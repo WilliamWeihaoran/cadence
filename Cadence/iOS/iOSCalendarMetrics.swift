@@ -511,30 +511,34 @@ nonisolated enum iOSCalendarTimelineBlockLayout {
     /// this rectangle's centre with `.position`, the mechanism the Mac's
     /// `TimelineDraftPopoverAnchor` uses for its own draft, so the anchor is where the block is.
     ///
-    /// An all-day draft sits in the first hour, an hour tall, as it always has.
+    /// **It takes no all-day flag, because an all-day draft is not drawn on this ladder at all**
+    /// ([[T-8851]]). It used to: an all-day draft was placed at `calendarStartHour * 60`, an hour
+    /// tall, "as it always has" -- so toggling All day on a 7:30 AM draft threw the block to the
+    /// top of the column and off the visible pane, while the Mac's ghost stayed on the pressed
+    /// range. The owner's call was neither; an all-day draft belongs in the all-day strip, where
+    /// an all-day item lives, on both platforms. `CadenceCalendarDraftPlacement` is that rule and
+    /// the column asks it before it draws anything, so there is no rectangle to get wrong here.
     static func draftFrame(
         startMin: Int,
         endMin: Int,
-        isAllDay: Bool,
         columnWidth: CGFloat,
         hourHeight: CGFloat
     ) -> CGRect {
         let inset = Kind.task.inset
-        let topMinute = isAllDay ? CadenceScheduleSupport.calendarStartHour * 60 : startMin
         return CGRect(
             x: inset,
-            y: blockTop(forMinute: CGFloat(topMinute), hourHeight: hourHeight),
+            y: blockTop(forMinute: CGFloat(startMin), hourHeight: hourHeight),
             width: max(0, columnWidth - inset * 2),
-            height: blockHeight(start: startMin, end: isAllDay ? startMin + 60 : endMin, hourHeight: hourHeight)
+            height: blockHeight(start: startMin, end: endMin, hourHeight: hourHeight)
         )
     }
 
     /// The rectangle the draft EDITOR hangs off ([[T-8502]]): the pressed range, **whatever the
-    /// all-day flag says**, so it takes no `isAllDay` to get wrong.
+    /// all-day flag says**, so it takes no all-day flag to get wrong.
     ///
     /// **The all-day editor ran off the top of the iPad screen because its anchor was the first
-    /// hour, not because UIKit chose the wrong edge.** `draftFrame` draws an all-day draft at
-    /// minute 0, and the popover used to hang off the drawn block — so toggling All day on a 7:30
+    /// hour, not because UIKit chose the wrong edge.** `draftFrame` used to draw an all-day draft
+    /// at minute 0, and the popover hung off the drawn block — so toggling All day on a 7:30
     /// AM draft moved the anchor to midnight, 435pt above the pressed slot and off the top of the
     /// pane. The measured panel fits that and nothing else: midnight's block bottom at -222pt on a
     /// pane where 7:30 AM sits at y=159, a ~611pt panel hung BELOW it ends at ~y=396, the bottom
@@ -549,7 +553,7 @@ nonisolated enum iOSCalendarTimelineBlockLayout {
         columnWidth: CGFloat,
         hourHeight: CGFloat
     ) -> CGRect {
-        draftFrame(startMin: startMin, endMin: endMin, isAllDay: false, columnWidth: columnWidth, hourHeight: hourHeight)
+        draftFrame(startMin: startMin, endMin: endMin, columnWidth: columnWidth, hourHeight: hourHeight)
     }
 
     // MARK: - Draw order
@@ -643,11 +647,16 @@ nonisolated enum iOSCalendarTypographyMetrics {
         return max(1, Int(CGFloat(base) / multiplier))
     }
 
+    /// `draftRows` is the all-day DRAFT one of the columns in view is composing ([[T-8851]]) —
+    /// one chip or none. The pinned row is a single height for every column, so a draft on one
+    /// day grows the whole row, exactly as the busiest day's chips already do.
     static func bandHeight(for splits: [CadenceCalendarMonthCellPriority.Split],
+                           draftRows: Int = 0,
                            at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        let drafts = max(0, draftRows)
         let previews = splits.map { split in
-            let lines = split.visible + (split.hidden > 0 ? 1 : 0)
-            return CGFloat(split.visible) * chipHeight(hasTime: false, at: size, scaling: scaling)
+            let lines = split.visible + (split.hidden > 0 ? 1 : 0) + drafts
+            return CGFloat(split.visible + drafts) * chipHeight(hasTime: false, at: size, scaling: scaling)
                 + (split.hidden > 0 ? CadenceTypeScale.lineHeight(.metadata, base: iOSCalendarTimelineMetrics.overflowLabelSize, at: size, scaling: scaling) : 0)
                 + CGFloat(max(0, lines - 1)) * iOSCalendarTimelineMetrics.bandLineSpacing
         }
@@ -668,11 +677,20 @@ nonisolated enum iOSCalendarTypographyMetrics {
     ///
     /// The strip's own inset is paid on both edges here; the day header pays it once because the
     /// date block above it carries the top one.
+    ///
+    /// `draftRows` is the all-day DRAFT the day is composing, which is one chip or none
+    /// ([[T-8851]]). It is counted outside `split` deliberately: the split rations the day's real
+    /// items against the strip's capacity, and a draft is not rationed -- the thing the user is
+    /// typing right now cannot be the one that gets hidden behind "+N more". A day with nothing
+    /// all-day on it still answers 0 until a draft arrives, so the ladder does not move on an
+    /// ordinary day.
     static func allDayStripHeight(for split: CadenceCalendarMonthCellPriority.Split,
+                                  draftRows: Int = 0,
                                   at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
-        let lines = split.visible + (split.hidden > 0 ? 1 : 0)
+        let drafts = max(0, draftRows)
+        let lines = split.visible + (split.hidden > 0 ? 1 : 0) + drafts
         guard lines > 0 else { return 0 }
-        let content = CGFloat(split.visible) * chipHeight(hasTime: false, at: size, scaling: scaling)
+        let content = CGFloat(split.visible + drafts) * chipHeight(hasTime: false, at: size, scaling: scaling)
             + (split.hidden > 0 ? CadenceTypeScale.lineHeight(.metadata, base: iOSCalendarTimelineMetrics.overflowLabelSize, at: size, scaling: scaling) : 0)
             + CGFloat(max(0, lines - 1)) * iOSCalendarTimelineMetrics.bandLineSpacing
         return content + iOSCalendarTimelineMetrics.previewInset * 2

@@ -82,6 +82,10 @@ struct SchedulePanelHeader: View {
 /// while the hours scroll. Three chips show before the band scrolls itself.
 struct SchedulePanelAllDayBand: View {
     let events: [EKEvent]
+    /// The all-day draft the ladder below is composing ([[T-8851]]), or `nil`. The ladder is
+    /// inside this panel's `ScrollView` and this band is pinned outside it, so the draft is
+    /// published rather than drawn across the boundary; see `CadenceCalendarAllDayDraftSession`.
+    var draftTitle: String? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -94,13 +98,20 @@ struct SchedulePanelAllDayBand: View {
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: SchedulePanelAllDayBandLayout.chipSpacing) {
+                    // First, so the row the user is typing is the row they can see.
+                    if let draftTitle {
+                        CadenceAllDayDraftChip(title: draftTitle)
+                    }
                     ForEach(events.map { CalendarAllDayEventItem(event: $0) }) { item in
                         AllDayEventChip(event: item.event)
                     }
                 }
                 .padding(.vertical, SchedulePanelAllDayBandLayout.verticalPadding)
             }
-            .frame(height: SchedulePanelAllDayBandLayout.height(eventCount: events.count))
+            .frame(height: SchedulePanelAllDayBandLayout.height(
+                eventCount: events.count,
+                draftCount: draftTitle == nil ? 0 : 1
+            ))
         }
         // The ladder's own right margin (`SchedulePanelTimelineViewport` pads 8 and draws 8
         // short of the pane), so a chip ends where a block does.
@@ -129,8 +140,13 @@ enum SchedulePanelAllDayBandLayout {
     static let verticalPadding: CGFloat = 4
 
     /// Zero for a day with nothing all-day, so the band costs nothing on an ordinary day.
-    static func height(eventCount: Int) -> CGFloat {
-        let rows = min(max(eventCount, 0), visibleChipLimit)
+    ///
+    /// `draftCount` is the all-day draft being composed on this day, which is one chip or none
+    /// ([[T-8851]]). It counts toward `visibleChipLimit` like any other row — a conference week
+    /// plus a draft still must not push the hour ladder off a short pane — but it is drawn first,
+    /// so it is never the row that scrolls out of sight.
+    static func height(eventCount: Int, draftCount: Int = 0) -> CGFloat {
+        let rows = min(max(eventCount, 0) + max(draftCount, 0), visibleChipLimit)
         guard rows > 0 else { return 0 }
         return CGFloat(rows) * chipHeight + CGFloat(rows - 1) * chipSpacing + verticalPadding * 2
     }

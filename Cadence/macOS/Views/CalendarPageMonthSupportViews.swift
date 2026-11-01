@@ -602,8 +602,17 @@ struct CalDayHeaderView: View {
     var todayKey: String = DateFormatters.todayKey()
     var allDayEvents: [EKEvent] = []
     var unscheduledTasks: [AppTask] = []
+    /// The all-day draft the hour canvas below is composing ([[T-8851]]). The canvas cannot draw
+    /// into this band — it is pinned above the vertical scroller, not inside it — so it publishes
+    /// the draft and this band draws the chip. See `CadenceCalendarAllDayDraftSession`.
+    @Environment(\.calendarAllDayDraft) private var allDayDraft
 
     private let cal = Calendar.current
+    /// This day's draft chip title, or `nil`. One draft at a time, keyed by day.
+    private var draftTitle: String? {
+        guard let allDayDraft, allDayDraft.isDrafting(on: DateFormatters.dateKey(from: date)) else { return nil }
+        return allDayDraft.chipTitle
+    }
     private var isToday: Bool { DateFormatters.dateKey(from: date) == todayKey }
     private var allDayEventItems: [CalendarAllDayEventItem] {
         allDayEvents.map { CalendarAllDayEventItem(event: $0) }
@@ -678,6 +687,12 @@ struct CalDayHeaderView: View {
     private var allDayBannerContent: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 2) {
+                // First, and never rationed by `split`: the thing the user is typing right now
+                // cannot be the row that gets hidden ([[T-8851]]). The band is a fixed-height
+                // scroller, so it costs no layout anywhere else.
+                if let draftTitle {
+                    CadenceAllDayDraftChip(title: draftTitle)
+                }
                 ForEach(allDayEventItems.prefix(split.events)) { item in
                     AllDayEventChip(event: item.event)
                 }

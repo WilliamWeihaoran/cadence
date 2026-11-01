@@ -121,7 +121,10 @@ struct CadenceCodexCalendarTypographyTests {
         let read = CadenceSourceScan.strippedSourceReader()
         let grid = try read("Cadence/iOS/iOSCalendarTimelineViews.swift")
         for binding in ["iOSCalendarTypographyMetrics.hourHeight(at: dynamicTypeSize, scaling: scaling)",
-                        "iOSCalendarTypographyMetrics.bandHeight(for: splits, at: dynamicTypeSize, scaling: scaling)",
+                        // [[T-8851]]: `draftRows:` is the all-day draft's own line in the pinned
+                        // band. The relation this pins -- the band's height is resolved from the
+                        // reader's type size, not a literal -- is the one it always was.
+                        "iOSCalendarTypographyMetrics.bandHeight(for: splits, draftRows: drafts, at: dynamicTypeSize, scaling: scaling)",
                         "iOSCalendarTypographyMetrics.dayCircle(at: dynamicTypeSize, scaling: scaling)",
                         "iOSCalendarTypographyMetrics.dateBlock(at: dynamicTypeSize, scaling: scaling)",
                         "iOSCalendarTypographyMetrics.railWidth(", "ViewThatFits(in: .vertical)",

@@ -866,10 +866,10 @@ struct iOSCalendarMetricsTests {
         let hour = iOSCalendarTimelineMetrics.hourHeight
         let width: CGFloat = 500
         let early = iOSCalendarTimelineBlockLayout.draftFrame(
-            startMin: 16 * 60, endMin: 17 * 60, isAllDay: false, columnWidth: width, hourHeight: hour
+            startMin: 16 * 60, endMin: 17 * 60, columnWidth: width, hourHeight: hour
         )
         let late = iOSCalendarTimelineBlockLayout.draftFrame(
-            startMin: 22 * 60 + 15, endMin: 23 * 60 + 15, isAllDay: false, columnWidth: width, hourHeight: hour
+            startMin: 22 * 60 + 15, endMin: 23 * 60 + 15, columnWidth: width, hourHeight: hour
         )
         #expect(abs((late.minY - early.minY) - CGFloat(6 * 60 + 15) / 60 * hour) < 0.001,
                 "two drafts 375 minutes apart are not 375 minutes of canvas apart")
@@ -880,11 +880,72 @@ struct iOSCalendarMetricsTests {
         let inset = iOSCalendarTimelineBlockLayout.Kind.task.inset
         #expect(early.minX == inset && early.maxX == width - inset,
                 "the draft does not keep the block strip's inset on both sides")
-        let allDay = iOSCalendarTimelineBlockLayout.draftFrame(
-            startMin: 16 * 60, endMin: 16 * 60, isAllDay: true, columnWidth: width, hourHeight: hour
+    }
+
+    // MARK: - The all-day draft leaves the ladder ([[T-8851]])
+
+    /// **`draftFrame` has no all-day case left to get wrong.**
+    ///
+    /// It used to take `isAllDay` and answer `calendarStartHour * 60`, an hour tall, for a true
+    /// one — so toggling All day on a 7:30 AM draft threw the block to the top of the column and
+    /// off the visible pane. The owner's call was that an all-day draft belongs in the ALL-DAY
+    /// STRIP on both platforms, so the ladder draws no block for it and the function that places
+    /// ladder blocks answers one thing: the pressed range.
+    ///
+    /// **Failing-first:** restoring the `isAllDay` branch requires restoring the parameter, which
+    /// this call site would then fail to compile; mutating the rule to
+    /// `placement(isAllDay:) == .hourLadder` for `true` fails the first three expectations here.
+    @Test func theAllDayDraftIsPlacedInTheStripAndTheLadderPlacesOnlyThePressedRange() {
+        let hour = iOSCalendarTimelineMetrics.hourHeight
+        let width: CGFloat = 500
+        let start = 7 * 60 + 30
+        #expect(CadenceCalendarDraftPlacement.placement(isAllDay: true) == .allDayStrip,
+                "an all-day draft is still placed on the hour ladder")
+        #expect(CadenceCalendarDraftPlacement.placement(isAllDay: false) == .hourLadder,
+                "non-vacuity: a timed draft no longer belongs on the ladder either")
+        #expect(!CadenceCalendarDraftPlacement.placement(isAllDay: true).drawsBlockInHourLadder,
+                "the ladder still draws a block for an all-day draft")
+        #expect(CadenceCalendarDraftPlacement.placement(isAllDay: false).drawsBlockInHourLadder)
+
+        // Whatever the flag said, the ladder rect is now the pressed minute's and nothing else.
+        let frame = iOSCalendarTimelineBlockLayout.draftFrame(
+            startMin: start, endMin: start + 60, columnWidth: width, hourHeight: hour
         )
-        #expect(allDay.minY == 0 && allDay.height == early.height,
-                "an all-day draft is not the first hour, an hour tall")
+        #expect(frame.minY == iOSCalendarTimelineBlockLayout.blockTop(forMinute: CGFloat(start), hourHeight: hour),
+                "the draft is not placed at the pressed minute")
+        #expect(frame.minY > 0, "non-vacuity: a 7:30 AM draft sits at the column's top edge")
+    }
+
+    /// The strip pays for the draft's row, and still costs **zero** on an ordinary day.
+    ///
+    /// A relation, not a figure: one draft row is exactly one chip plus one line gap more than
+    /// none, at whatever the reader's text size makes a chip. The zero case is what keeps the hour
+    /// ladder where it has always started on a day with nothing all-day on it ([[T-3163]]).
+    ///
+    /// **Failing-first:** dropping `drafts` out of `lines` leaves the two heights equal.
+    @Test func theAllDayStripPaysForTheDraftsRowAndStillCostsNothingOnAnOrdinaryDay() {
+        let empty = CadenceCalendarAllDayBandPriority.split(allDayEvents: 0, unscheduledTasks: 0, capacity: 6)
+        let none = iOSCalendarTypographyMetrics.allDayStripHeight(
+            for: empty, at: .large, scaling: .fixed
+        )
+        let drafting = iOSCalendarTypographyMetrics.allDayStripHeight(
+            for: empty, draftRows: 1, at: .large, scaling: .fixed
+        )
+        #expect(none == 0, "an ordinary day's strip no longer costs zero, so every ladder moved")
+        #expect(drafting > 0, "a day whose only all-day item is a draft draws no strip at all")
+
+        let oneEvent = CadenceCalendarAllDayBandPriority.split(allDayEvents: 1, unscheduledTasks: 0, capacity: 6)
+        let withEvent = iOSCalendarTypographyMetrics.allDayStripHeight(
+            for: oneEvent, at: .large, scaling: .fixed
+        )
+        let withEventAndDraft = iOSCalendarTypographyMetrics.allDayStripHeight(
+            for: oneEvent, draftRows: 1, at: .large, scaling: .fixed
+        )
+        let chip = iOSCalendarTypographyMetrics.chipHeight(hasTime: false, at: .large, scaling: .fixed)
+        #expect(abs((withEventAndDraft - withEvent) - (chip + iOSCalendarTimelineMetrics.bandLineSpacing)) < 0.001,
+                "a draft row costs something other than one chip and one line gap")
+        #expect(abs(drafting - withEvent) < 0.001,
+                "a draft row and an event row are not the same row")
     }
 
     /// The other half: the column draws the draft AT that rectangle by layout. Frame, popover,
@@ -923,19 +984,21 @@ struct iOSCalendarMetricsTests {
     // MARK: - The all-day draft's editor anchor ([[T-8502]])
 
     /// **An all-day draft's editor hangs off the slot that was pressed, not off the first hour.**
-    /// The block of an all-day draft is drawn at minute 0, and the editor used to hang off the
-    /// drawn block: toggling All day on a 7:30 AM draft moved the anchor 435pt up to midnight, off
-    /// the top of the iPad pane, and the panel hung below an off-screen rect with its kind switch,
+    /// An all-day draft's block used to be drawn at minute 0, and the editor hung off the drawn
+    /// block: toggling All day on a 7:30 AM draft moved the anchor 435pt up to midnight, off the
+    /// top of the iPad pane, and the panel hung below an off-screen rect with its kind switch,
     /// title and toggle above y=0 (`draftseen1430`, measured). The anchor is the pressed range
     /// whatever the flag says, so the edge UIKit picks is picked against an on-screen rect.
     ///
-    /// Relations only: the anchor equals the TIMED frame at the pressed minute, sits that many
-    /// minutes of canvas below the drawn all-day block, and the drawn block is still the first
-    /// hour -- so the test fails if the anchor follows the drawing again, or if the drawing is
-    /// quietly moved to make this pass.
+    /// **It survives [[T-8851]] unchanged, which is the point of testing it separately.** The
+    /// all-day draft's block has since moved out of the ladder altogether and into the all-day
+    /// strip; the editor's anchor did not move with it, and must not — a panel that jumped lanes
+    /// when the toggle was flipped would be the same defect in a new place.
     ///
-    /// **Failing-first:** returning `draftFrame(... isAllDay: true ...)` from
-    /// `draftEditorAnchorFrame` fails the first two expectations.
+    /// Relations only: the anchor equals the frame the ladder places at the pressed minute, and
+    /// that minute is not the column's top edge.
+    ///
+    /// **Failing-first:** anchoring on `calendarStartHour * 60` fails both expectations.
     @Test func theAllDayDraftsEditorHangsOffThePressedSlotNotTheFirstHour() {
         let hour = iOSCalendarTimelineMetrics.hourHeight
         let width: CGFloat = 500
@@ -944,15 +1007,13 @@ struct iOSCalendarMetricsTests {
             startMin: start, endMin: start + 60, columnWidth: width, hourHeight: hour
         )
         let timed = iOSCalendarTimelineBlockLayout.draftFrame(
-            startMin: start, endMin: start + 60, isAllDay: false, columnWidth: width, hourHeight: hour
-        )
-        let drawnAllDay = iOSCalendarTimelineBlockLayout.draftFrame(
-            startMin: start, endMin: start + 60, isAllDay: true, columnWidth: width, hourHeight: hour
+            startMin: start, endMin: start + 60, columnWidth: width, hourHeight: hour
         )
         #expect(anchor == timed, "the editor's anchor is not the pressed slot")
-        #expect(abs((anchor.minY - drawnAllDay.minY) - CGFloat(start) / 60 * hour) < 0.001,
-                "an all-day draft's editor anchor followed its drawing up to the first hour")
-        #expect(drawnAllDay.minY == 0, "non-vacuity: the all-day block is no longer drawn in the first hour")
+        #expect(abs(anchor.minY - CGFloat(start) / 60 * hour) < 0.001,
+                "the editor's anchor is not the pressed minute's own place on the canvas")
+        #expect(anchor.minY > 0,
+                "non-vacuity: the pressed slot resolves to the column's top edge, where the bug put it")
     }
 
     /// The other half: the popover is attached to a view framed from `draftEditorAnchorFrame`,

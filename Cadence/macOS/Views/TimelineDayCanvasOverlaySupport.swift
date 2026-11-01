@@ -44,6 +44,11 @@ struct TimelineDropPreviewOverlay: View {
 
 struct TimelineDraftCreationOverlay: View {
     let draft: TimelineDraftSelection?
+    /// Where the draft block belongs ([[T-8851]]). `.allDayStrip` draws **no ghost here** — the
+    /// day's all-day strip draws a chip for it instead — while the popover's anchor stays on the
+    /// pressed range either way, so flipping All day never moves the panel out from under the
+    /// pointer. iOS's column asks the same rule.
+    var placement: CadenceCalendarDraftPlacement = .hourLadder
     let width: CGFloat
     let metrics: TimelineMetrics
     let style: TimelineBlockStyle
@@ -53,13 +58,15 @@ struct TimelineDraftCreationOverlay: View {
 
     var body: some View {
         if let draft {
-            TimelineDraftGhostLayer(
-                startMinute: draft.start,
-                endMinute: draft.end,
-                width: width,
-                metrics: metrics,
-                style: style
-            )
+            if placement.drawsBlockInHourLadder {
+                TimelineDraftGhostLayer(
+                    startMinute: draft.start,
+                    endMinute: draft.end,
+                    width: width,
+                    metrics: metrics,
+                    style: style
+                )
+            }
 
             TimelineDraftPopoverAnchor(
                 startMinute: draft.start,

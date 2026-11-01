@@ -331,6 +331,12 @@ struct CalendarTimelineViewport: View {
     let onRestoreTimelineScrollIfNeeded: (ScrollViewProxy, ScrollViewProxy) -> Void
 
     private let cal = Calendar.current
+    /// **The one place that owns both halves of an all-day draft** ([[T-8851]]): the pinned
+    /// all-day band above and the hour canvases below are the two children of this view's stack,
+    /// and the draft belongs to a canvas while the chip belongs to the band. Installed here for
+    /// the reason `TimelineTaskDragSession` is installed on the day scroller — a column cannot
+    /// reach its sibling, so it publishes and the sibling reads.
+    @State private var allDayDraft = CadenceCalendarAllDayDraftSession()
 
     var body: some View {
         let viewportMetrics = CalendarTimelineViewportMetrics(
@@ -447,6 +453,8 @@ struct CalendarTimelineViewport: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // [[T-8851]]: the band above and the canvases below read and write the same draft.
+        .environment(\.calendarAllDayDraft, allDayDraft)
     }
 }
 

@@ -554,6 +554,9 @@ struct CadenceCalendarChipTreatmentTests {
         // callers now, so this reads the stack rather than the header that hands it a split.
         // Re-pointed, not relaxed — every assertion below is the one it always was, and the
         // header is still required to be the thing that hands the stack its two lists.
+        // [[T-8851]] added a third thing the header hands over: the day's all-day DRAFT, whose
+        // block moved out of the hour ladder and into this band. The argument the call is pinned
+        // for is unchanged — one stack, handed everything it draws by the header.
         let header = try #require(
             CadenceSourceScan.declarationBody("private struct iOSCalendarAllDayBandChips: View", in: source),
             "iOSCalendarAllDayBandChips is gone from \(Self.iOSTimeline)"
@@ -565,8 +568,8 @@ struct CadenceCalendarChipTreatmentTests {
         )
         #expect(
             dayHeader.filter { !$0.isWhitespace }
-                .contains("iOSCalendarAllDayBandChips(allDayEvents:allDayEvents,unscheduledTasks:unscheduledTasks,split:split,onOpenEvent:onOpenEvent,onSelectDay:action)"),
-            "the week header no longer hands the shared chip stack its day's two lists and its opener"
+                .contains("iOSCalendarAllDayBandChips(allDayEvents:allDayEvents,unscheduledTasks:unscheduledTasks,split:split,onOpenEvent:onOpenEvent,onSelectDay:action,draftTitle:draftTitle)"),
+            "the week header no longer hands the shared chip stack its day's two lists, its opener and its draft"
         )
 
         let dense = header.filter { !$0.isWhitespace }

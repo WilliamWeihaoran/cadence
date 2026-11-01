@@ -178,6 +178,12 @@ struct iOSCalendarTimelineGrid: View {
     /// inspector open, so a meeting on Day/Week (and on Today's schedule pane) is edited where it
     /// is seen instead of only from another view.
     @State private var selectedEvent: iOSCalendarEventSelection?
+    /// **Where an all-day draft's block is drawn** ([[T-8851]]). The draft is owned by the day
+    /// COLUMN the press landed in, and the all-day strip is that column's sibling — pinned outside
+    /// the hour canvas's scroll view so it stays put while the hours scroll. So the column says
+    /// what it is drafting and this grid hands it to the strip; see
+    /// `CadenceCalendarAllDayDraftSession`.
+    @State private var allDayDraft = CadenceCalendarAllDayDraftSession()
 
     private let calendar = Calendar.current
     /// Read for the two figures that are still about the pane — the hour rail's width and how wide a
@@ -223,6 +229,7 @@ struct iOSCalendarTimelineGrid: View {
         guard !isSingleDay else {
             return iOSCalendarTypographyMetrics.allDayStripHeight(
                 for: singleDaySplit,
+                draftRows: draftTitle(on: leadingDate) == nil ? 0 : 1,
                 at: dynamicTypeSize,
                 scaling: scaling
             )
@@ -230,7 +237,15 @@ struct iOSCalendarTimelineGrid: View {
         let splits = (0...visibleDayCount).map { offset in
             bandSplit(on: date(at: leadingIndex + offset))
         }
-        return iOSCalendarTypographyMetrics.bandHeight(for: splits, at: dynamicTypeSize, scaling: scaling)
+        let drafts = (0...visibleDayCount).contains(where: { draftTitle(on: date(at: leadingIndex + $0)) != nil }) ? 1 : 0
+        return iOSCalendarTypographyMetrics.bandHeight(for: splits, draftRows: drafts, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    /// The all-day draft chip this day's strip draws, or `nil` ([[T-8851]]). One draft at a time,
+    /// so at most one column in view answers non-nil.
+    private func draftTitle(on date: Date) -> String? {
+        guard allDayDraft.isDrafting(on: DateFormatters.dateKey(from: date)) else { return nil }
+        return allDayDraft.chipTitle
     }
 
     /// **What a single-day pane's strip shows: the day's all-day EVENTS and nothing else**
@@ -388,7 +403,8 @@ struct iOSCalendarTimelineGrid: View {
                 )
             },
             onDropTaskAtMinute: { id, minute in onDropTaskAtMinute(id, key, minute) },
-            resolveDroppedTask: resolveDroppedTask
+            resolveDroppedTask: resolveDroppedTask,
+            allDayDraft: allDayDraft
         )
     }
 
@@ -492,7 +508,8 @@ struct iOSCalendarTimelineGrid: View {
                     allDayEvents: allDayEvents(on: leadingDate),
                     split: singleDaySplit,
                     height: dayHeaderHeight,
-                    onOpenEvent: openAllDayEvent
+                    onOpenEvent: openAllDayEvent,
+                    draftTitle: draftTitle(on: leadingDate)
                 )
             }
 
@@ -535,7 +552,8 @@ struct iOSCalendarTimelineGrid: View {
                             unscheduledTasks: items(unscheduledTasksByDate, on: date),
                             capacity: bandCapacity,
                             bandHeight: dayHeaderHeight,
-                            onOpenEvent: openAllDayEvent
+                            onOpenEvent: openAllDayEvent,
+                            draftTitle: draftTitle(on: date)
                         ) {
                             selectedDate = date
                         }
@@ -941,6 +959,8 @@ private struct iOSCalendarTimelineDayHeader: View {
     /// an unscheduled task chip takes the hit because it is a drag source ([[T-8143]]) and hands
     /// its tap on to `action`, so the day is selectable through it too.
     let onOpenEvent: (EKEvent) -> Void
+    /// The all-day draft this day is composing ([[T-8851]]); see `iOSCalendarAllDayBandChips`.
+    var draftTitle: String? = nil
     /// Selects the day. Last, because the grid passes it as a trailing closure.
     let action: () -> Void
 
@@ -1050,7 +1070,8 @@ private struct iOSCalendarTimelineDayHeader: View {
                 unscheduledTasks: unscheduledTasks,
                 split: split,
                 onOpenEvent: onOpenEvent,
-                onSelectDay: action
+                onSelectDay: action,
+                draftTitle: draftTitle
             )
             .frame(
                 maxWidth: .infinity,
@@ -1098,9 +1119,23 @@ private struct iOSCalendarAllDayBandChips: View {
     /// around it does. The chip takes the hit now -- it is a drag source ([[T-8143]]) -- so the tap
     /// it used to let fall through to the header's `Button` is handed on here instead.
     var onSelectDay: (() -> Void)? = nil
+    /// **The all-day DRAFT this day is composing, if any** ([[T-8851]]) --
+    /// `CadenceCalendarAllDayDraftSession.chipTitle`. It is drawn FIRST and is never rationed by
+    /// `split`: a draft is the thing the user is typing right now, so it cannot be the row that
+    /// disappears behind "+N more". The grid pays for its line through the `draftRows:` argument
+    /// on `allDayStripHeight` / `bandHeight`.
+    ///
+    /// This is where an all-day draft's block now lives on iOS. It used to be drawn on the hour
+    /// ladder at `calendarStartHour * 60`, an hour tall, so a draft begun at 7:30 AM jumped to the
+    /// top of the column and off the visible pane; `CadenceCalendarDraftPlacement` is the rule
+    /// that moved it here, and the Mac's ghost obeys the same one.
+    var draftTitle: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: iOSCalendarTimelineMetrics.bandLineSpacing) {
+            if let draftTitle {
+                CadenceAllDayDraftChip(title: draftTitle)
+            }
             ForEach(allDayEvents.prefix(split.events), id: \.calendarItemIdentifier) { event in
                 iOSCalendarMiniChip(
                     title: iOSCalendarEventSupport.title(for: event),
@@ -1194,13 +1229,16 @@ private struct iOSCalendarTimelineAllDayStrip: View {
     /// Opens a chip's event in the grid's one editor ([[T-5356]]). This strip is not inside a
     /// `Button`, so a chip tap here is free to mean "open", as a tap on a timed block does.
     let onOpenEvent: (EKEvent) -> Void
+    /// The all-day draft this day is composing ([[T-8851]]); see `iOSCalendarAllDayBandChips`.
+    var draftTitle: String? = nil
 
     var body: some View {
         iOSCalendarAllDayBandChips(
             allDayEvents: allDayEvents,
             unscheduledTasks: [],
             split: split,
-            onOpenEvent: onOpenEvent
+            onOpenEvent: onOpenEvent,
+            draftTitle: draftTitle
         )
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(iOSCalendarTimelineMetrics.previewInset)
@@ -1342,6 +1380,11 @@ private struct iOSCalendarTimelineDayColumn: View {
     let onDropTaskAtMinute: (UUID, Int) -> Bool
     /// See `iOSCalendarTimelineGrid.resolveDroppedTask`.
     let resolveDroppedTask: (UUID) -> AppTask?
+    /// Where an all-day draft's block goes ([[T-8851]]): this column holds the draft, and the
+    /// grid's all-day strip draws it, so the column publishes it here rather than drawing a block
+    /// on the hour ladder for a thing that is not on the clock. See
+    /// `CadenceCalendarAllDayDraftSession`.
+    let allDayDraft: CadenceCalendarAllDayDraftSession
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
 
@@ -1481,6 +1524,14 @@ private struct iOSCalendarTimelineDayColumn: View {
                 .zIndex(iOSCalendarTimelineBlockLayout.overlayZIndex)
         }
         .frame(width: colWidth, height: timelineHeight, alignment: .topLeading)
+        // **The all-day draft is published to the strip from here, after the layout pass**
+        // ([[T-8851]]). `publishedAllDayDraft` is the whole input, so an untouched column writes
+        // nothing: the value only moves when All day is toggled or the draft's title is typed.
+        .onChange(of: publishedAllDayDraft) { _, _ in publishAllDayDraft() }
+        .onAppear(perform: publishAllDayDraft)
+        // Only this day's own chip. A column leaving the window must not take the chip of the
+        // column that now holds the draft down with it; see `CadenceCalendarAllDayDraftSession`.
+        .onDisappear { allDayDraft.clear(dateKey: DateFormatters.dateKey(from: date)) }
         // **The column is a drop target, and the minute is part of what it hands over** (T-1276).
         // The owner asked for a `+` dropped "onto the calendar timeline" to inherit what it landed
         // on, and what a day column has to give is a day *and* a time — the same two the column's
@@ -1870,16 +1921,45 @@ private struct iOSCalendarTimelineDayColumn: View {
         if presentingEditor { isDraftEditorPresented = true }
     }
 
+    /// The all-day draft this column is composing, as the strip is told it ([[T-8851]]): the
+    /// chip's title, or `nil` when there is no all-day draft here. Equatable, so the `.onChange`
+    /// that publishes it fires on the toggle and on each keystroke of the title and on nothing
+    /// else.
+    private var publishedAllDayDraft: String? {
+        guard drawsDraftBlocks,
+              let draft,
+              draft.startDateKey == DateFormatters.dateKey(from: date),
+              !CadenceCalendarDraftPlacement.placement(isAllDay: draft.isAllDay).drawsBlockInHourLadder
+        else { return nil }
+        return draft.title
+    }
+
+    private func publishAllDayDraft() {
+        let key = DateFormatters.dateKey(from: date)
+        if let title = publishedAllDayDraft {
+            allDayDraft.set(dateKey: key, title: title)
+        } else {
+            allDayDraft.clear(dateKey: key)
+        }
+    }
+
     /// The draft block, drawn where every other block on this column is drawn — same inset, same
     /// `yOffset`, same `blockHeight` — so what the user sees before committing is the rectangle the
     /// committed thing will occupy.
+    ///
+    /// **Unless the draft is all-day, in which case this ladder draws no block for it at all**
+    /// ([[T-8851]]). It used to draw one at `calendarStartHour * 60`, an hour tall, so toggling
+    /// All day on a 7:30 AM draft threw the block to the top of the column and off the visible
+    /// pane. `CadenceCalendarDraftPlacement` says where an all-day draft goes — the all-day strip,
+    /// where an all-day item lives — and the strip draws the chip, on both platforms. The EDITOR's
+    /// anchor is unaffected and stays on the pressed range ([[T-8502]]), so the panel does not
+    /// move out from under the finger when the toggle is flipped.
     @ViewBuilder
     private var draftLayer: some View {
         if drawsDraftBlocks, let current = draft, current.startDateKey == DateFormatters.dateKey(from: date) {
             let frame = iOSCalendarTimelineBlockLayout.draftFrame(
                 startMin: current.startMin,
                 endMin: current.endMin,
-                isAllDay: current.isAllDay,
                 columnWidth: colWidth,
                 hourHeight: hourHeight
             )
@@ -1889,13 +1969,15 @@ private struct iOSCalendarTimelineDayColumn: View {
                 columnWidth: colWidth,
                 hourHeight: hourHeight
             )
-            iOSTimelineDraftBlock(
-                draft: draftBinding(fallingBackTo: current),
-                hourHeight: hourHeight,
-                onAdjusted: restoreDraftEditorAfterAdjustment
-            )
-            .frame(width: frame.width, height: frame.height)
-            .position(x: frame.midX, y: frame.midY)
+            if CadenceCalendarDraftPlacement.placement(isAllDay: current.isAllDay).drawsBlockInHourLadder {
+                iOSTimelineDraftBlock(
+                    draft: draftBinding(fallingBackTo: current),
+                    hourHeight: hourHeight,
+                    onAdjusted: restoreDraftEditorAfterAdjustment
+                )
+                .frame(width: frame.width, height: frame.height)
+                .position(x: frame.midX, y: frame.midY)
+            }
 
             // **The editor hangs off the PRESSED range, not off the drawn block** ([[T-8502]]).
             // An all-day draft is drawn in the first hour, and while the popover was attached to

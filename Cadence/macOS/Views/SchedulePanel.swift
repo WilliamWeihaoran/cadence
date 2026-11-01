@@ -133,8 +133,18 @@ struct SchedulePanel: View {
         )
     }
 
+    /// This pane's all-day draft ([[T-8851]]). The band below is pinned outside the ladder's
+    /// `ScrollView` and the draft belongs to the canvas inside it, so the canvas publishes here
+    /// and the band reads it. See `CadenceCalendarAllDayDraftSession`.
+    @State private var allDayDraft = CadenceCalendarAllDayDraftSession()
+
+    private var allDayDraftTitle: String? {
+        allDayDraft.isDrafting(on: todayKey) ? allDayDraft.chipTitle : nil
+    }
+
     var body: some View {
         let allDayEvents = allDayEvents
+        let allDayDraftTitle = allDayDraftTitle
         VStack(alignment: .leading, spacing: 0) {
             if presentation.drawsOwnHeader {
                 SchedulePanelHeader(
@@ -149,8 +159,10 @@ struct SchedulePanel: View {
 
             // Only on a day that has one ([[T-7982]]); an ordinary day's ladder starts where it
             // always has.
-            if !allDayEvents.isEmpty {
-                SchedulePanelAllDayBand(events: allDayEvents)
+            // ...or on a day the user is drafting an all-day item on ([[T-8851]]): the draft's
+            // block moved here out of the hour ladder, so the band has to be able to appear for it.
+            if !allDayEvents.isEmpty || allDayDraftTitle != nil {
+                SchedulePanelAllDayBand(events: allDayEvents, draftTitle: allDayDraftTitle)
             }
 
             GeometryReader { geo in
@@ -262,6 +274,8 @@ struct SchedulePanel: View {
             Text(TaskCreationService.saveFailureNotice)
         }
         .cadenceTracksDayChanges($observedDay)
+        // [[T-8851]]: the band above and the ladder's canvas below read and write the same draft.
+        .environment(\.calendarAllDayDraft, allDayDraft)
         .onChange(of: calendarManager.storeVersion) {
             SchedulePanelDataSupport.syncLinkedTasks(
                 allTasks: allTasks,

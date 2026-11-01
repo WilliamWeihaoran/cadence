@@ -41,6 +41,11 @@ struct TimelineDayCanvas: View {
 
     @State private var draftSelection: TimelineDraftSelection? = nil
     @State private var showNewTaskPopover = false
+    /// **Whether the draft the popover is composing is all-day, and what it is called**
+    /// ([[T-8851]]). `nil` means the draft belongs on this ladder; non-nil means it has moved to
+    /// the day's all-day strip and this canvas draws no ghost for it. The All day toggle lives
+    /// inside `QuickCreateChoicePopover`, which reports it here.
+    @State private var allDayDraftTitle: String?
     @State private var isDropTargeted = false
     @State private var dropPreviewTaskID: UUID? = nil
     @State private var dropPreviewStartMin: Int? = nil
@@ -49,6 +54,9 @@ struct TimelineDayCanvas: View {
     /// The page's shared block-drag session when the host supplies one, else this canvas's own
     /// ([[T-5350]]). `activeDragTaskID` is that session's id, so every layer below reads one value.
     @Environment(\.timelineTaskDragSession) private var sharedDragSession
+    /// The day's all-day strip, which is this canvas's sibling in the page's layout ([[T-8851]]).
+    /// `nil` on a host that draws no strip; see `EnvironmentValues.calendarAllDayDraft`.
+    @Environment(\.calendarAllDayDraft) private var allDayDraft
     @State private var ownDragSession = TimelineTaskDragSession()
     private var dragSession: TimelineTaskDragSession { sharedDragSession ?? ownDragSession }
     private var activeDragTaskID: UUID? { dragSession.taskID }
@@ -123,6 +131,10 @@ struct TimelineDayCanvas: View {
 
             TimelineDraftCreationOverlay(
                 draft: draftSelection,
+                // **The ghost leaves the ladder when the draft goes all-day** ([[T-8851]]): an
+                // all-day item does not occupy an hour, and leaving the ghost on the pressed range
+                // said it did. `CadenceCalendarDraftPlacement` is the rule, and iOS reads it too.
+                placement: CadenceCalendarDraftPlacement.placement(isAllDay: allDayDraftTitle != nil),
                 width: width,
                 metrics: metrics,
                 style: style,
@@ -135,6 +147,7 @@ struct TimelineDayCanvas: View {
             ) { start, end in
                 quickCreatePopover(start: start, end: end)
             }
+            .onChange(of: publishedAllDayDraft) { _, _ in publishAllDayDraft() }
 
             TimelineDropPreviewOverlay(
                 isDropTargeted: isDropTargeted,
@@ -200,6 +213,8 @@ struct TimelineDayCanvas: View {
     }
 
     private func beginDraftSelection(startMin: Int, endMin: Int) {
+        // A new drag is a new draft, and a new draft is timed until its popover says otherwise.
+        allDayDraftTitle = nil
         // A block drag released outside every canvas left the session set ([[T-5380]]).
         dragSession.backgroundDragBegan()
         TimelineDayCanvasStateSupport.beginDraftSelection(
@@ -229,6 +244,37 @@ struct TimelineDayCanvas: View {
         showNewTaskPopover = false
         draftSelection = nil
         eventCreateFailureNotice = nil
+        allDayDraftTitle = nil
+        allDayDraft?.clear(dateKey: dateKey)
+    }
+
+    /// What the day's strip is told ([[T-8851]]): the all-day draft's title, or `nil`.
+    ///
+    /// **It reads `draftSelection` as well as the toggle**, so every path that takes the draft
+    /// down takes the chip with it. There are four — the popover's Add, its Cancel, an
+    /// outside-click dismissal and a click on the canvas — and only one of them runs
+    /// `finishDraftCreation`; a published value that read the toggle alone would have left a chip
+    /// in the band for a draft that no longer exists.
+    private var publishedAllDayDraft: String? {
+        guard draftSelection != nil else { return nil }
+        return allDayDraftTitle
+    }
+
+    /// Hands this column's all-day draft to the day's strip, or takes it back ([[T-8851]]).
+    /// Only this day's own chip is cleared, so a canvas that has already lost the draft cannot
+    /// take down the one that now holds it.
+    private func publishAllDayDraft() {
+        guard let allDayDraft else { return }
+        if let title = publishedAllDayDraft {
+            allDayDraft.set(dateKey: dateKey, title: title)
+        } else {
+            allDayDraft.clear(dateKey: dateKey)
+        }
+    }
+
+    /// What `QuickCreateChoicePopover` reports back: the draft is all-day, or it is not.
+    private func adoptAllDayDraft(isAllDay: Bool, title: String) {
+        allDayDraftTitle = isAllDay ? title : nil
     }
 
     /// `start`/`end` are the range the ghost is drawing and the popover is anchored to — the
@@ -272,7 +318,8 @@ struct TimelineDayCanvas: View {
                 },
                 onCancel: finishDraftCreation,
                 createFailureNotice: $eventCreateFailureNotice,
-                defaultsToCalendarEvent: prefersCalendarEventCreation
+                defaultsToCalendarEvent: prefersCalendarEventCreation,
+                onAllDayDraftChanged: adoptAllDayDraft
             )
         )
     }

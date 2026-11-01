@@ -243,6 +243,12 @@ struct QuickCreateChoicePopover: View {
     /// ([[T-3171]]'s eighth slice) and this popover has already dismissed itself by the time the
     /// store answers, so there is nothing left here to write a notice under.
     @Binding var createFailureNotice: String?
+    /// **What the host's draft ghost needs to know** ([[T-8851]]): whether the draft is all-day,
+    /// and what it is called. The panel's All day toggle lives inside this popover, so until this
+    /// existed the canvas drawing the ghost had no way to learn that the thing it was drawing an
+    /// hour-ladder block for was no longer on the clock. It is reported, not bound, because the
+    /// draft is still this popover's to own — the host only draws it.
+    var onAllDayDraftChanged: ((Bool, String) -> Void)? = nil
 
     @Environment(CalendarManager.self) private var calendarManager
     @Query(sort: \Area.order) private var areas: [Area]
@@ -258,7 +264,8 @@ struct QuickCreateChoicePopover: View {
         onCreateEvent: ((QuickCreateEventDraft) -> Void)?,
         onCancel: @escaping () -> Void,
         createFailureNotice: Binding<String?>,
-        defaultsToCalendarEvent: Bool = false
+        defaultsToCalendarEvent: Bool = false,
+        onAllDayDraftChanged: ((Bool, String) -> Void)? = nil
     ) {
         self.startMin = startMin
         self.endMin = endMin
@@ -266,6 +273,7 @@ struct QuickCreateChoicePopover: View {
         self.onCreateTask = onCreateTask
         self.onCreateEvent = onCreateEvent
         self.onCancel = onCancel
+        self.onAllDayDraftChanged = onAllDayDraftChanged
         _createFailureNotice = createFailureNotice
         _draft = State(
             initialValue: Self.openingDraft(
@@ -327,12 +335,23 @@ struct QuickCreateChoicePopover: View {
         .frame(width: CadenceSchedulePanelMetrics.preferredWidth)
         .background(Theme.surface)
         .onAppear(perform: resolveCalendarSelection)
+        // [[T-8851]]: the ghost follows the toggle. `.onAppear` as well as `.onChange`, because a
+        // popover re-opened over a draft that is already all-day never changes the value.
+        .onAppear(perform: reportAllDayDraft)
+        .onChange(of: draft.isAllDay) { _, _ in reportAllDayDraft() }
+        .onChange(of: draft.title) { _, _ in reportAllDayDraft() }
         .onChange(of: draft.kind) { previousKind, newKind in
             carryNotes(leaving: previousKind, entering: newKind)
             resolveCalendarSelection()
         }
         // The Section row follows the List row inside the panel ([[T-8591]]); this host's own
         // copy of that rule went with [[T-8601]].
+    }
+
+    /// Tells the host where its draft belongs now ([[T-8851]]). The rule itself is
+    /// `CadenceCalendarDraftPlacement`'s and lives with the host; this only reports the facts.
+    private func reportAllDayDraft() {
+        onAllDayDraftChanged?(draft.isAllDay, draft.title)
     }
 
     // MARK: - What the host can carry
