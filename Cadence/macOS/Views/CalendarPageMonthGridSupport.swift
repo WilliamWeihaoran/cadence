@@ -412,6 +412,12 @@ enum CalendarMonthDayLabelSupport {
 ///
 /// Takes the grid's `calendar` so the headings and `CalendarMonthGridSupport`'s tiling read one
 /// `firstWeekday`. The headings used to be a hard-coded `Sun…Sat`.
+///
+/// **[[T-9841]].** Size and band are `CadenceCalendarWeekdayHeaderMetrics`', the figures that type
+/// says every weekday header reads -- the Week columns' `MON` above this grid's own page, and both
+/// iOS month grids. This row was a fifth header outside it: a literal 11pt in a padded ~29pt band,
+/// so switching Week to Month stepped the weekday type up a point, and the phone's month row was
+/// smaller than the Mac's.
 struct MonthGridWeekdayHeader: View {
     let calendar: Calendar
 
@@ -419,10 +425,10 @@ struct MonthGridWeekdayHeader: View {
         HStack(spacing: 0) {
             ForEach(CadenceScheduleSupport.weekdaySymbols(calendar: calendar, width: .short), id: \.self) { day in
                 Text(day)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: CadenceCalendarWeekdayHeaderMetrics.labelSize, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    .frame(height: CadenceCalendarWeekdayHeaderMetrics.bandHeight)
             }
         }
         .background(Theme.surface)

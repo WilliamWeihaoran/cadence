@@ -357,12 +357,18 @@ struct CalendarTimelineViewport: View {
                             .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.dividerOpacity))
                             .frame(width: 0.5)
                     }
-                    .overlay(alignment: .bottomLeading) {
+                    // [[T-9842]]: in the rail's own column -- right-aligned on the hour labels'
+                    // edge (`CalTimeRailLabel`) -- and level with the band's first chip, which is
+                    // where Today's schedule band (`SchedulePanelAllDayBand`) sets the same label.
+                    // It sat at the corner's bottom-left, 4pt in, the far side of the column from
+                    // every hour label and most of the 90pt band below the chips it names.
+                    .overlay(alignment: .topTrailing) {
                         Text("all-day")
                             .font(.system(size: 9, weight: .medium))
                             .foregroundStyle(Theme.dim)
-                            .padding(.leading, 4)
-                    .padding(.bottom, 6)
+                            .frame(width: calTimeWidth, alignment: .trailing)
+                            .padding(.trailing, calTimeInset)
+                            .padding(.top, calDayHeaderHeight + 4) // the band's own 4pt chip inset
                     }
                 CalendarTimelineHeaderStrip(
                     todayKey: todayKey,
@@ -487,7 +493,9 @@ struct CalendarPageAccessNoticeStrip: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 4)
         .cadenceCard(background: Theme.surface.opacity(0.72), cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
-        .padding(.horizontal, 16)
+        // [[T-9843]]: on the page gutter the toolbar's "Calendar" title and the month grid's own
+        // notice stand on. It was a literal 16, so the card's edge sat 2pt inside the title's.
+        .padding(.horizontal, CadenceDesktopMetrics.pageHorizontalPadding)
         .padding(.vertical, 10)
     }
 }
