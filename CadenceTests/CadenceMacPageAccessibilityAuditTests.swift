@@ -590,6 +590,39 @@ struct CadenceMacPageAccessibilityAuditTests {
         #expect(after.contains(".onHover{isHovered=$0}"), "non-vacuity: the row still tracks the pointer")
     }
 
+    // MARK: - T-9655: the expanded mentions list scrolls past a few rows
+
+    /// It drew every mention in a plain stack under the editor, so a note naming twenty titles
+    /// took ~440pt out of the editor's height. Past `maxVisibleRows` the rows now scroll inside a
+    /// fixed height; a short list keeps its natural height and draws no scroll view.
+    @Test func theExpandedMentionsListScrollsPastAFewRows() throws {
+        let layout = NoteUnlinkedMentionsListLayout.self
+        #expect(!layout.scrolls(mentionCount: 1), "a single mention scrolls")
+        #expect(!layout.scrolls(mentionCount: layout.maxVisibleRows), "a list that fits the cap scrolls")
+        #expect(layout.scrolls(mentionCount: layout.maxVisibleRows + 1), "a list past the cap grows instead of scrolling")
+        #expect(layout.scrolls(mentionCount: 20), "twenty mentions grow instead of scrolling")
+        // A RELATION, not a pinned figure: the cap holds more than the last whole row and less
+        // than one more, so the clipped half row is the "more below" cue.
+        let row = layout.rowHeight + layout.rowSpacing
+        #expect(layout.cappedHeight > CGFloat(layout.maxVisibleRows) * row)
+        #expect(layout.cappedHeight < CGFloat(layout.maxVisibleRows + 1) * row)
+
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/NoteEditorAccessoryViews.swift")
+        )
+        let footer = try CadenceControlAccessibilityLabelTests.bodyOfStruct("NoteUnlinkedMentionsFooter", in: mac)
+            .filter { !$0.isWhitespace }
+        let gate = try #require(
+            footer.range(of: "ifNoteUnlinkedMentionsListLayout.scrolls(mentionCount:mentions.count){"),
+            "the expanded list no longer asks the layout whether to scroll"
+        )
+        let scrolling = footer[gate.upperBound...]
+        #expect(scrolling.hasPrefix("ScrollView(.vertical){mentionRows}.frame(height:NoteUnlinkedMentionsListLayout.cappedHeight)"),
+                "the long list is not a height-capped scroll view of the rows")
+        #expect(footer.components(separatedBy: "NoteUnlinkedMentionRow(title:mention.displayTitle){onLink(mention)}").count == 2,
+                "non-vacuity: the rows are drawn exactly once, as the T-9455 whole-row Link button")
+    }
+
     // MARK: - T-7338: the note's "N mentions" disclosure says whether it is open
 
     /// Hosted collapsed (its first state; opening it takes a click on a private view), so the

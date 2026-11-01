@@ -210,8 +210,16 @@ struct NoteUnlinkedMentionsFooter: View {
                 }
 
                 if isExpanded {
-                    ForEach(mentions, id: \.id) { mention in
-                        NoteUnlinkedMentionRow(title: mention.displayTitle) { onLink(mention) }
+                    // T-9655: past a few rows the list scrolls inside a fixed height instead of
+                    // growing under the editor and squeezing it; iOS shows the same list in a
+                    // scrolling sheet. A short list keeps its natural height.
+                    if NoteUnlinkedMentionsListLayout.scrolls(mentionCount: mentions.count) {
+                        ScrollView(.vertical) {
+                            mentionRows
+                        }
+                        .frame(height: NoteUnlinkedMentionsListLayout.cappedHeight)
+                    } else {
+                        mentionRows
                     }
                 }
             }
@@ -223,6 +231,31 @@ struct NoteUnlinkedMentionsFooter: View {
                 Divider().background(Theme.borderSubtle)
             }
         }
+    }
+
+    private var mentionRows: some View {
+        VStack(alignment: .leading, spacing: NoteUnlinkedMentionsListLayout.rowSpacing) {
+            ForEach(mentions, id: \.id) { mention in
+                NoteUnlinkedMentionRow(title: mention.displayTitle) { onLink(mention) }
+            }
+        }
+    }
+}
+
+/// T-9655: how tall the expanded mentions list may grow before it scrolls. The cap shows
+/// `maxVisibleRows` whole rows and half of the next, so the clipped edge reads as "more below".
+enum NoteUnlinkedMentionsListLayout {
+    static let maxVisibleRows = 5
+    /// One `NoteUnlinkedMentionRow`: an 11pt line plus its 4pt vertical padding either side.
+    static let rowHeight: CGFloat = 22
+    static let rowSpacing: CGFloat = 2
+
+    static func scrolls(mentionCount: Int) -> Bool {
+        mentionCount > maxVisibleRows
+    }
+
+    static var cappedHeight: CGFloat {
+        (CGFloat(maxVisibleRows) + 0.5) * (rowHeight + rowSpacing)
     }
 }
 
