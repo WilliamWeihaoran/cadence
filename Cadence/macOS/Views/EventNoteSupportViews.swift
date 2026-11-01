@@ -100,9 +100,9 @@ struct EventNoteEditorSheet: View {
                 // **T-5162.** The pane's append, not the menu's default store write: it flushes
                 // the buffer, appends, and commits through `commitEventNote`, so a summary reaches
                 // Apple Calendar and a failed mirror shows the notice like any other edit.
-                summaryHeaderAccessory: { appendSummary in AnyView(
+                summaryHeaderAccessory: { appendSummary, flushPendingContent in AnyView(
                     HStack(spacing: 10) {
-                        NoteActionMenu(note: note, onAppendSummary: appendSummary)
+                        NoteActionMenu(note: note, onAppendSummary: appendSummary, flushPendingContent: flushPendingContent)
                         // [[T-9453]]: the shared action button. A bare label under
                         // `.cadencePlain` made the hit area and the hover wash the word itself, a
                         // glyph-tight wash beside the padded Actions pill.

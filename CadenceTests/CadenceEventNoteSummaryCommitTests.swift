@@ -15,15 +15,15 @@ struct CadenceEventNoteSummaryCommitTests {
     @Test func theMeetingNoteSheetRoutesSummarizeThroughThePanesAppend() throws {
         let sheet = try codeOnly("Cadence/macOS/Views/EventNoteSupportViews.swift")
         #expect(sheet.contains("struct EventNoteEditorSheet: View"), "non-vacuity: wrong file read")
-        #expect(sheet.contains("summaryHeaderAccessory: { appendSummary in"))
-        #expect(sheet.contains("NoteActionMenu(note: note, onAppendSummary: appendSummary)"))
+        #expect(sheet.contains("summaryHeaderAccessory: { appendSummary, flushPendingContent in"))
+        #expect(sheet.contains("NoteActionMenu(note: note, onAppendSummary: appendSummary, flushPendingContent: flushPendingContent)"))
         #expect(!sheet.contains("NoteActionMenu(note: note)"))
         #expect(sheet.contains("onPersistContent: commitEventNote"))
     }
 
     @Test func thePanesAppendFlushesThenPersistsThroughTheHostsCommit() throws {
         let pane = try codeOnly("Cadence/macOS/Views/NoteEditorPane.swift")
-        #expect(pane.contains("summaryHeaderAccessory(appendSummary)"))
+        #expect(pane.contains("summaryHeaderAccessory(appendSummary, flushPendingEditorContent)"))
         let start = try #require(pane.range(of: "private func appendSummary(_ summary: String) {"))
         let end = try #require(pane.range(of: "private func replaceEditorContent(", range: start.upperBound..<pane.endIndex))
         let body = String(pane[start.upperBound..<end.lowerBound])
@@ -48,6 +48,44 @@ struct CadenceEventNoteSummaryCommitTests {
         let menuCall = String(controls[menu.lowerBound...])
         let close = try #require(menuCall.range(of: "onDelete: onDelete"))
         #expect(String(menuCall[..<close.lowerBound]).contains("onAppendSummary: appendSummary"))
+    }
+}
+
+/// **[[T-9651]].** The Actions popover's Export, Summarize and Extract Tasks read `note.content`,
+/// while a Mac editor holds up to 15 s of typing in its own buffer and a click on the pill moves no
+/// first responder. Each read now runs the host editor's flush first, and every host hands it in.
+@MainActor
+struct CadenceNoteActionMenuFlushTests {
+    @Test func everyReadOfTheNoteRunsTheHostsFlushFirst() throws {
+        let menuFile = try codeOnly("Cadence/macOS/Views/AIActionsSupportViews.swift")
+        let start = try #require(menuFile.range(of: "struct NoteActionMenu: View {"))
+        let end = try #require(menuFile.range(of: "private enum NoteActionPickerMetrics", range: start.upperBound..<menuFile.endIndex))
+        let menu = String(menuFile[start.upperBound..<end.lowerBound])
+        #expect(menu.contains("var flushPendingContent: () -> Void = {}"), "non-vacuity: the menu takes no flush")
+
+        // Export: the flush precedes the export call inside the row's action.
+        let export = try #require(menu.range(of: "NoteExportService.export("), "non-vacuity: the export row moved")
+        let exportRow = try #require(menu.range(of: "NoteActionPickerRow(icon: format.systemImage", options: .backwards, range: menu.startIndex..<export.lowerBound))
+        #expect(menu[exportRow.upperBound..<export.lowerBound].contains("flushPendingContent()"), "Export reads the note before the editor's held typing reaches it")
+
+        // Summarize and Extract Tasks: each function flushes before it builds the note context.
+        for function in ["private func runSummary() {", "private func runTaskExtraction() {"] {
+            let head = try #require(menu.range(of: function), "non-vacuity: \(function) moved")
+            let read = try #require(menu.range(of: "AIActionService.noteContext(note: note", range: head.upperBound..<menu.endIndex))
+            #expect(menu[head.upperBound..<read.lowerBound].contains("flushPendingContent()"), "\(function) reads the note before the editor's held typing reaches it")
+        }
+    }
+
+    @Test func everyHostHandsTheMenuItsEditorsFlush() throws {
+        let pane = try codeOnly("Cadence/macOS/Views/NoteEditorPane.swift")
+        let panel = try codeOnly("Cadence/macOS/Views/NotePanel.swift")
+        let sheet = try codeOnly("Cadence/macOS/Views/EventNoteSupportViews.swift")
+        let calls = [pane, panel, sheet].map { $0.components(separatedBy: "NoteActionMenu(").count - 1 }
+        #expect(calls == [1, 1, 1], "non-vacuity: the menu's call sites changed: \(calls)")
+        #expect(pane.contains("flushPendingContent: flushPendingEditorContent"), "the Notes page / list Notes menu gets no flush")
+        #expect(pane.contains("summaryHeaderAccessory(appendSummary, flushPendingEditorContent)"), "the meeting-note sheet's menu gets no flush")
+        #expect(panel.contains("flushPendingContent: flushPendingEditorContent"), "the Today notes column's menu gets no flush")
+        #expect(sheet.contains("flushPendingContent: flushPendingContent)"), "the meeting-note sheet drops the pane's flush")
     }
 }
 

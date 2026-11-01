@@ -68,7 +68,7 @@ struct NotePanel: View {
                     if let activeNote {
                         NoteActionMenu(note: activeNote, onAppendSummary: { summary in
                             appendSummary(summary, to: activeNote)
-                        })
+                        }, flushPendingContent: flushPendingEditorContent)
                         .padding(.top, 12)
                         .padding(.trailing, 12)
                     }
@@ -368,10 +368,8 @@ struct NotePanel: View {
 
     private func appendSummary(_ summary: String, to note: Note) {
         flushPendingEditorContent()
-        let trimmedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedSummary.isEmpty else { return }
-        let separator = note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\n\n"
-        let content = "\(note.content)\(separator)## AI Summary\n\n\(trimmedSummary)"
+        // The one heading-and-separator rule `NoteEditorPane` appends with, not a hand copy of it.
+        guard let content = CadenceAINoteSummary.appending(summary, to: note.content) else { return }
         CadenceCoreNoteSupport.update(note, content: content, in: currentNotesContext)
         if loadedNoteID == note.id {
             editorContent = content

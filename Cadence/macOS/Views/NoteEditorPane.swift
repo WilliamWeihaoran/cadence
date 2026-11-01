@@ -31,7 +31,11 @@ struct NoteEditorPane: View {
     /// append is a bare store write: it skips `onPersistContent` (the event-note sheet's Apple
     /// Calendar mirror) and leaves this pane's buffer stale, so the next flush wrote the old text
     /// back over the summary. Takes precedence over `headerAccessory`.
-    var summaryHeaderAccessory: ((_ appendSummary: @escaping (String) -> Void) -> AnyView)?
+    /// [[T-9651]]: also handed the pane's flush, for the menu's Export and AI reads.
+    var summaryHeaderAccessory: ((
+        _ appendSummary: @escaping (String) -> Void,
+        _ flushPendingContent: @escaping () -> Void
+    ) -> AnyView)?
     var headerStyle: HeaderStyle = .full
     /// **[[T-7336]].** An Escape in the body that the editor declined (`MarkdownEditor.
     /// onUnhandledEscape`). `nil` for the Notes page; the Mac event-note sheet passes its dismissal.
@@ -262,7 +266,7 @@ struct NoteEditorPane: View {
             NoteOutlineJumpButton(outline: derivedState.outline, onJump: jumpToOutline)
 
             if let summaryHeaderAccessory {
-                summaryHeaderAccessory(appendSummary)
+                summaryHeaderAccessory(appendSummary, flushPendingEditorContent)
             } else if let headerAccessory {
                 headerAccessory
             } else {
@@ -276,7 +280,8 @@ struct NoteEditorPane: View {
                     templates: templates,
                     onApplyTemplate: applyTemplate,
                     onAppendSummary: appendSummary,
-                    onDelete: onDelete
+                    onDelete: onDelete,
+                    flushPendingContent: flushPendingEditorContent
                 )
             }
         }

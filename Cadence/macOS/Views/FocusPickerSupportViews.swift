@@ -83,6 +83,9 @@ struct FocusPickSessionCard: View {
                 .fill(Theme.blue.opacity(searchFieldFocused ? 0.55 : 0.22))
                 .frame(height: 2)
         }
+        // [[T-9652]]: the accent bar is a full-width rectangle; unclipped, its square ends stood
+        // proud of the card's rounded top corners. `FocusTimerPanel` clips its bar the same way.
+        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private var searchBar: some View {

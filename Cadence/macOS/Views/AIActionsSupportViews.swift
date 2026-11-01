@@ -59,6 +59,12 @@ struct NoteActionMenu: View {
     var onApplyTemplate: ((NoteTemplate) -> Void)?
     var onAppendSummary: ((String) -> Void)?
     var onDelete: (() -> Void)?
+    /// **[[T-9651]].** The host editor's flush, run before Export, Summarize and Extract Tasks
+    /// read `note.content`. A Mac editor holds typing in its own buffer for up to 15 s
+    /// (`MarkdownEditorSyncTiming.fallbackContentCommitDelay`), and clicking this pill moves no
+    /// first responder, so without it an export lacked the last lines typed and the AI read a
+    /// note missing them. iOS's Export flushes the same way ([[T-5805]], [[T-5821]]).
+    var flushPendingContent: () -> Void = {}
 
     @Environment(AISettingsManager.self) private var aiSettingsManager
     @Environment(\.modelContext) private var modelContext
@@ -197,6 +203,7 @@ struct NoteActionMenu: View {
         ForEach(NoteExportFormat.allCases) { format in
             NoteActionPickerRow(icon: format.systemImage, title: format.actionTitle) {
                 dismissPicker()
+                flushPendingContent()
                 NoteExportService.export(
                     note,
                     as: format,
@@ -364,6 +371,7 @@ struct NoteActionMenu: View {
     }
 
     private func runSummary() {
+        flushPendingContent()
         Task {
             await run {
                 let provider = try aiSettingsManager.provider()
@@ -374,6 +382,7 @@ struct NoteActionMenu: View {
     }
 
     private func runTaskExtraction() {
+        flushPendingContent()
         Task {
             await run {
                 let provider = try aiSettingsManager.provider()

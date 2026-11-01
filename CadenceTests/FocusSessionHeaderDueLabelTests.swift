@@ -54,3 +54,27 @@ struct FocusSessionHeaderDueLabelTests {
         #expect(!header.contains("\"Due \\("), "macOS spells its own due wording again")
     }
 }
+
+/// **[[T-9652]].** The idle Mac Focus page's pick card draws a 2pt accent bar across its top. The
+/// bar is a plain full-width `Rectangle` overlay, so without a clip its square ends stood out past
+/// the card's 8pt rounded corners -- a blue tick at each top corner, brightest while the search
+/// field is focused. The card now clips to its own shape after the bar, as `FocusTimerPanel` does.
+struct CadenceFocusPickCardAccentClipTests {
+    @Test func theAccentBarIsClippedToTheCardsCorners() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusPickerSupportViews.swift")
+        let card = try #require(CadenceSourceScan.declarationBody("struct FocusPickSessionCard: View", in: source))
+        let bodyEnd = try #require(card.range(of: "private var searchBar: some View"), "non-vacuity: the card's body moved")
+        let body = String(card[..<bodyEnd.lowerBound]).filter { !$0.isWhitespace }
+        let bar = try #require(body.range(of: ".overlay(alignment:.top){Rectangle().fill(Theme.blue.opacity(searchFieldFocused"),
+                               "non-vacuity: the accent bar moved")
+        #expect(body[bar.upperBound...].contains(".clipShape(RoundedRectangle(cornerRadius:8))"),
+                "the accent bar's ends stand proud of the card's rounded corners")
+
+        // The timer card is the precedent this follows: bar overlay, then the clip.
+        let chrome = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusChromeSupportViews.swift")
+        ).filter { !$0.isWhitespace }
+        #expect(CadenceSourceScan.matchCount(#"\.frame\(height:2\)\}\.clipShape\(RoundedRectangle\("#, in: chrome) == 1,
+                "non-vacuity: the timer card no longer clips its bar")
+    }
+}
