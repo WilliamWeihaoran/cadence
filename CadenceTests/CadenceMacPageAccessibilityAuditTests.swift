@@ -564,6 +564,32 @@ struct CadenceMacPageAccessibilityAuditTests {
         #expect(ios.contains(".accessibilityLabel(NoteUnlinkedMentionCopy.linkControlLabel(noteTitle:note.displayTitle))"))
     }
 
+    // MARK: - T-9455: the Mac unlinked-mention row is its own Link button
+
+    /// The row lit its whole width on hover while only the "Link" word was a `Button`. The hover
+    /// plate, the hit shape and both texts now sit inside the one button's label, as the sibling
+    /// `NoteOutlineJumpRow` does; nothing row-wide is left outside it to light a dead strip.
+    @Test func anUnlinkedMentionRowIsItsWholeLinkButton() throws {
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/NoteEditorAccessoryViews.swift")
+        )
+        let row = try CadenceControlAccessibilityLabelTests.bodyOfStruct("NoteUnlinkedMentionRow", in: mac)
+            .filter { !$0.isWhitespace }
+        let parts = row.components(separatedBy: ".buttonStyle(.plain)")
+        #expect(parts.count == 2, "non-vacuity: the row holds exactly one plain-styled button: \(parts.count - 1)")
+        let label = try #require(parts.first)
+        let after = try #require(parts.last)
+        let button = try #require(label.range(of: "Button(action:action){"), "the row is no longer drawn as one button")
+        let beforeButton = label[..<button.lowerBound]
+        let inside = label[button.upperBound...]
+        #expect(!beforeButton.contains("Text("), "a row text sits outside the Link button")
+        #expect(inside.contains("Text(title)") && inside.contains("Text(\"Link\")"), "the mention title or Link word is outside the button")
+        #expect(inside.contains(".fill(isHovered?Theme.surfaceHighlight:Color.clear)"), "the hover plate is not inside the button")
+        #expect(inside.contains(".contentShape(RoundedRectangle("), "the button does not take the row's shape")
+        #expect(!after.contains(".fill(") && !after.contains(".contentShape("), "a row-wide plate or hit shape sits outside the button")
+        #expect(after.contains(".onHover{isHovered=$0}"), "non-vacuity: the row still tracks the pointer")
+    }
+
     // MARK: - T-7338: the note's "N mentions" disclosure says whether it is open
 
     /// Hosted collapsed (its first state; opening it takes a click on a private view), so the

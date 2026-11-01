@@ -265,32 +265,34 @@ private struct NoteUnlinkedMentionRow: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.muted)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 0)
-            // Blue survives here because linking really is the actionable thing on this row.
-            Button(action: action) {
+        // T-9455: the whole lit row is the Link control, as `NoteOutlineJumpRow` above and the
+        // iOS sheet's mention row (T-9482) are. It used to light its full width on hover while
+        // only the "Link" word took a click.
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.muted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
+                // Blue survives here because linking really is the actionable thing on this row.
                 Text("Link")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.blue)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            // T-7066: one "Link" per mention, so the visible word alone named none of them.
-            .accessibilityLabel(NoteUnlinkedMentionCopy.linkControlLabel(noteTitle: title))
+            .padding(.leading, 22)
+            .padding(.trailing, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                    .fill(isHovered ? Theme.surfaceHighlight : Color.clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         }
-        .padding(.leading, 22)
-        .padding(.trailing, 8)
-        .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                .fill(isHovered ? Theme.surfaceHighlight : Color.clear)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+        .buttonStyle(.plain)
+        // T-7066: one "Link" per mention, so the visible word alone named none of them.
+        .accessibilityLabel(NoteUnlinkedMentionCopy.linkControlLabel(noteTitle: title))
         .onHover { isHovered = $0 }
     }
 }
