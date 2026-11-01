@@ -18,6 +18,12 @@ struct iOSNoteAIActionsMenu: View {
     let note: Note
     var area: Area?
     var project: Project?
+    /// [[T-9656]]: the host editor's held-back typing, written into `note` before the context is
+    /// built, so a summary or an extraction reads the last words typed — the same door
+    /// `iOSNoteExportMenu` takes ([[T-5805]]). `iOSMarkdownEditingSurface` holds up to 2.5 s of
+    /// typing in its draft, and `note.content` alone does not have it. `nil` for a host that holds
+    /// nothing back.
+    var flush: iOSMarkdownEditorFlush? = nil
     /// [[T-5931]]: told after a summary has been appended and saved. `append` writes
     /// `note.content` directly, past any editor binding, so a host whose binding setter is the
     /// only thing that mirrors the note elsewhere — `iOSNotesView`'s Events pane on iPad, into
@@ -120,6 +126,7 @@ struct iOSNoteAIActionsMenu: View {
             runningAction = action
             errorMessage = nil
             defer { runningAction = nil }
+            flush?.flush()
             do {
                 let provider = try aiSettingsManager.provider()
                 let context = try AIActionService.noteContext(note: note, area: area, project: project)

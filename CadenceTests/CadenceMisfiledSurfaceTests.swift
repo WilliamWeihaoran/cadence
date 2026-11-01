@@ -570,10 +570,12 @@ struct NoteEditorSheetHeaderTests {
     /// Neither sheet re-declares the block. This is the assertion the ticket asked for, and it is
     /// written over the *whole file* rather than a function body: a second copy pasted into a new
     /// private var elsewhere in either file is exactly the regression.
+    ///
+    /// One sheet since [[T-9663]]: the `[[link]]` sheet was the other, and a link now opens
+    /// `iOSNoteEditorCover`, which draws no such block.
     @Test func neitherNoteSheetReDeclaresTheHeaderBlock() throws {
         let sheets = [
-            "Cadence/iOS/iOSEventNoteEditorSheet.swift",
-            "Cadence/iOS/iOSMarkdownReferenceSupport.swift"
+            "Cadence/iOS/iOSEventNoteEditorSheet.swift"
         ]
         for path in sheets {
             let raw = try misfiledSourceFile(path)
@@ -697,10 +699,11 @@ struct NoteEditorSheetHeaderTests {
                 "\(path) parameterises the shared header by width"
             )
         }
-        // Non-vacuity for the walk: the two sheets call it, and nothing else does. The declaring
-        // file is deliberately not one of them — its convenience initialiser delegates to
-        // `self.init`, so a count of two here is also the statement that there is no third sheet.
-        #expect(callSites == 2, "found \(callSites) calls to the shared header")
+        // Non-vacuity for the walk: the event sheet calls it, and nothing else does — the
+        // `[[link]]` sheet was the second until [[T-9663]] folded it into `iOSNoteEditorCover`.
+        // The declaring file is deliberately not counted — its convenience initialiser delegates
+        // to `self.init`, so a count of one here is also the statement that there is no second.
+        #expect(callSites == 1, "found \(callSites) calls to the shared header")
 
         // And the view takes three things, none of them a width. It reads the trait itself, which
         // is the whole reason neither sheet names those numbers any more.
@@ -746,8 +749,7 @@ struct NoteEditorSheetHeaderTests {
         // agreement is being argued for.
         for path in [
             "Cadence/iOS/iOSNoteEditorSheetHeader.swift",
-            "Cadence/iOS/iOSEventNoteEditorSheet.swift",
-            "Cadence/iOS/iOSMarkdownReferenceSupport.swift"
+            "Cadence/iOS/iOSEventNoteEditorSheet.swift"
         ] {
             let code = CadenceSourceScan.codeOnly(try misfiledSourceFile(path))
             #expect(

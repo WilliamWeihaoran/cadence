@@ -548,7 +548,9 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // fixed-size frame and shoved the iPad header, so it went, and `iOSNotesView` and
         // `iOSListNotesView` each draw the refusal on a full-width line under their header row.
         // Same retry, same clearing.
-        #expect(total == 84, "the inline notice has \(total) call sites, not the 84 this test was written over")
+        // [[T-9663]] makes it 83: the Search sheet and the `[[link]]` sheet each drew a bare T-497
+        // Done refusal, and both folded into `iOSNoteEditorCover`, which draws the one.
+        #expect(total == 83, "the inline notice has \(total) call sites, not the 83 this test was written over")
         #expect(withDismissal == 9, "\(withDismissal) call sites offer a dismissal, not 9")
 
         // And each of the nine is named, so one swapping places with another is still a failure.

@@ -355,6 +355,7 @@ struct iOSNotesView: View {
                     note: note,
                     area: note.area,
                     project: note.project,
+                    flush: editorFlush,
                     onAppended: { commitAppendedSummary(note) }
                 )
             }
@@ -889,6 +890,8 @@ struct iOSNoteEditorCover: View {
     @State private var noteToDelete: Note?
     /// A refused Move Note, drawn above the editor — see `iOSNoteManageMenu.moveFailureNotice`.
     @State private var moveFailureNotice: String?
+    /// Set when Done could not flush the note. See `flushBeforeDismissing()`.
+    @State private var saveFailureNotice: String?
 
     var body: some View {
         // [[T-8762]]: this cover can now delete its own note, so it can be asked to draw once more
@@ -937,10 +940,17 @@ struct iOSNoteEditorCover: View {
             )
             .id(note.id)
             .safeAreaInset(edge: .top, spacing: 0) {
-                if let moveFailureNotice {
-                    CadenceInlineFailureNotice(text: moveFailureNotice)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
+                VStack(spacing: 0) {
+                    if let saveFailureNotice {
+                        CadenceInlineFailureNotice(text: saveFailureNotice)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                    }
+                    if let moveFailureNotice {
+                        CadenceInlineFailureNotice(text: moveFailureNotice)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                    }
                 }
             }
             .background(Theme.surface.ignoresSafeArea())
@@ -949,6 +959,9 @@ struct iOSNoteEditorCover: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") {
+                        // [[T-5170]]: the well's tail reaches `note.content` before the save.
+                        editorFlush.flush()
+                        guard flushBeforeDismissing() else { return }
                         isEditorFocused = false
                         dismiss()
                     }
@@ -959,7 +972,7 @@ struct iOSNoteEditorCover: View {
                 // editor, so this is the same affordance in the only place it fits. Absent without
                 // an API key.
                 ToolbarItem(placement: .primaryAction) {
-                    iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project)
+                    iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project, flush: editorFlush)
                 }
 
                 // The one-column form's export control, for the same reason the AI menu is here:
@@ -979,7 +992,38 @@ struct iOSNoteEditorCover: View {
                     )
                 }
             }
+            // [[T-5190]]: Search and a `[[link]]` present this cover's body in a `.sheet`
+            // ([[T-9663]]), and a swipe skips Done, so the well's held tail is written here.
+            .onDisappear(perform: persistTypedTailOnDismissal)
         }
+    }
+
+    /// **[[T-5190]].** A swipe-dismiss skips Done. The held tail goes through the binding — so its
+    /// tags and H1 title sync as any other write does — and whatever is still pending commits.
+    /// A note deleted under the editor ([[T-8762]], or a CloudKit delete) takes nothing: the held
+    /// write is dropped rather than replayed into a model the store no longer holds.
+    private func persistTypedTailOnDismissal() {
+        if case .close = CadenceDetailPanelPresentation.resolveHeldSubject(heldModel: note) {
+            editorFlush.cancel()
+            return
+        }
+        editorFlush.flush()
+        CadencePendingChangePersistence.commitTypedContent(in: modelContext)
+    }
+
+    /// **T-497**, carried here from the Search and `[[link]]` sheets this cover replaced
+    /// ([[T-9663]]). Done used to dismiss unconditionally, so a refused write closed the editor on
+    /// a note the store had not taken. The caret is still in this editor, so nothing is restored:
+    /// the cover stays open, the text stays where it is, and the sentence says so. See
+    /// `CadenceInPlaceEditFlush`. The binding's setter already stamps `updatedAt` on every write,
+    /// so Done on an untouched note does not move it to the top of the list.
+    private func flushBeforeDismissing() -> Bool {
+        guard CadenceInPlaceEditFlush.flush(in: modelContext) else {
+            saveFailureNotice = CadenceInPlaceEditFlush.failureNotice
+            return false
+        }
+        saveFailureNotice = nil
+        return true
     }
 
     /// Same focus-drop rule as `iOSNotesView.apply(_:to:)`; see the note there.
@@ -1002,6 +1046,27 @@ struct iOSNoteEditorCover: View {
         case .task:
             selectedReferenceTask = iOSMarkdownReferenceResolver.task(for: target, in: allTasks)
         }
+    }
+}
+
+extension iOSNoteEditorCover {
+    /// **[[T-9663]].** The cover for a note reached from outside the Notes tab — a Search row or a
+    /// `[[link]]` — which used to open one of two thinner sheets with no Export, no tag control,
+    /// no AI actions and no Move/Delete. A note does not gain or lose chrome depending on where
+    /// you reached it, so it is this editor, configured from the note itself rather than from a
+    /// tab: the template menu for the note's own kind (a meeting note has none here), the title
+    /// the Search row drew ([[T-8523]]), a list note's tasks captured into its list, and Delete
+    /// where the Mac's hosts offer it — the Notepad and a list's Notes, never a dated note.
+    init(reachedFrom note: Note) {
+        let isListNote = note.kind == .list
+        self.init(
+            note: note,
+            templateKind: note.kind == .meeting ? nil : note.kind,
+            title: NoteReferencePanelSupport.searchTitle(note),
+            embeddedTaskArea: isListNote ? note.area : nil,
+            embeddedTaskProject: isListNote ? note.project : nil,
+            allowsDelete: isListNote || note.kind == .permanent
+        )
     }
 }
 

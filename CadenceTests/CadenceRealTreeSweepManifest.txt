@@ -2,6 +2,7 @@
 # Generated — do not hand-edit. Regenerate with:
 #   scripts/real-tree-sweep-manifest.sh <agent-id> --write
 # Deleting a line here, or the @Test it names, fails CadenceTestTargetHygieneTests.
+AINoteActionReviewTests/everyiOSAIMenuFlushesTheEditorsHeldTypingBeforeBuildingContext
 AINoteActionReviewTests/nothingInTheAIPathLogsOrPersistsARequest
 AINoteActionReviewTests/theSourceScanActuallyReachesTheFilesItAssertsAbout
 AINoteActionReviewTests/theWriteIsReachableOnlyThroughTheReviewGate

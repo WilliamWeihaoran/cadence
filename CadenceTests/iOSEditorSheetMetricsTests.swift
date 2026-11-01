@@ -368,7 +368,8 @@ struct iOSEditorSheetMetricsTests {
             // the assertion below, and why it had to leave rather than be left failing.
             "Cadence/iOS/iOSCaptureRadialMenu.swift": "iOSCreateTaskSheet(",
             "Cadence/iOS/iOSEventNoteEditorSheet.swift": "iOSNoteEditorSheetHeader(",
-            "Cadence/iOS/iOSMarkdownReferenceSupport.swift": "iOSLinkedNoteEditorSheet(",
+            // [[T-9663]]: a `[[link]]` opens the note editor itself now, in a plain `.sheet`.
+            "Cadence/iOS/iOSMarkdownReferenceSupport.swift": "iOSNoteEditorCover(reachedFrom: note)",
             "Cadence/iOS/iOSNoteEditorSheetHeader.swift": "iOSEditorSheetMetrics.gutter(",
             "Cadence/iOS/iOSNotesView.swift": "iOSEventNoteEditorSheet(",
             "Cadence/iOS/iOSSearchView.swift": "iOSCalendarEventEditSheet(",

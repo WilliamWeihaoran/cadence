@@ -247,7 +247,7 @@ struct iOSListNotesView: View {
                 // [[T-8761]]: the note's tags, on the template menu's gate; the cover's format
                 // row carries them in the one-column form.
                 iOSNoteTagControl(note: note, isEditorFocused: $isEditorFocused) { tagFailureNotice = $0 }
-                iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project)
+                iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project, flush: editorFlush)
                 iOSNoteExportMenu(note: note, flush: editorFlush)
                 // [[T-8762]]: Move Note and Delete Note for the open note, as the Mac's list Notes
                 // tab carries them in the Actions popover. A refused move is drawn in the column,

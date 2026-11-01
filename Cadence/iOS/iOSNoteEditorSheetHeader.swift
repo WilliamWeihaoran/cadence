@@ -1,9 +1,13 @@
 #if os(iOS)
 import SwiftUI
 
-/// The title block above a note editor's writing surface, in the one place both sheets read it.
+/// The title block above a note editor's writing surface.
 ///
-/// `iOSEventNoteEditorSheet` and `iOSLinkedNoteEditorSheet` each spelled this out. `af03fb1` made
+/// **One reader since [[T-9663]].** The `[[link]]` sheet that was its second reader is gone: a
+/// linked note now opens in `iOSNoteEditorCover`, whose navigation bar carries the title, so the
+/// title it drew twice ([[T-8587]]) went with it. The history below is why the block is a view.
+///
+/// `iOSEventNoteEditorSheet` and the `[[link]]` sheet each spelled this out. `af03fb1` made
 /// the two spellings identical and deferred the extraction until "a third near-copy appears", but
 /// the reason it recorded — that the two sheets' surrounding chrome differs (toolbar items, AI
 /// actions, calendar sync) — is about the chrome, not about this block. Two identical bodies is the

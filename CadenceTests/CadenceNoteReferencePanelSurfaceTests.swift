@@ -629,7 +629,8 @@ struct CadenceNoteReferencePanelSurfaceTests {
             "Cadence/iOS/iOSMarkdownAccessoryViews.swift": 1,
             "Cadence/macOS/Editor/MarkdownEditorSupport.swift": 1,
             "Cadence/iOS/iOSMarkdownEditingSurface.swift": 1,
-            "Cadence/iOS/iOSMarkdownReferenceSupport.swift": 1
+            // The `[[link]]` sheet's eyebrow went with the sheet ([[T-9663]]).
+            "Cadence/iOS/iOSMarkdownReferenceSupport.swift": 0
         ])
         try expectOccurrences(of: "NoteReferencePanelSupport.taskFallbackSubtitle(", at: [
             "Cadence/iOS/iOSMarkdownAccessoryViews.swift": 1
@@ -661,10 +662,12 @@ struct CadenceNoteReferencePanelSurfaceTests {
     /// notes field, a template body, and the two Apple Calendar note strings — correctly pass
     /// nothing, and are pinned by the relation in the test below rather than by a zero here.
     @Test func everyNoteEditingHostHandsTheEditorItsNote() throws {
+        // [[T-9663]]: Search's sheet and the `[[link]]` sheet were two hosts here until both
+        // routes opened `iOSNoteEditorCover`, one of the two in `iOSNotesView`.
         try expectOccurrences(of: "editingNote: note", at: [
-            "Cadence/iOS/iOSMarkdownReferenceSupport.swift": 1,
+            "Cadence/iOS/iOSMarkdownReferenceSupport.swift": 0,
             "Cadence/iOS/iOSEventNoteEditorSheet.swift": 1,
-            "Cadence/iOS/iOSSearchSupportViews.swift": 1,
+            "Cadence/iOS/iOSSearchSupportViews.swift": 0,
             "Cadence/iOS/iOSNotesView.swift": 2,
             "Cadence/iOS/iOSListNotesView.swift": 1
         ])
@@ -690,9 +693,7 @@ struct CadenceNoteReferencePanelSurfaceTests {
         for path in [
             "Cadence/iOS/iOSNotesView.swift",
             "Cadence/iOS/iOSListNotesView.swift",
-            "Cadence/iOS/iOSSearchSupportViews.swift",
-            "Cadence/iOS/iOSEventNoteEditorSheet.swift",
-            "Cadence/iOS/iOSMarkdownReferenceSupport.swift"
+            "Cadence/iOS/iOSEventNoteEditorSheet.swift"
         ] {
             let code = try strippingComments(sourceFile(path))
             let editors = code.components(separatedBy: "iOSMarkdownEditingSurface(").count - 1

@@ -425,6 +425,33 @@ struct AINoteActionReviewTests {
         ])
     }
 
+    /// **[[T-9656]].** The editing surface holds up to 2.5 s of typing in its draft, so a context
+    /// built from `note.content` alone summarises the note minus its last words. The menu flushes
+    /// its host's held typing before the context is built — the door Export takes ([[T-5805]]) —
+    /// and every iOS call site hands it the editor's flush. A count over every iOS file, so a fifth
+    /// host that forgets the flush is a failure rather than a gap.
+    @Test func everyiOSAIMenuFlushesTheEditorsHeldTypingBeforeBuildingContext() throws {
+        let menu = try strippingComments(sourceFile(Self.iosActionsView))
+        let run = try #require(CadenceSourceScan.functionBody(named: "run", in: menu))
+        let flushed = try #require(run.range(of: "flush?.flush()"), "the AI menu never flushes the held typing")
+        let built = try #require(run.range(of: "AIActionService.noteContext("), "non-vacuity: run builds no context")
+        #expect(flushed.upperBound <= built.lowerBound, "the context is built before the held typing is flushed")
+
+        var callSites = 0
+        for path in try swiftFiles(under: "Cadence/iOS") where path != Self.iosActionsView {
+            let code = try strippingComments(sourceFile(path))
+            let menus = CadenceSourceScan.matchCount(#"iOSNoteAIActionsMenu\("#, in: code)
+            guard menus > 0 else { continue }
+            callSites += menus
+            #expect(
+                CadenceSourceScan.matchCount(#"iOSNoteAIActionsMenu\([^)]*flush: editorFlush"#, in: code) == menus,
+                "\(path) runs an AI action without the editor's held typing"
+            )
+        }
+        // iOSNotesView draws two (header + cover), the list notes header and the event sheet one each.
+        #expect(callSites == 4, "\(callSites)")
+    }
+
     /// The hard safety rule, as a test. Nothing in the AI folder or the iOS view logs, and nothing
     /// there caches a request: the key lives in the Keychain and the prompt lives in memory.
     @Test func nothingInTheAIPathLogsOrPersistsARequest() throws {

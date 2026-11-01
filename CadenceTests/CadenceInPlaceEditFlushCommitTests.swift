@@ -200,9 +200,11 @@ struct CadenceInPlaceEditFlushCommitTests {
         // `CadenceTaskFieldEditCommit` family, not this one. `CadenceEditorSaveCommitSurfaceTests`
         // holds its Save (`applySave`) to the same rule this test holds these two to: the refusal
         // branch reports and returns, and the close is below it, exactly once.
+        //
+        // **One, not two, since [[T-9663]].** The Search sheet and the `[[link]]` sheet folded into
+        // `iOSNoteEditorCover`, which carries their Done flush for every route that opens it.
         let surfaces = [
-            ("Cadence/iOS/iOSSearchSupportViews.swift", "flushBeforeDismissing", "return true"),
-            ("Cadence/iOS/iOSMarkdownReferenceSupport.swift", "flushBeforeDismissing", "return true")
+            ("Cadence/iOS/iOSNotesView.swift", "flushBeforeDismissing", "return true")
         ]
 
         for (path, name, report) in surfaces {
@@ -259,8 +261,7 @@ struct CadenceInPlaceEditFlushCommitTests {
         // lives one frame up in `body` and has to guard on the answer. `iOSTaskDetailSheet` flushes
         // and closes in the one declaration already asserted above.
         for path in [
-            "Cadence/iOS/iOSSearchSupportViews.swift",
-            "Cadence/iOS/iOSMarkdownReferenceSupport.swift"
+            "Cadence/iOS/iOSNotesView.swift"
         ] {
             let view = try CadenceCommitSurfaceScan.scanned(path)
             #expect(
@@ -275,8 +276,7 @@ struct CadenceInPlaceEditFlushCommitTests {
     /// `iOSCalendarEventEditSheet` made at regular width, found by this same ticket's tier 1.
     @Test func everyInPlaceEditFlushNoticeIsDrawnOnTheSurfaceThatStaysOpen() throws {
         for path in [
-            "Cadence/iOS/iOSSearchSupportViews.swift",
-            "Cadence/iOS/iOSMarkdownReferenceSupport.swift"
+            "Cadence/iOS/iOSNotesView.swift"
         ] {
             let view = try CadenceCommitSurfaceScan.scanned(path)
             #expect(
@@ -336,12 +336,12 @@ struct CadenceInPlaceEditFlushCommitTests {
     }
 
     /// **Source shape, and the non-vacuity check for the two scans above.** The reader really does
-    /// strip comments and really did read these files: each of the four names a literal only its
-    /// own source carries, and none of them reads back a sentence that lives in a comment.
+    /// strip comments and really did read these files: each of them names a literal only its
+    /// own source carries, and none of them reads back a sentence that lives in a comment. Three since
+    /// [[T-9663]] folded the two note sheets into `iOSNoteEditorCover`.
     @Test func theflushSurfaceScanReadsTheFilesItClaimsTo() throws {
         let markers = [
-            ("Cadence/iOS/iOSSearchSupportViews.swift", "struct iOSNoteDetailSheet: View {"),
-            ("Cadence/iOS/iOSMarkdownReferenceSupport.swift", "struct iOSLinkedNoteEditorSheet: View {"),
+            ("Cadence/iOS/iOSNotesView.swift", "struct iOSNoteEditorCover: View {"),
             ("Cadence/iOS/iOSTaskDetailSheet.swift", "struct iOSTaskDetailSheet: View {"),
             ("Cadence/macOS/Views/KanbanCardMetaSupportViews.swift", "struct KanbanContainerPickerPopover: View {")
         ]

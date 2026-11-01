@@ -229,7 +229,10 @@ struct CadenceBundleInspectorHostTests {
                 // [[T-7540]]: the note half of the same guard, `iOSHeldNoteSheet`. A second
                 // *caller* of the one rule, not a second copy of it; its wiring is pinned by
                 // `CadenceHeldNoteSheetGuardTests`.
-                "Cadence/iOS/iOSMarkdownReferenceSupport.swift": 1
+                "Cadence/iOS/iOSMarkdownReferenceSupport.swift": 1,
+                // [[T-9663]]: `iOSNoteEditorCover`'s swipe-dismiss commit asks the same rule
+                // before replaying held typing, so a note deleted under the editor takes none.
+                "Cadence/iOS/iOSNotesView.swift": 1
             ]
         )
         // The model spelling, which reads all three signals in `Shared/` ([[T-7561]]): a host

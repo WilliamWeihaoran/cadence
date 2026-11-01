@@ -1008,23 +1008,23 @@ struct CadenceSearchCandidateSupportTests {
 
     /// **[[T-8523]].** A note opened from a Search row, or from a `[[link]]`, is titled by the name
     /// that row drew. `searchTitle` itself is pinned in `CadenceNoteReferencePanelSurfaceTests`; this
-    /// is the two sheets reading it, and the relation that makes it matter.
+    /// is the editor both routes open reading it, and the relation that makes it matter. Since
+    /// [[T-9663]] both routes open `iOSNoteEditorCover(reachedFrom:)` rather than a sheet each.
     @Test func aNoteSheetOpenedFromSearchTitlesItselfAsTheRowDid() throws {
         let daily = Note(kind: .daily, title: "2026-10-26", dateKey: "2026-10-26")
         // The relation: the storage key is what `displayTitle` would have put in the title bar.
         #expect(daily.displayTitle == "2026-10-26")
         #expect(NoteReferencePanelSupport.searchTitle(daily) != daily.displayTitle)
 
-        let support = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.iOSSearchSupportPath))
-        let sheet = try #require(CadenceSourceScan.declarationBody("struct iOSNoteDetailSheet: View", in: support))
-        #expect(sheet.contains(".navigationTitle(NoteReferencePanelSupport.searchTitle(note))"))
-        #expect(!sheet.contains(".navigationTitle(note.displayTitle)"))
+        let notes = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSNotesView.swift"))
+        let reached = try #require(CadenceSourceScan.declarationBody("init(reachedFrom note: Note)", in: notes))
+        #expect(reached.contains("title: NoteReferencePanelSupport.searchTitle(note)"))
+        #expect(!reached.contains("note.displayTitle"))
 
-        let linked = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownReferenceSupport.swift"))
-        let linkedSheet = try #require(CadenceSourceScan.declarationBody("struct iOSLinkedNoteEditorSheet: View", in: linked))
-        #expect(linkedSheet.contains(".navigationTitle(NoteReferencePanelSupport.searchTitle(note))"))
-        #expect(linkedSheet.contains("iOSNoteEditorSheetHeader(eyebrow: subtitle, title: NoteReferencePanelSupport.searchTitle(note))"))
-        #expect(!linkedSheet.contains("note.displayTitle)"))
+        for path in [Self.iOSSearchViewPath, "Cadence/iOS/iOSMarkdownReferenceSupport.swift"] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(code.contains("iOSNoteEditorCover(reachedFrom: note)"), "\(path) opens a note in some other editor")
+        }
     }
 }
 

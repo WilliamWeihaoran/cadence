@@ -340,7 +340,7 @@ struct iPadTodayRailSurfaceTests {
             "the AI and export controls are not both offered to the in-pane editor"
         )
         #expect(notes.contains(condition))
-        #expect(notes.contains("iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project)"))
+        #expect(notes.contains("iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project, flush: editorFlush)"))
         #expect(notes.contains("iOSNoteExportMenu(note: note, flush: editorFlush)"))
 
         // The template control is deliberately *not* in that pair: `editorPane` hands it to the

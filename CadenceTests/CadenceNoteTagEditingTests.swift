@@ -242,7 +242,8 @@ struct CadenceNoteTagEditingTests {
 
     // MARK: - Typing reaches the tags
 
-    /// **[[T-9661]].** The sheet a `[[link]]` opens (`iOSLinkedNoteEditorSheet`) and the iPhone
+    /// **[[T-9661]].** The sheet a `[[link]]` opened (the `[[link]]` sheet, since folded into
+    /// `iOSNoteEditorCover` by [[T-9663]]) and the iPhone
     /// event-note sheet (`iOSEventNoteEditorSheet`) bound their editor straight to `$note.content`,
     /// so an inline `#tag` typed there never attached and a `# H1` never renamed the note -- while
     /// the same note typed on the Notes tab, a list's Notes tab, Search or iPad's Events pane did
@@ -262,20 +263,26 @@ struct CadenceNoteTagEditingTests {
         }
         #expect(surfaces >= 6, "non-vacuity: \(surfaces) editing surfaces found")
 
-        for (path, declaration) in [
-            ("Cadence/iOS/iOSMarkdownReferenceSupport.swift", "struct iOSLinkedNoteEditorSheet: View"),
-            ("Cadence/iOS/iOSEventNoteEditorSheet.swift", "struct iOSEventNoteEditorSheet: View")
+        // The `[[link]]` sheet was the first of the two until [[T-9663]] folded it into
+        // `iOSNoteEditorCover`, which a link now opens; the cover types through `update`.
+        for (path, declaration, door) in [
+            ("Cadence/iOS/iOSNotesView.swift", "struct iOSNoteEditorCover: View", "update"),
+            ("Cadence/iOS/iOSEventNoteEditorSheet.swift", "struct iOSEventNoteEditorSheet: View", "applyContent")
         ] {
             let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
             let sheet = try #require(CadenceSourceScan.declarationBody(declaration, in: code), "\(path)")
             #expect(
                 CadenceSourceScan.matchCount(
-                    #"set: \{ CadenceCoreNoteSupport\.applyContent\(note, content: \$0, in: modelContext\) \}"#,
+                    #"set: \{ CadenceCoreNoteSupport\."# + door + #"\(note, content: \$0, in: modelContext\) \}"#,
                     in: sheet
                 ) == 1,
-                "\(declaration) does not type through CadenceCoreNoteSupport.applyContent"
+                "\(declaration) does not type through CadenceCoreNoteSupport.\(door)"
             )
         }
+        let reference = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownReferenceSupport.swift")
+        )
+        #expect(reference.contains("iOSNoteEditorCover(reachedFrom: note)"), "a [[link]] opens some other editor")
     }
 
     /// The door itself: typing `#name` through `applyContent` attaches the tag to the note.

@@ -65,7 +65,7 @@ struct iOSEventNoteEditorSheet: View {
                 // kinds get — `iOSNoteEditorCover` puts it in the same slot. Absent without an API
                 // key.
                 ToolbarItem(placement: .primaryAction) {
-                    iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project)
+                    iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project, flush: editorFlush)
                 }
 
                 // [[T-5805]]: and the same export control. A note can always be written out, and
@@ -144,8 +144,8 @@ struct iOSEventNoteEditorSheet: View {
         )
     }
 
-    // The same header `iOSLinkedNoteEditorSheet` draws, and now literally the same view rather than
-    // a second copy of it (T-281). The eyebrow, the title ramp and the block's padding live on
+    // The header the `[[link]]` sheet drew until [[T-9663]] folded that sheet into
+    // `iOSNoteEditorCover`; it became one view rather than two copies of it in T-281. The eyebrow, the title ramp and the block's padding live on
     // `iOSNoteEditorSheetHeader`; the commit notice is this sheet's own and rides in as the
     // accessory.
     private var header: some View {

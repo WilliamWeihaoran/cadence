@@ -48,11 +48,11 @@ struct iOSMarkdownEditorFlushWiringTests {
         )
     }
 
-    /// The three record-backed sheets flush before Done saves.
+    /// The record-backed note editors flush before Done saves. Search's sheet and the `[[link]]`
+    /// sheet were two of three until [[T-9663]] folded both into `iOSNoteEditorCover`.
     @Test(arguments: [
         ("Cadence/iOS/iOSEventNoteEditorSheet.swift", "persistNote().isSaved"),
-        ("Cadence/iOS/iOSMarkdownReferenceSupport.swift", "flushBeforeDismissing()"),
-        ("Cadence/iOS/iOSSearchSupportViews.swift", "flushBeforeDismissing()"),
+        ("Cadence/iOS/iOSNotesView.swift", "flushBeforeDismissing()"),
     ])
     func eachNoteSheetsDoneFlushesTheWellFirst(path: String, commit: String) throws {
         let source = try CadenceCommitSurfaceScan.scanned(path)
@@ -66,12 +66,13 @@ struct iOSMarkdownEditorFlushWiringTests {
     /// [[T-5190]]: a swipe-dismiss skips Done, so each record-backed note sheet flushes the well
     /// and commits from its own `onDisappear`. Flush before the commit, and the event note mirrors
     /// through `persistNote()` (Apple Calendar) only when the context holds something.
-    /// One test over the three, not a parameterised one, so `mutate.sh` can baseline it (T-3212).
+    /// One test over the two, not a parameterised one, so `mutate.sh` can baseline it (T-3212).
+    /// [[T-9663]]: the Search and `[[link]]` sheets are `iOSNoteEditorCover` now, which a `.sheet`
+    /// presents for both routes.
     @Test func eachNoteSheetFlushesAndCommitsWhenSwipedAway() throws {
         for (path, commit) in [
             ("Cadence/iOS/iOSEventNoteEditorSheet.swift", "persistNote()"),
-            ("Cadence/iOS/iOSMarkdownReferenceSupport.swift", "persistNote()"),
-            ("Cadence/iOS/iOSSearchSupportViews.swift", "CadencePendingChangePersistence.commitTypedContent(in: modelContext)"),
+            ("Cadence/iOS/iOSNotesView.swift", "CadencePendingChangePersistence.commitTypedContent(in: modelContext)"),
         ] {
             let source = try CadenceCommitSurfaceScan.scanned(path)
             #expect(source.contains(".onDisappear(perform: persistTypedTailOnDismissal)"), "\(path): a swipe commits nothing")

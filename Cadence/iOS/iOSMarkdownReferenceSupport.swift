@@ -5,18 +5,18 @@ import SwiftUI
 struct iOSMarkdownReferenceSheetModifier: ViewModifier {
     @Binding var selectedReferenceNote: Note?
     @Binding var selectedReferenceTask: AppTask?
+    /// Unread here since [[T-9663]]: the linked note opens in `iOSNoteEditorCover`, which queries
+    /// its own. Kept so the nine hosts' calls stay as they are; see [[T-9761]].
     let referenceNotes: [Note]
     let referenceTasks: [AppTask]
 
     func body(content: Content) -> some View {
         content
             .sheet(item: $selectedReferenceNote) { note in
+                // [[T-9663]]: a note reached from a `[[link]]` opens in the Notes tab's editor,
+                // chrome and all, not in a thinner sheet of its own.
                 iOSHeldNoteSheet(note: note) { selectedReferenceNote = nil } content: { note in
-                    iOSLinkedNoteEditorSheet(
-                        note: note,
-                        referenceNotes: referenceNotes,
-                        referenceTasks: referenceTasks
-                    )
+                    iOSNoteEditorCover(reachedFrom: note)
                 }
                 .cadenceFixedTypography()
             }
@@ -68,165 +68,6 @@ struct iOSHeldNoteSheet<Content: View>: View {
             // the selection cannot be written during the body evaluation that reads it.
             Color.clear.onAppear(perform: close)
         }
-    }
-}
-
-struct iOSLinkedNoteEditorSheet: View {
-    @Bindable var note: Note
-    let referenceNotes: [Note]
-    let referenceTasks: [AppTask]
-
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.modelContext) private var modelContext
-    @State private var isEditorFocused = false
-    /// The well's held-back typing, flushed before Done saves the note ([[T-5170]]).
-    @State private var editorFlush = iOSMarkdownEditorFlush()
-    /// Set when Done could not flush the note. See `flushBeforeDismissing()`.
-    @State private var saveFailureNotice: String?
-    @State private var selectedReferenceNote: Note?
-    @State private var selectedReferenceTask: AppTask?
-
-    private var isRegularWidth: Bool {
-        horizontalSizeClass == .regular
-    }
-
-    /// The shared spelling, not a fifth copy of this switch. It said "Linked note" for `.list`
-    /// while the reference panel's chip for the same note said "List note" — one note, two names,
-    /// on two surfaces a tap apart.
-    private var subtitle: String {
-        NoteReferencePanelSupport.noteKindLabel(note.kind)
-    }
-
-    var body: some View {
-        NavigationStack {
-            editorLayout
-                .background(Theme.surface.ignoresSafeArea())
-                // [[T-8523]]: a dated note by its day or week, not by its storage key.
-                .navigationTitle(NoteReferencePanelSupport.searchTitle(note))
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") {
-                            // [[T-5170]]: the well's tail reaches `note.content` before the save.
-                            editorFlush.flush()
-                            guard flushBeforeDismissing() else { return }
-                            isEditorFocused = false
-                            dismiss()
-                        }
-                    }
-                }
-                .onChange(of: note.content) { _, _ in
-                    persistNote()
-                }
-                // [[T-5190]]: a swipe skips Done, so the well's held tail is written here.
-                .onDisappear(perform: persistTypedTailOnDismissal)
-        }
-        .iOSMarkdownReferenceSheets(
-            selectedNote: $selectedReferenceNote,
-            selectedTask: $selectedReferenceTask,
-            referenceNotes: referenceNotes,
-            referenceTasks: referenceTasks
-        )
-        .preferredColorScheme(.dark)
-    }
-
-    @ViewBuilder
-    private var editorLayout: some View {
-        if isRegularWidth {
-            HStack(spacing: 0) {
-                header
-                    .frame(width: 320, alignment: .topLeading)
-
-                Divider().background(Theme.borderSubtle)
-
-                editorSurface
-            }
-        } else {
-            VStack(spacing: 0) {
-                header
-
-                Divider().background(Theme.borderSubtle)
-
-                editorSurface
-            }
-        }
-    }
-
-    // The eyebrow carries the note's kind, which is worth a row here because this sheet is reached
-    // from a `[[link]]` inside some other note and the kind is something the screen does not
-    // otherwise say. Everything else about the block is `iOSNoteEditorSheetHeader`'s, shared with
-    // `iOSEventNoteEditorSheet` (T-281).
-    private var header: some View {
-        iOSNoteEditorSheetHeader(eyebrow: subtitle, title: NoteReferencePanelSupport.searchTitle(note))
-    }
-
-    /// The notice sits here rather than in `editorLayout`, because the layout is drawn twice — the
-    /// header is beside the editor at regular width and above it at compact — and a notice attached
-    /// to either branch would be missing from the other.
-    private var editorSurface: some View {
-        VStack(spacing: 0) {
-            if let saveFailureNotice {
-                CadenceInlineFailureNotice(text: saveFailureNotice)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-            }
-
-            iOSMarkdownEditingSurface(
-                // [[T-9661]]: through the shared content door, so an inline `#tag` typed here
-                // attaches and a `# H1` renames the note, as the same note does on the Notes tab.
-                // A bare `$note.content` wrote the text and nothing else.
-                text: Binding(
-                    get: { note.content },
-                    set: { CadenceCoreNoteSupport.applyContent(note, content: $0, in: modelContext) }
-                ),
-                isFocused: $isEditorFocused,
-                placeholder: "Start writing…",
-                referenceNotes: referenceNotes,
-                referenceTasks: referenceTasks,
-                editingNote: note,
-                onOpenReference: openMarkdownReference,
-                flush: editorFlush
-            )
-        }
-    }
-
-    private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
-        switch target.kind {
-        case .note:
-            selectedReferenceNote = iOSMarkdownReferenceResolver.note(for: target, in: referenceNotes)
-        case .task:
-            selectedReferenceTask = iOSMarkdownReferenceResolver.task(for: target, in: referenceTasks)
-        }
-    }
-
-    private func persistNote() {
-        note.updatedAt = Date()
-        try? modelContext.save()
-    }
-
-    /// **[[T-5190]].** A swipe-dismiss skips Done, and the surface's own `onDisappear` writes the
-    /// held tail after this sheet stops answering `.onChange(of: note.content)`. Flush it, then
-    /// commit whatever is still pending; nothing pending, nothing written.
-    private func persistTypedTailOnDismissal() {
-        editorFlush.flush()
-        guard modelContext.hasChanges else { return }
-        persistNote()
-    }
-
-    /// **T-497.** `body` used to call `persistNote()` and dismiss unconditionally, so a refused
-    /// write closed the sheet on a note the store had not taken — the swallow one frame down and
-    /// the claim one frame up. The caret is still in this editor, so nothing is restored: the sheet
-    /// stays open, the text stays where it is, and the sentence says so. See
-    /// `CadenceInPlaceEditFlush`.
-    private func flushBeforeDismissing() -> Bool {
-        note.updatedAt = Date()
-        guard CadenceInPlaceEditFlush.flush(in: modelContext) else {
-            saveFailureNotice = CadenceInPlaceEditFlush.failureNotice
-            return false
-        }
-        saveFailureNotice = nil
-        return true
     }
 }
 

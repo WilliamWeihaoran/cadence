@@ -266,8 +266,8 @@ struct CadenceNoteTitleSyncSurfaceTests {
 
     /// **How iOS reaches the rule: by not writing `note.content` itself.** Every editor host on the
     /// platform commits through `CadenceCoreNoteSupport.update`, so there is no fifth surface to
-    /// forget the sync on — which is exactly what `iOSNoteDetailSheet` (the editor reached from
-    /// Search) was before this change: `content`, `updatedAt`, `save()` open-coded, so a note
+    /// forget the sync on — which is exactly what the note sheet Search opened (folded into
+    /// `iOSNoteEditorCover` by [[T-9663]]) was before this change: `content`, `updatedAt`, `save()` open-coded, so a note
     /// renamed from Search synced neither its title nor its inline `#tags`.
     ///
     /// Stated as **zero assignments** rather than as a list of hosts, because a list of hosts is a
@@ -288,12 +288,13 @@ struct CadenceNoteTitleSyncSurfaceTests {
         #expect("if note.content == other.content {".titleSyncMatchCount(ofPattern: noteContentAssignmentPattern) == 0)
         #expect("self.content = content()".titleSyncMatchCount(ofPattern: noteContentAssignmentPattern) == 0)
 
-        // The four iOS hosts do reach the shared commit, so the zero above is an absence of
-        // open-coding rather than an absence of editors.
+        // The iOS hosts do reach the shared commit, so the zero above is an absence of
+        // open-coding rather than an absence of editors. Search's own sheet was the fourth until
+        // [[T-9663]] folded it into `iOSNoteEditorCover`, one of the two in `iOSNotesView`.
         try expectTitleSyncOccurrences(of: "CadenceCoreNoteSupport.update(", at: [
             "Cadence/iOS/iOSNotesView.swift": 2,
             "Cadence/iOS/iOSListNotesView.swift": 1,
-            "Cadence/iOS/iOSSearchSupportViews.swift": 1
+            "Cadence/iOS/iOSSearchSupportViews.swift": 0
         ])
     }
 
