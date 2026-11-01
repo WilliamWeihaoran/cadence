@@ -604,13 +604,10 @@ struct KanbanSectionEditorPopover: View {
                     showsClear: editorHasDueDate,
                     onClear: onClearDate
                 )
-
-                if editorHasDueDate {
-                    Button("Clear date", action: onClearDate)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.red)
-                        .buttonStyle(.cadencePlain)
-                }
+                // [[T-9803]]: the picker's own panel is where a dated column is cleared -- its red
+                // "Clear date" under the grid, drawn only over a date there is to clear, as on every
+                // other Mac date field. A second red "Clear date" sat under this trigger, so with the
+                // panel open the popover showed two of them, one above the other.
             }
 
             // **Everything below the rule is a lifecycle action, and Default has no lifecycle.**

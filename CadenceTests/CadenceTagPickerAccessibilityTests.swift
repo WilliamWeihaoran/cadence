@@ -123,6 +123,27 @@ struct CadenceTagPickerAccessibilityTests {
         #expect(strip.contains(".accessibilityAddTraits(isSelected?.isSelected:[])"))
     }
 
+    /// **[[T-9802]]: both Mac tag pickers sit on the surface every other Mac picker popover does.**
+    /// `CadenceContextPicker` (beside the tag control in the inspector), the list editor's pickers
+    /// and the column editor all draw `Theme.surface`; the two tag popovers alone drew
+    /// `surfaceElevated`, a visibly lighter panel, so adjacent pickers read as two families. The
+    /// context picker's surface is asserted too, so the pair cannot drift apart from the other end.
+    @Test func macTagPickersSitOnThePickerPopoverSurface() throws {
+        let popover = try Self.compactBody("struct TagPickerPopover: View", in: Self.macPopoverPath)
+        #expect(popover.contains(".frame(width:240).background(Theme.surface).sheet(item:$editingTag)"))
+
+        let inline = try Self.compactBody("struct TaskTitleInlineTagPicker: View", in: Self.macInlinePath)
+        #expect(inline.contains(".frame(width:240).background(Theme.surface).onAppear{"))
+
+        let context = try Self.compactBody("struct CadenceContextPickerButton: View", in: "Cadence/macOS/Views/CadenceContextPicker.swift")
+        #expect(context.contains(".frame(width:260).frame(maxHeight:320).background(Theme.surface)"))
+
+        for (name, body) in [("TagPickerPopover", popover), ("TaskTitleInlineTagPicker", inline)] {
+            #expect(!body.contains(".background(Theme.surfaceElevated).sheet"), "\(name)")
+            #expect(!body.contains(".frame(width:240).background(Theme.surfaceElevated)"), "\(name)")
+        }
+    }
+
     @Test func iosSettingsSwatchIsNamedByWhatATapDoes() throws {
         let strip = try Self.compactBody("struct iOSSettingsColorSwatchRow: View", in: Self.iosSwatchPath)
         #expect(strip.contains(#".accessibilityLabel(isSelected(option)?"Selectedcolor":"Usethiscolor")"#))

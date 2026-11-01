@@ -138,7 +138,10 @@ struct TagPickerPopover: View {
             }
         }
         .frame(width: 240)
-        .background(Theme.surfaceElevated)
+        // [[T-9802]]: the surface every other Mac picker popover sits on (the context picker
+        // beside it in the inspector, the list editor's pickers, the column editor). The tag
+        // pickers alone were a shade lighter, so two adjacent popovers read as two families.
+        .background(Theme.surface)
         .sheet(item: $editingTag) { tag in
             TagEditSheet(
                 tag: tag,
@@ -369,23 +372,29 @@ private struct TagEditSheet: View {
     }
 
     var body: some View {
+        // [[T-9801]]: this sheet's chrome is the Mac's own, as `NoteFolderSheet`'s is. It was the
+        // one surface in the app on AppKit's stock bezel fields (`.roundedBorder`) and stock push
+        // buttons, on the elevated surface no other Mac sheet uses, under a sentence-case title
+        // beside every Title Case sheet title, with the colour as a third full-width field labelled
+        // "Color". The fields are now Settings' tag editor's own (`SettingsTagRow.editField`: plain
+        // text in `cadenceSettingsWell`), and so is the swatch strip with its short "#hex" field.
         VStack(alignment: .leading, spacing: 14) {
-            Text("Edit tag")
-                .font(.system(size: 15, weight: .semibold))
+            Text("Edit Tag")
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(Theme.text)
 
             VStack(alignment: .leading, spacing: 8) {
-                TextField("Name", text: $name)
-                    .textFieldStyle(.roundedBorder)
-                TextField("Description", text: $description)
-                    .textFieldStyle(.roundedBorder)
-                TextField("Color", text: $colorHex)
-                    .textFieldStyle(.roundedBorder)
+                editField("Name", text: $name)
+                editField("Description", text: $description)
             }
 
             // T-7335: Settings' strip, not a copy of it — this one named no swatch to VoiceOver
             // and never said which color was chosen.
-            TagColorSwatches(selectedHex: $colorHex)
+            HStack(spacing: 8) {
+                TagColorSwatches(selectedHex: $colorHex)
+                editField("#hex", text: $colorHex)
+                    .frame(width: 96)
+            }
 
             if hasDuplicateSlug {
                 Text("A tag with this name already exists.")
@@ -400,18 +409,30 @@ private struct TagEditSheet: View {
             HStack {
                 // T-7268: Escape cancels and Return saves (gated by the same `.disabled` as the
                 // click, and drawn as the default button). Archive is destructive and takes neither.
-                Button("Archive", role: .destructive, action: onArchive)
+                CadenceActionButton(title: "Archive", role: .destructive, size: .compact, action: onArchive)
                 Spacer()
-                Button("Cancel", action: onCancel)
-                    .keyboardShortcut(.cancelAction)
-                Button("Save", action: onSave)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!canSave)
+                CadenceActionButton(title: "Cancel", role: .ghost, size: .compact, shortcut: .cancelAction, action: onCancel)
+                CadenceActionButton(
+                    title: "Save",
+                    role: .primary,
+                    size: .compact,
+                    isDisabled: !canSave,
+                    shortcut: .defaultAction,
+                    action: onSave
+                )
             }
         }
         .padding(18)
         .frame(width: 320)
-        .background(Theme.surfaceElevated)
+        .background(Theme.surface)
+    }
+
+    private func editField(_ placeholder: String, text: Binding<String>) -> some View {
+        TextField(placeholder, text: text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 13))
+            .foregroundStyle(Theme.text)
+            .cadenceSettingsWell()
     }
 }
 #endif

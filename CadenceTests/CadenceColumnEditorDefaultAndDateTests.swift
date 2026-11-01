@@ -64,10 +64,10 @@ struct CadenceColumnEditorDefaultAndDateTests {
         #if os(macOS)
         let source = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/KanbanColumnSupportViews.swift")
         let popover = try #require(CadenceSourceScan.declarationBody("struct KanbanSectionEditorPopover", in: source))
-        // The picker call, up to the "Clear date" button that follows it.
+        // The picker call, through the clear handler that ends its argument list.
         let call = try #require(popover.range(of: "CadenceDatePicker("))
-        let clearButton = try #require(popover.range(of: "if editorHasDueDate {", range: call.upperBound..<popover.endIndex))
-        let tail = String(popover[call.lowerBound..<clearButton.lowerBound])
+        let clearHandler = try #require(popover.range(of: "onClear: onClearDate", range: call.upperBound..<popover.endIndex))
+        let tail = String(popover[call.lowerBound..<clearHandler.upperBound])
 
         // The shared label, not a re-spelling: `CadenceSharedBoardChromeTests` forbids the literal here.
         #expect(tail.contains("placeholder: editorHasDueDate ? nil : CadenceBoardColumnDueDatePlan.emptyLabel"))
@@ -76,6 +76,26 @@ struct CadenceColumnEditorDefaultAndDateTests {
         #expect(tail.contains("onDueDateChanged()"))
         #expect(!popover.contains(".onChange(of: editorDueDate)"))
         #expect(!tail.contains("selection: $editorDueDate"))
+        #endif
+    }
+
+    /// **[[T-9803]]: a dated column is cleared in one place, the picker's own panel.** The popover
+    /// drew a second red "Clear date" under the picker's trigger, beside the one the picker's panel
+    /// draws under its grid (`CadenceQuickDatePopover`, gated by `CadenceDateSelectionState.drawsClear`),
+    /// so with the panel open the popover carried two. Every other Mac date field clears from the
+    /// panel alone. The picker still gets the clear handler, so the column can still be undated.
+    @Test func macColumnDueDateClearsOnlyFromThePickerPanel() throws {
+        #if os(macOS)
+        let source = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/KanbanColumnSupportViews.swift")
+        let popover = try #require(CadenceSourceScan.declarationBody("struct KanbanSectionEditorPopover", in: source))
+        #expect(CadenceSourceScan.matchCount("onClearDate", in: popover) == 2, "the stored handler and the picker's onClear")
+        #expect(CadenceSourceScan.matchCount("showsClear: editorHasDueDate,\\s*onClear: onClearDate\\s*\\)", in: popover) == 1)
+        #expect(!popover.contains("Clear date"), "no second Clear control beside the picker's own")
+        #expect(!popover.contains("Button(\"Clear"))
+
+        // The panel's Clear is the one the user reaches: drawn over a date, never over none.
+        #expect(CadenceDateSelectionState.drawsClear(showsClear: true, hasSelection: true))
+        #expect(!CadenceDateSelectionState.drawsClear(showsClear: true, hasSelection: false))
         #endif
     }
 }

@@ -53,7 +53,9 @@ struct TaskTitleInlineTagPicker: View {
             .frame(maxHeight: 220)
         }
         .frame(width: 240)
-        .background(Theme.surfaceElevated)
+        // [[T-9802]]: the Mac picker-popover surface, as `TagPickerPopover` (the same tags, picked
+        // from the inspector) and every other Mac picker popover draw it.
+        .background(Theme.surface)
         .onAppear {
             clampHighlightIndex()
             DispatchQueue.main.async { isSearchFocused = true }
