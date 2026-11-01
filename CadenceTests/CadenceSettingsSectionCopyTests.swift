@@ -241,6 +241,33 @@ struct CadenceSettingsSectionCopyTests {
         }
     }
 
+    /// **[[T-9772]].** The glyph half of the same card. Both surfaces drew the amber warning
+    /// triangle in every not-authorized state, so a fresh install -- nobody asked yet -- opened
+    /// Settings > Notifications on a warning above "Connect Notifications" and a button offering the
+    /// permission: the contradiction T-543 removed from Calendar and T-858 from Reminders. The value
+    /// half pins which arm draws what; the source half pins that neither surface types the triangle
+    /// itself any more, which is how an unconditional one would come back.
+    @Test func theNotificationsAccessCardDrawsTheWarningGlyphOnlyWhenDenied() throws {
+        #expect(CadenceNotificationSettingsCopy.accessIconName(isDenied: true) == "exclamationmark.triangle.fill")
+        #expect(CadenceNotificationSettingsCopy.accessIconName(isDenied: false) == "bell.badge")
+
+        for path in Self.notificationSurfaces {
+            let code = try Self.strippedSource(at: path)
+            #expect(
+                CadenceSourceScan.matchCount("\"exclamationmark\\.triangle\\.fill\"", in: code) == 0,
+                "\(path) types the warning glyph itself, so it is drawn whatever the state"
+            )
+            #expect(
+                CadenceSourceScan.matchCount("CadenceNotificationSettingsCopy\\.accessIconName\\(isDenied: isDenied\\)", in: code) == 1,
+                "\(path) does not draw its access glyph from the shared per-state answer"
+            )
+            #expect(
+                code.contains("isDenied ? Theme.amber : Theme.blue"),
+                "\(path) tints the not-yet-asked glyph as a warning"
+            )
+        }
+    }
+
     /// **T-599's four, each read as a pair on both surfaces.**
     ///
     /// Split from the calendar and notification tests above only because the file pairs differ;

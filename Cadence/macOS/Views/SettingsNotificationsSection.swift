@@ -46,10 +46,12 @@ struct SettingsNotificationsSection: View {
     }
 
     private var notAuthorizedRow: some View {
-        CadenceSettingsNoticeRow(
-            systemImage: "exclamationmark.triangle.fill",
-            tint: Theme.amber,
-            title: notificationManager.isDenied
+        // Read once: the glyph, its tint and the title are three faces of one state ([[T-9772]]).
+        let isDenied = notificationManager.isDenied
+        return CadenceSettingsNoticeRow(
+            systemImage: CadenceNotificationSettingsCopy.accessIconName(isDenied: isDenied),
+            tint: isDenied ? Theme.amber : Theme.blue,
+            title: isDenied
                 ? CadenceNotificationSettingsCopy.accessRequiredTitle
                 : CadenceNotificationSettingsCopy.connectOfferTitle,
             detail: CadenceNotificationSettingsCopy.accessRequiredDetail

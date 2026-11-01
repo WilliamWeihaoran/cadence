@@ -83,7 +83,7 @@ struct iOSCalendarSettingsSection: View {
                     )
 
                     if index < links.count - 1 {
-                        iOSRowDivider(leadingInset: 24)
+                        iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
                     }
                 }
             }
@@ -110,7 +110,7 @@ struct iOSCalendarSettingsSection: View {
                     )
 
                     if index < links.count - 1 {
-                        iOSRowDivider(leadingInset: 24)
+                        iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
                     }
                 }
             }
@@ -316,10 +316,13 @@ private struct iOSMissingCalendarLinkRow: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
             : AnyLayout(HStackLayout(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing))
         layout {
+            // The settings-row glyph slot, so the card's hairline at `rowTextInset` starts at
+            // this row's text. A 34pt tile put the text at 46 and the hairline, typed as 24, ran
+            // under the tile itself ([[T-9771]]).
             iOSIconTile(
                 systemImage: link.icon,
                 color: Color(hex: link.colorHex),
-                size: 34,
+                size: iOSSettingsMetrics.glyphSlot,
                 iconSize: 15
             )
 
@@ -406,10 +409,13 @@ private struct iOSDormantCalendarLinkRow: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
             : AnyLayout(HStackLayout(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing))
         layout {
+            // The settings-row glyph slot, so the card's hairline at `rowTextInset` starts at
+            // this row's text. A 34pt tile put the text at 46 and the hairline, typed as 24, ran
+            // under the tile itself ([[T-9771]]).
             iOSIconTile(
                 systemImage: link.icon,
                 color: Color(hex: link.colorHex),
-                size: 34,
+                size: iOSSettingsMetrics.glyphSlot,
                 iconSize: 15
             )
 

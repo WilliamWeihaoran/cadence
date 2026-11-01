@@ -246,6 +246,17 @@ nonisolated enum CadenceNotificationSettingsCopy {
 
     static let accessRequiredDetail = "Allow Cadence to notify you about scheduled tasks and due dates."
 
+    /// The access card's glyph. **[[T-9772]].** Both surfaces drew the amber warning triangle in
+    /// every not-authorized state, `.notDetermined` included -- the state a fresh install opens
+    /// this pane in, under the neutral `connectOfferTitle` and a button offering the permission.
+    /// That is the contradiction [[T-543]] removed from the Calendar card and [[T-858]] from the
+    /// Reminders card; Notifications was the last of the three. The triangle is kept for a refusal,
+    /// which genuinely is a fault; before anyone is asked the card draws an offer. Both surfaces
+    /// tint it the way the other two cards do: `Theme.amber` denied, `Theme.blue` otherwise.
+    static func accessIconName(isDenied: Bool) -> String {
+        isDenied ? "exclamationmark.triangle.fill" : "bell.badge"
+    }
+
     /// The button under `accessRequiredDetail`. Names the thing it turns on rather than the
     /// permission dialog it opens, so it still reads correctly on the second press, when the
     /// system will not prompt again and both surfaces fall through to system settings.

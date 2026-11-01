@@ -146,8 +146,10 @@ struct iOSSidebarLayoutSettingsSection: View {
             iOSIconTile(
                 systemImage: destination.systemImage,
                 color: Color(hex: CadenceSidebarTint.hex(for: destination, overridesRaw: sidebarTabColorsRaw)),
-                size: 34,
-                iconSize: 16
+                // The settings-row glyph slot the card's `rowTextInset` hairline is summed from; at
+                // 34 the text sat 2pt right of where the hairline started ([[T-9771]]).
+                size: iOSSettingsMetrics.glyphSlot,
+                iconSize: 14
             )
 
             Text(CadenceSidebarLayout.rowTitle(for: destination))

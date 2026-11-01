@@ -1045,6 +1045,48 @@ struct SettingsRowDividerInsetTests {
         // text further in than the contexts row whose inset it borrowed.
         #expect(SidebarTabSettingsRow.dividerLeadingInset > ContextSettingsRow.dividerLeadingInset)
     }
+
+    /// **[[T-9771]]. The iOS half.** iOS's settings cards start their hairline at
+    /// `iOSSettingsMetrics.rowTextInset`, the glyph slot plus the glyph-label spacing, and every row
+    /// over that hairline has to draw its tile in that slot. The Sidebar Rows card drew a 34pt tile
+    /// (text at 46, hairline at 44), and Settings > Calendar's broken- and dormant-link cards drew a
+    /// 34pt tile over a hairline typed as 24 -- which ran under the tile itself. The iOS types are
+    /// not compiled into this target, so the relation is read from source.
+    @Test func theIOSRowsOverTheTextInsetHairlineDrawTheirTileInTheGlyphSlot() throws {
+        let rows: [(path: String, declaration: String)] = [
+            ("Cadence/iOS/iOSCalendarSettingsSection.swift", "struct iOSMissingCalendarLinkRow: View"),
+            ("Cadence/iOS/iOSCalendarSettingsSection.swift", "struct iOSDormantCalendarLinkRow: View"),
+            ("Cadence/iOS/iOSSidebarLayoutSettingsSection.swift", "private func rowContent("),
+        ]
+        for row in rows {
+            let source = try CadenceSourceScan.sourceFile(row.path)
+            let body = t286RemovingWhitespace(try #require(
+                CadenceSourceScan.declarationBody(row.declaration, in: source),
+                "\(row.declaration) moved out of \(row.path)"
+            ))
+            #expect(body.contains("HStackLayout(alignment:.top,spacing:iOSSettingsMetrics.glyphLabelSpacing)")
+                    || body.contains("HStack(spacing:iOSSettingsMetrics.glyphLabelSpacing)"),
+                    "\(row.declaration) no longer spaces its tile from its text by the inset's spacing")
+            #expect(body.contains("size:iOSSettingsMetrics.glyphSlot,"),
+                    "\(row.declaration) draws its tile at a size the hairline's inset is not summed from")
+        }
+
+        // The link cards' hairlines read the summed inset; the calendar list's own 24 (a 12pt dot
+        // plus 12) is a different row and stays.
+        let calendar = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarSettingsSection.swift")
+        )
+        for card in ["private var dormantLinksCard: some View", "private var missingLinksCard: some View"] {
+            let body = try #require(CadenceSourceScan.declarationBody(card, in: calendar), "\(card) moved")
+            #expect(body.contains("iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)"),
+                    "\(card) types its hairline inset instead of reading the row text inset")
+        }
+        let sidebar = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSidebarLayoutSettingsSection.swift")
+        )
+        #expect(CadenceSourceScan.matchCount("iOSRowDivider\\(leadingInset: iOSSettingsMetrics\\.rowTextInset\\)", in: sidebar) == 1,
+                "the Sidebar Rows card's hairline no longer reads the row text inset")
+    }
 }
 
 #endif

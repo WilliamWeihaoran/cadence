@@ -60,18 +60,20 @@ struct iOSNotificationsSettingsSection: View {
     }
 
     private var accessCard: some View {
-        iOSSettingsCard {
+        // Read once: the glyph, its tint and the title are three faces of one state ([[T-9772]]).
+        let isDenied = notificationManager.isDenied
+        return iOSSettingsCard {
             HStack(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
                 iOSIconTile(
-                    systemImage: "exclamationmark.triangle.fill",
-                    color: Theme.amber,
+                    systemImage: CadenceNotificationSettingsCopy.accessIconName(isDenied: isDenied),
+                    color: isDenied ? Theme.amber : Theme.blue,
                     size: 34,
                     iconSize: 16
                 )
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(
-                        notificationManager.isDenied
+                        isDenied
                             ? CadenceNotificationSettingsCopy.accessRequiredTitle
                             : CadenceNotificationSettingsCopy.connectOfferTitle
                     )
