@@ -56,8 +56,8 @@ path outside `docs/audits/` and `docs/TODO.md` is stale — and the shared check
 `./scripts/ledger-view.sh brief` is the live list (139 active entries at `e5a1da4b`); an entry's
 own lead token is the only authority, read with `head T-NNNN`. Grouped by who can move it:
 
-**Owner calls.** Rebuilt 2026-10-31 by `ownercalls2221` at `06d7bd13`; today's and a sample of older
-citations re-read on HEAD, none yet fixed. Each line: the question, then what an agent applies on "yes".
+**Owner calls.** Rebuilt 2026-10-31 by `ownercalls2221` at `06d7bd13`; refreshed 2026-11-01 by
+`ownercalls1307` at `c2b10b1d` (four added, new citations re-read on HEAD, none yet fixed; no listed ticket closed). Each line: the question, then what an agent applies on "yes".
 
 *Wording*
 - `T-9571` Title Case in-panel headings? Yes: "Task Notes", "Edit Tag", "Unlinked Mentions" (the last needs a `CadenceUITests` run).
@@ -92,6 +92,8 @@ citations re-read on HEAD, none yet fixed. Each line: the question, then what an
 - `T-7257` Mac Links tab swaps "Saved Links" for iOS's "Add Link" button? Yes.
 - `T-7943` First-run iPad Lists shows one empty state? Yes: the chooser's; detail column blank.
 - `T-7421`(3) XL widget columns truncate a name above a minimum width instead of dropping it? Yes.
+- `T-9654` Mac Focus timer card (radius 22, shadow) and notes card (radius 8, hairline) share one chrome? Yes: one token radius and border for both; no: timer card stays set apart.
+- `T-9664` iPhone Notes lists light the "open note" plate only where the editor stands beside the list? Yes: two-column only (Notes tab and a list's Notes tab); no: keep it as a last-opened marker.
 
 *Behaviour or scope*
 - `T-9613` iOS Week all-day task chip opens the task, like the event chip, the Mac and `T-8725`'s ruling? Yes: opens the inspector.
@@ -112,6 +114,8 @@ citations re-read on HEAD, none yet fixed. Each line: the question, then what an
 - `T-8564` iOS column swipe-delete confirms like the Mac? Yes.
 - `T-8565` iOS list Kanban gets Show Archived? Yes.
 - `T-8562`, `T-8584` One list-editor field set; one note toolbar and `/` command set? Yes: one shared list each.
+- `T-9702` `completeFocusSession` has no production caller since `T-8732`: retire it? Yes: delete it and its four suites' pins; no: route `CadenceFocusSupport.logSession`'s completing branch through it.
+- `T-9742` `TaskSortField` gains Due Date and Newest, so the iOS Inbox/All Tasks get them back beside Order? Yes: add both fields to the shared comparator, Mac Inbox/All Tasks/Kanban too.
 
 *Needs the owner present (a look, an account, or hardware)*
 - `T-8724` Month-grid cell anatomy: held for a side-by-side owner look at both grids.
