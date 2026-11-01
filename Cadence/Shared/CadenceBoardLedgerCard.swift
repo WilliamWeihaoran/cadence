@@ -24,7 +24,7 @@ nonisolated enum CadenceLedgerCardMetrics: Sendable {
     ///
     /// **What this does to `CadenceBoardMetadataChipMetrics.cornerRadius(inCardOfRadius:)`** — that
     /// rule stays live and keeps producing two answers, because its remaining callers are the
-    /// *event* cards, which keep their platforms' own radii (7 on macOS, 18 on iOS). The task cards
+    /// *event* cards: 7 on macOS, and on iOS this radius since [[T-9832]] (it was 18). The task cards
     /// simply stop being one of its inputs. Unifying the two task cards onto one radius without
     /// noticing that would have turned a rule into a constant silently.
     static let cornerRadius: CGFloat = Theme.radiusControl

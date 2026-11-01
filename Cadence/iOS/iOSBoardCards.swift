@@ -114,6 +114,13 @@ struct iOSCalendarBoardEventCard: View {
     @Environment(\.cadenceTypographyScaling) private var scaling
     let item: iOSCalendarBoardEventItem
 
+    /// [[T-9832]]: the Ledger task card's radius, because the two share a column. This card kept
+    /// `Theme.radiusCard` (18) when [[T-8181]] put every task card at
+    /// `CadenceLedgerCardMetrics.cornerRadius` (10), so an event and the task under it were two
+    /// rounder-and-squarer plates in one stack. Its chips follow through
+    /// `CadenceBoardMetadataChipMetrics.cornerRadius(inCardOfRadius:)`.
+    private let cornerRadius = CadenceLedgerCardMetrics.cornerRadius
+
     private var subtitle: String {
         if item.isAllDay {
             return "All day"
@@ -139,7 +146,7 @@ struct iOSCalendarBoardEventCard: View {
                         title: subtitle,
                         systemImage: item.isAllDay ? "sun.max" : "clock",
                         tint: item.color,
-                        cardCornerRadius: Theme.radiusCard,
+                        cardCornerRadius: cornerRadius,
                         fillsWidth: true
                     )
                     if item.isRecurring {
@@ -147,7 +154,7 @@ struct iOSCalendarBoardEventCard: View {
                             title: "Repeats",
                             systemImage: "repeat",
                             tint: item.color,
-                            cardCornerRadius: Theme.radiusCard,
+                            cardCornerRadius: cornerRadius,
                             fillsWidth: true
                         )
                     }
@@ -165,15 +172,15 @@ struct iOSCalendarBoardEventCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             ZStack {
-                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(Theme.surfaceElevated.opacity(CadenceCalendarEventStyle.surfaceOpacity(isActive: false)))
-                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(item.color.opacity(CadenceCalendarEventStyle.tintOpacity()))
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .strokeBorder(item.color.opacity(CadenceCalendarEventStyle.borderOpacity()), lineWidth: 1)
         }
         .accessibilityElement(children: .combine)

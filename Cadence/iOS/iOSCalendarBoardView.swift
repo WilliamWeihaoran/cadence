@@ -308,8 +308,15 @@ private struct iOSCalendarBoardDayColumn: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
+            // [[T-9831]]: the add row and the cards start where the header's dot does. The header
+            // pads its own title row by `CadenceBoardColumnHeaderMetrics.horizontalPadding`, so
+            // without the same inset here every card sat 4pt left of the dot above it. macOS's
+            // day column gets this from `KanbanColumnScroll`'s 4pt, and the iOS list board's
+            // column pads its add row and cards by the same 4.
             addTaskButton
+                .padding(.horizontal, CadenceBoardColumnHeaderMetrics.horizontalPadding)
             content
+                .padding(.horizontal, CadenceBoardColumnHeaderMetrics.horizontalPadding)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 10)
@@ -419,6 +426,7 @@ private struct iOSCalendarBoardDayColumn: View {
                         Image(systemName: isCompletedCollapsed ? "chevron.right" : "chevron.down")
                             .cadenceFont(.metadata, base: 10, weight: .bold)
                             .frame(width: CadenceTypeScale.height(12, holding: .metadata, textBase: 10, at: dynamicTypeSize, scaling: scaling))
+                            .accessibilityHidden(true)
                         Text("Completed")
                             .cadenceFont(.metadata, base: 12, weight: .semibold)
                         Spacer(minLength: 0)
@@ -438,6 +446,10 @@ private struct iOSCalendarBoardDayColumn: View {
                     .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                 }
                 .buttonStyle(.iosPressable)
+                // [[T-9833]]: the disclosure states Expanded/Collapsed, in the words
+                // `iOSTaskGroupSection`'s Completed heading uses and macOS's
+                // `KanbanCompletedTasksToggle` has read since [[T-7081]]; this one stated nothing.
+                .accessibilityValue(isCompletedCollapsed ? "Collapsed" : "Expanded")
 
                 if !isCompletedCollapsed {
                     VStack(alignment: .leading, spacing: 10) {

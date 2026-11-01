@@ -196,6 +196,68 @@ struct CadenceSharedBoardChromeTests {
         }
     }
 
+    /// **[[T-9831]]: the iOS Calendar Board day column's add row and cards start under the
+    /// header's dot.** `CadenceBoardColumnHeader` pads its title row by
+    /// `CadenceBoardColumnHeaderMetrics.horizontalPadding`; macOS's day column gets the same inset
+    /// for its add row and cards from `KanbanColumnScroll`, and the iOS list board pads both by it.
+    /// The iOS day column drew both flush with the column, 4pt left of the dot above them.
+    @Test func theIOSBoardDayColumnInsetsItsAddRowAndCardsByTheHeadersPadding() throws {
+        let stripped = try strippingComments(sourceFile("Cadence/iOS/iOSCalendarBoardView.swift"))
+        guard let start = stripped.range(of: "struct iOSCalendarBoardDayColumn: View {"),
+              let bodyStart = stripped.range(of: "var body: some View {", range: start.upperBound..<stripped.endIndex),
+              let bodyEnd = stripped.range(of: "private var header", range: bodyStart.upperBound..<stripped.endIndex)
+        else {
+            Issue.record("non-vacuity: iOSCalendarBoardDayColumn's body not found")
+            return
+        }
+        let body = String(stripped[bodyStart.upperBound..<bodyEnd.lowerBound])
+            .components(separatedBy: .whitespacesAndNewlines).joined()
+        let inset = ".padding(.horizontal,CadenceBoardColumnHeaderMetrics.horizontalPadding)"
+        #expect(body.contains("header"), "non-vacuity: the body slice does not draw the header")
+        #expect(body.contains("addTaskButton" + inset), "the add row is not inset to the header's dot (T-9831)")
+        #expect(body.contains("content" + inset), "the cards are not inset to the header's dot (T-9831)")
+        #expect(!body.contains("header" + inset), "the header would be inset twice")
+    }
+
+    /// **[[T-9832]]: an event card and the task cards beside it round at one radius.** The iOS
+    /// Board's event card kept `Theme.radiusCard` (18) when [[T-8181]] put every task card at
+    /// `CadenceLedgerCardMetrics.cornerRadius` (10), so one column held two corner radii.
+    @Test func theIOSBoardEventCardRoundsLikeTheTaskCardsBesideIt() throws {
+        let stripped = try strippingComments(sourceFile("Cadence/iOS/iOSBoardCards.swift"))
+        guard let start = stripped.range(of: "struct iOSCalendarBoardEventCard: View {"),
+              let end = stripped.range(of: "let iOSBoardColumnWidth", range: start.upperBound..<stripped.endIndex)
+        else {
+            Issue.record("non-vacuity: iOSCalendarBoardEventCard not found")
+            return
+        }
+        let card = String(stripped[start.upperBound..<end.lowerBound])
+        #expect(card.contains("private let cornerRadius = CadenceLedgerCardMetrics.cornerRadius"),
+                "the event card no longer takes the Ledger card's radius (T-9832)")
+        #expect(!card.contains("Theme.radiusCard"), "the event card rounds at a radius of its own again (T-9832)")
+        // Every shape and both chips read the one name: four shapes and two chips.
+        #expect(card.components(separatedBy: "cornerRadius: cornerRadius").count - 1 == 4,
+                "an event card shape does not read the shared radius (T-9832)")
+        #expect(card.components(separatedBy: "cardCornerRadius: cornerRadius").count - 1 == 2,
+                "an event card chip does not read the shared radius (T-9832)")
+    }
+
+    /// **[[T-9833]]: the iOS Board's Completed disclosure states Expanded/Collapsed**, as macOS's
+    /// `KanbanCompletedTasksToggle` has since [[T-7081]] and `iOSTaskGroupSection`'s heading does.
+    @Test func theIOSBoardCompletedDisclosureStatesItsState() throws {
+        let stripped = try strippingComments(sourceFile("Cadence/iOS/iOSCalendarBoardView.swift"))
+        guard let start = stripped.range(of: "private var completedFooter: some View {"),
+              let end = stripped.range(of: "if !isCompletedCollapsed {", range: start.upperBound..<stripped.endIndex)
+        else {
+            Issue.record("non-vacuity: the iOS Board's completed footer toggle not found")
+            return
+        }
+        let toggle = String(stripped[start.upperBound..<end.lowerBound])
+        #expect(toggle.contains("Text(\"Completed\")"), "non-vacuity: the slice is not the Completed toggle")
+        #expect(toggle.contains(".accessibilityValue(isCompletedCollapsed ? \"Collapsed\" : \"Expanded\")"),
+                "the Completed disclosure states nothing again (T-9833)")
+        #expect(toggle.contains(".accessibilityHidden(true)"), "the disclosure chevron is read out again (T-9833)")
+    }
+
     // MARK: - T-572: what VoiceOver calls a Board day column
 
     /// The label's words and its plural, as a value.
@@ -287,8 +349,9 @@ struct CadenceSharedBoardChromeTests {
     }
 
     /// The chip's radius is the one difference here that was **not** drift, so it is kept — but as a
-    /// rule rather than as two literals. A macOS board card rounds at `kanbanCardCornerRadius` (7)
-    /// and an iOS one at `Theme.radiusCard` (18); a chip cannot be rounder than the card it is
+    /// rule rather than as two literals. A macOS board event card rounds at `kanbanCardCornerRadius`
+    /// (7) and an iOS one, since [[T-9832]], at `CadenceLedgerCardMetrics.cornerRadius` (10); the
+    /// 18 below is the radius it had before. A chip cannot be rounder than the card it is
     /// inside. `min(control, card - 1)` reproduces both platforms' existing values exactly.
     @Test func theChipRadiusFollowsTheCardItSitsIn() {
         #expect(CadenceBoardMetadataChipMetrics.cornerRadius(inCardOfRadius: 7) == 6)
