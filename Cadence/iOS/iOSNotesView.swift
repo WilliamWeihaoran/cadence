@@ -288,9 +288,7 @@ struct iOSNotesView: View {
         }
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,
-            selectedTask: $selectedReferenceTask,
-            referenceNotes: allNotes,
-            referenceTasks: allTasks
+            selectedTask: $selectedReferenceTask
         )
         // Deleting the note the inline pane is showing puts the index back, rather than letting
         // selection normalisation open some other note nobody tapped (T-1277's rule).
@@ -906,9 +904,7 @@ struct iOSNoteEditorCover: View {
         }
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,
-            selectedTask: $selectedReferenceTask,
-            referenceNotes: allNotes,
-            referenceTasks: allTasks
+            selectedTask: $selectedReferenceTask
         )
         .iOSNoteDeletion(note: $noteToDelete) {
             isEditorFocused = false

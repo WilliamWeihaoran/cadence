@@ -223,9 +223,7 @@ struct iOSListNotesView: View {
         }
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,
-            selectedTask: $selectedReferenceTask,
-            referenceNotes: allNotes,
-            referenceTasks: allTasks
+            selectedTask: $selectedReferenceTask
         )
         .iOSNoteDeletion(note: $noteToDelete)
     }

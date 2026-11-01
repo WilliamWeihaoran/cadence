@@ -5,10 +5,8 @@ import SwiftUI
 struct iOSMarkdownReferenceSheetModifier: ViewModifier {
     @Binding var selectedReferenceNote: Note?
     @Binding var selectedReferenceTask: AppTask?
-    /// Unread here since [[T-9663]]: the linked note opens in `iOSNoteEditorCover`, which queries
-    /// its own. Kept so the nine hosts' calls stay as they are; see [[T-9761]].
-    let referenceNotes: [Note]
-    let referenceTasks: [AppTask]
+    // No note or task arrays ([[T-9761]]): since [[T-9663]] the linked note opens in
+    // `iOSNoteEditorCover`, which queries its own.
 
     func body(content: Content) -> some View {
         content
@@ -29,15 +27,11 @@ struct iOSMarkdownReferenceSheetModifier: ViewModifier {
 extension View {
     func iOSMarkdownReferenceSheets(
         selectedNote: Binding<Note?>,
-        selectedTask: Binding<AppTask?>,
-        referenceNotes: [Note],
-        referenceTasks: [AppTask]
+        selectedTask: Binding<AppTask?>
     ) -> some View {
         modifier(iOSMarkdownReferenceSheetModifier(
             selectedReferenceNote: selectedNote,
-            selectedReferenceTask: selectedTask,
-            referenceNotes: referenceNotes,
-            referenceTasks: referenceTasks
+            selectedReferenceTask: selectedTask
         ))
     }
 }

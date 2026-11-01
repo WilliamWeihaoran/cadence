@@ -283,9 +283,7 @@ struct iOSCalendarEventEditSheet: View {
         )
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,
-            selectedTask: $selectedReferenceTask,
-            referenceNotes: allNotes,
-            referenceTasks: allTasks
+            selectedTask: $selectedReferenceTask
         )
         .preferredColorScheme(.dark)
     }

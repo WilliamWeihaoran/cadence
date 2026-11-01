@@ -155,9 +155,7 @@ struct iOSTaskDetailSheet: View {
             }
             .iOSMarkdownReferenceSheets(
                 selectedNote: $selectedReferenceNote,
-                selectedTask: $selectedReferenceTask,
-                referenceNotes: allNotes,
-                referenceTasks: allTasks
+                selectedTask: $selectedReferenceTask
             )
             // [[T-6191]]: an After count stored below this occurrence before [[T-6114]]'s floor is
             // repaired when the task is opened, and only then. A coherent count is not written.

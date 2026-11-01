@@ -308,7 +308,7 @@ struct iOSSearchResultGroup<Row: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionEyebrowLabel(text: title)
-                .padding(.horizontal, 4)
+                .padding(.horizontal, SectionEyebrowLabel.cardListInset)
 
             VStack(spacing: 0) {
                 ForEach(0..<count, id: \.self) { index in

@@ -212,9 +212,7 @@ struct iOSFocusView: View {
         }
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,
-            selectedTask: $selectedReferenceTask,
-            referenceNotes: allNotes,
-            referenceTasks: allTasks
+            selectedTask: $selectedReferenceTask
         )
         // [[T-8732]]: the Mac's Log Session form, in the container a finger can use. Presented
         // from the screen rather than from the control, so the picker beside it is free to move

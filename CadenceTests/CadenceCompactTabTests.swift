@@ -462,6 +462,9 @@ struct CadenceCardListEyebrowInsetSurfaceTests {
         ("Cadence/iOS/iOSMoreTabView.swift", "SectionEyebrowLabel(text: section.title)"),
         ("Cadence/iOS/iOSSettingsComponents.swift", "SectionEyebrowLabel(text: group.title)"),
         ("Cadence/iOS/iOSListsRegularPane.swift", "SectionEyebrowLabel(text: title)"),
+        // [[T-9792]]: the two Search eyebrows, the search result groups and the Calendar Events card.
+        ("Cadence/iOS/iOSSearchSupportViews.swift", "SectionEyebrowLabel(text: title)"),
+        ("Cadence/iOS/iOSSearchView.swift", #"SectionEyebrowLabel(text: "Calendar Events")"#),
     ]
 
     @Test func everyCardListEyebrowReadsTheOneNamedInset() throws {
@@ -485,7 +488,7 @@ struct CadenceCardListEyebrowInsetSurfaceTests {
         }
     }
 
-    /// Anti-vacuity: the three files are really read, and the inset is really declared once.
+    /// Anti-vacuity: every site's file is really read, and the inset is really declared once.
     @Test func theInsetScanReadsRealSource() throws {
         for site in Self.sites {
             let source = try sourceFile(site.path)

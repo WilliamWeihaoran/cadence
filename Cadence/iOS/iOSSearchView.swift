@@ -506,7 +506,7 @@ struct iOSSearchView: View {
             Section {
                 VStack(alignment: .leading, spacing: 8) {
                     SectionEyebrowLabel(text: "Calendar Events")
-                        .padding(.horizontal, 4)
+                        .padding(.horizontal, SectionEyebrowLabel.cardListInset)
 
                     layout {
                         iOSIconTile(
