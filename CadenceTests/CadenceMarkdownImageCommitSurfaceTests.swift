@@ -530,11 +530,11 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // [[T-6211]] makes it 80, and bare: the Mac Month grid names a refused task drop above its
         // weeks, as the Calendar Board does -- the retry is the drag itself, and the next drop
         // that lands clears it ([[T-6281]]).
-        // [[T-6412]] makes it 81, and bare: the iOS focus note names a refused checklist or
-        // embedded-subtask tick above its card. Not dismissable, unlike the editing surface's
-        // embed notice: the focus note is a read-only preview, so the next thing the user does
-        // there is not typing but the same tap, and the next tick that lands clears it -- as does
-        // switching to another task.
+        // [[T-6412]] makes it 81, and bare: the iOS focus note names a refused write above its
+        // editor. It was a refused checklist or embedded-subtask tick on a read-only preview until
+        // [[T-8734]] made that panel an editor; the notice stayed, and stayed bare, because the
+        // retry is still the same act -- type again, or tick again -- and the next write that
+        // lands clears it, as does switching to another task.
         // [[T-6231]] makes it 80 again: the Mac inspector's Cancel/Restore moved into
         // `TaskDetailActionsSection` and shares that row's one notice, so the status row's own
         // bare notice went with `TaskInspectorStatusActionsRow.swift` ([[T-6571]]).

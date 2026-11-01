@@ -4,11 +4,16 @@ import Testing
 @testable import Cadence
 
 /// `CadenceTaskStatusEditing.completeFocusSession` is the one entry point on that wrapper that
-/// **answers** rather than returning `Void`, and its answer is load-bearing:
-/// `iOSFocusView.complete(_:)` reads it as `guard CadenceTaskStatusEditing.completeFocusSession(…)`
-/// and only then resets the stopwatch. The elapsed clock exists nowhere else, so `false` on a
+/// **answers** rather than returning `Void`, and its answer was load-bearing: the iOS focus
+/// screen's one-tap Complete read it as `guard CadenceTaskStatusEditing.completeFocusSession(…)`
+/// and only then reset the stopwatch. The elapsed clock exists nowhere else, so `false` on a
 /// commit that actually landed strands the timer running over a finished task, and the user's next
 /// stop banks the same minutes twice.
+///
+/// **[[T-8732]] replaced that control with the Mac's Log Session form**, which writes through
+/// `CadenceFocusSupport.logSession` and reports a refusal by throwing, so the entry point has no
+/// production caller today. The pins below are kept rather than retired: they measure the answer,
+/// not the call site, and [[T-9702]] holds the decision about the entry point itself.
 ///
 /// Nothing pinned that answer. `CadenceTaskStatusEditingSurfaceTests` calls the entry point through
 /// a `(AppTask, ModelContext, CadenceWindDownReconciler) -> Void` table, which discards it;

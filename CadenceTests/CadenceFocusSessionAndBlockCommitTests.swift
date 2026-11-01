@@ -134,6 +134,13 @@ struct CadenceFocusSessionAndBlockCommitTests {
     /// The wrapper records the refusal for the shared alert **and** answers it, and the focus view
     /// clears its stopwatch only below that answer. The seconds exist nowhere but the timer, so a
     /// reset over a refusal loses them for good.
+    ///
+    /// **[[T-8732]] moved the iOS half onto the log form.** The check control no longer completes
+    /// the task in one tap -- it opens the Mac's Log Session form -- so the screen's write is
+    /// `logSession`, and the thing that must not run over a refusal is the same: the reset, the
+    /// advance, and now the dismissal of the form that still holds the typed hours and minutes
+    /// (T-566's rule, which the Mac popover has carried since). The shape is a `catch` with a bare
+    /// `return` rather than a `guard`, because the shared write throws instead of answering.
     @Test func thefocusViewClearsItsStopwatchOnlyOnceTheStoreHasTheSession() throws {
         let wrapper = try CadenceCommitSurfaceScan.scanned(Self.statusEditingPath)
         let complete = try CadenceCommitSurfaceScan.declarationBody(named: "completeFocusSession", in: wrapper)
@@ -143,59 +150,82 @@ struct CadenceFocusSessionAndBlockCommitTests {
         #expect(wrapper.contains("-> Bool {"))
 
         let view = try CadenceCommitSurfaceScan.scanned(Self.focusViewPath)
-        let guarded = try CadenceCommitSurfaceScan.declarationBody(named: "complete", in: view)
-        #expect(guarded.contains("guard CadenceTaskStatusEditing.completeFocusSession("))
-        #expect(guarded.contains("else { return }"))
-        #expect(
-            guarded.range(of: "else { return }")!.upperBound < guarded.range(of: "resetTimer()")!.lowerBound,
-            "the reset is above the guard, so a refusal still clears the clock"
-        )
+        let guarded = try CadenceCommitSurfaceScan.declarationBody(named: "logSession", in: view)
+        #expect(guarded.contains("try CadenceFocusSupport.logSession("))
+        let refusal = try #require(guarded.range(of: "CadenceTaskSettleFailureCenter.shared.record()"))
+        let returned = try #require(guarded.range(of: "return", range: refusal.upperBound..<guarded.endIndex))
+        for below in ["resetTimer()", "loggingTask = nil"] {
+            let hit = try #require(guarded.range(of: below), "the focus view no longer \(below) after a log")
+            #expect(
+                returned.upperBound < hit.lowerBound,
+                "\(below) runs above the refusal's return, so a refused log still clears the clock"
+            )
+        }
+        #expect(CadenceSourceScan.matchCount(#"try\?"#, in: guarded) == 0)
         #expect(view.contains("struct iOSFocusView: View"))
     }
 
-    // MARK: - T-5060(b), the focus note's live controls
+    // MARK: - T-8734, the focus note is an editor
 
-    /// **The checklist circles in an iOS focus note act** ([[T-5060]] (b), the owner's option (a),
-    /// decided 2026-10-24): the preview is handed a toggle for the checklist and for both embed
-    /// controls, where it used to be handed `onOpenReference` and nothing else, which left every
-    /// circle drawn as a `.disabled` button (`iOSMarkdownPreview.swift`, `.disabled(onToggleChecklist == nil)`).
+    /// **The iOS focus note is editable, under the Mac's heading and prompt** ([[T-8734]], the
+    /// owner's decision of 2026-10-31 under [[T-8201]]).
+    ///
+    /// It drew nothing at all on an empty note and a read-only `iOSMarkdownPreview` otherwise, so
+    /// an iPhone user could not jot anything mid-session and an empty note said nothing about
+    /// being able to. It is now the editor the task sheet's Notes section uses, under
+    /// `CadenceFocusSupport.taskNotesTitle` and `taskNotesPrompt` -- the two strings macOS's
+    /// `FocusNotesPanel` reads, so neither panel can word them differently -- and the panel is
+    /// drawn whether or not the task has notes, which is the half the preview could not do.
     ///
     /// A scan, because `Cadence/iOS/` is behind `#if os(iOS)` and this target builds for macOS.
     /// The behaviour the wiring buys is measured by the test below it.
-    @Test func theIOSFocusNoteHandsItsPreviewALiveChecklistAndLiveEmbedToggles() throws {
+    @Test func theIOSFocusNoteIsALiveEditorUnderTheSharedHeadingAndPrompt() throws {
         let view = try CadenceCommitSurfaceScan.scanned(Self.focusViewPath)
         let notes = try CadenceCommitSurfaceScan.declarationBody(named: "taskNotes", in: view)
-        #expect(notes.contains("onToggleChecklist: { lineIndex in toggleChecklistItem(at: lineIndex, on: task) }"),
-                "the focus note's checklist circles are disabled again")
-        #expect(notes.contains("onToggleEmbeddedTask: { toggleEmbeddedTask(id: $0) }"))
-        #expect(notes.contains("onToggleEmbeddedSubtask: { toggleEmbeddedSubtask(taskID: $0, subtaskID: $1) }"))
-        // The reference opener it already had, so this reads an addition and not a replacement.
-        #expect(notes.contains("onOpenReference: openMarkdownReference"))
 
-        // The write path: the task's own notes, rewritten by the shared checklist rule and
-        // committed through the shared field transaction, which puts the text back on a refusal.
-        let toggle = try CadenceCommitSurfaceScan.declarationBody(named: "toggleChecklistItem", in: view)
-        let rewrite = try #require(toggle.range(of: "MarkdownChecklistSupport.toggledText(task.notes, lineIndex: lineIndex)"))
-        let commit = try #require(
-            toggle.range(of: "CadenceTaskFieldEditCommit.commit(task, in: modelContext) {"),
-            "the focus note writes its checklist outside the shared field transaction"
+        #expect(notes.contains("iOSMarkdownEditingSurface("), "the focus note is read-only again")
+        #expect(notes.contains("text: taskNotesBinding(task)"))
+        #expect(!notes.contains("iOSMarkdownPreview("), "the read-only preview is back beside the editor")
+
+        // The heading and the prompt are the shared ones, and nothing guards the panel on the
+        // note being non-blank: that `if` is the defect this ticket names.
+        #expect(notes.contains("Text(CadenceFocusSupport.taskNotesTitle)"))
+        #expect(notes.contains("Text(CadenceFocusSupport.taskNotesPrompt)"))
+        #expect(
+            CadenceSourceScan.matchCount(#"task\.notes\.trimmingCharacters"#, in: notes) == 0,
+            "the focus note panel is hidden on an empty note again"
         )
-        #expect(rewrite.upperBound <= commit.lowerBound)
-        #expect(toggle.contains("task.notes = toggled"))
 
-        // The two embed toggles go through the same shared paths the editing surface's cards use,
-        // rather than a second spelling of completion.
-        let embed = try CadenceCommitSurfaceScan.declarationBody(named: "toggleEmbeddedTask", in: view)
-        #expect(embed.contains("CadenceTaskStatusEditing.toggleCompletion(task, in: modelContext)"))
-        let subtask = try CadenceCommitSurfaceScan.declarationBody(named: "toggleEmbeddedSubtask", in: view)
-        #expect(subtask.contains("CadenceNoteTaskEmbedEditing.toggleSubtask(subtask, in: modelContext)"))
+        // macOS reads the same two strings, so this is one heading rather than two that agree.
+        let macPanel = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusNotesPanel.swift")
+        #expect(macPanel.contains("Text(CadenceFocusSupport.taskNotesTitle)"))
+        #expect(macPanel.contains("Text(CadenceFocusSupport.taskNotesPrompt)"))
+
+        // The editor is keyed on the task: it loads its draft once, so without this a session
+        // switched mid-edit keeps the outgoing task's buffer over the incoming note.
+        #expect(notes.contains(".id(task.id)"))
         #expect(view.contains("struct iOSFocusView: View"))
     }
 
-    /// The behaviour the wiring above buys, and the half a scan cannot claim: the composition the
-    /// focus note's handler performs ticks the line the user tapped and leaves every other line
-    /// alone, and a refused save puts the whole note back.
-    @Test func tickingAFocusNotesChecklistLineWritesThatLineAndRollsBackARefusedSave() throws {
+    /// The write path under that editor: the task's own notes, committed through the shared field
+    /// transaction, which puts the text back on a refusal.
+    @Test func theFocusNoteBindingTypesThroughTheSharedFieldTransaction() throws {
+        let view = try CadenceCommitSurfaceScan.scanned(Self.focusViewPath)
+        let binding = try CadenceCommitSurfaceScan.declarationBody(named: "taskNotesBinding", in: view)
+        let commit = try #require(
+            binding.range(of: "CadenceTaskFieldEditCommit.commit(task, in: modelContext) {"),
+            "the focus note writes its text outside the shared field transaction"
+        )
+        let write = try #require(binding.range(of: "task.notes = typed"))
+        #expect(commit.upperBound <= write.lowerBound, "the write is outside the transaction")
+        #expect(binding.contains("guard task.notes != typed else { return }"),
+                "an unchanged buffer still commits")
+        #expect(view.contains("struct iOSFocusView: View"))
+    }
+
+    /// The behaviour the wiring above buys, and the half a scan cannot claim: the write the focus
+    /// note's binding performs lands the typed text, and a refused save puts the whole note back.
+    @Test func typingInAFocusNoteWritesTheTextAndRollsBackARefusedSave() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
         let task = AppTask(title: "Ship the build")
@@ -203,63 +233,54 @@ struct CadenceFocusSessionAndBlockCommitTests {
         context.insert(task)
         try context.save()
 
-        let toggled = try #require(MarkdownChecklistSupport.toggledText(task.notes, lineIndex: 1))
-        #expect(CadenceTaskFieldEditCommit.commit(task, in: context) { task.notes = toggled })
-        #expect(task.notes == "- [ ] archive\n- [x] upload\n- [ ] notes",
-                "the tap ticked a line other than the one it landed on")
+        let typed = "- [ ] archive\n- [x] upload\n- [ ] notes"
+        #expect(CadenceTaskFieldEditCommit.commit(task, in: context) { task.notes = typed })
+        #expect(task.notes == typed, "the typed text did not reach the store")
 
         let before = task.notes
-        let refusedText = try #require(MarkdownChecklistSupport.toggledText(task.notes, lineIndex: 2))
         let landed = CadenceTaskFieldEditCommit.commit(
             task,
             in: context,
             commit: { _ in throw CommitRefused() }
         ) {
-            task.notes = refusedText
+            task.notes = before + "\n- [ ] ship"
         }
         #expect(landed == false)
-        #expect(task.notes == before, "a refused save left the focus note carrying a tick the store does not hold")
+        #expect(task.notes == before, "a refused save left the focus note carrying text the store does not hold")
     }
 
-    // MARK: - T-6412, the focus note names a refused tick
+    // MARK: - T-6412, the focus note names a refused write
 
-    /// **A refused tick in the iOS focus note is named** ([[T-6412]]). Both write paths put the
-    /// store back on a refusal, so the circle does not move; without a sentence that read as a
-    /// tap that missed. The notice is the shared sentence, set only in the refusal branch, cleared
-    /// by the next write that lands, drawn above the note card, and bare -- the retry is the same
-    /// tap (`onlyNoticesNoLaterAttemptClearsOfferToDismissThemselves` counts it among the bare).
-    @Test func theIOSFocusNoteNamesARefusedTickAndClearsItOnTheNextOneThatLands() throws {
+    /// **A refused write in the iOS focus note is named** ([[T-6412]], kept through [[T-8734]]).
+    ///
+    /// The write path puts the store back on a refusal, so the text simply does not change;
+    /// without a sentence that reads as typing that vanished. The notice is the shared sentence,
+    /// set only in the refusal branch, cleared by the next write that lands, drawn above the
+    /// editor, and bare -- the retry is to type again
+    /// (`onlyNoticesNoLaterAttemptClearsOfferToDismissThemselves` counts it among the bare).
+    @Test func theIOSFocusNoteNamesARefusedWriteAndClearsItOnTheNextOneThatLands() throws {
         let view = try CadenceCommitSurfaceScan.scanned(Self.focusViewPath)
         #expect(view.contains("@State private var noteFailureNotice: String?"))
 
         let refusal = "noteFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice"
-        for (name, guardLine) in [
-            ("toggleChecklistItem", "guard landed else {"),
-            ("toggleEmbeddedSubtask", "guard CadenceNoteTaskEmbedEditing.toggleSubtask(subtask, in: modelContext) else {")
-        ] {
-            let body = try CadenceCommitSurfaceScan.declarationBody(named: name, in: view)
-            let guarded = try #require(body.range(of: guardLine), "\(name) no longer branches on the commit's answer")
-            let named = try #require(body.range(of: refusal), "\(name) does not name its refusal")
-            let returned = try #require(body.range(of: "return", range: named.upperBound..<body.endIndex))
-            let cleared = try #require(body.range(of: "noteFailureNotice = nil"), "\(name) never clears the notice")
-            #expect(guarded.upperBound <= named.lowerBound, "\(name) names a refusal outside its refusal branch")
-            #expect(returned.upperBound <= cleared.lowerBound, "\(name) clears the notice inside the refusal branch")
-            #expect(CadenceSourceScan.matchCount(NSRegularExpression.escapedPattern(for: refusal), in: body) == 1)
-            #expect(CadenceSourceScan.matchCount(#"noteFailureNotice = nil"#, in: body) == 1)
-            #expect(CadenceSourceScan.matchCount(#"_ = CadenceNoteTaskEmbedEditing"#, in: body) == 0,
-                    "\(name) discards the commit's answer again")
-        }
-        let checklist = try CadenceCommitSurfaceScan.declarationBody(named: "toggleChecklistItem", in: view)
-        #expect(checklist.contains("let landed = CadenceTaskFieldEditCommit.commit(task, in: modelContext) {"))
+        let body = try CadenceCommitSurfaceScan.declarationBody(named: "taskNotesBinding", in: view)
+        let guarded = try #require(body.range(of: "guard landed else {"), "the binding ignores the commit's answer")
+        let named = try #require(body.range(of: refusal), "the binding does not name its refusal")
+        let returned = try #require(body.range(of: "return", range: named.upperBound..<body.endIndex))
+        let cleared = try #require(body.range(of: "noteFailureNotice = nil"), "the binding never clears the notice")
+        #expect(guarded.upperBound <= named.lowerBound, "the refusal is named outside its refusal branch")
+        #expect(returned.upperBound <= cleared.lowerBound, "the notice is cleared inside the refusal branch")
+        #expect(CadenceSourceScan.matchCount(NSRegularExpression.escapedPattern(for: refusal), in: body) == 1)
+        #expect(CadenceSourceScan.matchCount(#"noteFailureNotice = nil"#, in: body) == 1)
 
-        // Drawn above the card, bare, and reset when the focus moves to another task's note.
+        // Drawn above the editor, bare, and reset when the session moves to another task's note.
         let notes = try CadenceCommitSurfaceScan.declarationBody(named: "taskNotes", in: view)
         let notice = try #require(notes.range(of: "CadenceInlineFailureNotice(text: noteFailureNotice)"),
                                   "the focus note draws no refusal")
-        let card = try #require(notes.range(of: "iOSMarkdownPreview("))
-        #expect(notice.upperBound <= card.lowerBound, "the refusal is drawn below the note card")
+        let editor = try #require(notes.range(of: "iOSMarkdownEditingSurface("))
+        #expect(notice.upperBound <= editor.lowerBound, "the refusal is drawn below the editor")
         #expect(!notes.contains("CadenceInlineFailureNotice(text: noteFailureNotice) {"),
-                "a notice the next landed tick clears offers a dismissal")
+                "a notice the next landed write clears offers a dismissal")
         #expect(notes.contains(".onChange(of: task.id) { _, _ in noteFailureNotice = nil }"),
                 "another task's note inherits this one's refusal")
     }

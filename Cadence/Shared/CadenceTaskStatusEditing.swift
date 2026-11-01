@@ -132,12 +132,19 @@ enum CadenceTaskStatusEditing {
     /// twice or leave the logged minutes outside the transition.
     ///
     /// **It answers whether the change is in the store (T-636(c)).** `toggleCompletion` above
-    /// catches and records because its six surfaces cannot each own a notice; this one has exactly
-    /// one caller, `iOSFocusView.complete(_:)`, and that caller has something to do with the answer
-    /// the shared alert cannot do for it — the elapsed clock. Resetting it over a refused commit
-    /// discards the minutes for good, since the timer is the only place they existed. So the
-    /// refusal is recorded on `CadenceTaskSettleFailureCenter` for the sentence, *and* returned for
-    /// the clock.
+    /// catches and records because its six surfaces cannot each own a notice; this one had exactly
+    /// one caller, the iOS focus screen's one-tap Complete, and that caller had something to do
+    /// with the answer the shared alert cannot do for it — the elapsed clock. Resetting it over a
+    /// refused commit discards the minutes for good, since the timer is the only place they
+    /// existed. So the refusal is recorded on `CadenceTaskSettleFailureCenter` for the sentence,
+    /// *and* returned for the clock.
+    ///
+    /// **That caller left with [[T-8732]], and this entry point is awaiting its own decision.** The
+    /// iOS Focus check control now opens the Mac's Log Session form, and the form writes through
+    /// `CadenceFocusSupport.logSession`, which reports a refusal by throwing rather than by
+    /// answering — so nothing in the app calls this today, while four suites still pin it.
+    /// [[T-9702]] holds the choice between retiring it with its pins and making it the door the
+    /// log form's completing branch goes through; it was not a parity agent's call to make.
     ///
     /// Nothing is reconciled on the failure path, for the reason `toggleCompletion` records:
     /// `commitSettle` has already put the transition back, so there is none to reconcile.

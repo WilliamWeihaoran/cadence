@@ -12,7 +12,6 @@ struct iOSFocusView: View {
     @Environment(CadenceFocusHandoffCenter.self) private var focusHandoffCenter
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
     @State private var selectedTarget: CadenceFocusTarget?
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
@@ -29,6 +28,13 @@ struct iOSFocusView: View {
     /// What is typed in the picker's search field ([[T-8733]]), the Mac card's `searchText`.
     @State private var pickSearchText = ""
     @FocusState private var isPickSearchFocused: Bool
+    /// The task whose **Log Session** form is open ([[T-8732]]), `nil` while it is closed. The
+    /// subject is held rather than a bare flag because the sheet seeds its fields from the clock
+    /// and names the task, and the picker behind it can still move.
+    @State private var loggingTask: AppTask?
+    /// Whether the task-notes editor holds the keyboard ([[T-8734]]). The editing surface writes
+    /// its buffer back on focus loss, so this is the handle that releases it.
+    @State private var isTaskNotesFocused = false
 
     private var todayKey: String { DateFormatters.todayKey() }
 
@@ -210,6 +216,23 @@ struct iOSFocusView: View {
             referenceNotes: allNotes,
             referenceTasks: allTasks
         )
+        // [[T-8732]]: the Mac's Log Session form, in the container a finger can use. Presented
+        // from the screen rather than from the control, so the picker beside it is free to move
+        // while the form is up.
+        .sheet(item: $loggingTask) { task in
+            iOSFocusLogSessionSheet(
+                task: task,
+                elapsedSeconds: elapsedSeconds,
+                onLog: { hours, minutes, complete in
+                    logSession(hours: hours, minutes: minutes, complete: complete, task: task)
+                },
+                onDiscard: {
+                    // The Mac's Discard: the stopwatch is thrown away and nothing is banked.
+                    resetTimer()
+                    loggingTask = nil
+                }
+            )
+        }
     }
 
     /// The narrow fallback is the phone's own stacked form. It pushes nothing, so unlike Goals and
@@ -572,14 +595,23 @@ struct iOSFocusView: View {
 
             iOSFocusControlButton(
                 systemImage: "checkmark",
-                accessibilityLabel: "Log session and mark done",
-                // Always green: the button works at zero elapsed (it completes the task), so
-                // greying it promised a disabled control that was not disabled.
-                foreground: Theme.green,
+                accessibilityLabel: CadenceFocusSupport.logFormControlLabel,
+                // **The Mac's muted-at-zero rule** ([[T-8732]]). It used to be green always, on
+                // the reading that the control worked at zero elapsed because it completed the
+                // task; it no longer completes anything on its own -- it opens the log form, as
+                // the Mac's does -- so the Mac's cue is the true one: nothing to bank yet. The
+                // control is still not disabled on either platform, because the form can still
+                // correct the figure or finish the task.
+                foreground: elapsedSeconds > 0 ? Theme.green : Theme.muted,
                 background: Theme.surfaceElevated,
                 diameter: 48
             ) {
-                complete(task)
+                // Pausing before the form opens is the Mac's act too (`FocusView.timerControls`
+                // sets `focusManager.isRunning = false`): the sheet seeds its fields from the
+                // clock, and a clock still running behind it makes the seeded figure wrong the
+                // moment it is read.
+                if timerState.isRunning { timerState.toggle() }
+                loggingTask = task
             }
         }
     }
@@ -607,82 +639,98 @@ struct iOSFocusView: View {
         )
     }
 
+    /// **The Mac's task-notes panel, on iOS** ([[T-8734]], under [[T-8201]]).
+    ///
+    /// It used to draw nothing at all unless `task.notes` was non-blank, and then only the
+    /// read-only `iOSMarkdownPreview`: checklists and embed cards ticked ([[T-5060]] (b)), but no
+    /// text could be typed, so an iPhone user could not jot anything during a session and an empty
+    /// note gave no hint that they could. macOS's `FocusNotesPanel` has always put a titled, live
+    /// editor under the timer in every session. The owner chose that for iOS on 2026-10-31:
+    /// editable, with the prompt, drawn for an empty note too.
+    ///
+    /// It is the editor the task sheet's Notes section uses, so the live checklist circles and the
+    /// embed-card toggles [[T-5060]] bought are still live -- they belong to the surface now rather
+    /// than to this screen's own three handlers, which is why those handlers are gone.
     @ViewBuilder
     private func taskNotes(_ task: AppTask) -> some View {
-        if !task.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                if let noteFailureNotice {
-                    CadenceInlineFailureNotice(text: noteFailureNotice)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "note.text")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
+                    .frame(width: 24, height: 24)
+                    .background(Theme.blue.opacity(0.1))
+                    .clipShape(Circle())
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(CadenceFocusSupport.taskNotesTitle)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text(CadenceFocusSupport.taskNotesPrompt)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.dim)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                iOSMarkdownPreview(
-                    markdown: task.notes,
-                    imageAssets: imageAssets,
-                    taskEmbeds: taskEmbedInfos,
-                    onToggleChecklist: { lineIndex in toggleChecklistItem(at: lineIndex, on: task) },
-                    onToggleEmbeddedTask: { toggleEmbeddedTask(id: $0) },
-                    onToggleEmbeddedSubtask: { toggleEmbeddedSubtask(taskID: $0, subtaskID: $1) },
-                    onOpenReference: openMarkdownReference
-                )
-                // No `minHeight`. A two-line note was drawn in a 140pt card with ninety points of
-                // empty surface under it; the cap is what this needs, not a floor.
-                .frame(maxWidth: .infinity, maxHeight: isCompact ? 260 : 320, alignment: .topLeading)
-                .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
+                Spacer(minLength: 0)
             }
-            // The sentence names a tick in *this* note; another task's note did not refuse anything.
-            .onChange(of: task.id) { _, _ in noteFailureNotice = nil }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+
+            Divider().background(Theme.borderSubtle)
+
+            // The sentence names a refused write to *this* note, and is drawn above the editor it
+            // is about ([[T-6412]]). Bare, not dismissable: the retry is to type again, and the
+            // next write that lands clears it.
+            if let noteFailureNotice {
+                CadenceInlineFailureNotice(text: noteFailureNotice)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+            }
+
+            iOSMarkdownEditingSurface(
+                text: taskNotesBinding(task),
+                isFocused: $isTaskNotesFocused,
+                placeholder: "Add notes…",
+                referenceNotes: allNotes,
+                referenceTasks: allTasks,
+                onOpenReference: openMarkdownReference
+            )
+            // Keyed on the task: the surface loads its draft once, so without this a session
+            // switched mid-edit would keep the outgoing task's buffer over the incoming note.
+            .id(task.id)
+            // No `minHeight` floor beyond a workable one, and a cap rather than a floor at the
+            // top: a two-line note in a 140pt card was ninety points of empty surface.
+            .frame(maxWidth: .infinity, minHeight: 160, maxHeight: isCompact ? 280 : 340, alignment: .topLeading)
         }
+        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
+        // The sentence names a tick in *this* note; another task's note did not refuse anything.
+        .onChange(of: task.id) { _, _ in noteFailureNotice = nil }
     }
 
-    /// **Ticking an item off mid-session** ([[T-5060]] (b), the owner's option (a)): the
-    /// checklist circles and the embed toggles in the focus note act, as they do in the task
-    /// sheet, rather than drawing a control that is `.disabled`.
+    /// **What the focus note's editor types into** ([[T-8734]]).
     ///
-    /// The focus screen draws the note through the read-only `iOSMarkdownPreview` and not through
-    /// `iOSMarkdownEditingSurface`, so there is no draft buffer to rewrite and nothing to debounce:
-    /// the toggle rewrites the task's own `notes` and commits straight away, through the shared
-    /// field transaction every other one-field edit goes through. A refused save puts the text
-    /// back, so the box the user tapped is drawn exactly as the store still holds it.
-    private func toggleChecklistItem(at lineIndex: Int, on task: AppTask) {
-        guard let toggled = MarkdownChecklistSupport.toggledText(task.notes, lineIndex: lineIndex) else { return }
-        let landed = CadenceTaskFieldEditCommit.commit(task, in: modelContext) {
-            task.notes = toggled
-        }
-        guard landed else {
-            noteFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
-            return
-        }
-        noteFailureNotice = nil
-    }
-
-    /// The embed card's own circle. `CadenceTaskStatusEditing.toggleCompletion` is the shared
-    /// path — it is what the editing surface's card calls, and what carries the wind-down
-    /// reconciliation and the settle-failure report with it.
-    private func toggleEmbeddedTask(id: UUID) {
-        guard let task = embeddedTask(id: id) else { return }
-        CadenceTaskStatusEditing.toggleCompletion(task, in: modelContext)
-    }
-
-    /// A subtask inside an embed card. `CadenceNoteTaskEmbedEditing.toggleSubtask` answers whether
-    /// the write landed; the card is redrawn from the store either way, so a refusal leaves the tick
-    /// where the store still has it rather than where the tap put it.
-    private func toggleEmbeddedSubtask(taskID: UUID, subtaskID: UUID) {
-        guard let task = embeddedTask(id: taskID),
-              let subtask = (task.subtasks ?? []).first(where: { $0.id == subtaskID }) else {
-            return
-        }
-        guard CadenceNoteTaskEmbedEditing.toggleSubtask(subtask, in: modelContext) else {
-            noteFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
-            return
-        }
-        noteFailureNotice = nil
-    }
-
-    private func embeddedTask(id: UUID) -> AppTask? {
-        allTasks.first { $0.id == id }
-    }
-
-    private var taskEmbedInfos: [UUID: MarkdownTaskEmbedRenderInfo] {
-        NoteExportSupport.taskEmbedRenderInfos(for: allTasks)
+    /// The surface holds its own buffer and writes this binding on a pause in typing, on focus
+    /// loss and on disappear, so a write here is a settled edit rather than a keystroke. It goes
+    /// through `CadenceTaskFieldEditCommit.commit` -- the shared field transaction every other
+    /// one-field task edit uses, and the one the retired checklist handler used -- which puts the
+    /// text back when the store refuses, so what is drawn is what the store holds. A refusal is
+    /// named rather than silent ([[T-6412]]).
+    private func taskNotesBinding(_ task: AppTask) -> Binding<String> {
+        Binding(
+            get: { task.notes },
+            set: { typed in
+                guard task.notes != typed else { return }
+                let landed = CadenceTaskFieldEditCommit.commit(task, in: modelContext) {
+                    task.notes = typed
+                }
+                guard landed else {
+                    noteFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
+                    return
+                }
+                noteFailureNotice = nil
+            }
+        )
     }
 
     private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
@@ -820,23 +868,44 @@ struct iOSFocusView: View {
         timerState.reset()
     }
 
+    /// **What the Log Session form's confirm button does** ([[T-8732]]).
+    ///
+    /// The write is `CadenceFocusSupport.logSession`, the one macOS's `FocusSessionSupport.logSession`
+    /// performs: the typed minutes are banked, a ticked "Mark task as complete" settles the task in
+    /// the same commit, and the bank is undone if that commit refuses. This screen owns only what
+    /// the Mac leaves to `FocusManager` — the clock and which task the picker is pointing at.
+    ///
     /// **The clock is only cleared once the store has the session (T-636(c)).** Everything below
-    /// the guard is this screen's report that the session ended — the stopwatch back at zero and
-    /// the picker moved on — and the seconds it discards exist nowhere else, so running it over a
-    /// refused commit loses the work as well as lying about it. `iOSRootView` names the refusal
-    /// itself, through `CadenceTaskSettleFailureCenter`.
-    private func complete(_ task: AppTask) {
-        guard CadenceTaskStatusEditing.completeFocusSession(
-            task,
-            elapsedSeconds: elapsedSeconds,
-            in: modelContext
-        ) else { return }
-        resetTimer()
-        if let next = pickItems.first(where: { $0.target != .task(task.id) }) {
-            adopt(next)
-        } else {
-            selectedTarget = nil
+    /// the catch is this screen's report that the minutes were logged — the stopwatch back at zero,
+    /// the form closed, and (when completing) the picker moved on — and the seconds it discards
+    /// exist nowhere else, so running it over a refused commit loses the work as well as lying
+    /// about it. `iOSRootView` names the refusal itself, through `CadenceTaskSettleFailureCenter`.
+    /// T-566's rule rides on the same return: the sheet stays up over a refusal, so the hours and
+    /// minutes that were typed are not lost with it.
+    private func logSession(hours: Int, minutes: Int, complete: Bool, task: AppTask) {
+        do {
+            try CadenceFocusSupport.logSession(
+                hours: hours,
+                minutes: minutes,
+                complete: complete,
+                task: task,
+                modelContext: modelContext
+            )
+        } catch {
+            CadenceTaskSettleFailureCenter.shared.record()
+            return
         }
+        resetTimer()
+        // Only a finished task stops being the session. Logging without completing leaves the
+        // clock on the same task, because it is still being worked — macOS's rule exactly.
+        if complete {
+            if let next = pickItems.first(where: { $0.target != .task(task.id) }) {
+                adopt(next)
+            } else {
+                selectedTarget = nil
+            }
+        }
+        loggingTask = nil
     }
 
 }

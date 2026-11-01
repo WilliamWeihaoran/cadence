@@ -169,6 +169,18 @@ struct CadenceTaskStatusEditingSurfaceTests {
         "Cadence/iOS/iOSBoardCards.swift"
     ]
 
+    /// [[T-8732]]: the iOS Focus screen reaches the wrapper's reconcile a hop later too, and by a
+    /// different road. Its check control stopped completing the task in one tap -- it opens the
+    /// Mac's Log Session form -- so the screen's one status transition is the form's ticked
+    /// "Mark task as complete", written by `CadenceFocusSupport.logSession`. That helper settles
+    /// through `CadenceFocusSupport.complete` and runs `CadenceWindDownReconciler` after it, which
+    /// is the whole of what this rule asks for; the three bans below still apply to the file, and
+    /// the `CadenceFocusSupport.complete(` ban in particular is what keeps the screen from
+    /// reaching the unreconciled door directly.
+    private static let sharedFocusLogSurfaces: Set<String> = [
+        "Cadence/iOS/iOSFocusView.swift"
+    ]
+
     /// The pure mutation layer's status entry points, called directly. Correct for a service or an
     /// out-of-process writer; wrong for a user surface, because it saves and stops.
     ///
@@ -201,7 +213,9 @@ struct CadenceTaskStatusEditingSurfaceTests {
             #expect(
                 stripped.contains("CadenceTaskStatusEditing.")
                     || (Self.deferredCompletionSurfaces.contains(path)
-                        && stripped.contains("TaskCompletionAnimationManager.shared.")),
+                        && stripped.contains("TaskCompletionAnimationManager.shared."))
+                    || (Self.sharedFocusLogSurfaces.contains(path)
+                        && stripped.contains("CadenceFocusSupport.logSession(")),
                 "\(path) no longer routes any status change through CadenceTaskStatusEditing"
             )
             #expect(

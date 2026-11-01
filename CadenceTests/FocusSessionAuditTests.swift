@@ -10,13 +10,16 @@ import Testing
 @MainActor
 struct FocusSessionSeedTests {
 
-    /// The "Log session" popovers pre-fill from the same helper `FocusManager.commitElapsed`
-    /// uses, so the number the sheet offers is the number the timer would have banked. They used
-    /// to ceil (`(seconds + 59) / 60`): a 61-second session offered 2 minutes where the commit
-    /// path logged 1, and a 20-second session offered a whole minute of work that never happened.
+    /// The Log Session form pre-fills from the same helper `FocusManager.commitElapsed` uses, so
+    /// the number it offers is the number the timer would have banked. It used to ceil
+    /// (`(seconds + 59) / 60`): a 61-second session offered 2 minutes where the commit path logged
+    /// 1, and a 20-second session offered a whole minute of work that never happened.
+    ///
+    /// The helper moved to `CadenceFocusSupport` with [[T-8732]], which gave iOS the same form;
+    /// `CadenceFocusLogFormParityTests` is where the cross-platform half is pinned.
     @Test func logFieldSeedRoundsToNearestMinuteLikeTheCommitPath() {
         func seed(_ seconds: Int) -> [Int] {
-            let value = FocusSessionSupport.logFieldSeed(elapsedSeconds: seconds)
+            let value = CadenceFocusSupport.logFieldSeed(elapsedSeconds: seconds)
             return [value.hours, value.minutes]
         }
 
@@ -30,14 +33,14 @@ struct FocusSessionSeedTests {
     /// T-9121: the Log button names the total it banks in the app's one duration spelling, so 90
     /// typed into the minutes field reads "Log 1h 30m" as the logged time will everywhere else.
     @Test func logButtonTitleNamesTheTotalInTheSharedDurationSpelling() {
-        #expect(FocusSessionSupport.logButtonTitle(hours: 0, minutes: 0) == "Log")
-        #expect(FocusSessionSupport.logButtonTitle(hours: 0, minutes: 25) == "Log 25m")
-        #expect(FocusSessionSupport.logButtonTitle(hours: 2, minutes: 0) == "Log 2h")
-        #expect(FocusSessionSupport.logButtonTitle(hours: 0, minutes: 90) == "Log 1h\u{00A0}30m")
-        #expect(FocusSessionSupport.logButtonTitle(hours: 1, minutes: 75) == "Log 2h\u{00A0}15m")
+        #expect(CadenceFocusSupport.logButtonTitle(hours: 0, minutes: 0) == "Log")
+        #expect(CadenceFocusSupport.logButtonTitle(hours: 0, minutes: 25) == "Log 25m")
+        #expect(CadenceFocusSupport.logButtonTitle(hours: 2, minutes: 0) == "Log 2h")
+        #expect(CadenceFocusSupport.logButtonTitle(hours: 0, minutes: 90) == "Log 1h\u{00A0}30m")
+        #expect(CadenceFocusSupport.logButtonTitle(hours: 1, minutes: 75) == "Log 2h\u{00A0}15m")
         for (h, m) in [(0, 90), (1, 75), (3, 5), (0, 60)] {
             #expect(
-                FocusSessionSupport.logButtonTitle(hours: h, minutes: m)
+                CadenceFocusSupport.logButtonTitle(hours: h, minutes: m)
                     == "Log " + TimeFormatters.durationLabel(minutes: h * 60 + m, emptyPlaceholder: "")
             )
         }
@@ -63,7 +66,7 @@ struct FocusSessionSeedTests {
     /// one definition of "how many minutes is this stopwatch worth".
     @Test func logFieldSeedTotalAlwaysMatchesTheSharedMinuteConversion() {
         for seconds in stride(from: 0, through: 7_200, by: 7) {
-            let seed = FocusSessionSupport.logFieldSeed(elapsedSeconds: seconds)
+            let seed = CadenceFocusSupport.logFieldSeed(elapsedSeconds: seconds)
             #expect(seed.hours * 60 + seed.minutes == CadenceFocusSupport.minutes(fromElapsedSeconds: seconds))
         }
     }
@@ -449,7 +452,7 @@ struct FocusLogSessionAndQuitTests {
     /// can go below zero.
     @Test func logFieldValuesReadTheTypedTextAndClampAtZero() {
         func values(_ h: String, _ m: String) -> [Int] {
-            let v = FocusSessionSupport.logFieldValues(hoursText: h, minutesText: m)
+            let v = CadenceFocusSupport.logFieldValues(hoursText: h, minutesText: m)
             return [v.hours, v.minutes]
         }
         #expect(values("0", "40") == [0, 40])

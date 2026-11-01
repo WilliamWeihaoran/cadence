@@ -275,6 +275,21 @@ enum CadenceFocusSupport {
     /// passes what is typed to `CadenceFocusPickItem.filtered(query:)`.
     static let pickSearchPrompt = "Search tasks"
 
+    /// **The heading over the task notes a Focus session shows, on both platforms** ([[T-8734]]).
+    ///
+    /// macOS's `FocusNotesPanel` drew this title and the prompt below it under the timer in every
+    /// session; iOS drew neither, because its panel was a read-only preview that vanished outright
+    /// on an empty note -- so an iPhone session had nowhere to jot anything and nothing on screen
+    /// said a note could be written at all. Both panels read these two strings now, under
+    /// [[T-8201]]: the owner chose the Mac's editor for iOS, since screen width can justify a
+    /// smaller editor on a phone and not a missing one.
+    static let taskNotesTitle = "Task notes"
+
+    /// The line under `taskNotesTitle`. It is a **prompt, not an empty state**: it names the editor
+    /// beneath it and is drawn whether or not the task already has notes, which is the half iOS
+    /// could not show while the panel was hidden on an empty note.
+    static let taskNotesPrompt = "Capture the details you need while working."
+
     /// The Focus picker row's detail line, as segments so the row can tint an overdue due date
     /// red through `CadenceTaskDetailLineLabel`. iOS printed `sidebarDetail`'s flat string in one
     /// colour with the sidebar's fallback, so a week-late task read the same as one due next month.
@@ -433,6 +448,127 @@ enum CadenceFocusSupport {
             banked.restore(in: modelContext)
             throw error
         }
+    }
+
+    // MARK: - The Log Session form ([[T-8732]])
+
+    /// The form's own title. It is **one form on two platforms** now: macOS presents it in a
+    /// pointer-anchored popover and iOS in a detented sheet -- the container is input-shaped and
+    /// may differ ([[T-8201]]'s own example) -- but the fields, the toggle, the Discard and the
+    /// confirm label below are not, and used to exist only on the Mac. iOS's check control logged
+    /// and completed in one tap, so a phone session could not be logged without finishing the task,
+    /// nor its minutes corrected; the owner chose the Mac's form for iOS on 2026-10-31.
+    static let logFormTitle = "Log Session"
+
+    /// The label over the hour and minute fields.
+    static let logFormFieldsLabel = "Time to log"
+
+    /// The optional completion the form offers. Off when the form opens on both platforms: logging
+    /// time is the act, and finishing the task is the extra the user has to ask for.
+    static let logFormCompleteLabel = "Mark task as complete"
+
+    /// The form's discarding exit, which throws the stopwatch away rather than banking it.
+    static let logFormDiscardTitle = "Discard"
+
+    /// **The accessible name of the control that opens the form**, on both platforms. iOS's said
+    /// "Log session and mark done", which was honest about what it did and is no longer what it
+    /// does: it opens this form, where completing is a toggle.
+    static let logFormControlLabel = "Log session"
+
+    /// The hour/minute pair the Log Session form pre-fills from the stopwatch.
+    ///
+    /// Goes through `minutes(fromElapsedSeconds:)` -- the one place that turns elapsed seconds into
+    /// logged minutes -- rather than re-deriving it. The Mac's popover used to ceil
+    /// (`(seconds + 59) / 60`), which is the rounding that helper's own doc comment describes as a
+    /// bug it fixed: a 61-second session pre-filled 2 minutes while the commit path logged 1, and a
+    /// 20-second session pre-filled a whole minute of work that never happened. Logged time is a
+    /// record, so the two paths have to agree.
+    static func logFieldSeed(elapsedSeconds: Int) -> (hours: Int, minutes: Int) {
+        let total = minutes(fromElapsedSeconds: elapsedSeconds)
+        return (total / 60, total % 60)
+    }
+
+    /// **T-5304.** The hour/minute pair the form logs, read from what its fields show *now*.
+    ///
+    /// The Mac's fields were `TextField(value:format: .number)`, which write their `Int` only on
+    /// commit (Return or the field ending editing). Clicking the borderless Log button ends
+    /// neither, so a typed "40" was on screen while the button logged the pre-filled 25 -- and its
+    /// own label kept saying "Log 25m". Both forms hold the text and parse it here at the moment it
+    /// is read. Unparseable text is 0, and both halves are clamped at 0: a negative hours value
+    /// used to reach `CadenceFocusLedger.bank` and subtract time.
+    static func logFieldValues(hoursText: String, minutesText: String) -> (hours: Int, minutes: Int) {
+        func parse(_ text: String) -> Int {
+            max(0, Int(text.trimmingCharacters(in: .whitespaces)) ?? 0)
+        }
+        return (parse(hoursText), parse(minutesText))
+    }
+
+    /// **[[T-9121]].** The form's confirm label: "Log" with nothing to log, else "Log " and the
+    /// TOTAL in the app's one duration spelling, `TimeFormatters.durationLabel`.
+    ///
+    /// The Mac's popover used to print its two fields back as typed, so 90 in the minutes field
+    /// read "Log 90m" and 1 h + 75 min read "Log 1h 75m" -- while the same 90 minutes, once logged,
+    /// reads "1h 30m" on every chip, the inspector and the timeline. The button names what it will
+    /// bank, which is `hours * 60 + minutes`, so it is formatted from that sum.
+    static func logButtonTitle(hours: Int, minutes: Int) -> String {
+        let total = hours * 60 + minutes
+        guard total > 0 else { return "Log" }
+        return "Log \(TimeFormatters.durationLabel(minutes: total, emptyPlaceholder: ""))"
+    }
+
+    /// **What the form's confirm button writes, on both platforms** ([[T-8732]]).
+    ///
+    /// Lifted out of macOS's `FocusSessionSupport.logSession`, which keeps that name and now owns
+    /// only the part that is its own: moving `FocusManager`'s session on afterwards. iOS owns the
+    /// same afterwards against `CadenceFocusTimerState`. What is shared is the write, because a
+    /// second copy of it would be a second answer to "what does logging 25 minutes do to the three
+    /// counters and the ledger rows".
+    ///
+    /// **Both writes are one unit (T-654).** The bank is written pending, then a ticked
+    /// "Mark task as complete" settles through `commitSettle` -- the funnel that commits a
+    /// recurrence successor too -- or, when not completing, the bank commits on its own. Either way
+    /// exactly one commit, and the banked minutes are undone if it refuses, because
+    /// `CadenceFocusLedger.bank` writes with `+=` and inserts a `FocusSessionLog` per counter:
+    /// "the next fetch corrects it" is no reading at all for an accumulator.
+    ///
+    /// The reconcile is inside the settle, which is where macOS's `TaskWorkflowService.markDone`
+    /// has always run it, so a just-finished task's pending "due today" nudge is cleared on the
+    /// same path on both platforms.
+    static func logSession(
+        hours: Int,
+        minutes loggedMinutes: Int,
+        complete markComplete: Bool,
+        task: AppTask,
+        modelContext: ModelContext,
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        let totalMinutes = hours * 60 + loggedMinutes
+        guard markComplete else {
+            let banked = BankedMinutes(task)
+            CadenceFocusLedger.bank(totalMinutes, forTaskAndItsList: task, in: modelContext)
+            do {
+                try commit(modelContext)
+            } catch {
+                banked.restore(in: modelContext)
+                throw error
+            }
+            return
+        }
+        // Completing is `complete(_:elapsedSeconds:modelContext:commit:)` above -- the focus
+        // timer's own completion door, and the ONE write in this tree that banks and settles as a
+        // unit. It is named in stopwatch seconds and this form holds minutes, so the minutes are
+        // spelled as seconds rather than the settle being written a second time: on a whole number
+        // of minutes `minutes(fromElapsedSeconds:)` is exact, so the round trip adds nothing and
+        // loses nothing, and a second `commitSettle` here would be a second answer to "what does
+        // finishing a focus session do".
+        try complete(task, elapsedSeconds: totalMinutes * 60, modelContext: modelContext, commit: commit)
+        // The reconcile macOS's `TaskWorkflowService.markDone` used to run from inside the settle
+        // and iOS's `CadenceTaskStatusEditing.completeFocusSession` runs after it: a just-finished
+        // task's pending "starting now" / "due today" notification is cleared promptly rather than
+        // waiting for the scenePhase checkpoint. After the commit, so a refused log reconciles
+        // nothing -- `commitSettle` has already put the transition back.
+        (reconciler ?? .default).run(in: modelContext)
     }
 
     /// The three accumulators `bankElapsedSeconds(_:to:)` adds to, captured before the write.

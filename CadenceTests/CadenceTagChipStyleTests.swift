@@ -473,6 +473,11 @@ struct CadenceTagChipScaleTests {
             "Cadence/iOS/iOSCalendarSettingsSection.swift",
             "Cadence/iOS/iOSDataExportSettingsSection.swift",
             "Cadence/iOS/iOSFeatureComponents.swift",
+            // [[T-8732]]: the iOS Log Session form's Discard and Log are the compact
+            // `iOSActionButton` pair macOS's popover footer draws. The sheet declares no scope of
+            // its own -- its host, the Focus page, is `iOSFocusView.swift` just below, which is
+            // undeclared too -- so it renders at the environment default as that page does.
+            "Cadence/iOS/iOSFocusLogSessionSheet.swift",
             "Cadence/iOS/iOSFocusView.swift",
             "Cadence/iOS/iOSInboxRemindersSection.swift",
             "Cadence/iOS/iOSListEditorViews.swift",

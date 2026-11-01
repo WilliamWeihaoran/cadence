@@ -3302,9 +3302,11 @@ enum CadenceSaveCommitRule {
         // the `catch`. Pinned by `CadenceNoteMoveCommitTests`.
         // [[T-633]]'s other half — the task sheet's own scope dialog — left with the row chip's,
         // through the same unit and into the same alert.
-        // [[T-636]](c) left too: `iOSFocusView.complete` guards its reset and its advance on
-        // `completeFocusSession`'s answer, so the stopwatch is cleared only once the store has the
-        // session it measured.
+        // [[T-636]](c) left too: `iOSFocusView.logSession` puts its reset, its advance and the
+        // dismissal of the log form below the refusal's own `return`, so the stopwatch is cleared
+        // only once the store has the session it measured. ([[T-8732]] moved that screen off
+        // `CadenceTaskStatusEditing.completeFocusSession` and onto the shared log write, whose
+        // refusal throws rather than answering; the reading is the same.)
         // [[T-636]](a) from the note editor's task embed left with [[T-9122]]: `content`'s Repeat
         // field now hands the list the answer of `MacTaskRowContextMenu.selectRecurrenceRule`
         // (the committing `CadenceChoicePopoverList`), so nothing in it reports over a swallow.

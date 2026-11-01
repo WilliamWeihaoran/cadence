@@ -143,7 +143,8 @@ struct FocusView: View {
                 foreground: focusManager.elapsed > 0 ? Theme.green : Theme.muted,
                 background: Theme.surfaceElevated,
                 size: 38,
-                accessibilityLabel: "Log session",
+                // [[T-8732]]: one label on both platforms' Log Session controls.
+                accessibilityLabel: CadenceFocusSupport.logFormControlLabel,
                 action: {
                     focusManager.isRunning = false
                     showLogSheet = true

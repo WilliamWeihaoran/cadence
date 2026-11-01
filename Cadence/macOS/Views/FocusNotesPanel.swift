@@ -35,10 +35,12 @@ struct FocusNotesPanel: View {
                         .clipShape(Circle())
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Task notes")
+                        // [[T-8734]]: the shared heading and prompt, so the iOS panel under the
+                        // same timer cannot word them differently.
+                        Text(CadenceFocusSupport.taskNotesTitle)
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(Theme.text)
-                        Text("Capture the details you need while working.")
+                        Text(CadenceFocusSupport.taskNotesPrompt)
                             .font(.system(size: 11))
                             .foregroundStyle(Theme.dim)
                     }

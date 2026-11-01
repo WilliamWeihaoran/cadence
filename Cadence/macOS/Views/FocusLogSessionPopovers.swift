@@ -7,7 +7,8 @@ struct LogSessionPopover: View {
     let onDiscard: () -> Void
 
     /// Text, not `Int` (T-5304): a `TextField(value:format:)` writes its value only on commit, so
-    /// clicking Log after typing read the pre-filled figure. Parsed on every read instead.
+    /// clicking Log after typing read the pre-filled figure. Parsed on every read instead, through
+    /// `CadenceFocusSupport.logFieldValues` -- the parse iOS's sheet reads too ([[T-8732]]).
     @State private var logHoursText: String
     @State private var logMinutesText: String
     @State private var markComplete: Bool = false
@@ -16,7 +17,7 @@ struct LogSessionPopover: View {
         self.task = task
         self.onLog = onLog
         self.onDiscard = onDiscard
-        let seed = FocusSessionSupport.logFieldSeed(elapsedSeconds: elapsedSeconds)
+        let seed = CadenceFocusSupport.logFieldSeed(elapsedSeconds: elapsedSeconds)
         _logHoursText = State(initialValue: String(seed.hours))
         _logMinutesText = State(initialValue: String(seed.minutes))
     }
@@ -24,13 +25,13 @@ struct LogSessionPopover: View {
     private var logHours: Int { logValues.hours }
     private var logMinutes: Int { logValues.minutes }
     private var logValues: (hours: Int, minutes: Int) {
-        FocusSessionSupport.logFieldValues(hoursText: logHoursText, minutesText: logMinutesText)
+        CadenceFocusSupport.logFieldValues(hoursText: logHoursText, minutesText: logMinutesText)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Log Session")
+                Text(CadenceFocusSupport.logFormTitle)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.text)
                 HStack(spacing: 5) {
@@ -53,7 +54,7 @@ struct LogSessionPopover: View {
 
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Time to log")
+                    Text(CadenceFocusSupport.logFormFieldsLabel)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Theme.dim)
                     HStack(spacing: 10) {
@@ -67,7 +68,7 @@ struct LogSessionPopover: View {
 
                 HStack {
                     Toggle(isOn: $markComplete) {
-                        Text("Mark task as complete")
+                        Text(CadenceFocusSupport.logFormCompleteLabel)
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.text)
                     }
@@ -85,12 +86,12 @@ struct LogSessionPopover: View {
             // style's contentShape and wash wrapped only the label text, so the plate's rim was
             // dead to a click and hover lit a smaller rectangle inside the drawn plate.
             HStack(spacing: 8) {
-                CadenceActionButton(title: "Discard", role: .ghost, size: .compact) { onDiscard() }
+                CadenceActionButton(title: CadenceFocusSupport.logFormDiscardTitle, role: .ghost, size: .compact) { onDiscard() }
 
                 Spacer()
 
                 CadenceActionButton(
-                    title: FocusSessionSupport.logButtonTitle(hours: logHours, minutes: logMinutes),
+                    title: CadenceFocusSupport.logButtonTitle(hours: logHours, minutes: logMinutes),
                     role: .primary,
                     size: .compact
                 ) {
