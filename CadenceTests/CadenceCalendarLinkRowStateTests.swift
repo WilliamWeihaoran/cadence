@@ -407,7 +407,8 @@ struct CadenceCalendarLinkPickerOfferTests {
 /// `CalendarEventEditPopover` hands `CadenceCalendarPickerButton` `writableCalendars` — active
 /// **and** `allowsContentModifications` — while the timeline's events are fetched from
 /// `availableCalendars`, which filters by visibility alone. So an event on an active read-only
-/// subscribed calendar reaches the timeline, its card prints the calendar's name in `calendarLabel`,
+/// subscribed calendar reaches the timeline, its card prints the calendar's name in its header
+/// strip (`CadenceEventEditorHeaderStrip`),
 /// and the Calendar row directly beneath it says "No calendar": two contradictory readings of the
 /// same event, one card apart.
 ///

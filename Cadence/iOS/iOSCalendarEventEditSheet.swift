@@ -107,6 +107,24 @@ struct iOSCalendarEventEditSheet: View {
         CadenceEventNoteSupport.isRecurringSeriesMember(event)
     }
 
+    /// The header strip's two facts ([[T-8573]], under [[T-8201]]): **that this event repeats**,
+    /// and **how long it is**. The Mac's event editor has said both since it existed and this
+    /// sheet said neither, with no hardware or input constraint between them — and the repeat one
+    /// has a consequence, because a series whose rules Cadence cannot spell gets no Repeat row
+    /// (`offersRepeat` is false), so nothing here said the event repeated until Save raised the
+    /// scope question.
+    ///
+    /// One view, `CadenceEventEditorHeaderStrip`, and one piece of length arithmetic,
+    /// `CadenceEventEditorHeaderFacts.durationLabel` — not a second iOS spelling of either. The
+    /// calendar dot and name are the Mac's alone: the panel's Calendar row below already names the
+    /// calendar on both platforms.
+    private var headerStrip: CadenceEventEditorHeaderStrip {
+        CadenceEventEditorHeaderStrip(
+            repeatsInSeries: isRecurringEvent,
+            durationLabel: CadenceEventEditorHeaderFacts.durationLabel(for: draft)
+        )
+    }
+
     private var eventNoteID: String {
         CadenceEventNoteSupport.identifier(for: event)
     }
@@ -158,25 +176,30 @@ struct iOSCalendarEventEditSheet: View {
 
     var body: some View {
         ScrollView {
-            CadenceSchedulePanel(
-                draft: $draft,
-                calendarChoices: calendarChoices,
-                calendarUnavailableNotice: calendarUnavailableNotice,
-                readOnlyNotice: isEditable
-                    ? nil
-                    : CadenceCalendarEventEditingSupport.readOnlyNotice(calendarName: eventCalendarName),
-                // T-497: every failure this sheet reports — a refused EventKit save, a refused
-                // delete, a refused event-note commit — is drawn by the panel, in one place,
-                // whatever the width. Most of them arrive after a confirmation dialog rather
-                // than as the panel's own call returning, which is why this is a parameter.
-                failureNotice: actionError,
-                canCommit: canSave,
-                offersEventRepeat: offersRepeat,
-                actions: panelActions
-            ) {
-                notesSection
+            // The strip sits above the panel exactly as the Mac popover's does, and draws nothing
+            // at all when it has nothing to say — a one-off all-day event keeps the sheet it had.
+            VStack(alignment: .leading, spacing: 0) {
+                if !headerStrip.isEmpty { headerStrip }
+                CadenceSchedulePanel(
+                    draft: $draft,
+                    calendarChoices: calendarChoices,
+                    calendarUnavailableNotice: calendarUnavailableNotice,
+                    readOnlyNotice: isEditable
+                        ? nil
+                        : CadenceCalendarEventEditingSupport.readOnlyNotice(calendarName: eventCalendarName),
+                    // T-497: every failure this sheet reports — a refused EventKit save, a refused
+                    // delete, a refused event-note commit — is drawn by the panel, in one place,
+                    // whatever the width. Most of them arrive after a confirmation dialog rather
+                    // than as the panel's own call returning, which is why this is a parameter.
+                    failureNotice: actionError,
+                    canCommit: canSave,
+                    offersEventRepeat: offersRepeat,
+                    actions: panelActions
+                ) {
+                    notesSection
+                }
+                .capturePresentation(CadenceScheduleCaptureOptions())
             }
-            .capturePresentation(CadenceScheduleCaptureOptions())
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardHeight = $0 + 24 }
             .frame(maxWidth: 540)
             .padding(12)

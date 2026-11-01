@@ -219,15 +219,11 @@ struct CalendarEventEditPopover: View {
         )
     }
 
-    /// The length the header's capsule prints, read off the instants the draft would write so a
-    /// multi-day block reads its real length. `nil` for an all-day event — the panel's schedule row
-    /// already says "All day" — and for a schedule that names no instant.
-    ///
-    /// The format is the shared estimate label, with its non-breaking space, as before.
+    /// The length the header's capsule prints — `CadenceEventEditorHeaderFacts`' arithmetic, which
+    /// the iOS editor reads from the same place ([[T-8573]]). It used to live here, and iOS said
+    /// nothing about an event's length at all.
     private var durationLabel: String? {
-        guard !draft.isAllDay, let range = draft.eventDateRange() else { return nil }
-        let minutes = Int(range.end.timeIntervalSince(range.start) / 60)
-        return CadenceTaskPresentationSupport.estimateLabel(minutes: minutes, emptyPlaceholder: "–")
+        CadenceEventEditorHeaderFacts.durationLabel(for: draft)
     }
 
     var body: some View {
@@ -295,49 +291,20 @@ struct CalendarEventEditPopover: View {
 
     /// The event's calendar and whether it repeats, with its length — the facts this popover's old
     /// header carried and the panel has no row for. The title moved into the panel.
+    ///
+    /// **The strip is `CadenceEventEditorHeaderStrip` now and iOS draws the same view**
+    /// ([[T-8573]], under [[T-8201]]): the repeat marker and the length capsule were on this
+    /// editor and on no iOS one, and a series whose rules Cadence cannot spell gets no Repeat row,
+    /// so on iOS nothing said the event repeated until Save raised the scope question. The
+    /// calendar dot and name stay a macOS argument — the panel's Calendar row already names the
+    /// calendar on both platforms — and nothing was dropped from here.
     private var header: some View {
-        HStack(alignment: .center, spacing: 8) {
-            calendarLabel
-            Spacer(minLength: 0)
-            if let durationLabel {
-                Text(durationLabel)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Theme.surface)
-                    .clipShape(Capsule())
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.top, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surfaceElevated)
-    }
-
-    @ViewBuilder
-    private var calendarLabel: some View {
-        if !item.calendarTitle.isEmpty || item.isRecurringSeriesMember {
-            HStack(spacing: 5) {
-                if !item.calendarTitle.isEmpty {
-                    Circle()
-                        .fill(item.calendarColor)
-                        .frame(width: 7, height: 7)
-                    Text(item.calendarTitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(1)
-                }
-                if item.isRecurringSeriesMember {
-                    Image(systemName: "repeat")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                    Text("Repeats")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                }
-            }
-        }
+        CadenceEventEditorHeaderStrip(
+            calendarName: item.calendarTitle,
+            calendarColor: item.calendarColor,
+            repeatsInSeries: item.isRecurringSeriesMember,
+            durationLabel: durationLabel
+        )
     }
 
     /// Save, Cancel and — on an event that can be written — Delete. The panel draws them; a
@@ -360,8 +327,9 @@ struct CalendarEventEditPopover: View {
     /// This card used to hand the picker `writableCalendars` alone and let it title whatever it
     /// could find. The timeline's events come from `availableCalendars`, which filters by
     /// visibility and not by writability, so an event on an **active read-only** subscribed
-    /// calendar reached this editor, printed its calendar's name in `calendarLabel`, and had "No
-    /// calendar" underneath — the [[T-441]] collapse, on a second surface.
+    /// calendar reached this editor, printed its calendar's name in the header strip (today
+    /// `CadenceEventEditorHeaderStrip`), and had "No calendar" underneath — the [[T-441]]
+    /// collapse, on a second surface.
     ///
     /// The universe here is `availableCalendars`, not `allCalendars`: it is exactly what the
     /// timeline can show, so `availableCalendars` minus `writableCalendars` is exactly the active
