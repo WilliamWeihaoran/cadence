@@ -173,7 +173,13 @@ struct iOSLinkedNoteEditorSheet: View {
             }
 
             iOSMarkdownEditingSurface(
-                text: $note.content,
+                // [[T-9661]]: through the shared content door, so an inline `#tag` typed here
+                // attaches and a `# H1` renames the note, as the same note does on the Notes tab.
+                // A bare `$note.content` wrote the text and nothing else.
+                text: Binding(
+                    get: { note.content },
+                    set: { CadenceCoreNoteSupport.applyContent(note, content: $0, in: modelContext) }
+                ),
                 isFocused: $isEditorFocused,
                 placeholder: "Start writing…",
                 referenceNotes: referenceNotes,

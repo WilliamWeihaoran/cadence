@@ -239,4 +239,54 @@ struct CadenceNoteTagEditingTests {
                     "\(path) keeps a refusal across a note change")
         }
     }
+
+    // MARK: - Typing reaches the tags
+
+    /// **[[T-9661]].** The sheet a `[[link]]` opens (`iOSLinkedNoteEditorSheet`) and the iPhone
+    /// event-note sheet (`iOSEventNoteEditorSheet`) bound their editor straight to `$note.content`,
+    /// so an inline `#tag` typed there never attached and a `# H1` never renamed the note -- while
+    /// the same note typed on the Notes tab, a list's Notes tab, Search or iPad's Events pane did
+    /// both, through `CadenceCoreNoteSupport.update`/`applyContent`. No iOS note editor may write
+    /// the model's text bare, and the two sheets name the shared door.
+    @Test func everyIOSNoteEditorTypesThroughTheSharedContentDoorSoInlineTagsAttach() throws {
+        let iOSFiles = try CadenceSourceScan.swiftFiles(under: "Cadence/iOS")
+        #expect(iOSFiles.count > 50, "non-vacuity: the iOS tree was not read")
+        var surfaces = 0
+        for path in iOSFiles {
+            let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            surfaces += CadenceSourceScan.matchCount(#"iOSMarkdownEditingSurface\("#, in: code)
+            #expect(
+                CadenceSourceScan.matchCount(#"text: \$note\.content"#, in: code) == 0,
+                "\(path) binds a note editor straight to note.content, skipping the tag and H1 sync"
+            )
+        }
+        #expect(surfaces >= 6, "non-vacuity: \(surfaces) editing surfaces found")
+
+        for (path, declaration) in [
+            ("Cadence/iOS/iOSMarkdownReferenceSupport.swift", "struct iOSLinkedNoteEditorSheet: View"),
+            ("Cadence/iOS/iOSEventNoteEditorSheet.swift", "struct iOSEventNoteEditorSheet: View")
+        ] {
+            let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            let sheet = try #require(CadenceSourceScan.declarationBody(declaration, in: code), "\(path)")
+            #expect(
+                CadenceSourceScan.matchCount(
+                    #"set: \{ CadenceCoreNoteSupport\.applyContent\(note, content: \$0, in: modelContext\) \}"#,
+                    in: sheet
+                ) == 1,
+                "\(declaration) does not type through CadenceCoreNoteSupport.applyContent"
+            )
+        }
+    }
+
+    /// The door itself: typing `#name` through `applyContent` attaches the tag to the note.
+    @Test func typingAnInlineTagThroughTheSharedContentDoorAttachesIt() throws {
+        let (_, context) = try makeContext()
+        let note = Note(kind: .permanent, title: "Plan", content: "")
+        context.insert(note)
+        try context.save()
+
+        CadenceCoreNoteSupport.applyContent(note, content: "Ship it #launch", in: context)
+
+        #expect((note.tags ?? []).map(\.slug) == ["launch"], "\((note.tags ?? []).map(\.slug))")
+    }
 }

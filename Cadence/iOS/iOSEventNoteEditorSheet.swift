@@ -127,7 +127,13 @@ struct iOSEventNoteEditorSheet: View {
 
     private var editorSurface: some View {
         iOSMarkdownEditingSurface(
-            text: $note.content,
+            // [[T-9661]]: `applyContent`, the door iPad's Events pane already types through
+            // (`iOSNotesView.commitEditorContent`), so an inline `#tag` attaches here too. The
+            // commit and the Apple Calendar mirror stay `persistNote`'s, on `onChange(of:)`.
+            text: Binding(
+                get: { note.content },
+                set: { CadenceCoreNoteSupport.applyContent(note, content: $0, in: modelContext) }
+            ),
             isFocused: $isEditorFocused,
             placeholder: "Start writing…",
             referenceNotes: allNotes,
