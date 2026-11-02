@@ -1,6 +1,7 @@
 #if os(iOS)
 import SwiftData
 import SwiftUI
+import UIKit
 
 struct iPadMacStyleRootShell<Content: View>: View {
     @Binding var selection: iOSSidebarItem?
@@ -906,9 +907,7 @@ struct iOSSidebarHeader: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // [[T-8642]]: decoration and a heading, as `SidebarAppHeader` has them on the Mac. The
-            // tile was left exposed to VoiceOver, and the wordmark carried no header trait.
-            iOSIconTile(systemImage: "circle.hexagongrid.fill", color: Theme.blue, size: 28, iconSize: 14)
+            appMark
                 .accessibilityHidden(true)
 
             Text("Cadence")
@@ -926,6 +925,21 @@ struct iOSSidebarHeader: View {
         .frame(minHeight: 44)
     }
 
+    @ViewBuilder
+    private var appMark: some View {
+        if let image = iOSSidebarAppMark.image {
+            Image(uiImage: image)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 28, height: 28)
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        } else {
+            iOSIconTile(systemImage: CadenceFeatureDestination.allTasks.systemImage,
+                        color: Theme.blue, size: 28, iconSize: 14)
+        }
+    }
+
     private var searchButton: some View {
         iOSSidebarGlyphButton(
             systemImage: CadenceFeatureDestination.search.systemImage,
@@ -941,6 +955,21 @@ struct iOSSidebarHeader: View {
             action: onCollapse
         )
     }
+}
+
+/// Resolve the shipped primary icon once, using the iPad icon declaration when present.
+private enum iOSSidebarAppMark {
+    static let image: UIImage? = {
+        let bundle = Bundle.main
+        let icons = (bundle.object(forInfoDictionaryKey: "CFBundleIcons~ipad") as? [String: Any])
+            ?? (bundle.object(forInfoDictionaryKey: "CFBundleIcons") as? [String: Any])
+        let primary = icons?["CFBundlePrimaryIcon"] as? [String: Any]
+        let names = primary?["CFBundleIconFiles"] as? [String] ?? []
+        for name in names.reversed() {
+            if let image = UIImage(named: name, in: bundle, compatibleWith: nil) { return image }
+        }
+        return UIImage(named: "AppIcon", in: bundle, compatibleWith: nil)
+    }()
 }
 
 /// A small plate with a 44pt hit area — `iOSIconButton`'s trick. The header has to hold a mark, a

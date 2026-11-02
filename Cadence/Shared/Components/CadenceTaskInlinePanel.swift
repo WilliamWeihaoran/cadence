@@ -184,7 +184,7 @@ extension CadenceSchedulePanelChoice {
                 id: CadenceTaskComposerSupport.token(for: .inbox),
                 name: CadenceTaskInspectorSupport.inboxSegmentTitle,
                 color: Theme.blue,
-                systemImage: "tray.full.fill"
+                systemImage: CadenceListKindIcon.inbox
             )
         ]
         rows += CadenceTaskComposerSupport.pickableAreas(
@@ -196,7 +196,7 @@ extension CadenceSchedulePanelChoice {
                 // [[T-8551]]: the picker's own fallback, so a blank-named list is never a blank row.
                 name: CadenceAreaPickerSupport.title(for: $0),
                 color: Color(hex: $0.colorHex),
-                systemImage: "tray.full.fill"
+                systemImage: CadenceListKindIcon.area
             )
         }
         rows += CadenceTaskComposerSupport.pickableProjects(
@@ -207,7 +207,7 @@ extension CadenceSchedulePanelChoice {
                 id: CadenceTaskComposerSupport.token(for: .project($0.id)),
                 name: CadenceProjectPickerSupport.title(for: $0),
                 color: Color(hex: $0.colorHex),
-                systemImage: "checklist"
+                systemImage: CadenceListKindIcon.project
             )
         }
         return rows

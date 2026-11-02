@@ -1,5 +1,13 @@
 import SwiftUI
 
+/// List-kind glyphs are shared by capture, editing and inline suggestions. Each kind stays
+/// visually distinct; a list's user-owned icon is independent of this chooser vocabulary.
+enum CadenceListKindIcon {
+    static let inbox = "tray.fill"
+    static let area = "folder.fill"
+    static let project = "square.stack.3d.up.fill"
+}
+
 /// The list and section rows a **creating** `CadenceSchedulePanel` offers, as data, for either
 /// platform ([[T-3171]]).
 ///
@@ -31,7 +39,7 @@ enum CadenceScheduleDraftChoices {
                 id: CadenceTaskComposerSupport.token(for: .inbox),
                 name: "Inbox",
                 color: Theme.blue,
-                systemImage: "tray.fill"
+                systemImage: CadenceListKindIcon.inbox
             )
         ]
         rows += CadenceTaskComposerSupport.pickableAreas(
@@ -44,7 +52,7 @@ enum CadenceScheduleDraftChoices {
                 // empty List chip -- the fallback every other list picker already draws.
                 name: CadenceAreaPickerSupport.title(for: $0),
                 color: Color(hex: $0.colorHex),
-                systemImage: "folder.fill"
+                systemImage: CadenceListKindIcon.area
             )
         }
         rows += CadenceTaskComposerSupport.pickableProjects(
@@ -55,7 +63,7 @@ enum CadenceScheduleDraftChoices {
                 id: CadenceTaskComposerSupport.token(for: .project($0.id)),
                 name: CadenceProjectPickerSupport.title(for: $0),
                 color: Color(hex: $0.colorHex),
-                systemImage: "square.stack.3d.up.fill"
+                systemImage: CadenceListKindIcon.project
             )
         }
         return rows

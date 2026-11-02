@@ -197,7 +197,7 @@ struct ContainerPickerPopoverContent: View {
                 VStack(alignment: .leading, spacing: 2) {
                     if showsInbox {
                         ContainerPickerRow(
-                            icon: "tray",
+                            icon: CadenceListKindIcon.inbox,
                             name: "Inbox",
                             color: Theme.dim,
                             isHighlighted: highlighted == .inbox,
@@ -220,7 +220,7 @@ struct ContainerPickerPopoverContent: View {
 
                             ForEach(group.areas) { area in
                                 ContainerPickerRow(
-                                    icon: area.icon,
+                                    icon: CadenceListKindIcon.area,
                                     name: ContainerPickerFilterSupport.rowName(for: area),
                                     color: Color(hex: area.colorHex),
                                     isHighlighted: highlighted == .area(area.id),
@@ -230,7 +230,7 @@ struct ContainerPickerPopoverContent: View {
 
                             ForEach(group.projects) { project in
                                 ContainerPickerRow(
-                                    icon: project.icon,
+                                    icon: CadenceListKindIcon.project,
                                     name: ContainerPickerFilterSupport.rowName(for: project),
                                     color: Color(hex: project.colorHex),
                                     isHighlighted: highlighted == .project(project.id),

@@ -361,6 +361,72 @@ struct SettingsCategoryTitleTests {
     }
 }
 
+/// R67 acceptance checks, including the iOS-only control wiring visible to this macOS suite.
+@MainActor
+struct CadenceR67ParityTests {
+    @Test func r67SettingsRailsShareHeadingsAndCategoryMembership() {
+        let desktop = SettingsCategoryGroup.all
+        let mobile = CadenceMobileSettingsLayout.groups
+        #expect(desktop.map(\.title) == mobile.map(\.title))
+        #expect(desktop.map(\.title) == ["Interface", "Organization", "System", "Account & Safety", "App"])
+        for (mac, phone) in zip(desktop, mobile) {
+            #expect(mac.categories.map(\.sharedKind).filter {
+                !CadenceMobileSettingsLayout.desktopOnly.contains($0)
+            } == phone.kinds)
+        }
+        #expect(mobile.first { $0.title == "App" }?.kinds == [.about])
+    }
+
+    @Test func r67CreatingAndEditingOfferTheSameDistinctListKindIcons() throws {
+        let area = Area(name: "Area")
+        let project = Project(name: "Project")
+        // Choosers use kind glyphs even when the list has a different user-owned icon.
+        area.icon = "star.fill"
+        project.icon = "bolt.fill"
+        let draft = CadenceScheduleDraft(dateKey: "2026-11-02", startMin: 540)
+        let create = CadenceScheduleDraftChoices.listChoices(for: draft, areas: [area], projects: [project])
+        let edit = CadenceSchedulePanelChoice.editableTaskListChoices(
+            areas: [area], projects: [project], selection: .inbox
+        )
+        #expect(create.map(\.systemImage) == ["tray.fill", "folder.fill", "square.stack.3d.up.fill"])
+        #expect(edit.map(\.systemImage) == create.map(\.systemImage))
+        let tilde = TildeContainerPickerSupport.flatContainers(
+            query: "", contexts: [], areas: [area], projects: [project], selection: .inbox
+        )
+        #expect(tilde.map(\.icon) == create.map(\.systemImage))
+        for path in [
+            "Cadence/iOS/iOSCreateTaskSheetSupportViews.swift",
+            "Cadence/iOS/iOSChoicePicker.swift",
+            "Cadence/macOS/Views/ContainerPickerSupportViews.swift"
+        ] {
+            let source = try strippingComments(sourceFile(path))
+            for kind in ["inbox", "area", "project"] {
+                #expect(source.contains("CadenceListKindIcon.\(kind)"), "\(path) does not read the canonical \(kind) icon")
+            }
+        }
+    }
+
+    @Test func r67CaptureRepeatControlsUseTheOccurrenceAwareSettersAndBounds() throws {
+        let source = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift"))
+        let control = try #require(CadenceSourceScan.declarationBody("private var customRepeat: some View", in: source))
+        #expect(control.contains("get: { draft.effectiveSeriesEndMode }, set: { draft.selectSeriesEnd($0) }"))
+        #expect(control.contains("get: { draft.seriesEndCount }, set: { draft.setSeriesEndCount($0) }"))
+        #expect(control.contains("in: draft.seriesEndCountRange"))
+        #expect(!control.contains(".onChange(of: draft.seriesEndMode)"))
+
+        var draft = CadenceScheduleDraft(dateKey: "2026-11-02", startMin: 540)
+        draft.repeatRule = .daily
+        draft.seriesOccurrenceNumber = 1200
+        draft.selectSeriesEnd(.afterCount)
+        #expect(draft.seriesEndCount >= 1200)
+        #expect(draft.seriesEndCountRange.contains(draft.seriesEndCount))
+        draft.setSeriesEndCount(1)
+        #expect(draft.seriesEndCount == 1200)
+        draft.setSeriesEndCount(1500)
+        #expect(draft.seriesEndCountRange == 1200...1500)
+    }
+}
+
 // MARK: - Source-reading helpers
 
 /// Fails unless `name` is called exactly `count` times in each listed file.

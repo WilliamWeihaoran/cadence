@@ -107,7 +107,7 @@ struct iOSContainerChoicePopover: View {
             maxHeight: CadenceChoicePopoverMetrics.containerMaxHeight
         ) {
             VStack(alignment: .leading, spacing: 10) {
-                choiceRow(title: "Inbox", tag: "inbox", systemImage: "tray.full.fill", color: Theme.blue)
+                choiceRow(title: "Inbox", tag: "inbox", systemImage: CadenceListKindIcon.inbox, color: Theme.blue)
 
                 if !offerableAreas.isEmpty {
                     groupLabel("Areas")
@@ -115,7 +115,7 @@ struct iOSContainerChoicePopover: View {
                         choiceRow(
                             title: CadenceAreaPickerSupport.title(for: area),
                             tag: CadenceTaskComposerSupport.token(for: .area(area.id)),
-                            systemImage: "tray.full.fill",
+                            systemImage: CadenceListKindIcon.area,
                             color: Color(hex: area.colorHex)
                         )
                     }
@@ -127,7 +127,7 @@ struct iOSContainerChoicePopover: View {
                         choiceRow(
                             title: CadenceProjectPickerSupport.title(for: project),
                             tag: CadenceTaskComposerSupport.token(for: .project(project.id)),
-                            systemImage: "checklist",
+                            systemImage: CadenceListKindIcon.project,
                             color: Color(hex: project.colorHex)
                         )
                     }

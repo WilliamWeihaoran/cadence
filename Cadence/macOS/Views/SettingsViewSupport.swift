@@ -67,37 +67,15 @@ struct SettingsCategoryGroup: Identifiable {
 
     var id: String { title }
 
-    static let all: [SettingsCategoryGroup] = [
+    static let all: [SettingsCategoryGroup] = CadenceSettingsLayout.groups.map { group in
         SettingsCategoryGroup(
-            title: "Interface",
-            categories: [.appearance, .navigation, .sidebar]
-        ),
-        SettingsCategoryGroup(
-            title: "Organization",
-            categories: [.contexts, .lists, .tags, .templates]
-        ),
-        SettingsCategoryGroup(
-            title: "Connections",
-            // `.sync` sits with Calendar and Reminders — the system services the app talks to —
-            // rather than next to `.account` under "Account & Safety", even though its shared
-            // title reads "iCloud Sync". `.account` is Sign in with Apple, macOS-only and
-            // titled "Account"; the two filed adjacently would read as one setting listed twice.
-            // Mobile files `.sync` beside `.calendar`/`.reminders` in its "System" group for the
-            // same reason, so this is the same shape rather than a second opinion.
-            categories: [.calendar, .reminders, .sync, .notifications, .ai]
-        ),
-        SettingsCategoryGroup(
-            title: "Account & Safety",
-            categories: [.account, .dataSafety]
-        ),
-        // Its own group of one rather than filed under "Account & Safety": which build is
-        // running is not a safety control, and a row reading "About" beside "Data Safety"
-        // reads as one more thing that might delete something.
-        SettingsCategoryGroup(
-            title: "App",
-            categories: [.about]
+            title: group.title,
+            categories: group.kinds.compactMap { kind in
+                SettingsCategory.allCases.first { $0.sharedKind == kind }
+            }
         )
-    ]
+    }
+
 }
 
 /// Sizing for the settings category rail. The rail is the same kind of object as the

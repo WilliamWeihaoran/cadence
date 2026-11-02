@@ -830,7 +830,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                 SectionEyebrowLabel(text: "Ends")
                 CadenceChoicePopoverList(
                     rows: TaskRecurrenceEndMode.allCases.map { CadenceChoiceRow(value: $0, title: $0.label, color: Theme.blue) },
-                    selection: $draft.seriesEndMode,
+                    selection: Binding(get: { draft.effectiveSeriesEndMode }, set: { draft.selectSeriesEnd($0) }),
                     isPresented: .constant(true)
                 )
                 if draft.seriesEndMode == .onDate {
@@ -839,12 +839,9 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                         showsClear: false, inlineStyle: true
                     )
                 } else if draft.seriesEndMode == .afterCount {
-                    Stepper(CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(draft.seriesEndCount), value: $draft.seriesEndCount, in: 1...999)
+                    Stepper(CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(draft.seriesEndCount), value: Binding(get: { draft.seriesEndCount }, set: { draft.setSeriesEndCount($0) }), in: draft.seriesEndCountRange)
                 }
             }
-        }
-        .onChange(of: draft.seriesEndMode) { _, mode in
-            draft.seedSeriesEnd(for: mode)
         }
     }
 

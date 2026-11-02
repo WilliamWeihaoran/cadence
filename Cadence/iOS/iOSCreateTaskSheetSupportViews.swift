@@ -93,7 +93,7 @@ struct iOSTaskComposerMarkerSuggestions: View {
         if showsInbox {
             suggestion(
                 title: CadenceTaskInspectorSupport.inboxSegmentTitle,
-                systemImage: "tray.full.fill",
+                systemImage: CadenceListKindIcon.inbox,
                 tint: Theme.blue
             ) {
                 onPickContainer(.inbox)
@@ -103,7 +103,7 @@ struct iOSTaskComposerMarkerSuggestions: View {
         ForEach(matchingAreas) { area in
             suggestion(
                 title: CadenceAreaPickerSupport.title(for: area),
-                systemImage: "tray.full.fill",
+                systemImage: CadenceListKindIcon.area,
                 tint: Color(hex: area.colorHex)
             ) {
                 onPickContainer(.area(area.id))
@@ -113,7 +113,7 @@ struct iOSTaskComposerMarkerSuggestions: View {
         ForEach(matchingProjects) { project in
             suggestion(
                 title: CadenceProjectPickerSupport.title(for: project),
-                systemImage: "checklist",
+                systemImage: CadenceListKindIcon.project,
                 tint: Color(hex: project.colorHex)
             ) {
                 onPickContainer(.project(project.id))

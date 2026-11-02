@@ -1022,7 +1022,9 @@ struct CadenceIPadSidebarVoiceOverTests {
             CadenceSourceScan.declarationBody("struct iOSSidebarHeader: View", in: file),
             "non-vacuity: wrong file"
         )
-        #expect(header.contains("iOSIconTile("), "non-vacuity: the header no longer draws its mark")
+        #expect(header.contains("iOSSidebarAppMark.image"), "the header must prefer the shipped app icon")
+        #expect(header.contains("Image(uiImage: image)"))
+        #expect(header.contains("iOSIconTile("), "keep the unresolved-icon fallback")
         #expect(
             CadenceSourceScan.matchCount("\\.accessibilityHidden\\(true\\)", in: header) == 1,
             "the header's mark is exposed to VoiceOver again"

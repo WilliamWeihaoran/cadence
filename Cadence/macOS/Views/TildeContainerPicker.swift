@@ -75,7 +75,7 @@ enum TildeContainerPickerSupport {
         func areaItem(_ area: Area) -> TildeContainerItem {
             TildeContainerItem(
                 tag: .area(area.id),
-                icon: area.icon,
+                icon: CadenceListKindIcon.area,
                 name: ContainerPickerFilterSupport.rowName(for: area),
                 color: Color(hex: area.colorHex)
             )
@@ -83,7 +83,7 @@ enum TildeContainerPickerSupport {
         func projectItem(_ project: Project) -> TildeContainerItem {
             TildeContainerItem(
                 tag: .project(project.id),
-                icon: project.icon,
+                icon: CadenceListKindIcon.project,
                 name: ContainerPickerFilterSupport.rowName(for: project),
                 color: Color(hex: project.colorHex)
             )
@@ -108,7 +108,7 @@ enum TildeContainerPickerSupport {
 
         var result: [TildeContainerItem] = []
         if matches("Inbox") {
-            result.append(TildeContainerItem(tag: .inbox, icon: "tray", name: "Inbox", color: Theme.dim))
+            result.append(TildeContainerItem(tag: .inbox, icon: CadenceListKindIcon.inbox, name: "Inbox", color: Theme.dim))
         }
         for context in contexts {
             result += offerableAreas

@@ -104,17 +104,18 @@ struct CadenceCaptureCardSeriesEndSeedTests {
         }
     }
 
-    /// The seam above is only the fix if the card calls it: SwiftUI's `.onChange` is not reachable
-    /// from a unit test, so the wiring is source-scanned.
+    /// The compact card uses the same synchronous, occurrence-aware setters as the panel.
     @Test func theCaptureCardSeedsItsEndsChoiceThroughTheTestedSeam() throws {
         let card = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift")
         )
-        let onChange = try #require(
-            CadenceSourceScan.declarationBody(".onChange(of: draft.seriesEndMode)", in: card)
+        let control = try #require(
+            CadenceSourceScan.declarationBody("private var customRepeat: some View", in: card)
         )
-        #expect(onChange.contains("draft.seedSeriesEnd(for: mode)"))
-        #expect(!onChange.contains("draft.startDateKey"), "the Ends seed reads the start day again")
+        #expect(control.contains("set: { draft.selectSeriesEnd($0) }"))
+        #expect(control.contains("set: { draft.setSeriesEndCount($0) }"))
+        #expect(control.contains("in: draft.seriesEndCountRange"))
+        #expect(!control.contains(".onChange(of: draft.seriesEndMode)"))
         #expect(card.contains("return draft.captureRepeatSummary"))
     }
 
