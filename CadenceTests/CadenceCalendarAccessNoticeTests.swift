@@ -110,4 +110,49 @@ struct CadenceCalendarAccessNoticeTests {
         #expect(withLiterals.contains("icon: \"calendar\""), "non-vacuity: literals survive this read")
         #expect(!withLiterals.contains("\"Nothing this month\""))
     }
+
+    // MARK: - [[T-9953]] One glyph per access action on every iOS card
+
+    @Test func eachAccessActionHasOneMobileButtonGlyphAndItIsNotTheTiles() {
+        #expect(CadenceAccessButtonGlyph.requestAccess == "checkmark.circle.fill")
+        #expect(CadenceAccessButtonGlyph.openSettings == "gearshape.fill")
+        #expect(CadenceCalendarAccessNotice.connectOffer.mobileButtonSystemImage == CadenceAccessButtonGlyph.requestAccess)
+        #expect(CadenceCalendarAccessNotice.denied.mobileButtonSystemImage == CadenceAccessButtonGlyph.openSettings)
+        // The capture card put the tile's own glyph on its Allow Access button.
+        #expect(CadenceCalendarAccessNotice.connectOffer.mobileButtonSystemImage != CadenceCalendarAccessNotice.connectOffer.systemImage)
+    }
+
+    /// The six iOS access buttons read the one pair. Read as source: none of these files compiles
+    /// in this target.
+    @Test func everyIOSAccessButtonReadsTheOneGlyphPair() throws {
+        let needles: [(file: String, reads: [String])] = [
+            ("Cadence/iOS/iOSRemindersSettingsSection.swift", [
+                "title: action.title(on: .mobile)",
+                "systemImage: action.mobileButtonSystemImage",
+                "tint: action == .openSystemSettings ? Theme.amber : Theme.blue"
+            ]),
+            ("Cadence/iOS/iOSInboxRemindersSection.swift", [
+                "title: action.title(on: .mobile)",
+                "systemImage: action.mobileButtonSystemImage",
+                "tint: action == .openSystemSettings ? Theme.amber : Theme.blue"
+            ]),
+            ("Cadence/iOS/iOSCalendarSettingsSection.swift", [
+                "systemImage: calendarManager.isDenied ? CadenceAccessButtonGlyph.openSettings : CadenceAccessButtonGlyph.requestAccess"
+            ]),
+            ("Cadence/iOS/iOSSearchView.swift", ["systemImage: notice.mobileButtonSystemImage"]),
+            ("Cadence/iOS/iOSCalendarQuickCreateSheet.swift", ["systemImage: notice.mobileButtonSystemImage"]),
+            ("Cadence/iOS/iOSNotificationsSettingsSection.swift", ["systemImage: CadenceAccessButtonGlyph.requestAccess"])
+        ]
+        for (file, reads) in needles {
+            let raw = try CadenceSourceScan.sourceFile(file)
+            let source = CadenceSourceScan.strippingComments(raw)
+            #expect(source.contains("iOSActionButton("), "non-vacuity: \(file) draws no action button")
+            for needle in reads {
+                #expect(source.contains(needle), "\(file) no longer reads `\(needle)`")
+            }
+            for retired in ["\"gear\"", "\"gearshape.fill\"", "\"checkmark.shield.fill\""] {
+                #expect(!source.contains(retired), "\(file) spells an access glyph of its own again: \(retired)")
+            }
+        }
+    }
 }

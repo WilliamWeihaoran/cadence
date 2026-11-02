@@ -88,6 +88,16 @@ nonisolated enum CadenceCalendarAccessNotice: Equatable {
         }
     }
 
+    /// The glyph an iOS access button draws for this notice's action ([[T-9953]]). Not
+    /// `systemImage`: that is the card's icon tile, and the capture card used to put the tile's
+    /// `calendar.badge.plus` on its Allow Access button too.
+    var mobileButtonSystemImage: String {
+        switch action {
+        case .requestAccess: return CadenceAccessButtonGlyph.requestAccess
+        case .openSystemSettings: return CadenceAccessButtonGlyph.openSettings
+        }
+    }
+
     /// The month agenda's empty state. With a notice up, an empty month is only empty of what
     /// Cadence holds, so it may not say "Nothing this month".
     ///
@@ -109,4 +119,17 @@ nonisolated enum CadenceCalendarAccessNotice: Equatable {
     }
 
     static let notConnectedSentence = "Apple Calendar is not connected, so its events are not shown."
+}
+
+/// **One glyph per access action on every iOS access card** ([[T-9953]]).
+///
+/// The same two buttons -- "Allow Access" and "Open Settings" -- drew five glyphs across six iOS
+/// cards: Settings > Calendar, Settings > Reminders, the Inbox's Reminders row and Notifications
+/// put `checkmark.circle.fill` on Allow Access, Search put `checkmark.shield.fill` and the capture
+/// card `calendar.badge.plus`; Calendar's three Open Settings buttons drew `gearshape.fill` (the
+/// app's own Settings glyph, `CadenceFeatureDestination.settings`) and Reminders' two drew `gear`.
+/// The majority spelling of each, stated once. The Mac's access buttons carry no glyph.
+nonisolated enum CadenceAccessButtonGlyph {
+    static let requestAccess = "checkmark.circle.fill"
+    static let openSettings = "gearshape.fill"
 }

@@ -214,7 +214,7 @@ struct iOSCalendarSettingsSection: View {
 
                     iOSActionButton(
                         title: calendarManager.isDenied ? "Open Settings" : "Allow Access",
-                        systemImage: calendarManager.isDenied ? "gearshape.fill" : "checkmark.circle.fill",
+                        systemImage: calendarManager.isDenied ? CadenceAccessButtonGlyph.openSettings : CadenceAccessButtonGlyph.requestAccess,
                         role: .primary,
                         size: .compact,
                         tint: calendarManager.isDenied ? Theme.amber : Theme.blue

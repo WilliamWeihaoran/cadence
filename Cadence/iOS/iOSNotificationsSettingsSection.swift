@@ -87,7 +87,7 @@ struct iOSNotificationsSettingsSection: View {
 
                     iOSActionButton(
                         title: CadenceNotificationSettingsCopy.enableNotificationsAction,
-                        systemImage: "checkmark.circle.fill",
+                        systemImage: CadenceAccessButtonGlyph.requestAccess,
                         role: .primary,
                         size: .compact,
                         action: requestAuthorization

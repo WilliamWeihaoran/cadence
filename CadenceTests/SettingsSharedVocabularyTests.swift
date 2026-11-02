@@ -1089,4 +1089,28 @@ struct SettingsRowDividerInsetTests {
     }
 }
 
+/// **[[T-9954]].** The iPad Settings rail's lit row says it is the selected one, as every row of
+/// the root sidebar beside it does (`iOSRootSidebar`'s three row types). It drew the selection
+/// and stated nothing.
+struct IOSSettingsRailSelectionTraitTests {
+    @Test func theRailButtonStatesItsSelection() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSettingsComponents.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSSettingsRailButton: View", in: source),
+            "iOSSettingsRailButton moved"
+        )
+        #expect(body.contains(".fill(isSelected ? Theme.surfaceElevated : Color.clear)"),
+                "non-vacuity: the rail button no longer draws its selection here")
+        #expect(body.contains(".accessibilityAddTraits(isSelected ? .isSelected : [])"),
+                "the rail's lit row no longer states that it is selected")
+        // The root sidebar is the precedent; if it stops stating selection this rule needs rereading.
+        let sidebar = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootSidebar.swift")
+        )
+        #expect(sidebar.components(separatedBy: ".accessibilityAddTraits(isSelected ? .isSelected : [])").count - 1 >= 3)
+    }
+}
+
 #endif

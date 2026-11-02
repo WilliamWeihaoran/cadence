@@ -223,7 +223,7 @@ struct iOSCaptureCalendarAccessButton: View {
         ) {
             iOSActionButton(
                 title: notice.actionTitle(on: .mobile),
-                systemImage: notice == .denied ? "gearshape.fill" : notice.systemImage,
+                systemImage: notice.mobileButtonSystemImage,
                 role: .primary,
                 size: .compact,
                 tint: notice == .denied ? Theme.amber : Theme.blue

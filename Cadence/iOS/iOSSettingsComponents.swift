@@ -293,6 +293,8 @@ private struct iOSSettingsRailButton: View {
         }
         .buttonStyle(.iosPressable)
         .accessibilityIdentifier("settings.category.\(category.rawValue)")
+        // [[T-9954]]: the lit row says it is the one showing, as the root sidebar's rows do.
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .animation(.easeOut(duration: 0.12), value: isSelected)
     }
 }

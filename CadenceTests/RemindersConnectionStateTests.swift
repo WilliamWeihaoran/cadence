@@ -27,6 +27,33 @@ struct RemindersConnectionStateTests {
         #expect(state.accessAction?.title == "Allow Access")
     }
 
+    /// **[[T-9952]].** The Open Settings button names where it goes on each platform, split where
+    /// Calendar's is: the Mac opens the Reminders privacy pane, iOS opens Cadence's own page in
+    /// the Settings app.
+    @Test func theOpenSettingsTitleNamesWhereEachPlatformGoes() {
+        #expect(RemindersAccessAction.requestAccess.title(on: .mac) == "Allow Access")
+        #expect(RemindersAccessAction.requestAccess.title(on: .mobile) == "Allow Access")
+        #expect(RemindersAccessAction.openSystemSettings.title(on: .mac) == "Open Reminders Settings")
+        #expect(RemindersAccessAction.openSystemSettings.title(on: .mobile) == "Open Settings")
+        // The same words Calendar's card uses for the same act.
+        #expect(
+            RemindersAccessAction.openSystemSettings.title(on: .mobile)
+                == CadenceCalendarAccessNotice.denied.actionTitle(on: .mobile)
+        )
+        #expect(
+            RemindersAccessAction.requestAccess.title(on: .mobile)
+                == CadenceCalendarAccessNotice.connectOffer.actionTitle(on: .mobile)
+        )
+        // This target builds the Mac, whose callers read the bare `title`.
+        #expect(RemindersAccessAction.openSystemSettings.title == "Open Reminders Settings")
+    }
+
+    /// **[[T-9953]].** The iOS button glyphs are Calendar's.
+    @Test func theMobileButtonGlyphsAreCalendars() {
+        #expect(RemindersAccessAction.requestAccess.mobileButtonSystemImage == CadenceCalendarAccessNotice.connectOffer.mobileButtonSystemImage)
+        #expect(RemindersAccessAction.openSystemSettings.mobileButtonSystemImage == CadenceCalendarAccessNotice.denied.mobileButtonSystemImage)
+    }
+
     /// **T-846.** The first visit to this screen used to say "Reminders access required" — a
     /// demand before anyone had been asked anything, the same defect T-694/T-777 already fixed on
     /// Calendar and Notifications by splitting a neutral pre-prompt offer ("Connect Apple

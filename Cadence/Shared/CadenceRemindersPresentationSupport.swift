@@ -188,10 +188,40 @@ enum RemindersAccessAction: Equatable {
     case requestAccess
     case openSystemSettings
 
+    /// The two platforms the button's words differ on: Calendar's, so the two access cards split
+    /// on the same thing.
+    typealias Platform = CadenceCalendarAccessNotice.Platform
+
+    /// **[[T-9952]].** The button's title on each platform, split exactly where
+    /// `CadenceCalendarAccessNotice.actionTitle(on:)` splits Calendar's. On a Mac the button opens
+    /// the Reminders privacy pane, so "Open Reminders Settings" names where it goes. On iOS it
+    /// opens `UIApplication.openSettingsURLString`, which is Cadence's own page in the Settings
+    /// app, not a Reminders page -- and the iPhone said "Open Reminders Settings" beside
+    /// Calendar's "Open Settings" for the same act.
+    func title(on platform: Platform) -> String {
+        switch (self, platform) {
+        case (.requestAccess, _): return "Allow Access"
+        case (.openSystemSettings, .mac): return "Open Reminders Settings"
+        case (.openSystemSettings, .mobile): return "Open Settings"
+        }
+    }
+
+    /// This build's spelling, for the macOS callers. iOS names `.mobile` at the call site, as it
+    /// does for Calendar's notice.
     var title: String {
+        #if os(macOS)
+        return title(on: .mac)
+        #else
+        return title(on: .mobile)
+        #endif
+    }
+
+    /// The glyph an iOS access button draws for this action ([[T-9953]]): Calendar's, through
+    /// the one pair every iOS access card reads.
+    var mobileButtonSystemImage: String {
         switch self {
-        case .requestAccess: return "Allow Access"
-        case .openSystemSettings: return "Open Reminders Settings"
+        case .requestAccess: return CadenceAccessButtonGlyph.requestAccess
+        case .openSystemSettings: return CadenceAccessButtonGlyph.openSettings
         }
     }
 }

@@ -66,11 +66,13 @@ struct iOSRemindersSettingsSection: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     if let action = state.accessAction {
+                        // [[T-9952]], [[T-9953]]: Calendar's words, glyph and tint for the same two acts.
                         iOSActionButton(
-                            title: action.title,
-                            systemImage: action == .requestAccess ? "checkmark.circle.fill" : "gear",
+                            title: action.title(on: .mobile),
+                            systemImage: action.mobileButtonSystemImage,
                             role: .primary,
                             size: .compact,
+                            tint: action == .openSystemSettings ? Theme.amber : Theme.blue,
                             action: { perform(action) }
                         )
                         .padding(.top, 2)

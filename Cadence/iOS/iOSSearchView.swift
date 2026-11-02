@@ -526,7 +526,7 @@ struct iOSSearchView: View {
 
                             iOSActionButton(
                                 title: notice.actionTitle(on: .mobile),
-                                systemImage: notice == .denied ? "gearshape.fill" : "checkmark.shield.fill",
+                                systemImage: notice.mobileButtonSystemImage,
                                 role: .primary,
                                 size: .compact,
                                 tint: notice == .denied ? Theme.amber : Theme.blue
