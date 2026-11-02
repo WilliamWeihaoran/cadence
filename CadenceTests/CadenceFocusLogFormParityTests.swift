@@ -206,6 +206,29 @@ struct CadenceFocusLogFormParityTests {
         #expect(CadenceSourceScan.matchCount(#"\.accessibilityLabel\(accessibilityLabel\)"#, in: sheet) == 1)
     }
 
+    /// **[[T-10037]]: Return in either iOS field logs, as it does in the Mac popover ([[T-10017]]).**
+    /// The number pad has no Return, but an iPad's hardware keyboard does, and there Return did
+    /// nothing. Both fields come from `timeField`, so its body carrying `.onSubmit(submitLog)` is
+    /// both fields; the Log button goes through the same `submitLog()`, so the key and the tap
+    /// read one set of typed figures, and Discard takes no key.
+    @Test func theIOSFieldsLogOnReturnThroughTheLogButtonsOwnSubmit() throws {
+        let sheet = try Self.code(Self.iosSheetPath)
+        let field = try #require(CadenceSourceScan.declarationBody("private func timeField(", in: sheet))
+        #expect(
+            CadenceSourceScan.matchCount(#"\.onSubmit\(submitLog\)"#, in: field) == 1,
+            "Return in the hours or minutes field must log"
+        )
+        let submit = try #require(CadenceSourceScan.declarationBody("private func submitLog()", in: sheet))
+        #expect(submit.contains("onLog(logValues.hours, logValues.minutes, markComplete)"))
+        #expect(
+            CadenceSourceScan.matchCount(#"onLog\("#, in: sheet) == 1,
+            "the Log button reads its own figures instead of going through submitLog()"
+        )
+        #expect(sheet.contains("action: submitLog"))
+        #expect(CadenceSourceScan.matchCount(#"\.onSubmit\("#, in: sheet) == 1)
+        #expect(!sheet.contains(".keyboardShortcut("), "Discard throws the session away and takes no key")
+    }
+
     /// The control that opens it: one label on both platforms, and the Mac's muted-at-zero rule.
     /// iOS's said "Log session and mark done" and was green at zero elapsed, which was honest about
     /// a control that completed the task and is wrong about one that opens a form.

@@ -134,11 +134,18 @@ struct iOSFocusLogSessionSheet: View {
                 title: CadenceFocusSupport.logButtonTitle(hours: logValues.hours, minutes: logValues.minutes),
                 role: .primary,
                 size: .compact,
-                action: { onLog(logValues.hours, logValues.minutes, markComplete) }
+                action: submitLog
             )
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
+    }
+
+    /// The Log button's action and Return's in either field ([[T-10037]]): one read of the typed
+    /// figures, so the two cannot log different totals -- the Mac popover's `submitLog()`
+    /// ([[T-10017]]).
+    private func submitLog() {
+        onLog(logValues.hours, logValues.minutes, markComplete)
     }
 
     @ViewBuilder
@@ -154,6 +161,10 @@ struct iOSFocusLogSessionSheet: View {
                 .background(Theme.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                 .accessibilityLabel(accessibilityLabel)
+                // [[T-10037]]: the number pad has no Return, but an iPad's hardware keyboard does,
+                // and Return there did nothing while the Mac popover's same fields log
+                // ([[T-10017]]). Discard takes no key -- it throws the session away.
+                .onSubmit(submitLog)
             Text(label)
                 .cadenceFont(.metadata, base: 12)
                 .foregroundStyle(Theme.dim)

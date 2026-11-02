@@ -639,6 +639,30 @@ extension CadenceTaskMutationSupport {
     /// (`DeleteConfirmationManager.failureNotice`), which has a title already.
     static let deleteFailureAlertTitle = "Couldn't Delete Task"
 
+    /// **[[T-10036]]: one task-delete confirmation, in the Mac's words, on both platforms.**
+    ///
+    /// The Mac overlay (`DeleteConfirmationManager.presentTaskDelete`) named the task — "This will
+    /// permanently delete "Renew the domain"." — while the phone and iPad alert said "This removes
+    /// the task and its subtasks." over the same question, and the repeating-task form named the
+    /// task on the Mac only. No hardware or input constraint sits between the two: both are a
+    /// title and one sentence above the same buttons. [[T-7070]] settled the identical drift for the
+    /// event delete the same way, the Mac's sentence for both, read from one owner.
+    ///
+    /// `"Untitled"` is the overlay's long-standing fallback for an empty title, kept as it was.
+    static func deleteConfirmationTitle(for task: AppTask) -> String {
+        CadenceTaskRecurrenceWorkflowSupport.deleteOffersSeriesChoice(for: task)
+            ? CadenceRecurrenceScopeCopy.deleteScopeTitle
+            : "Delete Task?"
+    }
+
+    /// The sentence under `deleteConfirmationTitle(for:)`. See that function.
+    static func deleteConfirmationMessage(for task: AppTask) -> String {
+        let title = TaskTitleSupport.displayTitle(task.title, fallback: "Untitled")
+        return CadenceTaskRecurrenceWorkflowSupport.deleteOffersSeriesChoice(for: task)
+            ? "\"\(title)\" repeats. " + CadenceRecurrenceScopeCopy.deleteScopeMessage
+            : "This will permanently delete \"\(title)\"."
+    }
+
     /// The alert title for a refused **settle** — ticking or un-ticking a task's circle (T-628).
     ///
     /// It carries `CadencePendingChangePersistence.editFailureNotice`, and the "Nothing was

@@ -954,8 +954,8 @@ struct iOSTaskRowRecurrenceScopeDialogModifier: ViewModifier {
 /// advances the series first, through
 /// `CadenceTaskMutationSupport.delete(_:modelContext:recurrenceScope:)`.
 ///
-/// **A non-repeating task sees exactly what it saw before** — "Delete Task?", "This removes the
-/// task and its subtasks.", one `Delete` and one `Cancel`, one step. The guard is
+/// **A non-repeating task sees one step** — "Delete Task?", the Mac's "This will permanently delete
+/// "<title>"." ([[T-10036]]), one `Delete` and one `Cancel`. The guard is
 /// `CadenceTaskRecurrenceWorkflowSupport.deleteOffersSeriesChoice`, which is also what the Mac
 /// overlay asks, so the two platforms cannot hold different opinions about which tasks have a
 /// series worth asking about.
@@ -976,7 +976,7 @@ struct iOSTaskDeleteConfirmationModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .alert(
-                offersChoice ? CadenceRecurrenceScopeCopy.deleteScopeTitle : "Delete Task?",
+                CadenceTaskMutationSupport.deleteConfirmationTitle(for: task),
                 isPresented: $isPresented
             ) {
                 if offersChoice {
@@ -991,11 +991,9 @@ struct iOSTaskDeleteConfirmationModifier: ViewModifier {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text(
-                    offersChoice
-                        ? CadenceRecurrenceScopeCopy.deleteScopeMessage
-                        : "This removes the task and its subtasks."
-                )
+                // [[T-10036]]: the Mac overlay's sentence, naming the task, from the one owner
+                // `DeleteConfirmationManager.presentTaskDelete` reads.
+                Text(CadenceTaskMutationSupport.deleteConfirmationMessage(for: task))
             }
     }
 }

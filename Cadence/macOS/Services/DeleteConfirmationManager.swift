@@ -211,7 +211,6 @@ extension DeleteConfirmationManager {
         willDelete: @escaping () -> Void = {},
         commit: @escaping (ModelContext) throws -> Void = { try $0.save() }
     ) {
-        let title = TaskTitleSupport.displayTitle(task.title, fallback: "Untitled")
         let attempt: (CadenceTaskRecurrenceDeleteScope) -> Outcome = { scope in
             willDelete()
             guard modelContext.deleteTask(task, recurrenceScope: scope, commit: commit) else {
@@ -221,9 +220,10 @@ extension DeleteConfirmationManager {
         }
 
         guard CadenceTaskRecurrenceWorkflowSupport.deleteOffersSeriesChoice(for: task) else {
+            // [[T-10036]]: the words come from the one owner the iOS alert reads too.
             presentRefusable(
-                title: "Delete Task?",
-                message: "This will permanently delete \"\(title)\"."
+                title: CadenceTaskMutationSupport.deleteConfirmationTitle(for: task),
+                message: CadenceTaskMutationSupport.deleteConfirmationMessage(for: task)
             ) {
                 attempt(.wholeSeries)
             }
@@ -231,8 +231,8 @@ extension DeleteConfirmationManager {
         }
 
         presentRefusable(
-            title: CadenceRecurrenceScopeCopy.deleteScopeTitle,
-            message: "\"\(title)\" repeats. " + CadenceRecurrenceScopeCopy.deleteScopeMessage,
+            title: CadenceTaskMutationSupport.deleteConfirmationTitle(for: task),
+            message: CadenceTaskMutationSupport.deleteConfirmationMessage(for: task),
             confirmLabel: CadenceTaskRecurrenceDeleteScope.thisOccurrence.label,
             alternate: Alternate(label: CadenceTaskRecurrenceDeleteScope.wholeSeries.label) {
                 attempt(.wholeSeries)

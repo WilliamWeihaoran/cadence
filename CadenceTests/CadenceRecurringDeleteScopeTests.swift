@@ -270,6 +270,50 @@ struct CadenceRecurringDeleteScopeTests {
         #expect(try openTasks(in: modelContext).isEmpty)
     }
 
+    // MARK: - [[T-10036]]: one confirmation sentence for both platforms
+
+    /// A plain task is named in the Mac's sentence; the phone's "This removes the task and its
+    /// subtasks." is gone. The words are asked of the shared owner both alerts read.
+    @Test func aplainTaskDeleteConfirmationNamesTheTaskInTheMacWords() throws {
+        let modelContext = try makeContext()
+        let task = AppTask(title: "Renew the domain")
+        modelContext.insert(task)
+
+        #expect(CadenceTaskMutationSupport.deleteConfirmationTitle(for: task) == "Delete Task?")
+        #expect(
+            CadenceTaskMutationSupport.deleteConfirmationMessage(for: task)
+                == "This will permanently delete \"Renew the domain\"."
+        )
+    }
+
+    /// A repeating task gets the scope title, and the scope sentence prefixed with its name — on
+    /// iOS as well, where the name used to be missing.
+    @Test func arepeatingTaskDeleteConfirmationNamesTheTaskBeforeTheScopeSentence() throws {
+        let modelContext = try makeContext()
+        let task = makeDailyOccurrence(in: modelContext)
+
+        #expect(
+            CadenceTaskMutationSupport.deleteConfirmationTitle(for: task)
+                == CadenceRecurrenceScopeCopy.deleteScopeTitle
+        )
+        #expect(
+            CadenceTaskMutationSupport.deleteConfirmationMessage(for: task)
+                == "\"Water the plants\" repeats. " + CadenceRecurrenceScopeCopy.deleteScopeMessage
+        )
+    }
+
+    /// An empty title reads "Untitled", the overlay's fallback, rather than an empty pair of quotes.
+    @Test func anuntitledTaskDeleteConfirmationSaysUntitled() throws {
+        let modelContext = try makeContext()
+        let task = AppTask(title: "   ")
+        modelContext.insert(task)
+
+        #expect(
+            CadenceTaskMutationSupport.deleteConfirmationMessage(for: task)
+                == "This will permanently delete \"Untitled\"."
+        )
+    }
+
     // `DeleteConfirmationManager` is macOS-only, and the iOS leg compiles this file too ([[T-6610]]).
 #if os(macOS)
     // MARK: - Both confirmations carry it, and neither grows a button for a plain task
@@ -394,7 +438,11 @@ struct CadenceRecurringDeleteScopeTests {
         #expect(source.contains("CadenceTaskRecurrenceWorkflowSupport.deleteOffersSeriesChoice(for: task)"))
         #expect(source.contains("CadenceTaskRecurrenceDeleteScope.thisOccurrence.label"))
         #expect(source.contains("CadenceTaskRecurrenceDeleteScope.wholeSeries.label"))
-        #expect(source.contains("\"This removes the task and its subtasks.\""))
+        // [[T-10036]]: the alert's words are the shared owner's, which the Mac overlay reads too.
+        #expect(source.contains("CadenceTaskMutationSupport.deleteConfirmationTitle(for: task)"))
+        #expect(source.contains("Text(CadenceTaskMutationSupport.deleteConfirmationMessage(for: task))"))
+        #expect(!source.contains("\"This removes the task and its subtasks.\""))
+        #expect(!source.contains("\"Delete Task?\""))
     }
 
     /// The spawn is reached through `CadenceTaskRecurrenceWorkflowSupport` and sits **above** the
