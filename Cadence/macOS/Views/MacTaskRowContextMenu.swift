@@ -501,4 +501,57 @@ struct MacTaskRowMenuOutcomeModifier: ViewModifier {
         }
     }
 }
+
+/// **[[T-10205]] — the task menu for a task surface that is not a row or a board card.**
+///
+/// [[T-1479]]'s owner ruling is that right-clicking a task on macOS opens this menu, not the
+/// inspector, and [[T-8062]] carried it to the board card. The Calendar's Month and all-day task
+/// chips and the timeline's task block still answered a right-click with an AppKit
+/// `RightClickActionTrigger` that ran the click's own path, so the same task offered its actions on
+/// the Tasks page and only its inspector on the calendar. Those surfaces hold none of the menu's
+/// after-the-click state, so this modifier holds it for them: the menu's Edit is the host's click
+/// path, Focus and Delete Task are `MacTaskRow`'s (`FocusManager.startFocus`, the refusable delete
+/// overlay), and the scope dialog and refusal alert are `MacTaskRowMenuOutcomeModifier`.
+/// `willDelete` is the host's own teardown, run just before a confirmed delete.
+struct MacTaskContextMenuHost: ViewModifier {
+    let task: AppTask
+    let openDetail: () -> Void
+    var willDelete: () -> Void = {}
+    @Environment(\.modelContext) private var modelContext
+    @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
+    @Environment(FocusManager.self) private var focusManager
+    @State private var pendingRecurrenceRule: TaskRecurrenceRule?
+    @State private var menuFailure: MacTaskRowMenuFailure?
+
+    func body(content: Content) -> some View {
+        content
+            .contextMenu {
+                MacTaskRowContextMenu(
+                    task: task,
+                    openDetail: openDetail,
+                    startFocus: startFocus,
+                    requestDelete: presentDelete,
+                    pendingRecurrenceRule: $pendingRecurrenceRule,
+                    failure: $menuFailure
+                )
+            }
+            .modifier(MacTaskRowMenuOutcomeModifier(
+                task: task,
+                pendingRecurrenceRule: $pendingRecurrenceRule,
+                failure: $menuFailure
+            ))
+    }
+
+    private func startFocus() {
+        do {
+            try focusManager.startFocus(task: task, in: modelContext)
+        } catch {
+            TaskCompletionAnimationManager.shared.recordSettleFailure()
+        }
+    }
+
+    private func presentDelete() {
+        deleteConfirmationManager.presentTaskDelete(task, in: modelContext, willDelete: willDelete)
+    }
+}
 #endif

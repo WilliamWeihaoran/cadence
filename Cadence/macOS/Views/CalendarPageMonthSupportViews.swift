@@ -769,26 +769,24 @@ struct AllDayTaskChip: View {
 }
 
 extension View {
-    /// What a calendar task chip does when touched: a click or right-click opens the task's
-    /// inspector anchored on the chip, and the chip drags as the task's id. One definition for the
-    /// Week/Day all-day lane's `AllDayTaskChip` and the Month grid's `MonthTaskChip` ([[T-5351]]):
-    /// the Month chip used to be a plain plate, so the same task opened from one view and did
-    /// nothing in the other.
+    /// What a calendar task chip does when touched: a click opens the task's inspector anchored on
+    /// the chip, a right-click opens the task menu, and the chip drags as the task's id. One
+    /// definition for the Week/Day all-day lane's `AllDayTaskChip` and the Month grid's
+    /// `MonthTaskChip` ([[T-5351]]): the Month chip used to be a plain plate, so the same task
+    /// opened from one view and did nothing in the other.
     func calendarTaskChipInteractions(task: AppTask, showInspector: Binding<Bool>) -> some View {
         contentShape(Rectangle())
             .onTapGesture { showInspector.wrappedValue = true }
             // [[T-8721]]: a pointer-only control until now. One element reading what the chip
             // draws, a button, and the click's own path as its action -- the trait and action
             // iOS's band chips take (`iOSCalendarAllDayChipOpen`, [[T-5356]]). Before the
-            // right-click overlay, so that trigger is not folded in.
+            // task menu, so its items are not folded into the chip's element.
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isButton)
             .accessibilityAction { showInspector.wrappedValue = true }
-            .overlay {
-                RightClickActionTrigger {
-                    showInspector.wrappedValue = true
-                }
-            }
+            // [[T-10205]]: right-click is the task menu ([[T-1479]]), not a second click; it ran
+            // the click's own path through a `RightClickActionTrigger` overlay. Edit is the click.
+            .modifier(MacTaskContextMenuHost(task: task, openDetail: { showInspector.wrappedValue = true }))
             .popover(isPresented: showInspector, arrowEdge: .bottom) {
                 TaskDetailPopover(task: task)
             }

@@ -138,13 +138,10 @@ struct TimelineTaskBlock: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { handleBlockTap() }
         .accessibilityAction(named: CadenceTaskControlAccessibility.openTaskActionName, handleBlockTap)
-        .overlay {
-            RightClickActionTrigger {
-                activeDragTaskID = nil
-                selectedTaskID = task.id
-                onSelect()
-            }
-        }
+        // [[T-10205]]: right-click is the task menu ([[T-1479]]), not a second click; a
+        // `RightClickActionTrigger` overlay ran the click's own select-and-open. Edit is the click;
+        // a confirmed delete tears down what the hover's Cmd+Delete path tears down.
+        .modifier(MacTaskContextMenuHost(task: task, openDetail: handleBlockTap, willDelete: clearAfterDelete))
         .onDrag {
             guard resizeSession == nil else {
                 return NSItemProvider()
@@ -236,6 +233,21 @@ struct TimelineTaskBlock: View {
             activeDragTaskID: $activeDragTaskID,
             onSelect: onSelect
         )
+    }
+
+    /// The menu's Delete Task teardown -- `TimelineTaskBlockInteractionSupport.beginHover`'s, so a
+    /// deleted block leaves no hover, selection or drag pointing at it.
+    private func clearAfterDelete() {
+        if hoveredTaskManager.hoveredTask?.id == task.id {
+            hoveredTaskManager.hoveredTask = nil
+        }
+        if selectedTaskID == task.id {
+            selectedTaskID = nil
+        }
+        if activeDragTaskID == task.id {
+            activeDragTaskID = nil
+        }
+        hoveredEditableManager.endHovering(id: "timeline-task-\(task.id.uuidString)")
     }
 
     private func beginResizeIfNeeded(edge: TimelineResizeEdge, localY: CGFloat) {

@@ -131,6 +131,66 @@ struct MacTaskRowContextMenuParityTests {
         }
     }
 
+    /// **[[T-10205]] — the calendar's task surfaces are tasks too.** The Month and all-day task
+    /// chips and the timeline's task block answered a right-click with a `RightClickActionTrigger`
+    /// overlay that ran the click's own path, after [[T-1479]] had ruled right-click a menu and
+    /// [[T-8062]] had carried that to the board card. Each now wears `MacTaskContextMenuHost`, which
+    /// presents the row's menu with the row's outcome handling.
+    @Test func theCalendarTaskChipsAndTimelineBlockRightClickPresentTheSameMenu() throws {
+        // The host: the row's menu, the row's outcome modifier, and the row's Focus and Delete.
+        let menuFile = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.macMenuPath))
+        let host = try #require(
+            CadenceSourceScan.declarationBody("struct MacTaskContextMenuHost: ViewModifier", in: menuFile),
+            "MacTaskContextMenuHost not found"
+        )
+        #expect(CadenceSourceScan.matchCount(#"\.contextMenu \{\s*MacTaskRowContextMenu\("#, in: host) == 1)
+        #expect(CadenceSourceScan.matchCount(#"openDetail: openDetail"#, in: host) == 1)
+        #expect(CadenceSourceScan.matchCount(#"startFocus: startFocus"#, in: host) == 1)
+        #expect(CadenceSourceScan.matchCount(#"requestDelete: presentDelete"#, in: host) == 1)
+        #expect(CadenceSourceScan.matchCount(#"MacTaskRowMenuOutcomeModifier\("#, in: host) == 1)
+        #expect(CadenceSourceScan.matchCount(#"focusManager\.startFocus\(task: task"#, in: host) == 1)
+        #expect(CadenceSourceScan.matchCount(
+            #"deleteConfirmationManager\.presentTaskDelete\(task, in: modelContext, willDelete: willDelete\)"#,
+            in: host
+        ) == 1)
+
+        // The chips: both draw the one shared interaction, which carries the host and no overlay.
+        let chipFile = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/CalendarPageMonthSupportViews.swift")
+        )
+        let chips = try #require(CadenceSourceScan.functionBody(named: "calendarTaskChipInteractions", in: chipFile))
+        #expect(CadenceSourceScan.matchCount(#"\.onTapGesture \{ showInspector\.wrappedValue = true \}"#, in: chips) == 1,
+                "the chip's click no longer opens the inspector")
+        #expect(CadenceSourceScan.matchCount(
+            #"\.modifier\(MacTaskContextMenuHost\(task: task, openDetail: \{ showInspector\.wrappedValue = true \}\)\)"#,
+            in: chips
+        ) == 1)
+        #expect(CadenceSourceScan.matchCount("RightClickActionTrigger", in: chipFile) == 0,
+                "an AppKit right-click overlay on a chip would take the click before the menu sees it")
+        for chip in ["struct MonthTaskChip: View", "struct AllDayTaskChip: View"] {
+            let body = try #require(CadenceSourceScan.declarationBody(chip, in: chipFile), "\(chip) not found")
+            #expect(body.contains(".calendarTaskChipInteractions(task: task, showInspector: $showInspector)"))
+        }
+
+        // The timeline block: the menu's Edit is the click's own `handleBlockTap`.
+        let blockPath = "Cadence/macOS/Views/TimelineTaskBlock.swift"
+        let blockFile = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(blockPath))
+        let block = try body("var body: some View", in: blockPath)
+        #expect(blockFile.contains("struct TimelineTaskBlock: View"), "non-vacuity: wrong file read")
+        #expect(CadenceSourceScan.matchCount(#"\.onTapGesture \{\s*handleBlockTap\(\)\s*\}"#, in: block) == 1)
+        #expect(CadenceSourceScan.matchCount(
+            #"\.modifier\(MacTaskContextMenuHost\(task: task, openDetail: handleBlockTap, willDelete: clearAfterDelete\)\)"#,
+            in: block
+        ) == 1)
+        #expect(CadenceSourceScan.matchCount("RightClickActionTrigger", in: blockFile) == 0,
+                "an AppKit right-click overlay on the block would take the click before the menu sees it")
+        // The delete teardown clears what the hover's Cmd+Delete clears, so no state names a gone task.
+        let teardown = try #require(CadenceSourceScan.functionBody(named: "clearAfterDelete", in: blockFile))
+        for cleared in ["hoveredTaskManager.hoveredTask = nil", "selectedTaskID = nil", "activeDragTaskID = nil", "hoveredEditableManager.endHovering("] {
+            #expect(teardown.contains(cleared), "the block's delete teardown no longer runs \(cleared)")
+        }
+    }
+
     @Test func aRefusedMenuWriteIsTitledLikeIOSTitlesIt() {
         #expect(MacTaskRowMenuFailure.move.title == CadenceTaskMutationSupport.moveFailureAlertTitle)
         #expect(MacTaskRowMenuFailure.recurrence("x").title == CadenceTaskMutationSupport.recurrenceFailureAlertTitle)

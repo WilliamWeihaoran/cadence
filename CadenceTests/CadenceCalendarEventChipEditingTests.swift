@@ -162,9 +162,11 @@ struct CadenceCalendarEventChipEditingTests {
         }
         let shared = try #require(CadenceSourceScan.functionBody(named: "calendarTaskChipInteractions", in: code))
         #expect(shared.contains(".onTapGesture { showInspector.wrappedValue = true }"), "a click opens nothing")
+        // [[T-10205]]: right-click is the task menu ([[T-1479]]), its Edit the click's inspector;
+        // `MacTaskRowContextMenuParityTests` pins the menu itself.
         #expect(
-            CadenceSourceScan.matchCount(#"RightClickActionTrigger \{\s*showInspector\.wrappedValue = true\s*\}"#, in: shared) == 1,
-            "a right-click opens nothing"
+            CadenceSourceScan.matchCount(#"\.modifier\(MacTaskContextMenuHost\(task: task, openDetail: \{ showInspector\.wrappedValue = true \}\)\)"#, in: shared) == 1,
+            "a right-click opens no task menu"
         )
         #expect(
             CadenceSourceScan.matchCount(#"\.popover\(isPresented: showInspector, arrowEdge: \.bottom\) \{\s*TaskDetailPopover\(task: task\)"#, in: shared) == 1,
