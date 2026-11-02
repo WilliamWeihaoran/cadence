@@ -67,6 +67,30 @@ struct CadenceIOSSheetToolbarTintTests {
         #expect(edit.contains(".tint(Theme.blue).preferredColorScheme(.dark)"))
     }
 
+    /// [[T-9975]]: the palette's blue was declared on the iPhone's tab shell alone, so the iPad
+    /// sidebar shell -- and the task inspector, hosted by the root outside both shells -- drew the
+    /// system blue wherever a control inherits its tint. One declaration on the root now, wrapping
+    /// both shells and the inspector host.
+    @Test func theRootDeclaresThePalettesTintAboveBothShellsAndTheInspectorHost() throws {
+        let root = squeezed(try body(
+            "struct iOSRootView: View",
+            in: "Cadence/iOS/iOSRootView.swift"
+        ))
+        let ipadShell = root.range(of: "iPadMacStyleRootShell(selection:")
+        let phoneShell = root.range(of: "iOSCompactRootShell(")
+        let inspectorHost = root.range(of: ".iOSTaskInspectorHost()")
+        let tint = root.range(of: ".tint(Theme.blue)")
+        #expect(ipadShell != nil && phoneShell != nil && inspectorHost != nil,
+                "the scan no longer reaches the two shells and the inspector host")
+        #expect(tint != nil, "iOSRootView declares no tint above its shells")
+        if let tint, let inspectorHost, let ipadShell, let phoneShell {
+            // A modifier wraps what precedes it, so the tint must come after all three.
+            #expect(inspectorHost.upperBound <= tint.lowerBound)
+            #expect(ipadShell.upperBound <= tint.lowerBound)
+            #expect(phoneShell.upperBound <= tint.lowerBound)
+        }
+    }
+
     @Test func theReferencePickerSheetDeclaresItsOwnTintScope() throws {
         let picker = squeezed(try body(
             "struct iOSMarkdownReferencePickerSheet: View",

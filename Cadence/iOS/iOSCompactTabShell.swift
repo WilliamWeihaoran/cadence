@@ -129,7 +129,8 @@ struct iOSCompactRootShell: View {
         // Carries the bar's colour down through the home-indicator strip, so the bar does not float
         // on a band of page background. Bottom edge only — the status bar keeps the page's own.
         .background(Theme.surface.ignoresSafeArea(edges: .bottom))
-        .tint(Theme.blue)
+        // No `.tint` here: `iOSRootView` declares the palette's blue once, above both shells
+        // ([[T-9975]]). This was the only declaration, so the iPad sidebar shell had none.
         .task(id: selectedTab) { visitedTabs.insert(selectedTab) }
     }
 

@@ -145,6 +145,11 @@ struct iOSRootView: View {
                 .accessibilityHidden(true)
         }
         .background(Theme.bg)
+        // Both shells, one call ([[T-9975]]). The palette's blue was declared only on the iPhone's
+        // tab shell, so on the iPad sidebar shell every control that inherits its tint and sits
+        // outside a sheet declaring its own (a page's field cursor, a menu's checkmark) drew the
+        // system blue instead. After the inspector host, so this wraps it as well as both shells.
+        .tint(Theme.blue)
         .preferredColorScheme(.dark)
         .statusBarHidden(horizontalSizeClass == .regular)
         .onOpenURL { url in
