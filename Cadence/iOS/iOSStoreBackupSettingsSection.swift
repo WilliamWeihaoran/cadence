@@ -111,6 +111,14 @@ struct iOSStoreBackupSettingsSection: View {
                         )
 
                         VStack(alignment: .leading, spacing: 4) {
+                            // [[T-10021]]: the card's own title, as the Export, Import and Delete
+                            // Cadence Data cards above it carry one under their labels and the
+                            // Mac's Backups card opens with this same line. Without it this was
+                            // the one Data Safety card that began mid-paragraph.
+                            Text(CadenceStoreBackupPresentation.title)
+                                .cadenceFont(.rowTitle, base: 15, weight: .semibold)
+                                .foregroundStyle(Theme.text)
+
                             Text(CadenceStoreBackupPresentation.description)
                                 .cadenceFont(.metadata, base: 12, weight: .regular)
                                 .foregroundStyle(Theme.subdued)
@@ -133,9 +141,13 @@ struct iOSStoreBackupSettingsSection: View {
                     }
 
                     HStack(spacing: 10) {
+                        // [[T-10020]]: `.primary`, the Mac's `.filled(Theme.blue)` for the same
+                        // button -- the card's main act, set apart from the tinted Clean
+                        // Automatic beside it on both platforms.
                         iOSActionButton(
                             title: CadenceStoreBackupPresentation.createButtonTitle,
                             systemImage: "plus.circle.fill",
+                            role: .primary,
                             size: .compact,
                             tint: Theme.blue,
                             isDisabled: controls == nil,
