@@ -229,6 +229,9 @@ Cadence/macOS/Views/SettingsViewSupport.swift
 Cadence/iOS/iOSRootSidebar.swift
 CadenceTests/CadenceSidebarCountMetricsTests.swift
 CadenceTests/SettingsCategoryReachTests.swift
+Cadence/macOS/Views/TildeContainerPicker.swift
+Cadence/macOS/Views/ContainerPickerSupportViews.swift
+CadenceTests/CadenceCaptureCardSeriesEndSeedTests.swift
 ```
 
 Each pattern above has one row below naming the branch its grant was made for, the date it
@@ -248,7 +251,8 @@ Cadence/Shared/CadenceTypography.swift                           branch=-       
 CadenceTests/CadenceTypographyScaleTests.swift                   branch=-                           granted=2026-09-27  grant=dec37fea  spent=b537dd50
 CadenceTests/CadenceCodex*.swift                                 branch=-                           granted=2026-10-04  grant=c2ba2a77  spent=b537dd50
 Cadence/Shared/Components/CadenceChoicePicker.swift              branch=-                           granted=2026-10-07  grant=524c3e41  spent=b537dd50
-Cadence/iOS/iOSChoicePicker.swift                                branch=-                           granted=2026-10-07  grant=524c3e41  spent=b537dd50
+# superseded 2026-11-02, kept as history: Cadence/iOS/iOSChoicePicker.swift                                branch=-                           granted=2026-10-07  grant=524c3e41  spent=b537dd50
+Cadence/iOS/iOSChoicePicker.swift                                branch=codex/r67-parity            granted=2026-11-02  grant=62766c05
 Cadence/Shared/Components/CadenceTagChip.swift                   branch=-                           granted=2026-10-07  grant=524c3e41  spent=b537dd50
 Cadence/macOS/Views/SettingsAppearanceSection.swift              branch=-                           granted=2026-10-07  grant=524c3e41  spent=b537dd50
 Cadence/CadenceApp.swift                                         branch=-                           granted=2026-10-07  grant=524c3e41  spent=b537dd50
@@ -427,6 +431,9 @@ Cadence/macOS/Views/SettingsViewSupport.swift                    branch=codex/r6
 Cadence/iOS/iOSRootSidebar.swift                                 branch=codex/r67-parity            granted=2026-10-31  grant=3352a903
 CadenceTests/CadenceSidebarCountMetricsTests.swift               branch=codex/r67-parity            granted=2026-10-31  grant=3352a903
 CadenceTests/SettingsCategoryReachTests.swift                    branch=codex/r67-parity            granted=2026-10-31  grant=3352a903
+Cadence/macOS/Views/TildeContainerPicker.swift                   branch=codex/r67-parity            granted=2026-11-02  grant=62766c05
+Cadence/macOS/Views/ContainerPickerSupportViews.swift            branch=codex/r67-parity            granted=2026-11-02  grant=62766c05
+CadenceTests/CadenceCaptureCardSeriesEndSeedTests.swift          branch=codex/r67-parity            granted=2026-11-02  grant=62766c05
 ```
 
 ### 2026-10-25 — [[T-6400]]: what the fence actually HOLDS, path by path, and the field that makes it expire
