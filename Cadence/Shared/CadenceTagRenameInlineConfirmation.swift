@@ -24,6 +24,12 @@ nonisolated enum CadenceTagRenameInlineMentions {
     /// `newInlineName` is the text that will actually be written into the body
     /// (`TagSupport.inlineTagBody(for:)`), not the display name, so the dialog cannot promise a
     /// `#Day Job` that the body can never hold.
+    ///
+    /// **`oldName` is read the same way, for the same reason ([[T-10048]]).** It used to be the
+    /// tag's raw display name, so renaming a tag called "Day Job" asked "Rewrite #Day Job to
+    /// #side-job in note text?" and said "1 note mentions #Day Job in its text" -- about prose that
+    /// holds `#day-job`, because a hashtag cannot hold a space. Both names in the dialog are now
+    /// the text the reader will actually find in their notes.
     struct Prompt: Equatable, Identifiable {
         let oldName: String
         let newInlineName: String
@@ -40,7 +46,7 @@ nonisolated enum CadenceTagRenameInlineMentions {
         let count = TagSupport.inlineMentionCount(of: tag, renamedTo: newName)
         guard count > 0 else { return nil }
         return Prompt(
-            oldName: tag.name,
+            oldName: TagSupport.inlineTagBody(for: tag.name),
             newInlineName: TagSupport.inlineTagBody(for: newName),
             count: count
         )

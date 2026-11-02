@@ -408,6 +408,28 @@ struct TagSupportTests {
         #expect(try context.fetch(FetchDescriptor<Cadence.Tag>()).map(\.slug).sorted() == ["day-job"])
     }
 
+    /// [[T-10048]]: the OLD name in the dialog is the text the prose holds too. A tag displayed as
+    /// "Day Job" is written `#day-job` in a note body, so a dialog that said "#Day Job" named a
+    /// hashtag the reader could not find in any of the notes it was counting.
+    @Test func theRenamePromptNamesTheOldTagAsTheProseSpellsIt() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let note = Note(kind: .daily, title: "Today", content: "Follow up on #day-job today")
+        context.insert(note)
+        TagSupport.syncNoteTagsFromMarkdown(note, in: context)
+        let tag = try #require(note.tags?.first)
+        // Same slug, so this rename asks nothing; it only gives the tag a name prose cannot hold.
+        _ = TagSupport.rename(tag, to: "Day Job")
+        #expect(tag.name == "Day Job", "non-vacuity: the tag's display name has a space in it")
+        #expect(note.content.contains("#day-job"), "non-vacuity: the prose still spells the slug")
+
+        let prompt = try #require(CadenceTagRenameInlineMentions.prompt(for: tag, renamedTo: "Side Job"))
+        #expect(prompt.oldName == "day-job")
+        #expect(CadenceTagRenameInlineMentions.title(for: prompt) == "Rewrite #day-job to #side-job in note text?")
+        #expect(CadenceTagRenameInlineMentions.message(for: prompt).hasPrefix("1 note mentions #day-job in its text."))
+        #expect(!CadenceTagRenameInlineMentions.message(for: prompt).contains("#Day Job"))
+    }
+
     /// The rewrite edits exactly what the tag sweep reads and nothing else: not a heading, not a
     /// fenced block, not a link destination, not inline code, not `#workflow`, and not the
     /// frontmatter line (which the rename rewrites by its own path, to a display name).
