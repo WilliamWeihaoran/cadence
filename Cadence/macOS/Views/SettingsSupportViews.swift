@@ -495,10 +495,14 @@ struct SidebarTabEditorSheet: View {
 
             HStack {
                 Spacer()
+                // [[T-10004]]: Escape closes, as in every other Mac sheet. Nothing here waits on
+                // Done -- the swatches and the switch write through their bindings as they change --
+                // so the one way out takes the key a Mac reaches for to leave a sheet.
                 CadenceActionButton(
                     title: "Done",
                     role: .primary,
-                    size: .compact
+                    size: .compact,
+                    shortcut: .cancelAction
                 ) {
                     dismiss()
                 }

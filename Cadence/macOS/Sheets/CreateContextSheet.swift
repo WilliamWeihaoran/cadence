@@ -26,7 +26,7 @@ struct CreateContextSheet: View {
                 name: $name,
                 colorHex: $selectedColor,
                 icon: $selectedIcon,
-                placeholder: "e.g. Work, School, Personal"
+                placeholder: "Context name…"
             )
 
             if let createFailureNotice {

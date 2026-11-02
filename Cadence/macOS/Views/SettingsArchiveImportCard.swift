@@ -223,10 +223,14 @@ private struct SettingsArchiveImportPreviewSheet: View {
 
             HStack(spacing: 8) {
                 Spacer(minLength: 12)
+                // [[T-10004]]: Escape cancels, through the same `onCancel` that drops the archive.
+                // Import takes no Return: in "Overwrite what matches" it replaces rows, and a
+                // confirm that writes the store is a click (T-7290's question, asked of this sheet).
                 CadenceActionButton(
                     title: CadenceArchiveImportPresentation.cancelButtonTitle,
                     role: .ghost,
                     size: .compact,
+                    shortcut: .cancelAction,
                     action: onCancel
                 )
                 CadenceActionButton(

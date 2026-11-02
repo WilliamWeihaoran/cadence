@@ -620,7 +620,9 @@ private struct SettingsDataResetConfirmationSheet: View {
 
             HStack(spacing: 8) {
                 Spacer(minLength: 12)
-                CadenceActionButton(title: "Cancel", role: .ghost, size: .compact) {
+                // [[T-10004]]: Escape cancels. Delete Everything takes no key: it is destructive,
+                // and the typed phrase is the gate, not a Return pressed in the phrase field.
+                CadenceActionButton(title: "Cancel", role: .ghost, size: .compact, shortcut: .cancelAction) {
                     dismiss()
                 }
                 CadenceActionButton(
