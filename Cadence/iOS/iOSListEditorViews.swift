@@ -235,10 +235,14 @@ struct iOSListEditorSheet: View {
                                         selectedID: selectedArea?.id,
                                         noneTitle: "None"
                                     ).map { item in
+                                        // The canonical area glyph, not the area's own `icon`
+                                        // ([[T-10145]], [[T-8553]]): a chooser speaks one
+                                        // per-kind vocabulary. Read at this call site because
+                                        // `CadencePickerItem` also feeds the Context picker above.
                                         iOSChoiceRow(
                                             value: item.id?.uuidString ?? "none",
                                             title: item.title,
-                                            systemImage: item.icon,
+                                            systemImage: item.isNone ? nil : CadenceListKindIcon.area,
                                             color: item.tint
                                         )
                                     },

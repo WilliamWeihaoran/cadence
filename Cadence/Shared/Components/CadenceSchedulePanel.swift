@@ -545,7 +545,9 @@ struct CadenceSchedulePanel<NotesField: View>: View {
 
     private var listAndSection: some View {
         CadenceFieldSection(title: nil, style: .ruled) {
-            CadenceFieldRow(label: "List", systemImage: "tray.full.fill", color: Theme.blue) {
+            // The canonical Inbox glyph ([[T-10122]]), so this row and the Inbox row of the
+            // popover it opens draw one tray, not two.
+            CadenceFieldRow(label: "List", systemImage: CadenceListKindIcon.inbox, color: Theme.blue) {
                 CadenceChoiceValueButton(title: listTitle, color: Theme.text) {
                     showListPicker = true
                 }

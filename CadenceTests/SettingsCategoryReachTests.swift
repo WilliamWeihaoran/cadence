@@ -472,7 +472,9 @@ struct CadenceR67ParityTests {
             "Cadence/macOS/Views/TildeContainerPicker.swift": ["inbox", "area", "project"],
             "Cadence/macOS/Views/MacTaskRowContextMenu.swift": ["inbox", "area", "project"],
             "Cadence/iOS/iOSCalendarSettingsSection.swift": ["area", "project"],
-            "Cadence/macOS/Views/SettingsListManagementSections.swift": ["area", "project"]
+            "Cadence/macOS/Views/SettingsListManagementSections.swift": ["area", "project"],
+            "Cadence/iOS/iOSListEditorViews.swift": ["area"],
+            "Cadence/Shared/Components/CadenceSchedulePanel.swift": ["inbox"]
         ]
         for (path, kinds) in chooserKinds {
             let code = try strippingComments(sourceFile(path))
@@ -483,6 +485,47 @@ struct CadenceR67ParityTests {
                 )
             }
         }
+    }
+
+    /// The two sites the sweeps above could not see ([[T-10145]], [[T-10122]]).
+    ///
+    /// The iOS list editor's Area picker labelled each row with `item.icon` -- the area's own glyph
+    /// read through `CadencePickerItem`, which the list-icon regex does not name because a
+    /// `CadencePickerItem` also carries a Context's icon. Every `CadenceAreaPickerSupport.items(...)`
+    /// row builder in the tree is therefore found here and must draw `CadenceListKindIcon.area`, so
+    /// a second Area picker written later is held to the same rule without anyone listing it.
+    ///
+    /// The schedule panel's "List" field row drew `tray.full.fill`, a spelling [[T-8553]] retired,
+    /// directly above the popover whose Inbox row draws `CadenceListKindIcon.inbox`.
+    @Test func everyAreaPickerRowAndTheListFieldRowDrawTheCanonicalKindGlyph() throws {
+        let areaPickerCall = "CadenceAreaPickerSupport.items("
+        var builders: [String: Int] = [:]
+        for path in try swiftFiles(under: "Cadence") {
+            let code = try strippingComments(sourceFile(path))
+            var searchStart = code.startIndex
+            while let call = code.range(of: areaPickerCall, range: searchStart..<code.endIndex) {
+                builders[path, default: 0] += 1
+                // The row builder is the `.map { ... }` closure after the call, up to its selection.
+                let tail = code[call.upperBound...]
+                let end = tail.range(of: "selection:")?.lowerBound ?? tail.endIndex
+                let builder = String(tail[..<end])
+                #expect(
+                    builder.contains("systemImage: item.isNone ? nil : CadenceListKindIcon.area"),
+                    "\(path): an Area picker row does not draw the canonical area glyph"
+                )
+                #expect(
+                    !builder.contains("item.icon"),
+                    "\(path): an Area picker row labels an area with that area's own icon"
+                )
+                searchStart = call.upperBound
+            }
+        }
+        // Non-vacuity: the one Area picker this ticket fixed is the one the walk reached.
+        #expect(builders == ["Cadence/iOS/iOSListEditorViews.swift": 1])
+
+        let panel = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceSchedulePanel.swift"))
+        #expect(panel.contains(#"CadenceFieldRow(label: "List", systemImage: CadenceListKindIcon.inbox,"#))
+        #expect(!panel.contains(#""tray.full.fill""#))
     }
 
     @Test func r67CaptureRepeatControlsUseTheOccurrenceAwareSettersAndBounds() throws {
