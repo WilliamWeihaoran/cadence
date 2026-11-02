@@ -137,17 +137,24 @@ struct EstimatePickerPopoverContent: View {
     private let onCommit: ((Int) -> Bool)?
     /// Shown under the footer when `onCommit` refuses. `nil` on every draft caller.
     var failureNotice: String?
+    /// Whether the footer draws its own Done ([[T-10029]]). `false` only where this panel is
+    /// embedded in a popover that already ends in a Done of its own -- the capture card's Do
+    /// editor, whose header Done closes the popover. There the panel's Done had nothing to close
+    /// (`onClose` was `{}`), so the popover showed two Dones and one of them did nothing.
+    var showsDone = true
 
     /// The draft form. `value`'s setter is the only write, so every close is unconditional.
     init(
         value: Binding<Int>,
         title: String = "ESTIMATE",
         unsetValueLabel: String = "None",
+        showsDone: Bool = true,
         onClose: @escaping () -> Void = {}
     ) {
         self._value = value
         self.title = title
         self.unsetValueLabel = unsetValueLabel
+        self.showsDone = showsDone
         self.onClose = onClose
         self.onCommit = nil
         self.failureNotice = nil
@@ -381,26 +388,32 @@ struct EstimatePickerPopoverContent: View {
 
                 Spacer(minLength: 0)
 
-                Button {
-                    commit(force: true)
-                    closeIfLanded()
-                } label: {
-                    Text("Done")
-                        .cadenceFont(.metadata, base: EstimateRollerMetrics.footerLabelSize, weight: .semibold)
-                        .foregroundStyle(Theme.blue)
-                        .padding(.horizontal, 12)
-                        .frame(height: plateHeight)
-                        .background(Theme.blue.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .estimatePickerTouchTarget(plateHeight: plateHeight)
+                if showsDone {
+                    doneButton(plateHeight: plateHeight)
                 }
-                .buttonStyle(.plain)
             }
 
             if let failureNotice {
                 CadenceInlineFailureNotice(text: failureNotice)
             }
         }
+    }
+
+    private func doneButton(plateHeight: CGFloat) -> some View {
+        Button {
+            commit(force: true)
+            closeIfLanded()
+        } label: {
+            Text("Done")
+                .cadenceFont(.metadata, base: EstimateRollerMetrics.footerLabelSize, weight: .semibold)
+                .foregroundStyle(Theme.blue)
+                .padding(.horizontal, 12)
+                .frame(height: plateHeight)
+                .background(Theme.blue.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .estimatePickerTouchTarget(plateHeight: plateHeight)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Edits

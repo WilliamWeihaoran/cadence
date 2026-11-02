@@ -6,6 +6,16 @@ struct CadenceScheduleCaptureOptions {
     var createTag: ((String) -> String?)?
 }
 
+/// What the capture card's "New tag" field may hand `createTag` ([[T-10028]]): the name trimmed,
+/// or `nil` when nothing but whitespace was typed -- the answer the Add button greys out on, and
+/// the one Return now reads too, so the two can never disagree about a blank name.
+nonisolated enum CadenceCaptureTagEntry {
+    static func submittableName(_ raw: String) -> String? {
+        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
+    }
+}
+
 enum CadenceCaptureField: String, CaseIterable, Identifiable {
     case doDate, dueDate, list, tags, repeatRule, priority, estimate, calendar, location
 
@@ -384,7 +394,10 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                     }
                     editor(field)
                     if let actionError { CadenceInlineNotice(text: actionError, tone: .failure) }
-                    if isSet(field), field != .calendar, !(field == .doDate && draft.kind == .event) {
+                    // [[T-10029]]: not for Estimate, whose panel already ends in a red Clear that
+                    // does the same thing -- two Clears, one under the other, for one value.
+                    if isSet(field), field != .calendar, field != .estimate,
+                       !(field == .doDate && draft.kind == .event) {
                         Button("Clear \(field.title)") { clear(field) }
                             .foregroundStyle(Theme.red)
                     }
@@ -653,6 +666,15 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
         activeField = nil
     }
 
+    /// The one path from the "New tag" field to a tag, for the Add button and Return alike
+    /// ([[T-10028]]). A blank name does nothing here for the same reason the button greys out.
+    private func addNewTag() {
+        guard let createTag = options.createTag,
+              let name = CadenceCaptureTagEntry.submittableName(newTagName) else { return }
+        actionError = createTag(name)
+        if actionError == nil { newTagName = "" }
+    }
+
     private func commit() {
         guard !isReadOnly else { return }
         guard draft.hasCommittableTitle else {
@@ -690,9 +712,11 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                     // opens has to offer both — otherwise the duration is readable where it is not
                     // settable. `.estimate` stays in the overflow menu as well: that is the way in
                     // for a task with no do date, whose chip does not exist yet.
+                    // [[T-10029]]: the panel's own "ESTIMATE" eyebrow is the heading (a second
+                    // "Estimate" above it said it twice), and the popover header's Done is the
+                    // only Done -- the panel's had nothing to close here.
                     Divider()
-                    Text(CadenceCaptureField.estimate.title).cadenceFont(.controlLabel)
-                    EstimatePickerPopoverContent(value: estimateBinding, unsetValueLabel: "Clear estimate", onClose: {})
+                    EstimatePickerPopoverContent(value: estimateBinding, unsetValueLabel: "Clear estimate", showsDone: false)
                 }
                 if draft.kind == .event {
                     Text("Ends").cadenceFont(.controlLabel)
@@ -729,14 +753,20 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                     options.selectedTagIDs.wrappedValue = ids
                 } label: { choiceLabel(choice, selected: selectedTags.contains(choice.id)) }
             }
-            if let createTag = options.createTag {
+            if options.createTag != nil {
                 HStack {
+                    // [[T-10028]]: typed like every other tag-name field on iOS -- no capital
+                    // forced onto the first letter, no autocorrect rewriting the name -- and
+                    // Return adds it, as it does in the task sheet's own tag picker. This field
+                    // was the one where Return only dropped the keyboard and left the name typed.
                     TextField("New tag", text: $newTagName)
-                    Button("Add") {
-                        actionError = createTag(newTagName)
-                        if actionError == nil { newTagName = "" }
-                    }
-                    .disabled(newTagName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .autocorrectionDisabled()
+                        #if os(iOS)
+                        .textInputAutocapitalization(.never)
+                        #endif
+                        .onSubmit(addNewTag)
+                    Button("Add", action: addNewTag)
+                        .disabled(CadenceCaptureTagEntry.submittableName(newTagName) == nil)
                 }
             }
         case .repeatRule:
