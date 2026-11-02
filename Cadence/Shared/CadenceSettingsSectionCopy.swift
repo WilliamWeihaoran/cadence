@@ -140,6 +140,15 @@ nonisolated enum CadenceTagSettingsCopy {
     /// "No completed or archived lists" — is a noun phrase without one. A title is not a sentence.
     static let emptyCatalogTitle = "No active tags"
     static let emptyCatalogSubtitle = "Create a tag or add the default set."
+
+    /// The tag name and description fields' placeholders, in every tag editor on both platforms
+    /// ([[T-10032]]). The Mac said "Name" and "Optional description" while creating a tag and
+    /// "Name" and "Description" while editing one -- in Settings and in the tag picker's Edit Tag
+    /// sheet -- while iOS said "Tag name" and "Optional description" in both. The Mac fields are
+    /// placeholder-only (no eyebrow above them), so the placeholder is the only thing naming the
+    /// field, and the description is no less optional on the edit card than on the create card.
+    static let nameFieldPlaceholder = "Tag name"
+    static let descriptionFieldPlaceholder = "Optional description"
 }
 
 /// Settings → Note Templates, on both surfaces.

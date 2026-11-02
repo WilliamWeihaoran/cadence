@@ -50,10 +50,15 @@ struct SettingsTagsSection: View {
 
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(spacing: 10) {
-                                tagTextField("Name", text: $newTagName)
+                                tagTextField(CadenceTagSettingsCopy.nameFieldPlaceholder, text: $newTagName)
                                     .frame(minWidth: 180)
-                                tagTextField("Optional description", text: $newTagDescription)
+                                tagTextField(CadenceTagSettingsCopy.descriptionFieldPlaceholder, text: $newTagDescription)
                             }
+                            // [[T-10033]]: Return in either field creates, as Return in the tag
+                            // picker's "Find or create tag" field does. `createTag` reads the same
+                            // `creationDecision` the disabled button does, so a blank, duplicate
+                            // or archived name does nothing on Return either.
+                            .onSubmit(createTag)
 
                             HStack(spacing: 8) {
                                 TagColorSwatches(selectedHex: $newTagColorHex)
@@ -346,9 +351,9 @@ private struct SettingsTagRow: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
-                        editField("Name", text: $draftName)
+                        editField(CadenceTagSettingsCopy.nameFieldPlaceholder, text: $draftName)
                             .frame(minWidth: 180)
-                        editField("Description", text: $draftDescription)
+                        editField(CadenceTagSettingsCopy.descriptionFieldPlaceholder, text: $draftDescription)
                     }
 
                     HStack(spacing: 8) {
@@ -357,6 +362,9 @@ private struct SettingsTagRow: View {
                             .frame(width: 96)
                     }
                 }
+                // [[T-10033]]: Return in any of the three fields saves through the Save button's
+                // own `requestSave` (gated by `canSave`, and asking about inline mentions first).
+                .onSubmit(requestSave)
             }
 
             if hasDuplicateSlug {
@@ -381,6 +389,14 @@ private struct SettingsTagRow: View {
                 }
                 .disabled(!canSave)
             }
+        }
+        // [[T-10033]]: Escape cancels through the Cancel button's own `cancelEditing`, focus-scoped
+        // as the add-link form and the list-note rename are ([[T-10016]]) -- several cards can be
+        // open at once, so a window-wide key equivalent would not know which one it closes.
+        .onExitCommand(perform: cancelEditing)
+        .onKeyPress(.escape) {
+            cancelEditing()
+            return .handled
         }
     }
 

@@ -122,6 +122,9 @@ struct ContextSettingsRow: View {
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.text)
                         .cadenceSettingsWell()
+                        // [[T-10033]]: Return saves through the Save button's own `saveEdit`,
+                        // which refuses a blank name as the disabled button does.
+                        .onSubmit(saveEdit)
 
                     SectionEyebrowLabel(text: "Color")
                     ColorGrid(selected: $editColor)
@@ -138,10 +141,9 @@ struct ContextSettingsRow: View {
                         CadenceActionButton(
                             title: "Cancel",
                             role: .ghost,
-                            size: .compact
-                        ) {
-                            withAnimation(.easeInOut(duration: 0.15)) { isEditing = false }
-                        }
+                            size: .compact,
+                            action: cancelEditing
+                        )
 
                         CadenceActionButton(
                             title: "Save",
@@ -155,6 +157,13 @@ struct ContextSettingsRow: View {
                     .padding(.bottom, 4)
                 }
                 .padding(.bottom, 10)
+                // [[T-10033]]: Escape cancels through the Cancel button's own `cancelEditing`,
+                // focus-scoped like the Settings tag card's editor; several rows can be open at once.
+                .onExitCommand(perform: cancelEditing)
+                .onKeyPress(.escape) {
+                    cancelEditing()
+                    return .handled
+                }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -192,6 +201,10 @@ struct ContextSettingsRow: View {
         }
         .buttonStyle(.cadencePlain(cornerRadius: Theme.radiusControlCompact))
         .cadenceControlLabel(accessibilityLabel)
+    }
+
+    private func cancelEditing() {
+        withAnimation(.easeInOut(duration: 0.15)) { isEditing = false }
     }
 
     private func startEditing() {

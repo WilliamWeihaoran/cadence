@@ -66,4 +66,100 @@ struct CadenceMacInlineFormKeyboardTests {
             "Discard throws the session away and must take no key"
         )
     }
+
+    /// **[[T-10033]]: the Settings tag and context editors answer Return and Escape.** The Create
+    /// Tag fields, a tag card's inline editor and a context row's inline rename all had a Save or
+    /// Create button and nothing listening for either key, while the tag picker's "Find or create
+    /// tag" field creates on Return and the add-link form cancels on Escape.
+    @Test func settingsTagCreatorCreatesOnReturn() throws {
+        let section = try Self.compactBody(
+            "struct SettingsTagsSection: View",
+            in: "Cadence/macOS/Views/SettingsTagsSection.swift"
+        )
+        #expect(
+            section.contains("text:$newTagDescription)}.onSubmit(createTag)"),
+            "Return in the Create Tag name or description field must create"
+        )
+        #expect(
+            Self.count(".keyboardShortcut(", in: section) + Self.count("shortcut:.", in: section) == 0,
+            "a key equivalent would answer Return anywhere in the Settings window"
+        )
+    }
+
+    @Test func settingsTagCardEditorSavesOnReturnAndCancelsOnEscape() throws {
+        let row = try Self.compactBody(
+            "private struct SettingsTagRow: View",
+            in: "Cadence/macOS/Views/SettingsTagsSection.swift"
+        )
+        #expect(
+            row.contains(".frame(width:96)}}.onSubmit(requestSave)}"),
+            "Return in the tag card's name, description or hex field must save through requestSave"
+        )
+        #expect(row.contains(".onExitCommand(perform:cancelEditing)"), "Escape from a focused field must cancel")
+        #expect(
+            row.contains(".onKeyPress(.escape){cancelEditing()return.handled}"),
+            "Escape must also cancel along SwiftUI's focus route"
+        )
+        #expect(row.contains("action:cancelEditing){Text(\"Cancel\")}"), "the Cancel button and Escape share cancelEditing")
+        #expect(Self.count(".keyboardShortcut(", in: row) + Self.count("shortcut:.", in: row) == 0)
+    }
+
+    @Test func settingsContextRenameSavesOnReturnAndCancelsOnEscape() throws {
+        let row = try Self.compactBody(
+            "struct ContextSettingsRow: View",
+            in: "Cadence/macOS/Views/SettingsSupportViews.swift"
+        )
+        #expect(
+            row.contains("TextField(\"Contextname\",text:$editName).textFieldStyle(.plain).font(.system(size:13)).foregroundStyle(Theme.text).cadenceSettingsWell().onSubmit(saveEdit)"),
+            "Return in the context rename field must save through saveEdit"
+        )
+        #expect(row.contains(".onExitCommand(perform:cancelEditing)"), "Escape from the rename field must cancel")
+        #expect(
+            row.contains(".onKeyPress(.escape){cancelEditing()return.handled}"),
+            "Escape must also cancel along SwiftUI's focus route"
+        )
+        #expect(
+            row.contains("title:\"Cancel\",role:.ghost,size:.compact,action:cancelEditing)"),
+            "the Cancel button and Escape share cancelEditing"
+        )
+        #expect(
+            row.contains("privatefunccancelEditing(){withAnimation(.easeInOut(duration:0.15)){isEditing=false}}"),
+            "cancelEditing must close the editor"
+        )
+        #expect(Self.count(".keyboardShortcut(", in: row) + Self.count("shortcut:.", in: row) == 0)
+    }
+}
+
+/// **[[T-10032]]: every tag editor names its fields "Tag name" and "Optional description".** The Mac
+/// creator said "Name" / "Optional description", the Mac Settings card editor and the tag picker's
+/// Edit Tag sheet "Name" / "Description", and iOS "Tag name" / "Optional description" in both. One
+/// shared copy now feeds all five editors' fields.
+struct CadenceTagEditorPlaceholderTests {
+    @Test func theSharedPlaceholdersAreIOSsWording() {
+        #expect(CadenceTagSettingsCopy.nameFieldPlaceholder == "Tag name")
+        #expect(CadenceTagSettingsCopy.descriptionFieldPlaceholder == "Optional description")
+    }
+
+    @Test func everyTagEditorReadsTheSharedPlaceholders() throws {
+        let editors: [(path: String, name: Int, description: Int)] = [
+            ("Cadence/macOS/Views/SettingsTagsSection.swift", 2, 2),
+            ("Cadence/macOS/Views/TagPickerPopoverViews.swift", 1, 1),
+            ("Cadence/iOS/iOSSettingsTagsSection.swift", 2, 2),
+        ]
+        for editor in editors {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(editor.path))
+            let compact = source.filter { !$0.isWhitespace }
+            #expect(
+                compact.components(separatedBy: "(CadenceTagSettingsCopy.nameFieldPlaceholder,text:").count - 1 == editor.name,
+                "\(editor.path) names a tag-name field with its own literal"
+            )
+            #expect(
+                compact.components(separatedBy: "(CadenceTagSettingsCopy.descriptionFieldPlaceholder,text:").count - 1 == editor.description,
+                "\(editor.path) names a tag-description field with its own literal"
+            )
+            for stale in [#"("Name",text:"#, #"("Description",text:"#, #"("Tagname",text:"#, #"("Optionaldescription",text:"#] {
+                #expect(!compact.contains(stale), "\(editor.path) still spells \(stale)")
+            }
+        }
+    }
 }

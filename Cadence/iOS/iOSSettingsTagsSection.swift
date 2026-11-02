@@ -101,13 +101,13 @@ struct iOSTagsSettingsSection: View {
                     // `.roundedBorder` drew UIKit's own light field chrome into a dark
                     // card — the one place in settings with no palette colour at all.
                     iOSSettingsField(title: "Name") {
-                        TextField("Tag name", text: $newName)
+                        TextField(CadenceTagSettingsCopy.nameFieldPlaceholder, text: $newName)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                     }
 
                     iOSSettingsField(title: "Description") {
-                        TextField("Optional description", text: $newDescription)
+                        TextField(CadenceTagSettingsCopy.descriptionFieldPlaceholder, text: $newDescription)
                     }
 
                     VStack(alignment: .leading, spacing: 7) {
@@ -382,12 +382,12 @@ private struct iOSTagSettingsRow: View {
     private var editContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             iOSSettingsField(title: "Name") {
-                TextField("Tag name", text: $draftName)
+                TextField(CadenceTagSettingsCopy.nameFieldPlaceholder, text: $draftName)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
             }
             iOSSettingsField(title: "Description") {
-                TextField("Optional description", text: $draftDescription, axis: .vertical)
+                TextField(CadenceTagSettingsCopy.descriptionFieldPlaceholder, text: $draftDescription, axis: .vertical)
             }
             VStack(alignment: .leading, spacing: 7) {
                 SectionEyebrowLabel(text: "Color")

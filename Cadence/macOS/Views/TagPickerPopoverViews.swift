@@ -387,8 +387,8 @@ private struct TagEditSheet: View {
                 .foregroundStyle(Theme.text)
 
             VStack(alignment: .leading, spacing: 8) {
-                editField("Name", text: $name)
-                editField("Description", text: $description)
+                editField(CadenceTagSettingsCopy.nameFieldPlaceholder, text: $name)
+                editField(CadenceTagSettingsCopy.descriptionFieldPlaceholder, text: $description)
             }
 
             // T-7335: Settings' strip, not a copy of it — this one named no swatch to VoiceOver
