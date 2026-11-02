@@ -219,6 +219,17 @@ private struct AddLinkBar: View {
         .padding(.horizontal, 20)
         .padding(.vertical, 10)
         .background(Theme.surface)
+        // [[T-10016]]: Escape cancels, through the same `onCancel` as the button, as it does in the
+        // inline task composer and the list-note rename. Focus-scoped rather than a `.cancelAction`
+        // key equivalent, which would answer Escape anywhere in the window while the form is open.
+        // Both spellings, as `TaskInspectorChildPanelEscapeDismissal` carries: `onExitCommand`
+        // rides `cancelOperation(_:)` from the focused field, `onKeyPress` follows SwiftUI focus,
+        // and `SavedLinkAddForm.cancel()` is idempotent, so whichever fires second is a no-op.
+        .onExitCommand(perform: onCancel)
+        .onKeyPress(.escape) {
+            onCancel()
+            return .handled
+        }
     }
 }
 

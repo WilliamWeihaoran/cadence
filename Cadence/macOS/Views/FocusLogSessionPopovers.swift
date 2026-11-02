@@ -95,7 +95,7 @@ struct LogSessionPopover: View {
                     role: .primary,
                     size: .compact
                 ) {
-                    onLog(logHours, logMinutes, markComplete)
+                    submitLog()
                 }
             }
             .padding(.horizontal, 16)
@@ -103,6 +103,12 @@ struct LogSessionPopover: View {
         }
         .frame(width: 260)
         .background(Theme.surface)
+    }
+
+    /// The Log button's action and Return's in either field ([[T-10017]]): one read of the
+    /// typed figures, so the two cannot log different totals.
+    private func submitLog() {
+        onLog(logHours, logMinutes, markComplete)
     }
 
     @ViewBuilder
@@ -118,6 +124,11 @@ struct LogSessionPopover: View {
                 .padding(.vertical, 7)
                 .background(Theme.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                // [[T-10017]]: Return in either field logs, as Return commits the Kanban column
+                // name, an inspector subtask and a saved link's URL. Focus-scoped on purpose: a
+                // `.defaultAction` key equivalent reaches a popover only while its window is key.
+                // Discard takes no key -- it throws the session away.
+                .onSubmit(submitLog)
             Text(label)
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.dim)
