@@ -290,7 +290,6 @@ private struct ContainerPickerRow: View {
     let color: Color
     let isHighlighted: Bool
     let action: () -> Void
-    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
@@ -306,19 +305,13 @@ private struct ContainerPickerRow: View {
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .background(rowBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .background(isHighlighted ? Theme.blue.opacity(0.08) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: CadenceMenuRowButtonStyle.cornerRadius))
         }
-        .buttonStyle(.cadencePlain(cornerRadius: 6))
-        .onHover { isHovered = $0 }
-    }
-
-    /// One background layer for both states; stacking a hover fill under a highlight fill made
-    /// the highlighted row read as a different colour when the pointer happened to rest on it.
-    private var rowBackground: Color {
-        if isHighlighted { return Theme.blue.opacity(0.08) }
-        if isHovered { return Theme.blue.opacity(0.06) }
-        return .clear
+        // [[T-9944]]: the row style is the one hover plate, as [[T-9465]] made it for the ~ panel's
+        // rows. This row drew `.cadencePlain`'s blue wash AND stroke over its own `isHovered` fill,
+        // so a pointer lit two layers and a hovered row outlined itself where no other picker row does.
+        .buttonStyle(.cadenceMenuRow)
     }
 }
 #endif

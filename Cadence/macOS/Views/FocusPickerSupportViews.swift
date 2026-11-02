@@ -184,7 +184,11 @@ private struct FocusPickItemRow: View {
                     .strokeBorder(isHovered ? tint.opacity(0.2) : Theme.borderSubtle.opacity(0.35), lineWidth: 1)
             }
         }
-        .buttonStyle(.cadencePlain(cornerRadius: 8))
+        // [[T-9945]]: the row's own plate -- the brighter fill and the task-tinted stroke -- is its
+        // one hover layer, as [[T-9465]] did for the controls that keep a plate of their own.
+        // `.cadencePlain` laid a blue wash and a blue stroke over both, so the stroke read as two
+        // colours at once.
+        .buttonStyle(.plain)
         .help(helpText)
         .onHover { isHovered = $0 }
     }

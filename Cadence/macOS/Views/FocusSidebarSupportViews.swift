@@ -147,7 +147,9 @@ struct FocusSidebarTaskRow: View {
             .background(Theme.surfaceElevated.opacity(isHovered ? 0.78 : 0.52))
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
-        .buttonStyle(.cadencePlain(cornerRadius: 8))
+        // [[T-9945]]: the row's brighter fill is its one hover layer, as on the Focus picker's
+        // task rows; `.cadencePlain` stroked a blue outline around it as well.
+        .buttonStyle(.plain)
         // T-7065: named for the task it starts, with the detail line it draws as the value. It was
         // `.cadenceControlLabel("Focus this task")`, which replaced the row's own words, so every
         // "Next up" row announced the same three words. The sentence stays as the tooltip.

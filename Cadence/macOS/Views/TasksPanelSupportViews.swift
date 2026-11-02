@@ -443,7 +443,6 @@ private struct SectionPickerRow: View {
     let section: String
     let isHighlighted: Bool
     let action: () -> Void
-    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
@@ -463,17 +462,12 @@ private struct SectionPickerRow: View {
             .padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .background(rowBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .background(isHighlighted ? Theme.blue.opacity(0.08) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: CadenceMenuRowButtonStyle.cornerRadius))
         }
-        .buttonStyle(.cadencePlain(cornerRadius: 6))
-        .onHover { isHovered = $0 }
-    }
-
-    private var rowBackground: Color {
-        if isHighlighted { return Theme.blue.opacity(0.08) }
-        if isHovered { return Theme.blue.opacity(0.06) }
-        return .clear
+        // [[T-9944]]: the row style is the one hover plate ([[T-9465]]); `.cadencePlain` stroked a
+        // second, blue outline around this row's own hover fill.
+        .buttonStyle(.cadenceMenuRow)
     }
 }
 

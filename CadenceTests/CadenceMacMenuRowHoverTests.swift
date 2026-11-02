@@ -52,7 +52,10 @@ import Testing
     @Test func theNamedMenusUseTheRowStyle() throws {
         let sites: [String: Int] = [
             "Cadence/macOS/Sheets/CreateTaskSheetSupportViews.swift": 2,
-            "Cadence/macOS/Views/TasksPanelSupportViews.swift": 1,
+            // [[T-9944]]: + the section picker's rows.
+            "Cadence/macOS/Views/TasksPanelSupportViews.swift": 2,
+            // [[T-9944]]: the list picker's rows.
+            "Cadence/macOS/Views/ContainerPickerSupportViews.swift": 1,
             "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift": 1,
             "Cadence/macOS/CadenceCalendarPicker.swift": 1,
             "Cadence/macOS/Views/CadenceContextPicker.swift": 1,
@@ -72,9 +75,48 @@ import Testing
         for (path, row) in [
             ("Cadence/macOS/Sheets/CreateTaskSheetSupportViews.swift", "struct TildeContainerPickerRow: View"),
             ("Cadence/macOS/Views/TaskTitleInlineTagPicker.swift", "private struct InlineTagPickerRow: View"),
+            // [[T-9944]]: these two lit `.cadencePlain`'s wash and stroke over their own hover fill.
+            ("Cadence/macOS/Views/ContainerPickerSupportViews.swift", "private struct ContainerPickerRow: View"),
+            ("Cadence/macOS/Views/TasksPanelSupportViews.swift", "private struct SectionPickerRow: View"),
         ] {
             let body = try #require(CadenceSourceScan.declarationBody(row, in: try Self.code(path)), "\(row) moved")
             #expect(!body.contains("onHover"), "\(row) lights its own hover fill again")
+        }
+    }
+
+    /// **[[T-9944]].** The list and section pickers' rows wear the row style and nothing else: one
+    /// plate under the pointer, the keyboard highlight a fill at that plate's radius.
+    @Test func theListAndSectionPickerRowsLightOnePlate() throws {
+        for (path, row) in [
+            ("Cadence/macOS/Views/ContainerPickerSupportViews.swift", "private struct ContainerPickerRow: View"),
+            ("Cadence/macOS/Views/TasksPanelSupportViews.swift", "private struct SectionPickerRow: View"),
+        ] {
+            let body = try #require(CadenceSourceScan.declarationBody(row, in: try Self.code(path)), "\(row) moved")
+            #expect(CadenceSourceScan.matchCount("\\.buttonStyle\\(", in: body) == 1, "\(row) has more or fewer than one button style")
+            #expect(body.contains(".buttonStyle(.cadenceMenuRow)"), "\(row) is not on the row style")
+            #expect(!body.contains("cadencePlain"), "\(row) lights .cadencePlain's wash and stroke again")
+            #expect(!body.contains("isHovered"), "\(row) paints its own hover fill under the row style's")
+            // Non-vacuity: the keyboard highlight is still drawn, at the row style's radius.
+            #expect(body.contains(".background(isHighlighted ? Theme.blue.opacity(0.08) : Color.clear)"), "\(row) lost its highlight")
+            #expect(body.contains("RoundedRectangle(cornerRadius: CadenceMenuRowButtonStyle.cornerRadius)"), "\(row) clips at another radius")
+        }
+    }
+
+    /// **[[T-9945]].** The Focus picker's task row keeps its own plate -- the brighter fill and the
+    /// task-tinted stroke -- as its one hover layer, so its button lights nothing of its own.
+    @Test func theFocusTaskRowsLightOnlyTheirOwnPlate() throws {
+        for (path, row, fill) in [
+            ("Cadence/macOS/Views/FocusPickerSupportViews.swift", "private struct FocusPickItemRow: View",
+             ".background(Theme.surfaceElevated.opacity(isHovered ? 0.88 : 0.58))"),
+            ("Cadence/macOS/Views/FocusSidebarSupportViews.swift", "struct FocusSidebarTaskRow: View",
+             ".background(Theme.surfaceElevated.opacity(isHovered ? 0.78 : 0.52))"),
+        ] {
+            let body = try #require(CadenceSourceScan.declarationBody(row, in: try Self.code(path)), "\(row) moved")
+            // Non-vacuity: the row's own hover plate is still there.
+            #expect(body.contains(fill), "\(row)'s hover fill moved")
+            #expect(body.contains(".onHover { isHovered = $0 }"), "\(row) no longer tracks the pointer")
+            #expect(CadenceSourceScan.matchCount("\\.buttonStyle\\(", in: body) == 1, "\(row) has more or fewer than one button style")
+            #expect(body.contains(".buttonStyle(.plain)"), "\(row) lights a button-style wash over its own plate")
         }
     }
 
