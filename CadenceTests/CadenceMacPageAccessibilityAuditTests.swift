@@ -781,8 +781,9 @@ struct CadenceMacPageAccessibilityAuditTests {
         let row = try CadenceControlAccessibilityLabelTests.bodyOfStruct("LinkRow", in: source)
             .filter { !$0.isWhitespace }
         let menu = try #require(CadenceSourceScan.declarationBody(".contextMenu", in: row), "the link row has no context menu")
-        #expect(menu.contains("Button(MacSavedLinkRowActions.openMenuTitle,action:openLink)"))
-        #expect(menu.contains("Button(MacSavedLinkRowActions.copyMenuTitle,action:copyLink)"))
+        // [[T-10165]]: each item is now `Button(action:) { Label(title, systemImage:) }`.
+        #expect(menu.contains("Button(action:openLink){Label(MacSavedLinkRowActions.openMenuTitle,"))
+        #expect(menu.contains("Button(action:copyLink){Label(MacSavedLinkRowActions.copyMenuTitle,"))
         #expect(menu.contains("Button(role:.destructive){onDelete()}"))
         #expect(menu.contains("Label(MacSavedLinkRowActions.deleteMenuTitle,systemImage:"))
         #expect(row.contains(".onTapGesture(perform:openLink)"), "the row's click no longer opens the link")

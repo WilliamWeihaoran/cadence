@@ -862,7 +862,7 @@ struct iOSListLinksPanel: View {
                             Button(role: .destructive) {
                                 linkToDelete = link
                             } label: {
-                                Label("Delete", systemImage: "trash")
+                                Label(CadenceSavedLinkRowMenu.deleteTitle, systemImage: CadenceSavedLinkRowMenu.deleteSystemImage)
                             }
                         }
                         // [[T-10057]]: the Mac row's right-click menu, item for item and in its
@@ -871,18 +871,18 @@ struct iOSListLinksPanel: View {
                             Button {
                                 open(link)
                             } label: {
-                                Label(CadenceSavedLinkRowMenu.openTitle, systemImage: "arrow.up.right")
+                                Label(CadenceSavedLinkRowMenu.openTitle, systemImage: CadenceSavedLinkRowMenu.openSystemImage)
                             }
                             Button {
                                 UIPasteboard.general.string = link.url
                             } label: {
-                                Label(CadenceSavedLinkRowMenu.copyTitle, systemImage: "doc.on.doc")
+                                Label(CadenceSavedLinkRowMenu.copyTitle, systemImage: CadenceSavedLinkRowMenu.copySystemImage)
                             }
                             Divider()
                             Button(role: .destructive) {
                                 linkToDelete = link
                             } label: {
-                                Label(CadenceSavedLinkRowMenu.deleteTitle, systemImage: "trash")
+                                Label(CadenceSavedLinkRowMenu.deleteTitle, systemImage: CadenceSavedLinkRowMenu.deleteSystemImage)
                             }
                         }
                     }
@@ -1050,7 +1050,7 @@ private struct iOSLinkRow: View {
 
             if !wraps { Spacer(minLength: 8) }
 
-            Image(systemName: "arrow.up.right")
+            Image(systemName: CadenceSavedLinkRowMenu.openSystemImage)
                 .cadenceFont(.metadata, base: 11, weight: .bold)
                 .foregroundStyle(Theme.dim)
         }

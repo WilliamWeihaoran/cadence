@@ -142,8 +142,11 @@ struct ListNoteFolderRow: View {
                 onSelect(note)
             }
             .contextMenu {
-                Button("Copy Note Link") {
+                // [[T-10166]]: glyphed, as the Delete under it and iOS's item are.
+                Button {
                     onCopyLink(note)
+                } label: {
+                    Label(CadenceNoteClipboard.copyLinkTitle, systemImage: CadenceNoteClipboard.copyLinkSystemImage)
                 }
                 NoteFolderMoveMenu(
                     folderNames: folderNames,

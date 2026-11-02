@@ -154,4 +154,12 @@ nonisolated enum CadenceSavedLinkRowMenu {
     static let openTitle = "Open Link"
     static let copyTitle = "Copy Link"
     static let deleteTitle = "Delete"
+
+    /// Each item's glyph, named once beside its words ([[T-10165]]). iOS's long-press drew these
+    /// three from the day it gained the menu; the Mac's right-click drew Open Link and Copy Link
+    /// as bare words above a glyphed Delete, so one menu was two vocabularies on one platform and
+    /// a second vocabulary across the pair -- pure UI, no input behind it ([[T-8201]]).
+    static let openSystemImage = "arrow.up.right"
+    static let copySystemImage = "doc.on.doc"
+    static let deleteSystemImage = "trash"
 }

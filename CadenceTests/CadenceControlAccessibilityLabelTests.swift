@@ -421,8 +421,9 @@ struct CadenceControlAccessibilityLabelTests {
         // values `CadenceSavedLinkAddFormTests` pins; this scan only proves the button reads them.
         for (symbol, label) in [
             ("addForm.headerSymbol", "addForm.headerLabel"),
-            (#""arrow.up.right.square""#, #""Open link""#),
-            (#""trash""#, #""Delete link""#),
+            // [[T-10165]]: the row's hover glyphs are the menu's, read from the shared set.
+            ("CadenceSavedLinkRowMenu.openSystemImage", #""Open link""#),
+            ("CadenceSavedLinkRowMenu.deleteSystemImage", #""Delete link""#),
         ] {
             #expect(
                 source.contains("Image(systemName: \(symbol))"),

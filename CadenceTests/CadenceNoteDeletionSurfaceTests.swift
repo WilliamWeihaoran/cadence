@@ -458,6 +458,25 @@ struct CadenceNoteDeletionSurfaceTests {
         #expect(menu.contains("row.contextMenu {"))
     }
 
+    /// **[[T-10166]]: every note row menu's Copy Note Link draws the shared `link` glyph**, as the
+    /// Delete under it does. iOS's `iOSNoteCopyLinkButton` always drew it; the Mac's Notepad row
+    /// (`NotesView`) and list-note row (`ListNoteFolderRow`) spelled the item as bare words.
+    @Test func everyNoteRowMenuDrawsTheCopyLinkGlyph() throws {
+        #expect(CadenceNoteClipboard.copyLinkTitle == "Copy Note Link")
+        #expect(CadenceNoteClipboard.copyLinkSystemImage == "link")
+        let sharedLabel = "Label(CadenceNoteClipboard.copyLinkTitle, systemImage: CadenceNoteClipboard.copyLinkSystemImage)"
+        let sites = [
+            "Cadence/macOS/Views/NotesView.swift",
+            "Cadence/macOS/Views/ListNotesViewSupportViews.swift",
+            "Cadence/iOS/iOSNoteDeletionSupport.swift"
+        ]
+        for path in sites {
+            let code = try strippingComments(sourceFile(path))
+            #expect(code.components(separatedBy: sharedLabel).count - 1 == 1, "\(path) no longer draws the shared Copy Note Link label")
+            #expect(!code.contains("Button(\"Copy Note Link\")"), "\(path) has a title-only Copy Note Link again")
+        }
+    }
+
     /// Without this, every zero and every absence above could be passing because the reader
     /// returned an empty string — which is exactly what a `/tmp` against `/private/tmp` path
     /// mismatch produces on an isolated build tree.

@@ -298,6 +298,12 @@ struct CadenceNoteDeletionSummary: Equatable, Sendable {
 /// here rather than keeping its own copy, the way it already forwards `appendSummary` to
 /// `CadenceAINoteSummary`.
 enum CadenceNoteClipboard {
+    /// The menu item's words and glyph, for every note row's menu on both platforms ([[T-10166]]).
+    /// iOS's `iOSNoteCopyLinkButton` drew the `link` glyph; the Mac's two note-row menus spelled
+    /// the item as bare words above a glyphed Delete.
+    static let copyLinkTitle = "Copy Note Link"
+    static let copyLinkSystemImage = "link"
+
     static func copyMarkdownLink(to note: Note) {
         let markdown = NoteReferenceParser.noteReferenceMarkdown(for: note)
         #if os(macOS)

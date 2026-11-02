@@ -270,8 +270,10 @@ private struct LinkRow: View {
             // The sighted pointer shortcut. The context menu and the accessibility actions below
             // are the paths that exist without hovering (T-7258).
             if isHovering {
+                // [[T-10165]]: the menu's Open glyph, and iOS's row's -- one action, one glyph.
+                // It was the boxed up-right arrow here and the bare one on the menu beside it.
                 Button(action: openLink) {
-                    Image(systemName: "arrow.up.right.square")
+                    Image(systemName: CadenceSavedLinkRowMenu.openSystemImage)
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.blue)
                         // [[T-9501]]: the bare glyph was the whole hit area and hover wash.
@@ -282,7 +284,7 @@ private struct LinkRow: View {
                 .cadenceControlLabel(MacSavedLinkRowActions.openActionName)
 
                 Button(role: .destructive) { onDelete() } label: {
-                    Image(systemName: "trash")
+                    Image(systemName: CadenceSavedLinkRowMenu.deleteSystemImage)
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.red)
                         // [[T-9501]]: the bare glyph was the whole hit area and hover wash.
@@ -302,14 +304,20 @@ private struct LinkRow: View {
         // Every other Mac row answers a right-click with a menu (`MacTaskRowContextMenu`, the note
         // rows' "Copy Note Link" / Delete). Delete is `onDelete`, the hover button's own closure,
         // so it asks through `deleteConfirmationManager` exactly as the button does.
+        // [[T-10165]]: every item carries its glyph, the three iOS's long-press draws from the same
+        // shared set. Open and Copy were bare words above a glyphed Delete.
         .contextMenu {
-            Button(MacSavedLinkRowActions.openMenuTitle, action: openLink)
-            Button(MacSavedLinkRowActions.copyMenuTitle, action: copyLink)
+            Button(action: openLink) {
+                Label(MacSavedLinkRowActions.openMenuTitle, systemImage: CadenceSavedLinkRowMenu.openSystemImage)
+            }
+            Button(action: copyLink) {
+                Label(MacSavedLinkRowActions.copyMenuTitle, systemImage: CadenceSavedLinkRowMenu.copySystemImage)
+            }
             Divider()
             Button(role: .destructive) {
                 onDelete()
             } label: {
-                Label(MacSavedLinkRowActions.deleteMenuTitle, systemImage: "trash")
+                Label(MacSavedLinkRowActions.deleteMenuTitle, systemImage: CadenceSavedLinkRowMenu.deleteSystemImage)
             }
         }
         // `.contain` makes the card one element without swallowing its texts, as the task row

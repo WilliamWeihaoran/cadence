@@ -102,7 +102,7 @@ struct iOSNoteCopyLinkButton: View {
         Button {
             CadenceNoteClipboard.copyMarkdownLink(to: note)
         } label: {
-            Label("Copy Note Link", systemImage: "link")
+            Label(CadenceNoteClipboard.copyLinkTitle, systemImage: CadenceNoteClipboard.copyLinkSystemImage)
         }
     }
 }

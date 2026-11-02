@@ -14,7 +14,9 @@ struct MacNotepadRowContextMenuTests {
         let rowStart = try #require(page.range(of: "NotepadNoteListRow(note: note, isSelected: selectedNoteID == note.id)"))
         let afterRow = String(page[rowStart.upperBound...])
         let menuStart = try #require(afterRow.range(of: ".contextMenu {"))
-        let menu = String(afterRow[menuStart.upperBound...].prefix(400))
+        // 600, not 400: [[T-10166]] spelled Copy Note Link as a glyphed `Label`, which pushed
+        // Delete past the old window.
+        let menu = String(afterRow[menuStart.upperBound...].prefix(600))
         #expect(menu.contains("NoteActionSupport.copyMarkdownLink(to: note)"))
         #expect(menu.contains("Button(role: .destructive) {\n                                deleteNote(note)"))
         // The menu belongs to the row's `NoteListRowButton` ([[T-7068]]), not to something drawn

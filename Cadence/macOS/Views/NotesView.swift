@@ -444,8 +444,11 @@ private struct NotepadPage: View {
                         // `iOSNotesView.sidebarRow(for:)` for why the dated pages have none.
                         // `deleteNote` already confirms and fixes up a non-selected note.
                         .contextMenu {
-                            Button("Copy Note Link") {
+                            // [[T-10166]]: glyphed, as the Delete under it and iOS's item are.
+                            Button {
                                 NoteActionSupport.copyMarkdownLink(to: note)
+                            } label: {
+                                Label(CadenceNoteClipboard.copyLinkTitle, systemImage: CadenceNoteClipboard.copyLinkSystemImage)
                             }
                             Button(role: .destructive) {
                                 deleteNote(note)

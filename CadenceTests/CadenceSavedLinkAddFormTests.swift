@@ -77,6 +77,55 @@ struct CadenceSavedLinkAddFormTests {
         #expect(MacSavedLinkRowActions.deleteMenuTitle == CadenceSavedLinkRowMenu.deleteTitle)
     }
 
+    /// [[T-10165]]: a saved link's row menu draws one glyph per item, the same three on the Mac's
+    /// right-click and iOS's long-press, read from the one shared set. The Mac menu spelled Open
+    /// Link and Copy Link as bare words over a glyphed Delete, so the menu mixed two vocabularies
+    /// and disagreed with iOS's item for item -- pure UI, which [[T-8201]] says is the same on both.
+    @Test func bothLinkRowMenusDrawEveryItemsSharedGlyph() throws {
+        let shared = [
+            "openSystemImage": CadenceSavedLinkRowMenu.openSystemImage,
+            "copySystemImage": CadenceSavedLinkRowMenu.copySystemImage,
+            "deleteSystemImage": CadenceSavedLinkRowMenu.deleteSystemImage
+        ]
+        #expect(Set(shared.values).count == 3, "two items share a glyph: \(shared)")
+        #expect(shared.values.allSatisfy { !$0.isEmpty })
+
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/LinksView.swift")
+        )
+        let ios = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListSupportViews.swift")
+        )
+        let iosPanel = try #require(CadenceSourceScan.declarationBody("struct iOSListLinksPanel: View", in: ios))
+        let menus = [
+            "mac": try #require(CadenceSourceScan.declarationBody(".contextMenu", in: mac), "the Mac link row has no menu"),
+            "ios": try #require(CadenceSourceScan.declarationBody(".contextMenu", in: iosPanel), "the iOS link row has no menu")
+        ]
+        let glyphPattern = #"systemImage:\s*CadenceSavedLinkRowMenu\.(\w+)"#
+        for (platform, menu) in menus {
+            let glyphs = CadenceSourceScan.captures(glyphPattern, in: menu, group: 1).map(\.text)
+            #expect(
+                glyphs == ["openSystemImage", "copySystemImage", "deleteSystemImage"],
+                "\(platform) link menu glyphs, measured: \(glyphs)"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"Button\([^)]*MenuTitle\s*,"#, in: menu) == 0,
+                "\(platform) link menu has a title-only item again"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"systemImage:\s*""#, in: menu) == 0,
+                "\(platform) link menu spells a glyph literal instead of the shared one"
+            )
+        }
+
+        // The Mac row's two hover buttons are the pointer's shortcuts to the same two actions, so
+        // they draw the same two glyphs: Open was the boxed up-right arrow beside the menu's arrow.
+        let row = try #require(CadenceSourceScan.declarationBody("struct LinkRow: View", in: mac), "no LinkRow in LinksView.swift")
+        let hoverGlyphs = CadenceSourceScan.captures(#"Image\(systemName:\s*CadenceSavedLinkRowMenu\.(\w+)\)"#, in: row, group: 1).map(\.text)
+        #expect(hoverGlyphs == ["openSystemImage", "deleteSystemImage"], "Mac hover glyphs, measured: \(hoverGlyphs)")
+        #expect(!row.contains("arrow.up.right.square"))
+    }
+
     /// [[T-9972]]: the form's Save is the filled `.primary` commit beside a `.ghost` Cancel -- the
     /// pair every other Mac inline editor draws, and the role iOS's `iOSAddLinkForm` saves with.
     /// It was `.secondary`, so the one action the form exists for read as the lesser button.
