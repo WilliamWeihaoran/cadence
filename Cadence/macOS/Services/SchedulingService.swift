@@ -244,13 +244,17 @@ struct TimelineZoomControl: View {
     @Binding var zoomLevel: Int
     let range: ClosedRange<Int>
 
+    /// The zoom readout, for this header and the Calendar toolbar's stepper alike ([[T-9961]]):
+    /// the Calendar spelled it with a letter ("2x") beside this header's "2×".
+    nonisolated static func levelLabel(_ zoomLevel: Int) -> String { "\(zoomLevel)×" }
+
     var body: some View {
         HStack(spacing: 4) {
             TimelineHeaderIconButton(systemImage: "minus", accessibilityLabel: "Zoom out") {
                 if zoomLevel > range.lowerBound { zoomLevel -= 1 }
             }
             .disabled(zoomLevel <= range.lowerBound)
-            Text("\(zoomLevel)×")
+            Text(Self.levelLabel(zoomLevel))
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Theme.dim)
                 .frame(width: 22)

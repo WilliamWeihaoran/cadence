@@ -74,6 +74,15 @@ struct CalendarPageToolbar: View {
     }
 }
 
+/// **[[T-9962]].** One height for every group in the Calendar toolbar. The Week / Month / Board
+/// segments were 30pt inside a 3pt inset, so that group stood 36pt tall beside the zoom and
+/// Board-arrow groups (24pt buttons in the same 3pt inset, 30pt) and the 30pt Today button. Every
+/// group's buttons are now `segmentHeight` inside `groupInset`, which is the compact control height.
+enum CalendarToolbarMetrics {
+    static let groupInset: CGFloat = 3
+    static let segmentHeight: CGFloat = CadenceDesktopMetrics.compactControlHeight - 2 * groupInset
+}
+
 private struct CalendarViewModeControl: View {
     let viewMode: CadenceCalendarViewMode
     let presentation: CadenceCalendarPresentation
@@ -87,7 +96,7 @@ private struct CalendarViewModeControl: View {
                     Text(mode.rawValue)
                         .font(.system(size: 11, weight: presentation == .timeline && viewMode == mode ? .semibold : .medium))
                         .foregroundStyle(presentation == .timeline && viewMode == mode ? Theme.blue : Theme.dim)
-                        .frame(minWidth: 68, minHeight: CadenceDesktopMetrics.compactControlHeight)
+                        .frame(minWidth: 68, minHeight: CalendarToolbarMetrics.segmentHeight)
                         .padding(.horizontal, 8)
                         .contentShape(Rectangle())
                         .background(
@@ -109,7 +118,7 @@ private struct CalendarViewModeControl: View {
                 Text("Board")
                     .font(.system(size: 11, weight: presentation == .board ? .semibold : .medium))
                     .foregroundStyle(presentation == .board ? Theme.blue : Theme.dim)
-                    .frame(minWidth: 68, minHeight: CadenceDesktopMetrics.compactControlHeight)
+                    .frame(minWidth: 68, minHeight: CalendarToolbarMetrics.segmentHeight)
                     .padding(.horizontal, 8)
                     .contentShape(Rectangle())
                     .background(
@@ -124,7 +133,7 @@ private struct CalendarViewModeControl: View {
             .buttonStyle(.cadencePlain(cornerRadius: CadenceDesktopMetrics.controlCornerRadius))
             .accessibilityAddTraits(presentation == .board ? .isSelected : [])
         }
-        .padding(3)
+        .padding(CalendarToolbarMetrics.groupInset)
         .background(
             RoundedRectangle(cornerRadius: 9)
                 .fill(Color.clear)
@@ -161,7 +170,7 @@ private struct CalendarBoardWindowNavigationControl: View {
             }
         }
         .padding(.horizontal, 5)
-        .padding(.vertical, 3)
+        .padding(.vertical, CalendarToolbarMetrics.groupInset)
         .background(
             RoundedRectangle(cornerRadius: 9)
                 .fill(Color.clear)
@@ -187,7 +196,8 @@ private struct CalendarToolbarZoomControl: View {
                 if zoomLevel > range.lowerBound { zoomLevel -= 1 }
             }
 
-            Text("\(zoomLevel)x")
+            // [[T-9961]]: the Today timeline's spelling ("2×", not "2x"), from the one helper.
+            Text(TimelineZoomControl.levelLabel(zoomLevel))
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.dim)
                 .frame(minWidth: 24)
@@ -201,7 +211,7 @@ private struct CalendarToolbarZoomControl: View {
             }
         }
         .padding(.horizontal, 5)
-        .padding(.vertical, 3)
+        .padding(.vertical, CalendarToolbarMetrics.groupInset)
         .background(
             RoundedRectangle(cornerRadius: 9)
                 .fill(Color.clear)
@@ -228,7 +238,7 @@ private struct CalendarIconGhostButton: View {
             accessibilityLabel: accessibilityLabel,
             tint: Theme.blue,
             isEnabled: isEnabled,
-            size: 24,
+            size: CalendarToolbarMetrics.segmentHeight,
             iconSize: 10,
             help: help,
             action: action
