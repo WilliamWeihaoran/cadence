@@ -52,19 +52,13 @@ struct SchedulePanelHeader: View {
         .padding(.vertical, 10)
     }
 
+    /// [[T-9982]]: the zoom pair's own button, so the header's three are one size and one radius.
     private var exportButton: some View {
-        Button {
-            onExport()
-        } label: {
-            Image(systemName: "square.and.arrow.up")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .frame(width: 28, height: 28)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
-        .buttonStyle(.cadencePlain(cornerRadius: 8))
-        .cadenceControlLabel("Export schedule")
+        TimelineHeaderIconButton(
+            systemImage: "square.and.arrow.up",
+            accessibilityLabel: "Export schedule",
+            action: onExport
+        )
     }
 }
 

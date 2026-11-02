@@ -231,22 +231,20 @@ struct TaskNotesExpandedEditorSheet: View {
             relatedTasks: referenceTasks,
             // [[T-5061]]: the pane's default is a no-op, so a resolved note link went nowhere.
             onOpenNote: { TaskNoteLinkRouting.open($0) },
+            // [[T-9981]]: the same quiet pill as the outline button beside it, not a 30pt plate
+            // under `.cadencePlain`'s blue hover wash.
             trailingToolbarAccessory: AnyView(
-                Button {
+                CadenceQuietPillButton(state: .resting, action: {
                     if let onClose {
                         onClose()
                     } else {
                         dismiss()
                     }
-                } label: {
+                }) {
                     Image(systemName: "xmark")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .frame(width: 30, height: 30)
-                        .background(Theme.surfaceElevated.opacity(0.9))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .foregroundStyle(Theme.muted)
                 }
-                .buttonStyle(.cadencePlain(cornerRadius: 8))
                 .cadenceControlLabel("Close")
             ),
             showsExpandButton: false

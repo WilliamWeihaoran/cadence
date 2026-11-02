@@ -83,22 +83,22 @@ struct TaskNoteEditorPane: View {
                 .accessibilityValue(taskTitle)
                 .help("Task-linked note")
 
+                // [[T-9981]]: the outline button one sibling over, and the note editor's Actions
+                // button in the same toolbar on the Notes page, are `CadenceQuietPillButton`s. This
+                // was a hand-built 30pt plate under `.cadencePlain`, so it alone lit a blue wash
+                // and outline on hover in a toolbar whose other controls brighten a neutral fill.
                 if showsExpandButton {
-                    Button {
+                    CadenceQuietPillButton(state: .resting, action: {
                         TaskNotesPanelController.shared.show(
                             task: task,
                             referenceNotes: relatedNotes,
                             referenceTasks: relatedTasks
                         )
-                    } label: {
+                    }) {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Theme.dim)
-                            .frame(width: 30, height: 30)
-                            .background(Theme.surfaceElevated.opacity(0.85))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .foregroundStyle(Theme.muted)
                     }
-                    .buttonStyle(.cadencePlain(cornerRadius: 8))
                     .cadenceControlLabel("Open task notes")
                 }
 

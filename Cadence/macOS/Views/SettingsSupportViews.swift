@@ -178,15 +178,19 @@ struct ContextSettingsRow: View {
         accessibilityLabel: String,
         action: @escaping () -> Void
     ) -> some View {
+        // [[T-9984]]: the Tags pane's row actions (its `rowButton` helper) are the same
+        // three hover buttons -- rename, archive, delete -- and were drawn at 28pt on
+        // `Theme.radiusControlCompact` with a semibold glyph while these were 26pt at a literal 6
+        // with a regular one. Same geometry now, so the two Settings rows read as one control.
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 11))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(color)
-                .frame(width: 26, height: 26)
+                .frame(width: 28, height: 28)
                 .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         }
-        .buttonStyle(.cadencePlain(cornerRadius: 6))
+        .buttonStyle(.cadencePlain(cornerRadius: Theme.radiusControlCompact))
         .cadenceControlLabel(accessibilityLabel)
     }
 

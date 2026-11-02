@@ -206,36 +206,58 @@ enum SchedulingActions {
 
 // MARK: - Shared zoom control view
 
+/// **[[T-9982]].** The one square icon button the Today timeline header draws: Export, Zoom out and
+/// Zoom in. Export was a 28pt plate at radius 8 and the zoom pair beside it 24pt plates at radius
+/// 5, so the header's three neighbouring buttons came in two sizes and two corner radii. All three
+/// are this view now, at the 28pt plate and the desktop control radius.
+///
+/// **A zoom button at its limit is disabled, not merely dimmed.** It used to fade its glyph and stay
+/// enabled, so the pointer still lit `.cadencePlain`'s wash and press on a button that did nothing.
+/// The fade now reads `isEnabled`, so the dimmed look and the dead control are one fact.
+struct TimelineHeaderIconButton: View {
+    static let side: CGFloat = 28
+    static let cornerRadius: CGFloat = CadenceDesktopMetrics.controlCornerRadius
+    /// The glyph's opacity: full while the button acts, faded once it cannot.
+    static func glyphOpacity(isEnabled: Bool) -> Double { isEnabled ? 1 : 0.3 }
+
+    let systemImage: String
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.dim.opacity(Self.glyphOpacity(isEnabled: isEnabled)))
+                .frame(width: Self.side, height: Self.side)
+                .background(Theme.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+        }
+        .buttonStyle(.cadencePlain(cornerRadius: Self.cornerRadius))
+        .cadenceControlLabel(accessibilityLabel)
+    }
+}
+
 struct TimelineZoomControl: View {
     @Binding var zoomLevel: Int
     let range: ClosedRange<Int>
 
     var body: some View {
         HStack(spacing: 4) {
-            Button { if zoomLevel > range.lowerBound { zoomLevel -= 1 } } label: {
-                Image(systemName: "minus")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(zoomLevel > range.lowerBound ? Theme.dim : Theme.dim.opacity(0.3))
-                    .frame(width: 24, height: 24)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
+            TimelineHeaderIconButton(systemImage: "minus", accessibilityLabel: "Zoom out") {
+                if zoomLevel > range.lowerBound { zoomLevel -= 1 }
             }
-            .buttonStyle(.cadencePlain(cornerRadius: 5))
-            .cadenceControlLabel("Zoom out")
+            .disabled(zoomLevel <= range.lowerBound)
             Text("\(zoomLevel)×")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Theme.dim)
                 .frame(width: 22)
-            Button { if zoomLevel < range.upperBound { zoomLevel += 1 } } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(zoomLevel < range.upperBound ? Theme.dim : Theme.dim.opacity(0.3))
-                    .frame(width: 24, height: 24)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
+            TimelineHeaderIconButton(systemImage: "plus", accessibilityLabel: "Zoom in") {
+                if zoomLevel < range.upperBound { zoomLevel += 1 }
             }
-            .buttonStyle(.cadencePlain(cornerRadius: 5))
-            .cadenceControlLabel("Zoom in")
+            .disabled(zoomLevel >= range.upperBound)
         }
     }
 }
