@@ -515,6 +515,10 @@ struct TodayTasksWidgetView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: scale.panelCornerRadius, style: .continuous))
+        // Lifted like every other card on the extra-large tile -- the priority card above it, the
+        // column cards beside it and the footer link under it all carry the shared shadow, and
+        // the strip alone lay flat among them (T-10001).
+        .cadenceWidgetElevation(scale)
     }
 
     private func emptyState(alignment: HorizontalAlignment) -> some View {

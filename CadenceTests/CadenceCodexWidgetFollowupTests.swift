@@ -330,6 +330,56 @@ struct CadenceCodexWidgetFollowupTests {
         #expect(!String(choice[..<fallback.upperBound]).contains("Spacer("))
     }
 
+    /// T-10000: the Calendar widget's metric cards drew Overdue, Scheduled and Due all in the body
+    /// colour, Scheduled before Due, while the tile's own medium badge line and the Today
+    /// widget's summary panel read overdue red, due amber, scheduled blue in that order. Held
+    /// here: both card sites draw one shared `metricCards`, which names each tint in that order,
+    /// and the Today panel still says the same three.
+    @Test func calendarMetricCardsTintAndOrderTheirCountsLikeTheTodayPanel() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        // Not `codeOnly`: it blanks the string literals that name each card.
+        let calendar = try read("CadenceWidgets/CalendarSnapshotWidget.swift")
+        let today = CadenceSourceScan.codeOnly(try read("CadenceWidgets/TodayTasksWidgetView.swift"))
+        #expect(CadenceSourceScan.matchCount("CadenceWidgetMetricCard\\(", in: calendar) == 3)
+        #expect(CadenceSourceScan.matchCount("(?m)^\\s*metricCards$", in: calendar) == 2)
+        let start = try #require(calendar.range(of: "private var metricCards: some View {"))
+        let cards = String(calendar[start.upperBound...])
+        let overdue = try #require(cards.range(of: "title: \"Overdue\", value: \"\\(entry.snapshot.overdueCount)\", valueTint: Theme.red)"))
+        let due = try #require(cards.range(of: "title: \"Due\", value: \"\\(dueCount)\", valueTint: Theme.amber)"))
+        let scheduled = try #require(cards.range(of: "title: \"Scheduled\", value: \"\\(scheduledCount)\", valueTint: Theme.blueLight)"))
+        #expect(overdue.upperBound <= due.lowerBound && due.upperBound <= scheduled.lowerBound)
+        let panelStart = try #require(today.range(of: "private var summaryPanel: some View {"))
+        let panel = String(today[panelStart.upperBound...])
+        let red = try #require(panel.range(of: "tint: Theme.red"))
+        let amber = try #require(panel.range(of: "tint: Theme.amber"))
+        let blue = try #require(panel.range(of: "tint: Theme.blueLight"))
+        #expect(red.upperBound <= amber.lowerBound && amber.upperBound <= blue.lowerBound)
+    }
+
+    /// T-10001: two cards lay flat among lifted siblings -- the Today extra-large focus strip's
+    /// tiles, under a shadowed priority card and beside shadowed column panels, and the Calendar
+    /// extra-large agenda's next-up card, under three shadowed metric cards. Held here: the focus
+    /// tile carries the shared elevation, and the next-up card is drawn by `CadenceWidgetPanel`,
+    /// whose chrome carries it, rather than by a hand copy of that chrome without the shadow.
+    @Test func widgetExtraLargeCardsLiftLikeTheirSiblings() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let calendar = CadenceSourceScan.codeOnly(try read("CadenceWidgets/CalendarSnapshotWidget.swift"))
+        let today = CadenceSourceScan.codeOnly(try read("CadenceWidgets/TodayTasksWidgetView.swift"))
+        let chrome = CadenceSourceScan.codeOnly(try read("CadenceWidgets/WidgetChrome.swift"))
+        let tileStart = try #require(today.range(of: "private func focusTile("))
+        let tileEnd = try #require(today.range(of: "private func emptyState(", range: tileStart.upperBound..<today.endIndex))
+        #expect(today[tileStart.upperBound..<tileEnd.lowerBound].contains(".cadenceWidgetElevation(scale)"))
+        let agendaStart = try #require(calendar.range(of: "private var agendaPanel: some View {"))
+        let agendaEnd = try #require(calendar.range(of: "private var metricCards: some View {", range: agendaStart.upperBound..<calendar.endIndex))
+        let agenda = String(calendar[agendaStart.upperBound..<agendaEnd.lowerBound])
+        let panel = try #require(agenda.range(of: "CadenceWidgetPanel {"))
+        let nextUp = try #require(agenda.range(of: "nextUpSection(titleLineLimit: 2)"))
+        #expect(panel.upperBound <= nextUp.lowerBound)
+        #expect(!agenda.contains(".background("))
+        let panelChromeStart = try #require(chrome.range(of: "struct CadenceWidgetPanel<Content: View>: View {"))
+        #expect(chrome[panelChromeStart.upperBound...].contains(".cadenceWidgetElevation(scale)"))
+    }
+
     @Test func codexHabitSnapshotRequestsOverridesForItsOwnDate() throws {
         let rule = try CadenceScanInstrument(
             "habit snapshot dated override",

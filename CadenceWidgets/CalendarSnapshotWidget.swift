@@ -212,9 +212,7 @@ struct CalendarSnapshotWidgetView: View {
             } else {
                 twoWeekGrid(days: visibleSpan.days)
                 HStack(spacing: scale.compactSectionSpacing) {
-                    CadenceWidgetMetricCard(title: "Overdue", value: "\(entry.snapshot.overdueCount)")
-                    CadenceWidgetMetricCard(title: "Scheduled", value: "\(scheduledCount)")
-                    CadenceWidgetMetricCard(title: "Due", value: "\(dueCount)")
+                    metricCards
                 }
                 footerLink
             }
@@ -403,18 +401,28 @@ struct CalendarSnapshotWidgetView: View {
 
     private var agendaPanel: some View {
         VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
-            CadenceWidgetMetricCard(title: "Overdue", value: "\(entry.snapshot.overdueCount)")
-            CadenceWidgetMetricCard(title: "Scheduled", value: "\(scheduledCount)")
-            CadenceWidgetMetricCard(title: "Due", value: "\(dueCount)")
+            metricCards
 
             // Two title lines, not three: this column is the tallest thing in the tile, and the
-            // third line was ~14pt it could not spend (T-7126).
-            nextUpSection(titleLineLimit: 2)
-                .padding(scale.panelPadding)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: scale.panelCornerRadius, style: .continuous))
+            // third line was ~14pt it could not spend (T-7126). The shared panel, so the card
+            // lifts like the three metric cards above it instead of lying flat under them (T-10001).
+            CadenceWidgetPanel {
+                nextUpSection(titleLineLimit: 2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
+    }
+
+    /// The three counts in the order and colours every other surface of both widgets gives them:
+    /// this tile's own medium badge line and the Today widget's summary panel both read overdue
+    /// red, due amber, scheduled blue, in that order. The cards drew all three numbers in the
+    /// body colour, Scheduled before Due, so the one tile that spelled them out was the one that
+    /// told them apart least (T-10000).
+    @ViewBuilder
+    private var metricCards: some View {
+        CadenceWidgetMetricCard(title: "Overdue", value: "\(entry.snapshot.overdueCount)", valueTint: Theme.red)
+        CadenceWidgetMetricCard(title: "Due", value: "\(dueCount)", valueTint: Theme.amber)
+        CadenceWidgetMetricCard(title: "Scheduled", value: "\(scheduledCount)", valueTint: Theme.blueLight)
     }
 
     private var footerLink: some View {
