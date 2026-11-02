@@ -27,6 +27,37 @@ struct RemindersConnectionStateTests {
         #expect(state.accessAction?.title == "Allow Access")
     }
 
+    /// **[[T-10013]].** The not-yet-asked offer promised the iPhone less than the Mac: "Allow
+    /// Cadence to read your active reminders." under `#if os(iOS)`, a sentence older than T-163's
+    /// iOS Inbox reminders section and its completion circle. Both platforms read and complete
+    /// reminders, so both say so -- once, with no platform split in the arm. The value check runs
+    /// on the macOS host; the source check is what holds the iOS half, which this host never
+    /// compiles.
+    @Test func notDeterminedOfferSaysTheSameThingOnBothPlatforms() throws {
+        #expect(
+            RemindersConnectionState.notDetermined.accessMessage
+                == "Allow Cadence to read your active reminders and mark them complete."
+        )
+
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceRemindersPresentationSupport.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.declarationBody("var accessMessage: String", in: source),
+            "accessMessage is gone"
+        )
+        let arm = try #require(
+            body.range(of: "case .notDetermined:").map { String(body[$0.upperBound...]) },
+            "the .notDetermined arm is gone"
+        )
+        // Non-vacuity: the right arm, still carrying the sentence, and the split the other arms
+        // legitimately keep is still visible in the body this reads.
+        #expect(arm.contains("mark them complete"))
+        #expect(body.contains("#if os(macOS)"), "non-vacuity: the .denied split is still in this body")
+        #expect(!arm.contains("#if"), "the .notDetermined offer is split by platform again")
+        #expect(CadenceSourceScan.matchCount("read your active reminders\\.\"", in: source) == 0)
+    }
+
     /// **[[T-9952]].** The Open Settings button names where it goes on each platform, split where
     /// Calendar's is: the Mac opens the Reminders privacy pane, iOS opens Cadence's own page in
     /// the Settings app.

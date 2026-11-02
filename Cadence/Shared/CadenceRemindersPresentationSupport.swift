@@ -161,11 +161,13 @@ enum RemindersConnectionState: Equatable {
             // manages the device, not by a toggle either OS exposes to this user.
             return "A restriction on this device — Screen Time, a management profile — is blocking Reminders access, and it is not Cadence's to lift."
         case .notDetermined:
-            #if os(macOS)
+            // **[[T-10013]]: no `#if` split.** iOS said only "read your active reminders" -- a
+            // sentence that outlived T-163, which gave the iOS Inbox its reminders section and
+            // that section a completion circle calling `RemindersManager.completeReminder(id:)`.
+            // Both platforms read and complete reminders, as the shipped
+            // `NSRemindersFullAccessUsageDescription` says, so the offer says so on both
+            // ([[T-8201]]: there is no hardware reason for the iPhone to promise less).
             return "Allow Cadence to read your active reminders and mark them complete."
-            #else
-            return "Allow Cadence to read your active reminders."
-            #endif
         }
     }
 

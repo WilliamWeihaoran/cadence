@@ -75,4 +75,37 @@ struct CadenceDateSelectionStateTests {
             }
         }
     }
+
+    /// **[[T-10012]]: picking today made the panel's today marker vanish.**
+    ///
+    /// `CadenceCalendarDayBadge` names `MonthCalendarPanel` as the source of its colours and says a
+    /// picked today keeps a ring; both iOS month grids draw it, and the panel behind every date field
+    /// did not, so a task due today opened its picker on a plain solid circle. The ring takes the
+    /// cell's edge and only a picked today steps its fill in to make room.
+    @Test func aPickedTodayKeepsItsRingInsideTheCell() throws {
+        #expect(MonthCalendarPanel.fillInset(for: .todayAndSelected) == CadenceDateSelectionMetrics.todayRingWidth + CadenceDateSelectionMetrics.todayRingGap)
+        #expect(MonthCalendarPanel.fillInset(for: .todayAndSelected) > 0)
+        for badge in CadenceCalendarDayBadge.allCases where badge != .todayAndSelected {
+            #expect(MonthCalendarPanel.fillInset(for: badge) == 0, "\(badge) stepped its fill in")
+        }
+
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceDatePicker.swift")
+        )
+        let panel = try #require(
+            CadenceSourceScan.declarationBody("struct MonthCalendarPanel: View", in: source),
+            "MonthCalendarPanel is gone"
+        )
+        // Non-vacuity: the grid branch is in the body this reads.
+        #expect(panel.contains("LazyVGrid("))
+        #expect(panel.contains("CadenceCalendarDayBadge.style(isToday: isToday, isSelected: isSelected)"))
+        #expect(panel.contains(".padding(Self.fillInset(for: badge))"))
+        #expect(
+            CadenceSourceScan.matchCount(
+                "if badge\\.showsTodayRing \\{\\s*Circle\\(\\)\\s*\\.strokeBorder\\(Theme\\.blue, lineWidth: CadenceDateSelectionMetrics\\.todayRingWidth\\)",
+                in: panel
+            ) == 1,
+            "the grid no longer draws the today ring on a picked today"
+        )
+    }
 }

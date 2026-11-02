@@ -129,6 +129,10 @@ nonisolated enum CadenceDateSelectionMetrics {
     /// this at a size where it could not. The numeral is untouched: nothing here shrinks it to make
     /// room, which was the other way this could have been paid for and the wrong one.
     static let markerCaptionSize: CGFloat = 7
+    /// The today ring on a picked today ([[T-10012]]): iOS month grids' 1.5pt stroke, with a 1pt
+    /// gap between it and the solid fill. See `MonthCalendarPanel.fillInset(for:)`.
+    static let todayRingWidth: CGFloat = 1.5
+    static let todayRingGap: CGFloat = 1
 
     static func cellSide(at size: DynamicTypeSize) -> CGFloat {
         CadenceTypeScale.height(cellSide, holding: .metadata, textBase: numeralSize, at: size, scaling: .enabled)
@@ -273,6 +277,7 @@ struct MonthCalendarPanel: View {
                                                 let isSelected = CadenceDateSelectionState.isSelected(d, selection: selection, hasSelection: hasSelection, calendar: cal)
                                                 let isToday = cal.isDateInToday(d)
                                                 let isMarked = isMarkedDay(d) && !isSelected
+                                                let badge = CadenceCalendarDayBadge.style(isToday: isToday, isSelected: isSelected)
                                                 Button {
                                                     selection = d
                                                     syncViewMonthToSelection()
@@ -281,6 +286,16 @@ struct MonthCalendarPanel: View {
                                                     ZStack {
                                                         Circle()
                                                             .fill(isSelected ? Theme.blue : (isToday ? Theme.blue.opacity(0.15) : Color.clear))
+                                                            .padding(Self.fillInset(for: badge))
+
+                                                        // [[T-10012]]: today, when it is also the
+                                                        // picked day. Both take the solid fill, so
+                                                        // without this the today marker vanished
+                                                        // the moment the field held today.
+                                                        if badge.showsTodayRing {
+                                                            Circle()
+                                                                .strokeBorder(Theme.blue, lineWidth: CadenceDateSelectionMetrics.todayRingWidth)
+                                                        }
 
                                                         if isMarked {
                                                             Circle()
@@ -337,6 +352,20 @@ struct MonthCalendarPanel: View {
 
     private var cellSide: CGFloat {
         CadenceDateSelectionMetrics.cellSide(at: dynamicTypeSize)
+    }
+
+    /// How far the grid cell's fill pulls in from the cell's edge ([[T-10012]]).
+    ///
+    /// `CadenceCalendarDayBadge` is this panel's own rule written down -- its doc comment names
+    /// `MonthCalendarPanel` as the source of the colours -- and it says today-and-selected needs a
+    /// ring, because a grid where picking today makes the today marker vanish has lost a fact. Both
+    /// iOS month grids draw that ring; this panel, behind every date field in the app, did not, so
+    /// a task due today opened its picker on a solid blue circle indistinguishable from any other
+    /// picked day. The iOS ring sits outside a 25pt badge; this cell is the whole 34pt circle with
+    /// 2pt between rows, so the ring takes the cell's edge and the fill steps in to leave the same
+    /// 1pt gap rather than spilling onto the neighbouring row.
+    static func fillInset(for badge: CadenceCalendarDayBadge) -> CGFloat {
+        badge.showsTodayRing ? CadenceDateSelectionMetrics.todayRingWidth + CadenceDateSelectionMetrics.todayRingGap : 0
     }
 
     private func isMarkedDay(_ day: Date) -> Bool {
