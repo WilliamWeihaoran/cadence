@@ -56,7 +56,12 @@ struct iOSContextEditorSheet: View {
                     iOSSettingsCard {
                         VStack(alignment: .leading, spacing: 16) {
                             iOSSettingsField(title: "Name") {
+                                // [[T-10045]]: Return saves, as Return creates in the Mac's
+                                // New Context sheet ([[T-7266]]); blank does nothing, as the
+                                // disabled Save does.
                                 TextField("Context name", text: $name)
+                                    .submitLabel(.done)
+                                    .onSubmit(submitName)
                             }
 
                             VStack(alignment: .leading, spacing: 7) {
@@ -162,6 +167,13 @@ struct iOSContextEditorSheet: View {
     /// `CadencePendingChangePersistence.commitEdit` gives: a creation deletes what it inserted, an
     /// edit puts back the three fields it wrote. Neither rolls the context back, because this
     /// context is the whole app's.
+    /// Return in the name field: the Save button's own `save()`, refused on the same blank name
+    /// that disables the button.
+    private func submitName() {
+        guard !trimmedName.isEmpty else { return }
+        save()
+    }
+
     private func save() {
         if let clash = activeContextCarryingTheTypedName {
             switch mode {

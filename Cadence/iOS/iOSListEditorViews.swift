@@ -173,8 +173,12 @@ struct iOSListEditorSheet: View {
                     HStack(spacing: 12) {
                         iOSListIconBadge(icon: normalizedIcon, colorHex: normalizedColor, size: 38)
 
+                        // [[T-10045]]: Return saves, as it confirms the Mac list sheets
+                        // ([[T-7266]]); blank does nothing, as the disabled Save does.
                         TextField(isProjectMode ? "Project name" : "Area name", text: $name)
                             .font(.system(size: 17, weight: .semibold))
+                            .submitLabel(.done)
+                            .onSubmit(submitName)
                     }
 
                     TextField("Description", text: $details, axis: .vertical)
@@ -519,6 +523,13 @@ struct iOSListEditorSheet: View {
     ///
     /// The sheet's `@State` still holds everything the user typed either way, so a refused save
     /// leaves the editor open and intact rather than empty.
+    /// Return in the name field: the Save button's own `save()`, refused on the same blank name
+    /// that disables the button.
+    private func submitName() {
+        guard !trimmedName.isEmpty else { return }
+        save()
+    }
+
     private func save() {
         // **A column whose name the user cleared is a refused rename, not a delete (T-1053).**
         // `CadenceSectionEditingSupport.configs(from:)` used to drop such a draft, which read as
@@ -703,9 +714,13 @@ private struct iOSSectionDraftRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
+                // [[T-10045]]: the board header's own dot size; this drew 8pt beside a 7pt header.
                 Circle()
                     .fill(Color(hex: draft.colorHex))
-                    .frame(width: 8, height: 8)
+                    .frame(
+                        width: CadenceBoardColumnHeaderMetrics.dotSize,
+                        height: CadenceBoardColumnHeaderMetrics.dotSize
+                    )
 
                 // T-5835: Default's name is not editable. A rename re-pointed every Default card
                 // to the new name and `normalizedSectionConfigs` then synthesised an empty

@@ -101,13 +101,18 @@ struct iOSTagsSettingsSection: View {
                     // `.roundedBorder` drew UIKit's own light field chrome into a dark
                     // card — the one place in settings with no palette colour at all.
                     iOSSettingsField(title: "Name") {
+                        // [[T-10044]]: Return creates, as the Mac's Create Tag fields do since
+                        // [[T-10033]]. `createTag` reads the same `creationDecision` as the
+                        // disabled button, so a blank, duplicate or archived name does nothing.
                         TextField(CadenceTagSettingsCopy.nameFieldPlaceholder, text: $newName)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                            .onSubmit(createTag)
                     }
 
                     iOSSettingsField(title: "Description") {
                         TextField(CadenceTagSettingsCopy.descriptionFieldPlaceholder, text: $newDescription)
+                            .onSubmit(createTag)
                     }
 
                     VStack(alignment: .leading, spacing: 7) {
@@ -382,9 +387,13 @@ private struct iOSTagSettingsRow: View {
     private var editContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             iOSSettingsField(title: "Name") {
+                // [[T-10044]]: Return saves through the Save button's own `requestSave` (gated
+                // by `canSave`, still asking about inline mentions first), as on the Mac. The
+                // description field is multi-line, so Return there is a newline.
                 TextField(CadenceTagSettingsCopy.nameFieldPlaceholder, text: $draftName)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .onSubmit(requestSave)
             }
             iOSSettingsField(title: "Description") {
                 TextField(CadenceTagSettingsCopy.descriptionFieldPlaceholder, text: $draftDescription, axis: .vertical)
@@ -396,6 +405,7 @@ private struct iOSTagSettingsRow: View {
                     TextField("#hex", text: $draftColorHex)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .onSubmit(requestSave)
                 }
             }
             if iOSTagSettingsEdit.hasDuplicate(name: draftName, tag: tag, allTags: allTags) {
