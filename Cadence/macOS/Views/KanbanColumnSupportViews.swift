@@ -465,7 +465,9 @@ struct KanbanColumnAddTaskRow: View {
             }
             .contentShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))
         }
-        .buttonStyle(.cadencePlain(cornerRadius: kanbanCardCornerRadius))
+        // [[T-9946]]: the row's `Theme.surface` plate is its one hover layer; `.cadencePlain`
+        // washed and stroked it in blue as well.
+        .buttonStyle(.plain)
         .opacity(isColumnHovered || isHovered ? 1 : 0.45)
         .animation(.easeInOut(duration: 0.14), value: isColumnHovered)
         .animation(.easeInOut(duration: 0.14), value: isHovered)

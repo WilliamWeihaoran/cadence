@@ -580,6 +580,20 @@ struct CadenceListWindDownSurfaceTests {
         #expect(ListEditorLifecycleChoice.allCases.count == 3)
     }
 
+    /// **[[T-9947]]: the stored status names the choice the Status popover ticks.** A paused or
+    /// cancelled project is none of the offered choices, so it ticks nothing rather than the
+    /// nearest row; an archived list maps to `.archived`, which the popover does not offer either.
+    @Test func theStoredStatusNamesTheTickedChoice() {
+        #expect(ListEditorLifecycleChoice(AreaStatus.active) == .active)
+        #expect(ListEditorLifecycleChoice(AreaStatus.done) == .completed)
+        #expect(ListEditorLifecycleChoice(AreaStatus.archived) == .archived)
+        #expect(ListEditorLifecycleChoice(ProjectStatus.active) == .active)
+        #expect(ListEditorLifecycleChoice(ProjectStatus.done) == .completed)
+        #expect(ListEditorLifecycleChoice(ProjectStatus.archived) == .archived)
+        #expect(ListEditorLifecycleChoice(ProjectStatus.paused) == nil)
+        #expect(ListEditorLifecycleChoice(ProjectStatus.cancelled) == nil)
+    }
+
     /// And the outcome-shaped entry point really dispatches, on both container kinds. Without this
     /// the value above could be right and the service could still ignore it.
     @Test func theOutcomeShapedSettleReallySettlesThatWay() throws {

@@ -118,6 +118,22 @@ struct CadenceListEditorSheetKeyboardTests {
         #expect(cell.contains(".accessibilityAddTraits(isSelected ? .isSelected : [])"))
     }
 
+    /// [[T-9947]]: the Edit Area / Edit Project Status popover ticks the row the list already is,
+    /// as the priority and Sort/Group popovers do -- checkmark, fill and trait -- and both sheets
+    /// hand it that row from the stored status.
+    @Test func statusPopoverTicksTheCurrentChoice() throws {
+        let row = try Self.body("struct ListEditorStatusRow: View", in: Self.supportPath)
+        let compact = row.filter { !$0.isWhitespace }
+        #expect(compact.contains("letcurrentChoice:ListEditorLifecycleChoice?"), "the Status row takes no current choice")
+        #expect(compact.contains(#"ifcurrentChoice==choice{Image(systemName:"checkmark")"#), "the Status popover ticks no row")
+        #expect(compact.contains(".background(currentChoice==choice?Theme.blue.opacity(0.08):Color.clear)"), "the ticked row has no selected fill")
+        #expect(compact.contains(".accessibilityAddTraits(currentChoice==choice?.isSelected:[])"), "the ticked row does not say it is selected")
+        let sheets = try CadenceSourceScan.sourceFile("Cadence/macOS/Sheets/EditListSheet.swift").filter { !$0.isWhitespace }
+        for model in ["area", "project"] {
+            #expect(sheets.contains("currentChoice:ListEditorLifecycleChoice(\(model).status)"), "the \(model) sheet does not name its current status")
+        }
+    }
+
     @Test func newListTypeButtonCarriesTheSelectedTrait() throws {
         let button = try Self.body("private struct TypeButton: View", in: Self.createListPath)
         #expect(button.contains(".accessibilityAddTraits(isSelected ? .isSelected : [])"))

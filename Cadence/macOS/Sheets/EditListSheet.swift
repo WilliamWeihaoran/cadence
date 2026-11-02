@@ -88,6 +88,7 @@ struct EditAreaSheet: View {
                 ListEditorStatusRow(
                     noun: "Area",
                     statusLabel: statusLabel,
+                    currentChoice: ListEditorLifecycleChoice(area.status),
                     onSelect: apply
                 )
             }
@@ -354,6 +355,7 @@ struct EditProjectSheet: View {
                 ListEditorStatusRow(
                     noun: "Project",
                     statusLabel: statusLabel,
+                    currentChoice: ListEditorLifecycleChoice(project.status),
                     onSelect: apply
                 )
             }

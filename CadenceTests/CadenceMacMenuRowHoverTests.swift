@@ -120,6 +120,70 @@ import Testing
         }
     }
 
+    /// **[[T-9946]].** The Calendar Board's event card and a Kanban column's add-task row keep
+    /// their own plate as the one hover layer, on `.plain`, as [[T-9945]] did for the Focus rows.
+    @Test func theBoardEventCardAndAddTaskRowLightOnlyTheirOwnPlate() throws {
+        for (path, control, plate) in [
+            ("Cadence/macOS/Views/CalendarBoardItemSupportViews.swift", "struct CalendarBoardEventCard: View",
+             "CalendarEventVisualStyle.tintOpacity(isSelected: showPopover, isHovered: isHovered)"),
+            ("Cadence/macOS/Views/KanbanColumnSupportViews.swift", "struct KanbanColumnAddTaskRow: View",
+             ".fill(Theme.surface.opacity(isHovered ? 1 : 0))"),
+        ] {
+            let body = try #require(CadenceSourceScan.declarationBody(control, in: try Self.code(path)), "\(control) moved")
+            // Non-vacuity: the control's own hover plate is still there.
+            #expect(body.contains(plate), "\(control)'s hover plate moved")
+            #expect(body.contains(".onHover { isHovered = $0 }"), "\(control) no longer tracks the pointer")
+            #expect(CadenceSourceScan.matchCount("\\.buttonStyle\\(", in: body) == 1, "\(control) has more or fewer than one button style")
+            #expect(body.contains(".buttonStyle(.plain)"), "\(control) lights a button-style wash over its own plate")
+            #expect(!body.contains("cadencePlain"), "\(control) lights .cadencePlain's wash and stroke again")
+        }
+    }
+
+    /// **[[T-9946]].** The struct-scoped half of the census above: a view that puts a button on
+    /// `.cadencePlain` and also paints from its own `isHovered`. The line-window scan cannot see
+    /// these, because the second plate is drawn in the label, above the style line. Each survivor
+    /// below hovers a DIFFERENT control from the one on `.cadencePlain`, or only recolours a glyph;
+    /// the set is pinned whole, so a new doubled control fails here and a fixed survivor is removed.
+    @Test func noViewPaintsItsOwnHoverAroundACadencePlainButton() throws {
+        let survivors: Set<String> = [
+            // Hover lifts the date glyph's colour; no plate.
+            "Cadence/macOS/Sheets/CreateTaskSheetSupportViews.swift TaskDateChip",
+            // Row hover reveals the Focus button; the row's plate is not around that button.
+            "Cadence/macOS/Views/TasksPanelComponents.swift MacTaskRow",
+            // Row hover reveals the rename/archive buttons, which are the `.cadencePlain` ones.
+            "Cadence/macOS/Views/SettingsSupportViews.swift ContextSettingsRow",
+            // Row plate is the row's; `.cadencePlain` is the completion circle inside it.
+            "Cadence/macOS/Views/InboxSupportViews.swift AppleReminderTaskRow",
+            // Hover underlines the token's text; no plate.
+            "Cadence/macOS/Views/KanbanCardSupportViews.swift KanbanLedgerTokenButton",
+        ]
+        let header = try NSRegularExpression(pattern: "\\bstruct (\\w+)[^{\\n]*\\{")
+        let paint = try NSRegularExpression(pattern: "isHovered\\s*(\\?|\\|\\||&&|\\))|isHovered: isHovered")
+        var found: Set<String> = []
+        var structs = 0
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence/macOS") {
+            let source = try Self.code(path) as NSString
+            for match in header.matches(in: source as String, range: NSRange(location: 0, length: source.length)) {
+                structs += 1
+                var depth = 1
+                var end = match.range.upperBound
+                while depth > 0, end < source.length {
+                    let unit = source.character(at: end)
+                    if unit == 0x7B { depth += 1 } else if unit == 0x7D { depth -= 1 }
+                    end += 1
+                }
+                let body = source.substring(with: NSRange(location: match.range.upperBound, length: end - match.range.upperBound))
+                guard body.contains(".buttonStyle(.cadencePlain"),
+                      paint.firstMatch(in: body, range: NSRange(location: 0, length: (body as NSString).length)) != nil
+                else { continue }
+                found.insert("\(path) \(source.substring(with: match.range(at: 1)))")
+            }
+        }
+        #expect(structs > 300, "non-vacuity: only \(structs) structs under Cadence/macOS")
+        #expect(found.subtracting(survivors).isEmpty, "a control paints its own hover under .cadencePlain's: \(found.subtracting(survivors).sorted())")
+        #expect(survivors.subtracting(found).isEmpty, "no longer found, drop from the list: \(survivors.subtracting(found).sorted())")
+    }
+
     /// The task row's do-date, due-date and repeat chips light their own underline and 4pt wash;
     /// `.cadencePlain` added a third, 10pt blue layer around them.
     @Test func theTaskRowChipsLightOnlyTheirOwnHover() throws {

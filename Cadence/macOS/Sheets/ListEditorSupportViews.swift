@@ -488,6 +488,26 @@ enum ListEditorLifecycleChoice: CaseIterable {
         case .archived: return .cancelled
         }
     }
+
+    /// [[T-9947]]: the choice a stored status already is, so the Status popover can tick it.
+    init(_ status: AreaStatus) {
+        switch status {
+        case .active: self = .active
+        case .done: self = .completed
+        case .archived: self = .archived
+        }
+    }
+
+    /// `nil` for a project that is paused or cancelled -- states no choice sets -- so no row is
+    /// ticked rather than the nearest one.
+    init?(_ status: ProjectStatus) {
+        switch status {
+        case .active: self = .active
+        case .done: self = .completed
+        case .archived: self = .archived
+        case .paused, .cancelled: return nil
+        }
+    }
 }
 
 /// Status as one field row plus a picker.
@@ -501,6 +521,9 @@ struct ListEditorStatusRow: View {
     /// Shown as the row value. Not derived from the choices: a project can also be paused or
     /// cancelled, and the row must not claim otherwise.
     let statusLabel: String
+    /// [[T-9947]]: the row the popover ticks, as every other Mac choice popover marks its current
+    /// value. `nil` -- or `.archived`, which the popover does not offer -- ticks nothing.
+    let currentChoice: ListEditorLifecycleChoice?
     let onSelect: (ListEditorLifecycleChoice) -> Void
 
     @State private var showPicker = false
@@ -519,7 +542,7 @@ struct ListEditorStatusRow: View {
                 choiceRow(
                     .active,
                     title: "Active",
-                    subtitle: "Show \(noun.lowercased()) in the sidebar."
+                    subtitle: "Show the \(noun.lowercased()) in the sidebar."
                 )
                 choiceRow(
                     .completed,
@@ -539,21 +562,34 @@ struct ListEditorStatusRow: View {
             showPicker = false
             onSelect(choice)
         } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim)
-                    .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                    Text(subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.dim)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                // [[T-9947]]: the priority and Sort/Group menus' mark -- a blue checkmark and a
+                // blue 0.08 fill -- on the row the list already is.
+                if currentChoice == choice {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.blue)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
+            .background(currentChoice == choice ? Theme.blue.opacity(0.08) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: TaskInspectorFieldRowMetrics.hoverCornerRadius))
         }
         .buttonStyle(.plain)
         .modifier(InspectorPickerHover(cornerRadius: TaskInspectorFieldRowMetrics.hoverCornerRadius))
+        .accessibilityAddTraits(currentChoice == choice ? .isSelected : [])
     }
 }
 

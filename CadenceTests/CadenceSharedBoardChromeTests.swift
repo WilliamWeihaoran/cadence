@@ -255,8 +255,9 @@ struct CadenceSharedBoardChromeTests {
         #expect(card.contains("private let cornerRadius = CadenceLedgerCardMetrics.cornerRadius"),
                 "the Mac event card no longer takes the Ledger card's radius (T-9836)")
         #expect(!card.contains("kanbanCardCornerRadius"), "the Mac event card rounds at the 7pt board radius again (T-9836)")
-        // Hover wash, content shape, clip, stroke and both background plates: six shapes, two chips.
-        #expect(card.components(separatedBy: "cornerRadius: cornerRadius").count - 1 == 6,
+        // Content shape, clip, stroke and both background plates: five shapes, two chips. The
+        // button style's hover wash was the sixth until [[T-9946]] put the card on `.plain`.
+        #expect(card.components(separatedBy: "cornerRadius: cornerRadius").count - 1 == 5,
                 "a Mac event card shape does not read the shared radius (T-9836)")
         #expect(card.components(separatedBy: "cardCornerRadius: cornerRadius").count - 1 == 2,
                 "a Mac event card chip does not read the shared radius (T-9836)")

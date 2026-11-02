@@ -14,8 +14,9 @@ struct CalendarBoardEventCard: View {
     /// [[T-9836]]: the Ledger task card's radius, because the two share a day column. This card
     /// rounded at `kanbanCardCornerRadius` (7) beside `KanbanCard`'s `CadenceLedgerCard` at
     /// `CadenceLedgerCardMetrics.cornerRadius` (10) -- the macOS half of what [[T-9832]] fixed on
-    /// iOS. Plate, stroke, clip, content shape, hover wash and chips all read this one name; the
-    /// chips follow through `CadenceBoardMetadataChipMetrics.cornerRadius(inCardOfRadius:)`.
+    /// iOS. Plate, stroke, clip, content shape and chips all read this one name ([[T-9946]] retired
+    /// the button style's hover wash, which read it too); the chips follow through
+    /// `CadenceBoardMetadataChipMetrics.cornerRadius(inCardOfRadius:)`.
     private let cornerRadius = CadenceLedgerCardMetrics.cornerRadius
 
     private var tint: Color {
@@ -28,9 +29,11 @@ struct CalendarBoardEventCard: View {
         } label: {
             label
         }
-        // [[T-9671]]: the wash at the card's own radius, as [[T-9535]] did for the board's other
-        // plated rows; the label is a property, which is why that census did not see this one.
-        .buttonStyle(.cadencePlain(cornerRadius: cornerRadius))
+        // [[T-9946]]: the card's own calendar-tinted plate -- the brighter surface, the stronger
+        // tint and the 1.25pt stroke in `label` -- is its one hover layer, as [[T-9945]] did for
+        // the Focus task rows. `.cadencePlain` (which [[T-9671]] had brought to this radius) laid a
+        // blue wash and a blue stroke over that tinted stroke, two colours on one edge.
+        .buttonStyle(.plain)
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .onHover { isHovered = $0 }
         // T-1843: the card is its own popover's `.rect(.bounds)` anchor, so a test reading where
