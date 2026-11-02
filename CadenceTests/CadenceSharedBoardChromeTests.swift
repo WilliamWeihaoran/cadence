@@ -861,7 +861,10 @@ struct CadenceSectionEyebrowConvergenceTests {
             // it; `GoalsSupportViews.swift`, `HabitsFormSupportViews.swift` and
             // `iOSFeatureDetailViews.swift` each held one until [[T-5002]] deleted all three.
             "Cadence/Shared/CadenceSettingsSharedViews.swift": 1,
-            "Cadence/macOS/Views/CommitmentSharedViews.swift": 1,
+            // Zero since [[T-9971]]: its one eyebrow headed `CommitmentGroupHeader`, which no
+            // file had called since [[T-5002]] deleted the Goals and Habits screens, and went
+            // with it. Kept as a count for the same reason as the two zeros beside it.
+            "Cadence/macOS/Views/CommitmentSharedViews.swift": 0,
             "Cadence/Shared/Components/HabitProgressViews.swift": 1,
             // Zero since T-1273, and a count rather than a deletion for the same reason the
             // templates pane above is: this pane's one eyebrow headed the "Ready to Schedule"

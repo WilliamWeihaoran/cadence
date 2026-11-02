@@ -41,6 +41,12 @@ struct CadenceSearchFieldClearButtonTests {
         "Cadence/macOS/Views/CadenceContextPicker.swift": 12,
         "Cadence/macOS/Views/FocusPickerSupportViews.swift": 12,
         "Cadence/macOS/Views/GlobalSearchSupportViews.swift": 16,
+        // [[T-9971]]: the two Mac search fields that had no clear button at all -- the list Notes
+        // tab's "Search notes" (iOS's twin clears through `CadenceSearchFieldRow`) and the tag
+        // popover's "Find or create tag" (the title field's `#` picker, same field, already did).
+        // Both rows draw an 11pt leading magnifier.
+        "Cadence/macOS/Views/ListNotesViewSupportViews.swift": 11,
+        "Cadence/macOS/Views/TagPickerPopoverViews.swift": 11,
         // T-790's shared row: the four pickers that used to spell this button themselves --
         // ContainerPickerSupportViews, TaskTitleInlineTagPicker, TasksPanelSupportViews and
         // TildeContainerPicker -- now hand their field to `CadenceSearchFieldRow`, which draws the
@@ -95,9 +101,10 @@ struct CadenceSearchFieldClearButtonTests {
         // shared row itself. [[T-3170]]'s trio pass deleted `TaskBundlePickerSupportViews.swift`,
         // so seven; [[T-5002]] deleted GoalPickerViews.swift and GoalTimelineSupportViews.swift
         // with the Goals screens, so five. **A falling count here is the shared component doing its job** (or a field
-        // leaving the app); a rising one is a new hand-spelled copy.
-        #expect(actual.values.reduce(0, +) == 5)
-        #expect(actual.count == 5)
+        // leaving the app); a rising one is a new hand-spelled copy -- or, as at [[T-9971]] (five to
+        // seven), a field that had no clear button at all gaining the shared one.
+        #expect(actual.values.reduce(0, +) == 7)
+        #expect(actual.count == 7)
     }
 
     /// The size each call site states, which is the decision the ledger's comment explains. Stated

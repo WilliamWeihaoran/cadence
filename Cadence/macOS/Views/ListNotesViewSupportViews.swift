@@ -42,6 +42,7 @@ struct ListNotesHeaderView: View {
 struct ListNotesSearchField: View {
     @Binding var searchText: String
     var hasTagFilters: Bool
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         HStack(spacing: 7) {
@@ -52,6 +53,10 @@ struct ListNotesSearchField: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.text)
+                .focused($isSearchFocused)
+            // [[T-9971]]: iOS's list Notes search (`iOSListNotesView.filterRow`) clears from the
+            // shared button; the Mac field had none, so a typed query could only be deleted by hand.
+            CadenceSearchFieldClearButton(text: $searchText, glyphSize: 11, focus: $isSearchFocused)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)

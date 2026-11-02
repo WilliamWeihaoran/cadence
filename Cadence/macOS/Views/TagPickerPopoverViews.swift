@@ -67,6 +67,9 @@ struct TagPickerPopover: View {
                     .foregroundStyle(Theme.text)
                     .focused($isSearchFocused)
                     .onSubmit(createQueriedTagIfNeeded)
+                // [[T-9971]]: the title field's `#` picker (`TaskTitleInlineTagPicker`), with this
+                // same "Find or create tag" field, clears from the shared button; this one had none.
+                CadenceSearchFieldClearButton(text: $query, glyphSize: 11, focus: $isSearchFocused)
             }
             .padding(.horizontal, 11)
             .padding(.vertical, 9)

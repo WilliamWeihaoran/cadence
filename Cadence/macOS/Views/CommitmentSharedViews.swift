@@ -76,33 +76,6 @@ struct CommitmentIconTile: View {
     }
 }
 
-struct CommitmentSearchField: View {
-    let placeholder: String
-    @Binding var text: String
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.dim)
-
-            TextField(placeholder, text: $text)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.text)
-        }
-        .padding(.horizontal, 11)
-        .frame(minHeight: CadenceDesktopMetrics.regularControlHeight)
-        .background(Theme.surfaceElevated.opacity(0.82))
-        .clipShape(RoundedRectangle(cornerRadius: CadenceDesktopMetrics.controlCornerRadius, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: CadenceDesktopMetrics.controlCornerRadius, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.9), lineWidth: 1)
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
 struct CommitmentFilterBar<Item: Hashable>: View {
     let items: [Item]
     @Binding var selection: Item
@@ -130,39 +103,6 @@ struct CommitmentFilterBar<Item: Hashable>: View {
         .overlay {
             RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                 .strokeBorder(Theme.borderSubtle.opacity(0.72), lineWidth: 1)
-        }
-    }
-}
-
-struct CommitmentGroupHeader: View {
-    let title: String
-    let icon: String
-    let color: Color
-    let trailingText: String
-    var trailingTint: Color? = nil
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(color)
-
-            // Semibold, from the shared eyebrow — this was the app's only `.bold` at the eyebrow
-            // size and tint, and nothing chose it. The count beside it keeps `.bold`, which is the
-            // same split `CadenceTaskGroupHeading` draws: weight is what demotes the number from
-            // the label, so the label may not borrow it.
-            SectionEyebrowLabel(text: title)
-                .lineLimit(1)
-
-            Spacer()
-
-            Text(trailingText)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(trailingTint ?? Theme.text.opacity(0.75))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(Theme.surfaceElevated)
-                .clipShape(Capsule())
         }
     }
 }

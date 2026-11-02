@@ -203,9 +203,12 @@ private struct AddLinkBar: View {
                 ) {
                     onCancel()
                 }
+                // [[T-9972]]: `.primary`, the commit of a Cancel/commit pair everywhere else on
+                // the Mac (the context editor, Edit Tag, the list editor, the folder sheet) and
+                // the role iOS's own add-link form commits with. It was the one `.secondary` Save.
                 CadenceActionButton(
                     title: "Save",
-                    role: .secondary,
+                    role: .primary,
                     size: .compact,
                     isDisabled: CadenceTitleNormalization.isBlank(url)
                 ) {

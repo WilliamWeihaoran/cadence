@@ -34,5 +34,32 @@ struct CadenceSavedLinkAddFormTests {
         #expect(form.headerSymbol == "xmark")
         #expect(form.headerLabel == "Cancel adding a link")
     }
+
+    /// [[T-9972]]: the form's Save is the filled `.primary` commit beside a `.ghost` Cancel -- the
+    /// pair every other Mac inline editor draws, and the role iOS's `iOSAddLinkForm` saves with.
+    /// It was `.secondary`, so the one action the form exists for read as the lesser button.
+    @Test func theAddFormCommitsWithThePrimaryButtonBesideAGhostCancel() throws {
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/LinksView.swift")
+        )
+        guard let bar = CadenceSourceScan.declarationBody("private struct AddLinkBar: View", in: mac) else {
+            Issue.record("no AddLinkBar in LinksView.swift")
+            return
+        }
+        let pattern = #"title:\s*"(\w+)",\s*role:\s*\.(\w+)"#
+        let titles = CadenceSourceScan.captures(pattern, in: bar, group: 1).map(\.text)
+        let roles = CadenceSourceScan.captures(pattern, in: bar, group: 2).map(\.text)
+        #expect(titles == ["Cancel", "Save"], "measured: \(titles)")
+        #expect(roles == ["ghost", "primary"], "measured: \(roles)")
+
+        let ios = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListSupportViews.swift")
+        )
+        guard let form = CadenceSourceScan.declarationBody("private struct iOSAddLinkForm: View", in: ios) else {
+            Issue.record("no iOSAddLinkForm in iOSListSupportViews.swift")
+            return
+        }
+        #expect(form.contains("role: .primary"), "iOS's add-link commit is no longer .primary")
+    }
 }
 #endif
