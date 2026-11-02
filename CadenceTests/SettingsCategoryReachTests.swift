@@ -406,6 +406,85 @@ struct CadenceR67ParityTests {
         }
     }
 
+    /// One scan of the whole shipped tree: **no chooser labels a list with that list's own icon**
+    /// ([[T-10102]]).
+    ///
+    /// Stated once over every file rather than once per chooser. The unification above reached six
+    /// chooser paths and simply did not reach the task row's "Move to List" submenu or the two
+    /// calendar connection menus, and a pin that names its own sites cannot fail for a site nobody
+    /// named -- which is exactly how the miss survived. This fails the moment a glyph argument
+    /// anywhere reads an `Area`'s or a `Project`'s own `icon`, including in a chooser written next
+    /// year.
+    ///
+    /// The pinned sites are the places that **display one list**: a Lists row, a search result, a
+    /// card chip, a wind-down or deletion confirmation, an MCP payload. A list's own icon is that
+    /// list's identity and belongs there. It is a *chooser* -- anything offering a choice between
+    /// lists -- that has to speak the one `CadenceListKindIcon` vocabulary. Per-list COLOUR is a
+    /// different vocabulary, is not this rule, and is untouched at every site.
+    @Test func noChooserLabelsAListWithThatListsOwnIcon() throws {
+        let listIdentityDisplaySites: [String: Int] = [
+            "Cadence/Services/MCPReadOnly/CadenceReadService.swift": 2,
+            "Cadence/Shared/CadenceBoardCardMetadata.swift": 1,
+            "Cadence/Shared/CadenceCalendarLinkHealth.swift": 4,
+            "Cadence/iOS/iOSListDeletionSupport.swift": 1,
+            "Cadence/iOS/iOSListViews.swift": 4,
+            "Cadence/iOS/iOSListWindDownSupport.swift": 2,
+            "Cadence/iOS/iOSListsRegularPane.swift": 4,
+            "Cadence/iOS/iOSSearchView.swift": 2,
+            "Cadence/iOS/iOSSettingsTemplateAndListSections.swift": 2,
+            "Cadence/iOS/iOSTaskRowActionViews.swift": 1,
+            "Cadence/iOS/iOSWindDownConfirmation.swift": 1,
+            "Cadence/macOS/Views/GlobalSearchIndexSupport.swift": 2,
+            "Cadence/macOS/Views/SettingsListManagementSections.swift": 2
+        ]
+        let glyphArgumentReadingAListsOwnIcon =
+            #"(?:systemImage|icon): *[^,\n]*?\b(?:area|project|list|container|destination|target|subject)s?\??\.icon\b"#
+        var found: [String: Int] = [:]
+        for path in try swiftFiles(under: "Cadence") {
+            let code = try strippingComments(sourceFile(path))
+            let hits = regularExpressionMatchCount(of: glyphArgumentReadingAListsOwnIcon, in: code)
+            if hits > 0 { found[path] = hits }
+        }
+        #expect(
+            found == listIdentityDisplaySites,
+            """
+            a glyph argument reads a list's own icon somewhere this rule does not pin.
+            found:   \(found.sorted { $0.key < $1.key })
+            allowed: \(listIdentityDisplaySites.sorted { $0.key < $1.key })
+            A chooser draws CadenceListKindIcon; only a site displaying one list draws that list's icon.
+            """
+        )
+    }
+
+    /// The other half, stated positively: every chooser reads the shared helper rather than a
+    /// literal that happens to match it today ([[T-10102]]). The Inbox row of the two "Move to
+    /// List" menus was a literal `"tray.fill"` -- the right glyph by coincidence, and a fourth
+    /// spelling of it. The two calendar connection menus have no Inbox row: a calendar links to a
+    /// real list, never to the Inbox.
+    @Test func everyListChooserReadsTheCanonicalKindGlyphHelper() throws {
+        let chooserKinds: [String: [String]] = [
+            "Cadence/Shared/CadenceScheduleDraftChoices.swift": ["inbox", "area", "project"],
+            "Cadence/Shared/Components/CadenceTaskInlinePanel.swift": ["inbox", "area", "project"],
+            "Cadence/iOS/iOSCreateTaskSheetSupportViews.swift": ["inbox", "area", "project"],
+            "Cadence/iOS/iOSChoicePicker.swift": ["inbox", "area", "project"],
+            "Cadence/iOS/iOSTaskRowActionViews.swift": ["inbox", "area", "project"],
+            "Cadence/macOS/Views/ContainerPickerSupportViews.swift": ["inbox", "area", "project"],
+            "Cadence/macOS/Views/TildeContainerPicker.swift": ["inbox", "area", "project"],
+            "Cadence/macOS/Views/MacTaskRowContextMenu.swift": ["inbox", "area", "project"],
+            "Cadence/iOS/iOSCalendarSettingsSection.swift": ["area", "project"],
+            "Cadence/macOS/Views/SettingsListManagementSections.swift": ["area", "project"]
+        ]
+        for (path, kinds) in chooserKinds {
+            let code = try strippingComments(sourceFile(path))
+            for kind in kinds {
+                #expect(
+                    code.contains("CadenceListKindIcon.\(kind)"),
+                    "\(path) does not read the canonical \(kind) glyph"
+                )
+            }
+        }
+    }
+
     @Test func r67CaptureRepeatControlsUseTheOccurrenceAwareSettersAndBounds() throws {
         let source = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift"))
         let control = try #require(CadenceSourceScan.declarationBody("private var customRepeat: some View", in: source))
@@ -486,6 +565,13 @@ private func expectNoLiveMention(
             sourceLocation: sourceLocation
         )
     }
+}
+
+/// How many times `pattern` matches `code`. `range(of:options:.regularExpression)` answers only
+/// "at least once", and a census that cannot count cannot tell one allowed site from three.
+private func regularExpressionMatchCount(of pattern: String, in code: String) -> Int {
+    guard let expression = try? NSRegularExpression(pattern: pattern) else { return 0 }
+    return expression.numberOfMatches(in: code, range: NSRange(code.startIndex..., in: code))
 }
 
 private func repositoryRoot() -> URL {

@@ -449,6 +449,11 @@ private struct SettingsDormantCalendarLinkRow: View {
 /// The calendar row's "Connect to areas and projects" menu, a plated `link` glyph. Its own view,
 /// internal, so `CadenceMacPageAccessibilityAuditTests` can host it without an `EKCalendar`
 /// ([[T-9533]]); the row passes its calendar's identifier.
+///
+/// The rows read `CadenceListKindIcon` rather than each list's own `icon` ([[T-10102]]): this menu
+/// offers a choice between lists, so it speaks the one chooser vocabulary [[T-8553]] settled, and
+/// the iOS twin in `iOSCalendarSettingsSection.swift` draws the same two glyphs. There is no Inbox
+/// row -- a calendar links to a real list only.
 struct SettingsCalendarConnectionMenu: View {
     let calendarIdentifier: String
     let areas: [Area]
@@ -467,7 +472,7 @@ struct SettingsCalendarConnectionMenu: View {
                             Button {
                                 onToggleArea(area)
                             } label: {
-                                Label(CadenceCalendarSettingsCopy.areaDisplayName(area.name), systemImage: area.linkedCalendarID == calendarIdentifier ? "checkmark" : area.icon)
+                                Label(CadenceCalendarSettingsCopy.areaDisplayName(area.name), systemImage: area.linkedCalendarID == calendarIdentifier ? "checkmark" : CadenceListKindIcon.area)
                             }
                         }
                     }
@@ -479,7 +484,7 @@ struct SettingsCalendarConnectionMenu: View {
                             Button {
                                 onToggleProject(project)
                             } label: {
-                                Label(CadenceCalendarSettingsCopy.projectDisplayName(project.name), systemImage: project.linkedCalendarID == calendarIdentifier ? "checkmark" : project.icon)
+                                Label(CadenceCalendarSettingsCopy.projectDisplayName(project.name), systemImage: project.linkedCalendarID == calendarIdentifier ? "checkmark" : CadenceListKindIcon.project)
                             }
                         }
                     }

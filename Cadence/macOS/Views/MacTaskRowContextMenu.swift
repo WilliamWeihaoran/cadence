@@ -205,12 +205,18 @@ struct MacTaskRowContextMenu: View {
         }
     }
 
+    /// Rows read `CadenceListKindIcon`, never the list's own `icon` ([[T-10102]]).
+    ///
+    /// [[T-8553]]'s unification reached six chooser paths and not this one, so until now an area
+    /// whose user-chosen glyph was an iPhone drew an iPhone here and a folder in every other
+    /// chooser. The owner refused exactly that. The per-list COLOUR is a separate vocabulary and
+    /// still shows through; only the glyph is canonical. The selected row keeps its checkmark.
     private var moveToListMenu: some View {
         Menu {
             Button {
                 settle(Self.moveToList(task, area: nil, project: nil, allTasks: allTasks, modelContext: modelContext))
             } label: {
-                Label("Inbox", systemImage: task.area == nil && task.project == nil ? "checkmark.circle.fill" : "tray.fill")
+                Label("Inbox", systemImage: task.area == nil && task.project == nil ? "checkmark.circle.fill" : CadenceListKindIcon.inbox)
             }
 
             if !offerableAreas.isEmpty {
@@ -220,7 +226,7 @@ struct MacTaskRowContextMenu: View {
                     Button {
                         settle(Self.moveToList(task, area: area, project: nil, allTasks: allTasks, modelContext: modelContext))
                     } label: {
-                        Label(CadenceAreaPickerSupport.title(for: area), systemImage: task.area?.id == area.id && task.project == nil ? "checkmark.circle.fill" : area.icon)
+                        Label(CadenceAreaPickerSupport.title(for: area), systemImage: task.area?.id == area.id && task.project == nil ? "checkmark.circle.fill" : CadenceListKindIcon.area)
                     }
                 }
             }
@@ -232,7 +238,7 @@ struct MacTaskRowContextMenu: View {
                     Button {
                         settle(Self.moveToList(task, area: nil, project: project, allTasks: allTasks, modelContext: modelContext))
                     } label: {
-                        Label(CadenceProjectPickerSupport.title(for: project), systemImage: task.project?.id == project.id ? "checkmark.circle.fill" : project.icon)
+                        Label(CadenceProjectPickerSupport.title(for: project), systemImage: task.project?.id == project.id ? "checkmark.circle.fill" : CadenceListKindIcon.project)
                     }
                 }
             }

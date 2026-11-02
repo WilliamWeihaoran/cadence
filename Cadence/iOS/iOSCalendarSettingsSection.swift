@@ -667,6 +667,9 @@ private struct iOSCalendarSettingsRow: View {
         .opacity(isActive ? 1 : 0.68)
     }
 
+    /// The rows read `CadenceListKindIcon` rather than each list's own `icon` ([[T-10102]]):
+    /// this menu offers a choice between lists, so it speaks the one chooser vocabulary
+    /// [[T-8553]] settled. There is no Inbox row -- a calendar links to a real list only.
     private var connectionMenu: some View {
         Menu {
             if areas.isEmpty && projects.isEmpty {
@@ -678,7 +681,7 @@ private struct iOSCalendarSettingsRow: View {
                             Button {
                                 onToggleArea(area)
                             } label: {
-                                Label(CadenceCalendarSettingsCopy.areaDisplayName(area.name), systemImage: area.linkedCalendarID == calendar.calendarIdentifier ? "checkmark" : area.icon)
+                                Label(CadenceCalendarSettingsCopy.areaDisplayName(area.name), systemImage: area.linkedCalendarID == calendar.calendarIdentifier ? "checkmark" : CadenceListKindIcon.area)
                             }
                         }
                     }
@@ -690,7 +693,7 @@ private struct iOSCalendarSettingsRow: View {
                             Button {
                                 onToggleProject(project)
                             } label: {
-                                Label(CadenceCalendarSettingsCopy.projectDisplayName(project.name), systemImage: project.linkedCalendarID == calendar.calendarIdentifier ? "checkmark" : project.icon)
+                                Label(CadenceCalendarSettingsCopy.projectDisplayName(project.name), systemImage: project.linkedCalendarID == calendar.calendarIdentifier ? "checkmark" : CadenceListKindIcon.project)
                             }
                         }
                     }
