@@ -157,21 +157,4 @@ struct CadenceIconOnlyColorSwatchAccessibilityTests {
         #expect(source.contains(#".accessibilityLabel(isSelected ? "Selected color" : "Use this color")"#))
         #expect(source.contains(".help(hex)"))
     }
-
-    /// **T-934: the iOS tracking color grid was the one holdout this file's own doc comment
-    /// named**, and it named its swatches by hex (`"Color \(color)"`) rather than by what tapping
-    /// them does; T-934 fixed the label and [[T-5003]] respelled it. **[[T-5523]] deleted the grid**:
-    /// its only readers were the goal and habit editors [[T-2079]] removed, so it had no caller. The
-    /// pin is inverted rather than dropped — the file that held the grid holds no swatch at all,
-    /// hex-named or otherwise, so a grid that comes back there has to be written against the
-    /// converged idiom the suite above enforces, not resurrected from history.
-    @Test func theIOSTrackingColorGridIsDeletedAndLeftNoSwatchBehind() throws {
-        let source = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTrackingEditorComponents.swift")
-        let code = CadenceSourceScan.strippingComments(source)
-        #expect(!code.contains("struct iOSTrackingColorGrid"))
-        #expect(!code.contains(#"accessibilityLabel("Color \(color)")"#))
-        #expect(!code.contains("Use this color"))
-        // Non-vacuity: the file is still read, and still holds the tracking editor chrome.
-        #expect(code.contains("struct iOSTrackingEditorShell"))
-    }
 }

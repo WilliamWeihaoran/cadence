@@ -62,8 +62,6 @@ struct CadenceVoiceOverNamingTests {
                 ".cadenceControlLabel(CadenceIconPalette.accessibilityName(for: icon))",
             "Cadence/iOS/iOSListEditorViews.swift":
                 ".accessibilityLabel(CadenceIconPalette.accessibilityName(for: icon))",
-            "Cadence/iOS/iOSTrackingEditorComponents.swift":
-                ".accessibilityLabel(CadenceIconPalette.accessibilityName(for: icon))",
         ]
         let raw = ["accessibilityLabel: icon\n", ".accessibilityLabel(icon)", #"Select \(icon) icon"#]
         for (path, call) in pickers {

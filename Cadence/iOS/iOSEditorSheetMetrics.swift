@@ -13,9 +13,10 @@ import SwiftUI
 /// the two columns they split into at regular width. Each of those is one decision spelled two or
 /// three times, which is how `titleSize` came to be 22 in two files and a `24 : 21` ramp in a third.
 ///
-/// A fifth surface, `iOSTrackingEditorShell`, hosts no well but is the same kind of sheet, and had
-/// its own copies of the gutter ramp, the two-column cap and the gap between groups. It reads them
-/// from here now. "Editor sheet" is the unit these figures belong to, not "sheet with a markdown
+/// A fifth surface, the goal and habit editors' shared shell, hosted no well but was the same kind
+/// of sheet, and had its own copies of the gutter ramp, the two-column cap and the gap between
+/// groups. [[T-2079]] deleted those editors and [[T-9957]] the orphaned shell, and the two-column
+/// cap went with it. "Editor sheet" is the unit these figures belong to, not "sheet with a markdown
 /// well in it".
 ///
 /// Deliberately **outside** `#if os(iOS)`, like `iOSTaskInspectorMetrics` and `CadencePageHeaderMetrics`
@@ -57,8 +58,8 @@ nonisolated enum iOSEditorSheetMetrics {
     /// varies**, and the only one that is about the device rather than about the sheet. It is what
     /// is left over once a content column has stopped growing, so it is a real host fact.
     ///
-    /// Shared by the task inspector, both calendar sheets and `iOSTrackingEditorShell`, which is why
-    /// it is stated once instead of being a `isRegularWidth ? 20 : 18` in each of them.
+    /// Shared by the task inspector and both calendar sheets, which is why it is stated once instead
+    /// of being a `isRegularWidth ? 20 : 18` in each of them.
     static func gutter(isRegularWidth: Bool) -> CGFloat {
         isRegularWidth ? 20 : 18
     }
@@ -81,9 +82,9 @@ nonisolated enum iOSEditorSheetMetrics {
     /// **16.** Three of the five surfaces already said 16 and two said 14, but the count is not the
     /// argument — the argument is that the two families this splits along do not line up with it.
     /// `iOSCalendarQuickCreateSheet` is the inspector's structural twin (ruled sections inside one
-    /// sheet card, six groups apiece) and it says 16; `iOSCalendarEventEditSheet` and
-    /// `iOSTrackingEditorShell` are the other shape (free-standing `.card` sections on `Theme.bg`)
-    /// and they also say 16. Whichever way the surfaces are grouped, 14 is the odd one out.
+    /// sheet card, six groups apiece) and it says 16; `iOSCalendarEventEditSheet` and the since-deleted
+    /// tracking editor shell were the other shape (free-standing `.card` sections on `Theme.bg`)
+    /// and they also said 16. Whichever way the surfaces are grouped, 14 is the odd one out.
     ///
     /// The density theory does not survive being checked, either. The inspector is not denser than
     /// the sheets that say 16 — it draws six groups and quick-create draws six — and the number it
@@ -108,12 +109,6 @@ nonisolated enum iOSEditorSheetMetrics {
     /// A title wraps to three lines before it truncates. Not a width ramp: a long name is long on
     /// both devices, and past `gutter` the sheet's column is the same column.
     static let titleLineLimit = 3
-
-    // MARK: - Splitting into two columns
-
-    /// The widest a two-column editor sheet is ever drawn. Past this it stops growing and centres,
-    /// so a line of text never spans a full iPad.
-    static let twoColumnMaxWidth: CGFloat = 980
 }
 
 #if os(iOS)

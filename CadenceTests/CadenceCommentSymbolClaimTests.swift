@@ -1278,7 +1278,6 @@ enum CadenceCommentSymbolClaim {
     /// cross-language sweep checks against the script instead. A value, not a pointer.
     static let rootNonSymbols = [
         "Cadence/Shared/CadenceColorPalette.swift `dollarsign.circle.fill`",
-        "Cadence/iOS/iOSTrackingEditorComponents.swift `brain.head.profile`",
         // Off this list 2026-10-21 ([[T-3270]]) and back on 2026-10-22 ([[T-3271]]). T-3253's
         // cursor call in MarkdownInlineTaskPanelSupport.swift spells the word as an implicit
         // member, the only bare spelling in code, and that used to vouch for the root; an implicit
@@ -1327,7 +1326,9 @@ enum CadenceCommentSymbolClaim {
         // resolving, so they crossed from the member ledger to this one. The member ledger lost
         // the same two, which is why its count moved by two in the opposite direction.
         #expect(Self.rootTombstones.count == 12)
-        #expect(Self.rootNonSymbols.count == 6)
+        // Non-symbols **5 since [[T-9957]]**: the brain-head-profile icon list left with the
+        // orphaned tracking editor components file that held it.
+        #expect(Self.rootNonSymbols.count == 5)
         #expect(Self.rootStaleClaims.count == 0)
     }
 

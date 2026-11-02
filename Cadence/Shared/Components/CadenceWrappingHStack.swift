@@ -17,9 +17,9 @@ import SwiftUI
 /// `CadenceFlowLayoutSupport`, which owns the actual test suite
 /// (`CadenceFlowLayoutSupportTests.swift`). The one calculation that stays local — `itemSizes`'
 /// per-item width clamp, below — is equally unreachable, for the same reason. None of that makes
-/// this file dead: six `Cadence/iOS/` files call it across nine sites (`iOSTaskViews.swift`,
-/// `iOSTrackingEditorComponents.swift`, `iOSAINoteActionsViews.swift`, `iOSFeatureDetailViews.swift`,
-/// `iOSInboxRemindersSection.swift`, `iOSTaskDetailComponents.swift`). A future "which files have no
+/// this file dead: five `Cadence/iOS/` files call it, once each (`iOSTaskViews.swift`,
+/// `iOSAINoteActionsViews.swift`, `iOSFocusView.swift`, `iOSInboxRemindersSection.swift`,
+/// `iOSTaskDetailComponents.swift`). A future "which files have no
 /// test" sweep should read this comment before re-filing the gap — it is an adapter with no seam,
 /// already fully covered at the layer that can be covered.
 struct CadenceWrappingHStack: Layout {

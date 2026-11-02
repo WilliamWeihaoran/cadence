@@ -63,8 +63,8 @@ struct iOSEditorSheetMetricsTests {
     // MARK: - The gap between two groups, and the frame around them
 
     /// The split T-112 closed. Three surfaces said 16 — `iOSCalendarEventEditSheet`,
-    /// `iOSCalendarQuickCreateSheet` and `iOSTrackingEditorShell` — and two said 14: the task
-    /// inspector and the Settings template editor.
+    /// `iOSCalendarQuickCreateSheet` and the tracking editor shell [[T-9957]] since deleted — and
+    /// two said 14: the task inspector and the Settings template editor.
     ///
     /// 16 is not a vote. It is that the two structural families here do not line up with the split:
     /// quick-create is the inspector's twin (ruled sections inside one sheet card, six groups each)
@@ -136,15 +136,6 @@ struct iOSEditorSheetMetricsTests {
         #expect(iOSEditorSheetMetrics.titleSize > CadenceTaskRowMetrics.compactWidth.secondaryFontSize)
     }
 
-    // MARK: - Splitting into two columns
-
-    /// The cap is the one two-column width a sheet still reads (`iOSTrackingEditorComponents`).
-    /// The four per-column min/max widths beside it were read by nothing but this suite and were
-    /// deleted under T-3171 (vii).
-    @Test func theTwoColumnCapIsStatedOnce() {
-        #expect(iOSEditorSheetMetrics.twoColumnMaxWidth == 980)
-    }
-
     // MARK: - Sanity
 
     /// A zero anywhere in here draws as a collapsed sheet rather than as an error.
@@ -154,7 +145,6 @@ struct iOSEditorSheetMetricsTests {
         #expect(iOSEditorSheetMetrics.cardPadding > 0)
         #expect(iOSEditorSheetMetrics.titleSize > 0)
         #expect(iOSEditorSheetMetrics.titleLineLimit > 0)
-        #expect(iOSEditorSheetMetrics.twoColumnMaxWidth > 0)
     }
 
     // MARK: - One section style across the three calendar sheets (T-604)
@@ -337,11 +327,11 @@ struct iOSEditorSheetMetricsTests {
             "Cadence/iOS/iOSNotesView.swift",
             "Cadence/iOS/iOSSearchView.swift",
             "Cadence/iOS/iOSTaskDetailSheet.swift",
-            "Cadence/iOS/iOSTaskInspectorHost.swift",
-            "Cadence/iOS/iOSTrackingEditorComponents.swift"
-            // `iOSTrackingEditorSheets.swift` was the last link in this chain until [[T-2079]]
-            // deleted it with the goal and habit editors. `iOSTrackingEditorComponents` stays: it
-            // is the shared editor chrome, read by surfaces that are not goal or habit.
+            "Cadence/iOS/iOSTaskInspectorHost.swift"
+            // `iOSTrackingEditorSheets.swift` was in this chain until [[T-2079]] deleted it with the
+            // goal and habit editors, and `iOSTrackingEditorComponents.swift` until [[T-9957]]: it
+            // was their shared chrome, and with them gone nothing drew it. The last per-column
+            // figure it read, the two-column cap, went with it.
         ]
 
         /// The two covers in the chain, and the single editor behind both of them.
@@ -374,8 +364,7 @@ struct iOSEditorSheetMetricsTests {
             "Cadence/iOS/iOSNotesView.swift": "iOSEventNoteEditorSheet(",
             "Cadence/iOS/iOSSearchView.swift": "iOSCalendarEventEditSheet(",
             "Cadence/iOS/iOSTaskDetailSheet.swift": ".capturePresentation(",
-            "Cadence/iOS/iOSTaskInspectorHost.swift": "iOSTaskDetailSheet(",
-            "Cadence/iOS/iOSTrackingEditorComponents.swift": "iOSEditorSheetMetrics.gutter("
+            "Cadence/iOS/iOSTaskInspectorHost.swift": "iOSTaskDetailSheet("
         ]
 
         for path in chain {

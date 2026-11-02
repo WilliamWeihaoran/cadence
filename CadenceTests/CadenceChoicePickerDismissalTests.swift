@@ -136,7 +136,6 @@ struct CadenceChoicePickerDismissalTests {
             // Two since [[T-8731]]: the Today/list sort chip, and the generic
             // `iOSEnumChoiceChip` the Inbox and All Tasks bar draws three of.
             "Cadence/iOS/iOSTaskViews.swift": (2, 0),
-            "Cadence/iOS/iOSTrackingEditorComponents.swift": (2, 0),
             "Cadence/macOS/Views/SettingsArchiveImportCard.swift": (1, 0),
             "Cadence/macOS/Views/SettingsCalendarWorkHoursSection.swift": (1, 0),
             "Cadence/macOS/Views/SettingsSectionViews.swift": (1, 0),
@@ -201,7 +200,9 @@ struct CadenceChoicePickerDismissalTests {
         // [[T-8731]] adds `iOSEnumChoiceChip`, the one chip the Inbox and All Tasks sort/order/
         // group bar draws three of: 34, still 4 -- a chip that writes a view preference commits
         // nothing to the store.
-        #expect(found.values.map(\.calls).reduce(0, +) == 34)
+        // [[T-9957]] deletes the orphaned tracking editor components file and its frequency
+        // editor's two draft pickers (times per week, day of month): 32, still 4.
+        #expect(found.values.map(\.calls).reduce(0, +) == 32)
         #expect(found.values.map(\.committing).reduce(0, +) == 4)
     }
 

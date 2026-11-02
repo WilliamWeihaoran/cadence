@@ -23,8 +23,8 @@ import SwiftUI
 /// **T-492 is why the horizontal margin is not a ramp here at all.** The extraction took the two
 /// sheets' `isRegularWidth ? 20 : 18` and re-typed it instead of taking it from
 /// `iOSEditorSheetMetrics.gutter(isRegularWidth:)`, which is the file that decides "the margin
-/// between an editor sheet's content and the edge of its host" for the task inspector, both
-/// calendar sheets and `iOSTrackingEditorShell` — and whose own comment says it exists so that
+/// between an editor sheet's content and the edge of its host" for the task inspector and both
+/// calendar sheets — and whose own comment says it exists so that
 /// figure is stated once. The vertical ramp below is genuinely this header's own: no other surface
 /// has an opinion about how tall a title block is.
 ///
