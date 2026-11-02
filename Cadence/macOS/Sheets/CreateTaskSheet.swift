@@ -187,7 +187,7 @@ struct CreateTaskSheet: View {
                 .font(.system(size: 14))
                 .foregroundStyle(Theme.text)
                 .focused($focusedSubtask, equals: draftID)
-                .onSubmit(addNextSubtask)
+                .onSubmit { addSubtaskDraft(after: draftID) }
             Button {
                 subtaskDrafts = CreateTaskSubtaskDraft.removing(draftID, from: subtaskDrafts)
             } label: {
@@ -214,7 +214,7 @@ struct CreateTaskSheet: View {
     }
 
     private var addSubtaskButton: some View {
-        Button(action: addNextSubtask) {
+        Button { addSubtaskDraft(after: nil) } label: {
             HStack(spacing: 5) {
                 Image(systemName: "plus")
                     .font(.system(size: 10, weight: .semibold))
@@ -305,10 +305,12 @@ struct CreateTaskSheet: View {
         .background(Theme.surfaceElevated)
     }
 
-    private func addNextSubtask() {
-        let draft = CreateTaskSubtaskDraft(title: "")
-        subtaskDrafts.append(draft)
-        focusedSubtask = draft.id
+    /// Return in a draft row (`after:` that row) or the Add Subtask button (`after: nil`).
+    /// What it does is `CreateTaskSubtaskDraft.addingDraft(after:in:)`'s to decide ([[T-10040]]).
+    private func addSubtaskDraft(after draftID: CreateTaskSubtaskDraft.ID?) {
+        let next = CreateTaskSubtaskDraft.addingDraft(after: draftID, in: subtaskDrafts)
+        subtaskDrafts = next.drafts
+        focusedSubtask = next.focus
     }
 
     // MARK: - Logic
@@ -502,6 +504,40 @@ struct CreateTaskSubtaskDraft: Identifiable, Equatable {
     /// unchanged, exactly as the `[String]` state was handed over before.
     static func titles(of drafts: [CreateTaskSubtaskDraft]) -> [String] {
         drafts.map(\.title)
+    }
+
+    /// The drafts and the focused row after Return in the row `after`, or the Add Subtask button
+    /// when `after` is `nil` ([[T-10040]]).
+    ///
+    /// Return used to append a fresh empty row every time, wherever it was pressed: a second
+    /// Return on the row it had just made stacked a second blank "Subtask" row, then a third, and
+    /// Return in the middle of the list put the new row at the bottom. The inspector's own
+    /// "Add subtask…" field never did either -- a blank Return there adds nothing. So:
+    ///
+    /// - Return on a blank row adds nothing and leaves the caret where it is.
+    /// - Return on a filled row moves to the blank row straight after it if there is one, and
+    ///   otherwise opens a new one directly below it, not at the end.
+    /// - The button reuses a blank last row rather than stacking another under it.
+    static func addingDraft(
+        after id: CreateTaskSubtaskDraft.ID?,
+        in drafts: [CreateTaskSubtaskDraft]
+    ) -> (drafts: [CreateTaskSubtaskDraft], focus: CreateTaskSubtaskDraft.ID?) {
+        let isBlank: (CreateTaskSubtaskDraft) -> Bool = { CadenceTitleNormalization.isBlank($0.title) }
+        let insertionIndex: Int
+        if let id, let index = drafts.firstIndex(where: { $0.id == id }) {
+            if isBlank(drafts[index]) { return (drafts, id) }
+            insertionIndex = index + 1
+            if insertionIndex < drafts.count, isBlank(drafts[insertionIndex]) {
+                return (drafts, drafts[insertionIndex].id)
+            }
+        } else {
+            if let last = drafts.last, isBlank(last) { return (drafts, last.id) }
+            insertionIndex = drafts.count
+        }
+        let draft = CreateTaskSubtaskDraft(title: "")
+        var next = drafts
+        next.insert(draft, at: insertionIndex)
+        return (next, draft.id)
     }
 
     /// The drafts without the one whose x was clicked; every other draft keeps its id and text.
