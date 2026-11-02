@@ -704,7 +704,10 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                     }
                 ))
                 if !draft.isAllDay {
-                    CadenceTimeRoller(minutes: Binding(get: { draft.startMin }, set: { draft.moveStart(toMinute: $0) })) {}
+                    // [[T-10060]]: Return in a focused roller column closes the panel, as the
+                    // header's Done does and as Return does in every other time roller in the app.
+                    // The roller marks Return handled, so an empty closure here swallowed it.
+                    CadenceTimeRoller(minutes: Binding(get: { draft.startMin }, set: { draft.moveStart(toMinute: $0) })) { activeField = nil }
                 }
                 if draft.kind == .task {
                     // **Reachable from inside the card, not only from `...`** ([[T-3237]] item 4).
@@ -725,7 +728,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                         showsClear: false, inlineStyle: true
                     )
                     if !draft.isAllDay {
-                        CadenceTimeRoller(minutes: Binding(get: { draft.endMin }, set: { draft.setEndMinute($0) })) {}
+                        CadenceTimeRoller(minutes: Binding(get: { draft.endMin }, set: { draft.setEndMinute($0) })) { activeField = nil }
                     }
                 }
             }
@@ -807,9 +810,11 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
             )
             if let calendarUnavailableNotice { Text(calendarUnavailableNotice) }
         case .location:
+            // [[T-10060]]: Return closes the panel, as the header's Done does.
             TextField("Location", text: $draft.location)
                 .textFieldStyle(.plain)
                 .frame(minHeight: 44)
+                .onSubmit { activeField = nil }
         }
     }
 

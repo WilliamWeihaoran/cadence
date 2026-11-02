@@ -108,4 +108,35 @@ struct CadenceCaptureCardNewTagEntryTests {
         // The standalone Estimate editor still closes from its panel.
         #expect(card.contains("value: estimateBinding, unsetValueLabel: \"Clear estimate\", onClose: { activeField = nil }"))
     }
+
+    // MARK: - [[T-10060]]: Return in the capture card's time rollers closes the panel
+
+    /// **Source shape.** `CadenceTimeRoller` answers Return with `.handled` and calls `onSubmit`,
+    /// so a roller handed `{}` swallows the key and does nothing. The schedule panel's Do time row,
+    /// `CadenceTimeRollerFieldRow` and the Mac Kanban card each close on Return; the capture card's
+    /// two rollers (the Do start and an event's End) were the only ones handed an empty closure.
+    @Test func captureCardTimeRollersCloseThePanelOnReturn() throws {
+        let card = try CadenceCommitSurfaceScan.scanned(Self.cardPath)
+        let lines = card.components(separatedBy: "\n").filter { $0.contains("CadenceTimeRoller(minutes:") }
+        #expect(lines.count == 2, "expected the Do start and event End rollers, found \(lines.count)")
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            #expect(trimmed.hasSuffix("{ activeField = nil }"), "a capture-card roller ignores Return: \(trimmed)")
+            #expect(!trimmed.hasSuffix("{}"), "a capture-card roller swallows Return: \(trimmed)")
+        }
+    }
+
+    /// **Source shape.** The Location panel's one field closes the panel on Return too; it had no
+    /// submit at all, so Return on a hardware keyboard left the panel open over a typed place.
+    @Test func captureCardLocationFieldClosesThePanelOnReturn() throws {
+        let card = try CadenceCommitSurfaceScan.scanned(Self.cardPath)
+        let start = try #require(card.range(of: "TextField(\"Location\""), "the Location field is gone")
+        let end = try #require(
+            card.range(of: "private var customRepeat", range: start.upperBound..<card.endIndex),
+            "customRepeat no longer follows the Location field"
+        )
+        let chain = String(card[start.lowerBound..<end.lowerBound])
+        #expect(chain.count < 400, "the slice ran past the field: \(chain.count) characters")
+        #expect(chain.contains(".onSubmit { activeField = nil }"), "Return in the Location field does nothing")
+    }
 }

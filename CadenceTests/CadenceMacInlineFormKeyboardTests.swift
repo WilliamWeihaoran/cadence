@@ -25,6 +25,25 @@ struct CadenceMacInlineFormKeyboardTests {
         compact.components(separatedBy: needle).count - 1
     }
 
+    /// [[T-10061]]: the list page's "+ Section" row (shared, drawn on the Mac list page and both
+    /// iOS list pages) had an xmark and nothing listening for Escape.
+    @Test func sectionCreationRowCancelsOnEscapeThroughItsOwnCancel() throws {
+        let row = try Self.compactBody(
+            "struct CadenceSectionCreationRow: View",
+            in: "Cadence/Shared/Components/CadenceSectionCreationRow.swift"
+        )
+        #expect(row.contains("TextField(\"Sectionname\""), "the slice is not the section row")
+        #expect(
+            row.contains("#ifos(macOS).onExitCommand(perform:cancel)#endif"),
+            "Escape from the focused Section name field must cancel through cancel()"
+        )
+        #expect(
+            row.contains(".onKeyPress(.escape){cancel()return.handled}"),
+            "Escape must also cancel along SwiftUI's focus route"
+        )
+        #expect(Self.count("Button(action:cancel)", in: row) == 1, "the xmark no longer cancels through cancel()")
+    }
+
     @Test func addLinkFormCancelsOnEscapeThroughItsOwnCancel() throws {
         let bar = try Self.compactBody(
             "private struct AddLinkBar: View",

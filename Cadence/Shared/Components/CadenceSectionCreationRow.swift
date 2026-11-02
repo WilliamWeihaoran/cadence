@@ -41,6 +41,18 @@ struct CadenceSectionCreationRow: View {
                         .help("Cancel section")
                         .accessibilityLabel("Cancel section")
                     }
+                    // [[T-10061]]: Escape cancels through the xmark's own `cancel`, focus-scoped, as
+                    // it does in the Mac Links add form, the inline task composer and the Settings
+                    // tag and context editors. `onExitCommand` is AppKit's route from the focused
+                    // field; `onKeyPress` follows SwiftUI focus, and also reaches an iPad keyboard.
+                    // `cancel()` is idempotent, so whichever fires second changes nothing.
+                    #if os(macOS)
+                    .onExitCommand(perform: cancel)
+                    #endif
+                    .onKeyPress(.escape) {
+                        cancel()
+                        return .handled
+                    }
                 } else {
                     Button {
                         isEditing = true
