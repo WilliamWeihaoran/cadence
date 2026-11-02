@@ -101,10 +101,12 @@ struct iOSContextEditorSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
+                    // [[T-9991]]: blue, as every other iOS sheet's Cancel is. `Theme.muted` made
+                    // this the one sheet whose Cancel read as a disabled control.
                     Button("Cancel") {
                         dismiss()
                     }
-                    .tint(Theme.muted)
+                    .tint(Theme.blue)
                 }
 
                 ToolbarItem(placement: .confirmationAction) {

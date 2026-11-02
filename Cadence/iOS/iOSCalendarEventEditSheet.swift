@@ -285,6 +285,9 @@ struct iOSCalendarEventEditSheet: View {
             selectedNote: $selectedReferenceNote,
             selectedTask: $selectedReferenceTask
         )
+        // [[T-9993]]: the same tint scope `iOSCalendarQuickCreateSheet` declares around the same
+        // panel, so an existing event's fields carry the cursor a new event's do.
+        .tint(Theme.blue)
         .preferredColorScheme(.dark)
     }
 

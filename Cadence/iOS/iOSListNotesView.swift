@@ -744,12 +744,17 @@ struct iOSNoteFolderSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
-                ToolbarItem(placement: .primaryAction) {
+                // [[T-9992]]: the commit sits in the confirmation slot, as Save does on the
+                // list and context editors; `.primaryAction` drew it as an ordinary bar button.
+                ToolbarItem(placement: .confirmationAction) {
                     Button(request.actionTitle, action: save)
                         .disabled(normalized.isEmpty)
                 }
             }
         }
+        // [[T-9992]]: the sheet's own tint scope, as the other iOS editor sheets declare theirs,
+        // so Cancel, the commit and the field's cursor are the palette's blue.
+        .tint(Theme.blue)
         .preferredColorScheme(.dark)
         .onAppear {
             // Same deferred focus the macOS pickers use, and for the same reason: setting the

@@ -169,6 +169,9 @@ struct iOSMarkdownReferencePickerSheet: View {
                 }
             }
         }
+        // [[T-9993]]: the sheet's own tint scope, so Cancel and the search field's cursor are the
+        // palette's blue rather than the system's.
+        .tint(Theme.blue)
         .preferredColorScheme(.dark)
     }
 
