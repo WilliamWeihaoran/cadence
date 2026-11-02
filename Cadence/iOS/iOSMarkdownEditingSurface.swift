@@ -371,9 +371,12 @@ struct iOSMarkdownEditingSurface: View {
                         } label: {
                             // [[T-9482]]: `.iosPressable` adds no hit shape, so without this
                             // only the heading's own letters took the tap, not the row it fills.
+                            // [[T-10008]]: depth reads by weight as well as indent, the rule the
+                            // Mac's outline popover draws -- one shared style, not two copies.
                             Text(item.title)
-                                .padding(.leading, CGFloat(item.level - 1) * 12)
-                                .foregroundStyle(Theme.text)
+                                .fontWeight(CadenceNoteOutlineRowStyle.weight(level: item.level))
+                                .padding(.leading, CadenceNoteOutlineRowStyle.indent(level: item.level))
+                                .foregroundStyle(CadenceNoteOutlineRowStyle.color(level: item.level))
                                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                                 .contentShape(Rectangle())
                         }

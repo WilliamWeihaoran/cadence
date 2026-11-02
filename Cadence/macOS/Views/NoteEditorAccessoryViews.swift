@@ -80,15 +80,16 @@ private struct NoteOutlineJumpRow: View {
         Button(action: action) {
             HStack(spacing: 0) {
                 Text(item.title)
-                    .font(.system(size: 12, weight: item.level <= 2 ? .semibold : .regular))
-                    .foregroundStyle(item.level <= 2 ? Theme.text : Theme.muted)
+                    .font(.system(size: 12, weight: CadenceNoteOutlineRowStyle.weight(level: item.level)))
+                    .foregroundStyle(CadenceNoteOutlineRowStyle.color(level: item.level))
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 0)
             }
             // Depth is carried by indent and weight alone. The old panel drew a coloured rule per
-            // heading, which spent the accent on static structure.
-            .padding(.leading, CGFloat(max(0, item.level - 1)) * 12)
+            // heading, which spent the accent on static structure. [[T-10008]]: the rule is shared
+            // with the iOS outline sheet.
+            .padding(.leading, CadenceNoteOutlineRowStyle.indent(level: item.level))
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity, alignment: .leading)
