@@ -29,9 +29,7 @@ struct SchedulePanelHeader: View {
             // the zoom control, the close button's label, and iPad's pane switcher. (T-602)
             PanelHeader(title: "Timeline")
             Spacer()
-            exportButton
-                .padding(.trailing, 8)
-            TimelineZoomControl(zoomLevel: $zoomLevel, range: TimelineZoom.levels)
+            SchedulePanelHeaderControls(zoomLevel: $zoomLevel, onExport: onExport)
                 .padding(.trailing, 12)
         }
     }
@@ -45,11 +43,32 @@ struct SchedulePanelHeader: View {
                     .foregroundStyle(Theme.text)
             }
             Spacer(minLength: 8)
-            exportButton
-            TimelineZoomControl(zoomLevel: $zoomLevel, range: TimelineZoom.levels)
+            SchedulePanelHeaderControls(zoomLevel: $zoomLevel, onExport: onExport, spacing: 10)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+    }
+}
+
+/// **The timeline's Export and zoom controls, one view for every host that draws them**
+/// ([[T-10052]]).
+///
+/// They were spelled inside `SchedulePanelHeader`, so they existed only where that header did --
+/// and [[T-615]] took the header away from `RootTimelineSidebarPane` (the Cmd+\ "Today Timeline"
+/// pane) to stop the pane naming itself twice. Export and zoom went with the title, though nothing
+/// in that ticket asked for them to: the pane was the one place the timeline could not be zoomed
+/// or exported. The pane now draws this same view in its own title row, beside its close button.
+struct SchedulePanelHeaderControls: View {
+    @Binding var zoomLevel: Int
+    let onExport: () -> Void
+    /// The gap between Export and the zoom pair. The standard header's 8, the compact header's 10.
+    var spacing: CGFloat = 8
+
+    var body: some View {
+        HStack(spacing: spacing) {
+            exportButton
+            TimelineZoomControl(zoomLevel: $zoomLevel, range: TimelineZoom.levels)
+        }
     }
 
     /// [[T-9982]]: the zoom pair's own button, so the header's three are one size and one radius.

@@ -338,13 +338,21 @@ struct RootSidebarToggleButton: View {
 struct RootTimelineSidebarPane: View {
     let onClose: () -> Void
 
+    /// The hosted panel's zoom, drawn here because the panel draws no header of its own ([[T-10052]]).
+    @AppStorage(SchedulePanel.zoomLevelStorageKey) private var zoomLevel: Int = 1
+    /// Bumped by this row's Export; the panel below runs the export it owns.
+    @State private var exportRequest = 0
+
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: 8) {
                 Text("Today Timeline")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                 Spacer()
+                // [[T-10052]]: the Export and zoom controls every other timeline header carries.
+                // [[T-615]] dropped the hosted panel's header for its title, and these went with it.
+                SchedulePanelHeaderControls(zoomLevel: $zoomLevel, onExport: { exportRequest += 1 })
                 CadenceIconButton(
                     systemImage: "xmark",
                     accessibilityLabel: "Close timeline",
@@ -363,7 +371,7 @@ struct RootTimelineSidebarPane: View {
             // Headerless, because the title six lines up has already said "Timeline" and the rule
             // above is this pane's own. `SchedulePanel`'s three other hosts have nothing naming
             // them, so they keep their headers — see `SchedulePanelPresentation.hosted` (T-615).
-            SchedulePanel(presentation: .hosted)
+            SchedulePanel(presentation: .hosted, exportRequest: exportRequest)
                 .frame(minWidth: 320, idealWidth: 360, maxWidth: 420)
         }
         .frame(width: 360)

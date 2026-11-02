@@ -908,7 +908,8 @@ struct CadenceTodayUnificationTests {
         let pane = try strippingComments(sourceFile("Cadence/macOS/Views/macOSRootSupportViews.swift"))
         #expect(pane.contains("struct RootTimelineSidebarPane: View"), "non-vacuity: wrong file read")
         #expect(pane.contains(#"Text("Today Timeline")"#), "the pane stopped naming itself")
-        #expect(pane.contains("SchedulePanel(presentation: .hosted)"))
+        // An open paren, not a closed one: the pane passes its Export request too ([[T-10052]]).
+        #expect(pane.contains("SchedulePanel(presentation: .hosted"))
 
         let panel = try strippingComments(sourceFile("Cadence/macOS/Views/SchedulePanel.swift"))
         #expect(panel.contains("struct SchedulePanel: View"), "non-vacuity: wrong file read")
@@ -942,9 +943,9 @@ struct CadenceTodayUnificationTests {
         )
         let headerless = try CadenceScanInstrument(
             "hosts SchedulePanel headerless",
-            fires: "            SchedulePanel(presentation: .hosted)\n",
+            fires: "            SchedulePanel(presentation: .hosted, exportRequest: exportRequest)\n",
             andNotOn: "            SchedulePanel(presentation: .compact)\n",
-            by: { $0.contains("SchedulePanel(presentation: .hosted)") }
+            by: { $0.contains("SchedulePanel(presentation: .hosted") }
         )
         let read = CadenceSourceScan.strippedSourceReader()
         let files = try CadenceSourceScan.swiftFiles(under: "Cadence")
@@ -970,6 +971,43 @@ struct CadenceTodayUnificationTests {
             read: read
         )
         #expect(silenced == ["Cadence/macOS/Views/macOSRootSupportViews.swift"])
+    }
+
+    /// **[[T-10052]] — the headerless pane still carries Export and zoom.** [[T-615]] dropped the
+    /// hosted panel's header so the Cmd+\ pane named the timeline once, and the header was also
+    /// the only place the Export button and the zoom pair were drawn, so the pane lost both.
+    ///
+    /// Every host now draws the controls through one view, `SchedulePanelHeaderControls`: the two
+    /// headers inside the panel, and the pane's own title row. The pane's Export only bumps a
+    /// request; the panel runs the export, since the schedule it writes is the panel's queries.
+    /// The pane's zoom and the panel's ladder read one `UserDefaults` key.
+    @Test func theHeaderlessTimelinePaneStillCarriesExportAndZoom() throws {
+        let pane = try strippingComments(sourceFile("Cadence/macOS/Views/macOSRootSupportViews.swift"))
+        let paneBody = try #require(
+            pane.components(separatedBy: "struct RootTimelineSidebarPane: View").dropFirst().first,
+            "non-vacuity: the pane moved"
+        ).components(separatedBy: "\nstruct ").first ?? ""
+        #expect(paneBody.contains(#"Text("Today Timeline")"#), "non-vacuity: wrong struct read")
+        #expect(
+            paneBody.contains("SchedulePanelHeaderControls(zoomLevel: $zoomLevel, onExport: { exportRequest += 1 })"),
+            "the pane's title row lost the Export and zoom controls"
+        )
+        #expect(paneBody.contains("@AppStorage(SchedulePanel.zoomLevelStorageKey)"))
+        #expect(paneBody.contains("SchedulePanel(presentation: .hosted, exportRequest: exportRequest)"))
+
+        let panel = try strippingComments(sourceFile("Cadence/macOS/Views/SchedulePanel.swift"))
+        #expect(panel.contains("@AppStorage(SchedulePanel.zoomLevelStorageKey)"))
+        #expect(
+            panel.contains(".onChange(of: exportRequest) { _, _ in exportTodayPlan() }"),
+            "the panel no longer answers its host's Export"
+        )
+
+        // Both of the panel's own headers draw the same controls view, and nothing else spells
+        // the Export button.
+        let shell = try strippingComments(sourceFile("Cadence/macOS/Views/SchedulePanelShellViews.swift"))
+        #expect(shell.components(separatedBy: "SchedulePanelHeaderControls(zoomLevel:").count - 1 == 2)
+        #expect(shell.components(separatedBy: #""Export schedule""#).count - 1 == 1)
+        #expect(SchedulePanel.zoomLevelStorageKey == "scheduleZoomLevel", "the stored zoom would reset")
     }
 
     /// The metrics that fed the tile go with it — a size table entry nothing reads is the same

@@ -66,11 +66,19 @@ struct SchedulePanel: View {
     @Environment(TodayTimelineFocusManager.self) private var todayTimelineFocusManager
     var presentation: SchedulePanelPresentation = .standard
     var useStandardHeaderHeight = false
+    /// **A `.hosted` panel's Export, pressed in its host's title row** ([[T-10052]]). The host bumps
+    /// it and the panel exports: the schedule the file holds is this panel's own queries, so the
+    /// export stays here and only the button moves. `0`, never bumped, everywhere else.
+    var exportRequest = 0
+
+    /// The zoom level's `UserDefaults` key, read by this panel and by a host that draws the zoom
+    /// pair for it ([[T-10052]]), so the pair and the ladder it scales cannot read two settings.
+    nonisolated static let zoomLevelStorageKey = "scheduleZoomLevel"
     @Query private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
 
-    @AppStorage("scheduleZoomLevel") private var zoomLevel: Int = 1
+    @AppStorage(SchedulePanel.zoomLevelStorageKey) private var zoomLevel: Int = 1
     @AppStorage("scheduleRememberedScrollHour") private var rememberedScrollHour: Int = -1
     @State private var isRestoringScroll = true
     @State private var didRestoreScroll = false
@@ -258,6 +266,7 @@ struct SchedulePanel: View {
         ) { _ in
             exportDocument = nil
         }
+        .onChange(of: exportRequest) { _, _ in exportTodayPlan() }
         .overlay {
             RoundedRectangle(cornerRadius: 14)
                 .strokeBorder(Theme.blue.opacity(isFocusHighlighted ? 0.95 : 0), lineWidth: 2)
