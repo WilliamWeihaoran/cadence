@@ -393,6 +393,15 @@ struct TaskBundleTests {
             "Cadence/macOS/Views/SettingsAboutSection.swift": [
                 "\"Bundle ID\""
             ],
+            // [[T-8644]]: the iPad sidebar mark resolves the shipped primary icon from the
+            // Info.plist, as the Mac header does -- four technical keys read through
+            // `Bundle.main`, the same kind as `AppStoreReviewReadiness`'s two above.
+            "Cadence/iOS/iOSRootSidebar.swift": [
+                "\"CFBundleIcons~ipad\"",
+                "\"CFBundleIcons\"",
+                "\"CFBundlePrimaryIcon\"",
+                "\"CFBundleIconFiles\""
+            ],
         ]
 
         // Not `CadenceCommitSurfaceScan.scanned`: its `raw.count > 400` guard is right for a

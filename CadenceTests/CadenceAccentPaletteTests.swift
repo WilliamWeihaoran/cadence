@@ -491,14 +491,17 @@ struct CadenceAppearanceSettingsReachTests {
 
     /// Filed under Interface beside Navigation and Sidebar, and *not* into the group of one that
     /// holds About — which a test next door pins as `[.about]` exactly.
-    @Test func appearanceIsFiledInTheInterfaceGroupOnMacOSAndTheAppGroupOnMobile() throws {
+    @Test func appearanceIsFiledInTheInterfaceGroupOnBothPlatforms() throws {
         let interface = try #require(SettingsCategoryGroup.all.first { $0.title == "Interface" })
         #expect(interface.categories.contains(.appearance))
         #expect(interface.categories == [.appearance, .navigation, .sidebar])
 
+        // [[T-8738]]: one grouping on both sides, so mobile files Appearance under "Interface"
+        // too; `.sidebar` is `desktopOnly` and drops out, and "App" holds About alone.
+        let mobileInterface = try #require(CadenceMobileSettingsLayout.groups.first { $0.title == "Interface" })
+        #expect(mobileInterface.kinds == [.appearance, .navigation])
         let app = try #require(CadenceMobileSettingsLayout.groups.first { $0.title == "App" })
-        #expect(app.kinds.contains(.appearance))
-        #expect(app.kinds.first == .appearance)
+        #expect(!app.kinds.contains(.appearance))
     }
 
     /// Both screens read the same list and the same copy, which is the whole reason the picker is

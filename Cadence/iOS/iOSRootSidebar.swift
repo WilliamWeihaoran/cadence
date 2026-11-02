@@ -933,7 +933,7 @@ struct iOSSidebarHeader: View {
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fill)
                 .frame(width: 28, height: 28)
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous))
         } else {
             iOSIconTile(systemImage: CadenceFeatureDestination.allTasks.systemImage,
                         color: Theme.blue, size: 28, iconSize: 14)

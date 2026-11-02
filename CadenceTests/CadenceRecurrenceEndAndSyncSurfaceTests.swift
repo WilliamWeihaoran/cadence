@@ -797,8 +797,9 @@ struct CadenceSyncSurfaceTests {
         )
 
         // Filed with the system services the app talks to, not beside `.account`: the two adjacent
-        // would read as one setting listed twice. Mobile files it the same way.
-        #expect(group.title == "Connections")
+        // would read as one setting listed twice. [[T-8738]] made the heading one shared name,
+        // "System", which is mobile's; the membership is the Mac's.
+        #expect(group.title == "System")
         #expect(group.categories.contains(.calendar))
         #expect(group.categories.contains(.reminders))
         #expect(!group.categories.contains(.account))
