@@ -33,11 +33,13 @@ enum CadenceReorderVisibility {
     /// What a drop that landed outside the visible sequence says.
     ///
     /// **It names no sort mode, and that is a constraint rather than brevity.** The two surfaces
-    /// this is drawn on speak two vocabularies for the same arrangement: `TaskSortField.custom` is
-    /// labelled *Custom*, and `CadenceTaskSortMode.listOrder` — which macOS Today has used since
-    /// T-606 — is labelled *List Order*. A sentence naming either would be wrong on the other
-    /// screen, and a sentence naming both would be advice about a chip rather than a report about a
-    /// row.
+    /// this is drawn on still speak two vocabularies for the same arrangement — `TaskSortField.custom`
+    /// and `CadenceTaskSortMode.listOrder`, which macOS Today has used since T-606 — even though
+    /// the owner's 2026-11-01 decision under [[T-9901]] gave both the *same label*, "Custom". The
+    /// shared label is not a licence to name it here: a sentence that names the chip is advice
+    /// about a control at the moment the user needs a report about a row, and the arrangement is
+    /// reachable under a different sort on each surface anyway, so the mode the user is actually in
+    /// when they see this is not the one that would be named.
     ///
     /// It claims the move, because the move happened: the caller only reaches this once
     /// `CadenceOrderCommit.commit` has answered `true`, and since T-1119 `notice(droppedID:
@@ -63,10 +65,10 @@ enum CadenceReorderVisibility {
     /// `CadenceInlineNotice(tone: .informational)` beside the other landing sentence.
     ///
     /// **It names a list rather than a sort**, which is the one thing that makes it safe to draw on
-    /// all three row surfaces: `offScreenNotice` may not name a sort mode because the surfaces
-    /// speak two vocabularies for it (*Custom* and *List Order*), and "its own list" has one
-    /// spelling everywhere — it is `CadenceTaskQuerySupport.listGroupKey`, the same grouping the
-    /// sidebar, Today's headers and All Tasks' By List mode all use, Inbox included.
+    /// all three row surfaces: `offScreenNotice` may not name a sort mode for the reason recorded
+    /// on it, and "its own list" has one spelling everywhere — it is
+    /// `CadenceTaskQuerySupport.listGroupKey`, the same grouping the sidebar, Today's headers and
+    /// All Tasks' By List mode all use, Inbox included.
     ///
     /// **It teaches nothing about `order`.** A sentence explaining that each list carries its own
     /// hand-made sequence would be a paragraph about a data model at the moment the user is trying

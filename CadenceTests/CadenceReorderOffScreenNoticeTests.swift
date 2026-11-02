@@ -83,9 +83,11 @@ struct CadenceReorderOffScreenNoticeTests {
     ///
     /// Two separate claims, because two separate things would be wrong. Reusing
     /// `CadenceOrderCommit.failureNotice` would tell a user whose drop the store *accepted* that
-    /// nothing was saved and nothing was moved — both false. And a sentence naming a sort mode
-    /// would be wrong on one of the two surfaces that draw it, because they label the same
-    /// arrangement `Custom` (`TaskSortField`) and `List Order` (`CadenceTaskSortMode`).
+    /// nothing was saved and nothing was moved — both false. And the sentence may not name a sort
+    /// mode at all: the two surfaces that draw it still speak two vocabularies for the same
+    /// arrangement, `TaskSortField.custom` and `CadenceTaskSortMode.listOrder`, and since
+    /// [[T-9901]] gave both the one label "Custom" the loop below reads that single word out of
+    /// both — which is the check, not a redundancy.
     @Test func theOffScreenSentenceClaimsTheMoveRatherThanARefusal() {
         #expect(CadenceReorderVisibility.offScreenNotice == "Moved, but this sort doesn't show it there.")
         #expect(CadenceReorderVisibility.offScreenNotice != CadenceOrderCommit.failureNotice)
@@ -177,7 +179,8 @@ struct CadenceReorderOffScreenNoticeTests {
 
     // MARK: - Today, which has a key the sort chip cannot reach
 
-    /// **On Today a drop can be off screen under `List Order` too**, because
+    /// **On Today a drop can be off screen under `CadenceTaskSortMode.listOrder` too** — the
+    /// mode both surfaces now label "Custom" — because
     /// `CadenceTaskQuerySupport.todaySortKeyOrder` leads with the date-bucket rank and no chip
     /// setting removes it. This is the reason the notice takes a comparator rather than a
     /// `TaskSortField`, and the reason it is asked per drop.
@@ -211,7 +214,7 @@ struct CadenceReorderOffScreenNoticeTests {
         }
 
         #expect(todayNotice(alsoDoToday, onto: dueToday) == CadenceReorderVisibility.offScreenNotice)
-        #expect(todayNotice(alsoDoToday, onto: doToday) == nil, "two rows in one bucket are a band under List Order")
+        #expect(todayNotice(alsoDoToday, onto: doToday) == nil, "two rows in one bucket are a band under listOrder")
     }
 
     /// **`.dueDate` and `.newest` are the two modes with no `TaskSortField` twin**, so their keys
@@ -580,9 +583,10 @@ struct CadenceReorderOffScreenNoticeTests {
     /// `offScreenNotice`, which says *"Moved"* about a row that did not move. It must not be
     /// `CadenceOrderCommit.failureNotice`, which says the store refused something — nothing was
     /// offered to the store at all here, and a red line would send the user hunting for a fault.
-    /// And it must not name a sort mode, for the reason `offScreenNotice` may not: the two surfaces
-    /// that draw it label the same arrangement `Custom` and `List Order`, so either name is wrong
-    /// on one of them. What it may name is a **list**, which has one spelling on every surface.
+    /// And it must not name a sort mode, for the reason `offScreenNotice` may not: naming the chip
+    /// is advice about a control where a report about a row is owed, and since [[T-9901]] both
+    /// vocabularies spell this arrangement "Custom", so one word covers both surfaces. What it may
+    /// name is a **list**, which has one spelling on every surface.
     @Test func theAcrossListsSentenceReportsTheRuleRatherThanAFailure() {
         #expect(CadenceReorderVisibility.acrossListsNotice == "Nothing moved — rows only reorder within their own list.")
         #expect(CadenceReorderVisibility.acrossListsNotice != CadenceReorderVisibility.offScreenNotice)

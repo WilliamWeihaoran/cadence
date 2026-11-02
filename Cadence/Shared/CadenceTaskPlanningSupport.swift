@@ -1,21 +1,50 @@
 import Foundation
 import SwiftUI
 
+/// **What a single-chip task surface is ordered by** — Today on all three devices, and a list's
+/// Tasks tab. The three-control surfaces (the Inbox and All Tasks) speak `TaskSortField` instead;
+/// `macOSSortPair` is the one-to-one correspondence between the two vocabularies.
+///
+/// **The declaration order is the menu order, and since the owner's 2026-11-01 decision under
+/// [[T-9901]] it is the three-control order**: Custom, Do Date, Due Date, Priority, Newest, which
+/// is `TaskSortField.allCases` label-for-label. It used to read List Order / Priority / Do Date /
+/// Due Date / Newest, so a list's Tasks tab disagreed with the Inbox one tap away about both the
+/// order a reader scans and the word for the identity option.
+///
+/// **Reordering the cases moved no saved preference, and could not have.** The raw values here are
+/// implicit, so they are the CASE NAMES — `"listOrder"`, `"doDate"` — and not positions, and every
+/// surface stores and reads one through `rawValue`: the `@AppStorage` keys in
+/// `CadencePreferenceKeys`, `TasksPanel.storedSortMode`, and `CadenceLookPreferenceStore`'s record.
+/// Nothing subscripts or indexes `allCases`. **This is the exact opposite of `TaskSortField`**,
+/// whose raw values ARE the stored strings: there a rename orphans every saved setting and a
+/// reorder is free, here a reorder is free and a rename is only a label.
+/// `CadenceTaskSortGroupParityTests.reorderingTheSortMenuCannotMoveASavedPreference` is what says
+/// so, and it fails on any site that learns to persist an ordinal.
 enum CadenceTaskSortMode: String, CaseIterable, Hashable, Identifiable {
     case listOrder
-    case priority
     case doDate
     case dueDate
+    case priority
     case newest
 
     var id: String { rawValue }
 
+    /// **`.listOrder` is drawn as "Custom", the word the three-control surfaces already use**
+    /// ([[T-9901]]). It is one arrangement under two names — `macOSSortPair` projects this case
+    /// onto `TaskSortField.custom`, whose own label is "Custom" — and the finding was that two
+    /// screens one tap apart spelled it differently.
+    ///
+    /// **Every reader is relabelled, deliberately, rather than the list tab alone.**
+    /// `iOSTaskViewOptionsBar` is one control drawing Today on the iPhone and iPad *and* a list's
+    /// Tasks tab, and the Mac's Today badge reads the same property through `pickerLabel`, so
+    /// sparing a surface would have meant either two words for one mode inside a single view or a
+    /// per-call-site label override — a new inconsistency in place of the one being removed.
     var title: String {
         switch self {
-        case .listOrder: return "List Order"
-        case .priority: return "Priority"
+        case .listOrder: return "Custom"
         case .doDate: return "Do Date"
         case .dueDate: return "Due Date"
+        case .priority: return "Priority"
         case .newest: return "Newest"
         }
     }

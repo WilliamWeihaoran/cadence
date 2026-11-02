@@ -34,8 +34,8 @@ struct TasksPanel: View {
     /// Set when a row drop **landed** and Today does not show it where it was dropped (T-1077).
     ///
     /// Today is the surface where this can happen under *every* mode the Sort chip offers,
-    /// `List Order` included, because `compareTasksForCurrentSort` leads with the date-bucket rank
-    /// and the chip does not reach it — see `CadenceTaskQuerySupport.todaySortKeyOrder`.
+    /// `CadenceTaskSortMode.listOrder` included, because `compareTasksForCurrentSort` leads with
+    /// the date-bucket rank and the chip does not reach it — see `CadenceTaskQuerySupport.todaySortKeyOrder`.
     @State private var reorderOffScreenNotice: String?
     @State private var collapsedGroupIDs: Set<String> = []
     @State private var isCompletedCollapsed = true

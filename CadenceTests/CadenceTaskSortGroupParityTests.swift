@@ -287,6 +287,121 @@ struct CadenceTaskSortGroupParityTests {
         }
     }
 
+    // MARK: - The single-chip menu speaks the three-control menu ([[T-9901]])
+
+    /// **The one-chip surfaces spell the three-control menu, in the same order and the same
+    /// words** — the owner's 2026-11-01 decision under [[T-9901]].
+    ///
+    /// What was wrong: a list's Tasks tab drew List Order / Priority / Do Date / Due Date /
+    /// Newest while the Inbox one tap away drew Custom / Do Date / Due Date / Priority / Newest.
+    /// Both named the same five fields, so nothing was lost — what differed was the order a reader
+    /// scans and the word for the identity option.
+    ///
+    /// **Which mistake this kills.** The literal list kills a reorder of the `case` declarations,
+    /// which IS the menu order because every control iterates `allCases`, and it kills
+    /// `.listOrder.title` drifting back to "List Order" or to any third word. The equality against
+    /// `TaskSortField` kills the subtler one: a later widening that adds a field to one vocabulary
+    /// and not the other, or relabels one of them, re-opens exactly this ticket, and asking the
+    /// other menu rather than restating it is what makes that a red test instead of a sighting.
+    /// The source reads kill a control that stops drawing `allCases` in declaration order, or
+    /// starts printing something other than `title` — the one way the declaration could be right
+    /// and the screen still wrong.
+    @Test func theSingleChipSortMenuSpellsTheThreeControlMenu() throws {
+        #expect(CadenceTaskSortMode.allCases.map(\.title)
+                    == ["Custom", "Do Date", "Due Date", "Priority", "Newest"])
+        #expect(CadenceTaskSortMode.allCases.map(\.title) == TaskSortField.allCases.map(\.pickerLabel))
+        #expect(CadenceTaskSortMode.listOrder.title == TaskSortField.custom.pickerLabel)
+
+        // The chip prints `title` over `allCases` in declaration order, so the list above is the
+        // list on screen. `rows:` and `title: mode.title` are both read: a chip that kept the
+        // walk and printed `rawValue` would show "listOrder".
+        let bar = try #require(
+            CadenceSourceScan.declarationBody("struct iOSTaskViewOptionsBar: View", in: try code(Self.barPath)),
+            "iOSTaskViewOptionsBar is gone from \(Self.barPath)"
+        )
+        #expect(bar.contains("rows: CadenceTaskSortMode.allCases.map"))
+        #expect(bar.contains("title: mode.title"))
+        #expect(!bar.contains("excluded:"), "the one chip filters its cases")
+
+        // The three surfaces that draw that one chip. A list's Tasks tab is the ticket's own
+        // surface; the other two are why the label change could not be scoped to it.
+        for path in [
+            "Cadence/iOS/iOSListDetailView.swift",
+            "Cadence/iOS/iOSTodayCompactViews.swift",
+            "Cadence/iOS/iPadTodaySupportViews.swift"
+        ] {
+            #expect(try code(path).contains("iOSTaskViewOptionsBar("), "\(path) lost the one chip")
+        }
+
+        // And the Mac's Today badge, which reads the same vocabulary through `pickerLabel`.
+        let panel = try literalBearingCode("Cadence/macOS/Views/TasksPanel.swift")
+        #expect(panel.contains("CadenceEnumPickerBadge(title: \"Sort\", selection: $localSortMode)"))
+        #expect(!panel.contains("excluded:"), "the Mac's Today badge filters its cases")
+    }
+
+    /// **Reordering that menu cannot move a saved preference**, which is the one way [[T-9901]]
+    /// could have cost a user something.
+    ///
+    /// `CadenceTaskSortMode`'s raw values are IMPLICIT, so they are the case names and not
+    /// positions, and that is the opposite of `TaskSortField`, whose raw values are themselves the
+    /// stored strings. Reordering is therefore free here and a rename is only a label — but only
+    /// while nothing persists or decodes a mode by ordinal, and *that* is not a property of the
+    /// enum, it is a property of every call site.
+    ///
+    /// **Which mistake this kills.** The literal raw-value list kills a case given an explicit raw
+    /// value that happens to be its label, which is what would turn the next reorder or rename
+    /// into a silent reset of every saved sort. The decode loop kills a reader that stops being
+    /// name-based: the strings it feeds in are the ones a device wrote under the OLD declaration
+    /// order, so a build that reads a position would hand back a different mode for each of them.
+    /// The sweep kills a NEW call site that learns to index `allCases` — the mistake no assertion
+    /// about this enum alone could see, and the only one that would corrupt data rather than
+    /// relabel a chip.
+    @Test func reorderingTheSortMenuCannotMoveASavedPreference() throws {
+        #expect(CadenceTaskSortMode.allCases.map(\.rawValue)
+                    == ["listOrder", "doDate", "dueDate", "priority", "newest"])
+        for mode in CadenceTaskSortMode.allCases {
+            #expect(mode.id == mode.rawValue)
+            #expect(mode.rawValue != mode.title, "\(mode.rawValue) stores its own label")
+        }
+
+        // Written by a device on the pre-[[T-9901]] build, where these five sat in the order
+        // listOrder, priority, doDate, dueDate, newest. Each must still decode to the same mode.
+        let writtenUnderTheOldOrder: [(String, CadenceTaskSortMode)] = [
+            ("listOrder", .listOrder),
+            ("priority", .priority),
+            ("doDate", .doDate),
+            ("dueDate", .dueDate),
+            ("newest", .newest)
+        ]
+        for (stored, expected) in writtenUnderTheOldOrder {
+            #expect(CadenceTaskSortMode(rawValue: stored) == expected, "\(stored)")
+            #expect(expected.rawValue == stored, "\(stored)")
+        }
+        // The look record is the cross-device path, and it is name-based too.
+        for (stored, expected) in writtenUnderTheOldOrder {
+            #expect(CadenceLookPreferenceStore.mirrorValue(fromRecord: stored, codec: .macOSSortField)
+                        == expected.macOSSortPair.field.rawValue, "\(stored)")
+        }
+
+        // No call site reads a mode out of `allCases` by position. Swept over every file that
+        // names the type rather than spot-checked, because the failure is a NEW site, not this one.
+        let ordinal = try CadenceScanInstrument(
+            "a sort mode taken from allCases by position",
+            fires: "let mode = CadenceTaskSortMode.allCases[storedIndex]",
+            andNotOn: "let mode = CadenceTaskSortMode(rawValue: storedName)",
+            by: { $0.contains("allCases[") || $0.contains("allCases.firstIndex") }
+        )
+        let naming = try CadenceSourceScan.swiftFiles(under: "Cadence")
+            .filter { try CadenceSourceScan.sourceFile($0).contains("CadenceTaskSortMode") }
+        let hits = try ordinal.sweep(
+            naming,
+            atLeast: 10,
+            including: "Cadence/Shared/CadenceTaskPlanningSupport.swift",
+            read: { CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile($0)) }
+        )
+        #expect(hits.isEmpty, "a sort mode is read by ordinal in \(hits)")
+    }
+
     // MARK: - The two fields the owner's 2026-11-01 decision added ([[T-9742]])
 
     /// **Both platforms offer all five fields, and neither control filters the set.**
