@@ -3650,8 +3650,9 @@ enum CadenceSaveCommitRule {
     ///
     /// - `dismiss()` — the sheet closes.
     /// - `is<Something> = false` — the same thing said by a flag: `isPresented` for a sheet,
-    ///   `isAdding` for an inline add form. Generalised from the literal `isPresented` in T-508,
-    ///   after `iOSListSupportViews.addLink` turned out to close its form with `isAdding = false`.
+    ///   an is-adding flag for an inline add form. Generalised from the literal `isPresented` in
+    ///   T-508, after `iOSListSupportViews.addLink` turned out to close its form with such a flag
+    ///   set to false (it closes through `SavedLinkAddForm.cancel()` since [[T-10056]]).
     ///   On its own the widening finds nothing new across 552 files; it is only in combination
     ///   with the swallowed-call needle above that it reports that one site.
     /// - `onSave(…)` / `onDone(…)` / `onComplete(…)` / `onCommit(…)` — a completion handler, which

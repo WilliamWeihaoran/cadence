@@ -136,36 +136,8 @@ struct LinksView: View {
 
 // MARK: - Add Link Form State
 
-/// The Links tab's add form: whether it is open and what has been typed into it.
-///
-/// Closing it is one operation however it is closed — the form's Cancel, the header button, or a
-/// successful save — and every one of them discards the draft (T-7256).
-nonisolated struct SavedLinkAddForm: Equatable {
-    var isOpen = false
-    var title = ""
-    var url = ""
-
-    /// The header button's tap. Returns `true` when it closed the form, so the caller clears the
-    /// failure notice exactly as the form's own Cancel does.
-    @discardableResult
-    mutating func toggle() -> Bool {
-        if isOpen {
-            cancel()
-            return true
-        }
-        isOpen = true
-        return false
-    }
-
-    mutating func cancel() {
-        isOpen = false
-        title = ""
-        url = ""
-    }
-
-    var headerSymbol: String { isOpen ? "xmark" : "plus" }
-    var headerLabel: String { isOpen ? "Cancel adding a link" : "Add link" }
-}
+// `SavedLinkAddForm` lives in `Cadence/Shared/CadenceSavedLinkPersistence.swift` since
+// [[T-10056]], so iOS's Links tab closes its form the same way.
 
 // MARK: - Add Link Bar
 
@@ -245,9 +217,9 @@ enum MacSavedLinkRowActions {
     static let openActionName = "Open link"
     static let deleteActionName = "Delete link"
 
-    static let openMenuTitle = "Open Link"
-    static let copyMenuTitle = "Copy Link"
-    static let deleteMenuTitle = "Delete"
+    static let openMenuTitle = CadenceSavedLinkRowMenu.openTitle
+    static let copyMenuTitle = CadenceSavedLinkRowMenu.copyTitle
+    static let deleteMenuTitle = CadenceSavedLinkRowMenu.deleteTitle
 
     static func open(_ urlString: String) {
         if let url = URL(string: urlString) {

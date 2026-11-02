@@ -776,9 +776,10 @@ struct iOSListLinksPanel: View {
     @Query(sort: \SavedLink.order) private var allLinks: [SavedLink]
     let area: Area?
     let project: Project?
-    @State private var isAdding = false
-    @State private var newTitle = ""
-    @State private var newURL = ""
+    /// [[T-10056]]: the Mac's form state, so every close — the header's Cancel, a save — discards
+    /// the draft through one `cancel()`. Three loose `@State`s here let the header hide the form
+    /// and keep what was typed, so reopening it brought the abandoned title and URL back.
+    @State private var addForm = SavedLinkAddForm()
     /// What the store refused, in the same two sentences macOS's list shows. Before T-507 the two
     /// writes here were `try?` and this property did not exist, so a refused commit was reported
     /// by the form closing.
@@ -800,13 +801,13 @@ struct iOSListLinksPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 iOSActionButton(
-                    title: isAdding ? "Cancel" : "Add Link",
-                    systemImage: isAdding ? "xmark" : "plus",
-                    role: isAdding ? .ghost : .secondary,
+                    title: addForm.isOpen ? "Cancel" : "Add Link",
+                    systemImage: addForm.headerSymbol,
+                    role: addForm.isOpen ? .ghost : .secondary,
                     size: .compact
                 ) {
                     withAnimation(.easeInOut(duration: 0.18)) {
-                        isAdding.toggle()
+                        _ = addForm.toggle()
                     }
                     actionError = nil
                 }
@@ -816,10 +817,10 @@ struct iOSListLinksPanel: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
 
-            if isAdding {
+            if addForm.isOpen {
                 iOSAddLinkForm(
-                    title: $newTitle,
-                    url: $newURL,
+                    title: $addForm.title,
+                    url: $addForm.url,
                     save: addLink
                 )
                 .padding(.horizontal, 16)
@@ -864,6 +865,26 @@ struct iOSListLinksPanel: View {
                                 Label("Delete", systemImage: "trash")
                             }
                         }
+                        // [[T-10057]]: the Mac row's right-click menu, item for item and in its
+                        // order. Delete asks through the same `linkToDelete` as the swipe.
+                        .contextMenu {
+                            Button {
+                                open(link)
+                            } label: {
+                                Label(CadenceSavedLinkRowMenu.openTitle, systemImage: "arrow.up.right")
+                            }
+                            Button {
+                                UIPasteboard.general.string = link.url
+                            } label: {
+                                Label(CadenceSavedLinkRowMenu.copyTitle, systemImage: "doc.on.doc")
+                            }
+                            Divider()
+                            Button(role: .destructive) {
+                                linkToDelete = link
+                            } label: {
+                                Label(CadenceSavedLinkRowMenu.deleteTitle, systemImage: "trash")
+                            }
+                        }
                     }
                 }
                 .listStyle(.plain)
@@ -876,11 +897,11 @@ struct iOSListLinksPanel: View {
     }
 
     private func addLink() {
-        let title = CadenceTitleNormalization.normalized(newTitle)
+        let title = CadenceTitleNormalization.normalized(addForm.title)
         // Trim, blank-check and scheme come from the shared helper. The three lines that used to
         // sit here were a copy of macOS's, defect included: `hasPrefix` is case-sensitive, so a
         // pasted `HTTPS://example.com` was stored as `https://HTTPS://example.com` (T-509).
-        guard let url = CadenceSavedLinkURL.normalized(newURL) else { return }
+        guard let url = CadenceSavedLinkURL.normalized(addForm.url) else { return }
 
         let link = SavedLink(title: CadenceTitleNormalization.display(title, fallback: url), url: url)
         link.area = area
@@ -898,9 +919,7 @@ struct iOSListLinksPanel: View {
             return
         }
         actionError = nil
-        newTitle = ""
-        newURL = ""
-        isAdding = false
+        addForm.cancel()
     }
 
     private func open(_ link: SavedLink) {

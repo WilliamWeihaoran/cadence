@@ -419,6 +419,25 @@ struct CadenceSidebarLayoutTests {
         // And the list the menu measures in is the shared predicate's, not a hand-written one.
         #expect(section.contains("rows.filter { CadenceSidebarLayout.isOrderable($0) }"))
     }
+
+    /// [[T-10058]]: every iOS menu item that edits a list or context draws one glyph. The iPad
+    /// sidebar's list-row "Edit Area" / "Edit Project" drew `pencil` while the Lists page's item of
+    /// the same name on the same iPad, and Settings' "Edit Context", drew `square.and.pencil`.
+    @Test func everyIOSEditMenuItemDrawsTheSameGlyph() throws {
+        var glyphs: [String: [String]] = [:]
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence/iOS") {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            for glyph in CadenceSourceScan.captures(
+                #"Label\("Edit [^\n]*?,\s*systemImage:\s*"([^"]+)"\)"#, in: source, group: 1
+            ).map(\.text) {
+                glyphs[glyph, default: []].append(path)
+            }
+        }
+        #expect(glyphs.keys.sorted() == ["square.and.pencil"], "measured: \(glyphs)")
+        // Non-vacuity: the sidebar row, the two Lists surfaces (two each) and Settings' contexts.
+        #expect(glyphs["square.and.pencil", default: []].count >= 6, "measured: \(glyphs)")
+        #expect(glyphs["square.and.pencil", default: []].contains("Cadence/iOS/iOSRootSidebar.swift"))
+    }
 }
 
 #if os(macOS)

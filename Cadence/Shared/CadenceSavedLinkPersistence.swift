@@ -103,3 +103,55 @@ nonisolated enum CadenceSavedLinkURL {
         }
     }
 }
+
+// MARK: - Add Link Form State
+
+/// A Links tab's add form: whether it is open and what has been typed into it — **on both
+/// platforms** ([[T-10056]]).
+///
+/// Closing it is one operation however it is closed — the form's Cancel, the header button, or a
+/// successful save — and every one of them discards the draft (T-7256). That was the Mac's alone
+/// until [[T-10056]]: iOS's header button read "Cancel" and only hid the form, so tapping
+/// "Add Link" again brought back the abandoned title and URL — the exact defect T-7256 fixed on
+/// the Mac. Moved here from `LinksView.swift` so both tabs close through the one `cancel()`.
+nonisolated struct SavedLinkAddForm: Equatable {
+    var isOpen = false
+    var title = ""
+    var url = ""
+
+    /// The header button's tap. Returns `true` when it closed the form, so the caller clears the
+    /// failure notice exactly as the form's own Cancel does.
+    @discardableResult
+    mutating func toggle() -> Bool {
+        if isOpen {
+            cancel()
+            return true
+        }
+        isOpen = true
+        return false
+    }
+
+    mutating func cancel() {
+        isOpen = false
+        title = ""
+        url = ""
+    }
+
+    var headerSymbol: String { isOpen ? "xmark" : "plus" }
+    var headerLabel: String { isOpen ? "Cancel adding a link" : "Add link" }
+}
+
+// MARK: - Link Row Menu
+
+/// The words of a saved link's row menu, for the Mac's right-click and iOS's long-press
+/// ([[T-10057]]).
+///
+/// The Mac row has offered Open Link, Copy Link and Delete since [[T-7258]]; an iOS row offered a
+/// tap to open and a swipe to delete, and no way at all to copy a saved URL. A long-press is the
+/// touch spelling of the right-click ([[T-8531]], [[T-8201]]), so iOS now carries the same three
+/// items in the same order, named once here.
+nonisolated enum CadenceSavedLinkRowMenu {
+    static let openTitle = "Open Link"
+    static let copyTitle = "Copy Link"
+    static let deleteTitle = "Delete"
+}

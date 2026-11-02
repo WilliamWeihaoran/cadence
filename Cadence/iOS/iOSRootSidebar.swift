@@ -1160,11 +1160,13 @@ struct iOSSidebarListRow: View {
         .buttonStyle(.iosPressable)
         // The touch equivalent of macOS's right-click-to-edit on the same row. Not `.swipeActions`:
         // that modifier does nothing outside a `List`, and this region is a `ScrollView`.
+        // [[T-10058]]: `square.and.pencil`, the glyph the Lists page's own "Edit Area" / "Edit
+        // Project" item draws on the same iPad -- one action, one glyph. It was the bare `pencil`.
         .contextMenu {
             Button {
                 onEdit()
             } label: {
-                Label("Edit \(item.kind == .area ? "Area" : "Project")", systemImage: "pencil")
+                Label("Edit \(item.kind == .area ? "Area" : "Project")", systemImage: "square.and.pencil")
             }
         }
         // [[T-8641]]: the count and the flag below are both hidden from VoiceOver, so the row's
