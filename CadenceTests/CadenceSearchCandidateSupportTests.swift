@@ -431,8 +431,8 @@ struct CadenceSearchCandidateSupportTests {
         #expect(stripped.contains("CadenceTaskSearchSupport.glyph(for: task)"))
         #expect(stripped.contains("CadenceSearchTagSupport.text(for: note.sortedTags)"))
 
-        // Scoped to the function, not to the file: `eventResult` also draws
-        // `calendar.badge.clock`, so a file-wide `contains` for it would pass at HEAD.
+        // Scoped to the function, not to the file: `eventResult` drew `calendar.badge.clock`
+        // until [[T-10185]], so a file-wide `contains` for it would have passed regardless.
         let iconBody = try #require(CadenceSourceScan.functionBody(named: "taskIcon", in: stripped))
         #expect(iconBody.contains("case .scheduled: \"calendar.badge.clock\""))
         #expect(iconBody.contains("case .completed: \"checkmark.circle.fill\""))
@@ -445,6 +445,39 @@ struct CadenceSearchCandidateSupportTests {
         #expect(CadenceSourceScan.matchCount("task\\.priority\\.label,", in: stripped) == 0)
         // Self-check for the regex above: it must match the shape it is looking for.
         #expect(CadenceSourceScan.matchCount("task\\.priority\\.label,", in: "  task.priority.label,\n") == 1)
+    }
+
+    /// [[T-10185]]: an event's search row draws one glyph on both platforms, and iOS no longer
+    /// spells it inline -- where it had been inverted, a clock on the all-day event and none on
+    /// the timed one. The value is asserted directly; each surface is asserted to read it inside
+    /// its own `eventResult`, and iOS to hold no `isAllDay ?` glyph choice there at all.
+    @Test func bothSearchSurfacesDrawAnEventRowWithTheOneSharedGlyph() throws {
+        #expect(CadenceSearchEventGlyph.systemImage == "calendar")
+
+        let iOSRaw = try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath)
+        let iOSStripped = CadenceSourceScan.strippingComments(iOSRaw)
+        #expect(iOSRaw.contains("struct iOSSearchView"))
+        #expect(iOSStripped != iOSRaw)
+        #expect(iOSStripped.count == iOSRaw.count)
+        let iOSBody = try #require(CadenceSourceScan.functionBody(named: "eventResult", in: iOSStripped))
+        // Non-vacuity: this is the event row's builder, not some other function of that name.
+        #expect(iOSBody.contains("CadenceSearchIdentity.event("))
+        #expect(iOSBody.contains("icon: CadenceSearchEventGlyph.systemImage,"))
+        #expect(CadenceSourceScan.matchCount("isAllDay\\s*\\?", in: iOSBody) == 0)
+        // Self-check for the regex: it must see the inverted spelling this ticket removed.
+        #expect(
+            CadenceSourceScan.matchCount(
+                "isAllDay\\s*\\?",
+                in: "icon: event.isAllDay ? \"calendar.badge.clock\" : \"calendar\","
+            ) == 1
+        )
+
+        let macRaw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GlobalSearchIndexSupport.swift")
+        let macStripped = CadenceSourceScan.strippingComments(macRaw)
+        #expect(macStripped != macRaw)
+        let macBody = try #require(CadenceSourceScan.functionBody(named: "eventResult", in: macStripped))
+        #expect(macBody.contains("category: .events,"))
+        #expect(macBody.contains("icon: CadenceSearchEventGlyph.systemImage,"))
     }
 
     @Test func theIOSSearchSurfaceRoutesListInclusionThroughTheSharedPolicy() throws {

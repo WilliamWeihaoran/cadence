@@ -390,7 +390,7 @@ enum GlobalSearchIndexSupport {
             category: .events,
             title: item.title,
             subtitle: subtitle,
-            icon: "calendar",
+            icon: CadenceSearchEventGlyph.systemImage,
             tintHex: item.calendarColor.globalSearchHexString() ?? Theme.purpleHex,
             destination: .event(item.id)
         )

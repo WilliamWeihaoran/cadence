@@ -25,6 +25,18 @@ nonisolated enum CadenceTaskSearchGlyph {
     case active
 }
 
+/// The glyph an Apple Calendar event's search row draws, on both search surfaces ([[T-10185]],
+/// under [[T-8201]]).
+///
+/// One symbol, whether the event is timed or all-day: the row's own detail line already says
+/// "All day" or the time range, so the glyph only has to say "this is an event". The Mac's Cmd+K
+/// row has drawn plain `calendar` since it existed; iOS Search spelled the choice inline and
+/// inverted it -- `isAllDay ? "calendar.badge.clock" : "calendar"` -- so an all-day event wore a
+/// clock and a timed one did not.
+nonisolated enum CadenceSearchEventGlyph {
+    static let systemImage = "calendar"
+}
+
 /// A tag matches by the name you see **and** by the slug you type, everywhere a tagged thing is
 /// searchable. `TagSupport.slug` folds case, diacritics and punctuation, so the two usually
 /// normalize to the same string — the pair only pays off for a tag whose slug was set by hand,
