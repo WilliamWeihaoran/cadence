@@ -34,8 +34,9 @@ nonisolated struct CadenceBoardMetadataChipMetrics: Sendable {
     /// **A kept difference, expressed as one rule instead of two literals.**
     ///
     /// macOS's chip was 6 and iOS's was `Theme.radiusControl` (10), and that is *not* drift: the
-    /// cards differ. A macOS board card is `kanbanCardCornerRadius` (7) — dense, containerless
-    /// boards where the card barely rounds — and an iOS board card is `Theme.radiusCard` (18). A
+    /// cards differed. A macOS board card was `kanbanCardCornerRadius` (7) — dense, containerless
+    /// boards where the card barely rounds — and an iOS board card was `Theme.radiusCard` (18); both
+    /// event cards now read `CadenceLedgerCardMetrics.cornerRadius` (10, [[T-9832]], [[T-9836]]). A
     /// chip cannot be rounder than the card it sits inside; a 10pt chip in a 7pt card reads as a
     /// capsule crammed into a rectangle. So the chip takes the control radius *unless* its card is
     /// tighter than that, in which case it follows the card in.

@@ -241,6 +241,27 @@ struct CadenceSharedBoardChromeTests {
                 "an event card chip does not read the shared radius (T-9832)")
     }
 
+    /// **[[T-9836]]: the macOS half of [[T-9832]].** The Mac Board's event card rounded at
+    /// `kanbanCardCornerRadius` (7) beside `KanbanCard`'s `CadenceLedgerCard` at
+    /// `CadenceLedgerCardMetrics.cornerRadius` (10). The constant itself stays: the Completed toggle
+    /// and the add row still read it, and [[T-9535]]/[[T-9671]]'s hover census pins them.
+    @Test func theMacBoardEventCardRoundsLikeTheTaskCardsBesideIt() throws {
+        let stripped = try strippingComments(sourceFile("Cadence/macOS/Views/CalendarBoardItemSupportViews.swift"))
+        guard let start = stripped.range(of: "struct CalendarBoardEventCard: View {") else {
+            Issue.record("non-vacuity: CalendarBoardEventCard not found")
+            return
+        }
+        let card = String(stripped[start.upperBound...])
+        #expect(card.contains("private let cornerRadius = CadenceLedgerCardMetrics.cornerRadius"),
+                "the Mac event card no longer takes the Ledger card's radius (T-9836)")
+        #expect(!card.contains("kanbanCardCornerRadius"), "the Mac event card rounds at the 7pt board radius again (T-9836)")
+        // Hover wash, content shape, clip, stroke and both background plates: six shapes, two chips.
+        #expect(card.components(separatedBy: "cornerRadius: cornerRadius").count - 1 == 6,
+                "a Mac event card shape does not read the shared radius (T-9836)")
+        #expect(card.components(separatedBy: "cardCornerRadius: cornerRadius").count - 1 == 2,
+                "a Mac event card chip does not read the shared radius (T-9836)")
+    }
+
     /// **[[T-9833]]: the iOS Board's Completed disclosure states Expanded/Collapsed**, as macOS's
     /// `KanbanCompletedTasksToggle` has since [[T-7081]] and `iOSTaskGroupSection`'s heading does.
     @Test func theIOSBoardCompletedDisclosureStatesItsState() throws {
@@ -348,12 +369,16 @@ struct CadenceSharedBoardChromeTests {
         #expect(CadenceBoardMetadataChipMetrics.iconSize == CadenceBoardMetadataChipMetrics.labelSize - 1)
     }
 
-    /// The chip's radius is the one difference here that was **not** drift, so it is kept — but as a
-    /// rule rather than as two literals. A macOS board event card rounds at `kanbanCardCornerRadius`
-    /// (7) and an iOS one, since [[T-9832]], at `CadenceLedgerCardMetrics.cornerRadius` (10); the
-    /// 18 below is the radius it had before. A chip cannot be rounder than the card it is
-    /// inside. `min(control, card - 1)` reproduces both platforms' existing values exactly.
+    /// The chip's radius is kept as a rule rather than as literals. Both boards' event cards now
+    /// round at `CadenceLedgerCardMetrics.cornerRadius` (10) -- iOS since [[T-9832]], macOS since
+    /// [[T-9836]] (it was `kanbanCardCornerRadius`, 7) -- so today the rule has one live input. A
+    /// chip cannot be rounder than the card it is inside: `min(control, card - 1)` gives 9 in a
+    /// 10pt card, and the 7 and 18 below are the radii the two cards had before.
     @Test func theChipRadiusFollowsTheCardItSitsIn() {
+        #expect(CadenceBoardMetadataChipMetrics.cornerRadius(inCardOfRadius: CadenceLedgerCardMetrics.cornerRadius)
+                == CadenceLedgerCardMetrics.cornerRadius - CadenceBoardMetadataChipMetrics.cardInset)
+        #expect(CadenceBoardMetadataChipMetrics.cornerRadius(inCardOfRadius: CadenceLedgerCardMetrics.cornerRadius)
+                < CadenceLedgerCardMetrics.cornerRadius)
         #expect(CadenceBoardMetadataChipMetrics.cornerRadius(inCardOfRadius: 7) == 6)
         #expect(CadenceBoardMetadataChipMetrics.cornerRadius(inCardOfRadius: Theme.radiusCard) == Theme.radiusControl)
     }

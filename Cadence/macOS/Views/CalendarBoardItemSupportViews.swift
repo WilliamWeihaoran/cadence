@@ -11,6 +11,13 @@ struct CalendarBoardEventCard: View {
     @State private var isHovered = false
     @State private var actionFailureNotice: String?
 
+    /// [[T-9836]]: the Ledger task card's radius, because the two share a day column. This card
+    /// rounded at `kanbanCardCornerRadius` (7) beside `KanbanCard`'s `CadenceLedgerCard` at
+    /// `CadenceLedgerCardMetrics.cornerRadius` (10) -- the macOS half of what [[T-9832]] fixed on
+    /// iOS. Plate, stroke, clip, content shape, hover wash and chips all read this one name; the
+    /// chips follow through `CadenceBoardMetadataChipMetrics.cornerRadius(inCardOfRadius:)`.
+    private let cornerRadius = CadenceLedgerCardMetrics.cornerRadius
+
     private var tint: Color {
         item.calendarColor
     }
@@ -23,8 +30,8 @@ struct CalendarBoardEventCard: View {
         }
         // [[T-9671]]: the wash at the card's own radius, as [[T-9535]] did for the board's other
         // plated rows; the label is a property, which is why that census did not see this one.
-        .buttonStyle(.cadencePlain(cornerRadius: kanbanCardCornerRadius))
-        .contentShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))
+        .buttonStyle(.cadencePlain(cornerRadius: cornerRadius))
+        .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .onHover { isHovered = $0 }
         // T-1843: the card is its own popover's `.rect(.bounds)` anchor, so a test reading where
         // that popover lands needs the card's box and the content inside it. Same `.contain`
@@ -110,14 +117,14 @@ struct CalendarBoardEventCard: View {
                         title: subtitle,
                         systemImage: item.isAllDay ? "sun.max" : "clock",
                         tint: tint,
-                        cardCornerRadius: kanbanCardCornerRadius
+                        cardCornerRadius: cornerRadius
                     )
                     if item.isRecurringSeriesMember {
                         CadenceBoardMetadataChip(
                             title: "Repeats",
                             systemImage: "repeat",
                             tint: tint,
-                            cardCornerRadius: kanbanCardCornerRadius
+                            cardCornerRadius: cornerRadius
                         )
                     }
                 }
@@ -128,9 +135,9 @@ struct CalendarBoardEventCard: View {
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .strokeBorder(
                     tint.opacity(CalendarEventVisualStyle.borderOpacity(isSelected: showPopover, isHovered: isHovered)),
                     lineWidth: isHovered || showPopover ? 1.25 : 1
@@ -140,9 +147,9 @@ struct CalendarBoardEventCard: View {
 
     private var cardBackground: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(Theme.surfaceElevated.opacity(CalendarEventVisualStyle.surfaceOpacity(isActive: isHovered || showPopover)))
-            RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(tint.opacity(CalendarEventVisualStyle.tintOpacity(isSelected: showPopover, isHovered: isHovered)))
         }
     }

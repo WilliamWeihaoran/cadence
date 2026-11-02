@@ -23,10 +23,11 @@ nonisolated enum CadenceLedgerCardMetrics: Sendable {
     /// One radius for both platforms, where the cards were 7 (macOS) and 18 (iOS).
     ///
     /// **What this does to `CadenceBoardMetadataChipMetrics.cornerRadius(inCardOfRadius:)`** — that
-    /// rule stays live and keeps producing two answers, because its remaining callers are the
-    /// *event* cards: 7 on macOS, and on iOS this radius since [[T-9832]] (it was 18). The task cards
-    /// simply stop being one of its inputs. Unifying the two task cards onto one radius without
-    /// noticing that would have turned a rule into a constant silently.
+    /// rule stays live, because its remaining callers are the *event* cards, and both of those now
+    /// read this radius too: iOS since [[T-9832]] (it was 18) and macOS since [[T-9836]] (it was
+    /// `kanbanCardCornerRadius`, 7), so an event and the task under it share one plate shape. The
+    /// rule is kept rather than folded into a constant so a card that changes radius again carries
+    /// its chips with it.
     static let cornerRadius: CGFloat = Theme.radiusControl
 
     /// The title's base point size, and its role for Dynamic Type. macOS drew a hardcoded
