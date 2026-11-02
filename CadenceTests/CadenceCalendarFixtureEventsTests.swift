@@ -197,6 +197,57 @@ struct CadenceCalendarFixtureEventsTests {
         }
     }
 
+    /// **[[T-10103]] — exactly one fixture repeats, and the editors' strip reads it as repeating.**
+    ///
+    /// [[T-8573]]'s "Repeats" strip had no positive case on screen: every fixture was a one-off, and
+    /// the fixture path is the only way an agent can put an event in front of the editors. The pale
+    /// control now carries a weekly rule. Asserted through the built `EKEvent` (what the screen is
+    /// handed), through `CadenceEventNoteSupport.isRecurringSeriesMember` (the rule the iOS sheet
+    /// passes to the strip as `repeatsInSeries`), and through the strip itself. Every other
+    /// fixture, the all-day one above all, must stay a one-off: that is the negative half of
+    /// [[T-9722]] check (4). And the gate still answers `nil` without both halves, so a shipping
+    /// launch never sees the repeating event either.
+    @Test func exactlyOneFixtureRepeatsAndTheEditorStripSaysSo() throws {
+        let timed = try #require(CadenceCalendarFixtureEvents.timedEvents(for: Date(), in: Self.active))
+        let allDay = try #require(CadenceCalendarFixtureEvents.allDayEvents(for: Date(), in: Self.active))
+        let cascadeActive: [String: String] = [Self.mode: "1", Self.scenario: "calendar-cascade"]
+        let cascadeTimed = try #require(CadenceCalendarFixtureEvents.timedEvents(for: Date(), in: cascadeActive))
+        let cascadeAllDay = try #require(CadenceCalendarFixtureEvents.allDayEvents(for: Date(), in: cascadeActive))
+        let every = timed + allDay + cascadeTimed + cascadeAllDay
+        #expect(every.count >= 6, "non-vacuity: built \(every.count) fixture events")
+
+        let repeating = every.filter { CadenceEventNoteSupport.isRecurringSeriesMember($0) }
+        #expect(repeating.compactMap(\.title) == ["Pale event"])
+
+        let pale = try #require(repeating.first)
+        #expect(pale.isAllDay == false, "the strip's length capsule needs a timed event")
+        let rule = try #require(pale.recurrenceRules?.first)
+        #expect(pale.recurrenceRules?.count == 1)
+        #expect(rule.frequency == .weekly)
+        #expect(rule.interval == 1)
+        #expect(rule.recurrenceEnd == nil)
+
+        let strip = CadenceEventEditorHeaderStrip(
+            repeatsInSeries: CadenceEventNoteSupport.isRecurringSeriesMember(pale),
+            durationLabel: nil
+        )
+        #expect(strip.repeatsInSeries)
+        #expect(!strip.isEmpty, "a repeating event's strip has a fact to state even with no length")
+
+        // The negative case: the one-off all-day event's sheet has no strip at all.
+        let oneOffAllDay = try #require(allDay.first)
+        let negative = CadenceEventEditorHeaderStrip(
+            repeatsInSeries: CadenceEventNoteSupport.isRecurringSeriesMember(oneOffAllDay),
+            durationLabel: nil
+        )
+        #expect(negative.isEmpty)
+
+        // A shipping launch, and either half of the gate alone, still asks EventKit.
+        for environment in [[:], [Self.mode: "1"], [Self.scenario: "calendar-hues"]] as [[String: String]] {
+            #expect(CadenceCalendarFixtureEvents.timedEvents(for: Date(), in: environment) == nil)
+        }
+    }
+
     // MARK: - 3b. The calendar-cascade scenario (T-3194)
 
     private static let cascadeActive: [String: String] = [mode: "1", scenario: "calendar-cascade"]

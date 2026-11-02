@@ -86,6 +86,12 @@ enum CadenceCalendarFixtureEvents {
         /// event's existing Apple Calendar text (rule 4), and appending it under a divider beside
         /// a Cadence note that says something else (rule 6).
         var nativeNotes: String? = nil
+        /// **[[T-10103]].** When set, the event carries one `EKRecurrenceRule` of this frequency
+        /// (interval 1, no end), so it is a series member to `CadenceEventNoteSupport
+        /// .isRecurringSeriesMember` and both event editors draw [[T-8573]]'s "Repeats" strip.
+        /// Defaulted to `nil`, so every other fixture stays a one-off; the rule is a value on an
+        /// event that is never saved, so it needs no `EKEventStore` and expands no occurrences.
+        var repeatFrequency: EKRecurrenceFrequency? = nil
     }
 
     /// **The `calendar-hues` fixture: the two pathological hues [[T-3168]] is about, a pale
@@ -145,12 +151,18 @@ enum CadenceCalendarFixtureEvents {
                 startMinute: bandStartMinute + 75,
                 durationMinutes: 60
             ),
+            // [[T-10103]]: the one REPEATING fixture, so [[T-8573]]'s strip has a positive case
+            // to sight. The pale control carries it because a rule adds no block and moves none —
+            // the timed count the Mac all-day band UI test pins and the colour comparison this
+            // scenario photographs are both unchanged. The all-day entry stays a one-off: it is
+            // the negative case, a sheet with no strip at all.
             Spec(
                 title: "Pale event",
                 calendarTitle: "Pale Calendar",
                 hue: pale,
                 startMinute: bandStartMinute + 150,
-                durationMinutes: 60
+                durationMinutes: 60,
+                repeatFrequency: .weekly
             ),
         ]
 
@@ -354,6 +366,9 @@ enum CadenceCalendarFixtureEvents {
         event.calendar = eventCalendar
         event.title = spec.title
         event.notes = spec.nativeNotes
+        if let frequency = spec.repeatFrequency {
+            event.recurrenceRules = [EKRecurrenceRule(recurrenceWith: frequency, interval: 1, end: nil)]
+        }
         let dayStart = calendar.startOfDay(for: date)
         if let startMinute = spec.startMinute {
             // Set on the wall clock, not added to midnight ([[T-4220]]); the end stays a duration.
