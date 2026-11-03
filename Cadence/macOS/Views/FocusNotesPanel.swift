@@ -88,9 +88,9 @@ struct FocusNotesPanel: View {
             }
         }
         .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusFocusCard))
         .overlay {
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: Theme.radiusFocusCard)
                 .strokeBorder(Theme.borderSubtle.opacity(0.72), lineWidth: 1)
         }
         .onAppear {

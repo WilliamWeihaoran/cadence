@@ -152,7 +152,7 @@ struct FocusTimerPanel<Controls: View>: View {
                 .fill(accent.opacity(isRunning ? 0.72 : 0.24))
                 .frame(height: 2)
         }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusFocusCard, style: .continuous))
         .shadow(color: Theme.cardElevationShadow, radius: 16, x: 0, y: 6)
     }
 }

@@ -593,6 +593,11 @@ nonisolated struct Theme {
     /// assumed. Do not converge this onto `radiusControl` or `10` — that would be a visible
     /// change to every one of those 55 sites, none of which anyone has reviewed.
     static let radiusControlCompact: CGFloat = radiusControl - 3
+    /// The Mac Focus surface's card radius: the pick card, picker rows, sidebar rows, and the
+    /// session's stacked timer and notes cards ([[T-9654]]). The timer card was the one outlier at
+    /// `radiusPanel` (22) directly above the 8pt notes card, so the two read as different
+    /// components; hierarchy between them is carried by the timer's shadow, not by its corner.
+    static let radiusFocusCard: CGFloat = 8
 
 }
 
