@@ -345,8 +345,8 @@ struct CadenceCodexWidgetFollowupTests {
         let start = try #require(calendar.range(of: "private var metricCards: some View {"))
         let cards = String(calendar[start.upperBound...])
         let overdue = try #require(cards.range(of: "title: \"Overdue\", value: \"\\(entry.snapshot.overdueCount)\", valueTint: Theme.red)"))
-        let due = try #require(cards.range(of: "title: \"Due\", value: \"\\(dueCount)\", valueTint: Theme.amber)"))
-        let scheduled = try #require(cards.range(of: "title: \"Scheduled\", value: \"\\(scheduledCount)\", valueTint: Theme.blueLight)"))
+        let due = try #require(cards.range(of: "title: CadenceWidgetCountWords.dueTitle, value: \"\\(dueCount)\", valueTint: Theme.amber)"))
+        let scheduled = try #require(cards.range(of: "title: CadenceWidgetCountWords.plannedTitle, value: \"\\(scheduledCount)\", valueTint: Theme.blueLight)"))
         #expect(overdue.upperBound <= due.lowerBound && due.upperBound <= scheduled.lowerBound)
         let panelStart = try #require(today.range(of: "private var summaryPanel: some View {"))
         let panel = String(today[panelStart.upperBound...])
@@ -354,6 +354,35 @@ struct CadenceCodexWidgetFollowupTests {
         let amber = try #require(panel.range(of: "tint: Theme.amber"))
         let blue = try #require(panel.range(of: "tint: Theme.blueLight"))
         #expect(red.upperBound <= amber.lowerBound && amber.upperBound <= blue.lowerBound)
+    }
+
+    /// T-10002: the two widgets named the due-today count "due now" / "due" / "Due today" / "Due"
+    /// and the do-date count "planned" / "scheduled" / "Scheduled" by family. One word each now,
+    /// read from `CadenceWidgetCountWords` at every site: "due now" claimed a task due today was
+    /// due this minute, and "scheduled" reads as a scheduled start time.
+    @Test func bothWidgetsNameEachCountWithOneSharedWord() throws {
+        #expect(CadenceWidgetCountWords.due == "due")
+        #expect(CadenceWidgetCountWords.planned == "planned")
+        #expect(CadenceWidgetCountWords.dueTitle == "Due")
+        #expect(CadenceWidgetCountWords.plannedTitle == "Planned")
+        #expect(CadenceWidgetCountWords.badge(3, CadenceWidgetCountWords.due) == "3 due")
+        #expect(CadenceWidgetCountWords.badge(1, CadenceWidgetCountWords.planned) == "1 planned")
+
+        let read = CadenceSourceScan.strippedSourceReader()
+        // Not `codeOnly`: the retired words live in string literals.
+        let today = try read("CadenceWidgets/TodayTasksWidgetView.swift")
+        let calendar = try read("CadenceWidgets/CalendarSnapshotWidget.swift")
+        for (path, code, badges, titles) in [
+            ("TodayTasksWidgetView", today, 5, 4),
+            ("CalendarSnapshotWidget", calendar, 2, 2),
+        ] {
+            #expect(CadenceSourceScan.matchCount("CadenceWidgetCountWords\\.badge\\(", in: code) == badges, "\(path) badge sites")
+            #expect(CadenceSourceScan.matchCount("CadenceWidgetCountWords\\.(due|planned)Title", in: code) == titles, "\(path) title sites")
+            #expect(CadenceSourceScan.matchCount("\\) (due|due now|planned|scheduled)\"", in: code) == 0, "\(path) types a count word again")
+            for retired in ["\"Due today\"", "\"Scheduled\"", "\"Due\"", "\"Planned\""] {
+                #expect(!code.contains(retired), "\(path) types \(retired) instead of the shared word")
+            }
+        }
     }
 
     /// T-10001: two cards lay flat among lifted siblings -- the Today extra-large focus strip's

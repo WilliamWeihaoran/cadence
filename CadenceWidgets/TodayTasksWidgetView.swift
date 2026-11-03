@@ -8,12 +8,12 @@ private struct CadenceTodayTaskStatusPresentation {
 }
 
 private extension CadenceTodayWidgetTask {
-    /// "Scheduled" is reserved for tasks with no due date at all — a future due date keeps its
+    /// "Planned" is reserved for tasks with no due date at all — a future due date keeps its
     /// own dated label so the two are never collapsed into the same pill.
     func widgetStatus(for todayKey: String) -> CadenceTodayTaskStatusPresentation {
         guard let dueLabel = CadenceWidgetDateSupport.dueLabel(for: dueDate, todayKey: todayKey) else {
             return CadenceTodayTaskStatusPresentation(
-                label: "Scheduled",
+                label: CadenceWidgetCountWords.plannedTitle,
                 tint: Theme.blueLight
             )
         }
@@ -215,12 +215,12 @@ struct TodayTasksWidgetView: View {
                     tint: Theme.red
                 )
                 metricTile(
-                    title: "Due today",
+                    title: CadenceWidgetCountWords.dueTitle,
                     value: entry.snapshot.dueTodayCount,
                     tint: Theme.amber
                 )
                 metricTile(
-                    title: "Scheduled",
+                    title: CadenceWidgetCountWords.plannedTitle,
                     value: entry.snapshot.scheduledTodayCount,
                     tint: Theme.blueLight
                 )
@@ -592,7 +592,7 @@ struct TodayTasksWidgetView: View {
     private var topStatus: CadenceTodayTaskStatusPresentation {
         guard let task = entry.snapshot.tasks.first else {
             return CadenceTodayTaskStatusPresentation(
-                label: "Scheduled",
+                label: CadenceWidgetCountWords.plannedTitle,
                 tint: Theme.blueLight
             )
         }
@@ -619,19 +619,19 @@ struct TodayTasksWidgetView: View {
                 return [WidgetHeaderBadge(text: "\(entry.snapshot.overdueCount) overdue", tint: overdueTint)]
             }
             if entry.snapshot.dueTodayCount > 0 {
-                return [WidgetHeaderBadge(text: "\(entry.snapshot.dueTodayCount) due now", tint: dueTint)]
+                return [WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(entry.snapshot.dueTodayCount, CadenceWidgetCountWords.due), tint: dueTint)]
             }
-            return [WidgetHeaderBadge(text: "\(entry.snapshot.scheduledTodayCount) planned", tint: scheduledTint)]
+            return [WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(entry.snapshot.scheduledTodayCount, CadenceWidgetCountWords.planned), tint: scheduledTint)]
         case .systemMedium:
             return [
                 WidgetHeaderBadge(text: "\(entry.snapshot.overdueCount) overdue", tint: overdueTint),
-                WidgetHeaderBadge(text: "\(entry.snapshot.dueTodayCount) due", tint: dueTint),
+                WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(entry.snapshot.dueTodayCount, CadenceWidgetCountWords.due), tint: dueTint),
             ]
         default:
             return [
                 WidgetHeaderBadge(text: "\(entry.snapshot.overdueCount) overdue", tint: overdueTint),
-                WidgetHeaderBadge(text: "\(entry.snapshot.dueTodayCount) due", tint: dueTint),
-                WidgetHeaderBadge(text: "\(entry.snapshot.scheduledTodayCount) scheduled", tint: scheduledTint),
+                WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(entry.snapshot.dueTodayCount, CadenceWidgetCountWords.due), tint: dueTint),
+                WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(entry.snapshot.scheduledTodayCount, CadenceWidgetCountWords.planned), tint: scheduledTint),
             ]
         }
     }

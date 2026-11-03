@@ -110,6 +110,26 @@ nonisolated struct CadenceTodayWidgetSnapshot: Hashable {
     }
 }
 
+/// The words both widgets name their two task counts with, at every family ([[T-10002]]).
+///
+/// The Today and Calendar widgets used to spell the due-today count "due now", "due", "Due today"
+/// and "Due", and the do-date count "planned", "scheduled" and "Scheduled". One word each now:
+/// **due**, because "due now" claims a task due today is due this minute; **planned**, because
+/// "scheduled" reads as a task's scheduled START TIME, which the app stores separately
+/// (`scheduledStartMin`). The day strip's "d" and "p" chips are the same two words, abbreviated.
+nonisolated enum CadenceWidgetCountWords {
+    static let due = "due"
+    static let planned = "planned"
+    /// The capitalised forms, for a title above a number rather than a word after one.
+    static let dueTitle = "Due"
+    static let plannedTitle = "Planned"
+
+    /// "3 due", "1 planned": the badge line's spelling of a count.
+    static func badge(_ count: Int, _ word: String) -> String {
+        "\(count) \(word)"
+    }
+}
+
 nonisolated enum CadenceTodayWidgetSupport {
     nonisolated static func snapshot(
         modelContext: ModelContext,

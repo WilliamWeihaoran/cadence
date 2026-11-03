@@ -117,7 +117,7 @@ struct CadenceCalendarSnapshotWidget: Widget {
             CalendarSnapshotWidgetView(entry: entry)
         }
         .configurationDisplayName("Calendar Snapshot")
-        .description("See your next stretch of due and scheduled work at a glance.")
+        .description("See your next stretch of due and planned work at a glance.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .systemExtraLarge])
         // WidgetKit insets widget content by ~16pt a side unless a configuration opts out, and
         // `CalendarSnapshotWidgetView` already draws `scale.outerPadding` inside that. Both
@@ -415,14 +415,14 @@ struct CalendarSnapshotWidgetView: View {
 
     /// The three counts in the order and colours every other surface of both widgets gives them:
     /// this tile's own medium badge line and the Today widget's summary panel both read overdue
-    /// red, due amber, scheduled blue, in that order. The cards drew all three numbers in the
+    /// red, due amber, planned blue, in that order. The cards drew all three numbers in the
     /// body colour, Scheduled before Due, so the one tile that spelled them out was the one that
     /// told them apart least (T-10000).
     @ViewBuilder
     private var metricCards: some View {
         CadenceWidgetMetricCard(title: "Overdue", value: "\(entry.snapshot.overdueCount)", valueTint: Theme.red)
-        CadenceWidgetMetricCard(title: "Due", value: "\(dueCount)", valueTint: Theme.amber)
-        CadenceWidgetMetricCard(title: "Scheduled", value: "\(scheduledCount)", valueTint: Theme.blueLight)
+        CadenceWidgetMetricCard(title: CadenceWidgetCountWords.dueTitle, value: "\(dueCount)", valueTint: Theme.amber)
+        CadenceWidgetMetricCard(title: CadenceWidgetCountWords.plannedTitle, value: "\(scheduledCount)", valueTint: Theme.blueLight)
     }
 
     private var footerLink: some View {
@@ -432,7 +432,7 @@ struct CalendarSnapshotWidgetView: View {
     private var emptyState: some View {
         CadenceWidgetStateCard(
             title: "Schedule is clear",
-            message: "There is no due or scheduled work in this stretch.",
+            message: "There is no due or planned work in this stretch.",
             actionLabel: "Open Calendar",
             actionURL: entry.snapshot.calendarURL,
             alignment: stateCardAlignment
@@ -531,8 +531,8 @@ struct CalendarSnapshotWidgetView: View {
             // total they sat under is still the count in the header's trailing corner.
             return [
                 WidgetHeaderBadge(text: "\(entry.snapshot.overdueCount) overdue", tint: overdueTint),
-                WidgetHeaderBadge(text: "\(dueCount) due", tint: Theme.amber),
-                WidgetHeaderBadge(text: "\(scheduledCount) planned", tint: upcomingTint),
+                WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(dueCount, CadenceWidgetCountWords.due), tint: Theme.amber),
+                WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(scheduledCount, CadenceWidgetCountWords.planned), tint: upcomingTint),
             ]
         }
 
