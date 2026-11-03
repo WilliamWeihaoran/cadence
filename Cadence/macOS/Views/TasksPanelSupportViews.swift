@@ -383,7 +383,7 @@ struct TaskSectionPickerBadge: View {
         .popover(isPresented: $showPicker) {
             VStack(alignment: .leading, spacing: 0) {
                 CadenceSearchFieldRow(query: $searchQuery, focus: $isSearchFocused) {
-                    TextField("Search…", text: $searchQuery)
+                    TextField("Search", text: $searchQuery)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.text)

@@ -117,7 +117,7 @@ struct ListEditorIdentityHeader: View {
     @Binding var name: String
     @Binding var colorHex: String
     @Binding var icon: String
-    var placeholder: String = "List name…"
+    var placeholder: String = "List name"
     var details: Binding<String>? = nil
 
     var body: some View {

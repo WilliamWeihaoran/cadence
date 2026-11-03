@@ -232,7 +232,7 @@ struct TildeContainerPicker: View {
 
     private var searchRow: some View {
         CadenceSearchFieldRow(query: $query, focus: $isSearchFocused) {
-            TextField("Search lists…", text: $query)
+            TextField("Search lists", text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.text)

@@ -26,6 +26,14 @@ struct CadenceRetiredPhrase {
     }
 }
 
+/// [[T-10006]]'s reason, shared by every single-line placeholder it retired.
+private let retiredSingleLineEllipsisWhy = """
+A single-line field placeholder ending in an ellipsis. The rule decided on T-10006: no ellipsis \
+on a single-line field, "…" on a multi-line body editor only -- iOS already followed it \
+everywhere while the Mac mixed both spellings inside one sheet. An ellipsis promises that more \
+follows, which is true of a body and false of a one-line name.
+"""
+
 /// **The one collection.** Adding a retired phrase is a line here and nothing else: the sweep below
 /// walks every Swift file under `Cadence/` for every entry, so a screen written next year inherits
 /// the whole list without anyone remembering to name it.
@@ -273,6 +281,41 @@ let cadenceRetiredCopy: [CadenceRetiredPhrase] = [
         was not Title Case. It reads "Unlinked Mentions" now.
         """
     ),
+    CadenceRetiredPhrase(
+        "Area name…",
+        retiredBy: "T-10006",
+        why: retiredSingleLineEllipsisWhy
+    ),
+    CadenceRetiredPhrase(
+        "Project name…",
+        retiredBy: "T-10006",
+        why: retiredSingleLineEllipsisWhy
+    ),
+    CadenceRetiredPhrase(
+        "List name…",
+        retiredBy: "T-10006",
+        why: retiredSingleLineEllipsisWhy
+    ),
+    CadenceRetiredPhrase(
+        "Context name…",
+        retiredBy: "T-10006",
+        why: retiredSingleLineEllipsisWhy
+    ),
+    CadenceRetiredPhrase(
+        "Search…",
+        retiredBy: "T-10006",
+        why: retiredSingleLineEllipsisWhy
+    ),
+    CadenceRetiredPhrase(
+        "Search lists…",
+        retiredBy: "T-10006",
+        why: retiredSingleLineEllipsisWhy
+    ),
+    CadenceRetiredPhrase(
+        "Jump anywhere or run a command…",
+        retiredBy: "T-10006",
+        why: retiredSingleLineEllipsisWhy
+    ),
 ]
 
 // MARK: - The sweep
@@ -411,7 +454,7 @@ struct CadenceRetiredCopyTests {
 
     /// **T-5000: three full stops are retired as an ellipsis, everywhere at once.**
     ///
-    /// The house ellipsis is the single character "…" — "Add notes…" in the Mac inspector, "Search…",
+    /// The house ellipsis is the single character "…" — "Add notes…" in the Mac inspector, "Start writing…",
     /// "Choose Archive…" — and nineteen literals still typed "..." instead, most of them the
     /// phone's twin of a Mac string that already had it right: "Add notes..." on iOS beside the
     /// inspector's "Add notes…", "Start writing..." in six editors, "Loading reminders..." in four.

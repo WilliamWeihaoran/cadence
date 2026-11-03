@@ -56,7 +56,7 @@ struct EditAreaSheet: View {
                 name: $name,
                 colorHex: $selectedColor,
                 icon: $selectedIcon,
-                placeholder: "Area name…",
+                placeholder: "Area name",
                 details: $details
             )
 
@@ -319,7 +319,7 @@ struct EditProjectSheet: View {
                 name: $name,
                 colorHex: $selectedColor,
                 icon: $selectedIcon,
-                placeholder: "Project name…",
+                placeholder: "Project name",
                 details: $details
             )
 

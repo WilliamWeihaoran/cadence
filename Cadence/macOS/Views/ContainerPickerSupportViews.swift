@@ -282,7 +282,7 @@ struct ContainerPickerPopoverContent: View {
 
     private var searchBar: some View {
         CadenceSearchFieldRow(query: $searchQuery, focus: $isSearchFocused) {
-            TextField("Search…", text: $searchQuery)
+            TextField("Search", text: $searchQuery)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.text)

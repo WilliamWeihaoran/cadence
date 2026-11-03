@@ -73,14 +73,14 @@ struct CadenceSettingsSheetKeyboardTests {
     }
 
     /// **[[T-10005]].** The New Context sheet's name field said "e.g. Work, School, Personal" while
-    /// its two siblings on the same `ListEditorSheetShell` say "Area name…" / "Project name…" and the
-    /// iOS context editor says "Context name".
+    /// its two siblings on the same `ListEditorSheetShell` say "Area name" / "Project name" and the
+    /// iOS context editor says "Context name" -- no ellipsis on a single-line field ([[T-10006]]).
     @Test func newContextNameFieldNamesTheField() throws {
         let sheet = try Self.compactBody(
             "struct CreateContextSheet: View",
             in: "Cadence/macOS/Sheets/CreateContextSheet.swift"
         )
-        #expect(sheet.contains(#"placeholder:"Contextname…""#))
+        #expect(sheet.contains(#"placeholder:"Contextname""#))
         #expect(!sheet.contains("e.g."))
     }
 }

@@ -356,7 +356,7 @@ struct GlobalSearchHeader: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(Theme.dim)
 
-            TextField("Jump anywhere or run a command…", text: $draftQuery)
+            TextField("Jump anywhere or run a command", text: $draftQuery)
                 .textFieldStyle(.plain)
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(Theme.text)

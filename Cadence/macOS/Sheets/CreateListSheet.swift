@@ -121,7 +121,7 @@ struct CreateListSheet: View {
                 name: $name,
                 colorHex: $selectedColor,
                 icon: $selectedIcon,
-                placeholder: listType == .area ? "Area name…" : "Project name…",
+                placeholder: listType == .area ? "Area name" : "Project name",
                 details: $details
             )
 
