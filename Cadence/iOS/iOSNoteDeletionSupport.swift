@@ -88,7 +88,7 @@ struct iOSNoteDeleteMenuButton: View {
         Button(role: .destructive) {
             request(note)
         } label: {
-            Label("Delete Note", systemImage: "trash")
+            Label(CadenceNoteRowMenuCopy.deleteTitle, systemImage: CadenceNoteRowMenuCopy.deleteSystemImage)
         }
     }
 }

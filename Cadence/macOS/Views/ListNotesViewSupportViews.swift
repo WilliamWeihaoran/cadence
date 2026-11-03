@@ -156,7 +156,7 @@ struct ListNoteFolderRow: View {
                 Button(role: .destructive) {
                     onDelete(note)
                 } label: {
-                    Label("Delete", systemImage: "trash")
+                    Label(CadenceNoteRowMenuCopy.deleteTitle, systemImage: CadenceNoteRowMenuCopy.deleteSystemImage)
                 }
             }
     }

@@ -453,7 +453,7 @@ private struct NotepadPage: View {
                             Button(role: .destructive) {
                                 deleteNote(note)
                             } label: {
-                                Label("Delete", systemImage: "trash")
+                                Label(CadenceNoteRowMenuCopy.deleteTitle, systemImage: CadenceNoteRowMenuCopy.deleteSystemImage)
                             }
                         }
                     }

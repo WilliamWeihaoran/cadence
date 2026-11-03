@@ -297,6 +297,16 @@ struct CadenceNoteDeletionSummary: Equatable, Sendable {
 /// pasteboards are the part that genuinely cannot be shared. macOS's `NoteActionSupport` forwards
 /// here rather than keeping its own copy, the way it already forwards `appendSummary` to
 /// `CadenceAINoteSummary`.
+/// **[[T-8534]]: a note row menu's delete item, on both platforms.** The Mac's Notepad row and
+/// list-note row said bare "Delete" while iOS's `iOSNoteDeleteMenuButton` said "Delete Note" for
+/// the same menu. The object-naming form, as its siblings ("Copy Note Link", "Move to Folder")
+/// and both platforms' confirmations already read, and the one a menu that also deletes folders
+/// cannot misread.
+nonisolated enum CadenceNoteRowMenuCopy {
+    static let deleteTitle = "Delete Note"
+    static let deleteSystemImage = "trash"
+}
+
 enum CadenceNoteClipboard {
     /// The menu item's words and glyph, for every note row's menu on both platforms ([[T-10166]]).
     /// iOS's `iOSNoteCopyLinkButton` drew the `link` glyph; the Mac's two note-row menus spelled
