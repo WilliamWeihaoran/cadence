@@ -45,7 +45,9 @@ struct iOSEventNoteEditorSheet: View {
             .navigationTitle("Event Note")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
+                // [[T-8587]]: Done confirms, so it sits trailing in `.confirmationAction`, where
+                // the system puts a confirming action on every iOS sheet -- not leading.
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
                         // T-325: Done used to dismiss over a `try?` save. A sheet that closes on
                         // a failed commit takes the user's writing with it, so an unsaved note

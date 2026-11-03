@@ -953,7 +953,9 @@ struct iOSNoteEditorCover: View {
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
+                // [[T-8587]]: Done confirms, so it sits trailing in `.confirmationAction`, where
+                // the system puts a confirming action on every iOS sheet -- not leading.
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
                         // [[T-5170]]: the well's tail reaches `note.content` before the save.
                         editorFlush.flush()

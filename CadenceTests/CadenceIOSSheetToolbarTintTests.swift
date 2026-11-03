@@ -99,4 +99,19 @@ struct CadenceIOSSheetToolbarTintTests {
         #expect(picker.contains("ToolbarItem(placement:.cancellationAction)"), "the scan no longer reaches the picker's bar")
         #expect(picker.contains("}.tint(Theme.blue).preferredColorScheme(.dark)"))
     }
+
+    /// [[T-8587]]: the two note editors Search and `[[link]]`s open put a confirming Done in
+    /// `.confirmationAction` (trailing), where the system puts it on every iOS sheet, not in
+    /// `.cancellationAction` (leading), where both had it until 2026-11-02.
+    @Test func theNoteEditorsConfirmFromTheTrailingDoneSlot() throws {
+        for (declaration, path) in [
+            ("struct iOSEventNoteEditorSheet: View", "Cadence/iOS/iOSEventNoteEditorSheet.swift"),
+            ("struct iOSNoteEditorCover: View", "Cadence/iOS/iOSNotesView.swift")
+        ] {
+            let sheet = squeezed(try body(declaration, in: path))
+            #expect(sheet.contains("Button(\"Done\")"), "the scan no longer reaches \(declaration)'s Done")
+            #expect(sheet.contains("ToolbarItem(placement:.confirmationAction){Button(\"Done\")"), "\(declaration)")
+            #expect(!sheet.contains("ToolbarItem(placement:.cancellationAction){Button(\"Done\")"), "\(declaration)")
+        }
+    }
 }
