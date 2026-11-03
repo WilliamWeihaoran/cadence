@@ -97,7 +97,8 @@ struct CadenceTaskSortGroupParityTests {
         )
         #expect(page.contains("CadenceEnumPickerBadge(title: \"Sort\", selection: sortField)"))
         #expect(page.contains("CadenceEnumPickerBadge(title: \"Order\", selection: sortDirection)"))
-        #expect(page.contains("CadenceEnumPickerBadge(title: \"Group\", selection: groupingMode)"))
+        // [[T-7985]]: the Group badge also leaves out what the scope excludes (By List, in Inbox).
+        #expect(page.contains("CadenceEnumPickerBadge(title: \"Group\", selection: groupingMode, excluded: TaskGroupingMode.excluded(on: scope))"))
     }
 
     /// Order is drawn only where the field honours one, on both — `TaskSortField.honorsDirection`,
@@ -418,7 +419,11 @@ struct CadenceTaskSortGroupParityTests {
             let page = try literalBearingCode(path)
             let sortBadges = page.components(separatedBy: "CadenceEnumPickerBadge(title: \"Sort\"").count - 1
             #expect(sortBadges >= 1, "\(path) lost its Sort pill")
-            #expect(!page.contains("excluded:"), "\(path) filters a picker's cases")
+            // Asked of the Sort lines only: since [[T-7985]] the Inbox's GROUP badge passes
+            // `excluded:` on purpose (By List), which says nothing about the sort vocabulary.
+            let sortLines = page.split(separator: "\n").filter { $0.contains("CadenceEnumPickerBadge(title: \"Sort\"") }
+            #expect(sortLines.count == sortBadges, "\(path): a Sort badge spans lines; read its arguments another way")
+            #expect(!sortLines.contains { $0.contains("excluded:") }, "\(path) filters the Sort picker's cases")
         }
 
         let bar = try #require(CadenceSourceScan.declarationBody(

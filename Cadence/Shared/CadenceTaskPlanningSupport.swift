@@ -75,6 +75,36 @@ enum TaskGroupingMode: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 }
 
+// MARK: - What the Inbox offers ([[T-7985]], [[T-10461]])
+
+extension TaskGroupingMode {
+    /// The cases the Inbox's Group menu leaves out, on both platforms. No Inbox task is in a list
+    /// by definition, so By List could only draw one "Inbox" heading over every row -- a control
+    /// that appears to fail, which the owner ruled worse than one that is not there ([[T-7006]]).
+    static let inboxExcluded: [TaskGroupingMode] = [.byList]
+
+    /// What a Tasks-page view's Group menu leaves out. The Mac badge and the iOS chip both ask
+    /// this, so the two Inboxes cannot offer different menus ([[T-8201]]).
+    static func excluded(on scope: CadenceTasksPageScope) -> [TaskGroupingMode] {
+        scope == .inbox ? inboxExcluded : []
+    }
+
+    /// What that menu offers, in menu order.
+    static func offered(on scope: CadenceTasksPageScope) -> [TaskGroupingMode] {
+        let excluded = excluded(on: scope)
+        return allCases.filter { !excluded.contains($0) }
+    }
+
+    /// The Inbox's stored grouping as the Inbox reads it: a `.byList` stored before the option
+    /// left the menu reads as None, so the page never draws a grouping its menu cannot show.
+    /// Writable, so a page binds `$inboxGroupingMode.inboxResolved` -- a key path, not a
+    /// `Binding(get:set:)` closure pair (T-3156).
+    var inboxResolved: TaskGroupingMode {
+        get { Self.inboxExcluded.contains(self) ? .none : self }
+        set { self = newValue }
+    }
+}
+
 // MARK: - A stored raw value as a sort mode (T-3156, T-3158)
 
 /// The stored raw value read and written as a sort mode, so a page's `sortModeBinding` can be a

@@ -865,8 +865,10 @@ struct TasksPageView: View {
         scope == .inbox ? $inboxSortDirection : $allSortDirection
     }
 
+    /// [[T-7985]]: the Inbox reads its stored grouping through `inboxResolved`, so a `.byList`
+    /// stored before By List left its menu groups as None.
     private var groupingMode: Binding<TaskGroupingMode> {
-        scope == .inbox ? $inboxGroupingMode : $allGroupingMode
+        scope == .inbox ? $inboxGroupingMode.inboxResolved : $allGroupingMode
     }
 
     /// The same number the sidebar's Tasks row shows, plus — in the Inbox view — the Apple
@@ -929,7 +931,8 @@ struct TasksPageView: View {
                     }
                 }
                 if mode == .list {
-                    CadenceEnumPickerBadge(title: "Group", selection: groupingMode)
+                    // [[T-7985]]: no Inbox task is in a list, so the Inbox's menu leaves By List out.
+                    CadenceEnumPickerBadge(title: "Group", selection: groupingMode, excluded: TaskGroupingMode.excluded(on: scope))
                 }
             }
 

@@ -58,7 +58,8 @@ struct iOSInboxView: View {
             completedTasks: completedInboxTasks,
             sortField: $sortField,
             sortDirection: $sortDirection,
-            groupingMode: $groupingMode,
+            // [[T-10461]]: a stored By List reads as None; the Inbox's menu no longer offers it.
+            groupingMode: $groupingMode.inboxResolved,
             showCompleted: $showCompleted
         )
         // No seed: the Inbox is where a task goes when it has no list yet, so seeding one would

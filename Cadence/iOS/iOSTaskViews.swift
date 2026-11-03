@@ -703,6 +703,9 @@ struct iOSTaskSortGroupBar: View {
     @Binding var sortField: TaskSortField
     @Binding var sortDirection: TaskSortDirection
     @Binding var groupingMode: TaskGroupingMode
+    /// The Group cases this page leaves out -- `TaskGroupingMode.excluded(on:)`, the same answer
+    /// the Mac badge reads ([[T-7985]], [[T-10461]]).
+    var excludedGroupings: [TaskGroupingMode] = []
 
     var body: some View {
         let stacks = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
@@ -715,7 +718,7 @@ struct iOSTaskSortGroupBar: View {
             if sortField.honorsDirection {
                 iOSEnumChoiceChip(title: "Order", glyph: "arrow.up.arrow.down.square", selection: $sortDirection)
             }
-            iOSEnumChoiceChip(title: "Group", glyph: "rectangle.3.group", selection: $groupingMode)
+            iOSEnumChoiceChip(title: "Group", glyph: "rectangle.3.group", selection: $groupingMode, excluded: excludedGroupings)
 
             if !stacks {
                 Spacer()
@@ -741,6 +744,8 @@ struct iOSEnumChoiceChip<T: CaseIterable & RawRepresentable & Identifiable & Has
     let title: String
     let glyph: String
     @Binding var selection: T
+    /// Cases this page leaves out of the menu, as `CadenceEnumPickerBadge.excluded` does on macOS.
+    var excluded: [T] = []
     @State private var showPicker = false
 
     /// What a value is *called*. `rawValue` unless the type says otherwise — the same question
@@ -777,7 +782,7 @@ struct iOSEnumChoiceChip<T: CaseIterable & RawRepresentable & Identifiable & Has
         .accessibilityValue(label(for: selection))
         .popover(isPresented: $showPicker) {
             iOSChoicePopoverList(
-                rows: Array(T.allCases).map { value in
+                rows: Array(T.allCases).filter { !excluded.contains($0) }.map { value in
                     iOSChoiceRow(value: value, title: label(for: value), color: Theme.blue)
                 },
                 selection: $selection,

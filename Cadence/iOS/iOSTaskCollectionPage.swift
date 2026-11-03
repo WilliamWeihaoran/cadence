@@ -257,7 +257,8 @@ struct iOSTaskCollectionPage: View {
             iOSTaskSortGroupBar(
                 sortField: $sortField,
                 sortDirection: $sortDirection,
-                groupingMode: $groupingMode
+                groupingMode: $groupingMode,
+                excludedGroupings: TaskGroupingMode.excluded(on: CadenceTasksPageScope(collection: collection))
             )
             .padding(.vertical, 2)
         }
