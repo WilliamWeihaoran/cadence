@@ -761,6 +761,22 @@ struct CadenceMacPageAccessibilityAuditTests {
         #expect(request.message == CadenceSavedLinkPersistence.deleteConfirmationMessage(title: title))
     }
 
+    /// [[T-7257]]: the Links tab opens on its add action, not on a "Saved Links" title restating
+    /// the tab the reader just selected. Counted on the hosted tree, so a header label put back in
+    /// any spelling of that title reds here.
+    @Test func theLinksTabLeadsWithItsAddButtonAndNoTitleRestatingTheTab() throws {
+        let nodes = allNodes(in: try hostedLinks(titled: "Header probe", url: "https://example.com/header"),
+                             size: NSSize(width: 560, height: 340))
+        #expect(nodes.contains { $0.label.contains("Header probe") || $0.value.contains("Header probe") },
+                "non-vacuity: the link row is not on the tree: \(nodes)")
+        let addButtons = nodes.filter { $0.role == "AXButton" && $0.label == SavedLinkAddForm().headerLabel }
+        #expect(addButtons.count == 1, "the header's add button is not on the tree once: \(nodes)")
+        let restating = nodes.filter {
+            ($0.label + " " + $0.value + " " + $0.title).localizedCaseInsensitiveContains("saved links")
+        }
+        #expect(restating.isEmpty, "a header restates the Links tab: \(restating)")
+    }
+
     /// Copy Link puts the stored URL, as plain text, on the pasteboard it is given.
     @Test func copyLinkPutsTheStoredURLOnThePasteboard() {
         let pasteboard = NSPasteboard(name: NSPasteboard.Name("cadence.tests.links.\(UUID().uuidString)"))

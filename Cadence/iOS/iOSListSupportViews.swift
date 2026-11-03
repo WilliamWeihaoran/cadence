@@ -801,7 +801,7 @@ struct iOSListLinksPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 iOSActionButton(
-                    title: addForm.isOpen ? "Cancel" : "Add Link",
+                    title: addForm.headerTitle,
                     systemImage: addForm.headerSymbol,
                     role: addForm.isOpen ? .ghost : .secondary,
                     size: .compact

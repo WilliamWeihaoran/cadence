@@ -28,11 +28,32 @@ struct CadenceSavedLinkAddFormTests {
 
     @Test func theHeaderButtonDrawsAndNamesWhatItDoes() {
         var form = SavedLinkAddForm()
+        #expect(form.headerTitle == "Add Link")
         #expect(form.headerSymbol == "plus")
         #expect(form.headerLabel == "Add link")
         form.toggle()
+        #expect(form.headerTitle == "Cancel")
         #expect(form.headerSymbol == "xmark")
         #expect(form.headerLabel == "Cancel adding a link")
+    }
+
+    /// **[[T-7257]]: both Links tabs lead with one labelled add button.** The Mac header was a
+    /// muted "Saved Links" title over a bare "+", restating the selected tab; it now draws the
+    /// labelled button iOS draws, and both read the one `SavedLinkAddForm.headerTitle`.
+    @Test func bothLinksHeadersLeadWithTheSharedLabelledAddButton() throws {
+        let mac = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/LinksView.swift"))
+        let ios = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListSupportViews.swift"))
+        let view = try #require(CadenceSourceScan.declarationBody("struct LinksView: View", in: mac))
+        let panel = try #require(CadenceSourceScan.declarationBody("struct iOSListLinksPanel: View", in: ios))
+        for (name, body, button) in [("LinksView", view, "CadenceActionButton"), ("iOSListLinksPanel", panel, "iOSActionButton")] {
+            let header = CadenceSourceScan.matchCount(
+                button + #"\(\s*title:\s*addForm\.headerTitle,\s*systemImage:\s*addForm\.headerSymbol,"#,
+                in: body
+            )
+            #expect(header == 1, "\(name) does not lead with the shared labelled add button")
+            #expect(CadenceSourceScan.matchCount(#""(Add Link|Saved Links)""#, in: body) == 0,
+                    "\(name) spells its own header words")
+        }
     }
 
     /// [[T-10056]]: iOS's Links tab closes its add form through the same `SavedLinkAddForm` the

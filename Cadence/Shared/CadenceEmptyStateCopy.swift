@@ -154,11 +154,11 @@ nonisolated enum CadenceEmptyStateCopy {
 
     /// The saved-links panel on a list, area or project detail page.
     ///
-    /// **Deliberately names no control.** The two surfaces do not carry the same one: the Mac's
-    /// `LinksView` header holds a bare `+` glyph, the phone's `iOSListLinksPanel` holds a labelled
-    /// `Add Link` button. The Mac's spelling was "Tap + to save a link", which is wrong twice —
-    /// a Mac is clicked rather than tapped, and the `+` it names is not what the other surface
-    /// shows. A sentence that says what the panel is *for* is true at both widths.
+    /// **Deliberately names no control.** The Mac's spelling was "Tap + to save a link", which was
+    /// wrong twice — a Mac is clicked rather than tapped, and the `+` it named was not what the
+    /// phone's labelled `Add Link` button showed. Both headers draw that labelled button now
+    /// ([[T-7257]]), but a sentence that says what the panel is *for* stays true however the
+    /// control is spelled.
     static let savedLinksTitle = "No saved links"
     static let savedLinksSubtitle = "Save URLs that belong with this list."
 

@@ -23,27 +23,24 @@ struct LinksView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header bar
+            // [[T-7257]]: no "Saved Links" title -- the selected tab above already reads "Links",
+            // and a page header does not describe the page the user is on (AGENTS.md, [[T-615]]).
+            // The add action leads with a visible word instead, the labelled button iOS's Links
+            // tab draws, from the same `SavedLinkAddForm` spelling.
             HStack {
-                Text("Saved Links")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.muted)
-                Spacer()
-                // The header button is the form's second Cancel while it is open, so it does what
-                // the form's own Cancel does and draws the same "x" iOS's toggle draws (T-7256).
-                // It used to stay a "+" and only hide the form, so reopening it brought back the
-                // abandoned title, URL and failure notice.
-                Button {
+                // While the form is open this is its second Cancel, so it does what the form's own
+                // Cancel does and draws the same "x" (T-7256). It used to only hide the form, so
+                // reopening it brought back the abandoned title, URL and failure notice.
+                CadenceActionButton(
+                    title: addForm.headerTitle,
+                    systemImage: addForm.headerSymbol,
+                    role: addForm.isOpen ? .ghost : .secondary,
+                    size: .compact
+                ) {
                     if addForm.toggle() { actionError = nil }
-                } label: {
-                    Image(systemName: addForm.headerSymbol)
-                        .foregroundStyle(Theme.blue)
-                        // [[T-9501]]: the bare glyph was the whole hit area and hover wash.
-                        .frame(minWidth: 22, minHeight: 22)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.cadencePlain)
                 .cadenceControlLabel(addForm.headerLabel)
+                Spacer()
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)

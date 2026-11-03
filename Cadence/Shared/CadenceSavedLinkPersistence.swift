@@ -142,6 +142,10 @@ nonisolated struct SavedLinkAddForm: Equatable {
         url = ""
     }
 
+    /// The header button's visible word, on both platforms ([[T-7257]]). The Mac header was a
+    /// muted "Saved Links" title beside a bare "+", restating the Links tab the reader had just
+    /// selected; it now draws iOS's leading labelled button instead, from this one spelling.
+    var headerTitle: String { isOpen ? "Cancel" : "Add Link" }
     var headerSymbol: String { isOpen ? "xmark" : "plus" }
     var headerLabel: String { isOpen ? "Cancel adding a link" : "Add link" }
 }
