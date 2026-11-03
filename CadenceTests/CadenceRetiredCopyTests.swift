@@ -431,6 +431,26 @@ struct CadenceRetiredCopyTests {
         )
     }
 
+    /// **[[T-9838]]: the task sheet's composers read one way on both platforms.** By the rule
+    /// decided on [[T-10006]] -- no ellipsis on a single-line field, "…" on a body editor -- the
+    /// subtask composer reads "Add subtask" and every notes composer reads "Add notes…",
+    /// `CadenceSchedulePanel`'s included.
+    @Test func theTaskSheetComposersSpellOnePlaceholderEach() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let mac = try read("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift")
+        let ios = try read("Cadence/iOS/iOSTaskDetailSheetSections.swift")
+        let panel = try read("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+
+        for (name, source) in [("Mac inspector", mac), ("iOS sheet", ios)] {
+            #expect(source.contains("TextField(\"Add subtask\", text:"), "\(name): the subtask composer")
+            #expect(!source.contains("\"Add subtask…\""), "\(name): a single-line composer ends in an ellipsis")
+            #expect(source.contains("\"Add notes…\""), "\(name): the notes composer")
+        }
+        #expect(panel.contains("TextField(\"Add notes…\", text: $notes, axis: .vertical)"),
+                "the shared schedule panel's notes editor drops the ellipsis")
+        #expect(!panel.contains("\"Add notes\""), "the shared schedule panel's notes editor drops the ellipsis")
+    }
+
     /// **T-5522: the British spelling of *cancelled* is retired from display copy, everywhere at
     /// once — and nowhere near the persisted raw value.**
     ///

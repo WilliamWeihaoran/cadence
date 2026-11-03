@@ -514,7 +514,7 @@ struct CreateTaskSubtaskDraft: Identifiable, Equatable {
     /// Return used to append a fresh empty row every time, wherever it was pressed: a second
     /// Return on the row it had just made stacked a second blank "Subtask" row, then a third, and
     /// Return in the middle of the list put the new row at the bottom. The inspector's own
-    /// "Add subtask…" field never did either -- a blank Return there adds nothing. So:
+    /// "Add subtask" field never did either -- a blank Return there adds nothing. So:
     ///
     /// - Return on a blank row adds nothing and leaves the caret where it is.
     /// - Return on a filled row moves to the blank row straight after it if there is one, and

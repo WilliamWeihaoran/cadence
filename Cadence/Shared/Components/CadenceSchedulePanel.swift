@@ -1031,7 +1031,7 @@ struct CadenceSchedulePanelNotesRow: View {
                     .cadenceFont(.metadata)
                     .foregroundStyle(Theme.dim)
                     .padding(.top, 4)
-                TextField("Add notes", text: $notes, axis: .vertical)
+                TextField("Add notes…", text: $notes, axis: .vertical)
                     .textFieldStyle(.plain)
                     .cadenceFont(.fieldValue)
                     .foregroundStyle(Theme.text)

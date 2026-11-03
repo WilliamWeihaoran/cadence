@@ -428,7 +428,7 @@ struct TaskDetailSubtasksSection: View {
                     Image(systemName: "plus.circle")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim.opacity(0.6))
-                    TextField("Add subtask…", text: $newSubtaskTitle)
+                    TextField("Add subtask", text: $newSubtaskTitle)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.text)
