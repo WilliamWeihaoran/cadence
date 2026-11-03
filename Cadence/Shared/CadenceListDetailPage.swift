@@ -151,6 +151,40 @@ enum ListDetailKanbanBoard {
         )
     }
 
+    /// **The FINISHED cards each column closes with, bucketed by the same rule as the open ones**
+    /// ([[T-9837]]).
+    ///
+    /// The iOS list board was handed `activeTasks` only, so a column whose work was all done read
+    /// "0" and empty on an iPad while the Mac's `ListSectionKanbanColumn` showed it behind a
+    /// `KanbanCompletedTasksToggle`. The candidate reason -- "the iOS list page has its own
+    /// Completed tab" -- is not a hardware or input reason, and the Mac list page has finished
+    /// work in more than one place too, so under [[T-8201]] it was drift.
+    ///
+    /// It is the SAME `sectionGroups` call `columns(tasks:sectionNames:)` makes, over the finished
+    /// half instead of the open one, rather than a second bucketing rule: a column's open cards and
+    /// its finished ones must agree about which section a task is in, including the
+    /// case-insensitive match and the fallback for a section a list no longer configures. Returned
+    /// keyed by the column title `columns(...)` produces, so a caller cannot mismatch them.
+    ///
+    /// `isFinishedTask`, through `CadenceTaskQuerySupport.completedTasks`, not `isDone`: a
+    /// CANCELLED task is finished and `!$0.isDone` would file it among the work you still intend
+    /// to do. That is the T-147 / T-203 / T-342 / T-381 shape, and
+    /// `KanbanBoardSupport.columnHalves` records it for the Mac's own split.
+    static func completedTasksByColumn(
+        tasks: [AppTask],
+        sectionNames: [String]
+    ) -> [String: [AppTask]] {
+        var byColumn: [String: [AppTask]] = [:]
+        for group in CadenceTaskQuerySupport.sectionGroups(
+            from: tasks,
+            sectionNames: sectionNames,
+            includingEmpty: true
+        ) where !group.tasks.isEmpty {
+            byColumn[group.title] = group.tasks
+        }
+        return byColumn
+    }
+
     /// The empty panel stands in only when the list has no column at all (every section archived).
     /// An open-task count is not the question: an empty column is a place to put work.
     static func drawsColumns(_ columns: [CadenceTaskDisplayGroup]) -> Bool {

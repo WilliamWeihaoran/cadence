@@ -252,6 +252,12 @@ struct iOSListDetailView: View {
         case .kanban:
             iOSListKanbanPanel(
                 tasks: activeTasks,
+                // [[T-9837]]: the finished half, which the board used never to be given at all --
+                // so a column whose work was all done read "0" and empty here while the Mac showed
+                // it behind a Completed toggle. The page's own Completed TAB keeps this same list;
+                // one surface naming finished work does not excuse the other dropping it, which is
+                // the Mac's position on its own list page.
+                completedTasks: completedTasks,
                 sectionNames: sectionNames,
                 sectionConfigs: sectionConfigs,
                 hideSectionDueDateIfEmpty: hideSectionDueDateIfEmpty,

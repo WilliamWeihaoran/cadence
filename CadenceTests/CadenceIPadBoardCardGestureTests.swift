@@ -260,7 +260,10 @@ struct CadenceIPadBoardCardGestureTests {
         let card = try cardBody()
         #expect(CadenceSourceScan.matchCount(dragPayload, in: card) == 0)
 
-        for (file, cards) in [(listBoardFile, 1), (calendarBoardFile, 2)] {
+        // The list board draws TWO since [[T-9837]]: the column's open stack and the Completed
+        // footer under it, which is the same card at the same width rather than a second kind of
+        // card for finished work. The Calendar Board has drawn two for the same reason.
+        for (file, cards) in [(listBoardFile, 2), (calendarBoardFile, 2)] {
             let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(file))
             let drawn = CadenceSourceScan.matchCount(#"iOSBoardTaskCard\("#, in: source)
             let dragged = CadenceSourceScan.matchCount(

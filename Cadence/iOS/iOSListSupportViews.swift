@@ -449,6 +449,18 @@ struct iOSListCompletedPanel: View {
 /// dot is where that colour lives now, exactly as on macOS.
 struct iOSListKanbanPanel: View {
     let tasks: [AppTask]
+    /// **The list's FINISHED tasks, so a column can close with the Mac's "Completed N" toggle**
+    /// ([[T-9837]]). This panel was handed `activeTasks` only, so a column whose work was all done
+    /// read "0" and empty on an iPad while every macOS list Kanban column showed its finished
+    /// cards behind `KanbanCompletedTasksToggle`. The iOS list page having its own Completed tab
+    /// is not a hardware or input reason, and the Mac list page has finished work in more than one
+    /// place too, so under [[T-8201]] the difference was drift.
+    ///
+    /// They are bucketed into columns by `ListDetailKanbanBoard.completedTasksByColumn`, the same
+    /// `sectionGroups` call the open cards go through, so the two halves of a column cannot
+    /// disagree about which section a task is in. Empty by default: a caller that has no finished
+    /// half gets the board it always got, with no footer drawn anywhere.
+    var completedTasks: [AppTask] = []
     let sectionNames: [String]
     /// Colour/completion for the named columns. Names that only exist on a task (a section a list
     /// no longer configures) have no config and fall back to the list's own colour.
@@ -499,6 +511,13 @@ struct iOSListKanbanPanel: View {
         ListDetailKanbanBoard.columns(tasks: tasks, sectionNames: sectionNames)
     }
 
+    /// Finished cards keyed by the column title `columns` produces ([[T-9837]]). One pass for the
+    /// whole board rather than a filter per column: a SwiftUI computed property is recomputed at
+    /// every reference, and the body reaches this once per column inside a `ForEach` (T-1501).
+    private var completedByColumn: [String: [AppTask]] {
+        ListDetailKanbanBoard.completedTasksByColumn(tasks: completedTasks, sectionNames: sectionNames)
+    }
+
     var body: some View {
         Group {
             if !ListDetailKanbanBoard.drawsColumns(columns) {
@@ -524,6 +543,9 @@ struct iOSListKanbanPanel: View {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal) {
                         HStack(alignment: .top, spacing: 14) {
+                            // Derived once for the row, not once per column — see
+                            // `completedByColumn`.
+                            let finished = completedByColumn
                             ForEach(columns) { column in
                                 let identity = CadenceTaskDropSupport.groupIdentity(
                                     container: container,
@@ -535,6 +557,7 @@ struct iOSListKanbanPanel: View {
                                     dotColor: dotColor(for: column.title),
                                     dueDatePlan: dueDatePlan(for: column.title),
                                     tasks: column.tasks,
+                                    completedTasks: finished[column.title] ?? [],
                                     isHighlighted: isHighlighted(column.title),
                                     dropIdentity: identity,
                                     // [[T-8184]]: the header's drop identity, so a tap on the row
@@ -661,6 +684,14 @@ private struct iOSListKanbanColumn: View {
     /// way macOS sets it from the header popover.
     let dueDatePlan: CadenceBoardColumnDueDatePlan
     let tasks: [AppTask]
+    /// **The column's finished cards, drawn behind a collapsed "Completed N" toggle at the foot of
+    /// the stack** ([[T-9837]]) -- where macOS's `ListSectionKanbanColumn` closes with
+    /// `KanbanCompletedTasksToggle` over the same half and this column drew nothing at all.
+    ///
+    /// They are NOT in `tasks` and must not be: the header's count is the OPEN work, which is
+    /// macOS's rule and T-571's, and the toggle below carries its own count. Adding the two would
+    /// state one number twice over.
+    var completedTasks: [AppTask] = []
     /// Set for the one column a caller arrived here to look at. It is emphasis, not selection —
     /// nothing about the column behaves differently — so it draws a ring at the card radius and
     /// nothing else, and the panel takes it away after a beat.
@@ -683,6 +714,10 @@ private struct iOSListKanbanColumn: View {
     /// Without it a card could change column and never move within one.
     var onDropCard: ([String], AppTask?) -> Bool = { _, _ in false }
     @State private var isCardDropTargeted = false
+    /// **Collapsed on arrival**, as the Mac's toggle and the iOS Calendar Board's footer both are:
+    /// the board is for the work that is left, and finished cards are there to be found rather
+    /// than to be read past ([[T-9837]]).
+    @State private var isCompletedCollapsed = true
     /// The card a held card is over, for macOS's insertion line (`KanbanDraggableCard`'s 2pt top
     /// rule): where the drop will land, drawn on the card rather than as a second column layer.
     @State private var dropTargetTaskID: UUID?
@@ -744,6 +779,14 @@ private struct iOSListKanbanColumn: View {
                                 else if dropTargetTaskID == task.id { dropTargetTaskID = nil }
                             }
                     }
+
+                    // **Inside the scroller, after the cards** ([[T-9611]] settled that for the
+                    // Calendar Board's column: a footer pinned under the scroller is a second
+                    // thing competing for the column's height, and macOS puts its toggle in the
+                    // card stack). Same `LazyVStack`, so an expanded Completed section scrolls
+                    // with the work above it.
+                    completedFooter
+                        .padding(.top, tasks.isEmpty ? 0 : 2)
                 }
                 .padding(.horizontal, 4)
                 .padding(.top, 10)
@@ -768,6 +811,52 @@ private struct iOSListKanbanColumn: View {
         .dropDestination(for: String.self) { items, _ in
             onDropCard(items, nil)
         } isTargeted: { isCardDropTargeted = $0 }
+    }
+
+    /// **The "Completed N" row this column closes with** ([[T-9837]]).
+    ///
+    /// The shape is the iOS Calendar Board day column's, which is the in-app precedent and is
+    /// already the Mac's look through the one shared label ([[T-9835]]): the green count right
+    /// after the word on a hairlined surface plate, with iOS's 44pt touch floor the only platform
+    /// input. Drawing it a second way here is exactly what that ticket took out of the tree.
+    ///
+    /// Nothing is drawn when the column has no finished work, so a board of open columns looks
+    /// precisely as it did.
+    @ViewBuilder
+    private var completedFooter: some View {
+        if !completedTasks.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Button {
+                    withAnimation(.snappy(duration: 0.16)) {
+                        isCompletedCollapsed.toggle()
+                    }
+                } label: {
+                    CadenceBoardCompletedToggleLabel(
+                        count: completedTasks.count,
+                        isExpanded: !isCompletedCollapsed,
+                        minimumHeight: 44
+                    )
+                }
+                .buttonStyle(.iosPressable)
+                // [[T-9833]]: the disclosure states Expanded/Collapsed, in the words
+                // `iOSTaskGroupSection`'s Completed heading uses and macOS's
+                // `KanbanCompletedTasksToggle` has read since [[T-7081]].
+                .accessibilityValue(isCompletedCollapsed ? "Collapsed" : "Expanded")
+
+                if !isCompletedCollapsed {
+                    VStack(spacing: 8) {
+                        ForEach(completedTasks) { task in
+                            // The same card the open half draws, at the same width and with the
+                            // same container chip suppressed -- a finished card is not a different
+                            // kind of card, which is the Mac's position too.
+                            iOSBoardTaskCard(task: task, showsContainerChip: false)
+                                .draggable(TaskDragPayload.string(for: task.id))
+                        }
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+        }
     }
 }
 
