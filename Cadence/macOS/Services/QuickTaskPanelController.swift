@@ -417,13 +417,9 @@ private struct QuickTaskCaptureSuccessView: View {
         .padding(.horizontal, 22)
         .frame(width: 600, height: 150)
         .background(Theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Theme.borderSubtle.opacity(0.95), lineWidth: 1)
-        }
-        .shadow(color: Theme.overlayCardShadow, radius: 34, x: 0, y: 18)
-        .shadow(color: Theme.green.opacity(0.12), radius: 18, x: 0, y: 0)
+        // [[T-10041]]: the New Task panel's chrome, so the panel does not change shape when the
+        // form gives way to this card.
+        .cadenceOverlayCard(glow: Theme.green.opacity(0.12))
         .scaleEffect(isVisible ? 1 : 0.98)
         .opacity(isVisible ? 1 : 0)
         .onAppear {

@@ -675,12 +675,8 @@ struct HoveredTaskDatePickerOverlay: View {
                 .padding(20)
             }
             .frame(width: 360)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.radiusPanel)
-                    .fill(Theme.surface)
-                    .overlay(RoundedRectangle(cornerRadius: Theme.radiusPanel).strokeBorder(Theme.borderSubtle.opacity(0.4)))
-            )
-            .shadow(color: Theme.overlayCardShadow, radius: 24, x: 0, y: 14)
+            .background(Theme.surface)
+            .cadenceOverlayCard() // [[T-10041]]
         }
     }
 }
@@ -778,15 +774,8 @@ struct DeleteConfirmationOverlay: View {
             // Wider when a third button is on the row, so the two scoped labels keep their words
             // on one line (T-6115). Unchanged at 420 for every other delete.
             .frame(width: alternateLabel == nil ? 420 : 520)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.radiusPanel)
-                    .fill(Theme.surface)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.radiusPanel)
-                            .strokeBorder(Theme.borderSubtle, lineWidth: 1)
-                    )
-            )
-            .shadow(color: Theme.overlayCardShadow, radius: 28, x: 0, y: 16)
+            .background(Theme.surface)
+            .cadenceOverlayCard() // [[T-10041]]
         }
     }
 }

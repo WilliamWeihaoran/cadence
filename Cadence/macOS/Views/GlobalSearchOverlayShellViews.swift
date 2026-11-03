@@ -92,12 +92,7 @@ struct GlobalSearchOverlayShell<Content: View>: View {
             content()
                 .frame(width: 760, height: 620)
                 .background(Theme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous)
-                        .strokeBorder(Theme.borderSubtle.opacity(0.4), lineWidth: 1)
-                }
-                .shadow(color: Theme.overlayCardShadow, radius: 36, x: 0, y: 20)
+                .cadenceOverlayCard() // [[T-10041]]
         }
     }
 }

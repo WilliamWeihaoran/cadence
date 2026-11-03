@@ -23,13 +23,9 @@ struct CreateTaskPanelSurface: View {
             successAction: successAction
         )
             .ignoresSafeArea()
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle.opacity(0.95), lineWidth: 1)
-            }
-            .shadow(color: Theme.overlayCardShadow, radius: 34, x: 0, y: 18)
-            .shadow(color: Theme.blue.opacity(0.08), radius: 18, x: 0, y: 0)
+            // [[T-10041]]: the window-level overlay card chrome; the blue glow marks the one card
+            // that takes input.
+            .cadenceOverlayCard(glow: Theme.blue.opacity(0.08))
     }
 }
 
