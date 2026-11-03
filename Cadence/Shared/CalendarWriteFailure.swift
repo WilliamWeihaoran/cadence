@@ -39,10 +39,20 @@ nonisolated enum CalendarWriteFailure: Equatable {
         }
     }
 
-    var message: String {
+    /// The sentence for the platform this build is. Every alert and notice reads this one.
+    var message: String { message(on: .current) }
+
+    /// Only `.notAuthorized` differs by platform, because the place access is granted does.
+    ///
+    /// [[T-9572]]: it said "Grant Calendar access in Settings → Calendar", which on iOS reads as
+    /// the system Settings app's Calendar pane, where app access is not granted, and was a third
+    /// spelling of a state the Settings card and the Calendar page already describe. The remedy is
+    /// now `CadenceCalendarAccessNotice.detail(on:)`'s denied sentence, read rather than retyped,
+    /// so the alert and the card say one thing on each platform.
+    func message(on platform: CadenceCalendarAccessNotice.Platform) -> String {
         switch self {
         case .notAuthorized:
-            return "Cadence can't reach your calendars. Grant Calendar access in Settings → Calendar to create and edit events."
+            return "Cadence can't reach your calendars. \(CadenceCalendarAccessNotice.denied.detail(on: platform))"
         case .noWritableCalendar:
             return "No calendar is available to write to. The calendar may be read-only, or hidden in Settings → Calendar."
         case .invalidRange:

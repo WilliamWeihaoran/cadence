@@ -206,7 +206,7 @@ struct iOSCalendarSettingsSection: View {
                         .foregroundStyle(Theme.text)
 
                     Text(calendarManager.isDenied
-                         ? "Allow Cadence from the iOS Settings app to show Apple Calendar events."
+                         ? CadenceCalendarAccessNotice.denied.detail(on: .mobile)
                          : CadenceCalendarSettingsCopy.accessRequiredDetail)
                         .cadenceFont(.metadata, base: 12, weight: .regular)
                         .foregroundStyle(Theme.subdued)

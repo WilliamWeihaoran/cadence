@@ -58,6 +58,44 @@ struct CadenceCalendarAccessNoticeTests {
         #expect(CadenceCalendarAccessNotice.connectOffer.detail(on: .mobile) == CadenceCalendarSettingsCopy.accessRequiredDetail)
     }
 
+    /// [[T-9572]]: the missing-access write failure and both Settings cards say the denied sentence
+    /// from this one source, per platform. The alert used to say "Grant Calendar access in
+    /// Settings → Calendar", which on iOS reads as the system app's Calendar pane.
+    @Test func theMissingAccessWriteFailureAndBothSettingsCardsReadTheOneDeniedSentence() throws {
+        for platform in [CadenceCalendarAccessNotice.Platform.mac, .mobile] {
+            let message = CalendarWriteFailure.notAuthorized.message(on: platform)
+            #expect(message.hasSuffix(CadenceCalendarAccessNotice.denied.detail(on: platform)))
+            #expect(!message.contains("Settings → Calendar"), "the alert names Settings → Calendar again on \(platform)")
+        }
+        #expect(
+            CalendarWriteFailure.notAuthorized.message(on: .mac)
+                != CalendarWriteFailure.notAuthorized.message(on: .mobile)
+        )
+        // The build's own message is its platform's.
+        #expect(
+            CalendarWriteFailure.notAuthorized.message
+                == CalendarWriteFailure.notAuthorized.message(on: .current)
+        )
+        // The other causes are one sentence on both platforms.
+        for cause in [CalendarWriteFailure.noWritableCalendar, .invalidRange, .eventNotFound, .saveFailed("x")] {
+            #expect(cause.message(on: .mac) == cause.message(on: .mobile))
+        }
+
+        // Neither Settings card types the denied sentence beside the source it now reads.
+        let cards: [(path: String, platform: CadenceCalendarAccessNotice.Platform, call: String)] = [
+            ("Cadence/macOS/Views/SettingsListManagementSections.swift", .mac, "CadenceCalendarAccessNotice.denied.detail(on: .mac)"),
+            ("Cadence/iOS/iOSCalendarSettingsSection.swift", .mobile, "CadenceCalendarAccessNotice.denied.detail(on: .mobile)"),
+        ]
+        for card in cards {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(card.path))
+            #expect(code.contains(card.call), "\(card.path) no longer reads the denied sentence from the notice")
+            #expect(
+                !code.contains("\"\(CadenceCalendarAccessNotice.denied.detail(on: card.platform))\""),
+                "\(card.path) types the denied sentence again"
+            )
+        }
+    }
+
     // MARK: - The empty copy
 
     @Test func nothingThisMonthIsSaidOnlyWhenEventsCouldHaveBeenRead() {

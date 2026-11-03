@@ -223,7 +223,7 @@ struct SettingsCalendarSection: View {
                     ? CadenceCalendarSettingsCopy.accessDeniedTitle
                     : CadenceCalendarSettingsCopy.connectOfferTitle,
                 detail: calendarManager.isDenied
-                    ? "Allow Cadence from System Settings, Privacy & Security, Calendars."
+                    ? CadenceCalendarAccessNotice.denied.detail(on: .mac)
                     : CadenceCalendarSettingsCopy.accessRequiredDetail
             ) {
                 if calendarManager.isDenied {

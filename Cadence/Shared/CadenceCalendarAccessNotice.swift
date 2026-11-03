@@ -30,6 +30,16 @@ nonisolated enum CadenceCalendarAccessNotice: Equatable {
     enum Platform: Equatable {
         case mac
         case mobile
+
+        /// The platform this build is. Named rather than `#if`-ed at each caller so a test on the
+        /// Mac can still read the iOS sentence ([[T-9572]]: `CalendarWriteFailure` reads it here).
+        static var current: Platform {
+            #if os(macOS)
+            return .mac
+            #else
+            return .mobile
+            #endif
+        }
     }
 
     /// `nil` means the page can read events (or is showing fixture events, which stand in for
