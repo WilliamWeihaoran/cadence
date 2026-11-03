@@ -154,11 +154,15 @@ struct MonthTaskChip: View {
     /// has no contrast budget at all. It becomes the plate's own tertiary tier, which is solved
     /// against the fill the glyph actually lands on.
     private var glyphTint: Color {
-        if let settled = CadenceCalendarTaskDoneStyle.chipGlyphTint(for: .resolve(task: task)) { return settled }
-        // No due date is not urgency-free noise: it collapses to the same neutral `.later`
-        // tint, so only a real deadline ever colours the circle.
-        return CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone, todayKey: todayKey)?.tint
-            ?? CadenceCalendarEventStyle.plateTertiaryLabelColor()
+        // Settled state, then due urgency, then this plate's own neutral tier -- one decision in
+        // `Shared/`, which iOS's `iOSCalendarMiniChip` reads too ([[T-8243]]). It used to be
+        // spelled out here and again, verbatim, in `AllDayTaskChip` below.
+        CadenceCalendarTaskDoneStyle.chipGlyphTint(
+            for: .resolve(task: task),
+            dueDateKey: task.dueDate,
+            todayKey: todayKey,
+            open: CadenceCalendarEventStyle.plateTertiaryLabelColor()
+        )
     }
 
     var body: some View {
@@ -715,13 +719,16 @@ struct AllDayTaskChip: View {
     var todayKey: String = DateFormatters.todayKey()
     @State private var showInspector = false
 
-    /// Same rule as `MonthTaskChip.glyphTint`, and for the same reason: urgency and done-green are
-    /// information that survives the plate, `Theme.dim` is a grey solved against `Theme.bg` that
-    /// does not.
+    /// Same rule as `MonthTaskChip.glyphTint`, and now literally the same call: urgency and
+    /// done-green are information that survives the plate, `Theme.dim` is a grey solved against
+    /// `Theme.bg` that does not, so the plate's own tertiary tier is the no-deadline fallback.
     private var allDayGlyphTint: Color {
-        if let settled = CadenceCalendarTaskDoneStyle.chipGlyphTint(for: .resolve(task: task)) { return settled }
-        return CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone, todayKey: todayKey)?.tint
-            ?? CadenceCalendarEventStyle.plateTertiaryLabelColor()
+        CadenceCalendarTaskDoneStyle.chipGlyphTint(
+            for: .resolve(task: task),
+            dueDateKey: task.dueDate,
+            todayKey: todayKey,
+            open: CadenceCalendarEventStyle.plateTertiaryLabelColor()
+        )
     }
 
     var body: some View {

@@ -1069,6 +1069,7 @@ private struct iOSCalendarTimelineDayHeader: View {
                 allDayEvents: allDayEvents,
                 unscheduledTasks: unscheduledTasks,
                 split: split,
+                todayKey: todayKey,
                 onOpenEvent: onOpenEvent,
                 onSelectDay: action,
                 draftTitle: draftTitle
@@ -1108,6 +1109,10 @@ private struct iOSCalendarAllDayBandChips: View {
     let allDayEvents: [EKEvent]
     let unscheduledTasks: [AppTask]
     let split: CadenceCalendarMonthCellPriority.Split
+    /// The band's observed day ([[T-5010]]), which the unscheduled task chips' due-urgency tint
+    /// measures against ([[T-8243]]). Defaulted because the single-day strip below draws no task
+    /// chips at all, so it has no day to hand down and nothing that would read one.
+    var todayKey: String = DateFormatters.todayKey()
     /// What a tap on an all-day event chip does, or nil for a chip that takes no tap ([[T-5356]]).
     /// Both callers pass the grid's opener now — the owner's answer was that a chip in the
     /// scrolling grid's day header opens its event too, and the header gets there by drawing this
@@ -1158,7 +1163,12 @@ private struct iOSCalendarAllDayBandChips: View {
                     icon: "circle.dashed",
                     color: Color(hex: task.containerColor),
                     isUnscheduled: true,
-                    completion: .resolve(task: task)
+                    completion: .resolve(task: task),
+                    // **The open glyph's due urgency, as on the Mac's all-day lane** ([[T-8243]]).
+                    // The dashed rim says "no time yet"; this says whether the deadline has already
+                    // gone. They are different facts and the band now carries both.
+                    dueDateKey: task.dueDate,
+                    todayKey: todayKey
                 )
                 // **It drags as its task, onto the grid below** ([[T-8143]]) -- the Mac's all-day
                 // lane chip does (`calendarTaskChipInteractions`, `.draggable(task.id.uuidString)`)

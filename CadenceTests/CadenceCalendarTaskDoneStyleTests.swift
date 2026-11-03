@@ -74,7 +74,12 @@ struct CadenceCalendarTaskDoneStyleTests {
         let chip = try #require(CadenceSourceScan.declarationBody("struct iOSCalendarMiniChip: View", in: month))
         #expect(chip.contains("var completion: CadenceTaskCompletionState? = nil"))
         #expect(chip.contains("CadenceCalendarTaskDoneStyle.chipGlyphSymbol(for: $0, open: icon)"))
-        #expect(chip.contains("completion.flatMap { CadenceCalendarTaskDoneStyle.chipGlyphTint(for: $0) } ?? openGlyphTint"))
+        // [[T-8243]] folded the open leg into the shared call, so the chip asks ONE question and
+        // an event -- no completion, no deadline -- is the only thing that keeps the flat tier.
+        #expect(chip.contains("guard let completion else { return openGlyphTint }"))
+        #expect(chip.contains("CadenceCalendarTaskDoneStyle.chipGlyphTint("))
+        #expect(chip.contains("dueDateKey: dueDateKey,"))
+        #expect(chip.contains("open: openGlyphTint"))
         #expect(chip.contains("CadenceCalendarTaskDoneStyle.dimsTitle(for: completion)"))
         #expect(chip.contains(".foregroundStyle(titleInk)"))
 
@@ -92,7 +97,15 @@ struct CadenceCalendarTaskDoneStyleTests {
         for declaration in ["struct MonthTaskChip: View", "struct AllDayTaskChip: View"] {
             let body = try #require(CadenceSourceScan.declarationBody(declaration, in: macOS))
             #expect(body.contains("CadenceCalendarTaskDoneStyle.chipGlyphSymbol(for: .resolve(task: task), open: \"circle\")"), "\(declaration)")
-            #expect(body.contains("CadenceCalendarTaskDoneStyle.chipGlyphTint(for: .resolve(task: task))"), "\(declaration)")
+            // One shared call for the whole ladder since [[T-8243]] -- settled tint, then due
+            // urgency, then this plate's neutral tier -- rather than the settled call plus a
+            // `CadenceDueUrgency.evaluate` the Mac spelled out twice and iOS not at all.
+            let dense = body.filter { !$0.isWhitespace }
+            #expect(
+                dense.contains("CadenceCalendarTaskDoneStyle.chipGlyphTint(for:.resolve(task:task),dueDateKey:task.dueDate,todayKey:todayKey,open:CadenceCalendarEventStyle.plateTertiaryLabelColor())"),
+                "\(declaration)"
+            )
+            #expect(!dense.contains("CadenceDueUrgency.evaluate"), "\(declaration) kept its own copy of the urgency ladder")
         }
     }
 }

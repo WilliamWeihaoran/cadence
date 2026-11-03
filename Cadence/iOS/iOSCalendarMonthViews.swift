@@ -598,7 +598,11 @@ private struct iOSCalendarMonthDayCell: View {
                     title: TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle),
                     icon: "circle.fill",
                     color: Color(hex: task.containerColor),
-                    completion: .resolve(task: task)
+                    completion: .resolve(task: task),
+                    // [[T-8243]]: the cell's own observed day, not a fresh clock read inside each
+                    // chip, so every chip in the grid turns over at the midnight the badges do.
+                    dueDateKey: task.dueDate,
+                    todayKey: todayKey
                 )
                 .modifier(iOSCalendarMonthChipOpen(onOpen: opens ? { taskInspector(task) } : nil))
             }
@@ -741,6 +745,29 @@ struct iOSCalendarMiniChip: View {
     /// are `CadenceCalendarTaskDoneStyle`'s, the same decision macOS's `MonthTaskChip` and
     /// `AllDayTaskChip` read. `nil` is an event, or a task chip drawn without a state.
     var completion: CadenceTaskCompletionState? = nil
+    /// **The task's deadline, so an OPEN chip's circle can carry its urgency** ([[T-8243]]).
+    ///
+    /// macOS tints an open chip glyph red when the task is overdue and amber when it is due today;
+    /// every open glyph here was one flat `plateTertiaryLabelColor()`, so an iPhone chip said
+    /// nothing about a deadline the same chip on the Mac shouted about. Nothing about touch
+    /// explains that, which is [[T-8201]]'s test, and the rule both now read is
+    /// `CadenceCalendarTaskDoneStyle.chipGlyphTint(for:dueDateKey:todayKey:open:)`.
+    ///
+    /// Empty -- the default, and what an event chip passes -- means no deadline, and the glyph
+    /// keeps the neutral tier it always had. The chip takes the KEY rather than the task because
+    /// it is handed events too, and an event has no task to read it from.
+    ///
+    /// **macOS's SECOND due-date channel is deliberately not here.** That one is
+    /// `CalendarChipDueMarker`, a 9pt date drawn after the title and given layout priority OVER
+    /// it. This chip is a column of a seven-column grid: on the owner's 393pt iPhone that column
+    /// is about 56pt wide and the title is already down to a few characters, so a marker that wins
+    /// the width contest would leave no title at all. That is a screen-width reason, the kind
+    /// [[T-8201]] accepts, and it is why only the tint -- which costs no width whatever -- crossed.
+    /// The marker half is [[T-10821]], where the iPad's much wider cell is the open question.
+    var dueDateKey: String = ""
+    /// The surface's observed day ([[T-5010]]), so a chip left on screen past midnight re-tints
+    /// with the grid around it instead of holding yesterday's red.
+    var todayKey: String = DateFormatters.todayKey()
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
@@ -786,10 +813,22 @@ struct iOSCalendarMiniChip: View {
             : CadenceCalendarEventStyle.plateTertiaryLabelColor()
     }
 
+    /// An event carries no completion and no deadline, so it keeps the flat tier; a task's glyph
+    /// is the shared settled-then-urgency ladder over that same tier ([[T-8243]]).
+    private var glyphTint: Color {
+        guard let completion else { return openGlyphTint }
+        return CadenceCalendarTaskDoneStyle.chipGlyphTint(
+            for: completion,
+            dueDateKey: dueDateKey,
+            todayKey: todayKey,
+            open: openGlyphTint
+        )
+    }
+
     private var glyph: some View {
         Image(systemName: completion.map { CadenceCalendarTaskDoneStyle.chipGlyphSymbol(for: $0, open: icon) } ?? icon)
             .cadenceFont(.metadata, base: 8, weight: .semibold)
-            .foregroundStyle(completion.flatMap { CadenceCalendarTaskDoneStyle.chipGlyphTint(for: $0) } ?? openGlyphTint)
+            .foregroundStyle(glyphTint)
     }
 
     private var titleInk: Color {

@@ -127,7 +127,11 @@ struct CadenceCodexRefreshRegressionTests {
         #expect(header.contains("AllDayTaskChip(task: task, dayKey: DateFormatters.dateKey(from: date), todayKey: todayKey)"))
         for declaration in ["struct MonthTaskChip", "struct AllDayTaskChip"] {
             let chip = try #require(CadenceSourceScan.declarationBody(declaration, in: month))
-            #expect(chip.contains("dueDateKey: task.dueDate, isDone: task.isDone, todayKey: todayKey"))
+            // The claim is the OBSERVED day, not the spelling: since [[T-8243]] the chip asks
+            // `CadenceCalendarTaskDoneStyle.chipGlyphTint` for the whole ladder and hands it the
+            // grid's `todayKey`, where it used to call `CadenceDueUrgency.evaluate` itself.
+            let dense = chip.filter { !$0.isWhitespace }
+            #expect(dense.contains("dueDateKey:task.dueDate,todayKey:todayKey"))
             #expect(chip.contains("CalendarChipDueMarker(dueDateKey: task.dueDate, dayKey: dayKey, todayKey: todayKey, isDone: task.isDone)"))
         }
         let marker = try #require(CadenceSourceScan.declarationBody("struct CalendarChipDueMarker", in: month))

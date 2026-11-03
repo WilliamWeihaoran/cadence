@@ -33,6 +33,39 @@ enum CadenceCalendarTaskDoneStyle {
         }
     }
 
+    /// **The whole of a calendar task chip's glyph tint, settled state or open** ([[T-8243]]).
+    ///
+    /// The two settled tints are `chipGlyphTint(for:)` above. An OPEN task's circle is tinted by
+    /// `CadenceDueUrgency`, which is how a chip says "overdue" or "due soon" at a glance — macOS's
+    /// `MonthTaskChip` and `AllDayTaskChip` have done that since the urgency classifier existed,
+    /// and `iOSCalendarMiniChip` drew every open glyph in one flat tertiary tier, so on iPhone and
+    /// iPad the channel did not exist at all. Nothing about a finger explains a missing colour, so
+    /// under [[T-8201]] that was drift; this is the one decision both platforms now read, which is
+    /// what [[T-8243]] asked for rather than a second copy of the rule on the iOS side.
+    ///
+    /// `open` is the caller's own no-deadline tier, and it has to be the caller's: the Mac's month
+    /// chip and the iOS mini chip are solved against different plates, so a shared literal here
+    /// would land one of them on a fill it has no contrast budget against.
+    ///
+    /// A task with **no** due date is not urgency-free noise — `evaluate` answers `nil` and the
+    /// glyph falls back to `open`, so only a real deadline ever colours the circle.
+    static func chipGlyphTint(
+        for state: CadenceTaskCompletionState,
+        dueDateKey: String,
+        todayKey: String = DateFormatters.todayKey(),
+        open: Color
+    ) -> Color {
+        if let settled = chipGlyphTint(for: state) { return settled }
+        // False by construction at this point — every settled state returned above — and passed
+        // anyway so the two guards cannot disagree if the settled set ever grows a member that
+        // keeps the caller's open tint. `evaluate` collapses a finished task to `.later`.
+        return CadenceDueUrgency.evaluate(
+            dueDateKey: dueDateKey,
+            isDone: state.isSettled,
+            todayKey: todayKey
+        )?.tint ?? open
+    }
+
     /// A done task's title drops one ink tier rather than going grey; a cancelled one does not,
     /// which is macOS's long-standing rule (`task.isDone`).
     static func dimsTitle(for state: CadenceTaskCompletionState) -> Bool {

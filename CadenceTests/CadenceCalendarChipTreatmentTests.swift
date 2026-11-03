@@ -570,8 +570,11 @@ struct CadenceCalendarChipTreatmentTests {
         )
         #expect(
             dayHeader.filter { !$0.isWhitespace }
-                .contains("iOSCalendarAllDayBandChips(allDayEvents:allDayEvents,unscheduledTasks:unscheduledTasks,split:split,onOpenEvent:onOpenEvent,onSelectDay:action,draftTitle:draftTitle)"),
-            "the week header no longer hands the shared chip stack its day's two lists, its opener and its draft"
+                .contains("iOSCalendarAllDayBandChips(allDayEvents:allDayEvents,unscheduledTasks:unscheduledTasks,split:split,todayKey:todayKey,onOpenEvent:onOpenEvent,onSelectDay:action,draftTitle:draftTitle)"),
+            // `todayKey` joined the argument list under [[T-8243]]: the band's unscheduled task
+            // chips tint their open glyph by due urgency and must measure it against the grid's
+            // observed day rather than a clock read inside each chip ([[T-5010]]).
+            "the week header no longer hands the shared chip stack its day's two lists, its observed day, its opener and its draft"
         )
 
         let dense = header.filter { !$0.isWhitespace }
