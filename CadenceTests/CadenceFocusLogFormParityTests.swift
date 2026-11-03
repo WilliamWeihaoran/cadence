@@ -254,6 +254,16 @@ struct CadenceFocusLogFormParityTests {
         #expect(macView.contains("foreground: focusManager.elapsed > 0 ? Theme.green : Theme.muted"))
     }
 
+    /// **[[T-9976]]: the "Mark task as complete" switch is blue like every other iOS switch.** It
+    /// was the one green track in the app; a switch says on/off, and completion's green belongs to
+    /// actions. The sheet sets no tint of its own, so the root palette's blue reaches it.
+    @Test func theIOSCompletionSwitchTakesTheRootTintLikeEveryOtherSwitch() throws {
+        let sheet = try Self.code(Self.iosSheetPath)
+        #expect(sheet.contains("Toggle(isOn: $markComplete)"), "non-vacuity: the switch is in this file")
+        #expect(CadenceSourceScan.matchCount(#"\.tint\("#, in: sheet) == 0,
+                "the Log Session sheet tints its completion switch its own colour")
+    }
+
     /// Both screens perform the same write, and neither spells the bank itself.
     @Test func bothScreensLogThroughTheOneSharedWrite() throws {
         for path in [Self.iosViewPath, "Cadence/macOS/Views/FocusSessionSupport.swift"] {

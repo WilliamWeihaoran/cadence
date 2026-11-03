@@ -112,7 +112,8 @@ struct iOSFocusLogSessionSheet: View {
                     .foregroundStyle(Theme.text)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .tint(Theme.green)
+            // No `.tint` of its own ([[T-9976]]): the track takes the root's palette blue like every
+            // other iOS switch. A switch says on/off; completion's green is carried by actions.
             .frame(minHeight: 44)
         }
         .padding(.horizontal, 18)
