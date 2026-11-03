@@ -956,8 +956,9 @@ private struct iOSCalendarTimelineDayHeader: View {
     /// this view's to choose; a chip drawn above the button is simply the topmost hit-testable
     /// thing at that point, and everything the chips do not cover falls through to the button
     /// beneath. The "+N more" line takes no hit at all, so the day is still selectable through it;
-    /// an unscheduled task chip takes the hit because it is a drag source ([[T-8143]]) and hands
-    /// its tap on to `action`, so the day is selectable through it too.
+    /// an unscheduled task chip takes the hit because it is a drag source ([[T-8143]]) and since
+    /// [[T-9613]] OPENS ITS TASK with it, as the event chip beside it opens its event and as the
+    /// Mac's all-day lane chip does. The day is selected everywhere the chips do not cover.
     let onOpenEvent: (EKEvent) -> Void
     /// The all-day draft this day is composing ([[T-8851]]); see `iOSCalendarAllDayBandChips`.
     var draftTitle: String? = nil
@@ -1071,7 +1072,6 @@ private struct iOSCalendarTimelineDayHeader: View {
                 split: split,
                 todayKey: todayKey,
                 onOpenEvent: onOpenEvent,
-                onSelectDay: action,
                 draftTitle: draftTitle
             )
             .frame(
@@ -1120,10 +1120,15 @@ private struct iOSCalendarAllDayBandChips: View {
     /// a chip that opens nothing is still a legal thing to draw, and a caller that passes nothing
     /// should get the chip it always got rather than a dead button.
     var onOpenEvent: ((EKEvent) -> Void)? = nil
-    /// What a tap on an unscheduled task chip does: selects the day, exactly as a tap on the band
-    /// around it does. The chip takes the hit now -- it is a drag source ([[T-8143]]) -- so the tap
-    /// it used to let fall through to the header's `Button` is handed on here instead.
-    var onSelectDay: (() -> Void)? = nil
+    /// **A tap on an unscheduled task chip OPENS THE TASK** ([[T-9613]], under [[T-8201]]).
+    ///
+    /// It used to be handed back to the header's select-the-day action, which left the band's
+    /// two chip kinds answering a tap differently on one strip -- an all-day EVENT chip
+    /// beside it already opened its editor ([[T-5356]]) -- and left the same chip behaving
+    /// differently from the Mac's, where `calendarTaskChipInteractions` opens `TaskDetailPopover`.
+    /// The candidate hardware reason was touch-target size, a ~17pt chip under a finger; it does
+    /// not hold, because the event chip is the same 17pt and has opened since [[T-5356]].
+    ///
     /// **The all-day DRAFT this day is composing, if any** ([[T-8851]]) --
     /// `CadenceCalendarAllDayDraftSession.chipTitle`. It is drawn FIRST and is never rationed by
     /// `split`: a draft is the thing the user is typing right now, so it cannot be the row that
@@ -1135,6 +1140,11 @@ private struct iOSCalendarAllDayBandChips: View {
     /// top of the column and off the visible pane; `CadenceCalendarDraftPlacement` is the rule
     /// that moved it here, and the Mac's ghost obeys the same one.
     var draftTitle: String? = nil
+
+    /// T-201's rule: the PAGE's `iOSTaskInspectorHost` presents the task a chip opens, not this
+    /// stack, which is a `ForEach` row its own query rebuilds. Declared below the stored
+    /// properties so the memberwise initialiser its two callers use is unchanged by it.
+    @Environment(\.iOSTaskInspector) private var taskInspector
 
     var body: some View {
         VStack(alignment: .leading, spacing: iOSCalendarTimelineMetrics.bandLineSpacing) {
@@ -1170,16 +1180,19 @@ private struct iOSCalendarAllDayBandChips: View {
                     dueDateKey: task.dueDate,
                     todayKey: todayKey
                 )
+                // **The event chip's own four modifiers, for the task chip's own opener**
+                // ([[T-9613]]): the same `iOSCalendarAllDayChipOpen` the all-day event beside it
+                // wears, so the band cannot grow two spellings of "this chip is a button". The
+                // chip has taken the hit since [[T-8143]] -- it is a drag source -- and in the
+                // week header this stack is drawn ABOVE the select-the-day button, so what the
+                // hit MEANS is this view's to choose; until now it chose to hand the tap back to
+                // the day. The day is still selectable everywhere the chips do not cover, which
+                // is what the hit-testable `Color.clear` inside the Button's label is for.
+                .modifier(iOSCalendarAllDayChipOpen(onOpen: { taskInspector(task) }))
                 // **It drags as its task, onto the grid below** ([[T-8143]]) -- the Mac's all-day
                 // lane chip does (`calendarTaskChipInteractions`, `.draggable(task.id.uuidString)`)
                 // and nothing about a finger says otherwise ([[T-8201]]). Without it the Calendar
                 // page's day columns accepted a dropped task that nothing on the page could start.
-                // It used to take no hit at all ([[T-5356]]), because in the week header this stack
-                // is drawn ABOVE the select-the-day button and a chip that swallowed the tap would
-                // make part of the band dead -- so the tap is handed on to `onSelectDay`, and the
-                // band selects its day through the chip exactly as it did around it.
-                .contentShape(Rectangle())
-                .onTapGesture { onSelectDay?() }
                 // Same payload, plus the chip's task NAMED on the item it hands over, so the
                 // column below can draw it at its own length ([[T-8451]]).
                 .timelineTaskDragSource(taskID: task.id)
@@ -1196,9 +1209,15 @@ private struct iOSCalendarAllDayBandChips: View {
     }
 }
 
-/// Makes an all-day event chip open its event, when its caller gave it an opener ([[T-5356]]):
-/// the whole chip takes the tap, and VoiceOver hears a button it can activate. Without an opener
-/// the chip is left exactly as it was, so the day header's own tap is not stolen.
+/// Makes a band chip open its item, when its caller gave it an opener ([[T-5356]]): the whole chip
+/// takes the tap, and VoiceOver hears a button it can activate. Without an opener the chip is left
+/// exactly as it was, so the day header's own tap is not stolen.
+///
+/// **Both chip kinds wear it since [[T-9613]]** -- the all-day event opens its editor, the
+/// unscheduled task opens the page's inspector -- which is the point: the band's two chips used to
+/// answer a tap differently, and one modifier is how they cannot drift apart again. The Month
+/// grid's `iOSCalendarMonthChipOpen` is deliberately a separate declaration in its own file rather
+/// than a rename of this one; see it for why.
 private struct iOSCalendarAllDayChipOpen: ViewModifier {
     let onOpen: (() -> Void)?
 

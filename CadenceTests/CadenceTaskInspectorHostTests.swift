@@ -175,12 +175,16 @@ struct CadenceTaskInspectorHostTests {
         // still drawn on that pane are `iOSTimelineTaskBlock`, which asks from the file above it.
         // The entry stays at `0` rather than leaving the list, for the same reason the four `0`s in
         // the check above stay: this pane presenting an inspector again is the regression.
+        // The calendar timeline file asks TWICE since [[T-9613]]: the timed task block it always
+        // had, and the all-day band's unscheduled task chip, which used to spend its tap on
+        // selecting the day instead of opening the task it names. Two askers, still zero sheets --
+        // which is the claim this test is about.
         try expectOccurrences(
             of: "taskInspector(task)",
             at: [
                 "Cadence/iOS/iOSTaskViews.swift": 1,
                 "Cadence/iOS/iOSBoardCards.swift": 1,
-                "Cadence/iOS/iOSCalendarTimelineViews.swift": 1,
+                "Cadence/iOS/iOSCalendarTimelineViews.swift": 2,
                 "Cadence/iOS/iOSTodaySchedulePanel.swift": 0
             ]
         )
@@ -189,7 +193,7 @@ struct CadenceTaskInspectorHostTests {
             at: [
                 "Cadence/iOS/iOSTaskViews.swift": 1,
                 "Cadence/iOS/iOSBoardCards.swift": 1,
-                "Cadence/iOS/iOSCalendarTimelineViews.swift": 1,
+                "Cadence/iOS/iOSCalendarTimelineViews.swift": 2,
                 "Cadence/iOS/iOSTodaySchedulePanel.swift": 0
             ]
         )

@@ -1661,6 +1661,10 @@ struct CadenceTimelineEventOpenTests {
         #expect(modifier.contains(".onTapGesture { onOpen() }"), "the chip takes no tap")
         #expect(modifier.contains(".accessibilityAddTraits(.isButton)"))
         #expect(modifier.contains(".accessibilityAction { onOpen() }"), "VoiceOver cannot open the all-day event")
+        // One modifier for BOTH chip kinds since [[T-9613]] -- the event's editor and the task's
+        // inspector -- so the band cannot grow two spellings of "this chip is a button".
+        #expect(CadenceSourceScan.matchCount(#"iOSCalendarAllDayChipOpen\("#, in: chips) == 2,
+                "the band's two chips no longer wear the same opener")
 
         // The scrolling header is a Button that selects the day, and the owner's answer (option
         // (a), 2026-10-24) is that a chip inside it opens the event anyway. It gets there by
@@ -1706,14 +1710,18 @@ struct CadenceTimelineEventOpenTests {
         #expect(!header.contains("children: .combine"))
 
         // The overflow line lets the tap through to the day button beneath it. The unscheduled
-        // chip takes the hit since [[T-8143]] -- it drags as its task -- and hands the tap on to
-        // the same select-the-day action instead of swallowing it.
+        // chip takes the hit since [[T-8143]] -- it drags as its task -- and since [[T-9613]] it
+        // spends that hit on OPENING the task, through the same `iOSCalendarAllDayChipOpen` the
+        // event chip above it wears, rather than handing the tap back to the day.
         let taskChip = try #require(chips.range(of: "isUnscheduled: true"))
-        let handedOn = try #require(
-            chips.range(of: ".onTapGesture { onSelectDay?() }", range: taskChip.upperBound..<chips.endIndex),
-            "the unscheduled chip swallows the week header's select-the-day tap without acting on it"
+        let opensTask = try #require(
+            chips.range(of: ".modifier(iOSCalendarAllDayChipOpen(onOpen: { taskInspector(task) }))",
+                        range: taskChip.upperBound..<chips.endIndex),
+            "the unscheduled chip opens no task, so the band's two chip kinds answer a tap differently"
         )
-        #expect(handedOn.lowerBound > taskChip.upperBound)
+        #expect(opensTask.lowerBound > taskChip.upperBound)
+        #expect(!chips.contains("onSelectDay"),
+                "the band chip hands its tap back to the day again, which is the [[T-9613]] defect")
         #expect(CadenceSourceScan.matchCount(#"\.allowsHitTesting\(false\)"#, in: chips) == 1,
                 "the overflow line no longer passes the tap through")
     }

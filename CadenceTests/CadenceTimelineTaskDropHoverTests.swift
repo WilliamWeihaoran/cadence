@@ -298,9 +298,13 @@ struct CadenceTimelineTaskDropHoverTests {
         }
     }
 
-    /// [[T-8143]]: the Calendar page's unscheduled chips drag as their task, and a tap on one still
-    /// selects the day, as it did when the chip let the tap fall through.
-    @Test func theUnscheduledBandChipDragsAsItsTaskAndStillSelectsTheDay() throws {
+    /// [[T-8143]]: the Calendar page's unscheduled chips drag as their task. Since [[T-9613]] a
+    /// TAP on one opens the task rather than selecting the day -- the all-day event chip beside it
+    /// has opened its editor since [[T-5356]], and the Mac's all-day lane chip opens its inspector,
+    /// so a chip that answered a tap with "select the day" was the band disagreeing with itself and
+    /// with the other platform ([[T-8201]]). The drag half is unchanged and is still pinned here,
+    /// because the two share one press and it is the lift that pays for the chip taking the hit.
+    @Test func theUnscheduledBandChipDragsAsItsTaskAndOpensItOnATap() throws {
         let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(timelineFile))
         let chips = try #require(
             CadenceSourceScan.declarationBody("private struct iOSCalendarAllDayBandChips: View", in: code)
@@ -312,14 +316,20 @@ struct CadenceTimelineTaskDropHoverTests {
                 "the unscheduled chip no longer offers its task to the grid")
         #expect(CadenceSourceScan.matchCount(#"\.allowsHitTesting\(false\)"#, in: taskStack) == 0,
                 "the unscheduled chip takes no hit again, so it cannot start a drag")
-        #expect(CadenceSourceScan.matchCount(#"\.onTapGesture \{ onSelectDay\?\(\) \}"#, in: taskStack) == 1,
-                "a tap on the chip no longer selects the day")
+        #expect(CadenceSourceScan.matchCount(#"iOSCalendarAllDayChipOpen\(onOpen: \{ taskInspector\(task\) \}\)"#, in: taskStack) == 1,
+                "a tap on the unscheduled chip opens no task ([[T-9613]])")
+        // The retired behaviour, named so a revert cannot pass quietly.
+        #expect(CadenceSourceScan.matchCount(#"onSelectDay"#, in: chips) == 0,
+                "the band chip hands its tap back to the day again, which is the [[T-9613]] defect")
 
         let header = try #require(
             CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayHeader: View", in: code)
         )
-        #expect(CadenceSourceScan.matchCount(#"onSelectDay: action"#, in: header) == 1,
-                "the week header no longer hands its select-the-day action to the chips it draws over")
+        #expect(CadenceSourceScan.matchCount(#"onSelectDay"#, in: header) == 0,
+                "the week header still hands the chips a select-the-day action they no longer have a use for")
+        // T-201: the page's one host presents, so the stack asks rather than owning a sheet.
+        #expect(CadenceSourceScan.matchCount(#"@Environment\(\\\.iOSTaskInspector\) private var taskInspector"#, in: chips) == 1,
+                "the band opens a task some way other than the page's one inspector host")
     }
 
     // MARK: - [[T-8455]]: at one grid step the plate still states its time

@@ -570,10 +570,12 @@ struct CadenceCalendarChipTreatmentTests {
         )
         #expect(
             dayHeader.filter { !$0.isWhitespace }
-                .contains("iOSCalendarAllDayBandChips(allDayEvents:allDayEvents,unscheduledTasks:unscheduledTasks,split:split,todayKey:todayKey,onOpenEvent:onOpenEvent,onSelectDay:action,draftTitle:draftTitle)"),
+                .contains("iOSCalendarAllDayBandChips(allDayEvents:allDayEvents,unscheduledTasks:unscheduledTasks,split:split,todayKey:todayKey,onOpenEvent:onOpenEvent,draftTitle:draftTitle)"),
             // `todayKey` joined the argument list under [[T-8243]]: the band's unscheduled task
             // chips tint their open glyph by due urgency and must measure it against the grid's
             // observed day rather than a clock read inside each chip ([[T-5010]]).
+            // The select-the-day closure left the argument list under [[T-9613]]: an unscheduled
+            // task chip opens its task now, so nothing in the stack wanted the day's action.
             "the week header no longer hands the shared chip stack its day's two lists, its observed day, its opener and its draft"
         )
 
