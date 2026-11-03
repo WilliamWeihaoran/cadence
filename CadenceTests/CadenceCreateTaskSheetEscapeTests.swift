@@ -26,7 +26,7 @@ struct CadenceCreateTaskSheetEscapeTests {
     @Test func theCancelButtonTakesEscape() throws {
         let compact = try Self.sheetBody()
         #expect(
-            compact.contains(#".buttonStyle(.cadencePlain).keyboardShortcut(.cancelAction).accessibilityLabel("Cancel")"#),
+            compact.contains(#".buttonStyle(.cadencePlain).keyboardShortcut(.cancelAction).cadenceControlLabel("Cancel")"#),
             "Escape must close the create-task sheet, from the same ✕ a click uses"
         )
         #expect(

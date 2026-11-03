@@ -202,7 +202,7 @@ struct CreateTaskSheet: View {
             // T-673: the glyph says "remove"; VoiceOver still needs to know remove *what* — a
             // draft subtask has no model yet, so the row hands down its own text, normalised the
             // same way an unnamed one would render.
-            .accessibilityLabel("Remove")
+            .cadenceControlLabel("Remove")
             .accessibilityValue(TaskTitleSupport.displayTitle(
                 draft.wrappedValue.title,
                 fallback: TaskTitleSupport.defaultCompactDisplayTitle
@@ -284,7 +284,9 @@ struct CreateTaskSheet: View {
             // pickers are popovers — their own windows — so this window's key equivalent does not
             // take Escape from them.
             .keyboardShortcut(.cancelAction)
-            .accessibilityLabel("Cancel")
+            // [[T-10230]]: name and tooltip from one string, as every other icon-only Mac
+            // control has them; the panel's three glyph buttons drew no tooltip.
+            .cadenceControlLabel("Cancel")
 
             Button(action: createTask) {
                 Image(systemName: "arrow.right")
@@ -298,7 +300,7 @@ struct CreateTaskSheet: View {
             .disabled(trimmedTitle.isEmpty)
             .opacity(trimmedTitle.isEmpty ? 0.5 : 1)
             .keyboardShortcut(.return, modifiers: [.command])
-            .accessibilityLabel("Create Task")
+            .cadenceControlLabel("Create Task")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

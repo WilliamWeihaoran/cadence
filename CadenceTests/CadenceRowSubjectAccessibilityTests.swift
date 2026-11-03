@@ -37,7 +37,8 @@ struct CadenceRowSubjectAccessibilityTests {
             CadenceSourceScan.declarationBody("private func subtaskRow(_ draft: Binding<CreateTaskSubtaskDraft>) -> some View", in: source)
         )
 
-        #expect(body.contains(#".accessibilityLabel("Remove")"#))
+        // [[T-10230]]: the name now arrives with its tooltip, through `cadenceControlLabel`.
+        #expect(body.contains(#".cadenceControlLabel("Remove")"#))
         #expect(body.contains(".accessibilityValue(TaskTitleSupport.displayTitle("))
         // The subject: this row's own draft text, not the model `Subtask` (there is none yet).
         // Since T-6452 the row is bound to its draft by identity rather than by index.

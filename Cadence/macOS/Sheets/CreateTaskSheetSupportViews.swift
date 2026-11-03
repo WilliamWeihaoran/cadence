@@ -78,9 +78,10 @@ struct TaskPriorityPicker: View {
                     .foregroundStyle(valueColor)
                     .frame(width: 22, height: 22)
                     .contentShape(Rectangle())
-                    .accessibilityLabel("Priority")
             }
             .buttonStyle(.cadencePlain)
+            // [[T-10230]]: on the button, with its tooltip, rather than on the glyph alone.
+            .cadenceControlLabel("Priority")
         case .value:
             CadenceChoiceValueButton(
                 title: CadenceTaskComposerSupport.priorityValueLabel(selection),
@@ -248,6 +249,10 @@ struct TaskDateChip: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
             }
             .buttonStyle(.cadencePlain(cornerRadius: Theme.radiusControlCompact))
+            // [[T-10230]]: an unset chip is a bare glyph, so it is named, with its tooltip, by
+            // what it sets; the date it carries once set is the value, not the name.
+            .cadenceControlLabel(label)
+            .accessibilityValue(isOn ? displayLabel : "")
             .onHover { isHovered = $0 }
             .popover(isPresented: $showPicker, arrowEdge: .top) { pickerPopover }
         }

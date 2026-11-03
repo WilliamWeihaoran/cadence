@@ -306,7 +306,8 @@ struct FloatingNewTaskButton: View {
         .buttonStyle(.cadencePlain)
         .padding(.trailing, Self.edgeInset)
         .padding(.bottom, Self.edgeInset)
-        .accessibilityLabel("New Task")
+        // [[T-10230]]: name and tooltip from one string; the circle drew no tooltip.
+        .cadenceControlLabel("New Task")
     }
 }
 
