@@ -4,10 +4,11 @@
 // (3) no hover. Item (2) is this one, and it is the limit that has nothing to do with clicking.
 // `scripts/run-macos-app.sh` draws and captures a window but cannot choose its SIZE, and macOS
 // Today's composition turns on size: `CadenceDesktopSplitLayout.todayLayout(paneWidth:)` mounts a
-// Timeline pane only above `todayTwoPaneMinimumWidth`, and a default 960x632 launch leaves 640pt
-// of pane against that 644 — four points short ([[T-8941]]). So Today opens `tasksOnly`, mounts no
-// Timeline pane, and **the all-day band does not exist to be photographed**. That is why
-// [[T-8001]] item (1) has never been seen, and it is not because nobody clicked anything.
+// Timeline pane only above `todayTwoPaneMinimumWidth`, and a default 960x632 launch used to leave
+// 640pt of pane against a 644 floor — four points short — so Today opened `tasksOnly`, mounted no
+// Timeline pane, and **the all-day band did not exist to be photographed**. [[T-8941]] trimmed
+// the floor to 636, so a default launch now keeps the pane; the resize below stays because a
+// restored window frame or a widened sidebar can still put the page under the floor.
 //
 // XCUITest has the window control the launcher lacks, and this target already owns the move:
 // `CadenceTodayCompositionUITests` resizes with View ▸ Enter Full Screen, which is a real resize
@@ -208,7 +209,7 @@ final class CadenceMacTodayAllDayBandUITests: XCTestCase {
         /// `CadenceDesktopSplitLayout.todayTwoPaneMinimumWidth` and the shipped sidebar width,
         /// spelled here because the UI-test target cannot import the app module. They are asserted
         /// as a RELATION (pane vs minimum), never as a pinned window size.
-        static let todayTwoPaneMinimumWidth: CGFloat = 644
+        static let todayTwoPaneMinimumWidth: CGFloat = 636
         static let sidebarWidth: CGFloat = 320
         /// **Not measured.** Deliberately far above `CadenceUITestBounds.firstPaint`: see the call
         /// site. A bound that is too small turns "the app was still seeding" into "no main window".

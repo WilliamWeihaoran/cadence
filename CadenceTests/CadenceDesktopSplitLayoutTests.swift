@@ -44,12 +44,12 @@ struct CadenceDesktopSplitLayoutTests {
 
     @Test
     func todaysFloorsAreTheSumOfItsThreePanesAndTheirDividers() {
-        #expect(CadenceDesktopSplitLayout.todayThreePaneMinimumWidth == 1094)
-        #expect(CadenceDesktopSplitLayout.todayTwoPaneMinimumWidth == 644)
-        #expect(CadenceDesktopSplitLayout.todayLayout(paneWidth: 1094) == .notesTasksAndSchedule)
-        #expect(CadenceDesktopSplitLayout.todayLayout(paneWidth: 1093) == .tasksAndSchedule)
-        #expect(CadenceDesktopSplitLayout.todayLayout(paneWidth: 644) == .tasksAndSchedule)
-        #expect(CadenceDesktopSplitLayout.todayLayout(paneWidth: 643) == .tasksOnly)
+        #expect(CadenceDesktopSplitLayout.todayThreePaneMinimumWidth == 1086)
+        #expect(CadenceDesktopSplitLayout.todayTwoPaneMinimumWidth == 636)
+        #expect(CadenceDesktopSplitLayout.todayLayout(paneWidth: 1086) == .notesTasksAndSchedule)
+        #expect(CadenceDesktopSplitLayout.todayLayout(paneWidth: 1085) == .tasksAndSchedule)
+        #expect(CadenceDesktopSplitLayout.todayLayout(paneWidth: 636) == .tasksAndSchedule)
+        #expect(CadenceDesktopSplitLayout.todayLayout(paneWidth: 635) == .tasksOnly)
     }
 
     @Test
@@ -133,16 +133,23 @@ struct CadenceDesktopSplitLayoutTests {
         }
     }
 
-    /// The wider default deliberately crosses Today's 644pt pair floor at the 960pt window
-    /// minimum. Keep the 264pt custom-width case as a positive control for the two-pane layout.
+    /// [[T-8941]]: the default 320pt sidebar at the 960pt window minimum leaves 640pt of pane, and
+    /// Today's pair floor was 644 — so every new install opened Today with no Timeline pane. The
+    /// default now keeps the pair, as a RELATION against the floor rather than a pinned figure; the
+    /// 390pt maximum is the negative control that the fallback still exists.
     @Test
-    func todayUsesTheFallbackAtTheNewDefaultButKeepsAPairWhenItFits() {
+    func todayKeepsTheTimelinePairAtTheDefaultSidebarAndFallsBackOnlyWhenItCannotPay() {
         let ordinaryPane = Self.windowFloor - 320
         #expect(ordinaryPane == 640)
-        #expect(CadenceDesktopSplitLayout.todayLayout(paneWidth: ordinaryPane) == .tasksOnly)
+        #expect(CadenceDesktopSplitLayout.todayTwoPaneMinimumWidth <= ordinaryPane)
+        #expect(CadenceDesktopSplitLayout.todayLayout(paneWidth: ordinaryPane) == .tasksAndSchedule)
+        #expect(CadenceDesktopSplitLayout.todayLayoutMountsTimelinePane(
+            CadenceDesktopSplitLayout.todayLayout(paneWidth: ordinaryPane)))
         let customPane = Self.windowFloor - 264
         #expect(customPane == 696)
         #expect(CadenceDesktopSplitLayout.todayLayout(paneWidth: customPane) == .tasksAndSchedule)
+        let widestSidebarPane = Self.windowFloor - 390
+        #expect(CadenceDesktopSplitLayout.todayLayout(paneWidth: widestSidebarPane) == .tasksOnly)
 
         let notesAndTasks = CadenceDesktopSplitLayout.todayNotesPaneMinWidth
             + CadenceDesktopSplitLayout.todayTaskPaneMinWidth

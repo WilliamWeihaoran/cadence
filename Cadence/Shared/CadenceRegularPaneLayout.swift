@@ -589,9 +589,11 @@ nonisolated enum CadenceDesktopTodayLayout: Equatable, Sendable {
 /// its minimums and overflows **leading-aligned** — off the trailing edge.
 ///
 /// What that looked like, measured at the 960pt floor with the sidebar at its 220pt minimum, its
-/// stored 264pt default and its 390pt maximum (740 / 696 / 570 of pane):
+/// then-stored 264pt default (320 since [[T-1463]]) and its 390pt maximum (740 / 696 / 570 of
+/// pane):
 ///
-///   - Today, `449 + 300 + 343` + 2 dividers = **1094**: `449, 290, 0` — `449, 246, 0` —
+///   - Today, `449 + 300 + 343` + 2 dividers = **1094** (the Schedule pane's minimum was 343 then;
+///     [[T-8941]] trimmed it to 335): `449, 290, 0` — `449, 246, 0` —
 ///     `449, 120, 0`. The Schedule pane is **entirely off the right edge in all three**, and so is
 ///     the divider that would drag it back.
 ///   - Goals, `560 + 340` + 1 = **901**: the inspector shows 179, 135 and **9** of its 340.
@@ -600,7 +602,7 @@ nonisolated enum CadenceDesktopTodayLayout: Equatable, Sendable {
 /// **The window floor was the other candidate and it was rejected on measurement, not taste.** The
 /// pane is the window *less the sidebar*, and the sidebar is independently 220–390pt
 /// (`macOSRootShellViews.swift`) and can be hidden outright with `Cmd+O`. A floor that pays for
-/// Today's 1094 at the stored 264pt sidebar is 1358; at the 390pt maximum it is **1484**, which is
+/// Today's then-1094 at the then-stored 264pt sidebar was 1358; at the 390pt maximum it is **1484**, which is
 /// wider than a 13" MacBook Air's whole 1470pt screen — so the floor that actually closes the bug
 /// makes the app unopenable at full width on a shipping Mac, and any floor short of it leaves the
 /// bug live for everyone who has widened their sidebar. **A single window minimum cannot express a
@@ -612,11 +614,11 @@ nonisolated enum CadenceDesktopTodayLayout: Equatable, Sendable {
 /// **Which pane gives is decided per page, and each answer has a reason.**
 ///
 /// *Today* drops the **notepad** first, and that is a measurement rather than a preference: the
-/// ordinary minimum pane is 696 (960 less the stored sidebar), `tasks + schedule` is 644 and fits,
-/// and `notes + tasks` is 750 and does not — dropping the notepad is the only two-pane form the
+/// ordinary minimum pane is 640 (960 less the default 320pt sidebar), `tasks + schedule` is 636 and
+/// fits, and `notes + tasks` is 750 and does not — dropping the notepad is the only two-pane form the
 /// app's own minimum window can pay for. It is also the pair with a behaviour: a task dragged out
 /// of the task column onto the timeline is the whole unprefixed drag payload in `TaskDragPayload`,
-/// and it exists only while those two panes are on screen together. Below 644 the task column takes
+/// and it exists only while those two panes are on screen together. Below 636 the task column takes
 /// the window.
 ///
 /// *Goals* drops the **inspector** *as a column*. Its list column is not just a list — the page
@@ -643,7 +645,7 @@ nonisolated enum CadenceDesktopTodayLayout: Equatable, Sendable {
 ///
 /// Every floor is a **sum of the panes' own declared minimums**, and the views read the constants
 /// back rather than re-typing them, so raising a pane moves the floor with it. That is the property
-/// this whole file exists for; a floor typed as `1094` satisfies every value assertion on the day
+/// this whole file exists for; a floor typed as `1086` satisfies every value assertion on the day
 /// it is written and stops following its parts the next day.
 ///
 /// `paneWidth <= 0` means "not measured", and answers with the fewest panes for
@@ -664,18 +666,23 @@ nonisolated enum CadenceDesktopSplitLayout {
     /// the iPad's task column, which is one of *two* panes and carries the day's whole task list
     /// with no notepad beside it. Two different pages that happen to share a name.
     static let todayTaskPaneMinWidth: CGFloat = 300
-    /// `SchedulePanel`'s.
-    static let todaySchedulePaneMinWidth: CGFloat = 343
+    /// `SchedulePanel`'s. 335, not the 343 it inherited: at 343 the pair needed 644pt, four more
+    /// than the 640 the 960pt window floor leaves beside the default 320pt sidebar, so every new
+    /// install opened Today with no Timeline pane ([[T-8941]]). Trimmed by 8 rather than 4 so the
+    /// default clears the floor with a few points to spare instead of meeting it exactly.
+    static let todaySchedulePaneMinWidth: CGFloat = 335
 
-    /// 1094pt of pane. Reached at the 960pt window floor only with the sidebar hidden and a window
-    /// 134pt wider than the floor; at the stored sidebar it needs a 1358pt window.
+    /// 1086pt of pane. Reached at the 960pt window floor only with the sidebar hidden and a window
+    /// 126pt wider than the floor; at the default 320pt sidebar it needs a 1406pt window.
     static var todayThreePaneMinimumWidth: CGFloat {
         todayNotesPaneMinWidth + todayTaskPaneMinWidth + todaySchedulePaneMinWidth
             + paneDividerWidth * 2
     }
 
-    /// 644pt of pane — under the 696 the app's own minimum window leaves at the stored sidebar,
-    /// which is the point of dropping the notepad rather than the timeline.
+    /// 636pt of pane — under the 640 the app's own minimum window leaves at the default 320pt
+    /// sidebar (any sidebar up to 324pt), which is the point of dropping the notepad rather than
+    /// the timeline. [[T-8941]]: it was 644 and this comment said 696, which is 960 less a 264pt
+    /// sidebar the app stopped shipping with [[T-1463]].
     static var todayTwoPaneMinimumWidth: CGFloat {
         todayTaskPaneMinWidth + todaySchedulePaneMinWidth + paneDividerWidth
     }
