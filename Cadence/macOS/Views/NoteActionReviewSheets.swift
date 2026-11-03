@@ -15,7 +15,7 @@ struct AISummaryReviewSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("AI Summary")
+            Text(CadenceAIReviewCopy.summaryTitle)
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(Theme.text)
             ScrollView {
@@ -42,11 +42,11 @@ struct AISummaryReviewSheet: View {
             HStack {
                 Spacer()
                 // T-7289: Escape closes and Return appends; neither key did anything.
-                CadenceActionButton(title: "Close", role: .ghost, size: .compact, shortcut: .cancelAction) {
+                CadenceActionButton(title: CadenceAIReviewCopy.summaryCloseTitle, role: .ghost, size: .compact, shortcut: .cancelAction) {
                     dismiss()
                 }
 
-                CadenceActionButton(title: "Append to Note", role: .primary, size: .compact, shortcut: .defaultAction) {
+                CadenceActionButton(title: CadenceAIReviewCopy.summaryAppendTitle, role: .primary, size: .compact, shortcut: .defaultAction) {
                     append()
                 }
             }
@@ -103,10 +103,10 @@ struct AITaskDraftReviewSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("AI Task Drafts")
+                    Text(CadenceAIReviewCopy.draftsTitle)
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(Theme.text)
-                    Text("Review each draft before creating anything in Cadence.")
+                    Text(CadenceAIReviewCopy.draftsCaption)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim)
                 }
@@ -153,12 +153,12 @@ struct AITaskDraftReviewSheet: View {
                 // single-line fields, so a `.defaultAction` would turn "finish typing this title"
                 // into "create every approved draft".
                 // [[T-9451]]: the shared action button, as in the summary sheet above.
-                CadenceActionButton(title: "Cancel", role: .ghost, size: .compact, shortcut: .cancelAction) {
+                CadenceActionButton(title: CadenceAIReviewCopy.draftsCancelTitle, role: .ghost, size: .compact, shortcut: .cancelAction) {
                     dismiss()
                 }
 
                 CadenceActionButton(
-                    title: "Create Selected",
+                    title: CadenceAIReviewCopy.draftsCreateTitle,
                     role: .primary,
                     size: .compact,
                     isDisabled: !review.canCreate,

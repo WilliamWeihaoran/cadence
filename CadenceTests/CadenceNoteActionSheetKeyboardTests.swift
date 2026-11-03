@@ -47,11 +47,11 @@ struct CadenceNoteActionSheetKeyboardTests {
         let sheet = try Self.compactBody("struct AISummaryReviewSheet: View", in: Self.sheetsPath)
 
         #expect(
-            sheet.contains(#"CadenceActionButton(title:"Close",role:.ghost,size:.compact,shortcut:.cancelAction){dismiss()}"#),
+            sheet.contains(#"CadenceActionButton(title:CadenceAIReviewCopy.summaryCloseTitle,role:.ghost,size:.compact,shortcut:.cancelAction){dismiss()}"#),
             "Escape must close the Mac AI summary sheet"
         )
         #expect(
-            sheet.contains(#"CadenceActionButton(title:"AppendtoNote",role:.primary,size:.compact,shortcut:.defaultAction){append()}"#),
+            sheet.contains(#"CadenceActionButton(title:CadenceAIReviewCopy.summaryAppendTitle,role:.primary,size:.compact,shortcut:.defaultAction){append()}"#),
             "Return must append the summary, through the same append() as the click"
         )
         #expect(Self.shortcutCount(sheet) == 2)
@@ -64,17 +64,52 @@ struct CadenceNoteActionSheetKeyboardTests {
         let sheet = try Self.compactBody("struct AITaskDraftReviewSheet: View", in: Self.sheetsPath)
 
         #expect(
-            sheet.contains(#"CadenceActionButton(title:"Cancel",role:.ghost,size:.compact,shortcut:.cancelAction){dismiss()}"#),
+            sheet.contains(#"CadenceActionButton(title:CadenceAIReviewCopy.draftsCancelTitle,role:.ghost,size:.compact,shortcut:.cancelAction){dismiss()}"#),
             "Escape must cancel the Mac AI task draft sheet"
         )
         #expect(
-            sheet.contains(#"CadenceActionButton(title:"CreateSelected",role:.primary,size:.compact,isDisabled:!review.canCreate,shortcut:KeyboardShortcut(.return,modifiers:.command)){createSelected()}"#),
+            sheet.contains(#"CadenceActionButton(title:CadenceAIReviewCopy.draftsCreateTitle,role:.primary,size:.compact,isDisabled:!review.canCreate,shortcut:KeyboardShortcut(.return,modifiers:.command)){createSelected()}"#),
             "Cmd+Return must create the approved drafts, gated like the click"
         )
         #expect(!sheet.contains("defaultAction"), "plain Return must not create every approved draft")
         // The two keys above and no third: Escape's `shortcut:.` and Cmd+Return's `shortcut:K`.
         #expect(Self.shortcutCount(sheet) == 1)
         #expect(sheet.components(separatedBy: "shortcut:KeyboardShortcut(").count - 1 == 1)
+    }
+
+    /// **[[T-7291]].** One word set for both platforms' AI review sheets, the Mac's (owner call,
+    /// 2026-11-03), read by both from `CadenceAIReviewCopy`.
+    @Test func bothPlatformsReviewSheetsSayTheMacsWords() throws {
+        #expect(CadenceAIReviewCopy.summaryTitle == "AI Summary")
+        #expect(CadenceAIReviewCopy.summaryCloseTitle == "Close")
+        #expect(CadenceAIReviewCopy.summaryAppendTitle == "Append to Note")
+        #expect(CadenceAIReviewCopy.draftsTitle == "AI Task Drafts")
+        #expect(CadenceAIReviewCopy.draftsCaption == "Review each draft before creating anything in Cadence.")
+        #expect(CadenceAIReviewCopy.draftsCancelTitle == "Cancel")
+        #expect(CadenceAIReviewCopy.draftsCreateTitle == "Create Selected")
+
+        let summary = try Self.compactBody("struct iOSAISummaryReviewSheet: View", in: Self.iosMenuPath)
+        #expect(summary.contains(".navigationTitle(CadenceAIReviewCopy.summaryTitle)"))
+        #expect(summary.contains("Button(CadenceAIReviewCopy.summaryCloseTitle){dismiss()}"))
+        #expect(summary.contains("Button(CadenceAIReviewCopy.summaryAppendTitle){append()}"))
+        #expect(!summary.contains(#""Discard""#), "the iOS summary sheet says Discard again")
+        #expect(!summary.contains(#"Button("Append")"#), "the iOS summary sheet says a bare Append again")
+
+        let drafts = try Self.compactBody("struct iOSAITaskDraftReviewSheet: View", in: Self.iosMenuPath)
+        #expect(drafts.contains(".navigationTitle(CadenceAIReviewCopy.draftsTitle)"))
+        #expect(drafts.contains("Text(CadenceAIReviewCopy.draftsCaption)"), "the iOS draft sheet lost the Mac's caption")
+        #expect(drafts.contains("Button(CadenceAIReviewCopy.draftsCancelTitle){dismiss()}"))
+        #expect(drafts.contains("Button(CadenceAIReviewCopy.draftsCreateTitle){createApproved()}"))
+        #expect(!drafts.contains(#""TaskDrafts""#), "the iOS draft sheet's own title came back")
+        #expect(!drafts.contains(#""Create\("#), "the iOS draft sheet counts its own Create again")
+
+        let mac = try CadenceSourceScan.sourceFile(Self.sheetsPath)
+        #expect(mac.contains("Text(CadenceAIReviewCopy.summaryTitle)"))
+        #expect(mac.contains("Text(CadenceAIReviewCopy.draftsTitle)"))
+        #expect(mac.contains("Text(CadenceAIReviewCopy.draftsCaption)"))
+        for word in ["\"AI Summary\"", "\"AI Task Drafts\"", "\"Append to Note\"", "\"Create Selected\""] {
+            #expect(!mac.contains(word), "the Mac sheet spells \(word) itself again")
+        }
     }
 
     @Test func moveDestinationRowsNameBlankListsUntitled() throws {

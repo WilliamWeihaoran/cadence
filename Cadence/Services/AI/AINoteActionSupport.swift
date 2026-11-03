@@ -102,6 +102,20 @@ enum CadenceAINoteSummary {
     }
 }
 
+/// **The AI review sheets' words, one set on both platforms ([[T-7291]]).** The owner's call of
+/// 2026-11-03: the Mac's. iOS's summary sheet said "Discard" / "Append" and its draft sheet "Task
+/// Drafts" with "Create" / "Create 3" and no caption -- the same feature over the same
+/// `CadenceAIDraftReview`, so under [[T-8201]] that was drift, not a platform reason.
+nonisolated enum CadenceAIReviewCopy {
+    static let summaryTitle = "AI Summary"
+    static let summaryCloseTitle = "Close"
+    static let summaryAppendTitle = "Append to Note"
+    static let draftsTitle = "AI Task Drafts"
+    static let draftsCaption = "Review each draft before creating anything in Cadence."
+    static let draftsCancelTitle = "Cancel"
+    static let draftsCreateTitle = "Create Selected"
+}
+
 /// The review gate for AI task drafts.
 ///
 /// `docs/CLAUDE_REFERENCE.md` states the rule this type exists to make unbreakable: drafts go

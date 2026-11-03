@@ -192,16 +192,16 @@ struct iOSAISummaryReviewSheet: View {
             }
             .scrollIndicators(.hidden)
             .background(Theme.bg.ignoresSafeArea())
-            .navigationTitle("AI Summary")
+            .navigationTitle(CadenceAIReviewCopy.summaryTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Theme.surface, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Discard") { dismiss() }
+                    Button(CadenceAIReviewCopy.summaryCloseTitle) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Append") { append() }
+                    Button(CadenceAIReviewCopy.summaryAppendTitle) { append() }
                         .fontWeight(.semibold)
                 }
             }
@@ -285,16 +285,16 @@ struct iOSAITaskDraftReviewSheet: View {
             }
             .scrollIndicators(.hidden)
             .background(Theme.bg.ignoresSafeArea())
-            .navigationTitle("Task Drafts")
+            .navigationTitle(CadenceAIReviewCopy.draftsTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Theme.surface, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button(CadenceAIReviewCopy.draftsCancelTitle) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(createTitle) { createApproved() }
+                    Button(CadenceAIReviewCopy.draftsCreateTitle) { createApproved() }
                         .fontWeight(.semibold)
                         .disabled(!review.canCreate)
                 }
@@ -310,11 +310,6 @@ struct iOSAITaskDraftReviewSheet: View {
             }
         }
         .preferredColorScheme(.dark)
-    }
-
-    private var createTitle: String {
-        let count = review.selectedIDs.count
-        return count == 0 ? "Create" : "Create \(count)"
     }
 
     @ViewBuilder
@@ -333,7 +328,13 @@ struct iOSAITaskDraftReviewSheet: View {
             VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
                 // Says where the approved drafts will land, which is the one fact the cards below
                 // and the title above do not carry.
-                SectionEyebrowLabel(text: "Creating in \(destinationName)")
+                // [[T-7291]]: the Mac sheet's caption, which the phone's lacked.
+                VStack(alignment: .leading, spacing: 4) {
+                    SectionEyebrowLabel(text: "Creating in \(destinationName)")
+                    Text(CadenceAIReviewCopy.draftsCaption)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.dim)
+                }
 
                 ForEach($review.drafts) { $draft in
                     iOSAITaskDraftCard(
