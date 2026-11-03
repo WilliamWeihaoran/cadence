@@ -609,8 +609,12 @@ struct iOSNotesView: View {
         return notesForActiveTab.first { $0.id == selectedNoteID }
     }
 
+    /// The row's "open note" plate (and its VoiceOver Selected trait) means *this is the note
+    /// standing beside the list*, so it lights only in the two-column form (T-9664). In the
+    /// one-column form the note opens over the list or in the list's place, and `selectedNoteID`
+    /// outlives that -- a lit row there would claim a note is open while the list is all there is.
     private func isSelected(_ note: Note) -> Bool {
-        selectedNoteID == note.id
+        notesLayout == .twoColumn && selectedNoteID == note.id
     }
 
     /// Same words macOS uses, tab for tab — and now the *same strings*, not a second spelling of

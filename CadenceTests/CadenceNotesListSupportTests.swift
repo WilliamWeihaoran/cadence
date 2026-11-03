@@ -760,8 +760,10 @@ struct CadenceNotesTwoColumnFloorTests {
 
         // Declaration, plus the four decisions: the column split, whether a tapped row shows the
         // editor instead of the list, where the template control lives, and — since T-1277 — the
-        // guard on the in-pane editor, which may only draw in the one-column form.
-        #expect(code.components(separatedBy: "notesLayout").count - 1 == 5)
+        // guard on the in-pane editor, which may only draw in the one-column form -- and, since
+        // [[T-9664]], whether a row draws the "open note" plate, which is lit only in the
+        // two-column form where the note stands beside the list.
+        #expect(code.components(separatedBy: "notesLayout").count - 1 == 6)
         // Declaration, the `!isCompactWidth` inside `notesLayout`, the row metrics, and the three
         // genuinely device-shaped decisions T-1277 leaves it with: `isShowingInlineEditor` (a phone
         // never edits in the pane), `open(_:)`'s fork between the pane and the presented cover, and

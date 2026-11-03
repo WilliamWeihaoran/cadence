@@ -486,7 +486,8 @@ struct iOSListNotesView: View {
                 title: note.displayTitle,
                 detail: NoteRowText.previewBelowTitleHeading(note),
                 tags: note.sortedTags,
-                isSelected: selectedNoteID == note.id,
+                // Lit only where the editor stands beside the list (T-9664); see `iOSNotesView.isSelected`.
+                isSelected: layout == .twoColumn && selectedNoteID == note.id,
                 metrics: metrics
             )
         }
