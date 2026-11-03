@@ -343,7 +343,7 @@ struct iOSMarkdownEditingSurface: View {
                 isFocused = false
                 showsUnlinkedMentions = true
             } label: {
-                Label("Unlinked mentions", systemImage: "link.badge.plus")
+                Label("Unlinked Mentions", systemImage: "link.badge.plus")
                     .frame(minHeight: 44)
                     // [[T-9511]]: `.plain` adds no hit shape, so the 44pt row took a tap only on
                     // the 12pt words; above or below them the tap fell through to the page.
@@ -429,7 +429,7 @@ struct iOSMarkdownEditingSurface: View {
                 .padding(14)
             }
             .background(Theme.surface.ignoresSafeArea())
-            .navigationTitle("Unlinked mentions")
+            .navigationTitle("Unlinked Mentions")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {

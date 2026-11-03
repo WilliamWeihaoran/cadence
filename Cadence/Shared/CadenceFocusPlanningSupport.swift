@@ -283,7 +283,7 @@ enum CadenceFocusSupport {
     /// said a note could be written at all. Both panels read these two strings now, under
     /// [[T-8201]]: the owner chose the Mac's editor for iOS, since screen width can justify a
     /// smaller editor on a phone and not a missing one.
-    static let taskNotesTitle = "Task notes"
+    static let taskNotesTitle = "Task Notes"
 
     /// The line under `taskNotesTitle`. It is a **prompt, not an empty state**: it names the editor
     /// beneath it and is drawn whether or not the task already has notes, which is the half iOS

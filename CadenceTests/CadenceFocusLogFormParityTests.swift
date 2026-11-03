@@ -305,7 +305,7 @@ struct CadenceFocusLogFormParityTests {
                 "\(path) spells the prompt itself"
             )
         }
-        #expect(CadenceFocusSupport.taskNotesTitle == "Task notes")
+        #expect(CadenceFocusSupport.taskNotesTitle == "Task Notes")
         #expect(CadenceFocusSupport.taskNotesPrompt == "Capture the details you need while working.")
     }
 }

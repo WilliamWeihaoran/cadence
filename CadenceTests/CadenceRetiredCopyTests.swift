@@ -255,6 +255,24 @@ let cadenceRetiredCopy: [CadenceRetiredPhrase] = [
         most likely to re-type.
         """
     ),
+    CadenceRetiredPhrase(
+        "Task notes",
+        retiredBy: "T-9571",
+        why: """
+        The Focus notes card's heading in sentence case, where the Mac notes page, the task-notes \
+        window and the iOS related-notes header all say "Task Notes". In-panel headings are Title \
+        Case like every window, sheet and navigation title; CadenceFocusSupport.taskNotesTitle \
+        is the one spelling both platforms read.
+        """
+    ),
+    CadenceRetiredPhrase(
+        "Unlinked mentions",
+        retiredBy: "T-9571",
+        why: """
+        The iOS note editor's link and the sheet it opens, the one navigationTitle in the app that \
+        was not Title Case. It reads "Unlinked Mentions" now.
+        """
+    ),
 ]
 
 // MARK: - The sweep

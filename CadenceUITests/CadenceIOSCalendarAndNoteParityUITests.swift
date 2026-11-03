@@ -72,7 +72,7 @@ final class CadenceIOSCalendarAndNoteParityUITests: XCTestCase {
         jump(to: "Destination Harbor")
         XCTAssertTrue(try renderedText(in: editor).contains("Destination Harbor"))
 
-        tap("Unlinked mentions")
+        tap("Unlinked Mentions")
         tap("Link Orchard plans")
         XCTAssertTrue(containing("No unlinked mentions").waitForExistence(timeout: 5))
         tap("Done")
