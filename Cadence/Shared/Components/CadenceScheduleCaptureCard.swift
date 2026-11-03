@@ -818,15 +818,36 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
         }
     }
 
+    /// **"Custom…" opens only what the list above it cannot express** (owner ruling, [[T-10121]],
+    /// option (a): this panel "drops its own FREQUENCY eyebrow and list").
+    ///
+    /// It used to open with a second "Frequency" eyebrow over the same five
+    /// `TaskRecurrenceRule.allCases` rows the `.repeatRule` case had already drawn, so a 393 pt
+    /// screen carried two identical lists with the same row ticked in each, separated only by the
+    /// button that opened the second one. That is a duplicated control rather than a labelled
+    /// section. Hiding the top list instead was rejected: the selection would jump out from under
+    /// the finger that opened the panel, and ENDS — the half a reader came for — would sit further
+    /// down the same scroll.
+    ///
+    /// The frequency is therefore chosen once, in the list above. What is left here is when the
+    /// series *ends*, which that list has no room for.
+    ///
+    /// **It still states the choice it was opened on**, in a sentence rather than an eyebrow and a
+    /// list: a panel that qualifies a frequency and shows none of it reads as having dropped it,
+    /// and the one thing a reader must not have to guess at is which rule the Ends rows are
+    /// about. With no rule chosen there is nothing to qualify, so the panel says where to choose
+    /// one instead of drawing an Ends section that cannot apply.
     private var customRepeat: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionEyebrowLabel(text: "Frequency")
-            CadenceChoicePopoverList(
-                rows: TaskRecurrenceRule.allCases.map { CadenceChoiceRow(value: $0, title: $0.label, color: Theme.blue) },
-                selection: $draft.repeatRule,
-                isPresented: .constant(true)
-            )
+            if draft.repeatRule == .none {
+                Text("Choose a frequency above to set when the series ends.")
+                    .cadenceFont(.metadata)
+                    .foregroundStyle(Theme.subdued)
+            }
             if draft.repeatRule != .none {
+                Text("Repeats \(draft.repeatRule.label.lowercased())")
+                    .cadenceFont(.fieldValue)
+                    .foregroundStyle(Theme.text)
                 SectionEyebrowLabel(text: "Ends")
                 CadenceChoicePopoverList(
                     rows: TaskRecurrenceEndMode.allCases.map { CadenceChoiceRow(value: $0, title: $0.label, color: Theme.blue) },

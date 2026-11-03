@@ -136,7 +136,14 @@ struct CadenceCaptureCardNewTagEntryTests {
             "customRepeat no longer follows the Location field"
         )
         let chain = String(card[start.lowerBound..<end.lowerBound])
-        #expect(chain.count < 400, "the slice ran past the field: \(chain.count) characters")
+        // Counted over CODE, not over the raw slice ([[T-10121]]). `scanned` blanks comments to
+        // spaces of equal width rather than deleting them, so this length also measured whatever
+        // doc comment happened to sit between the Location field and the next declaration — and a
+        // paragraph added above `customRepeat` took the slice from ~150 to 1596 characters without
+        // a line of code moving. Dropping whitespace measures the thing the guard is actually for:
+        // that the slice did not run past the field's own modifier chain.
+        let code = chain.filter { !$0.isWhitespace }
+        #expect(code.count < 400, "the slice ran past the field: \(code.count) code characters")
         #expect(chain.contains(".onSubmit { activeField = nil }"), "Return in the Location field does nothing")
     }
 }

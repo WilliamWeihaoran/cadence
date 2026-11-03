@@ -299,4 +299,85 @@ struct CadenceCaptureEditorTests {
             at: .large, availableWidth: phoneWidth - clippedLeftEdge
         ))
     }
+
+    /// **[[T-10121]] — "Custom…" opens only what the frequency list above it cannot express.**
+    ///
+    /// The repeat editor drew `TaskRecurrenceRule.allCases` twice on one 393pt screen: once in the
+    /// `.repeatRule` case's own list, and again inside `customRepeat` under a second "Frequency"
+    /// eyebrow, with the same row ticked in each copy and nothing between them but the button that
+    /// opened the second one. The owner chose option (a) — the custom panel "drops its own
+    /// FREQUENCY eyebrow and list" — over hiding the top list or leaving it, so both the eyebrow
+    /// and the list are asserted gone here, not just the list. What the panel keeps is Ends, and
+    /// the frequency chosen above is carried in and **shown** rather than silently reset.
+    ///
+    /// **Two halves, because either alone is weak.** The source half is the only way to see
+    /// *which* view draws a list: `customRepeat` is a private computed property on a `View` this
+    /// target cannot construct, so there is no rendering seam to read. The behavioural half is the
+    /// round trip the ruling is actually about — a frequency chosen in the first list has to
+    /// survive every write the custom panel makes, and the panel's readout is the rule's own
+    /// `label`, which is what the second list used to spell for it.
+    ///
+    /// The eyebrow and readout are read off the comment-stripped text rather than `codeOnly`,
+    /// because both live in string literals that `codeOnly` blanks; the structural assertions are
+    /// read off `codeOnly`, so a needle cannot be answered by a comment or a literal.
+    ///
+    /// **Failing-first:** restoring the second `CadenceChoicePopoverList` over
+    /// `TaskRecurrenceRule.allCases`, or its "Frequency" eyebrow, fails the assertions above the
+    /// round trip; making any Ends control put `repeatRule` back fails the round trip itself.
+    @Test func theCustomRepeatPanelCarriesTheChosenFrequencyAndNeverOffersItASecondTime() throws {
+        let cardSource = try source("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift")
+        let card = CadenceSourceScan.codeOnly(cardSource)
+
+        // Exactly one frequency list in the whole card, and `customRepeat` is not where it is.
+        #expect(card.components(separatedBy: "TaskRecurrenceRule.allCases").count == 2)
+        let custom = try #require(
+            CadenceSourceScan.declarationBody("private var customRepeat: some View", in: card)
+        )
+        #expect(!custom.contains("TaskRecurrenceRule.allCases"))
+        // ...and keeps the half it alone offers: the Ends mode, its date and its count.
+        #expect(custom.contains("TaskRecurrenceEndMode.allCases"))
+        #expect(custom.contains("draft.selectSeriesEnd("))
+        #expect(custom.contains("draft.setSeriesEndCount("))
+        #expect(custom.contains("recurrenceEndBinding"))
+
+        // The copy, over the text that still carries string literals.
+        let customText = try #require(
+            CadenceSourceScan.declarationBody("private var customRepeat: some View", in: cardSource)
+        )
+        #expect(!customText.contains("SectionEyebrowLabel(text: \"Frequency\")"), "the duplicate eyebrow is back")
+        #expect(customText.contains("SectionEyebrowLabel(text: \"Ends\")"))
+        // It states the frequency it was opened on instead of offering it again.
+        #expect(customText.contains("draft.repeatRule.label"))
+        // Non-vacuity for the un-blanked read: the one eyebrow it keeps is a literal, so a text
+        // with its literals blanked could not satisfy the line above it.
+        #expect(!card.contains("SectionEyebrowLabel(text: \"Ends\")"))
+
+        // The round trip, driven the way the two controls drive it: the first list writes
+        // `repeatRule`, the panel reads it back, and the Ends controls write beside it.
+        let calendar = Calendar.current
+        let reference = try #require(DateFormatters.date(from: "2026-10-21", in: calendar))
+        var draft = CadenceScheduleDraft(dateKey: "2026-10-21", startMin: 600, kind: .event)
+
+        draft.repeatRule = .weekly
+        #expect(draft.repeatRule.label == "Weekly", "the custom panel's readout is this label")
+
+        draft.selectSeriesEnd(.onDate, reference: reference, calendar: calendar)
+        #expect(draft.repeatRule == .weekly)
+        #expect(draft.effectiveSeriesEndMode == .onDate)
+
+        draft.setSeriesEndCount(6)
+        #expect(draft.repeatRule == .weekly, "choosing an occurrence count reset the frequency")
+        #expect(draft.effectiveSeriesEndMode == .afterCount)
+
+        draft.selectSeriesEnd(.never, reference: reference, calendar: calendar)
+        #expect(draft.repeatRule == .weekly, "choosing Ends: Never reset the frequency")
+        #expect(draft.repeatRule.label == "Weekly")
+
+        // And the one write that *does* clear the frequency is the first list's own Never row,
+        // which is why the panel reads `.none` as "Never" and shows no Ends half at all.
+        CadenceCaptureFieldInventory.clear(.repeatRule, draft: &draft)
+        #expect(draft.repeatRule == .none)
+        #expect(draft.repeatRule.label == "Never")
+        #expect(draft.effectiveSeriesEndMode == .never)
+    }
 }

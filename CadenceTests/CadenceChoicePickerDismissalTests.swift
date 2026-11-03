@@ -119,7 +119,12 @@ struct CadenceChoicePickerDismissalTests {
             // answer, for the same reason, as the three sheets above it. [[T-6901]] adds a fifth,
             // the Ends mode under Repeat, on the same side of the line: it writes the draft.
             "Cadence/Shared/Components/CadenceSchedulePanel.swift": (5, 0),
-            "Cadence/Shared/Components/CadenceScheduleCaptureCard.swift": (7, 0),
+            // Six since [[T-10121]]: the "Custom…" repeat panel drew a second list over the same
+            // `TaskRecurrenceRule.allCases` the Repeat panel above it had already drawn, with the
+            // same row ticked in both, and the owner retired the duplicate. The Ends list in that
+            // panel stays, and stays non-committing for the same reason as the rest: the card
+            // commits once.
+            "Cadence/Shared/Components/CadenceScheduleCaptureCard.swift": (6, 0),
             "Cadence/Shared/Components/CadenceStartTimeFieldRow.swift": (1, 0),
             "Cadence/iOS/iOSArchiveImportSettingsSection.swift": (1, 0),
             "Cadence/iOS/iOSCalendarSettingsSection.swift": (1, 0),
@@ -202,7 +207,11 @@ struct CadenceChoicePickerDismissalTests {
         // nothing to the store.
         // [[T-9957]] deletes the orphaned tracking editor components file and its frequency
         // editor's two draft pickers (times per week, day of month): 32, still 4.
-        #expect(found.values.map(\.calls).reduce(0, +) == 32)
+        // [[T-10121]] retires the capture card's duplicate Frequency list inside "Custom…" -- the
+        // same five rows the Repeat panel above it already drew, ticked in both copies on one
+        // 393pt screen: 31, still 4. The frequency is chosen in the list that remains, and the
+        // custom panel states it rather than offering it a second time.
+        #expect(found.values.map(\.calls).reduce(0, +) == 31)
         #expect(found.values.map(\.committing).reduce(0, +) == 4)
     }
 
