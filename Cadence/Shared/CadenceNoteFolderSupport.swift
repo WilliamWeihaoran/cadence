@@ -232,18 +232,26 @@ struct NoteFolderListRow: View {
 /// No checkmark and no disabled current folder, deliberately — the heading the row sits under
 /// already says where it is, and greying out the answer to "where is this note" is how a menu
 /// stops being readable as a list of destinations.
+///
+/// [[T-10168]]: the trigger draws the folder glyph, so it is not the one words-only item between
+/// Copy Note Link's link glyph and Delete's trash. Unfilled, because the filled folder is the AREA
+/// glyph ([[T-8553]]).
 struct NoteFolderMoveMenu: View {
+    static let systemImage = "folder"
+
     let folderNames: [String]
     let move: (String) -> Void
     let newFolder: () -> Void
 
     var body: some View {
-        Menu("Move to Folder") {
+        Menu {
             Button("No Folder") { move(CadenceNoteFolderPath.root) }
             ForEach(folderNames, id: \.self) { name in
                 Button(name) { move(name) }
             }
             Button("New Folder…") { newFolder() }
+        } label: {
+            Label("Move to Folder", systemImage: Self.systemImage)
         }
     }
 }

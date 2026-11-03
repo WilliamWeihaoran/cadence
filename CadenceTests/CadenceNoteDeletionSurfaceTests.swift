@@ -477,6 +477,18 @@ struct CadenceNoteDeletionSurfaceTests {
         }
     }
 
+    /// **[[T-10168]]: the list-note row's Move to Folder draws the `folder` glyph**, so the menu is
+    /// not link / words only / trash. One shared view, so both platforms follow; unfilled
+    /// because `folder.fill` is the area glyph.
+    @Test func theMoveToFolderMenuDrawsTheFolderGlyph() throws {
+        #expect(NoteFolderMoveMenu.systemImage == "folder")
+        let code = try strippingComments(sourceFile("Cadence/Shared/CadenceNoteFolderSupport.swift"))
+        let start = try #require(code.range(of: "struct NoteFolderMoveMenu: View {"))
+        let menu = String(code[start.upperBound...].prefix(900))
+        #expect(menu.contains("Label(\"Move to Folder\", systemImage: Self.systemImage)"))
+        #expect(!menu.contains("Menu(\"Move to Folder\")"), "the trigger is title-only again")
+    }
+
     /// Without this, every zero and every absence above could be passing because the reader
     /// returned an empty string — which is exactly what a `/tmp` against `/private/tmp` path
     /// mismatch produces on an isolated build tree.
