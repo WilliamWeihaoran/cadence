@@ -1033,6 +1033,32 @@ struct CadenceEmptyStateAuditTests {
         #expect(firstRun.contains("here"))
     }
 
+    /// **[[T-7943]]: a first-run iPad Lists page draws one empty state, not two.** The detail
+    /// column's nil-route branch is reached only when there is no active list -- exactly when the
+    /// chooser column beside it draws `activeListsTitle` -- so it stays blank rather than repeating
+    /// that panel with a second medallion and a literal sentence of its own.
+    @Test func theIPadListsDetailColumnDrawsNoSecondEmptyState() throws {
+        let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListViews.swift"))
+        let split = try #require(bodyOfComputedProperty("regularSplitLayout", in: code),
+                                 "non-vacuity: iOSListViews.swift has no regularSplitLayout")
+        let detail = try #require(split.range(of: "} detail: {"), "non-vacuity: the split has no detail column")
+        let narrow = try #require(split.range(of: "} narrow: {", range: detail.upperBound..<split.endIndex),
+                                  "non-vacuity: the split has no narrow column")
+        let column = String(split[detail.upperBound..<narrow.lowerBound])
+        #expect(column.contains("if let route = effectiveSelectedRoute"), "non-vacuity: the detail column no longer branches on the route")
+        let fallback = try #require(column.range(of: "} else {"), "non-vacuity: the detail column has no nil-route branch")
+        let blank = String(column[fallback.upperBound...])
+        #expect(blank.contains("Theme.bg"), "the nil-route detail column is no longer a blank page fill")
+        // Named rather than walked: this reads one file, so it is not a sweep of the tree.
+        for component in ["iOSEmptyPanel(", "iOSFeatureEmptyState(", "iOSFeatureEmptyDetail(", "CadenceInlineEmpty(", "EmptyStateView("] {
+            #expect(!blank.contains(component), "the nil-route detail column draws \(component) beside the chooser's own empty state")
+        }
+        #expect(!code.contains("Nothing to show yet"), "the duplicate detail-column sentence is back")
+        // The one empty state left is the chooser's, and it is the one carrying the action.
+        let pane = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListsRegularPane.swift"))
+        #expect(pane.contains("title: CadenceEmptyStateCopy.activeListsTitle"), "non-vacuity: the chooser column lost its empty state")
+    }
+
     /// **Both shells ask the same predicate that draws the section, and each spells it once.**
     ///
     /// Source-shape, and stated as such: `Cadence/iOS/` is not compiled by this target, so nothing

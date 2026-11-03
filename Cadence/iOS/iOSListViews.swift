@@ -168,12 +168,11 @@ struct iOSListsView: View {
                 listDetail(for: route)
                     .id(route)
             } else {
-                iOSEmptyPanel(
-                    systemImage: "folder",
-                    title: "Nothing to show yet",
-                    subtitle: "Once you add an area or project, it'll open here."
-                )
-                .background(Theme.bg)
+                // [[T-7943]]: blank, on purpose. `effectiveSelectedRoute` falls back to the first
+                // active list, so this branch is reached only when there is none -- exactly when the
+                // chooser column beside it draws `CadenceEmptyStateCopy.activeListsTitle`, the one
+                // empty state carrying the action. A second panel here could only repeat it.
+                Theme.bg
             }
         } narrow: {
             narrowLayout
