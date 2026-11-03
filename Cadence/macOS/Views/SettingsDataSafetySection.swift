@@ -590,7 +590,9 @@ private struct SettingsDataResetConfirmationSheet: View {
                                 // is the phone gate's, so both say the deletions leave this Mac.
                                 // T-1840: the trailing claim names the recovery store before the
                                 // button is live, and not the one this launch is running on.
-                                Text("This permanently deletes the local Cadence account profile, Cadence tasks, lists, notes, documents, tags, saved links, retained legacy records, local Cadence backups, pending restores, and the saved OpenAI key. \(CadenceDataResetCopy.deletionsReachOtherDevices) Apple Calendar events that already exist in Calendar are not deleted. \(CadenceUnmanagedStoreCopy.resetGateDeletesThem(runningOnRecoveryStore: PersistenceController.startupIssue?.kind == .recoveryStore))")
+                                // [[T-7209]] (b): what it deletes is the shared sentence the
+                                // phone's gate reads; only the account profile is the Mac's own.
+                                Text("\(CadenceDataResetCopy.gateDeletesEverything) On this Mac it also deletes the local Cadence account profile. \(CadenceDataResetCopy.deletionsReachOtherDevices) Apple Calendar events that already exist in Calendar are not deleted. \(CadenceUnmanagedStoreCopy.resetGateDeletesThem(runningOnRecoveryStore: PersistenceController.startupIssue?.kind == .recoveryStore))")
                                     .font(.system(size: 12))
                                     .foregroundStyle(Theme.dim)
                                     .fixedSize(horizontal: false, vertical: true)

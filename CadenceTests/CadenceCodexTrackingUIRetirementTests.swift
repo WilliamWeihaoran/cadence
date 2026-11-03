@@ -276,12 +276,16 @@ struct CadenceCodexTrackingUIRetirementTests {
             read: { CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile($0)) }
         )
         #expect(hits.isEmpty)
+        // [[T-7209]] (b): both gates read one shared sentence now, so the disclosure is pinned on
+        // the sentence and the read, not on a literal each file used to type.
+        #expect(CadenceDataResetCopy.gateDeletesEverything.contains("retained legacy record"))
         for path in sourcePaths {
             let source = try CadenceSourceScan.sourceFile(path)
-            #expect(source.contains("retained legacy record"))
+            #expect(source.contains("CadenceDataResetCopy.gateDeletesEverything"))
             #expect(source.contains("CadenceUnmanagedStoreCopy.resetGateDeletesThem("))
         }
         for copy in [
+            CadenceDataResetCopy.gateDeletesEverything,
             CadenceNotificationSettingsCopy.remindersToggleDetail,
             CadenceNotificationSettingsCopy.accessRequiredDetail,
             CadenceDataExportPresentation.description,

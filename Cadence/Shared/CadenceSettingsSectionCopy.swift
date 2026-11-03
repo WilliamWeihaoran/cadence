@@ -458,6 +458,24 @@ nonisolated enum CadenceListLifecycleSectionCopy {
 nonisolated enum CadenceDataResetCopy {
     static let deletionsReachOtherDevices =
         "Cadence syncs through your private iCloud database, so these deletions reach your other devices."
+
+    /// What the reset deletes, as both typed-phrase gates say it ([[T-7209]] (b), owner decision
+    /// 2026-11-02). The two gates each enumerated store kinds and each went stale differently —
+    /// the Mac's named documents and not focus history, the phone's the reverse, and neither
+    /// named habits, goals or images, all of which `markAllCadenceModelsDeleted` deletes. So the
+    /// store half is not enumerated: "everything Cadence holds in this store" is true of every
+    /// `@Model` that sweep covers, and `CadencePrivacyDataResetSurfaceTests` holds the sweep to the
+    /// whole schema. Retained legacy records are named because nothing in the app shows them.
+    ///
+    /// What follows "plus" is what `deleteCadenceDataAndLocalArtifacts` removes **outside** the
+    /// store: the pending notifications (`CadenceNotificationCanceller`), the backups and the
+    /// pending restore (`removeStoredBackups`), and the saved key (`removeStoredAPIKey`). The
+    /// macOS-only account profile is said beside this, on the Mac, because the phone has none
+    /// (T-474).
+    static let gateDeletesEverything =
+        "This permanently deletes everything Cadence holds in this store, retained legacy records "
+        + "included, plus its scheduled notifications, local Cadence backups, any pending restore, "
+        + "and the saved OpenAI key."
 }
 
 /// The sentences both platforms say about the store folders Cadence is **not** using, and the

@@ -1548,6 +1548,50 @@ struct CadenceSettingsSectionCopyTests {
         }
     }
 
+    /// **[[T-7209]] (b): both delete-everything gates say what the reset deletes in one shared
+    /// sentence, and it does not enumerate store kinds.** The Mac's gate named documents and not
+    /// focus history, the phone's the reverse, and neither named habits, goals or images, though
+    /// `markAllCadenceModelsDeleted` deletes all of them. The sentence says "everything Cadence
+    /// holds in this store" (owner decision 2026-11-02) and then names each thing
+    /// `deleteCadenceDataAndLocalArtifacts` removes outside the store.
+    @Test func bothDataResetGatesReadOneSentenceForWhatTheyDelete() throws {
+        let sentence = CadenceDataResetCopy.gateDeletesEverything
+        #expect(sentence.contains("permanently deletes everything Cadence holds in this store"))
+        for outsideTheStore in ["scheduled notifications", "local Cadence backups", "pending restore", "saved OpenAI key"] {
+            #expect(sentence.contains(outsideTheStore), "the gate sentence does not say it deletes \(outsideTheStore)")
+        }
+        // The sequence the sentence describes still removes those, so the claim has a source.
+        let service = try Self.strippedSource(at: "Cadence/Services/CadencePrivacyDataResetService.swift")
+        let sequence = try #require(
+            CadenceSourceScan.functionBody(named: "deleteCadenceDataAndLocalArtifacts", in: service),
+            "non-vacuity: the reset sequence was not found"
+        )
+        for step in ["deleteCadenceData(in:", "removeStoredAPIKey(", "removeStoredBackups("] {
+            #expect(sequence.contains(step), "the reset sequence no longer calls \(step)")
+        }
+
+        let gates: [(path: String, declaration: String)] = [
+            ("Cadence/macOS/Views/SettingsDataSafetySection.swift", "private struct SettingsDataResetConfirmationSheet: View"),
+            ("Cadence/iOS/iOSDataResetSettingsSection.swift", "struct iOSDataResetConfirmationSheet: View"),
+        ]
+        for gate in gates {
+            let code = try Self.strippedSource(at: gate.path)
+            let body = try #require(
+                CadenceSourceScan.declarationBody(gate.declaration, in: code),
+                "non-vacuity: \(gate.declaration) was not found in \(gate.path)"
+            )
+            #expect(body.contains("Delete Everything"), "non-vacuity: \(gate.path)'s body is not the gate")
+            #expect(
+                CadenceSourceScan.matchCount("CadenceDataResetCopy\\.gateDeletesEverything", in: body) == 1,
+                "\(gate.path)'s gate does not read the shared sentence for what it deletes exactly once"
+            )
+            #expect(
+                body.contains("permanently deletes") == false,
+                "\(gate.path)'s gate types its own list of what it deletes beside the shared sentence"
+            )
+        }
+    }
+
     /// **[[T-7208]]: the Mac's Privacy card names what an AI action sends.** It said "selected
     /// note content", the clause [[T-1322]] removed from the AI pane's disclosure because the
     /// request carries the note's title, its whole text and its list's name.

@@ -149,7 +149,8 @@ private struct iOSDataResetConfirmationSheet: View {
                                     // section that gives their full paths (T-1841). T-1840: it
                                     // names the recovery store before the button is live, and
                                     // keeps quiet about deleting the one this launch runs on.
-                                    Text("Cadence permanently deletes your tasks, lists, notes, tags, saved links, focus history, and retained legacy records from this store, plus local Cadence backups, any pending restore, and the saved OpenAI key. \(CadenceUnmanagedStoreCopy.resetGateDeletesThem(runningOnRecoveryStore: PersistenceController.startupIssue?.kind == .recoveryStore))")
+                                    // [[T-7209]] (b): what it deletes is the Mac gate's sentence.
+                                    Text("\(CadenceDataResetCopy.gateDeletesEverything) \(CadenceUnmanagedStoreCopy.resetGateDeletesThem(runningOnRecoveryStore: PersistenceController.startupIssue?.kind == .recoveryStore))")
                                         .cadenceFont(.metadata, base: 12, weight: .regular)
                                         .foregroundStyle(Theme.subdued)
                                         .fixedSize(horizontal: false, vertical: true)
