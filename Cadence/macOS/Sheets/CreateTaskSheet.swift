@@ -247,14 +247,16 @@ struct CreateTaskSheet: View {
                 )
             }
 
+            // [[T-8104]]: the do date wears the app's sun; the flag stays with Priority alone, so
+            // the due date takes a calendar-deadline glyph rather than a second identical flag.
             TaskDateChip(label: "Do Date",
-                         icon: "calendar",
+                         icon: CadenceBoardCardMetadata.doDateIcon,
                          activeColor: Theme.blue,
                          isOn: $hasDoDate, date: $doDate,
                          showPicker: $showDoPicker)
 
             TaskDateChip(label: "Due Date",
-                         icon: "flag.fill",
+                         icon: "calendar.badge.exclamationmark",
                          activeColor: Theme.red,
                          isOn: $hasDueDate, date: $dueDate,
                          showPicker: $showDuePicker)

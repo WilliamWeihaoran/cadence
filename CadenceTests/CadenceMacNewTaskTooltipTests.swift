@@ -51,6 +51,26 @@ struct CadenceMacNewTaskTooltipTests {
         #expect(!compact.contains(".accessibilityLabel("), "the chip must not be named a second, tooltip-less way")
     }
 
+    /// [[T-8104]], owner-decided 2026-11-02: an unset Do Date / Due Date chip shows its word, as
+    /// the Tags chip beside it does; the do chip wears the app's sun (never `calendar` or the old
+    /// today `star.fill`), and the flag stays with Priority alone. Not parameterised (T-3212).
+    @Test func anUnsetDateChipShowsItsWordAndOnlyPriorityWearsTheFlag() throws {
+        let chip = try Self.body("struct TaskDateChip: View", in: "Cadence/macOS/Sheets/CreateTaskSheetSupportViews.swift")
+        #expect(chip.contains("guardisOnelse{returnlabel}"), "an unset chip's text is its word")
+        #expect(chip.components(separatedBy: "Text(displayLabel)").count - 1 == 1, "non-vacuity: the chip draws its text once")
+        #expect(!chip.contains("ifisOn{Text(displayLabel)"), "the chip's word must not hide until a date is set")
+        #expect(!chip.contains("star.fill"), "a today do date keeps the sun; only its tint changes")
+        #expect(chip.contains("icon==CadenceBoardCardMetadata.doDateIcon"))
+
+        let sheet = try Self.body("struct CreateTaskSheet: View", in: "Cadence/macOS/Sheets/CreateTaskSheet.swift")
+        #expect(sheet.contains("TaskDateChip(label:\"DoDate\",icon:CadenceBoardCardMetadata.doDateIcon,"))
+        let due = try #require(sheet.range(of: "TaskDateChip(label:\"DueDate\","))
+        #expect(!sheet[due.lowerBound...].prefix(80).contains("flag"), "the due chip must not wear Priority's flag")
+
+        let inline = try Self.body("struct InlineTaskComposer: View", in: "Cadence/macOS/Views/InlineTaskComposerView.swift")
+        #expect(inline.contains("TaskDateChip(label:\"DoDate\",icon:CadenceBoardCardMetadata.doDateIcon,"))
+    }
+
     /// The parameterised test above cannot be baselined by `mutate.sh` (T-3212); this sibling reads
     /// the same three files, so a run that executed it reached them.
     @Test func theThreeFilesAreReadable() throws {

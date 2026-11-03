@@ -198,12 +198,10 @@ struct TaskDateChip: View {
 
     private let cal = Calendar.current
 
-    private var isDoDate: Bool { icon == "calendar" }
-
-    private var effectiveIcon: String {
-        guard isOn, isDoDate else { return icon }
-        return cal.isDateInToday(date) ? "star.fill" : icon
-    }
+    /// [[T-8104]]: the do-date chip wears the app's do-date glyph, set or not, and keeps it on the
+    /// day it is today -- only the tint changes then -- so it is the caller's glyph that says which
+    /// field this is.
+    private var isDoDate: Bool { icon == CadenceBoardCardMetadata.doDateIcon }
 
     private var effectiveIconColor: Color {
         guard isOn else { return Theme.dim }
@@ -220,15 +218,15 @@ struct TaskDateChip: View {
         HStack(spacing: 0) {
             Button { showPicker.toggle() } label: {
                 HStack(spacing: 5) {
-                    Image(systemName: effectiveIcon)
+                    Image(systemName: icon)
                         .font(.system(size: 11))
                         .foregroundStyle(isOn ? effectiveIconColor : (isHovered ? Theme.muted : Theme.dim))
-                    if isOn {
-                        Text(displayLabel)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(isDoDate && cal.isDateInToday(date) ? Theme.amber : activeColor)
-                            .fixedSize()
-                    }
+                    // [[T-8104]]: an unset chip shows its word, as the Tags chip beside it does,
+                    // rather than a bare glyph; a set one shows its date.
+                    Text(displayLabel)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(isOn ? effectiveIconColor : (isHovered ? Theme.muted : Theme.dim))
+                        .fixedSize()
                 }
                 .padding(.leading, 8)
                 .padding(.trailing, 8)
@@ -247,8 +245,8 @@ struct TaskDateChip: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
             }
             .buttonStyle(.cadencePlain(cornerRadius: Theme.radiusControlCompact))
-            // [[T-10230]]: an unset chip is a bare glyph, so it is named, with its tooltip, by
-            // what it sets; the date it carries once set is the value, not the name.
+            // [[T-10230]]: named, with its tooltip, by what it sets; the date it carries once set
+            // is the value, not the name.
             .cadenceControlLabel(label)
             .accessibilityValue(isOn ? displayLabel : "")
             .onHover { isHovered = $0 }

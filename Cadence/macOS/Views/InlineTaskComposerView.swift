@@ -135,7 +135,7 @@ struct InlineTaskComposer: View {
             if chips.showsDay {
                 TaskDateChip(
                     label: "Do Date",
-                    icon: "calendar",
+                    icon: CadenceBoardCardMetadata.doDateIcon,
                     activeColor: Theme.blue,
                     isOn: dayIsOn,
                     date: dayDate,
