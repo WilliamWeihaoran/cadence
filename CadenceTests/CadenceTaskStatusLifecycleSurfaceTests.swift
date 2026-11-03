@@ -685,6 +685,23 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
         #expect(#"(subtask.isDone ? "Mark subtask todo" : "Complete subtask")"#.matchCount(ofPattern: taskLevelDoneLabel) == 0)
     }
 
+    /// **[[T-10502]]: the trailing swipe names its action in the circle's words.** The tray said
+    /// "Done" / "Todo" while the inspector and every completion circle say "Complete" / "Reopen",
+    /// so VoiceOver read "Todo" in the rotor and "Reopen task" on the circle for one action. The
+    /// tray word is the leading word of `accessibilityActionLabel` for an open and a finished row.
+    /// Source-scanned for the tray: `Cadence/iOS/` is not compiled into this macOS target.
+    @Test func theTrailingSwipeWordIsTheLeadingWordOfTheCirclesActionLabel() throws {
+        let open = try #require(CadenceTaskCompletionState.todo.accessibilityActionLabel.split(separator: " ").first)
+        let finished = try #require(CadenceTaskCompletionState.done.accessibilityActionLabel.split(separator: " ").first)
+        #expect(open == "Complete")
+        #expect(finished == "Reopen")
+
+        let code = try strippingComments(sourceFile("Cadence/iOS/iOSTaskRowActionViews.swift"))
+        #expect(code.contains(#"title: isFinished ? "\#(finished)" : "\#(open)","#), "the tray no longer reads Reopen / Complete")
+        #expect(!code.contains(#""Todo""#), "the tray still offers \"Todo\"")
+        #expect(!code.contains(#"? "Done""#) && !code.contains(#": "Done""#), "the tray still offers \"Done\"")
+    }
+
     /// The shared toggle is the one place the decision lives; the macOS animation manager defers to
     /// the same predicate rather than keeping its own copy of the rule.
     @Test func bothToggleEntryPointsReadTheFinishedPredicate() throws {

@@ -42,19 +42,22 @@ enum iOSTaskRowSwipeActions {
     ) -> [CadenceSwipeAction] {
         // T-344: the swipe describes what `toggleCompletion` will do, so it reads the same
         // predicate that decides it. On a cancelled row this used to promise "Done" and the tap
-        // delivered it; both halves say "Todo" now, because a cancelled task is already settled.
+        // delivered it; both halves reopen now, because a cancelled task is already settled.
+        // [[T-10502]]: the words are the inspector's and the circle's, "Complete" / "Reopen"
+        // (`CadenceTaskCompletionState.accessibilityActionLabel`, [[T-7010]]), not "Done" / "Todo",
+        // so the tray, its VoiceOver rotor action and Voice Control's "Tap Reopen" all match.
         let isFinished = CadenceTaskQuerySupport.isFinishedTask(task)
         return [
             CadenceSwipeAction(
                 id: "toggle-completion",
-                title: isFinished ? "Todo" : "Done",
+                title: isFinished ? "Reopen" : "Complete",
                 systemImage: isFinished ? "circle" : "checkmark.circle.fill",
                 tint: isFinished ? Theme.blue : Theme.green
             ) {
                 // [[T-8203]]: the swipe starts the same deferred fill the circle does, so the row
                 // the tray springs closed over shows the ring running rather than sitting unchanged
                 // until a write that already happened removes it. It is the *toggle*, not the
-                // circle's three-tap walk: a swipe that says "Done" on a row already filling takes
+                // circle's three-tap walk: a swipe that says "Complete" on a row already filling takes
                 // the completion back rather than turning it into a cancellation.
                 TaskCompletionAnimationManager.shared.toggleCompletion(for: task)
             },
