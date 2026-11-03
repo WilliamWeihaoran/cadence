@@ -417,6 +417,25 @@ struct CadenceEmptyStateAuditTests {
 
     // MARK: One spelling per sentence
 
+    /// **[[T-8586]]: an empty note's ghost text is one sentence on both platforms**, the Mac's
+    /// shape, and only the verb follows the input -- `press` with a keyboard, `type` with the
+    /// on-screen one. The host's placeholder leads it, without its ellipsis, and both views read
+    /// the one helper rather than spelling a second line of their own.
+    @Test func anEmptyNoteSaysOneSentenceAndOnlyTheVerbFollowsTheInput() throws {
+        #expect(CadenceEmptyStateCopy.noteBodyPrompt(lead: "Start writing", hasHardwareKeyboard: true)
+            == "Start writing, or press / for commands.")
+        #expect(CadenceEmptyStateCopy.noteBodyPrompt(lead: "Start writing\u{2026}", hasHardwareKeyboard: false)
+            == "Start writing, or type / for commands.")
+        #expect(CadenceEmptyStateCopy.noteBodyPrompt(lead: "Add notes...", hasHardwareKeyboard: false)
+            == "Add notes, or type / for commands.")
+
+        let mac = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/NoteEditorAccessoryViews.swift"))
+        let ios = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownAccessoryViews.swift"))
+        #expect(mac.contains("CadenceEmptyStateCopy.noteBodyPrompt(lead: \"Start writing\", hasHardwareKeyboard: true)"))
+        #expect(ios.contains("CadenceEmptyStateCopy.noteBodyPrompt(lead: placeholder, hasHardwareKeyboard: false)"))
+        #expect(!ios.contains("for commands."), "the iOS prompt must not spell a second line of its own")
+    }
+
     /// **No empty-state sentence is written out in two files.**
     ///
     /// The generalisation of the per-screen fixes: rather than pinning one screen's words, this

@@ -803,20 +803,15 @@ struct iOSMarkdownEmptyPrompt: View {
     let placeholder: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(placeholder)
-                .font(.system(size: 15))
-                .foregroundStyle(Theme.dim)
-
-            Text("Type / for commands.")
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.dim)
-        }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 16)
-        // Non-interactive, so a tap anywhere in the empty body still places the caret — which is
-        // the thing you came here to do.
-        .allowsHitTesting(false)
+        // One sentence, the Mac's shape ([[T-8586]]); only the verb follows the input.
+        Text(CadenceEmptyStateCopy.noteBodyPrompt(lead: placeholder, hasHardwareKeyboard: false))
+            .font(.system(size: 15))
+            .foregroundStyle(Theme.dim)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
+            // Non-interactive, so a tap anywhere in the empty body still places the caret — which
+            // is the thing you came here to do.
+            .allowsHitTesting(false)
     }
 }
 // MARK: - Reference panel

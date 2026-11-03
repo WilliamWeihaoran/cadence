@@ -123,7 +123,7 @@ struct NoteEmptyBodyPlaceholder: View {
     var body: some View {
         if isVisible {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Start writing, or press / for commands.")
+                Text(CadenceEmptyStateCopy.noteBodyPrompt(lead: "Start writing", hasHardwareKeyboard: true))
                     .font(.system(size: 15))
                     .foregroundStyle(Theme.dim)
                     .allowsHitTesting(false)

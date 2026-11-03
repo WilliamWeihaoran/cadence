@@ -334,4 +334,21 @@ nonisolated enum CadenceEmptyStateCopy {
     /// `listsTitle(isNarrowed:)` rather than replacing it: the touch column says both, one under
     /// the other.
     static let addFirstListAction = "Add first list"
+
+    /// **An empty note body's ghost text, one sentence on both platforms** ([[T-8586]], under
+    /// [[T-8201]]): `Start writing, or press / for commands.` on the Mac. iOS drew the host's
+    /// placeholder over a second, smaller `Type / for commands.` line; the split answered nothing,
+    /// so it is gone. `lead` is the host's own placeholder (`Start writing…`, `Add notes…`), with
+    /// its trailing ellipsis dropped because the sentence carries on past it.
+    ///
+    /// **The verb is the one platform difference, and it names the input:** a Mac has a key to
+    /// press; a phone or iPad types `/` on the on-screen keyboard.
+    static func noteBodyPrompt(lead: String, hasHardwareKeyboard: Bool) -> String {
+        var trimmed = lead.trimmingCharacters(in: .whitespaces)
+        for ellipsis in ["\u{2026}", "..."] where trimmed.hasSuffix(ellipsis) {
+            trimmed = String(trimmed.dropLast(ellipsis.count))
+        }
+        let verb = hasHardwareKeyboard ? "press" : "type"
+        return "\(trimmed), or \(verb) / for commands."
+    }
 }
