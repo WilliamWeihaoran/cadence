@@ -18,7 +18,7 @@ struct CreateContextSheet: View {
     var body: some View {
         ListEditorSheetShell(
             title: "New Context",
-            confirmTitle: "Create",
+            confirmTitle: CadenceListVocabularyCopy.createActionTitle,
             isConfirmDisabled: CadenceTitleNormalization.isBlank(name),
             onConfirm: create
         ) {

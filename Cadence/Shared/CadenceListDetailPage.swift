@@ -182,4 +182,35 @@ enum ListDetailHeaderAccessibility {
     static func deadlineLabel(dueDate: String) -> String {
         "Deadline \(DateFormatters.shortDateString(from: dueDate))"
     }
+
+    /// The header's edit control, named for the list it edits ([[T-8563]] (e)). iOS said a bare
+    /// "Edit list" and the Mac "Edit <name>"; the one that names the list is strictly more use to
+    /// VoiceOver, so both read this. A blank name reads the header's own fallback title.
+    static func editLabel(listName: String) -> String {
+        "Edit \(TaskTitleSupport.displayTitle(listName, fallback: TaskTitleSupport.defaultCompactDisplayTitle))"
+    }
+}
+
+/// The list surfaces' small words, one spelling on both platforms ([[T-8563]]).
+///
+/// Each of these was spelled two ways across iOS and macOS with no hardware constraint behind
+/// either, and each spelling below is the owner's decision of 2026-11-02.
+nonisolated enum CadenceListVocabularyCopy {
+    /// The confirm of the New List and New Context sheets. iOS said "Save", which belongs to the
+    /// edit sheets; a creation sheet names what it does, as the Mac's always has.
+    static let createActionTitle = "Create"
+
+    /// Bringing an archived list back. iOS's Lists page alone said "Restore"; Settings > Lists on
+    /// both platforms already said "Unarchive".
+    static let unarchiveActionTitle = "Unarchive"
+
+    /// The list editor's two due-date toggles, plural because each governs every row (iOS's
+    /// spelling; the Mac's create and edit sheets read "due date").
+    static let hideEmptyTaskDueDatesToggle = "Hide empty task due dates"
+    static let hideEmptyColumnDueDatesToggle = "Hide empty column due dates"
+
+    /// The list editors' name placeholders, with no ellipsis on a single-line field
+    /// ([[T-10006]]).
+    static let areaNamePlaceholder = "Area name"
+    static let projectNamePlaceholder = "Project name"
 }

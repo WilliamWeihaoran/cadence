@@ -115,7 +115,8 @@ struct iOSContextEditorSheet: View {
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    // [[T-8563]] (a): New Context creates, Edit Context saves.
+                    Button(isEditing ? "Save" : CadenceListVocabularyCopy.createActionTitle) {
                         save()
                     }
                     .tint(Theme.blue)

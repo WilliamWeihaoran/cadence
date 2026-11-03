@@ -396,8 +396,9 @@ struct iOSArchivedListRow: View {
 
             if !wraps { Spacer(minLength: 8) }
 
+            // [[T-8563]] (b): "Unarchive", the word Settings > Lists says for the same action.
             iOSActionButton(
-                title: "Restore",
+                title: CadenceListVocabularyCopy.unarchiveActionTitle,
                 role: .secondary,
                 size: .compact,
                 action: restore

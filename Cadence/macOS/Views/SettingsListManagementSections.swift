@@ -817,7 +817,7 @@ struct SettingsListsSection: View {
                         subtitle: area.context?.name ?? CadenceListSettingsCopy.noContextSubtitle,
                         color: Color(hex: area.colorHex),
                         statusLabel: area.isDone ? "Completed" : "Archived",
-                        primaryLabel: area.isDone ? "Reopen" : "Unarchive",
+                        primaryLabel: area.isDone ? "Reopen" : CadenceListVocabularyCopy.unarchiveActionTitle,
                         onPrimary: { onReopenArea(area) },
                         onDelete: { onDeleteArea(area) }
                     )
@@ -849,7 +849,7 @@ struct SettingsListsSection: View {
                         statusLabel: CadenceListSearchSupport.lifecycle(of: project).statusLabel,
                         // "Unarchive" is only true of `.archived` — a done, paused or cancelled
                         // project is not being unarchived, so those three read "Reopen".
-                        primaryLabel: project.isArchived ? "Unarchive" : "Reopen",
+                        primaryLabel: project.isArchived ? CadenceListVocabularyCopy.unarchiveActionTitle : "Reopen",
                         onPrimary: { onReopenProject(project) },
                         onDelete: { onDeleteProject(project) }
                     )

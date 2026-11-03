@@ -97,7 +97,7 @@ struct CreateListSheet: View {
     var body: some View {
         ListEditorSheetShell(
             title: "New List",
-            confirmTitle: "Create",
+            confirmTitle: CadenceListVocabularyCopy.createActionTitle,
             isConfirmDisabled: CadenceTitleNormalization.isBlank(name),
             onConfirm: create
         ) {
@@ -121,7 +121,7 @@ struct CreateListSheet: View {
                 name: $name,
                 colorHex: $selectedColor,
                 icon: $selectedIcon,
-                placeholder: listType == .area ? "Area name" : "Project name",
+                placeholder: listType == .area ? CadenceListVocabularyCopy.areaNamePlaceholder : CadenceListVocabularyCopy.projectNamePlaceholder,
                 details: $details
             )
 
@@ -143,13 +143,13 @@ struct CreateListSheet: View {
                 }
 
                 ListEditorCheckRow(
-                    label: "Hide empty task due date",
+                    label: CadenceListVocabularyCopy.hideEmptyTaskDueDatesToggle,
                     isOn: $hideDueDateIfEmpty
                 )
 
                 TaskInspectorFieldDivider()
                 ListEditorCheckRow(
-                    label: "Hide empty column due date",
+                    label: CadenceListVocabularyCopy.hideEmptyColumnDueDatesToggle,
                     isOn: $hideSectionDueDateIfEmpty
                 )
             }

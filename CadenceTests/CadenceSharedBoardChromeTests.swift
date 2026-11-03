@@ -774,7 +774,8 @@ struct CadenceSharedBoardChromeTests {
         )
 
         let editor = try strippingComments(sourceFile("Cadence/iOS/iOSListEditorViews.swift"))
-        #expect(editor.contains("Hide empty column due dates"), "the iOS list editor offers no column-due-date toggle")
+        // [[T-8563]] (c): the toggle reads the shared plural spelling.
+        #expect(editor.contains("Toggle(CadenceListVocabularyCopy.hideEmptyColumnDueDatesToggle,"), "the iOS list editor offers no column-due-date toggle")
         for model in ["area", "project"] {
             #expect(
                 editor.range(of: "\(model)\\.hideSectionDueDateIfEmpty\\s*=", options: .regularExpression) != nil,

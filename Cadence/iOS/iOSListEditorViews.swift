@@ -175,7 +175,7 @@ struct iOSListEditorSheet: View {
 
                         // [[T-10045]]: Return saves, as it confirms the Mac list sheets
                         // ([[T-7266]]); blank does nothing, as the disabled Save does.
-                        TextField(isProjectMode ? "Project name" : "Area name", text: $name)
+                        TextField(isProjectMode ? CadenceListVocabularyCopy.projectNamePlaceholder : CadenceListVocabularyCopy.areaNamePlaceholder, text: $name)
                             .font(.system(size: 17, weight: .semibold))
                             .submitLabel(.done)
                             .onSubmit(submitName)
@@ -266,13 +266,11 @@ struct iOSListEditorSheet: View {
                     }
 
                     // Lives here rather than under "Columns", where it read as a column setting:
-                    // `hideDueDateIfEmpty` is about the *task* rows in this list. macOS spells the
-                    // two apart as "Hide empty task due date" / "Hide empty column due date".
-                    Toggle("Hide empty task due dates", isOn: $hideEmptyDueDates)
-                    // The column half of the same pair macOS spells "Hide empty task due date" /
-                    // "Hide empty column due date". It sits beside its sibling rather than under
-                    // "Columns" so the two read as one choice with two halves.
-                    Toggle("Hide empty column due dates", isOn: $hideEmptySectionDueDates)
+                    // `hideDueDateIfEmpty` is about the *task* rows in this list.
+                    Toggle(CadenceListVocabularyCopy.hideEmptyTaskDueDatesToggle, isOn: $hideEmptyDueDates)
+                    // The column half of the same pair. It sits beside its sibling rather than
+                    // under "Columns" so the two read as one choice with two halves.
+                    Toggle(CadenceListVocabularyCopy.hideEmptyColumnDueDatesToggle, isOn: $hideEmptySectionDueDates)
                 } header: {
                     iOSListEditorSectionHeader(title: "Organize")
                 }
@@ -327,7 +325,8 @@ struct iOSListEditorSheet: View {
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    // [[T-8563]] (a): a new list is created, an existing one saved.
+                    Button(isEditing ? "Save" : CadenceListVocabularyCopy.createActionTitle) {
                         save()
                     }
                     .disabled(trimmedName.isEmpty)

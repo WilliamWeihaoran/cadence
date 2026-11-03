@@ -491,7 +491,7 @@ private struct iOSListDetailHeader: View {
                 }
                 iOSIconButton(
                     systemImage: "slider.horizontal.3",
-                    accessibilityLabel: "Edit list",
+                    accessibilityLabel: ListDetailHeaderAccessibility.editLabel(listName: title),
                     action: onEdit
                 )
             }

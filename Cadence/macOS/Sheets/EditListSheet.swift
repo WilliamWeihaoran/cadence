@@ -56,7 +56,7 @@ struct EditAreaSheet: View {
                 name: $name,
                 colorHex: $selectedColor,
                 icon: $selectedIcon,
-                placeholder: "Area name",
+                placeholder: CadenceListVocabularyCopy.areaNamePlaceholder,
                 details: $details
             )
 
@@ -74,13 +74,13 @@ struct EditAreaSheet: View {
                 }
 
                 ListEditorCheckRow(
-                    label: "Hide empty task due date",
+                    label: CadenceListVocabularyCopy.hideEmptyTaskDueDatesToggle,
                     isOn: $hideDueDateIfEmpty
                 )
 
                 TaskInspectorFieldDivider()
                 ListEditorCheckRow(
-                    label: "Hide empty column due date",
+                    label: CadenceListVocabularyCopy.hideEmptyColumnDueDatesToggle,
                     isOn: $hideSectionDueDateIfEmpty
                 )
 
@@ -319,7 +319,7 @@ struct EditProjectSheet: View {
                 name: $name,
                 colorHex: $selectedColor,
                 icon: $selectedIcon,
-                placeholder: "Project name",
+                placeholder: CadenceListVocabularyCopy.projectNamePlaceholder,
                 details: $details
             )
 
@@ -348,13 +348,13 @@ struct EditProjectSheet: View {
 
                 TaskInspectorFieldDivider()
                 ListEditorCheckRow(
-                    label: "Hide empty task due date",
+                    label: CadenceListVocabularyCopy.hideEmptyTaskDueDatesToggle,
                     isOn: $hideDueDateIfEmpty
                 )
 
                 TaskInspectorFieldDivider()
                 ListEditorCheckRow(
-                    label: "Hide empty column due date",
+                    label: CadenceListVocabularyCopy.hideEmptyColumnDueDatesToggle,
                     isOn: $hideSectionDueDateIfEmpty
                 )
 
