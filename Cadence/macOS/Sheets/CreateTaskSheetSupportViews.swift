@@ -146,6 +146,9 @@ struct TaskPriorityChoiceList: View {
     }
 }
 
+/// One row of the `~` panel. **The checkmark is the draft's list, the highlight is the fill
+/// ([[T-8101]]),** as `ContainerPickerRow` draws them: the mark used to follow the keyboard
+/// highlight, which opened on Inbox, so a draft in "Work" opened onto "checkmark Inbox".
 struct TildeContainerPickerRow: View {
     let icon: String
     let name: String
@@ -160,7 +163,7 @@ struct TildeContainerPickerRow: View {
                 Image(systemName: icon).font(.system(size: 12)).foregroundStyle(color).frame(width: 16)
                 Text(name).font(.system(size: 13)).foregroundStyle(Theme.text)
                 Spacer()
-                if isHighlighted {
+                if isSelected {
                     Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.blue)
                 }
             }

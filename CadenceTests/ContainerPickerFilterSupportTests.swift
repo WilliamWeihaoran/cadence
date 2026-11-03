@@ -496,5 +496,43 @@ struct ContainerPickerFilterSupportTests {
         #expect(CadenceSourceScan.matchCount("isSelected: selection == ", in: popover) == 3)
         #expect(popover.contains("highlightIdx = ContainerPickerFilterSupport.openingHighlightIndex("))
     }
+
+    /// The `~` panel follows the same rule: its highlight opens on the draft's list, and with no
+    /// list (or one the panel does not offer) on the first row.
+    @Test func theTildePanelHighlightOpensOnTheDraftsList() throws {
+        let fixture = try makeFixture()
+        let errands = try #require(fixture.areas.first { $0.name == "Errands" })
+        let selection = TaskContainerSelection.area(errands.id)
+        let items = TildeContainerPickerSupport.flatContainers(
+            query: "", contexts: fixture.contexts, areas: fixture.areas, projects: fixture.projects,
+            selection: selection
+        )
+        let index = TildeContainerPickerSupport.openingHighlightIndex(selection: selection, in: items)
+        // Non-vacuity: Errands is not row 0, so opening on row 0 would have named another list.
+        #expect(index > 0)
+        #expect(items[index].tag == selection)
+        #expect(TildeContainerPickerSupport.openingHighlightIndex(selection: nil, in: items) == 0)
+        #expect(TildeContainerPickerSupport.openingHighlightIndex(selection: .area(UUID()), in: items) == 0)
+    }
+
+    /// The `~` row draws its checkmark from `isSelected`, and the panel opens its highlight through
+    /// `openingHighlightIndex` rather than clamping row 0.
+    @Test func theTildeRowCheckmarksTheDraftsListAndNotTheHighlight() throws {
+        let rows = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Sheets/CreateTaskSheetSupportViews.swift")
+        )
+        let row = try #require(CadenceSourceScan.declarationBody("struct TildeContainerPickerRow: View", in: rows))
+        #expect(row.contains("let isSelected: Bool"))
+        #expect(CadenceSourceScan.matchCount("if isSelected \\{\\s*Image\\(systemName: \"checkmark\"\\)", in: row) == 1)
+        #expect(CadenceSourceScan.matchCount("if isHighlighted", in: row) == 0)
+        #expect(row.contains(".background(isHighlighted ? Theme.blue.opacity(0.08) : Color.clear)"))
+
+        let panel = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TildeContainerPicker.swift")
+        )
+        let picker = try #require(CadenceSourceScan.declarationBody("struct TildeContainerPicker: View", in: panel))
+        #expect(CadenceSourceScan.matchCount("isSelected: selection == item\\.tag", in: picker) == 1)
+        #expect(picker.contains("highlightIndex = TildeContainerPickerSupport.openingHighlightIndex(selection: selection, in: items)"))
+    }
 }
 #endif

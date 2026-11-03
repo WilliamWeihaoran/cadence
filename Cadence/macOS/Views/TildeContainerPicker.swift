@@ -131,6 +131,14 @@ enum TildeContainerPickerSupport {
         return result
     }
 
+    /// The row the panel's highlight opens on: the draft's own list when the panel offers it,
+    /// otherwise the first row ([[T-8101]]). Opening on row 0 put Enter and Tab on Inbox for a
+    /// draft filed elsewhere; this is the shared list popover's rule, read through its helper.
+    static func openingHighlightIndex(selection: TaskContainerSelection?, in items: [TildeContainerItem]) -> Int {
+        guard let selection else { return 0 }
+        return ContainerPickerFilterSupport.openingHighlightIndex(for: selection, in: items.map(\.tag))
+    }
+
     /// Commits a `~` choice: the container, **and** the section name that choice may have
     /// invalidated.
     ///
@@ -209,7 +217,7 @@ struct TildeContainerPicker: View {
         .frame(minWidth: 200)
         .background(Theme.surfaceElevated)
         .onAppear {
-            clampHighlight()
+            highlightIndex = TildeContainerPickerSupport.openingHighlightIndex(selection: selection, in: items)
             DispatchQueue.main.async { isSearchFocused = true }
         }
         .onChange(of: query) { _, _ in highlightIndex = 0 }
