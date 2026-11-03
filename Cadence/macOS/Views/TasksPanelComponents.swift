@@ -427,7 +427,7 @@ struct MacTaskRow: View {
                         .background(Theme.blue)
                         .clipShape(Circle())
                 }
-                .buttonStyle(.cadencePlain)
+                .buttonStyle(.cadencePlain(.circle))
                 // Name *and* tooltip from one string, the shape T-472 settled on. It carried the
                 // `.help` alone, so the pointer got a sentence and VoiceOver got "play.fill".
                 .cadenceControlLabel(CadenceTaskControlAccessibility.startFocus)

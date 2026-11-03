@@ -1,22 +1,54 @@
 import SwiftUI
 
-/// **[[T-9535]].** `cornerRadius` is the radius the hover wash, its stroke and the hit shape are
-/// drawn at. It defaults to `Theme.radiusControl` for a label with no plate of its own; a label
-/// that paints its own plate at another radius passes that radius
-/// (`.cadencePlain(cornerRadius: 8)`), so the pointer lights one outline whose corners meet the
-/// plate's -- AGENTS.md's one-hover-layer-at-one-radius rule. Before this the wash was always
-/// 10pt, and ~40 Mac plates (7, 8, 12, 14...) drew a second outline that disagreed at the corners.
+/// **[[T-9601]].** The shape the hover wash, its stroke and the hit shape are drawn in.
+///
+/// [[T-9535]] gave the style a *radius*, which can only answer a rounded-rectangle plate. Ten
+/// controls clip their label to a `Circle` or a `Capsule` -- the date picker's day cells and its
+/// quick pills, the Focus overlay's close and round action buttons, the inbox completion circle,
+/// the Settings and board colour swatches, start-focus, the segmented pill and the root floating
+/// button -- and every one of them got a 10pt rounded rectangle washed round a round plate, which
+/// is the same disagreement T-9535 fixed for corners, one shape further out. A plate now declares
+/// its shape rather than a number, so the one hover layer meets the control it sits under.
+// `nonisolated` because this file is compiled under default main-actor isolation, and a
+// main-actor-isolated `Equatable` conformance cannot be used from the nonisolated context a
+// `#expect` macro expands into -- 5 `IsolatedConformances` warnings, which are errors in the
+// Swift 6 language mode. The plate is a value with no state and belongs on no actor.
+nonisolated enum CadencePlainButtonPlate: Equatable {
+    case roundedRectangle(CGFloat)
+    case circle
+    case capsule
+
+    /// The hit shape. `AnyShape` is enough here because `contentShape` asks only for a `Shape`;
+    /// the wash and its stroke are drawn case by case below, because `strokeBorder` needs an
+    /// `InsettableShape` and erasing the plate would quietly demote it to `stroke` -- a hairline
+    /// half a line width further out than every plate this style has ever drawn.
+    var hitShape: AnyShape {
+        switch self {
+        case .roundedRectangle(let radius): AnyShape(RoundedRectangle(cornerRadius: radius))
+        case .circle: AnyShape(Circle())
+        case .capsule: AnyShape(Capsule())
+        }
+    }
+}
+
+/// **[[T-9535]], [[T-9601]].** `plate` is the shape the hover wash, its stroke and the hit shape
+/// are drawn in. It defaults to a `Theme.radiusControl` rounded rectangle for a label with no
+/// plate of its own; a label that paints its own plate passes that plate
+/// (`.cadencePlain(cornerRadius: 8)`, `.cadencePlain(.circle)`), so the pointer lights one outline
+/// that meets the plate's -- AGENTS.md's one-hover-layer-at-one-radius rule. Before T-9535 the
+/// wash was always a 10pt rounded rectangle, and ~40 Mac plates (7, 8, 12, 14...) drew a second
+/// outline that disagreed at the corners.
 struct CadencePlainButtonStyle: ButtonStyle {
-    var cornerRadius: CGFloat = Theme.radiusControl
+    var plate: CadencePlainButtonPlate = .roundedRectangle(Theme.radiusControl)
 
     func makeBody(configuration: Configuration) -> some View {
-        CadencePlainButtonBody(configuration: configuration, cornerRadius: cornerRadius)
+        CadencePlainButtonBody(configuration: configuration, plate: plate)
     }
 }
 
 private struct CadencePlainButtonBody: View {
     let configuration: ButtonStyle.Configuration
-    let cornerRadius: CGFloat
+    let plate: CadencePlainButtonPlate
     @State private var isHovered = false
 
     private var backgroundOpacity: Double {
@@ -31,17 +63,28 @@ private struct CadencePlainButtonBody: View {
         return 0
     }
 
+    // **The wash and its stroke stay spelled out HERE, inside `body`, three cases each**, rather
+    // than in two tidy `@ViewBuilder` properties beside it. `CadencePressFeedbackSurfaceTests`
+    // cuts this body at the `#else` and counts the paint in each branch, so that the touch branch
+    // can be proved to draw none; paint moved to a sibling property leaves that fence reading an
+    // empty room. The duplication is the price of the guard and is deliberate.
     var body: some View {
         #if os(macOS)
         configuration.label
-            .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(Theme.blue.opacity(backgroundOpacity))
-            )
+            .contentShape(plate.hitShape)
+            .background {
+                switch plate {
+                case .roundedRectangle(let radius): RoundedRectangle(cornerRadius: radius).fill(Theme.blue.opacity(backgroundOpacity))
+                case .circle: Circle().fill(Theme.blue.opacity(backgroundOpacity))
+                case .capsule: Capsule().fill(Theme.blue.opacity(backgroundOpacity))
+                }
+            }
             .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .strokeBorder(Theme.blue.opacity(strokeOpacity))
+                switch plate {
+                case .roundedRectangle(let radius): RoundedRectangle(cornerRadius: radius).strokeBorder(Theme.blue.opacity(strokeOpacity))
+                case .circle: Circle().strokeBorder(Theme.blue.opacity(strokeOpacity))
+                case .capsule: Capsule().strokeBorder(Theme.blue.opacity(strokeOpacity))
+                }
             }
             .animation(.easeOut(duration: 0.12), value: isHovered)
             .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
@@ -59,7 +102,7 @@ private struct CadencePlainButtonBody: View {
         // of macOS's `.cadencePlain` hover wash", and this is that sentence made executable.
         // `contentShape` is kept so the hit area does not change with the paint.
         iOSPressableButtonStyle().makeBody(configuration: configuration)
-            .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
+            .contentShape(plate.hitShape)
         #endif
     }
 }
@@ -149,7 +192,14 @@ extension ButtonStyle where Self == CadencePlainButtonStyle {
 
     /// The plain style around a label that paints its own plate at `cornerRadius` ([[T-9535]]).
     static func cadencePlain(cornerRadius: CGFloat) -> CadencePlainButtonStyle {
-        CadencePlainButtonStyle(cornerRadius: cornerRadius)
+        CadencePlainButtonStyle(plate: .roundedRectangle(cornerRadius))
+    }
+
+    /// The plain style around a label that paints a ROUND plate -- a `Circle` or a `Capsule`
+    /// ([[T-9601]]). A radius cannot express either, and 10pt round a circle is the wash this
+    /// spelling exists to stop.
+    static func cadencePlain(_ plate: CadencePlainButtonPlate) -> CadencePlainButtonStyle {
+        CadencePlainButtonStyle(plate: plate)
     }
 }
 

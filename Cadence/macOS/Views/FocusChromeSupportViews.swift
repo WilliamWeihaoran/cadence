@@ -34,7 +34,7 @@ private struct FocusSurfaceHeader<Metadata: View>: View {
                     .background(Theme.surfaceElevated)
                     .clipShape(Circle())
             }
-            .buttonStyle(.cadencePlain)
+            .buttonStyle(.cadencePlain(.circle))
             .cadenceControlLabel("Close focus session")
         }
         .padding(.leading, 24)
@@ -177,7 +177,7 @@ struct FocusIconButton: View {
                 .clipShape(Circle())
                 .shadow(color: shadowColor, radius: shadowRadius)
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(.circle))
         .cadenceControlLabel(accessibilityLabel)
     }
 }

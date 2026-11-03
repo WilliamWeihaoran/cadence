@@ -248,7 +248,7 @@ struct CadencePillButton: View {
                 .overlay(Capsule().strokeBorder(isSelected ? tint.opacity(0.24) : Color.clear, lineWidth: 1))
                 .contentShape(Capsule())
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(.capsule))
     }
 }
 

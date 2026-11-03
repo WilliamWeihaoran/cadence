@@ -16,23 +16,130 @@ import Testing
         CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
     }
 
-    /// The wash, its stroke and both hit shapes are drawn at the style's own radius, never at a
-    /// hard-coded token.
-    @Test func theWashIsDrawnAtTheStylesRadius() throws {
+    /// The wash, its stroke and both hit shapes are drawn in the style's own plate, never at a
+    /// hard-coded token and never in a shape the plate did not ask for.
+    ///
+    /// **[[T-9601]] widened this from a radius to a shape**, so the counting half changed with it:
+    /// a rounded rectangle is one of three cases rather than the only one, and what has to hold is
+    /// that every shape the body draws comes out of a `switch` over `plate`.
+    @Test func theWashIsDrawnInTheStylesPlate() throws {
         let source = try Self.code("Cadence/Shared/CadenceHoverStyles.swift")
         let body = try #require(CadenceSourceScan.declarationBody(
             "private struct CadencePlainButtonBody: View", in: source
         ))
-        let shapes = body.components(separatedBy: "RoundedRectangle(").count - 1
-        let atOwnRadius = body.components(separatedBy: "RoundedRectangle(cornerRadius: cornerRadius)").count - 1
-        #expect(shapes >= 3, "non-vacuity: the style draws \(shapes) rounded rectangles")
-        #expect(atOwnRadius == shapes, "\(shapes - atOwnRadius) of the style's shapes ignore its radius")
+
+        // Six shapes and no more: three plate cases, filled once and stroked once. A seventh
+        // would be a shape nothing in the plate asked for, which is the defect itself.
+        let shapes = ["RoundedRectangle(", "Circle()", "Capsule()"]
+            .map { body.components(separatedBy: $0).count - 1 }
+            .reduce(0, +)
+        #expect(shapes == 6, "the style draws \(shapes) shapes, not the three plates' fill and stroke")
+        #expect(body.components(separatedBy: "switch plate {").count - 1 == 2, "the wash is not switched on the plate")
+        for arm in ["case .roundedRectangle(let radius)", "case .circle", "case .capsule"] {
+            #expect(body.components(separatedBy: arm).count - 1 == 2, "\(arm) is not drawn twice")
+        }
+        #expect(body.components(separatedBy: "RoundedRectangle(cornerRadius: radius)").count - 1 == 2,
+                "a rounded plate is drawn at something other than its own radius")
+        // The fill sits below the label and the stroke above it, where both have always been, so
+        // T-9601 moves the shape and nothing else.
+        #expect(body.contains(".background {"))
+        #expect(body.contains(".overlay {"))
+        #expect(body.contains("fill(Theme.blue.opacity(backgroundOpacity))"))
+        #expect(body.contains("strokeBorder(Theme.blue.opacity(strokeOpacity))"))
+        // Both platforms take their hit shape from the plate rather than re-spelling one.
+        #expect(body.components(separatedBy: ".contentShape(plate.hitShape)").count - 1 == 2)
         #expect(!body.contains("radiusControl"), "the style's body pins a radius token")
 
-        #expect(CadencePlainButtonStyle().cornerRadius == Theme.radiusControl)
+        // The hit shape answers all three plates, so a round control's TAP area is round too --
+        // the half of this that reaches iOS, where there is no wash to look at.
+        let plate = try #require(CadenceSourceScan.declarationBody(
+            "enum CadencePlainButtonPlate: Equatable", in: source
+        ))
+        #expect(plate.contains("AnyShape(RoundedRectangle(cornerRadius: radius))"))
+        #expect(plate.contains("AnyShape(Circle())"))
+        #expect(plate.contains("AnyShape(Capsule())"))
+
+        #expect(CadencePlainButtonStyle().plate == .roundedRectangle(Theme.radiusControl))
         let plated = CadencePlainButtonStyle.cadencePlain(cornerRadius: Theme.radiusControlCompact)
-        #expect(plated.cornerRadius == Theme.radiusControlCompact)
-        #expect(plated.cornerRadius != CadencePlainButtonStyle.cadencePlain.cornerRadius)
+        #expect(plated.plate == .roundedRectangle(Theme.radiusControlCompact))
+        #expect(plated.plate != CadencePlainButtonStyle.cadencePlain.plate)
+        #expect(CadencePlainButtonStyle.cadencePlain(.circle).plate == .circle)
+        #expect(CadencePlainButtonStyle.cadencePlain(.capsule).plate == .capsule)
+    }
+
+    /// **[[T-9601]]. A round plate takes a round wash.** Every `.cadencePlain` button whose label
+    /// clips or hit-shapes to a `Circle` or a `Capsule` passes that shape to the style, so the
+    /// pointer does not light a 10pt rounded rectangle round a circle.
+    @Test func everyRoundPlatedButtonPassesItsPlatesShape() throws {
+        var round = 0
+        var offenders: [String] = []
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence") {
+            let lines = try Self.code(path).components(separatedBy: "\n")
+            for (index, line) in lines.enumerated() {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                guard trimmed.hasPrefix(".buttonStyle(.cadencePlain") else { continue }
+                guard let start = Self.buttonStart(above: index, in: lines) else { continue }
+                guard let shape = Self.roundPlate(of: Array(lines[start..<index])) else { continue }
+                round += 1
+                let expected = ".buttonStyle(.cadencePlain(\(shape)))"
+                if trimmed != expected {
+                    offenders.append("\(path):\(index + 1) plate \(shape), style \(trimmed)")
+                }
+            }
+        }
+        #expect(round >= 10, "non-vacuity: only \(round) round-plated .cadencePlain buttons found")
+        #expect(offenders.isEmpty, "a rounded-rectangle wash round a round plate: \(offenders)")
+    }
+
+    /// **[[T-9603]].** `.cadencePlain` IS the hover layer: no button wearing it may also brighten
+    /// its own plate under the pointer, or one pointer lights two layers.
+    ///
+    /// The three the ticket named -- the Focus picker's and sidebar's task rows and the board's
+    /// add-card row -- were already fixed by [[T-9945]] and [[T-9946]], which moved them to
+    /// `.plain` with their own plate as the single layer. This keeps that settled. A hover flag
+    /// read for a TINT or an underline is not a second plate and is deliberately allowed: the
+    /// rule is about `background` / `overlay` / `fill` / `strokeBorder`.
+    @Test func noPlainButtonAlsoBrightensItsOwnPlateOnHover() throws {
+        var scanned = 0
+        var offenders: [String] = []
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence") {
+            let lines = try Self.code(path).components(separatedBy: "\n")
+            for (index, line) in lines.enumerated() {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                guard trimmed.hasPrefix(".buttonStyle(.cadencePlain") else { continue }
+                guard let start = Self.buttonStart(above: index, in: lines) else { continue }
+                scanned += 1
+                for (offset, labelLine) in lines[start..<index].enumerated()
+                where Self.paintsAHoverPlate(labelLine) {
+                    offenders.append("\(path):\(start + offset + 1) \(labelLine.trimmingCharacters(in: .whitespaces))")
+                }
+            }
+        }
+        #expect(scanned > 80, "non-vacuity: only \(scanned) .cadencePlain buttons scanned")
+        #expect(offenders.isEmpty, "a second hover layer under the style's wash: \(offenders)")
+    }
+
+    /// A plate painter whose argument reads a hover flag.
+    static func paintsAHoverPlate(_ line: String) -> Bool {
+        let painters = [".background(", ".overlay(", ".fill(", ".strokeBorder("]
+        guard painters.contains(where: { line.contains($0) }) else { return false }
+        return line.range(of: #"\bis[A-Za-z]*[Hh]overed\b"#, options: .regularExpression) != nil
+    }
+
+    /// The label's outermost ROUND plate, spelled the way a call site passes it, or `nil` when the
+    /// outermost shape is a rounded rectangle (which `plateRadius` answers instead) or none.
+    /// Modifiers wrap outward, so the last shape in the label is the outermost one.
+    static func roundPlate(of label: [String]) -> String? {
+        let text = label.joined(separator: "\n")
+        var outermost: (position: String.Index, spelling: String?)?
+        for candidate in [("RoundedRectangle(cornerRadius:", nil), ("Circle()", ".circle"), ("Capsule()", ".capsule")]
+            as [(String, String?)] {
+            guard let range = text.range(of: candidate.0, options: .backwards) else { continue }
+            if outermost == nil || range.lowerBound > outermost!.position {
+                outermost = (range.lowerBound, candidate.1)
+            }
+        }
+        return outermost?.spelling
     }
 
     /// Every `.cadencePlain` button whose label paints its own rounded plate passes that plate's
@@ -49,6 +156,8 @@ import Testing
                 guard let start = Self.buttonStart(above: index, in: lines) else { continue }
                 scanned += 1
                 let label = Array(lines[start..<index])
+                // [[T-9601]]: a round outermost plate is the shape census's, not this one's.
+                if Self.roundPlate(of: label) != nil { continue }
                 guard let radius = Self.plateRadius(of: label, declarations: Array(lines[max(0, start - 4)..<start]))
                     ?? Self.forwardedPlateRadius(of: label, buttonStart: start, in: lines) else {
                     continue

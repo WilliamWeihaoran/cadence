@@ -98,8 +98,9 @@ struct CadencePressFeedbackSurfaceTests {
         // The finger draws nothing of its own. It delegates, and the only thing it adds back is the
         // hit area, which is shape rather than paint.
         #expect(touchBranch.contains("iOSPressableButtonStyle().makeBody(configuration: configuration)"))
-        // [[T-9535]]: the radius is the style's own `cornerRadius` (default `Theme.radiusControl`).
-        let shapeLine = ".contentShape(RoundedRectangle(cornerRadius: cornerRadius))"
+        // [[T-9535]], [[T-9601]]: the hit shape is the style's own `plate`, which defaults to a
+        // `Theme.radiusControl` rounded rectangle and since T-9601 can also be round.
+        let shapeLine = ".contentShape(plate.hitShape)"
         #expect(touchBranch.contains(shapeLine))
         // T-754 moved the hit area's radius onto `Theme.radiusControl`, so the branch legitimately
         // reads `Theme.` once now — the shape line just pinned above. Strip exactly that pinned
@@ -112,13 +113,20 @@ struct CadencePressFeedbackSurfaceTests {
         }
 
         // Counted over the whole body, so the wash cannot be drawn twice under either branch.
-        #expect(viewBody.components(separatedBy: "Theme.blue").count - 1 == 2)
-        #expect(viewBody.components(separatedBy: ".background(").count - 1 == 1)
+        // [[T-9601]] made the plate a shape rather than a radius, so the fill and the stroke are
+        // each spelled once per plate case: six paints, three of each, in exactly one background
+        // and one overlay. Counting the two opacities separately is what keeps the "not twice"
+        // force a widened total alone would lose.
+        #expect(viewBody.components(separatedBy: "Theme.blue").count - 1 == 6)
+        #expect(viewBody.components(separatedBy: "Theme.blue.opacity(backgroundOpacity)").count - 1 == 3)
+        #expect(viewBody.components(separatedBy: "Theme.blue.opacity(strokeOpacity)").count - 1 == 3)
+        #expect(viewBody.components(separatedBy: ".background {").count - 1 == 1)
+        #expect(viewBody.components(separatedBy: ".background(").count - 1 == 0)
 
         // One level up: `makeBody` hands the configuration straight to the body above, so a wash
         // cannot be reintroduced on the wrapper instead.
         let makeBody = try cadenceFunctionBody("func makeBody(configuration: Configuration) -> some View", in: code)
-        #expect(makeBody.contains("CadencePlainButtonBody(configuration: configuration, cornerRadius: cornerRadius)"))
+        #expect(makeBody.contains("CadencePlainButtonBody(configuration: configuration, plate: plate)"))
         #expect(makeBody.contains("#if") == false)
         #expect(makeBody.contains("Theme.") == false)
 

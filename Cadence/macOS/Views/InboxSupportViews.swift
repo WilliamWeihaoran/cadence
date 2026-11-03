@@ -148,7 +148,7 @@ private struct AppleReminderTaskRow: View {
                 )
                 .contentShape(Circle())
             }
-            .buttonStyle(.cadencePlain)
+            .buttonStyle(.cadencePlain(.circle))
             .disabled(!reminder.allowsCompletion || rowState.isCompleting)
             .opacity(AppleReminderRowPresentation.completionControlOpacity(allowsCompletion: reminder.allowsCompletion))
             // T-7007: one name for the circle in every state, iOS's, so a read-only list's circle

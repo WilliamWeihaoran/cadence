@@ -551,7 +551,7 @@ struct KanbanSectionEditorPopover: View {
                                         )
                                 }
                         }
-                        .buttonStyle(.cadencePlain)
+                        .buttonStyle(.cadencePlain(.circle))
                     }
                 }
             }

@@ -318,7 +318,7 @@ struct MonthCalendarPanel: View {
                                                     .frame(width: cellSide, height: cellSide)
                                                     .contentShape(Circle())
                                                 }
-                                                .buttonStyle(.cadencePlain)
+                                                .buttonStyle(.cadencePlain(.circle))
                                                 .accessibilityLabel(
                                                     isMarked
                                                         ? "\(DateFormatters.longDate.string(from: d)), \(markedDayCaption.lowercased())"
@@ -588,7 +588,7 @@ struct CadenceQuickDatePopover: View {
                 .background(isSelected ? tint : Theme.surface)
                 .clipShape(Capsule())
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(.capsule))
         .modifier(PickerHoverHighlight(cornerRadius: 999))
     }
 }

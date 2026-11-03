@@ -303,7 +303,7 @@ struct FloatingNewTaskButton: View {
                 .clipShape(Circle())
                 .shadow(color: Theme.blue.opacity(0.32), radius: 18, x: 0, y: 8)
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(.circle))
         .padding(.trailing, Self.edgeInset)
         .padding(.bottom, Self.edgeInset)
         // [[T-10230]]: name and tooltip from one string; the circle drew no tooltip.
