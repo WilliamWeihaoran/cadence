@@ -27,7 +27,19 @@ nonisolated enum CadenceWidgetFamilyLayout: CaseIterable, Sendable {
     /// truncation left a two-character stub, `[S` (T-7126). The medium rows and the large queue
     /// card share the same row and are wide enough that a truncated name still reads, so there it
     /// truncates as it did before `eff2f35b` (T-7211 (b)).
+    ///
+    /// [[T-7421]] (3), owner-decided 2026-11-02: between the two, the extra-large row keeps a
+    /// TRUNCATING middle option once the name can have at least
+    /// `todayRowTruncatedContainerNameMinimumEms` caption ems beside the pill, and drops it only
+    /// below that. The medium and large rows truncate the same overflow, and a truncated name
+    /// still identifies the list where a missing one says nothing; the floor is what keeps
+    /// T-7126's two-character `[S` stub out.
     var todayRowDropsContainerNameThatDoesNotFit: Bool { self == .extraLarge }
+
+    /// The narrowest a truncated container name may be drawn on a row that otherwise drops it, in
+    /// multiples of the caption size: four ems is ~38pt at the extra-large 9.5pt caption, room for
+    /// about five characters and the ellipsis -- well past T-7126's two-character stub.
+    static let todayRowTruncatedContainerNameMinimumEms: Double = 4
 
     /// The floor `countChip` may shrink a Calendar day's `d`/`p` chip to. `systemSmall` draws the
     /// two chips side by side in one ~30pt line (iPhone; ~34pt on the iPad), and at 0.9 a two-digit

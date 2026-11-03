@@ -436,13 +436,22 @@ struct TodayTasksWidgetView: View {
                         .lineLimit(titleLines)
                         .minimumScaleFactor(0.9)
 
-                    // At extra-large the container name rides beside the status pill only when it
-                    // fits WHOLE: the pill is `fixedSize`, so the narrow iPad columns left the name
-                    // a two-character stub, `[S`, which is noise rather than information (T-7126).
+                    // At extra-large the container name rides beside the status pill whole when
+                    // it fits, truncated when it can still have its minimum width, and is dropped
+                    // only below that: the pill is `fixedSize`, so the narrow iPad columns once left
+                    // the name a two-character stub, `[S` (T-7126), and dropping every name that did
+                    // not fit whole made XL the one family not to truncate (T-7421 (3)).
                     // Every other family truncates it, as before (T-7211 (b)).
                     if widgetFamily.cadenceLayout.todayRowDropsContainerNameThatDoesNotFit {
                         ViewThatFits(in: .horizontal) {
                             statusLine(status, containerName: task.containerName, truncates: false)
+                            statusLine(
+                                status,
+                                containerName: task.containerName,
+                                truncates: true,
+                                truncatedNameMinimumWidth: scale.captionFontSize
+                                    * CadenceWidgetFamilyLayout.todayRowTruncatedContainerNameMinimumEms
+                            )
                             statusPill(status)
                         }
                     } else {
@@ -464,7 +473,8 @@ struct TodayTasksWidgetView: View {
     private func statusLine(
         _ status: CadenceTodayTaskStatusPresentation,
         containerName: String,
-        truncates: Bool
+        truncates: Bool,
+        truncatedNameMinimumWidth: CGFloat? = nil
     ) -> some View {
         HStack(spacing: 5) {
             statusPill(status)
@@ -474,6 +484,15 @@ struct TodayTasksWidgetView: View {
                     .foregroundStyle(Theme.subdued)
                     .lineLimit(1)
                     .fixedSize(horizontal: !truncates, vertical: false)
+                    // T-7421 (3): `ViewThatFits` measures a candidate at its ideal width, which for
+                    // a truncating name is the whole name. Pinning the ideal to the floor is what
+                    // lets the truncating candidate win whenever the floor fits; laid out, the name
+                    // still takes the width it is offered and truncates within it.
+                    .frame(
+                        minWidth: truncatedNameMinimumWidth,
+                        idealWidth: truncatedNameMinimumWidth,
+                        alignment: .leading
+                    )
             }
         }
     }

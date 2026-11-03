@@ -212,6 +212,30 @@ struct CadenceCodexWidgetFollowupTests {
         #expect(view.contains(".fixedSize(horizontal: !truncates, vertical: false)"))
     }
 
+    /// T-7421 (3), owner-decided 2026-11-02: the extra-large row no longer drops every container
+    /// name that does not fit whole. Its `ViewThatFits` offers, in order, the whole name, the name
+    /// truncating above a minimum width, and the pill alone -- so a name that would only be the
+    /// `[S` stub (T-7126) is still dropped, and every other overflow truncates as the medium and
+    /// large rows do. The truncating candidate pins its ideal width to the floor, or
+    /// `ViewThatFits` would measure it as the whole name and never pick it. Not parameterised.
+    @Test func extraLargeTodayRowTruncatesAContainerNameAboveAFloorBeforeDroppingIt() throws {
+        #expect(CadenceWidgetFamilyLayout.todayRowTruncatedContainerNameMinimumEms >= 3,
+                "a floor under three caption ems lets the two-character stub back")
+        let read = CadenceSourceScan.strippedSourceReader()
+        let view = CadenceSourceScan.codeOnly(try read("CadenceWidgets/TodayTasksWidgetView.swift"))
+        let gate = try #require(view.range(of: "if widgetFamily.cadenceLayout.todayRowDropsContainerNameThatDoesNotFit {"))
+        let otherwise = try #require(view.range(of: "statusLine(status, containerName: task.containerName, truncates: true)", range: gate.upperBound..<view.endIndex))
+        let choice = String(view[gate.upperBound..<otherwise.lowerBound])
+        let whole = try #require(choice.range(of: "statusLine(status, containerName: task.containerName, truncates: false)"))
+        let truncated = try #require(choice.range(of: #"truncates: true,\n\s*truncatedNameMinimumWidth: scale\.captionFontSize\n\s*\* CadenceWidgetFamilyLayout\.todayRowTruncatedContainerNameMinimumEms"#, options: .regularExpression))
+        let pillAlone = try #require(choice.range(of: #"statusPill\(status\)\n\s*\}"#, options: .regularExpression))
+        #expect(whole.upperBound <= truncated.lowerBound && truncated.upperBound <= pillAlone.lowerBound)
+        let line = try #require(view.range(of: "private func statusLine("))
+        let body = String(view[line.upperBound...].prefix(1400))
+        #expect(body.contains("idealWidth: truncatedNameMinimumWidth"), "the truncating candidate must measure at its floor")
+        #expect(body.contains("minWidth: truncatedNameMinimumWidth"))
+    }
+
     /// T-7211 (a): the small Calendar tile draws its `d`/`p` chips side by side in ~30pt, so a
     /// two-digit count needs a lower shrink floor there than the stacked families need. The floor
     /// is the model's; the chip is held to reading it rather than a literal.
