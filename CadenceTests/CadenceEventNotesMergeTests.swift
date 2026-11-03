@@ -262,6 +262,62 @@ struct CadenceEventNotesMergeTests {
         }
     }
 
+    // MARK: - T-8163 rule (1): an untouched field refreshes in place
+
+    /// **[[T-8163]] rule (1).** An Apple Calendar edit made while an editor is open replaces the
+    /// field's text when, and only when, the field still holds what it last loaded.
+    @Test func anAppleCalendarEditRefreshesAnUntouchedFieldInPlace() {
+        #expect(CadenceEventNotesMerge.refreshedText(
+            shown: "Room 4B",
+            lastLoaded: "Room 4B",
+            fresh: "Room 5C"
+        ) == "Room 5C")
+        // In place, not under a divider: the refresh is the fresh text whole.
+        let refreshed = CadenceEventNotesMerge.refreshedText(shown: "Agenda", lastLoaded: "Agenda", fresh: "Agenda, moved")
+        #expect(refreshed?.contains(CadenceEventNotesMerge.divider) == false)
+    }
+
+    /// The other half, and the one that could lose the owner's typing: a field that differs from
+    /// what it loaded holds an edit, and no store change replaces it.
+    @Test func anAppleCalendarEditNeverReplacesTypingInTheField() {
+        #expect(CadenceEventNotesMerge.refreshedText(
+            shown: "Room 4B, and what I am typing",
+            lastLoaded: "Room 4B",
+            fresh: "Room 5C"
+        ) == nil)
+        #expect(CadenceEventNotesMerge.refreshedText(
+            shown: "Room 4B, and what I am typing",
+            lastLoaded: "Room 4B",
+            fresh: "Room 4B"
+        ) == nil)
+    }
+
+    /// Both platforms ask the one decision ([[T-8201]]): the Mac popover on every store change,
+    /// through a buffer that is still untouched, and iOS's [[T-5171]] helper by delegation.
+    @Test func bothPlatformsRefreshAnUntouchedFieldThroughTheSharedRule() throws {
+        let popover = try scanned("Cadence/macOS/Views/TimelineEventBlockSupportViews.swift")
+        let onStore = try #require(
+            CadenceSourceScan.declarationBody(".onChange(of: calendarManager.storeVersion)", in: popover)
+        )
+        #expect(onStore.contains("reloadNotesIfUntouched()"))
+        #expect(!onStore.contains("notesDraft ="), "a store change writes the buffer without asking")
+        let onRefetch = try #require(
+            CadenceSourceScan.declarationBody(".onChange(of: item.ekEvent.notes)", in: popover),
+            "a refetched event's notes never reach the open popover"
+        )
+        #expect(onRefetch.contains("reloadNotesIfUntouched()"))
+        #expect(!onRefetch.contains("notesDraft ="), "a refetch writes the buffer without asking")
+        let reload = try #require(CadenceSourceScan.functionBody(named: "reloadNotesIfUntouched", in: popover))
+        #expect(reload.contains("CadenceEventNotesMerge.refreshedText("))
+        #expect(reload.contains("pendingNotesCommit == nil"), "typing the debounce still holds can be refreshed away")
+        let load = try #require(CadenceSourceScan.functionBody(named: "loadNotesIfNeeded", in: popover))
+        #expect(load.contains("loadedNotesText = notesDraft"), "the baseline an untouched buffer equals is never taken")
+
+        let sheet = try scanned("Cadence/iOS/iOSCalendarEventEditSheet.swift")
+        let reloaded = try #require(CadenceSourceScan.functionBody(named: "reloadedNotes", in: sheet))
+        #expect(reloaded.contains("CadenceEventNotesMerge.refreshedText("), "iOS answers rule (1) on its own")
+    }
+
     // MARK: - The surfaces
 
     /// Both event editors draw **one** Notes field and neither of the two surfaces it replaced.

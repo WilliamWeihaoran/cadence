@@ -128,6 +128,23 @@ nonisolated enum CadenceEventNotesMerge {
         return content != displayText(noteContent: nil, nativeNotes: nativeNotes)
     }
 
+    /// **[[T-8163]] rule (1): an untouched field refreshes IN PLACE when Apple Calendar changes.**
+    /// Asked on every `EKEventStoreChanged` while an event editor is open. `shown` is what the
+    /// field holds now, `lastLoaded` what it held when the editor last read the two sources, and
+    /// `fresh` the same read made again. `nil` keeps the field: it differs from what was loaded, so
+    /// it carries the user's typing and a refresh would throw that away.
+    ///
+    /// One function for both platforms ([[T-8201]]): iOS made this decision in
+    /// `iOSCalendarEventNoteReload` ([[T-5171]]) and the Mac made none, so an Apple Calendar edit
+    /// reached an open iOS sheet and never an open Mac popover.
+    ///
+    /// Rules (2) and (3) -- only Apple changed since the LAST MERGE, and both changed -- are not
+    /// this function: they need per-event sync metadata that nothing stores yet (see [[T-8163]]).
+    static func refreshedText(shown: String, lastLoaded: String, fresh: String) -> String? {
+        guard shown == lastLoaded else { return nil }
+        return fresh
+    }
+
     /// The text a mirror writes. Spelled once so the three commit paths — the iOS event sheet, the
     /// iOS note sheet and the Mac's two note editors — cannot disagree about what Apple Calendar
     /// is given, and so a sweep can ask whether any of them still passes raw content.

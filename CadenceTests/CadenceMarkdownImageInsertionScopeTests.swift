@@ -358,16 +358,15 @@ struct CadenceMarkdownImageInsertionScopeTests {
     /// field now and it edits the `Note` — `CadenceMarkdownSourceInventory.Source.noteContent`,
     /// which the sweep reads — so an image inserted there is seen, and the door closes on nothing.
     ///
-    /// The refusal that stayed is `allowsEmbeddedTaskCreation`: a compact field inside an event
-    /// sheet still does not mint tasks. That is a scope decision, not a sweep one, which is why
-    /// the two were entangled here and are now separate — the same split
-    /// `theTemplateBodyIsNowInTheInventoryAndTheDoorIsStillShut` records for the template body.
+    /// The task half went too, in [[T-8164]] (owner decision 2026-10-31): the field mints
+    /// embedded tasks, as the same note's full editor does — its refusal had the same out-of-store
+    /// reason, and that reason is gone.
     @Test func theCalendarEventEditorAcceptsImagesBecauseItsNotesFieldIsANoteRow() throws {
         let code = try strippedSource("Cadence/iOS/iOSCalendarEventEditSheet.swift")
 
         #expect(code.contains("iOSMarkdownEditingSurface("), "the sheet presents no editor; this scan measures nothing")
         #expect(!code.contains("allowsImageInsertion"), "the merged Notes field refuses images again")
-        #expect(code.contains("allowsEmbeddedTaskCreation: false"))
+        #expect(!code.contains("allowsEmbeddedTaskCreation"), "the merged Notes field refuses embedded tasks again ([[T-8164]])")
 
         // The premise, asserted rather than assumed: the field's binding reaches `Note.content`,
         // and that property is in the inventory the image sweep reads.

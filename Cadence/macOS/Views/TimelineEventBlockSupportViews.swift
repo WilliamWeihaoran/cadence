@@ -92,6 +92,11 @@ struct CalendarEventEditPopover: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
+    /// [[T-8164]]: what the Notes field resolves `[[task:…]]` embeds against, so the cards it
+    /// draws are live -- and, with `embeds` below, what lets the field mint one.
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    @Environment(HoveredTaskManager.self) private var hoveredTaskManager
+    @Environment(HoveredEditableManager.self) private var hoveredEditableManager
 
     @State private var draft: CadenceScheduleDraft
     @State private var presentedEventNote: Note?
@@ -107,9 +112,14 @@ struct CalendarEventEditPopover: View {
     /// editor, when the popover closes, and on termination.
     @State private var notesDraft = ""
     @State private var hasLoadedNotes = false
+    /// [[T-8163]] rule (1): what the field held when it last read the note and `EKEvent.notes` --
+    /// the text an untouched buffer still equals, so a store change may refresh it in place.
+    @State private var loadedNotesText = ""
     @State private var pendingNotesCommit: Task<Void, Never>?
     @State private var notesWindowStart: Date?
     @State private var notesFlushID = UUID()
+    /// [[T-8164]]: the one live-card handler set every other Mac note editor uses ([[T-5120]]).
+    @State private var embeds = TaskNotesEmbedHandlers(hoverIDPrefix: "event-notes-embed-task-")
 
     /// The draft as the popover opened it. A Save compares against it — see
     /// `CalendarEventEditRequest`.
@@ -249,6 +259,15 @@ struct CalendarEventEditPopover: View {
         .onAppear(perform: ensureWritableCalendar)
         .onAppear(perform: loadMirrorBaseline)
         .onAppear(perform: loadNotesIfNeeded)
+        .onChange(of: calendarManager.storeVersion) { _, _ in
+            reloadNotesIfUntouched()
+        }
+        // `item` is handed in by the host and replaced when the host refetches, which can land
+        // after the store-version bump above has already been read against the old `EKEvent`; the
+        // new event's notes arriving is the second trigger, through the same untouched guard.
+        .onChange(of: item.ekEvent.notes) { _, _ in
+            reloadNotesIfUntouched()
+        }
         .onDisappear {
             flushPendingNotes()
             MarkdownEditorTerminationFlush.shared.unregister(notesFlushID)
@@ -399,10 +418,22 @@ struct CalendarEventEditPopover: View {
     /// inside the popover.
     ///
     /// Not disabled on a read-only calendar: rule (5) refuses the *mirror*, not the note.
+    ///
+    /// **[[T-8164]], owner decision 2026-10-31: the field mints embedded tasks**, as the SAME
+    /// note's full editor (`EventNoteEditorSheet` -> `NoteEditorPane`) does, and as the iOS field
+    /// now does too ([[T-8201]]). It takes the shared `TaskNotesEmbedHandlers` rather than a
+    /// subset, so a card drawn here is as live as one drawn in the full editor; the target is the
+    /// full editor's own (`TaskNotesEmbedTarget.noteEditor` of a non-list note: the Inbox).
     private var notesField: some View {
-        CadenceEventNotesField(
+        let embedScope = notesEmbedScope
+        let embedCallbacks = embeds.callbacks(
+            in: embedScope,
+            hoveredTaskManager: hoveredTaskManager,
+            hoveredEditableManager: hoveredEditableManager
+        )
+        return CadenceEventNotesField(
             mirrorsToCalendar: isEditable,
-            failureNotice: noteFailureNotice,
+            failureNotice: noteFailureNotice ?? embeds.embeddedTaskFailureNotice,
             onOpenFullEditor: openEventNote
         ) {
             MarkdownEditor(
@@ -411,15 +442,36 @@ struct CalendarEventEditPopover: View {
                 // Not the event's own note ([[T-8751]], the T-8583 rule): the field IS that note.
                 // `openNoteReference` still resolves against every note.
                 referenceNotes: MarkdownReferenceCompletionSupport.linkableNotes(allNotes, excludingNoteID: linkedEventNote?.id),
+                referenceTasks: allTasks,
                 onOpenNoteReference: openNoteReference,
+                onOpenTaskReference: embedCallbacks.openTaskReference,
+                onCreateEmbeddedTask: embedCallbacks.createEmbeddedTask,
+                onToggleEmbeddedTask: embedCallbacks.toggleEmbeddedTask,
+                onToggleEmbeddedSubtask: embedCallbacks.toggleEmbeddedSubtask,
+                onRenameEmbeddedTask: embedCallbacks.renameEmbeddedTask,
+                onOpenEmbeddedTask: embedCallbacks.openEmbeddedTask,
+                onEditEmbeddedTask: embedCallbacks.editEmbeddedTask,
+                onHoverEmbeddedTask: embedCallbacks.hoverEmbeddedTask,
                 onEditingChanged: { isEditing in
                     if !isEditing { flushPendingNotes() }
-                }
+                },
+                onTextViewChanged: embedCallbacks.textViewChanged
             )
             .frame(minHeight: CadenceEventNotesFieldMetrics.deskEditorHeight)
             .background(Theme.surfaceRecessed)
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous))
+            .taskNotesEmbedPopovers(embeds, scope: embedScope)
         }
+    }
+
+    /// Where a task minted in the field is filed: the full editor's target for this note, or --
+    /// before the first keystroke has created the note -- the same Inbox with no note to touch.
+    private var notesEmbedScope: TaskNotesEmbedScope {
+        TaskNotesEmbedScope(
+            referenceTasks: allTasks,
+            embedTarget: linkedEventNote.map { TaskNotesEmbedTarget.noteEditor($0, area: nil, project: nil) } ?? .coreNotes,
+            modelContext: modelContext
+        )
     }
 
     /// What the field shows: the buffer once typing has started, and otherwise
@@ -448,7 +500,27 @@ struct CalendarEventEditPopover: View {
             noteContent: linkedEventNote?.content,
             nativeNotes: item.ekEvent.notes
         )
+        loadedNotesText = notesDraft
         hasLoadedNotes = true
+    }
+
+    /// **[[T-8163]] rule (1), the Mac half of [[T-5171]].** An edit made in Apple Calendar while
+    /// this popover is open reaches the field -- but only a field the user has not typed in since
+    /// it last read, which is the shared `CadenceEventNotesMerge.refreshedText` decision iOS asks
+    /// too. A pending commit means typing the buffer still holds, so it is left alone as well.
+    private func reloadNotesIfUntouched() {
+        guard hasLoadedNotes, pendingNotesCommit == nil else { return }
+        let fresh = CadenceEventNotesMerge.displayText(
+            noteContent: linkedEventNote?.content,
+            nativeNotes: item.ekEvent.notes
+        )
+        guard let refreshed = CadenceEventNotesMerge.refreshedText(
+            shown: notesDraft,
+            lastLoaded: loadedNotesText,
+            fresh: fresh
+        ) else { return }
+        loadedNotesText = refreshed
+        notesDraft = refreshed
     }
 
     private func updateNotesDraft(_ content: String) {

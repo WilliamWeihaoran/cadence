@@ -109,4 +109,24 @@ struct CadenceMarkdownEditorEmbedWiringTests {
             #expect(arguments.contains(handler), "FocusNotesPanel does not pass \(handler)")
         }
     }
+
+    /// [[T-8164]], owner decision 2026-10-31: the calendar event popover's merged Notes field
+    /// mints embedded tasks and draws them as live cards, as the same note's full editor does.
+    /// Before it the field passed neither `referenceTasks:` nor a single card handler, so the
+    /// sweep above never saw it and a `[[task:…]]` in an event note drew unresolved here.
+    @Test func theEventPopoverNotesFieldMintsAndWiresEmbeddedTasks() throws {
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineEventBlockSupportViews.swift")
+        )
+        let field = try #require(CadenceSourceScan.declarationBody("private var notesField: some View", in: source))
+        let call = try #require(field.range(of: "MarkdownEditor("))
+        let arguments = try #require(
+            CadenceSourceScan.matchedBody(after: field.index(before: call.upperBound), in: field, open: "(", close: ")")
+        )
+        #expect(arguments.contains("referenceTasks:"))
+        for handler in Self.requiredHandlers {
+            #expect(arguments.contains(handler), "the event popover's Notes field does not pass \(handler)")
+        }
+        #expect(field.contains(".taskNotesEmbedPopovers(embeds, scope: embedScope)"), "a card click opens nothing")
+    }
 }

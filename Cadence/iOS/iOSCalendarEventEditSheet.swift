@@ -361,7 +361,11 @@ struct iOSCalendarEventEditSheet: View {
                 referenceNotes: MarkdownReferenceCompletionSupport.linkableNotes(allNotes, excludingNoteID: linkedEventNote?.id),
                 referenceTasks: allTasks,
                 onOpenReference: openMarkdownReference,
-                allowsEmbeddedTaskCreation: false,
+                // [[T-8164]], owner decision 2026-10-31: this field mints embedded tasks, as the
+                // SAME note's full editor does. The refusal was [[T-422]]'s other half -- the field
+                // used to be `EKEvent.notes`, outside the store -- and [[T-8161]] made it a `Note`
+                // row. No area or project is passed, so a new task files into the Inbox, which is
+                // where the full editor files one from an event note too (it is not a list note).
                 flush: notesFlush
             )
             .iOSMarkdownWell()
@@ -643,9 +647,9 @@ struct iOSCalendarEventEditSheet: View {
 /// **[[T-5171]]** — whether a store change may replace the event sheet's draft Apple Calendar note.
 /// `nil` keeps the draft: it differs from what the sheet last read, so it holds the user's edit.
 enum iOSCalendarEventNoteReload {
+    /// The shared decision ([[T-8163]] rule (1)), so the Mac popover cannot answer it differently.
     static func reloadedNotes(draft: String, lastLoaded: String, fresh: String) -> String? {
-        guard draft == lastLoaded else { return nil }
-        return fresh
+        CadenceEventNotesMerge.refreshedText(shown: draft, lastLoaded: lastLoaded, fresh: fresh)
     }
 }
 
