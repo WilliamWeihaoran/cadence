@@ -64,6 +64,8 @@ struct CadenceSettingsSectionCopyTests {
             "CadenceTemplateSettingsCopy.editScopeFootnote",
             "Templates affect future insertions only. Existing notes keep their current content."
         ),
+        // [[T-8542]]: the Description placeholder, one spelling that names no sidebar.
+        ("CadenceTemplateSettingsCopy.descriptionFieldPlaceholder", "Short description"),
     ]
 
     private static let aiPairs: [(expression: String, literal: String)] = [
@@ -322,6 +324,11 @@ struct CadenceSettingsSectionCopyTests {
             phone.contains("note sidebar") == false,
             "the phone's templates footnote now names a surface the phone does not have"
         )
+        // [[T-8542]]: the Description placeholder named the same sidebar on both surfaces.
+        for code in [mac, phone] {
+            #expect(code.contains("sidebar description") == false, "a template placeholder names a sidebar again")
+        }
+        #expect(CadenceTemplateSettingsCopy.descriptionFieldPlaceholder == "Short description")
     }
 
     /// **T-599(e): the calendar list's eyebrow is inside the authorized branch on both surfaces.**

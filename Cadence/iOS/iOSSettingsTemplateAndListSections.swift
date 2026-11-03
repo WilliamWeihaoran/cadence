@@ -181,7 +181,7 @@ struct iOSTemplatesSettingsSection: View {
                     }
 
                     iOSSettingsField(title: "Description") {
-                        TextField("Short sidebar description", text: subtitleBinding)
+                        TextField(CadenceTemplateSettingsCopy.descriptionFieldPlaceholder, text: subtitleBinding)
                     }
 
                     // **T-5172.** Keyed by template so a chip tap builds a fresh surface instead of

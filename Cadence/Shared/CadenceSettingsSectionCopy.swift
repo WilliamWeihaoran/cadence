@@ -165,6 +165,12 @@ nonisolated enum CadenceTemplateSettingsCopy {
     /// stands alone without the sidebar clause in front of it. Same family as [[T-544]].
     static let editScopeFootnote = "Templates affect future insertions only. Existing notes keep their current content."
 
+    /// The template editor's Description placeholder ([[T-8542]]). Both surfaces read "Short
+    /// sidebar description", which on a phone named a note sidebar it does not have -- the same
+    /// false clause T-599(b) kept out of the phone's footnote. The field's words still show on the
+    /// Mac's AI action picker and template tooltip; the placeholder no longer says where.
+    static let descriptionFieldPlaceholder = "Short description"
+
     /// The notice both editors draw, and the reason their fields stop taking input, while the
     /// stored override map is text this build cannot read (T-3016). An edit there would replace
     /// every customisation the string holds with the one being typed, so

@@ -180,7 +180,7 @@ struct SettingsTemplatesSection: View {
                     }
 
                     CadenceSettingsField(title: "Description") {
-                        TextField("Short sidebar description", text: subtitleBinding)
+                        TextField(CadenceTemplateSettingsCopy.descriptionFieldPlaceholder, text: subtitleBinding)
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.muted)
                     }
