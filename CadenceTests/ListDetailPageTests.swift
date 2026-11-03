@@ -240,7 +240,8 @@ struct ListDetailPageTests {
         #expect(body.contains("ListDetailKanbanBoard.columns(tasks: tasks, sectionNames: sectionNames)"))
         #expect(body.contains("if !ListDetailKanbanBoard.drawsColumns(columns)"))
         #expect(!body.contains("tasks.isEmpty"), "the board branches on its open-task count again")
-        #expect(CadenceSourceScan.matchCount(#"CadenceSectionCreationRow\(area: area, project: project\)"#, in: body) == 2)
+        // [[T-7085]] named the noun, so both rows say "Add column", not "Add section" (T-10901).
+        #expect(CadenceSourceScan.matchCount(#"CadenceSectionCreationRow\(area: area, project: project, noun: \.column\)"#, in: body) == 2)
         #expect(body.contains("CadenceEmptyStateCopy.listKanbanTitle"))
         #expect(!source.contains("No kanban cards"))
 
