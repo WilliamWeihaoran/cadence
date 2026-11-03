@@ -101,34 +101,29 @@ struct SchedulePanelAllDayBand: View {
     var draftTitle: String? = nil
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            Text("all-day")
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(Theme.dim)
-                .frame(width: timeLabelWidth, alignment: .trailing)
-                .padding(.trailing, timeLabelPad)
-                .padding(.top, 4)
+        let bandHeight = SchedulePanelAllDayBandLayout.height(
+            eventCount: events.count,
+            draftCount: draftTitle == nil ? 0 : 1
+        )
+        // The band follows the blocks ([[T-8001]] owner call, [[T-10440]]): its chips take the
+        // ladder's own block column, read off the same width the viewport below lays out in.
+        GeometryReader { geo in
+            let span = SchedulePanelTimelineColumn.chipSpan(ladderWidth: geo.size.width)
+            HStack(alignment: .top, spacing: 0) {
+                Text("all-day")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: timeLabelWidth, alignment: .trailing)
+                    .padding(.trailing, max(0, span.leading - timeLabelWidth))
+                    .padding(.top, 4)
 
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: SchedulePanelAllDayBandLayout.chipSpacing) {
-                    // First, so the row the user is typing is the row they can see.
-                    if let draftTitle {
-                        CadenceAllDayDraftChip(title: draftTitle)
-                    }
-                    ForEach(events.map { CalendarAllDayEventItem(event: $0) }) { item in
-                        AllDayEventChip(event: item.event)
-                    }
-                }
-                .padding(.vertical, SchedulePanelAllDayBandLayout.verticalPadding)
+                chipColumn
+                    .frame(width: span.width, height: bandHeight)
+
+                Spacer(minLength: 0)
             }
-            .frame(height: SchedulePanelAllDayBandLayout.height(
-                eventCount: events.count,
-                draftCount: draftTitle == nil ? 0 : 1
-            ))
         }
-        // The ladder's own right margin (`SchedulePanelTimelineViewport` pads 8 and draws 8
-        // short of the pane), so a chip ends where a block does.
-        .padding(.trailing, 16)
+        .frame(height: bandHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.bg)
         .overlay(alignment: .bottom) {
@@ -140,6 +135,52 @@ struct SchedulePanelAllDayBand: View {
         .accessibilityLabel(
             CadenceCalendarDayAccessibility.allDayStripLabel(allDayEventCount: events.count)
         )
+    }
+
+    private var chipColumn: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: SchedulePanelAllDayBandLayout.chipSpacing) {
+                // First, so the row the user is typing is the row they can see.
+                if let draftTitle {
+                    CadenceAllDayDraftChip(title: draftTitle)
+                }
+                ForEach(events.map { CalendarAllDayEventItem(event: $0) }) { item in
+                    AllDayEventChip(event: item.event)
+                }
+            }
+            .padding(.vertical, SchedulePanelAllDayBandLayout.verticalPadding)
+        }
+    }
+}
+
+/// The Today ladder's horizontal geometry, stated once for the viewport that draws the blocks and
+/// the all-day band that must line up with them ([[T-10440]]). The band used to pad itself 16pt
+/// from the trailing edge on the belief that a block ended there; measured on screen under
+/// [[T-8001]], blocks start 8pt further in and stop 22.5pt short of that, because they honour
+/// `TimelineBlockStyle.schedule`'s leading inset and `blockWidthFraction`.
+enum SchedulePanelTimelineColumn {
+    /// The viewport draws this far short of the pane's trailing edge.
+    static let trailingMargin: CGFloat = 8
+
+    /// The rail plus canvas width the viewport lays out in.
+    static func totalWidth(ladderWidth: CGFloat) -> CGFloat {
+        max(240, ladderWidth - trailingMargin)
+    }
+
+    /// The canvas the blocks are drawn on, right of the hour rail.
+    static func canvasWidth(ladderWidth: CGFloat) -> CGFloat {
+        max(0, totalWidth(ladderWidth: ladderWidth) - blockInset)
+    }
+
+    /// A lone (single-lane) block's leading edge and width in pane coordinates -- the span an
+    /// all-day chip takes so it starts and ends where a block does.
+    static func chipSpan(ladderWidth: CGFloat) -> (leading: CGFloat, width: CGFloat) {
+        let style = TimelineBlockStyle.schedule
+        let column = TimelineMetricsSupport.blockColumnSpan(
+            totalWidth: canvasWidth(ladderWidth: ladderWidth),
+            style: style
+        )
+        return (blockInset + column.x, max(0, column.columnWidth - style.columnSpacing))
     }
 }
 
@@ -189,8 +230,8 @@ struct SchedulePanelTimelineViewport: View {
             endHour: schedEndHour,
             hourHeight: hourHeight
         )
-        let totalWidth = max(240, geoSize.width - 8)
-        let canvasWidth = max(0, totalWidth - blockInset)
+        let totalWidth = SchedulePanelTimelineColumn.totalWidth(ladderWidth: geoSize.width)
+        let canvasWidth = SchedulePanelTimelineColumn.canvasWidth(ladderWidth: geoSize.width)
 
         HStack(alignment: .top, spacing: 0) {
             VStack(spacing: 0) {
@@ -227,7 +268,7 @@ struct SchedulePanelTimelineViewport: View {
             )
         }
         .frame(width: totalWidth, alignment: .leading)
-        .padding(.trailing, 8)
+        .padding(.trailing, SchedulePanelTimelineColumn.trailingMargin)
     }
 }
 #endif

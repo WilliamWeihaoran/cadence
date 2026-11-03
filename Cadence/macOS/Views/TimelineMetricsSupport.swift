@@ -145,10 +145,9 @@ enum TimelineMetricsSupport {
         // reason a zero-estimate task was *drawn* an hour tall while being *columned* as 30 minutes,
         // so it could overlap the very neighbour it had been laid out beside.
         let height = metrics.height(for: durationMinutes, minHeight: style.minHeight)
-        let availableWidth = max(0, totalWidth - style.leadingInset - style.trailingInset) * style.blockWidthFraction
-        let innerAvailableWidth = availableWidth * max(0, 1 - (style.sideMarginFraction * 2))
-        let leftMargin = style.leadingInset + availableWidth * style.sideMarginFraction
-        let columnWidth = innerAvailableWidth / CGFloat(max(totalColumns, 1))
+        let column0 = blockColumnSpan(totalWidth: totalWidth, style: style)
+        let leftMargin = column0.x
+        let columnWidth = column0.columnWidth / CGFloat(max(totalColumns, 1))
         let slotWidth = max(0, columnWidth - style.columnSpacing)
         // The cascade (T-3161). A block at depth 0 is exactly what it always was; a deeper one is
         // pushed off its column's leading edge and keeps the column's trailing edge, so it runs
@@ -161,6 +160,17 @@ enum TimelineMetricsSupport {
         let width = max(0, slotWidth - indent)
         let x = leftMargin + CGFloat(column) * columnWidth + indent
         return TimelineBlockFrame(x: x, y: y, width: width, height: height)
+    }
+
+    /// Where a block column starts on a canvas `totalWidth` wide, and how wide all of its lanes
+    /// are together (before `columnSpacing`). `computeBlockFrame` divides this among lanes; the Mac
+    /// Today all-day band reads it whole so its chips span exactly what a lone block spans
+    /// ([[T-8001]], [[T-10440]]).
+    static func blockColumnSpan(totalWidth: CGFloat, style: TimelineBlockStyle) -> (x: CGFloat, columnWidth: CGFloat) {
+        let availableWidth = max(0, totalWidth - style.leadingInset - style.trailingInset) * style.blockWidthFraction
+        let innerAvailableWidth = availableWidth * max(0, 1 - (style.sideMarginFraction * 2))
+        let leftMargin = style.leadingInset + availableWidth * style.sideMarginFraction
+        return (leftMargin, innerAvailableWidth)
     }
 
     /// The rect a drag-to-create draft occupies: one full-width block slot for the drawn range.

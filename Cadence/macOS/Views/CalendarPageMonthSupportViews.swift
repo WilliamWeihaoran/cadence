@@ -179,6 +179,20 @@ struct MonthTaskChip: View {
                 )
                 .lineLimit(1)
             Spacer(minLength: 2)
+            // A timed task's start, in `MonthEventChip`'s slot and spelling ([[T-8044]]). Same
+            // width rule as the event chip's clock: fixed, and the title is what gives up room.
+            if let time = CalendarEventChipTimeSupport.taskLabel(
+                scheduledDate: task.scheduledDate,
+                scheduledStartMin: task.scheduledStartMin,
+                dayKey: dayKey
+            ) {
+                Text(time)
+                    .font(.system(size: 10))
+                    .foregroundStyle(CadenceCalendarEventStyle.plateSecondaryLabelColor())
+                    .lineLimit(1)
+                    .fixedSize()
+                    .layoutPriority(1)
+            }
             CalendarChipDueMarker(dueDateKey: task.dueDate, dayKey: dayKey, todayKey: todayKey, isDone: task.isDone)
         }
         // No `wash`: the fill is already this task's list colour solved to its own luminance, so a

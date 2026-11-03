@@ -151,7 +151,8 @@ struct CadenceCodexCalendarTypographyTests {
         #expect(grid.contains("diameter: CadenceTypeScale.size(.metadata, base: 13, at: dynamicTypeSize, scaling: scaling)"))
         let month = try read("Cadence/iOS/iOSCalendarMonthViews.swift")
         #expect(month.contains(".frame(height: iOSCalendarTypographyMetrics.chipHeight(hasTime: timeLabel != nil, at: dynamicTypeSize, scaling: scaling))"))
-        #expect(month.contains("iOSCalendarMiniChip.height(hasTime: false, at: dynamicTypeSize, scaling: scaling)"))
+        // [[T-8044]]: a timed task's chip draws a time line now, so its height is asked, not assumed.
+        #expect(month.contains("iOSCalendarMiniChip.height(hasTime: taskTimeLabel(for: $0) != nil, at: dynamicTypeSize, scaling: scaling)"))
         #expect(month.contains("iOSCalendarTypographyMetrics.lineGain(9, at: dynamicTypeSize, scaling: scaling)"))
         #expect(month.contains("ScrollView(.horizontal)"))
         #expect(month.contains("7 * iOSCalendarTypographyMetrics.monthColumnWidth(at: dynamicTypeSize, scaling: scaling)"))

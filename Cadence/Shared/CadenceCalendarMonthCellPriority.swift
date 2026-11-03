@@ -215,4 +215,58 @@ nonisolated enum CalendarEventChipTimeSupport {
         if isLastSegment { return "ends \(clock(eventEndMin))" }
         return nil
     }
+
+    /// The minute a TASK's month chip is timed at on `dayKey`, or `nil` for an untimed chip
+    /// ([[T-8044]], owner call: "event-chip time slot, both platforms").
+    ///
+    /// A task is timed on a day only when it is SCHEDULED on that day at a real minute:
+    /// `scheduledStartMin == -1` is the app's spelling of "no time", and a task filed under its
+    /// due date (no do date) has no start on that day at all, whatever minute it carries.
+    static func taskStartMinute(scheduledDate: String, scheduledStartMin: Int, dayKey: String) -> Int? {
+        guard !scheduledDate.isEmpty, scheduledDate == dayKey, scheduledStartMin >= 0 else { return nil }
+        return scheduledStartMin
+    }
+
+    /// A task chip's time text, in the event chip's spelling and its one `compact` difference.
+    static func taskLabel(
+        scheduledDate: String,
+        scheduledStartMin: Int,
+        dayKey: String,
+        compact: Bool = false
+    ) -> String? {
+        guard let minute = taskStartMinute(
+            scheduledDate: scheduledDate,
+            scheduledStartMin: scheduledStartMin,
+            dayKey: dayKey
+        ) else { return nil }
+        return compact ? TimeFormatters.compactTimeString(from: minute) : TimeFormatters.timeString(from: minute)
+    }
+
+    /// A month cell's task order ([[T-8044]]): timed tasks first, by start minute; then untimed
+    /// ones. Within each group -- equal starts included -- the incoming order (priority, then
+    /// manual) is kept, so this only ever lifts a timed task, never reshuffles the rest.
+    static func orderedMonthTasks<T>(
+        _ tasks: [T],
+        dayKey: String,
+        scheduledDate: (T) -> String,
+        scheduledStartMin: (T) -> Int
+    ) -> [T] {
+        tasks.enumerated()
+            .map { offset, task in
+                (offset, task, taskStartMinute(
+                    scheduledDate: scheduledDate(task),
+                    scheduledStartMin: scheduledStartMin(task),
+                    dayKey: dayKey
+                ))
+            }
+            .sorted { lhs, rhs in
+                switch (lhs.2, rhs.2) {
+                case let (l?, r?) where l != r: return l < r
+                case (.some, .none): return true
+                case (.none, .some): return false
+                default: return lhs.0 < rhs.0
+                }
+            }
+            .map(\.1)
+    }
 }

@@ -375,7 +375,9 @@ private struct iOSCalendarMonthDayCell: View {
     private var chipCapacity: Int {
         let heights = events.prefix(Self.maximumChipCount).map {
             iOSCalendarMiniChip.height(hasTime: timeLabel(for: $0) != nil, at: dynamicTypeSize, scaling: scaling)
-        } + tasks.prefix(Self.maximumChipCount).map { _ in iOSCalendarMiniChip.height(hasTime: false, at: dynamicTypeSize, scaling: scaling) }
+        } + tasks.prefix(Self.maximumChipCount).map {
+            iOSCalendarMiniChip.height(hasTime: taskTimeLabel(for: $0) != nil, at: dynamicTypeSize, scaling: scaling)
+        }
         var used: CGFloat = 0
         var count = 0
         for height in heights.prefix(Self.maximumChipCount) {
@@ -404,6 +406,17 @@ private struct iOSCalendarMonthDayCell: View {
             isLastSegment: calendar.isDate(lastInstant, inSameDayAs: date),
             eventStartMin: minutes(start),
             eventEndMin: minutes(end),
+            compact: horizontalSizeClass == .compact
+        )
+    }
+
+    /// A timed task's start through the same shared helper and the same compact-width face as
+    /// the event chip above it ([[T-8044]]); an untimed task draws no time line.
+    private func taskTimeLabel(for task: AppTask) -> String? {
+        CalendarEventChipTimeSupport.taskLabel(
+            scheduledDate: task.scheduledDate,
+            scheduledStartMin: task.scheduledStartMin,
+            dayKey: DateFormatters.dateKey(from: date),
             compact: horizontalSizeClass == .compact
         )
     }
@@ -598,6 +611,7 @@ private struct iOSCalendarMonthDayCell: View {
                     title: TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle),
                     icon: "circle.fill",
                     color: Color(hex: task.containerColor),
+                    timeLabel: taskTimeLabel(for: task),
                     completion: .resolve(task: task),
                     // [[T-8243]]: the cell's own observed day, not a fresh clock read inside each
                     // chip, so every chip in the grid turns over at the midnight the badges do.
@@ -848,7 +862,12 @@ struct iOSCalendarMiniChip: View {
                     if glyphRow == .time { glyph }
                     Text(timeLabel)
                         .cadenceFont(.metadata, base: 8, weight: .medium)
-                        .foregroundStyle(CadenceCalendarEventStyle.railSecondaryLabelColor(for: color))
+                        // A task's clock sits on the plate, not the rail ([[T-8044]]).
+                        .foregroundStyle(
+                            isEvent
+                                ? CadenceCalendarEventStyle.railSecondaryLabelColor(for: color)
+                                : CadenceCalendarEventStyle.plateSecondaryLabelColor()
+                        )
                         .lineLimit(1)
                         .minimumScaleFactor(scaling == .enabled && dynamicTypeSize > .large ? 1 : 0.8)
                         // The clock keeps the 2pt of optical overhang it has always had; the glyph

@@ -423,7 +423,17 @@ enum CadenceScheduleSupport {
                 result[task.dueDate, default: []].append(task)
             }
         }
-        return result.mapValues { CadenceTaskQuerySupport.sortedTasks($0, sortMode: .priority) }
+        // Priority order first, then timed tasks lifted to the front by start ([[T-8044]]).
+        var ordered: [String: [AppTask]] = [:]
+        for (dayKey, dayTasks) in result {
+            ordered[dayKey] = CalendarEventChipTimeSupport.orderedMonthTasks(
+                CadenceTaskQuerySupport.sortedTasks(dayTasks, sortMode: .priority),
+                dayKey: dayKey,
+                scheduledDate: \.scheduledDate,
+                scheduledStartMin: \.scheduledStartMin
+            )
+        }
+        return ordered
     }
 
     // bundlesByDate(_:includeCompleted:) was declared here. Its one production caller was the Mac
