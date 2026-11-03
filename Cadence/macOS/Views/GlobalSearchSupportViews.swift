@@ -450,9 +450,28 @@ struct GlobalSearchMoreResultsRow: View {
 ///
 /// It borrows `GlobalSearchResultRow`'s selection vocabulary — tint at 0.18 behind the glyph, a
 /// hairline at 0.18, one radius — rather than inventing a fourth chip shape for this one screen.
+///
+/// **`.plain`, and the hover deepens the chip's own plate ([[T-9626]]).** On `.cadencePlain` a
+/// hover laid the style's blue wash and stroke (10pt, non-continuous) over this chip's green "on"
+/// plate and hairline (continuous `Theme.radiusControl`): two colours of outline on one chip. The
+/// result rows beside it made the same move in [[T-9621]]; the pointer now changes one layer, in
+/// the chip's own tone.
 struct GlobalSearchCompletedFilterToggle: View {
     @Binding var includesCompletedTasks: Bool
     let restoreFocus: () -> Void
+    @State private var isHovered = false
+
+    private var tone: Color { includesCompletedTasks ? Theme.green : Theme.dim }
+
+    private var plateOpacity: Double {
+        if includesCompletedTasks { return isHovered ? 0.24 : 0.18 }
+        return isHovered ? 0.08 : 0
+    }
+
+    private var hairline: Color {
+        if includesCompletedTasks { return Theme.green.opacity(isHovered ? 0.28 : 0.18) }
+        return isHovered ? Theme.dim.opacity(0.18) : Theme.borderSubtle
+    }
 
     var body: some View {
         Button {
@@ -465,23 +484,22 @@ struct GlobalSearchCompletedFilterToggle: View {
                 Text("Completed")
                     .font(.system(size: 12, weight: .semibold))
             }
-            .foregroundStyle(includesCompletedTasks ? Theme.green : Theme.dim)
+            .foregroundStyle(tone)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                    .fill(includesCompletedTasks ? Theme.green.opacity(0.18) : Color.clear)
+                    .fill(tone.opacity(plateOpacity))
             )
             .overlay {
                 RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                    .strokeBorder(
-                        includesCompletedTasks ? Theme.green.opacity(0.18) : Theme.borderSubtle,
-                        lineWidth: 1
-                    )
+                    .strokeBorder(hairline, lineWidth: 1)
             }
             .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+            .animation(.easeOut(duration: 0.12), value: isHovered)
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
         .help(includesCompletedTasks ? "Hide completed tasks from results" : "Include completed tasks in results")
         .accessibilityLabel("Include completed tasks")
         .accessibilityAddTraits(includesCompletedTasks ? [.isSelected] : [])

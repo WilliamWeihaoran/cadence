@@ -216,4 +216,25 @@ import Testing
             #expect(!body.contains("cadencePlain"), "\(row) is back on .cadencePlain")
         }
     }
+
+    /// **[[T-9626]].** Cmd+K's Completed chip paints its own plate (green when on, a subtle hairline
+    /// when off), so the pointer changes that plate and nothing else: on `.cadencePlain` a hover
+    /// laid a blue wash and stroke over the green one, two colours of outline on one chip.
+    @Test func theCompletedFilterChipLightsOnlyItsOwnPlate() throws {
+        let source = try Self.code("Cadence/macOS/Views/GlobalSearchSupportViews.swift")
+        let body = try #require(
+            CadenceSourceScan.declarationBody("struct GlobalSearchCompletedFilterToggle: View", in: source),
+            "GlobalSearchCompletedFilterToggle moved"
+        )
+        // Non-vacuity: the chip still draws its own plate and hairline, and still tracks the pointer.
+        #expect(body.contains(".fill(tone.opacity(plateOpacity))"), "the chip no longer draws its own plate")
+        #expect(body.contains(".strokeBorder(hairline"), "the chip no longer draws its own hairline")
+        #expect(body.contains(".onHover { isHovered = $0 }"), "the chip no longer tracks the pointer")
+        #expect(CadenceSourceScan.matchCount("\\.buttonStyle\\(", in: body) == 1, "the chip has more or fewer than one button style")
+        #expect(body.contains(".buttonStyle(.plain)"), "the chip lights a button-style hover wash over its own plate")
+        #expect(!body.contains("cadencePlain"), "the chip is back on .cadencePlain")
+        // The hover deepens the plate in BOTH states, so the pointer still reads on the chip.
+        #expect(body.contains("isHovered ? 0.24 : 0.18"), "the on plate no longer answers the pointer")
+        #expect(body.contains("isHovered ? 0.08 : 0"), "the off plate no longer answers the pointer")
+    }
 }
