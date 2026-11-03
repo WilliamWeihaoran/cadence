@@ -11,14 +11,22 @@ struct iOSTodayRolloverNotice {
     /// the sentence travels with the offer rather than with a second piece of state.
     let failureNotice: String?
     let onRollOver: () -> Void
+    /// "Not Now" ([[T-7981]]), part of the same opt-in: a banner with no way out but the roll is
+    /// the defect that entry retired.
+    let onDismiss: () -> Void
 }
 
 extension iOSTodayRolloverNotice {
     /// The banner for `content`, or `nil` when it carries no rollover tasks — the one place the
     /// page's read-once list content (T-3159) becomes the notice both widths draw.
-    init?(content: CadenceTodayListContent, onRollOver: @escaping () -> Void) {
+    init?(content: CadenceTodayListContent, onRollOver: @escaping () -> Void, onDismiss: @escaping () -> Void) {
         guard let tasks = content.rolloverTasks else { return nil }
-        self.init(tasks: tasks, failureNotice: content.rolloverFailureNotice, onRollOver: onRollOver)
+        self.init(
+            tasks: tasks,
+            failureNotice: content.rolloverFailureNotice,
+            onRollOver: onRollOver,
+            onDismiss: onDismiss
+        )
     }
 }
 
@@ -148,10 +156,10 @@ struct iOSTodayTaskSections: View {
                 CadenceTodayRolloverBanner(
                     tasks: rolloverNotice.tasks,
                     style: .card,
-                    failureNotice: rolloverNotice.failureNotice
-                ) {
-                    rolloverNotice.onRollOver()
-                }
+                    failureNotice: rolloverNotice.failureNotice,
+                    onRollOver: rolloverNotice.onRollOver,
+                    onDismiss: rolloverNotice.onDismiss
+                )
                 content
             }
         } else {

@@ -47,6 +47,11 @@ struct CadenceTodayRolloverBanner: View {
     /// is precisely the macOS-only shape T-195 spent a ticket undoing.
     let failureNotice: String?
     let onRollOver: () -> Void
+    /// "Not Now" ([[T-7981]]): the host stores today's key under
+    /// `CadenceTodayRolloverSupport.dismissedDateStorageKey`, which hides the banner for the day and
+    /// returns the rows to their groups. Required rather than optional, so neither platform can draw
+    /// a banner whose only exit is the roll.
+    let onDismiss: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -72,14 +77,14 @@ struct CadenceTodayRolloverBanner: View {
                     headerIcon
                     headerCopy
                 }
-                rollOverButton
+                actionButtons
             }
         } else {
             HStack(alignment: .top, spacing: 10) {
                 headerIcon
                 headerCopy
                 Spacer(minLength: 8)
-                rollOverButton
+                actionButtons
             }
         }
     }
@@ -110,6 +115,30 @@ struct CadenceTodayRolloverBanner: View {
                 .foregroundStyle(Theme.text)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    /// "Not Now" leading "Roll Over": the quiet way out, then the primary action, the order every
+    /// Cadence button pair keeps.
+    private var actionButtons: some View {
+        HStack(spacing: 6) {
+            dismissButton
+            rollOverButton
+        }
+        .fixedSize(horizontal: !wraps, vertical: true)
+    }
+
+    private var dismissButton: some View {
+        Button(action: onDismiss) {
+            Text(CadenceTodayRolloverSupport.dismissActionTitle)
+                .cadenceFont(.metadata, base: 11, weight: .semibold)
+                .foregroundStyle(Theme.muted)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .frame(minHeight: wraps ? 44 : nil)
+                .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
+        }
+        .buttonStyle(.plain)
+        .fixedSize(horizontal: !wraps, vertical: true)
     }
 
     private var rollOverButton: some View {

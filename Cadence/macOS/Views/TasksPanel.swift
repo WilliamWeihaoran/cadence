@@ -275,10 +275,10 @@ struct TasksPanel: View {
             CadenceTodayRolloverBanner(
                 tasks: derived.overdoTasks,
                 style: .panelBand,
-                failureNotice: rolloverFailureNotice
-            ) {
-                rollOverPastDoTasks()
-            }
+                failureNotice: rolloverFailureNotice,
+                onRollOver: rollOverPastDoTasks,
+                onDismiss: dismissRolloverNotice
+            )
             // At the call site, not inside the banner: `CadenceTodayRolloverBanner` is shared with
             // iOS, and an identifier named `today.…` on the shared view would claim to identify a
             // surface on a platform whose test target cannot see it.
@@ -464,6 +464,16 @@ struct TasksPanel: View {
             rolloverNoticeDismissedDate = dismissed
         } catch {
             rolloverFailureNotice = CadenceTodayRolloverSupport.rollFailureNotice
+        }
+    }
+
+    /// **"Not Now" ([[T-7981]]).** Stores today's key, which hides the banner until midnight and
+    /// puts the withheld rows back in their groups through `CadenceTodayRolloverSupport.groupedTasks`.
+    /// Nothing to catch: it writes a default and no store. iOS's `iOSTodayView` does the same.
+    private func dismissRolloverNotice() {
+        withAnimation(.easeOut(duration: 0.2)) {
+            rolloverFailureNotice = nil
+            rolloverNoticeDismissedDate = CadenceTodayRolloverSupport.dismissedDateKey(dismissingOn: todayKey)
         }
     }
 

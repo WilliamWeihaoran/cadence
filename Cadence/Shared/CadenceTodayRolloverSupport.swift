@@ -24,8 +24,25 @@ enum CadenceTodayRolloverSupport {
     /// longer past-do.
     static let dismissedDateStorageKey = "todayRolloverNoticeDismissedDate"
 
-    static let title = "Leftover tasks are rolling over to today"
+    /// A question, not a report ([[T-7981]]): it used to read "Leftover tasks are rolling over to
+    /// today", describing as already happening a move that waits for the button beside it.
+    static let title = "Roll leftover tasks over to today?"
     static let confirmActionTitle = "Roll Over"
+    /// The banner's way out that is not a roll ([[T-7981]]). Title Case, as the "Roll Over" it sits
+    /// beside and every other Cadence button label is.
+    static let dismissActionTitle = "Not Now"
+
+    /// The value "Not Now" stores under `dismissedDateStorageKey` ([[T-7981]]): today's key, the same
+    /// value a successful roll stores, so the notice hides until midnight and `groupedTasks` hands
+    /// the withheld rows back to their groups.
+    ///
+    /// Before this nothing in either host wrote the key except a successful roll, so the banner's
+    /// only exit was moving every leftover task — and while it showed, those tasks were on Today
+    /// only as inert banner text, with no completion control. Unlike the roll it cannot fail: it
+    /// writes a default and touches no store, so there is no refusal to catch.
+    static func dismissedDateKey(dismissingOn todayKey: String) -> String {
+        todayKey
+    }
 
     /// The over-do bucket: open work planned for a day that has gone by. **The do date is the
     /// whole question; the due date is not asked about at all.**
@@ -84,8 +101,9 @@ enum CadenceTodayRolloverSupport {
     /// are withheld, because the banner is already listing them and a Past Do section under it
     /// would be the same rows twice.
     ///
-    /// Dismissing merges them back in — there is no third state, and nothing is written to do it:
-    /// `isNoticeVisible` goes false and the same array comes back whole.
+    /// Dismissing merges them back in — there is no third state, and nothing here is written to do
+    /// it: the host stores `dismissedDateKey(dismissingOn:)`, `isNoticeVisible` goes false and the
+    /// same array comes back whole.
     static func groupedTasks(
         from todayTasks: [AppTask],
         withholding pastDoTasks: [AppTask],

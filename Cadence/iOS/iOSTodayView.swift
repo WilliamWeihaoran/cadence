@@ -104,7 +104,7 @@ struct iOSTodayView: View {
 
     /// Everything the task list draws, read from the store **once per body pass** (T-3159). The
     /// rollover tasks are `nil` when there is nothing to roll or the day's notice has already been
-    /// dismissed; `iOSTodayRolloverNotice(content:onRollOver:)` turns them back into the banner,
+    /// dismissed; `iOSTodayRolloverNotice(content:onRollOver:onDismiss:)` turns them back into the banner,
     /// which opts in whole — the tasks and the action are useless apart.
     private var listContent: CadenceTodayListContent {
         CadenceTodayListContent(
@@ -140,6 +140,15 @@ struct iOSTodayView: View {
             rolloverNoticeDismissedDate = dismissed
         } catch {
             rolloverFailureNotice = CadenceTodayRolloverSupport.rollFailureNotice
+        }
+    }
+
+    /// **"Not Now" ([[T-7981]]).** macOS's `TasksPanel.dismissRolloverNotice` in the same words:
+    /// today's key hides the banner until midnight and hands the withheld rows back to their groups.
+    private func dismissRolloverNotice() {
+        withAnimation(.easeOut(duration: 0.2)) {
+            rolloverFailureNotice = nil
+            rolloverNoticeDismissedDate = CadenceTodayRolloverSupport.dismissedDateKey(dismissingOn: todayKey)
         }
     }
 
@@ -277,6 +286,7 @@ struct iOSTodayView: View {
             sortMode: sortModeBinding,
             showCompleted: $showCompleted,
             onRollOver: rollOverPastDoTasks,
+            onDismissRollover: dismissRolloverNotice,
             sampleDataStatus: sampleDataStatus,
             seedSampleData: seedSampleData
         )
@@ -289,7 +299,8 @@ struct iOSTodayView: View {
             showCompletedValue: showCompleted,
             sortMode: sortModeBinding,
             showCompleted: $showCompleted,
-            onRollOver: rollOverPastDoTasks
+            onRollOver: rollOverPastDoTasks,
+            onDismissRollover: dismissRolloverNotice
         )
         .equatable()
         #endif
@@ -349,7 +360,7 @@ struct iOSTodayView: View {
             taskGroups: content.taskGroups,
             completedTasks: content.completedTasks,
             showsCompleted: $showCompleted,
-            rolloverNotice: iOSTodayRolloverNotice(content: content, onRollOver: rollOverPastDoTasks),
+            rolloverNotice: iOSTodayRolloverNotice(content: content, onRollOver: rollOverPastDoTasks, onDismiss: dismissRolloverNotice),
             sampleDataStatus: sampleDataStatus,
             seedSampleData: seedSampleData
         )
@@ -359,7 +370,7 @@ struct iOSTodayView: View {
             taskGroups: content.taskGroups,
             completedTasks: content.completedTasks,
             showsCompleted: $showCompleted,
-            rolloverNotice: iOSTodayRolloverNotice(content: content, onRollOver: rollOverPastDoTasks)
+            rolloverNotice: iOSTodayRolloverNotice(content: content, onRollOver: rollOverPastDoTasks, onDismiss: dismissRolloverNotice)
         )
         #endif
     }
@@ -402,6 +413,7 @@ struct iOSCompactTodayHost: View, Equatable {
     let sortMode: Binding<CadenceTaskSortMode>
     let showCompleted: Binding<Bool>
     let onRollOver: () -> Void
+    let onDismissRollover: () -> Void
     #if DEBUG
     let sampleDataStatus: String?
     let seedSampleData: () -> Void
@@ -423,7 +435,7 @@ struct iOSCompactTodayHost: View, Equatable {
             showsHeader: showsHeader,
             completedTodayTasks: content.completedTasks,
             todayTaskGroups: content.taskGroups,
-            rolloverNotice: iOSTodayRolloverNotice(content: content, onRollOver: onRollOver),
+            rolloverNotice: iOSTodayRolloverNotice(content: content, onRollOver: onRollOver, onDismiss: onDismissRollover),
             summary: content.summary,
             sortMode: sortMode,
             showCompleted: showCompleted,
@@ -435,7 +447,7 @@ struct iOSCompactTodayHost: View, Equatable {
             showsHeader: showsHeader,
             completedTodayTasks: content.completedTasks,
             todayTaskGroups: content.taskGroups,
-            rolloverNotice: iOSTodayRolloverNotice(content: content, onRollOver: onRollOver),
+            rolloverNotice: iOSTodayRolloverNotice(content: content, onRollOver: onRollOver, onDismiss: onDismissRollover),
             summary: content.summary,
             sortMode: sortMode,
             showCompleted: showCompleted

@@ -234,6 +234,93 @@ struct CadenceTodayRolloverSurfaceTests {
         ))
     }
 
+    // MARK: - "Not Now" ([[T-7981]])
+
+    /// "Not Now" stores today's key, the notice goes away for the day, and the rows it was
+    /// withholding are back in the grouped list; tomorrow the same stored key no longer hides it.
+    ///
+    /// Round-tripped through a **test-local** defaults suite, never the app's store, so the value
+    /// the hosts' `@AppStorage` would hold is the one the predicate is asked about.
+    @Test func notNowHidesTheNoticeForTheDayAndPutsTheRowsBack() throws {
+        let today = "2026-08-20"
+        let pastDo = task(title: "Past do", scheduled: "2026-08-19")
+        let plannedToday = task(title: "Planned today", scheduled: today)
+        let all = [pastDo, plannedToday]
+
+        try withTemporaryDefaults("CadenceTests.TodayRollover") { defaults in
+            let key = CadenceTodayRolloverSupport.dismissedDateStorageKey
+
+            // Before: the banner is up and the past-do row is withheld from the groups.
+            let before = defaults.string(forKey: key) ?? ""
+            let showingBefore = CadenceTodayRolloverSupport.isNoticeVisible(
+                pastDoTaskCount: 1, dismissedDateKey: before, todayKey: today
+            )
+            #expect(showingBefore)
+            #expect(CadenceTodayRolloverSupport.groupedTasks(
+                from: all, withholding: [pastDo], isNoticeVisible: showingBefore
+            ).map(\.title) == ["Planned today"])
+
+            defaults.set(CadenceTodayRolloverSupport.dismissedDateKey(dismissingOn: today), forKey: key)
+
+            // After: hidden for today, and the row is back in its group, without anything rolled.
+            let after = try #require(defaults.string(forKey: key))
+            let showingAfter = CadenceTodayRolloverSupport.isNoticeVisible(
+                pastDoTaskCount: 1, dismissedDateKey: after, todayKey: today
+            )
+            #expect(!showingAfter)
+            #expect(CadenceTodayRolloverSupport.groupedTasks(
+                from: all, withholding: [pastDo], isNoticeVisible: showingAfter
+            ).map(\.title) == ["Past do", "Planned today"])
+            #expect(pastDo.scheduledDate == "2026-08-19", "Not Now moved the task: that is the roll's job")
+
+            // Tomorrow the same stored key no longer hides it.
+            #expect(CadenceTodayRolloverSupport.isNoticeVisible(
+                pastDoTaskCount: 1, dismissedDateKey: after, todayKey: "2026-08-21"
+            ))
+        }
+    }
+
+    /// The banner draws the control on both platforms, and both hosts write today's key from it.
+    @Test func bothPlatformsDrawNotNowAndStoreTodaysKeyFromIt() throws {
+        let banner = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceTodayRolloverBanner.swift"))
+        #expect(banner.contains("let onDismiss: () -> Void"))
+        #expect(banner.contains("Button(action: onDismiss)"))
+        #expect(banner.contains("Text(CadenceTodayRolloverSupport.dismissActionTitle)"))
+        let header = try cadenceFunctionBody("private var headerRow: some View", in: banner)
+        // Both header layouts (wrapping and not) carry the pair, never the roll alone.
+        #expect(header.components(separatedBy: "actionButtons").count - 1 == 2)
+        #expect(!header.contains("rollOverButton"))
+        let pair = try cadenceFunctionBody("private var actionButtons: some View", in: banner)
+        #expect(pair.contains("dismissButton"))
+        #expect(pair.contains("rollOverButton"))
+
+        for path in ["Cadence/iOS/iOSTodayView.swift", "Cadence/macOS/Views/TasksPanel.swift"] {
+            let body = try cadenceFunctionBody(
+                "private func dismissRolloverNotice()",
+                in: try strippingComments(sourceFile(path))
+            )
+            #expect(
+                body.contains("rolloverNoticeDismissedDate = CadenceTodayRolloverSupport.dismissedDateKey(dismissingOn: todayKey)"),
+                "\(path) does not store today's key from Not Now"
+            )
+        }
+        let panel = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanel.swift"))
+        #expect(panel.contains("onDismiss: dismissRolloverNotice"))
+        let list = try strippingComments(sourceFile("Cadence/iOS/iOSTodayTaskSections.swift"))
+        #expect(list.contains("onDismiss: rolloverNotice.onDismiss"))
+        let today = try strippingComments(sourceFile("Cadence/iOS/iOSTodayView.swift"))
+        // Two-pane (DEBUG and release) and the compact host (DEBUG and release).
+        #expect(today.components(separatedBy: "onDismiss: dismissRolloverNotice)").count - 1 == 2)
+        #expect(today.components(separatedBy: "onDismiss: onDismissRollover)").count - 1 == 2)
+        #expect(today.components(separatedBy: "onDismissRollover: dismissRolloverNotice").count - 1 == 2)
+    }
+
+    /// The title asks; it no longer reports a move that waits for the button ([[T-7981]]).
+    @Test func theTitleOffersTheRollRatherThanReportingIt() {
+        #expect(CadenceTodayRolloverSupport.title.hasSuffix("?"))
+        #expect(!CadenceTodayRolloverSupport.title.contains("are rolling"))
+    }
+
     // MARK: - Withholding
 
     @Test func theGroupedListWithholdsExactlyWhatTheBannerIsOffering() throws {
@@ -418,8 +505,9 @@ struct CadenceTodayRolloverSurfaceTests {
         let owner = "Cadence/Shared/CadenceTodayRolloverSupport.swift"
         let literals = [
             "\"todayRolloverNoticeDismissedDate\"",
-            "\"Leftover tasks are rolling over to today\"",
-            "\"Roll Over\""
+            "\"Roll leftover tasks over to today?\"",
+            "\"Roll Over\"",
+            "\"Not Now\""
         ]
         var scanned = 0
         for path in try swiftFiles(under: "Cadence") where path != owner {
@@ -438,8 +526,8 @@ struct CadenceTodayRolloverSurfaceTests {
     }
 
     /// **T-1432(1): the banner makes its offer once.** It carried a subtitle — *"Review these
-    /// tasks, then confirm to move them into today's groups."* — under a title that already says
-    /// *"Leftover tasks are rolling over to today"*, over rows that **are** the tasks to review
+    /// tasks, then confirm to move them into today's groups."* — under a title that already said
+    /// *"Leftover tasks are rolling over to today"* (a question since [[T-7981]]), over rows that **are** the tasks to review
     /// and beside a button that **is** the confirmation. That is this repository's page-header
     /// non-negotiable one level down, and the constant went with the `Text` rather than being left
     /// to be redrawn.
