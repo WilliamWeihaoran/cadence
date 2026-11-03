@@ -148,9 +148,10 @@ struct AITaskDraftReviewSheet: View {
 
             HStack {
                 Spacer()
-                // T-7289: Escape cancels. Return is deliberately NOT bound to Create Selected:
-                // this sheet is a stack of editable fields, and T-7290 asks the owner whether a
-                // Return typed in one should create every approved task.
+                // T-7289: Escape cancels. [[T-7290]] (owner call, 2026-11-02): Cmd+Return creates,
+                // and plain Return is deliberately NOT bound -- every draft card is a column of
+                // single-line fields, so a `.defaultAction` would turn "finish typing this title"
+                // into "create every approved draft".
                 // [[T-9451]]: the shared action button, as in the summary sheet above.
                 CadenceActionButton(title: "Cancel", role: .ghost, size: .compact, shortcut: .cancelAction) {
                     dismiss()
@@ -160,7 +161,8 @@ struct AITaskDraftReviewSheet: View {
                     title: "Create Selected",
                     role: .primary,
                     size: .compact,
-                    isDisabled: !review.canCreate
+                    isDisabled: !review.canCreate,
+                    shortcut: KeyboardShortcut(.return, modifiers: .command)
                 ) {
                     createSelected()
                 }

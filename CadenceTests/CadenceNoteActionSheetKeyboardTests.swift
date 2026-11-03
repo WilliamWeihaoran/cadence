@@ -11,8 +11,8 @@ import Testing
 ///
 /// T-7289: `AISummaryReviewSheet` and `AITaskDraftReviewSheet` carried no keyboard shortcut, so
 /// Escape closed neither sheet and Return did nothing — the same gap T-7266 closed in the list
-/// sheets. Summary: Escape closes, Return appends. Drafts: Escape cancels, and Return is left off
-/// Create Selected on purpose (T-7290 is the owner call).
+/// sheets. Summary: Escape closes, Return appends. Drafts: Escape cancels, and plain Return is left
+/// off Create Selected on purpose; [[T-7290]]'s owner call (2026-11-02) gave it Cmd+Return instead.
 ///
 /// T-7292: `NoteActionDestinationRow` drew the note's current list (filled circle, blue title,
 /// checkmark) and never told VoiceOver; it now carries `.isSelected` the way T-7267's list-sheet
@@ -57,7 +57,10 @@ struct CadenceNoteActionSheetKeyboardTests {
         #expect(Self.shortcutCount(sheet) == 2)
     }
 
-    @Test func draftSheetCancelTakesEscapeAndCreateTakesNoKey() throws {
+    /// **[[T-7290]].** Cmd+Return creates, through the same `createSelected()` as the click, and
+    /// stays behind `review.canCreate`; plain Return reaches nothing, because every draft card is a
+    /// column of single-line fields and a `.defaultAction` would fire from any of them.
+    @Test func draftSheetCancelTakesEscapeAndCreateTakesCommandReturn() throws {
         let sheet = try Self.compactBody("struct AITaskDraftReviewSheet: View", in: Self.sheetsPath)
 
         #expect(
@@ -65,9 +68,13 @@ struct CadenceNoteActionSheetKeyboardTests {
             "Escape must cancel the Mac AI task draft sheet"
         )
         #expect(
-            Self.shortcutCount(sheet) == 1,
-            "Create Selected takes no key until the owner answers T-7290"
+            sheet.contains(#"CadenceActionButton(title:"CreateSelected",role:.primary,size:.compact,isDisabled:!review.canCreate,shortcut:KeyboardShortcut(.return,modifiers:.command)){createSelected()}"#),
+            "Cmd+Return must create the approved drafts, gated like the click"
         )
+        #expect(!sheet.contains("defaultAction"), "plain Return must not create every approved draft")
+        // The two keys above and no third: Escape's `shortcut:.` and Cmd+Return's `shortcut:K`.
+        #expect(Self.shortcutCount(sheet) == 1)
+        #expect(sheet.components(separatedBy: "shortcut:KeyboardShortcut(").count - 1 == 1)
     }
 
     @Test func moveDestinationRowsNameBlankListsUntitled() throws {
