@@ -232,7 +232,6 @@ struct iOSNavigationSettingsSection: View {
 
     private enum DefaultsPicker: String, Identifiable {
         case calendarView
-        case calendarStyle
         case timelineDensity
         case defaultPage
 
@@ -243,14 +242,12 @@ struct iOSNavigationSettingsSection: View {
         iOSEditorSection(title: "Defaults") {
             calendarViewRow
             iOSEditorDivider()
-            calendarStyleRow
-            iOSEditorDivider()
             timelineDensityRow
             iOSEditorDivider()
-            // Last, not first: the three above are one run about the calendar, and this one is
+            // Last, not first: the two above are one run about the calendar, and this one is
             // about lists. Splitting it into its own group — macOS files it under "List Opening" —
             // would put a one-row card under a heading on a screen where "Defaults" already says
-            // what all four are.
+            // what all three are.
             defaultPageRow
         }
         .onAppear {
@@ -264,53 +261,60 @@ struct iOSNavigationSettingsSection: View {
         }
     }
 
+    /// One row for the Calendar page's one three-way choice ([[T-7074]]). It was two -- "Calendar
+    /// view: Week / Month" over "Calendar style: Timeline / Board" -- so with Board picked on the
+    /// page this read "Week" beside a style the page never names. The toolbar is one Week / Month /
+    /// Board control, and this row offers the same three and writes both stored keys the way it
+    /// does, through `CadenceCalendarPageView`.
     private var calendarViewRow: some View {
         iOSEditorFieldRow(label: "Calendar view", systemImage: "calendar") {
-            valueButton(calendarViewMode.rawValue, picker: .calendarView)
+            valueButton(calendarViewTitle, picker: .calendarView)
                 .popover(isPresented: isPresented(.calendarView)) {
                     iOSChoicePopoverList(
-                        rows: CadenceCalendarViewMode.pickerCases.map { mode in
+                        rows: CadenceCalendarPageView.allCases.map { choice in
                             iOSChoiceRow(
-                                value: mode,
-                                title: mode.rawValue,
-                                systemImage: mode.systemImage,
+                                value: choice,
+                                title: choice.title,
+                                subtitle: calendarViewSubtitle(choice),
+                                systemImage: choice.systemImage,
                                 color: Theme.purple
                             )
                         },
-                        selection: $calendarViewMode,
-                        isPresented: isPresented(.calendarView)
+                        selection: calendarViewSelection,
+                        isPresented: isPresented(.calendarView),
+                        width: 280
                     )
                 }
         }
     }
 
-    private var calendarStyleRow: some View {
-        iOSEditorFieldRow(label: "Calendar style", systemImage: "square.grid.2x2") {
-            valueButton(calendarPresentation.rawValue, picker: .calendarStyle)
-                .popover(isPresented: isPresented(.calendarStyle)) {
-                    iOSChoicePopoverList(
-                        rows: [
-                            iOSChoiceRow(
-                                value: CadenceCalendarPresentation.timeline,
-                                title: CadenceCalendarPresentation.timeline.rawValue,
-                                subtitle: "Hour-by-hour, the way the Mac schedule reads.",
-                                systemImage: "timeline.selection",
-                                color: Theme.blue
-                            ),
-                            iOSChoiceRow(
-                                value: CadenceCalendarPresentation.board,
-                                title: CadenceCalendarPresentation.board.rawValue,
-                                subtitle: "Columns per day, with overdue and unscheduled rails.",
-                                systemImage: CadenceCalendarPresentation.boardSystemImage,
-                                color: Theme.blue
-                            )
-                        ],
-                        selection: $calendarPresentation,
-                        isPresented: isPresented(.calendarStyle),
-                        width: 280
-                    )
-                }
-        }
+    /// The stored pair as the one choice. A `.twoWeeks` an older build persisted reads as itself
+    /// rather than as Week, the way the toolbar lights no pill for it.
+    private var calendarViewTitle: String {
+        CadenceCalendarPageView(presentation: calendarPresentation, viewMode: calendarViewMode)?.title
+            ?? calendarViewMode.rawValue
+    }
+
+    private var calendarViewSelection: Binding<CadenceCalendarPageView> {
+        Binding(
+            get: {
+                CadenceCalendarPageView(presentation: calendarPresentation, viewMode: calendarViewMode)
+                    ?? .week
+            },
+            set: { choice in
+                var presentation = calendarPresentation
+                var viewMode = calendarViewMode
+                choice.apply(presentation: &presentation, viewMode: &viewMode)
+                if viewMode != calendarViewMode { calendarViewMode = viewMode }
+                if presentation != calendarPresentation { calendarPresentation = presentation }
+            }
+        )
+    }
+
+    /// Board keeps the line it had as a "Calendar style": it is the one choice whose name does not
+    /// say what it draws. Week and Month do.
+    private func calendarViewSubtitle(_ choice: CadenceCalendarPageView) -> String? {
+        choice == .board ? "Columns per day, with overdue and unscheduled rails." : nil
     }
 
     private var timelineDensityRow: some View {

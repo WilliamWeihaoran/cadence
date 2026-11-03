@@ -32,13 +32,17 @@ struct CadenceIOSCalendarModeGlyphTests {
         #expect(!control.contains("systemImage:\""), "no literal glyph left in the mode control")
     }
 
+    /// [[T-7074]] folded "Calendar style" into "Calendar view", so the three choices are one
+    /// `CadenceCalendarPageView` list and the glyphs come from that type, which reads the same two
+    /// constants the toolbar pills do.
     @Test func settingsCalendarChoicesReadTheSameGlyphs() throws {
         let view = try Self.compactBody("private var calendarViewRow: some View", in: Self.settingsPath)
-        #expect(view.contains("title:mode.rawValue,systemImage:mode.systemImage,"),
-                "each Calendar view choice wears its mode's toolbar glyph")
-        let style = try Self.compactBody("private var calendarStyleRow: some View", in: Self.settingsPath)
-        #expect(style.contains("systemImage:CadenceCalendarPresentation.boardSystemImage,"),
+        #expect(view.contains("systemImage:choice.systemImage,"),
+                "each Calendar view choice wears its choice's glyph")
+        #expect(!view.contains("square.grid.2x2"), "no second Board glyph among the choices")
+        #expect(CadenceCalendarPageView.week.systemImage == CadenceCalendarViewMode.week.systemImage)
+        #expect(CadenceCalendarPageView.month.systemImage == CadenceCalendarViewMode.month.systemImage)
+        #expect(CadenceCalendarPageView.board.systemImage == CadenceCalendarPresentation.boardSystemImage,
                 "the Board choice wears the toolbar Board pill's glyph")
-        #expect(!style.contains("square.grid.2x2\",color:"), "no second Board glyph among the choices")
     }
 }

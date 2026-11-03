@@ -129,7 +129,7 @@ struct CadenceChoicePickerDismissalTests {
             "Cadence/iOS/iOSArchiveImportSettingsSection.swift": (1, 0),
             "Cadence/iOS/iOSCalendarSettingsSection.swift": (1, 0),
             "Cadence/iOS/iOSListEditorViews.swift": (2, 0),
-            "Cadence/iOS/iOSSettingsOverviewSections.swift": (4, 0),
+            "Cadence/iOS/iOSSettingsOverviewSections.swift": (3, 0), // [[T-7074]]: one Calendar view row, was two
             // [[T-3171]]: the task inspector is the shared schedule panel. The components file's
             // three — the title card's priority, the breadcrumb's list and section — went with the
             // two views, onto the panel's own rows, so the file holds no picker. The sections
@@ -211,7 +211,9 @@ struct CadenceChoicePickerDismissalTests {
         // same five rows the Repeat panel above it already drew, ticked in both copies on one
         // 393pt screen: 31, still 4. The frequency is chosen in the list that remains, and the
         // custom panel states it rather than offering it a second time.
-        #expect(found.values.map(\.calls).reduce(0, +) == 31)
+        // [[T-7074]] folds iOS Settings' "Calendar style" picker into "Calendar view", one
+        // Week / Month / Board list as the Calendar toolbar has it: 30, still 4.
+        #expect(found.values.map(\.calls).reduce(0, +) == 30)
         #expect(found.values.map(\.committing).reduce(0, +) == 4)
     }
 

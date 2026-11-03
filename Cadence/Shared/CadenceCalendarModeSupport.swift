@@ -35,3 +35,65 @@ enum CadenceCalendarPresentation: String, CaseIterable, Hashable {
     /// Timeline has no constant: the toolbar names it by its Week/Month modes, not a pill.
     static let boardSystemImage = "rectangle.grid.2x2"
 }
+
+/// The Calendar page's one three-way choice, Week / Month / Board ([[T-7074]]).
+///
+/// Two stored keys carry it -- `CadenceCalendarPresentation` and `CadenceCalendarViewMode` -- and
+/// the iOS toolbar's mode control has always written them as one control: Board sets the
+/// presentation and leaves the mode alone, Week and Month set the timeline plus the mode. Settings
+/// > Navigation drew the same two keys as two rows, "Calendar view: Week / Month" and "Calendar
+/// style: Timeline / Board", so with Board on the page Settings still read "Calendar view: Week"
+/// beside a style row the page never names. Both surfaces now read and write this one value.
+enum CadenceCalendarPageView: Hashable, CaseIterable {
+    case week
+    case month
+    case board
+
+    /// The choice the two stored keys spell. `nil` only for `.twoWeeks`, which no picker offers
+    /// and only an older build's persisted value can hold -- so neither surface claims it is Week.
+    init?(presentation: CadenceCalendarPresentation, viewMode: CadenceCalendarViewMode) {
+        if presentation == .board {
+            self = .board
+            return
+        }
+        switch viewMode {
+        case .week: self = .week
+        case .month: self = .month
+        case .twoWeeks: return nil
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .week: return CadenceCalendarViewMode.week.rawValue
+        case .month: return CadenceCalendarViewMode.month.rawValue
+        case .board: return CadenceCalendarPresentation.board.rawValue
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .week: return CadenceCalendarViewMode.week.systemImage
+        case .month: return CadenceCalendarViewMode.month.systemImage
+        case .board: return CadenceCalendarPresentation.boardSystemImage
+        }
+    }
+
+    /// The write the toolbar makes. Board keeps the stored mode, so leaving Board returns to the
+    /// timeline range the reader had.
+    func apply(
+        presentation: inout CadenceCalendarPresentation,
+        viewMode: inout CadenceCalendarViewMode
+    ) {
+        switch self {
+        case .week:
+            presentation = .timeline
+            viewMode = .week
+        case .month:
+            presentation = .timeline
+            viewMode = .month
+        case .board:
+            presentation = .board
+        }
+    }
+}
