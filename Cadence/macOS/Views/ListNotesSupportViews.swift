@@ -75,10 +75,10 @@ struct TaskNoteEditorPane: View {
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(Theme.surfaceElevated.opacity(0.88))
-                .clipShape(Capsule())
+                // [[T-9985]]: the same radius-8 quiet pill as the two buttons beside it, at rest and
+                // never hovered -- it is a read-only label, and the missing hover and press states
+                // are what say so, not a capsule corner of its own.
+                .modifier(CadenceQuietPill(state: .resting, isHovered: false))
                 .accessibilityLabel("Task-linked note")
                 .accessibilityValue(taskTitle)
                 .help("Task-linked note")

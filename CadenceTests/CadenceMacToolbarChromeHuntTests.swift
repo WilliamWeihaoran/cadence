@@ -44,6 +44,25 @@ import Testing
         #expect(!sheet.contains("RoundedRectangle("), "Close paints its own plate again")
     }
 
+    /// [[T-9985]]: the task-title label between those buttons wears the same radius-8 quiet pill,
+    /// at rest and unhovered, rather than a capsule of its own -- one toolbar, one corner shape.
+    @Test func theTaskNotesToolbarTitleLabelIsARestingQuietPill() throws {
+        let pane = try #require(CadenceSourceScan.declarationBody(
+            "struct TaskNoteEditorPane: View",
+            in: try Self.code("Cadence/macOS/Views/ListNotesSupportViews.swift")
+        ))
+        let label = try #require(pane.range(of: ".accessibilityLabel(\"Task-linked note\")"),
+                                 "non-vacuity: the pane no longer draws its task-title label")
+        let title = try #require(pane.range(of: "Text(taskTitle)", options: .backwards,
+                                            range: pane.startIndex..<label.lowerBound),
+                                 "non-vacuity: the label no longer shows the task title")
+        let chrome = String(pane[title.upperBound..<label.lowerBound])
+        #expect(chrome.contains(".modifier(CadenceQuietPill(state: .resting, isHovered: false))"),
+                "the task-title label is not a resting, unhovered quiet pill")
+        #expect(!chrome.contains("Capsule()"), "the task-title label is a capsule again")
+        #expect(!chrome.contains(".background("), "the task-title label paints its own plate again")
+    }
+
     /// [[T-9982]]: the Today timeline header's Export, Zoom out and Zoom in are one button at one
     /// size and one radius.
     @Test func theTimelineHeaderButtonsShareOneSizeAndRadius() throws {
