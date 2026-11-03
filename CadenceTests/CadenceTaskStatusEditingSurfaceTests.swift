@@ -77,14 +77,20 @@ struct CadenceTaskStatusEditingSurfaceTests {
             ("setStatus(.cancelled)", { CadenceTaskStatusEditing.setStatus(.cancelled, for: $0, in: $1, reconciler: $2) },
              { $0.status == .cancelled }),
             ("setStatus(.inProgress)", { CadenceTaskStatusEditing.setStatus(.inProgress, for: $0, in: $1, reconciler: $2) },
-             { $0.status == .inProgress && !$0.hasCompletedAt }),
-            ("completeFocusSession", { CadenceTaskStatusEditing.completeFocusSession($0, elapsedSeconds: 25 * 60, in: $1, reconciler: $2) },
-             { $0.status == .done && $0.hasCompletedAt && $0.actualMinutes == 25 })
+             { $0.status == .inProgress && !$0.hasCompletedAt })
         ]
 
         // Non-vacuity: the table is the wrapper's whole surface, so an entry point deleted from it
         // cannot quietly stop being covered.
-        #expect(cases.count == 3 + 1, "the entry-point table has \(cases.count) cases")
+        //
+        // It was four until [[T-9702]]. The fourth was the focus timer's own completion door --
+        // named here without backticks, because the symbol is gone and a backticked name that
+        // resolves to nothing is a finding for CadenceCommentSymbolClaimTests: completeFocusSession.
+        // [[T-8732]] moved the iOS focus screen onto the shared Log Session write, which reconciles
+        // for itself, and the owner retired the entry point rather than keep a second door onto one
+        // write. The relation below -- one reconcile per public entry point -- is what actually
+        // guards the surface; this count only keeps the table honest about its own size.
+        #expect(cases.count == 3, "the entry-point table has \(cases.count) cases")
 
         for testCase in cases {
             let modelContext = try statusContext()
@@ -251,7 +257,11 @@ struct CadenceTaskStatusEditingSurfaceTests {
 
         let entryPoints = CadenceSourceScan.matchCount(#"static func "#, in: stripped)
         let reconciles = CadenceSourceScan.matchCount(#"reconcile\(context, reconciler\)"#, in: stripped)
-        #expect(entryPoints >= 4, "the wrapper declares only \(entryPoints) functions")
+        // Three: `toggleCompletion`, `setStatus`, and the private `reconcile` they both end in.
+        // It was four until [[T-9702]] retired the focus timer's own completion door; the floor
+        // moved with it rather than being left as a number nothing could satisfy. The relation
+        // below is the assertion that matters, and it is unchanged.
+        #expect(entryPoints >= 3, "the wrapper declares only \(entryPoints) functions")
         #expect(
             reconciles == entryPoints - 1,
             "\(entryPoints) functions but \(reconciles) reconcile calls — an entry point skips it"

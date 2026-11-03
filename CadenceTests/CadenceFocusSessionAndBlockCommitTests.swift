@@ -131,9 +131,14 @@ struct CadenceFocusSessionAndBlockCommitTests {
 
     // MARK: - T-636(c), source shape
 
-    /// The wrapper records the refusal for the shared alert **and** answers it, and the focus view
-    /// clears its stopwatch only below that answer. The seconds exist nowhere but the timer, so a
-    /// reset over a refusal loses them for good.
+    /// The focus view clears its stopwatch only below the write that banked the session. The
+    /// seconds exist nowhere but the timer, so a reset over a refusal loses them for good.
+    ///
+    /// **[[T-9702]] retired the wrapper half.** This used to open by reading the status wrapper's
+    /// own focus-completion entry point and asserting that it recorded the refusal and answered
+    /// `false`. That entry point had had no production caller since [[T-8732]], so the owner
+    /// retired it; what is left here is the half over a path a user can reach, plus the one-line
+    /// pin that the dead door has not grown back.
     ///
     /// **[[T-8732]] moved the iOS half onto the log form.** The check control no longer completes
     /// the task in one tap -- it opens the Mac's Log Session form -- so the screen's write is
@@ -142,12 +147,17 @@ struct CadenceFocusSessionAndBlockCommitTests {
     /// (T-566's rule, which the Mac popover has carried since). The shape is a `catch` with a bare
     /// `return` rather than a `guard`, because the shared write throws instead of answering.
     @Test func thefocusViewClearsItsStopwatchOnlyOnceTheStoreHasTheSession() throws {
+        // The retired door, stated as an assertion so it cannot quietly come back: the status
+        // wrapper reaches no focus write at all now. Named without backticks on purpose -- the
+        // symbol is gone, and a backticked name resolving to nothing is a finding for
+        // CadenceCommentSymbolClaimTests: completeFocusSession. The positive read beside it is the
+        // non-vacuity check, since a wrong or empty file would satisfy the ban for free.
         let wrapper = try CadenceCommitSurfaceScan.scanned(Self.statusEditingPath)
-        let complete = try CadenceCommitSurfaceScan.declarationBody(named: "completeFocusSession", in: wrapper)
-        #expect(complete.contains("CadenceTaskSettleFailureCenter.shared.record()"))
-        #expect(complete.contains("return false"))
-        #expect(CadenceSourceScan.matchCount(#"try\?"#, in: complete) == 0)
-        #expect(wrapper.contains("-> Bool {"))
+        #expect(wrapper.contains("enum CadenceTaskStatusEditing"), "the scan read the wrong file")
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceFocusSupport\.complete\("#, in: wrapper) == 0,
+            "the status wrapper grew a focus-completion door back ([[T-9702]] retired it)"
+        )
 
         let view = try CadenceCommitSurfaceScan.scanned(Self.focusViewPath)
         let guarded = try CadenceCommitSurfaceScan.declarationBody(named: "logSession", in: view)

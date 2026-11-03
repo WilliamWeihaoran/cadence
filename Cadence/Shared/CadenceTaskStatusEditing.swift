@@ -124,55 +124,23 @@ enum CadenceTaskStatusEditing {
         reconcile(context, reconciler)
     }
 
-    /// Finishing a task from the focus timer: log the elapsed minutes and mark it done, then
-    /// reconcile once.
-    ///
-    /// A case of its own rather than "log, then call `toggleCompletion`", because
-    /// `CadenceFocusSupport.complete` is a single save and splitting it would either reconcile
-    /// twice or leave the logged minutes outside the transition.
-    ///
-    /// **It answers whether the change is in the store (T-636(c)).** `toggleCompletion` above
-    /// catches and records because its six surfaces cannot each own a notice; this one had exactly
-    /// one caller, the iOS focus screen's one-tap Complete, and that caller had something to do
-    /// with the answer the shared alert cannot do for it — the elapsed clock. Resetting it over a
-    /// refused commit discards the minutes for good, since the timer is the only place they
-    /// existed. So the refusal is recorded on `CadenceTaskSettleFailureCenter` for the sentence,
-    /// *and* returned for the clock.
-    ///
-    /// **That caller left with [[T-8732]], and this entry point is awaiting its own decision.** The
-    /// iOS Focus check control now opens the Mac's Log Session form, and the form writes through
-    /// `CadenceFocusSupport.logSession`, which reports a refusal by throwing rather than by
-    /// answering — so nothing in the app calls this today, while four suites still pin it.
-    /// [[T-9702]] holds the choice between retiring it with its pins and making it the door the
-    /// log form's completing branch goes through; it was not a parity agent's call to make.
-    ///
-    /// Nothing is reconciled on the failure path, for the reason `toggleCompletion` records:
-    /// `commitSettle` has already put the transition back, so there is none to reconcile.
-    ///
-    /// - Parameter commit: Forwarded to the mutation under it, for the reason `toggleCompletion`
-    ///   states at length ([[T-881]]).
-    @discardableResult
-    static func completeFocusSession(
-        _ task: AppTask,
-        elapsedSeconds: Int,
-        in context: ModelContext,
-        reconciler: CadenceWindDownReconciler? = nil,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) -> Bool {
-        do {
-            try CadenceFocusSupport.complete(
-                task,
-                elapsedSeconds: elapsedSeconds,
-                modelContext: context,
-                commit: commit
-            )
-        } catch {
-            CadenceTaskSettleFailureCenter.shared.record()
-            return false
-        }
-        reconcile(context, reconciler)
-        return true
-    }
+    // **There is no third entry point for the focus timer, and that is a decision** ([[T-9702]],
+    // owner ruling of 2026-11-02). The wrapper used to carry one — completeFocusSession, written
+    // here without backticks because the symbol no longer exists and a backticked name that
+    // resolves to nothing is a finding for CadenceCommentSymbolClaimTests. It banked the elapsed
+    // minutes and settled the task in one save, and answered `Bool` rather than `Void` for the one
+    // caller that needed the answer: the iOS focus screen's one-tap Complete, whose stopwatch held
+    // the only copy of those minutes and so must not reset over a refused commit.
+    //
+    // [[T-8732]] replaced that control with the Mac's Log Session form. The form writes through
+    // `CadenceFocusSupport.logSession`, which is the same bank-and-settle unit, reports a refusal
+    // by throwing instead of answering, and reconciles after its own commit — so the entry point
+    // lost its last production caller and kept four suites pinning a path no user could reach. The
+    // owner retired it rather than routing the log form's completing branch back through it: a
+    // second door onto one write is the duplication this codebase keeps paying to remove, and the
+    // round trip from minutes back into stopwatch seconds bought nothing.
+    //
+    // A focus completion still reconciles; `logSession` does it, where the write is.
 
     // MARK: - The one reconcile
 

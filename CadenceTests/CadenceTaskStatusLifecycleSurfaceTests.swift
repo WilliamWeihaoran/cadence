@@ -509,50 +509,17 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
         centre.clear()
     }
 
-    /// The third entry point, and the one with an answer of its own: `completeFocusSession` returns
-    /// `false` on a refusal so `iOSFocusView` can keep the elapsed clock, which is the only place
-    /// those minutes exist.
-    ///
-    /// New with [[T-881]]. Nothing behavioural reached this path before — its "nothing is
-    /// reconciled on the failure path" paragraph was documented and asserted by nothing at all,
-    /// not even the string ordering its two siblings had.
-    @Test func aRefusedFocusCompletionAnswersFalseAndReconcilesNothing() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let task = AppTask(title: "Focus me")
-        context.insert(task)
-        try context.save()
-
-        let centre = CadenceTaskSettleFailureCenter.shared
-        centre.clear()
-        let counter = Counter()
-        let watcher = CadenceWindDownReconciler(isLive: false) { _ in counter.runs += 1 }
-
-        let refused = CadenceTaskStatusEditing.completeFocusSession(
-            task,
-            elapsedSeconds: 1_500,
-            in: context,
-            reconciler: watcher
-        ) { _ in throw CommitRefused() }
-
-        #expect(refused == false, "the clock was told the minutes landed")
-        #expect(centre.settleFailed)
-        #expect(counter.runs == 0, "a refused focus completion still reconciled")
-        #expect(task.status == .todo)
-
-        centre.clear()
-        let accepted = CadenceTaskStatusEditing.completeFocusSession(
-            task,
-            elapsedSeconds: 1_500,
-            in: context,
-            reconciler: watcher
-        )
-        #expect(accepted)
-        #expect(!centre.settleFailed)
-        #expect(counter.runs == 1)
-        #expect(task.status == .done)
-        centre.clear()
-    }
+    // **The third entry point is gone** ([[T-9702]], owner ruling of 2026-11-02). It was the
+    // focus timer's own completion door -- spelled without backticks here, because the symbol no
+    // longer exists and a backticked name resolving to nothing is a finding for
+    // CadenceCommentSymbolClaimTests: completeFocusSession. It answered `Bool` rather than `Void`
+    // so the iOS focus screen could keep its stopwatch over a refused commit, and the test that
+    // lived here pinned exactly that answer.
+    //
+    // [[T-8732]] had already moved that screen onto `CadenceFocusSupport.logSession`, which
+    // reports a refusal by throwing and reconciles after its own commit; the refusal-path
+    // behaviour this test covered is pinned there by `CadenceFocusSessionAndBlockCommitTests`,
+    // over a path a user can actually reach. Nothing was left uncovered by removing it.
 
     // MARK: - T-344: the circle toggles settled, not done
 

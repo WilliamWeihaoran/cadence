@@ -1895,8 +1895,14 @@ enum CadenceSaveCommitRule {
         //
         // `CadenceFocusSupport.complete` left with T-636(c) — the focus timer's own door onto the
         // same recurrence insert. It throws, settles through the shared `commitSettle`, and puts
-        // the banked minutes back; `CadenceTaskStatusEditing.completeFocusSession` records the
-        // refusal and answers `false` so the stopwatch is not cleared over it.
+        // the banked minutes back. The app-side half of that sentence used to name a third entry
+        // point on `CadenceTaskStatusEditing`, which recorded the refusal and answered `false` so
+        // the stopwatch was not cleared over it; [[T-9702]] retired that entry point — written
+        // here without backticks, because the symbol is gone and a backticked name that resolves
+        // to nothing is a finding for CadenceCommentSymbolClaimTests: completeFocusSession. Since
+        // [[T-8732]] the only caller is `CadenceFocusSupport.logSession`, which reports a refusal
+        // by throwing and whose caller's ordering is pinned by
+        // `CadenceFocusSessionAndBlockCommitTests`.
         // T-629 emptied the two image doors out of this list: macOS's `createAssets` and iOS's
         // `createPastedImageAssets`/`insertPickedImages` commit through `commitInsert` now and
         // write no reference over a refused commit, pinned by
@@ -3304,9 +3310,12 @@ enum CadenceSaveCommitRule {
         // through the same unit and into the same alert.
         // [[T-636]](c) left too: `iOSFocusView.logSession` puts its reset, its advance and the
         // dismissal of the log form below the refusal's own `return`, so the stopwatch is cleared
-        // only once the store has the session it measured. ([[T-8732]] moved that screen off
-        // `CadenceTaskStatusEditing.completeFocusSession` and onto the shared log write, whose
-        // refusal throws rather than answering; the reading is the same.)
+        // only once the store has the session it measured. ([[T-8732]] moved that screen off the
+        // status wrapper's own focus-completion door and onto the shared log write, whose refusal
+        // throws rather than answering; the reading is the same. [[T-9702]] then retired that
+        // door — named here without backticks because the symbol is gone and a backticked name
+        // that resolves to nothing is a finding for CadenceCommentSymbolClaimTests:
+        // completeFocusSession.)
         // [[T-636]](a) from the note editor's task embed left with [[T-9122]]: `content`'s Repeat
         // field now hands the list the answer of `MacTaskRowContextMenu.selectRecurrenceRule`
         // (the committing `CadenceChoicePopoverList`), so nothing in it reports over a swallow.

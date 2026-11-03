@@ -563,11 +563,13 @@ enum CadenceFocusSupport {
         // loses nothing, and a second `commitSettle` here would be a second answer to "what does
         // finishing a focus session do".
         try complete(task, elapsedSeconds: totalMinutes * 60, modelContext: modelContext, commit: commit)
-        // The reconcile macOS's `TaskWorkflowService.markDone` used to run from inside the settle
-        // and iOS's `CadenceTaskStatusEditing.completeFocusSession` runs after it: a just-finished
-        // task's pending "starting now" / "due today" notification is cleared promptly rather than
-        // waiting for the scenePhase checkpoint. After the commit, so a refused log reconciles
-        // nothing -- `commitSettle` has already put the transition back.
+        // The reconcile macOS's `TaskWorkflowService.markDone` used to run from inside the settle,
+        // and that iOS's own focus-completion entry point on `CadenceTaskStatusEditing` used to run
+        // after it ([[T-9702]] retired that entry point -- this is now the only place a finished
+        // focus session reconciles, on both platforms): a just-finished task's pending "starting
+        // now" / "due today" notification is cleared promptly rather than waiting for the
+        // scenePhase checkpoint. After the commit, so a refused log reconciles nothing --
+        // `commitSettle` has already put the transition back.
         (reconciler ?? .default).run(in: modelContext)
     }
 
