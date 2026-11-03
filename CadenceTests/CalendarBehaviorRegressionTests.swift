@@ -1093,6 +1093,27 @@ struct CalendarBehaviorRegressionTests {
             eventEndMin: 12 * 60 + 55
         ) == nil)
 
+        // [[T-8723]]: the compact-width face keeps the same verb and the same rule; only the clock
+        // shortens. Locale-relative, so it holds on a 24-hour face too.
+        #expect(CalendarEventChipTimeSupport.label(
+            isAllDay: false,
+            isMultiDayTimedEvent: true,
+            isFirstSegment: false,
+            isLastSegment: true,
+            eventStartMin: 22 * 60 + 29,
+            eventEndMin: 12 * 60 + 55,
+            compact: true
+        ) == "ends \(TimeFormatters.compactTimeString(from: 12 * 60 + 55))")
+        #expect(CalendarEventChipTimeSupport.label(
+            isAllDay: false,
+            isMultiDayTimedEvent: false,
+            isFirstSegment: true,
+            isLastSegment: true,
+            eventStartMin: 9 * 60,
+            eventEndMin: 17 * 60,
+            compact: true
+        ) == TimeFormatters.compactTimeString(from: 9 * 60))
+
         // All-day events have no time to show at any position.
         #expect(CalendarEventChipTimeSupport.label(
             isAllDay: true,

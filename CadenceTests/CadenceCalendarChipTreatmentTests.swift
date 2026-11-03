@@ -46,10 +46,12 @@ struct CadenceCalendarChipTreatmentTests {
     @Test func mobileMonthEventsCarryCompactEndpointTimesWithoutTakingTitleWidth() throws {
         let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(Self.iOSChips))
         let time = try CadenceCommitSurfaceScan.declarationBody(named: "timeLabel", in: source)
-        #expect(time.contains("guard !event.isAllDay"))
-        #expect(time.contains("guard isStart || isEnd else { return nil }"))
-        #expect(time.contains("TimeFormatters.compactTimeString(from: minutes)"))
-        #expect(source.contains("timeLabel: Self.timeLabel(for: event, on: date)"))
+        // [[T-8723]]: the iOS cell spells its time through the Mac's helper, and the compact
+        // face is gated on width rather than on the platform.
+        #expect(time.contains("CalendarEventChipTimeSupport.label("))
+        #expect(time.contains("compact: horizontalSizeClass == .compact"))
+        #expect(!time.contains("TimeFormatters."), "the cell must not spell a clock of its own")
+        #expect(source.contains("timeLabel: timeLabel(for: event)"))
         let chip = try #require(CadenceSourceScan.declarationBody("struct iOSCalendarMiniChip: View", in: source))
         #expect(chip.contains("if let timeLabel"))
         #expect(chip.contains("Text(timeLabel)"))

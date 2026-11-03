@@ -182,3 +182,37 @@ nonisolated enum CadenceCalendarChipGlyphRow: String, Equatable, Sendable, CaseI
         hasTimeLine ? .time : .title
     }
 }
+
+/// Time text for a month-cell event chip, on both platforms ([[T-8723]], under [[T-8201]]).
+///
+/// One rule and one verb: the start time on the day the event begins, `ends <time>` on the day a
+/// multi-day event finishes, nothing on a middle day. iOS spelled the last day `to 5p`, which can
+/// be read as the start of a range; the verb is now `ends` everywhere.
+///
+/// **`compact` is the one platform difference, and it names screen width:** a 393 pt iPhone month
+/// column cannot spare `9 AM`, so a compact-width cell draws `9a` / `ends 5p`. An iPad's
+/// regular-width grid draws the same cell as the Mac and so the same `9 AM`. Both faces honour a
+/// 24-hour clock through `TimeFormatters`.
+nonisolated enum CalendarEventChipTimeSupport {
+    /// `nil` whenever no single time describes the chip: an all-day event has none, and a middle
+    /// segment of a multi-day event fills its whole day, so either endpoint would name a time that
+    /// day never sees.
+    static func label(
+        isAllDay: Bool,
+        isMultiDayTimedEvent: Bool,
+        isFirstSegment: Bool,
+        isLastSegment: Bool,
+        eventStartMin: Int,
+        eventEndMin: Int,
+        compact: Bool = false
+    ) -> String? {
+        guard !isAllDay else { return nil }
+        func clock(_ minutes: Int) -> String {
+            compact ? TimeFormatters.compactTimeString(from: minutes) : TimeFormatters.timeString(from: minutes)
+        }
+        guard isMultiDayTimedEvent else { return clock(eventStartMin) }
+        if isFirstSegment { return clock(eventStartMin) }
+        if isLastSegment { return "ends \(clock(eventEndMin))" }
+        return nil
+    }
+}

@@ -343,6 +343,7 @@ private struct iOSCalendarMonthChipOpen: ViewModifier {
 
 private struct iOSCalendarMonthDayCell: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.cadenceTypographyScaling) private var scaling
     let date: Date
     let displayMonth: Date
@@ -373,7 +374,7 @@ private struct iOSCalendarMonthDayCell: View {
 
     private var chipCapacity: Int {
         let heights = events.prefix(Self.maximumChipCount).map {
-            iOSCalendarMiniChip.height(hasTime: Self.timeLabel(for: $0, on: date) != nil, at: dynamicTypeSize, scaling: scaling)
+            iOSCalendarMiniChip.height(hasTime: timeLabel(for: $0) != nil, at: dynamicTypeSize, scaling: scaling)
         } + tasks.prefix(Self.maximumChipCount).map { _ in iOSCalendarMiniChip.height(hasTime: false, at: dynamicTypeSize, scaling: scaling) }
         var used: CGFloat = 0
         var count = 0
@@ -386,17 +387,25 @@ private struct iOSCalendarMonthDayCell: View {
         return count
     }
 
-    /// The same endpoint rule as Mac month chips, in compact clock vocabulary. All-day and
-    /// middle-day segments have no clock. The shared formatter still owns locale/hour-cycle.
-    private static func timeLabel(for event: EKEvent, on date: Date, calendar: Calendar = .current) -> String? {
-        guard !event.isAllDay, let start = event.startDate, let end = event.endDate else { return nil }
-        let isStart = calendar.isDate(start, inSameDayAs: date)
-        let isEnd = calendar.isDate(end.addingTimeInterval(-1), inSameDayAs: date)
-        guard isStart || isEnd else { return nil }
-        let endpoint = isStart ? start : end
-        let minutes = calendar.component(.hour, from: endpoint) * 60 + calendar.component(.minute, from: endpoint)
-        let clock = TimeFormatters.compactTimeString(from: minutes)
-        return isStart ? clock : "to \(clock)"
+    /// The Mac's month-chip rule through the one shared helper ([[T-8723]]): start time on the
+    /// first day, `ends <time>` on the last, nothing between. The compact `9a` face is gated on
+    /// COMPACT WIDTH -- a 393 pt iPhone month column -- so an iPad's regular-width grid draws the
+    /// Mac's `9 AM`.
+    private func timeLabel(for event: EKEvent) -> String? {
+        guard let start = event.startDate, let end = event.endDate else { return nil }
+        let lastInstant = end.addingTimeInterval(-1)
+        func minutes(_ instant: Date) -> Int {
+            calendar.component(.hour, from: instant) * 60 + calendar.component(.minute, from: instant)
+        }
+        return CalendarEventChipTimeSupport.label(
+            isAllDay: event.isAllDay,
+            isMultiDayTimedEvent: !calendar.isDate(start, inSameDayAs: lastInstant),
+            isFirstSegment: calendar.isDate(start, inSameDayAs: date),
+            isLastSegment: calendar.isDate(lastInstant, inSameDayAs: date),
+            eventStartMin: minutes(start),
+            eventEndMin: minutes(end),
+            compact: horizontalSizeClass == .compact
+        )
     }
 
     /// Who gets those slots. The ordering is `CadenceCalendarMonthCellPriority`'s and is shared
@@ -580,7 +589,7 @@ private struct iOSCalendarMonthDayCell: View {
                     icon: event.isAllDay ? "calendar" : "calendar.badge.clock",
                     color: iOSCalendarEventSupport.color(for: event.calendar),
                     isEvent: true,
-                    timeLabel: Self.timeLabel(for: event, on: date)
+                    timeLabel: timeLabel(for: event)
                 )
                 .modifier(iOSCalendarMonthChipOpen(onOpen: opens ? { onOpenEvent(event) } : nil))
             }
