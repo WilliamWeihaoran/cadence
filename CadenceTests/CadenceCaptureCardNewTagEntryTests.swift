@@ -98,7 +98,7 @@ struct CadenceCaptureCardNewTagEntryTests {
     @Test func captureCardEstimateEditorsDrawOneHeadingOneClearOneDone() throws {
         let card = try CadenceCommitSurfaceScan.scanned(Self.cardPath)
         #expect(card.contains(
-            "EstimatePickerPopoverContent(value: estimateBinding, unsetValueLabel: \"Clear estimate\", showsDone: false)"
+            "EstimatePickerPopoverContent(value: estimateBinding, showsDone: false)"
         ), "the Do editor's embedded panel draws a Done with nothing to close")
         #expect(!card.contains("onClose: {})"), "an estimate panel is handed a close that does nothing")
         #expect(!card.contains("Text(CadenceCaptureField.estimate.title)"),
@@ -106,7 +106,7 @@ struct CadenceCaptureCardNewTagEntryTests {
         #expect(card.contains("field != .calendar, field != .estimate,"),
                 "the Estimate editor draws Clear Estimate under the panel's own Clear")
         // The standalone Estimate editor still closes from its panel.
-        #expect(card.contains("value: estimateBinding, unsetValueLabel: \"Clear estimate\", onClose: { activeField = nil }"))
+        #expect(card.contains("value: estimateBinding, onClose: { activeField = nil }"))
     }
 
     // MARK: - [[T-10060]]: Return in the capture card's time rollers closes the panel

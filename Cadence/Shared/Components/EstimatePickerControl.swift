@@ -124,7 +124,9 @@ struct EstimatePickerPopoverContent: View {
     /// Uppercase heading. Callers editing a duration that is not a planning estimate (logged
     /// "Actual" minutes) pass their own so the panel is not mislabelled.
     var title: String = "ESTIMATE"
-    var unsetValueLabel = "None"
+    /// What the readout says at zero. [[T-10030]]: the same words as the control that opens the
+    /// panel and the iOS inspector row, so an unset estimate reads one way everywhere.
+    var unsetValueLabel = CadenceTaskPresentationSupport.estimateValueLabel(minutes: 0)
     var onClose: () -> Void = {}
     /// **T-761(b).** `nil` on the draft form: `value`'s own setter is the only write, so nothing
     /// here can be refused and closing stays unconditional. Non-`nil` on the committing form: this
@@ -147,7 +149,7 @@ struct EstimatePickerPopoverContent: View {
     init(
         value: Binding<Int>,
         title: String = "ESTIMATE",
-        unsetValueLabel: String = "None",
+        unsetValueLabel: String = CadenceTaskPresentationSupport.estimateValueLabel(minutes: 0),
         showsDone: Bool = true,
         onClose: @escaping () -> Void = {}
     ) {

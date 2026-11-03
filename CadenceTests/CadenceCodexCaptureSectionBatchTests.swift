@@ -8,11 +8,12 @@ import Testing
 struct CadenceCodexCaptureSectionBatchTests {
     @Test func captureEstimateLabelIsOptInAndDoesNotChangeOtherPickerCallers() throws {
         let ordinary = EstimatePickerPopoverContent(value: .constant(0))
-        let capture = EstimatePickerPopoverContent(value: .constant(0), unsetValueLabel: "Clear estimate")
         let committing = EstimatePickerPopoverContent(value: 0, onCommit: { _ in true })
-        #expect(ordinary.unsetValueLabel == "None")
-        #expect(committing.unsetValueLabel == "None")
-        #expect(capture.unsetValueLabel == "Clear estimate")
+        // [[T-10030]]: an unset estimate reads "No estimate" everywhere -- the same words as the
+        // control that opens the panel -- and the capture card no longer passes its own.
+        #expect(CadenceTaskPresentationSupport.estimateValueLabel(minutes: 0) == "No estimate")
+        #expect(ordinary.unsetValueLabel == "No estimate")
+        #expect(committing.unsetValueLabel == "No estimate")
         let read = CadenceSourceScan.strippedSourceReader()
         let picker = try read("Cadence/Shared/Components/EstimatePickerControl.swift")
         #expect(picker.contains("struct EstimatePickerPopoverContent: View"))
@@ -22,7 +23,10 @@ struct CadenceCodexCaptureSectionBatchTests {
         // of the card's picker sites share. The opt-in label is what this test is about, so the
         // binding is still required to be a binding rather than a plain value.
         #expect(card.contains("private var estimateBinding: Binding<Int>"))
-        #expect(card.contains("EstimatePickerPopoverContent(value: estimateBinding, unsetValueLabel: \"Clear estimate\""))
+        #expect(card.components(separatedBy: "EstimatePickerPopoverContent(").count - 1 == 2,
+                "non-vacuity: the card's two estimate panels are where this scan looks")
+        #expect(!card.contains("unsetValueLabel:"), "the capture card words an unset estimate its own way")
+        #expect(!picker.contains("\"None\""), "the panel's unset readout still defaults to None")
     }
 
     @Test func captureSectionEntryPointsShareOneCommittedControlAndLeaveBoardMappingIntact() throws {

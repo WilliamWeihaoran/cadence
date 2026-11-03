@@ -719,7 +719,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                     // "Estimate" above it said it twice), and the popover header's Done is the
                     // only Done -- the panel's had nothing to close here.
                     Divider()
-                    EstimatePickerPopoverContent(value: estimateBinding, unsetValueLabel: "Clear estimate", showsDone: false)
+                    EstimatePickerPopoverContent(value: estimateBinding, showsDone: false)
                 }
                 if draft.kind == .event {
                     Text("Ends").cadenceFont(.controlLabel)
@@ -798,7 +798,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
             )
         case .estimate:
             EstimatePickerPopoverContent(
-                value: estimateBinding, unsetValueLabel: "Clear estimate", onClose: { activeField = nil }
+                value: estimateBinding, onClose: { activeField = nil }
             )
         case .calendar:
             CadenceChoicePopoverList(
