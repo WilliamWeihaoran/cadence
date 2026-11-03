@@ -380,4 +380,96 @@ struct CadenceCaptureEditorTests {
         #expect(draft.repeatRule.label == "Never")
         #expect(draft.effectiveSeriesEndMode == .never)
     }
+
+    /// **[[T-9662]]. A button's hit frame belongs INSIDE its label.** The card applies
+    /// `.buttonStyle(.cadencePlain)`, and on iOS that style lays its `contentShape` on
+    /// `configuration.label` -- so a `.frame` written as a modifier on the `Button` reserves the
+    /// space and takes none of the taps. The close (X) and Delete buttons were laid out in 44pt
+    /// and tappable only on the ~17pt glyph and on the word; the field icons, the overflow menu
+    /// and Save already framed inside their labels and were the ones that worked.
+    ///
+    /// Source shape because the defect IS the position of a modifier in a private view: no
+    /// constructible draft can report where a `contentShape` landed, and a hit test needs the
+    /// simulator. The scan is validated against a synthetic good/bad pair below so that a change
+    /// that stops it seeing anything fails rather than passes.
+    @Test func everyCaptureCardButtonKeepsItsHitFrameInsideItsLabel() throws {
+        let cardSource = try source("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift")
+        let card = CadenceSourceScan.codeOnly(cardSource)
+        let lines = card.components(separatedBy: "\n")
+        let scan = Self.buttonsFramedOutsideTheirLabel(in: lines)
+        #expect(scan.scanned >= 6, "non-vacuity: only \(scan.scanned) buttons scanned in the capture card")
+        #expect(scan.offenders.isEmpty, "a hit frame outside the button's label: \(scan.offenders)")
+
+        // The two that were wrong, spelled the way the fix spells them.
+        #expect(cardSource.contains(
+            "Button(action: actions.cancel) { Image(systemName: \"xmark\").frame(width: 44, height: 44) }"
+        ))
+        let delete = try #require(
+            cardSource.range(of: "Button(role: .destructive) { actionError = delete() } label: {")
+        )
+        #expect(cardSource[delete.upperBound...].prefix(120).contains("Text(\"Delete\").frame(minHeight: 44)"))
+    }
+
+    /// The scan sees a frame written on the button and does not see one written in its label.
+    @Test func theHitFrameScanSeparatesALabelFrameFromAButtonFrame() {
+        let bad = [
+            "        Button(action: cancel) { Image(systemName: \"xmark\") }",
+            "            .accessibilityLabel(\"Cancel\")",
+            "            .frame(width: 44, height: 44)",
+        ]
+        let badScan = Self.buttonsFramedOutsideTheirLabel(in: bad)
+        #expect(badScan.scanned == 1)
+        #expect(badScan.offenders.count == 1)
+
+        let good = [
+            "        Button(action: cancel) { Image(systemName: \"xmark\").frame(width: 44, height: 44) }",
+            "            .accessibilityLabel(\"Cancel\")",
+            "        Button(role: .destructive) { remove() } label: {",
+            "            Text(\"Delete\").frame(minHeight: 44)",
+            "        }",
+            "        .foregroundStyle(Theme.red)",
+        ]
+        let goodScan = Self.buttonsFramedOutsideTheirLabel(in: good)
+        #expect(goodScan.scanned == 2)
+        #expect(goodScan.offenders.isEmpty, "\(goodScan.offenders)")
+    }
+
+    /// Every `Button` in `lines`, with the `.frame(` modifiers applied to the button itself rather
+    /// than inside its label. A button's expression ends on the line where the braces its own
+    /// closures opened close again; the lines after it that begin with `.` are its modifiers.
+    static func buttonsFramedOutsideTheirLabel(in lines: [String]) -> (scanned: Int, offenders: [String]) {
+        var scanned = 0
+        var offenders: [String] = []
+        var index = 0
+        while index < lines.count {
+            let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("Button(") || trimmed.hasPrefix("Button {") else {
+                index += 1
+                continue
+            }
+            scanned += 1
+            var depth = 0
+            var opened = false
+            var end = index
+            for cursor in index..<lines.count {
+                depth += lines[cursor].filter { $0 == "{" }.count
+                depth -= lines[cursor].filter { $0 == "}" }.count
+                end = cursor
+                if depth > 0 { opened = true }
+                if depth <= 0 { break }
+            }
+            _ = opened
+            var cursor = end + 1
+            while cursor < lines.count {
+                let modifier = lines[cursor].trimmingCharacters(in: .whitespaces)
+                guard modifier.hasPrefix(".") else { break }
+                if modifier.hasPrefix(".frame(") {
+                    offenders.append("line \(cursor + 1): \(modifier)")
+                }
+                cursor += 1
+            }
+            index = end + 1
+        }
+        return (scanned, offenders)
+    }
 }

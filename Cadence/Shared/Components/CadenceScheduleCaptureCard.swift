@@ -263,11 +263,15 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                 CadenceScheduleKindSwitch(kind: kindBinding, isEditing: draft.subject.isEditing, identifierPrefix: "capture-kind")
                     .frame(maxWidth: 240)
                 Spacer(minLength: 0)
-                Button(action: actions.cancel) { Image(systemName: "xmark") }
+                // [[T-9662]]: the 44pt square goes INSIDE the label. The card's
+                // `.buttonStyle(.cadencePlain)` puts its `contentShape` on the button's label, so
+                // a frame applied to the Button reserves the space and takes none of the taps --
+                // the tappable area was the ~17pt glyph. The field icons below have always put
+                // their frame inside the label, which is why they alone were right.
+                Button(action: actions.cancel) { Image(systemName: "xmark").frame(width: 44, height: 44) }
                     .accessibilityLabel(isReadOnly ? "Done" : "Cancel")
                     .accessibilityIdentifier("capture-cancel")
                     .help(isReadOnly ? "Done" : "Cancel")
-                    .frame(width: 44, height: 44)
             }
             if let readOnlyNotice {
                 CadenceInlineNotice(text: readOnlyNotice, tone: .informational)
@@ -315,10 +319,13 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
             chipPlacement
             HStack(spacing: 0) {
                 if !isReadOnly, let delete = actions.delete {
-                    Button("Delete", role: .destructive) { actionError = delete() }
-                        .foregroundStyle(Theme.red)
-                        .frame(minHeight: 44)
-                        .accessibilityIdentifier("capture-delete")
+                    // [[T-9662]]: same shape as the close button above -- the 44pt minimum is
+                    // the label's, not the Button's, so the word takes the whole row height.
+                    Button(role: .destructive) { actionError = delete() } label: {
+                        Text("Delete").frame(minHeight: 44)
+                    }
+                    .foregroundStyle(Theme.red)
+                    .accessibilityIdentifier("capture-delete")
                 }
                 Spacer(minLength: 0)
                 ForEach(fields.filter { !isSet($0) && !CadenceCaptureFieldInventory.overflow.contains($0) }) { field in
