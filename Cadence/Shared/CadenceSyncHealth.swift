@@ -360,7 +360,9 @@ struct CadenceSyncHealth: Equatable {
                 level: .syncing,
                 tone: .positive,
                 title: "iCloud available",
-                detail: "CloudKit should be able to sync Cadence data.",
+                // [[T-7941]]: the hedge stays (an available account is not proof sync is running); the
+                // framework name goes.
+                detail: "Cadence should be able to sync your data through iCloud.",
                 iconName: "checkmark.icloud"
             )
         case .checking:
@@ -376,7 +378,8 @@ struct CadenceSyncHealth: Equatable {
                 level: .unknown,
                 tone: .neutral,
                 title: "iCloud not checked",
-                detail: "Check status before relying on TestFlight sync.",
+                // [[T-7941]]: no distribution-channel name; whoever installed the build reads this.
+                detail: "Check status before relying on sync.",
                 iconName: "icloud"
             )
         case .couldNotDetermine:

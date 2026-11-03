@@ -89,6 +89,20 @@ struct CadenceSyncHealthTests {
         #expect(health.iconName == "checkmark.icloud")
     }
 
+    /// [[T-7941]]: the two steady-state sentences the card shows on every visit keep their meaning
+    /// and lose the developer vocabulary -- no framework name, no distribution channel.
+    @Test func theSteadyStateCopyNamesNeitherTheFrameworkNorTheDistributionChannel() {
+        let available = CadenceSyncHealth.resolve(startupIssue: nil, account: .available, pushRegistration: .registered)
+        let notChecked = CadenceSyncHealth.resolve(startupIssue: nil, account: .notChecked, pushRegistration: .registered)
+
+        #expect(available.detail == "Cadence should be able to sync your data through iCloud.")
+        #expect(notChecked.detail == "Check status before relying on sync.")
+        for health in [available, notChecked] {
+            #expect(!health.title.contains("CloudKit") && !health.detail.contains("CloudKit"))
+            #expect(!health.title.contains("TestFlight") && !health.detail.contains("TestFlight"))
+        }
+    }
+
     @Test func accountStatesMapToDistinctLevels() {
         let expected: [(CadenceCloudAccountState, CadenceSyncHealthLevel)] = [
             (.available, .syncing),
