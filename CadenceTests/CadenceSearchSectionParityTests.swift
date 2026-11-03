@@ -145,6 +145,32 @@ struct CadenceSearchSectionParityTests {
         #expect(!body.contains(".commands"))
     }
 
+    /// [[T-6984]]: the chip that narrows to the one section headed "Pages" is titled by that
+    /// section, so the chip, the heading it opens and the Mac's category say one word. It read
+    /// "More" until 2026-11-02. The other five chip titles are pinned beside it so a rename of
+    /// any chip is a decision this suite sees.
+    @Test func thePagesChipIsTitledByTheSectionItOpens() throws {
+        // Comments stripped but string literals kept: `codeOnly` blanks literals, and the titles
+        // are literals.
+        let code = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchSupportViews.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.declarationBody("var title: String", in: code),
+            "could not read iOSSearchScope.title"
+        )
+
+        #expect(body.contains("case .progress: return CadenceSearchSection.pages.title"))
+        #expect(CadenceSearchSection.pages.title == "Pages")
+        #expect(!body.contains("\"More\""))
+
+        #expect(body.contains("case .all: return \"All\""))
+        #expect(body.contains("case .tasks: return \"Tasks\""))
+        #expect(body.contains("case .lists: return \"Lists\""))
+        #expect(body.contains("case .notes: return \"Notes\""))
+        #expect(body.contains("case .events: return \"Events\""))
+    }
+
     /// An event note is an **Event Notes** row on the phone too. The split is `kind == .meeting`,
     /// which is the Mac's own gate rather than a second rule written beside it.
     @Test func theIOSNoteSectionsSplitOnTheMacsEventNoteGate() throws {

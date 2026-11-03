@@ -20,15 +20,19 @@ enum iOSSearchScope: String, CaseIterable, Identifiable {
         case .lists: return "Lists"
         case .notes: return "Notes"
         case .events: return "Events"
-        case .progress: return "More"
+        // [[T-6984]]: this chip opens the one section headed "Pages", and the Mac names the same
+        // category "Pages", so the chip takes the section's own title rather than the "More" it
+        // read until 2026-11-02.
+        case .progress: return CadenceSearchSection.pages.title
         }
     }
 
     /// T-5013(b). What the idle line calls this scope, or `nil` on **All**, where there is no one
     /// kind of thing to name and "search all" would say less than "search".
     ///
-    /// Not `title.lowercased()`: **More** is a chip label, and "start typing to search more" is not
-    /// a sentence. It gates the Pages section — the screens themselves — so that is what it says.
+    /// Spelled out rather than `title.lowercased()`, which would say "search lists" for a chip
+    /// that also finds areas. The Pages chip gates the Pages section — the screens themselves — so
+    /// that is what it says.
     var idleNoun: String? {
         switch self {
         case .all: return nil
@@ -49,9 +53,9 @@ enum iOSSearchScope: String, CaseIterable, Identifiable {
     /// **Lists** is Areas and Projects, which the phone used to merge into one "Lists" heading,
     /// and **Notes** is Event Notes and Notes, which it used to merge into one "Notes" heading.
     ///
-    /// **More** is the odd one. It gated two sections — Pages, and the "Goals and Habits" one
-    /// that merged `Goal` and `Habit` behind a destination apiece — and T-2076 took the second
-    /// away with the two destinations. The chip stays, because Pages is what a reader looking for
+    /// **Pages** (the "More" chip until [[T-6984]]) is the odd one. It gated two sections —
+    /// Pages, and the "Goals and Habits" one that merged `Goal` and `Habit` behind a destination
+    /// apiece — and T-2076 took the second away with the two destinations. The chip stays, because Pages is what a reader looking for
     /// a *screen* rather than a row is searching for, and it is the one section nothing else
     /// shows.
     ///
