@@ -25,6 +25,11 @@ import SwiftData
 enum CadenceSavedLinkPersistence {
     static let deleteConfirmationTitle = "Delete Link?"
 
+    /// **[[T-9973]]: the add-link form's commit, one label on both platforms.** The Mac's
+    /// `AddLinkBar` said "Save" beside Cancel while iOS's `iOSAddLinkForm` said "Save Link" with no
+    /// Cancel beside it, so its label has to carry the object; carrying it costs the Mac nothing.
+    static let saveActionTitle = "Save Link"
+
     static func deleteConfirmationMessage(title: String) -> String {
         "This will permanently delete \"\(title)\"."
     }

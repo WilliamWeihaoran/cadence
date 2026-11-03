@@ -993,7 +993,7 @@ private struct iOSAddLinkForm: View {
                 .onSubmit(save)
 
             iOSActionButton(
-                title: "Save Link",
+                title: CadenceSavedLinkPersistence.saveActionTitle,
                 systemImage: "checkmark",
                 role: .primary,
                 size: .compact,

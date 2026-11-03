@@ -627,6 +627,21 @@ struct CadenceRecurrenceEndSurfaceTests {
         #expect(CadenceSourceScan.matchCount(#"occurrenceNumber: task\.recurrenceOccurrenceNumber"#, in: mac) == 2)
     }
 
+    /// **[[T-9973]]: both single-choice groups in the Mac repeat popover draw one mark.** APPLY TO
+    /// marked its choice with a leading checkmark while ENDS drew a radio circle, two marks for
+    /// one kind of choice stacked in one popover. Both rows now draw `TaskRecurrenceRadioIndicator`.
+    @Test func bothRepeatPopoverChoiceGroupsDrawTheRadioIndicator() throws {
+        let mac = try strippingComments(sourceFile("Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift"))
+        let scopeRow = try #require(
+            CadenceSourceScan.declarationBody("private func scopeRow(_ title: String, value: CadenceTaskRecurrenceEditScope) -> some View", in: mac)
+        )
+        let endRow = try #require(CadenceSourceScan.declarationBody("private struct TaskRecurrenceEndOptionRow<Trailing: View>: View", in: mac))
+        for (name, body) in [("scopeRow", scopeRow), ("TaskRecurrenceEndOptionRow", endRow)] {
+            #expect(CadenceSourceScan.matchCount(#"TaskRecurrenceRadioIndicator\(isSelected: isSelected\)"#, in: body) == 1, "\(name)")
+            #expect(!body.contains(#"Image(systemName: "checkmark")"#), "\(name) still marks its choice with a checkmark")
+        }
+    }
+
     @Test func theSeededEndDateIsAMonthOutAndParses() throws {
         let reference = try #require(DateFormatters.date(from: "2026-01-31"))
         let key = CadenceTaskRecurrenceEndPresentation.defaultEndDateKey(from: reference)

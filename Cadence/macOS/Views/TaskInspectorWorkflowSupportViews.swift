@@ -319,11 +319,9 @@ private struct TaskRecurrencePickerPanel: View {
             scope = value
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.blue)
-                    .opacity(isSelected ? 1 : 0)
-                    .frame(width: 11)
+                // [[T-9973]]: the same radio the ENDS group draws. Both groups in this popover are
+                // single-choice, and a checkmark read as menu state rather than one of N.
+                TaskRecurrenceRadioIndicator(isSelected: isSelected)
 
                 Text(title)
                     .font(.system(size: 11))

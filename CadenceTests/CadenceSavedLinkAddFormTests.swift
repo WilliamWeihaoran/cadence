@@ -137,10 +137,11 @@ struct CadenceSavedLinkAddFormTests {
             Issue.record("no AddLinkBar in LinksView.swift")
             return
         }
-        let pattern = #"title:\s*"(\w+)",\s*role:\s*\.(\w+)"#
+        // [[T-9973]]: Save reads the shared label, so a title is a literal or that constant.
+        let pattern = #"title:\s*([^,\s]+),\s*role:\s*\.(\w+)"#
         let titles = CadenceSourceScan.captures(pattern, in: bar, group: 1).map(\.text)
         let roles = CadenceSourceScan.captures(pattern, in: bar, group: 2).map(\.text)
-        #expect(titles == ["Cancel", "Save"], "measured: \(titles)")
+        #expect(titles == [#""Cancel""#, "CadenceSavedLinkPersistence.saveActionTitle"], "measured: \(titles)")
         #expect(roles == ["ghost", "primary"], "measured: \(roles)")
 
         let ios = CadenceSourceScan.strippingComments(
@@ -151,6 +152,24 @@ struct CadenceSavedLinkAddFormTests {
             return
         }
         #expect(form.contains("role: .primary"), "iOS's add-link commit is no longer .primary")
+    }
+
+    /// **[[T-9973]]: one add-link commit label on both platforms.** The Mac said "Save" and iOS
+    /// "Save Link" for the same commit; both now read `CadenceSavedLinkPersistence.saveActionTitle`,
+    /// and neither form spells a Save literal of its own.
+    @Test func bothAddLinkFormsCommitUnderTheOneSharedSaveLinkLabel() throws {
+        #expect(CadenceSavedLinkPersistence.saveActionTitle == "Save Link")
+        let mac = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/LinksView.swift"))
+        let ios = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListSupportViews.swift"))
+        let bar = try #require(CadenceSourceScan.declarationBody("private struct AddLinkBar: View", in: mac))
+        let form = try #require(CadenceSourceScan.declarationBody("private struct iOSAddLinkForm: View", in: ios))
+        for (name, body) in [("AddLinkBar", bar), ("iOSAddLinkForm", form)] {
+            #expect(
+                CadenceSourceScan.matchCount(#"title:\s*CadenceSavedLinkPersistence\.saveActionTitle\b"#, in: body) == 1,
+                "\(name) does not commit under the shared label"
+            )
+            #expect(CadenceSourceScan.matchCount(#"title:\s*"Save( Link)?""#, in: body) == 0, "\(name) spells its own Save label")
+        }
     }
 }
 #endif

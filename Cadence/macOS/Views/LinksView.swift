@@ -179,7 +179,7 @@ private struct AddLinkBar: View {
                 // the Mac (the context editor, Edit Tag, the list editor, the folder sheet) and
                 // the role iOS's own add-link form commits with. It was the one `.secondary` Save.
                 CadenceActionButton(
-                    title: "Save",
+                    title: CadenceSavedLinkPersistence.saveActionTitle,
                     role: .primary,
                     size: .compact,
                     isDisabled: CadenceTitleNormalization.isBlank(url)
