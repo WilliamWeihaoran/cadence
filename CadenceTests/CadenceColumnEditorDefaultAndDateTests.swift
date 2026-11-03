@@ -98,4 +98,26 @@ struct CadenceColumnEditorDefaultAndDateTests {
         #expect(!CadenceDateSelectionState.drawsClear(showsClear: true, hasSelection: false))
         #endif
     }
+
+    /// **[[T-9804]]: the iOS column row edits its due date the Mac popover's way.** It drew a "Due
+    /// date" switch and, only when on, a picker with no placeholder and no clear -- two controls
+    /// that could disagree about whether the column is dated. It now draws one `CadenceDatePicker`
+    /// that reads the shared "No due date" while `draft.dueDate` is empty, commits every pick through
+    /// the binding's setter, and clears through the picker's own `onClear`.
+    @Test func iOSColumnDueDateIsOnePlaceholderPicker() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListEditorViews.swift")
+        let row = try #require(CadenceSourceScan.declarationBody("private struct iOSSectionDraftRow", in: source))
+        let call = try #require(row.range(of: "CadenceDatePicker("))
+        let clear = try #require(row.range(of: "onClear: { draft.dueDate = \"\" }", range: call.upperBound..<row.endIndex))
+        let tail = String(row[call.lowerBound..<clear.upperBound])
+
+        #expect(tail.contains("placeholder: draft.dueDate.isEmpty ? CadenceBoardColumnDueDatePlan.emptyLabel : nil"))
+        #expect(tail.contains("showsClear: !draft.dueDate.isEmpty"))
+        #expect(tail.contains("draft.dueDate = DateFormatters.dateKey(from: newValue)"), "a pick commits through the setter")
+        #expect(!tail.contains("selection: $dueDate"))
+        #expect(CadenceSourceScan.matchCount("CadenceDatePicker\\(", in: row) == 1)
+        #expect(!row.contains("Toggle(\"Due date\""), "the separate switch is back")
+        #expect(!row.contains("hasDueDate"))
+        #expect(!row.contains(".onChange(of: dueDate)"))
+    }
 }

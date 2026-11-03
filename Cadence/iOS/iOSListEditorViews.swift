@@ -712,7 +712,8 @@ struct iOSListEditorSheet: View {
 private struct iOSSectionDraftRow: View {
     @Binding var draft: CadenceSectionDraft
     let lifecycle: iOSSectionRowLifecycle?
-    @State private var hasDueDate = false
+    /// The day the picker shows and opens on. Whether the column HAS a due date is
+    /// `draft.dueDate` alone ([[T-9804]]) -- there is no switch beside the picker to disagree with it.
     @State private var dueDate = Date()
 
     var body: some View {
@@ -750,18 +751,27 @@ private struct iOSSectionDraftRow: View {
 
             iOSSectionColorPicker(selectedHex: $draft.colorHex)
 
-            Toggle("Due date", isOn: $hasDueDate)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.subdued)
-
-            if hasDueDate {
-                HStack {
-                    Text("Due")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.subdued)
-                    Spacer()
-                    CadenceDatePicker(selection: $dueDate)
-                }
+            // [[T-9804]]: the Mac column popover's one-button field, not a "Due date" switch plus a
+            // picker. It reads "No due date" while empty, a pick sets the date and Clear unsets it.
+            // Every pick commits through the setter rather than `.onChange`: after a clear the
+            // bound day is still the cleared one, and picking it again changes nothing.
+            HStack {
+                Text("Due date")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.subdued)
+                Spacer()
+                CadenceDatePicker(
+                    selection: Binding(
+                        get: { dueDate },
+                        set: { newValue in
+                            dueDate = newValue
+                            draft.dueDate = DateFormatters.dateKey(from: newValue)
+                        }
+                    ),
+                    placeholder: draft.dueDate.isEmpty ? CadenceBoardColumnDueDatePlan.emptyLabel : nil,
+                    showsClear: !draft.dueDate.isEmpty,
+                    onClear: { draft.dueDate = "" }
+                )
             }
 
             if let lifecycle {
@@ -770,15 +780,7 @@ private struct iOSSectionDraftRow: View {
         }
         .padding(.vertical, 8)
         .onAppear {
-            hasDueDate = !draft.dueDate.isEmpty
             dueDate = DateFormatters.date(from: draft.dueDate) ?? Date()
-        }
-        .onChange(of: hasDueDate) { _, isOn in
-            draft.dueDate = isOn ? DateFormatters.dateKey(from: dueDate) : ""
-        }
-        .onChange(of: dueDate) { _, newValue in
-            guard hasDueDate else { return }
-            draft.dueDate = DateFormatters.dateKey(from: newValue)
         }
     }
 
