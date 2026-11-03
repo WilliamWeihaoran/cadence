@@ -71,6 +71,9 @@ struct CadenceSettingsSectionCopyTests {
             "CadenceAISettingsCopy.keyPrivacyDisclosure",
             "Stored in Keychain. Cadence sends the note to OpenAI only when you run an AI action, such as summarizing a note or extracting task drafts: its title, its full text, and the name of the list it belongs to. Test Connection also contacts OpenAI, but it sends two fixed phrases and none of your content. Every request asks OpenAI not to store it, which also keeps it out of your OpenAI account's logs."
         ),
+        // T-7210: the middle disclosure row, one definite pair for both platforms.
+        ("CadenceAISettingsCopy.noteContentDisclosureTitle", "The note you run it on"),
+        ("CadenceAISettingsCopy.noteContentDisclosureDetail", "Its title, its full text, and the name of its list."),
         ("CadenceAISettingsCopy.saveAPIKeyAction", "Save API Key"),
         ("CadenceAISettingsCopy.testConnectionAction", "Test Connection"),
         ("CadenceAISettingsCopy.deleteAPIKeyAction", "Delete API Key"),
@@ -1092,6 +1095,13 @@ struct CadenceSettingsSectionCopyTests {
                 asks OpenAI not to store it, which also keeps it out of your OpenAI account's \
                 logs.
                 """
+        )
+        // T-7210. The row under that sentence now makes the same definite claim rather than the
+        // "selected" / "may" / "related list names" one T-1322 retired from the sentence itself.
+        #expect(CadenceAISettingsCopy.noteContentDisclosureTitle == "The note you run it on")
+        #expect(
+            CadenceAISettingsCopy.noteContentDisclosureDetail
+                == "Its title, its full text, and the name of its list."
         )
         #expect(CadenceAISettingsCopy.saveAPIKeyAction == "Save API Key")
         #expect(CadenceAISettingsCopy.testConnectionAction == "Test Connection")

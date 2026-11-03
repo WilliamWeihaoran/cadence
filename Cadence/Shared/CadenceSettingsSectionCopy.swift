@@ -204,6 +204,16 @@ nonisolated enum CadenceAISettingsCopy {
     /// off those two literals and off `prompt(for:)`, which renders only the context it is given.
     static let keyPrivacyDisclosure = "Stored in Keychain. Cadence sends the note to OpenAI only when you run an AI action, such as summarizing a note or extracting task drafts: its title, its full text, and the name of the list it belongs to. Test Connection also contacts OpenAI, but it sends two fixed phrases and none of your content. Every request asks OpenAI not to store it, which also keeps it out of your OpenAI account's logs."
 
+    /// The middle disclosure row, one pair for both platforms ([[T-7210]]).
+    ///
+    /// It said "Selected note content" over "The note title, note text, and related list names may
+    /// be sent for the requested action." -- "selected", "may" and "related list names" are the
+    /// three vaguenesses [[T-1322]] retired from `keyPrivacyDisclosure` two rows above, and
+    /// [[T-7208]] fixed on the Mac's Data Safety card. The row now says what that sentence says:
+    /// the one note the action runs on, its title, its whole text and its one list's name.
+    static let noteContentDisclosureTitle = "The note you run it on"
+    static let noteContentDisclosureDetail = "Its title, its full text, and the name of its list."
+
     /// The three buttons under the key field. Verbosity was **inverted** between the surfaces —
     /// macOS said "Save API Key"/"Test Connection"/"Delete Key" and iOS said "Save Key"/"Test"/
     /// "Delete API Key" — so neither tree was simply the terser one and there was nothing to

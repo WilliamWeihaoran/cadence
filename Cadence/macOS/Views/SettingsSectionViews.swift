@@ -194,8 +194,8 @@ struct SettingsAISection: View {
                         )
                         aiDisclosureRow(
                             icon: "doc.text.magnifyingglass",
-                            title: "Selected note content",
-                            detail: "The note title, note text, and related list names may be sent for the requested action."
+                            title: CadenceAISettingsCopy.noteContentDisclosureTitle,
+                            detail: CadenceAISettingsCopy.noteContentDisclosureDetail
                         )
                         aiDisclosureRow(
                             icon: "key.fill",
