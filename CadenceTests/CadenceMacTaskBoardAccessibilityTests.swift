@@ -40,7 +40,8 @@ struct CadenceMacTaskBoardAccessibilityTests {
     @Test func theBoardCompletedDisclosureStatesItsState() throws {
         let file = try source("Cadence/macOS/Views/KanbanColumnSupportViews.swift")
         let toggle = try #require(CadenceSourceScan.declarationBody("struct KanbanCompletedTasksToggle: View", in: file))
-        #expect(toggle.contains("Text(\"Completed\")"), "non-vacuity: still the Completed disclosure")
+        // [[T-9835]]: the row's words are the shared label's, which every board draws.
+        #expect(toggle.contains("CadenceBoardCompletedToggleLabel("), "non-vacuity: still the Completed disclosure")
         #expect(toggle.contains(".accessibilityValue(TaskListGroupHeaderAccessibility.value(isCollapsed: !isExpanded))"),
                 "the board's Completed disclosure no longer states Expanded/Collapsed")
     }

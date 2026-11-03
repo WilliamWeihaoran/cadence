@@ -29,12 +29,24 @@ struct CadenceCodexCalendarTypographyTests {
         // rather than on a file that no longer has a `Text` of its own. The sheet's own
         // `.cadenceScaledTypography()` scope is still asserted below, which is the half that
         // cannot move.
+        // `iOSCalendarBoardView.swift` joined them with [[T-9835]]: its last `Text`, the day
+        // column's Completed row, became `CadenceBoardCompletedToggleLabel`, the row every board
+        // draws, so the adapter is asserted on that label below.
         for path in Self.calendarFiles
         where !path.hasSuffix("iOSCalendarInspectorView.swift")
             && !path.hasSuffix("iOSCalendarQuickCreateSheet.swift")
-            && !path.hasSuffix("iOSCalendarEventEditSheet.swift") {
+            && !path.hasSuffix("iOSCalendarEventEditSheet.swift")
+            && !path.hasSuffix("iOSCalendarBoardView.swift") {
             #expect(try read(path).contains(".cadenceFont("), "Calendar text lost its role adapter: \(path)")
         }
+        #expect(
+            try read("Cadence/Shared/Components/CadenceBoardCompletedToggleLabel.swift").contains(".cadenceFont("),
+            "the shared Completed row lost its role adapter"
+        )
+        #expect(
+            try read("Cadence/iOS/iOSCalendarBoardView.swift").contains("CadenceBoardCompletedToggleLabel("),
+            "non-vacuity: the iOS Board no longer draws the shared Completed row this exclusion relies on"
+        )
         #expect(
             try read("Cadence/Shared/Components/CadenceEventNotesField.swift").contains(".cadenceFont("),
             "the merged Notes field lost its role adapter"

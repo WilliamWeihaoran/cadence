@@ -274,10 +274,65 @@ struct CadenceSharedBoardChromeTests {
             return
         }
         let toggle = String(stripped[start.upperBound..<end.lowerBound])
-        #expect(toggle.contains("Text(\"Completed\")"), "non-vacuity: the slice is not the Completed toggle")
+        // Since [[T-9835]] the row's glyph and words are the shared label's, so the chevron is
+        // hidden there; the disclosure's state is still said here, by the button that owns it.
+        #expect(toggle.contains("CadenceBoardCompletedToggleLabel("), "non-vacuity: the slice is not the Completed toggle")
         #expect(toggle.contains(".accessibilityValue(isCompletedCollapsed ? \"Collapsed\" : \"Expanded\")"),
                 "the Completed disclosure states nothing again (T-9833)")
-        #expect(toggle.contains(".accessibilityHidden(true)"), "the disclosure chevron is read out again (T-9833)")
+        let label = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceBoardCompletedToggleLabel.swift"))
+        #expect(label.contains("Text(\"Completed\")"), "non-vacuity: the shared label is not the Completed row")
+        #expect(label.contains(".accessibilityHidden(true)"), "the disclosure chevron is read out again (T-9833)")
+    }
+
+    /// **[[T-9835]]: one Completed row on every board.** The iOS Calendar Board drew its own --
+    /// count pushed trailing in a neutral capsule on a strokeless `surfaceElevated` plate at
+    /// `Theme.radiusControl` -- beside the Mac's green count after the word on a hairlined surface
+    /// plate. Both now draw `CadenceBoardCompletedToggleLabel`, the Mac's look; iOS passes only its
+    /// 44pt touch floor, and each side's button style is the platform's own press feedback.
+    @Test func everyBoardDrawsTheOneSharedCompletedRow() throws {
+        let label = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceBoardCompletedToggleLabel.swift"))
+        guard let start = label.range(of: "struct CadenceBoardCompletedToggleLabel: View {") else {
+            Issue.record("non-vacuity: the shared Completed label not found")
+            return
+        }
+        let body = String(label[start.upperBound...])
+        // The Mac's look: the count right after the word, green on a green wash, then the spacer.
+        let word = try #require(body.range(of: "Text(\"Completed\")"), "the label lost its word")
+        let count = try #require(body.range(of: "Text(\"\\(count)\")", range: word.upperBound..<body.endIndex),
+                                 "the count no longer follows the word")
+        let spacer = try #require(body.range(of: "Spacer(", range: count.upperBound..<body.endIndex),
+                                  "the count is pushed to the trailing edge again")
+        let chip = String(body[count.upperBound..<spacer.lowerBound])
+        #expect(chip.contains(".foregroundStyle(Theme.green)"), "the count is not green")
+        #expect(chip.contains(".background(Theme.green.opacity(0.12))"), "the count's wash is not green")
+        #expect(!body.contains("surfaceElevated"), "the label draws the neutral iOS plate or capsule again")
+        // A surface plate with a hairline, at the one radius the Mac's hover wash is handed.
+        #expect(body.contains("shape.fill(Theme.surface)"), "the plate is not the surface fill")
+        #expect(body.contains("shape.strokeBorder(Theme.borderSubtle, lineWidth: 1)"), "the plate lost its hairline")
+        #expect(body.contains("static let cornerRadius: CGFloat = Theme.radiusControlCompact"))
+        #expect(body.components(separatedBy: "RoundedRectangle(").count - 1 == 1, "a second plate shape crept in")
+
+        // Every board reaches it: the Mac toggle (section board and Calendar Board) and iOS's footer.
+        let mac = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanColumnSupportViews.swift"))
+        let macToggle = try #require(CadenceSourceScan.declarationBody("struct KanbanCompletedTasksToggle: View", in: mac))
+        #expect(macToggle.contains("CadenceBoardCompletedToggleLabel(count: count, isExpanded: isExpanded)"))
+        #expect(macToggle.contains(".buttonStyle(.cadencePlain(cornerRadius: CadenceBoardCompletedToggleLabel.cornerRadius))"),
+                "the Mac's hover wash no longer meets the shared plate's corners")
+        #expect(!macToggle.contains("RoundedRectangle("), "the Mac toggle paints a plate of its own again")
+
+        let ios = try strippingComments(sourceFile("Cadence/iOS/iOSCalendarBoardView.swift"))
+        guard let footerStart = ios.range(of: "private var completedFooter: some View {"),
+              let footerEnd = ios.range(of: "if !isCompletedCollapsed {", range: footerStart.upperBound..<ios.endIndex)
+        else {
+            Issue.record("non-vacuity: the iOS Board's completed footer toggle not found")
+            return
+        }
+        let footer = String(ios[footerStart.upperBound..<footerEnd.lowerBound])
+        #expect(footer.contains("CadenceBoardCompletedToggleLabel("), "the iOS Board draws its own Completed row again")
+        #expect(footer.contains("minimumHeight: 44"), "the iOS row lost its 44pt touch floor")
+        #expect(!footer.contains("Text(\"Completed\")"), "the iOS Board spells its own Completed row again")
+        #expect(!footer.contains("Capsule()"), "the iOS Board draws its own count capsule again")
+        #expect(!footer.contains("RoundedRectangle("), "the iOS Board draws its own plate again")
     }
 
     // MARK: - T-572: what VoiceOver calls a Board day column

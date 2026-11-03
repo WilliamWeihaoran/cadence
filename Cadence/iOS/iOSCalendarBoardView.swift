@@ -422,28 +422,14 @@ private struct iOSCalendarBoardDayColumn: View {
                         isCompletedCollapsed.toggle()
                     }
                 } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: isCompletedCollapsed ? "chevron.right" : "chevron.down")
-                            .cadenceFont(.metadata, base: 10, weight: .bold)
-                            .frame(width: CadenceTypeScale.height(12, holding: .metadata, textBase: 10, at: dynamicTypeSize, scaling: scaling))
-                            .accessibilityHidden(true)
-                        Text("Completed")
-                            .cadenceFont(.metadata, base: 12, weight: .semibold)
-                        Spacer(minLength: 0)
-                        Text("\(completedTasks.count)")
-                            .cadenceFont(.metadata, base: 11, weight: .bold)
-                            .monospacedDigit()
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(Theme.surfaceElevated.opacity(0.72))
-                            .clipShape(Capsule())
-                    }
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 10)
-                    .frame(minHeight: CadenceTypeScale.height(44, holding: .rowTitle, at: dynamicTypeSize, scaling: scaling))
-                    .background(Theme.surfaceElevated.opacity(0.42))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                    // [[T-9835]]: the Mac's Completed row, through the one shared view -- the green
+                    // count right after the word on a hairlined surface plate. The 44pt floor is
+                    // the one touch constraint, and the only thing iOS passes.
+                    CadenceBoardCompletedToggleLabel(
+                        count: completedTasks.count,
+                        isExpanded: !isCompletedCollapsed,
+                        minimumHeight: 44
+                    )
                 }
                 .buttonStyle(.iosPressable)
                 // [[T-9833]]: the disclosure states Expanded/Collapsed, in the words

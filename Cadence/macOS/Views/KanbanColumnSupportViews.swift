@@ -187,7 +187,8 @@ struct KanbanColumnScroll<Content: View>: View {
 }
 
 /// The collapsed/expanded "Completed N" row that closes a column's card stack. Shared by the
-/// section board and the Calendar Board so a completed pile reads the same on both.
+/// section board and the Calendar Board so a completed pile reads the same on both -- and, since
+/// [[T-9835]], drawn by `CadenceBoardCompletedToggleLabel`, which the iOS Calendar Board draws too.
 struct KanbanCompletedTasksToggle: View {
     let count: Int
     let isExpanded: Bool
@@ -195,37 +196,9 @@ struct KanbanCompletedTasksToggle: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .accessibilityHidden(true)
-                Text("Completed")
-                    .font(.system(size: 11, weight: .semibold))
-                Text("\(count)")
-                    .font(.system(size: 10, weight: .medium))
-                    .monospacedDigit()
-                    .foregroundStyle(Theme.green)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Theme.green.opacity(0.12))
-                    .clipShape(Capsule())
-                Spacer()
-            }
-            .foregroundStyle(Theme.dim)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background {
-                RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
-                    .fill(Theme.surface)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
-                    .strokeBorder(Theme.borderSubtle, lineWidth: 1)
-            }
-            .contentShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))
+            CadenceBoardCompletedToggleLabel(count: count, isExpanded: isExpanded)
         }
-        .buttonStyle(.cadencePlain(cornerRadius: kanbanCardCornerRadius))
+        .buttonStyle(.cadencePlain(cornerRadius: CadenceBoardCompletedToggleLabel.cornerRadius))
         // T-7081: the list's own "Completed" heading states Expanded/Collapsed (T-7008) and so
         // does iOS's; this disclosure stated nothing, on both boards that draw it.
         .accessibilityValue(TaskListGroupHeaderAccessibility.value(isCollapsed: !isExpanded))
