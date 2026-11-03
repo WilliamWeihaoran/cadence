@@ -166,7 +166,8 @@ extension CadenceTextView {
                 task: embed.task,
                 cardRect: cardRect,
                 checkboxRect: checkboxRect,
-                hoveredTarget: hoveredTarget
+                hoveredTarget: hoveredTarget,
+                pendingFill: TaskCompletionAnimationManager.shared.embedPendingFill(forTaskID: embed.task.id)
             )
         }
     }

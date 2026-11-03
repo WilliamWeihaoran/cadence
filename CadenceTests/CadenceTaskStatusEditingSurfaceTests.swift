@@ -172,7 +172,9 @@ struct CadenceTaskStatusEditingSurfaceTests {
     private static let deferredCompletionSurfaces: Set<String> = [
         "Cadence/iOS/iOSTaskRowActionViews.swift",
         "Cadence/iOS/iOSTaskViews.swift",
-        "Cadence/iOS/iOSBoardCards.swift"
+        "Cadence/iOS/iOSBoardCards.swift",
+        // [[T-8395]]: the note editor's task-embed circle joined the deferred completion.
+        "Cadence/iOS/iOSMarkdownEditingSurface.swift"
     ]
 
     /// [[T-8732]]: the iOS Focus screen reaches the wrapper's reconcile a hop later too, and by a

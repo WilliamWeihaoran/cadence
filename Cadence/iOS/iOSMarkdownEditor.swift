@@ -297,6 +297,9 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         /// What `onInlineTaskPanelPresenceChange` was last told, so it hears changes only.
         var reportedInlineTaskPanelPresence = false
 
+        /// Repaints a task card's circle while its deferred completion runs ([[T-8395]]).
+        let embedCompletionDriver = CadenceTaskEmbedCompletionDriver()
+
         init(parent: iOSMarkdownEditor) {
             self.parent = parent
             styleSignature = MarkdownStyleSignature.current(
@@ -847,6 +850,68 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                 let selection = textView.selectedRange
                 applyMarkdownStyle(to: textView, text: textView.text ?? "")
                 textView.selectedRange = clamped(selection, in: textView.textStorage)
+                if case .checkbox = hit.target {
+                    trackEmbedCompletion(taskID: refreshed.id, in: textView)
+                }
+            }
+        }
+
+        /// The card is a canvas image baked at styling time, so the fill is drawn by re-rendering
+        /// that one card's image each frame — not by restyling the note — and the settle draws it
+        /// once more without a fill. The landed status itself arrives as it always has: the surface
+        /// re-reads the task, the style signature changes, and the note restyles.
+        private func trackEmbedCompletion(taskID: UUID, in textView: UITextView) {
+            embedCompletionDriver.repaint = { [weak self, weak textView] id in
+                guard let self, let textView else { return }
+                self.renderTaskEmbedCanvas(id: id, in: textView)
+            }
+            embedCompletionDriver.settled = { [weak self, weak textView] id in
+                guard let self, let textView else { return }
+                self.renderTaskEmbedCanvas(id: id, in: textView)
+                self.refreshStylingIfNeeded(on: textView)
+            }
+            embedCompletionDriver.track(taskID)
+        }
+
+        private func renderTaskEmbedCanvas(id: UUID, in textView: UITextView) {
+            let storage = textView.textStorage
+            let fill = TaskCompletionAnimationManager.shared.embedPendingFill(forTaskID: id)
+            let width = textView.markdownContentWidth
+            var replacements: [(NSRange, iOSMarkdownBlockCanvas)] = []
+            storage.enumerateAttribute(
+                .cadenceMarkdownTaskEmbed,
+                in: NSRange(location: 0, length: storage.length),
+                options: []
+            ) { value, range, _ in
+                guard let embed = value as? MarkdownTaskEmbedLayoutInfo, embed.task.id == id else { return }
+                var canvasRange = NSRange(location: NSNotFound, length: 0)
+                guard let canvas = storage.attribute(
+                    .cadenceMarkdownBlockCanvas,
+                    at: range.location,
+                    effectiveRange: &canvasRange
+                ) as? iOSMarkdownBlockCanvas, canvasRange.location != NSNotFound else { return }
+                let image = iOSMarkdownTaskEmbedLayoutInfo(
+                    task: embed.task,
+                    pendingFill: fill,
+                    reducesMotion: UIAccessibility.isReduceMotionEnabled
+                ).renderedBlock(maxWidth: width)
+                replacements.append((canvasRange, iOSMarkdownBlockCanvas(
+                    image: image,
+                    isBlock: canvas.isBlock,
+                    yOffset: canvas.yOffset,
+                    leadingInset: canvas.leadingInset
+                )))
+            }
+            guard !replacements.isEmpty else { return }
+            isApplyingStyle = true
+            defer { isApplyingStyle = false }
+            storage.beginEditing()
+            for (range, canvas) in replacements {
+                storage.addAttribute(.cadenceMarkdownBlockCanvas, value: canvas, range: range)
+            }
+            storage.endEditing()
+            for (range, _) in replacements {
+                textView.layoutManager.invalidateDisplay(forCharacterRange: range)
             }
         }
 

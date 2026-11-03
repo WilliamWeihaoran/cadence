@@ -96,7 +96,16 @@ enum MarkdownTaskEmbedDrawing {
         MarkdownTaskEmbedSubtaskHitTesting.hit(at: point, in: subtaskRects(task: task, cardRect: cardRect))
     }
 
-    static func drawCard(task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect, checkboxRect: NSRect, hoveredTarget: MarkdownTaskEmbedHitTarget?) {
+    /// `pendingFill` is the card circle's running deferral ([[T-8395]]), read from
+    /// `TaskCompletionAnimationManager` by the text view at draw time: the snapshot `task` is the
+    /// status before the deferred write, and is rebuilt when it lands.
+    static func drawCard(
+        task: MarkdownTaskEmbedRenderInfo,
+        cardRect: NSRect,
+        checkboxRect: NSRect,
+        hoveredTarget: MarkdownTaskEmbedHitTarget?,
+        pendingFill: CadenceTaskEmbedPendingFill? = nil
+    ) {
         let isHovered = hoveredTarget != nil
         let radius: CGFloat = 11
         let cardPath = NSBezierPath(roundedRect: cardRect, xRadius: radius, yRadius: radius)
@@ -116,7 +125,7 @@ enum MarkdownTaskEmbedDrawing {
         stripColor.withAlphaComponent(task.isMissing ? 0.48 : 0.9).setFill()
         NSBezierPath(roundedRect: stripRect, xRadius: 2, yRadius: 2).fill()
 
-        drawCheckbox(task: task, rect: checkboxRect, isHovered: hoveredTarget == .checkbox)
+        drawCheckbox(task: task, rect: checkboxRect, isHovered: hoveredTarget == .checkbox, pendingFill: pendingFill)
 
         let chips = displayChips(for: task)
         let layout = fieldRects(task: task, cardRect: cardRect, chips: chips)
@@ -128,7 +137,12 @@ enum MarkdownTaskEmbedDrawing {
         drawSubtasks(task: task, cardRect: cardRect, hoveredTarget: hoveredTarget)
     }
 
-    private static func drawCheckbox(task: MarkdownTaskEmbedRenderInfo, rect: NSRect, isHovered: Bool) {
+    private static func drawCheckbox(
+        task: MarkdownTaskEmbedRenderInfo,
+        rect: NSRect,
+        isHovered: Bool,
+        pendingFill: CadenceTaskEmbedPendingFill?
+    ) {
         let path = NSBezierPath(ovalIn: rect)
         let done = task.isDone
         if task.isMissing {
@@ -146,6 +160,16 @@ enum MarkdownTaskEmbedDrawing {
         }
         path.lineWidth = 1.4
         path.stroke()
+
+        if let pendingFill, !task.isMissing, let context = NSGraphicsContext.current?.cgContext {
+            let tint = pendingFill.kind == .completing ? MarkdownStylist.greenColor : MarkdownStylist.dimColor
+            pendingFill.draw(
+                in: rect,
+                tint: tint.cgColor,
+                reducesMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+                context: context
+            )
+        }
 
         if isHovered {
             let ring = NSBezierPath(ovalIn: rect.insetBy(dx: -3, dy: -3))

@@ -105,9 +105,23 @@ final class TaskNotesEmbedHandlers {
     /// commit; the hosts take the default.
     @ObservationIgnored private let commit: (ModelContext) throws -> Void
 
-    init(hoverIDPrefix: String, commit: @escaping (ModelContext) throws -> Void = { try $0.save() }) {
+    /// The card circle's deferred completion ([[T-8395]]): the shared manager's walk, repainted
+    /// while it fills and rebuilt when it settles.
+    @ObservationIgnored let completionDriver: CadenceTaskEmbedCompletionDriver
+    /// The tasks whose card circle is filling, so the settle can rebuild each card from its task.
+    @ObservationIgnored private var completingEmbeds: [UUID: AppTask] = [:]
+
+    init(
+        hoverIDPrefix: String,
+        commit: @escaping (ModelContext) throws -> Void = { try $0.save() },
+        completionDriver: CadenceTaskEmbedCompletionDriver? = nil
+    ) {
         self.hoverIDPrefix = hoverIDPrefix
         self.commit = commit
+        let completionDriver = completionDriver ?? CadenceTaskEmbedCompletionDriver()
+        self.completionDriver = completionDriver
+        completionDriver.repaint = { [weak self] in self?.repaintEmbeddedTaskCircle(id: $0) }
+        completionDriver.settled = { [weak self] in self?.embeddedTaskCompletionSettled(id: $0) }
     }
 
     // MARK: - The editor's closures
@@ -236,24 +250,36 @@ final class TaskNotesEmbedHandlers {
         return .task(embeddedTask)
     }
 
-    /// The card's circle toggles *settled*, not *done* ([[T-8394]], the rule T-344 decided): it
-    /// asks the shared `CadenceTaskMutationSupport.toggleCompletion`, which reads `isFinishedTask`,
-    /// so a cancelled card restores to todo as iOS's embed card already did. Reading `isDone` here
-    /// completed a cancelled task on one click, minting the successor of a recurring one.
+    /// The card's circle is a task circle like every other ([[T-8395]], owner call): it walks
+    /// `TaskCompletionAnimationManager.advanceCompletionControl(for:)` — open → filling for
+    /// `CadenceTaskCompletionTiming.animationDuration` → done, a second tap inside the window turns
+    /// it into a cancellation, a third takes that back — rather than writing at once. A settled card
+    /// still restores at once ([[T-8394]], the rule T-344 decided), through the same call.
+    ///
+    /// A refused settle is reported where every deferred circle reports one — the manager's
+    /// `settleFailed`, which `macOSRootView` alerts on — because the write happens when the window
+    /// closes, after this handler has returned; `embeddedTaskFailureNotice` stays the sentence for
+    /// the card's synchronous edits (subtask ticks, renames).
     func toggleEmbeddedTask(id: UUID, in scope: TaskNotesEmbedScope) {
         guard let embeddedTask = embeddedTask(id: id, in: scope) else { return }
-        do {
-            try CadenceTaskMutationSupport.toggleCompletion(
-                embeddedTask,
-                modelContext: scope.modelContext,
-                commit: commit
-            )
-        } catch {
-            embeddedTaskFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
-            return
-        }
         embeddedTaskFailureNotice = nil
-        HabitNotificationReconcileSupport.scheduleReconcile(in: scope.modelContext)
+        completingEmbeds[id] = embeddedTask
+        completionDriver.tap(embeddedTask)
+    }
+
+    /// One frame of the fill: only the circle's box, which the text view drew last pass.
+    private func repaintEmbeddedTaskCircle(id: UUID) {
+        guard let editorTextView else { return }
+        if let checkbox = editorTextView.markdownTaskEmbedRects[id]?.checkbox {
+            editorTextView.setNeedsDisplay(checkbox.insetBy(dx: -2, dy: -2))
+        } else {
+            editorTextView.needsDisplay = true
+        }
+    }
+
+    /// The fill ended — written, taken back, or restored at once: draw the card as the task now is.
+    private func embeddedTaskCompletionSettled(id: UUID) {
+        guard let embeddedTask = completingEmbeds.removeValue(forKey: id) else { return }
         editorTextView?.markdownTaskEmbeds[id] = MarkdownTaskEmbedRenderInfo.task(embeddedTask)
         if let editorTextView {
             MarkdownStylist.apply(to: editorTextView)

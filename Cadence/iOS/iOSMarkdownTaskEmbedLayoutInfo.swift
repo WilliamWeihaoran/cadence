@@ -19,6 +19,10 @@ enum iOSMarkdownTaskEmbedHitTarget {
 
 struct iOSMarkdownTaskEmbedLayoutInfo {
     let task: MarkdownTaskEmbedRenderInfo
+    /// The circle's running deferral ([[T-8395]]), drawn over the resting open circle. `task` is the
+    /// status before the deferred write; the editor re-renders this card each frame while it runs.
+    var pendingFill: CadenceTaskEmbedPendingFill? = nil
+    var reducesMotion = false
 
     func renderedSize(maxWidth: CGFloat) -> CGSize {
         CGSize(width: renderedWidth(maxWidth: maxWidth), height: task.cardHeight)
@@ -121,6 +125,11 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
         (task.isDone ? UIColor(Theme.green) : UIColor(Theme.dim).withAlphaComponent(0.84)).setStroke()
         circle.lineWidth = 2
         circle.stroke()
+
+        if let pendingFill, !task.isMissing, let context = UIGraphicsGetCurrentContext() {
+            let tint = UIColor(pendingFill.kind == .completing ? Theme.green : Theme.dim)
+            pendingFill.draw(in: rect, tint: tint.cgColor, reducesMotion: reducesMotion, context: context)
+        }
 
         guard task.isDone else { return }
         let check = UIBezierPath()

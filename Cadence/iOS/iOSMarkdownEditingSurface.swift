@@ -727,9 +727,13 @@ struct iOSMarkdownEditingSurface: View {
         commitDraftImmediately()
     }
 
+    /// The card's circle walks the shared deferred completion every task circle walks ([[T-8395]],
+    /// owner call; [[T-8203]]): a tap starts the fill and the write lands when it closes. The editor
+    /// repaints the fill and the settle (`CadenceTaskEmbedCompletionDriver`); the card it gets back
+    /// here is the task as it is now — unchanged mid-fill, restored at once for a settled task.
     private func toggleEmbeddedTask(id: UUID) -> MarkdownTaskEmbedRenderInfo? {
         guard let task = embeddedTask(id: id) else { return nil }
-        CadenceTaskStatusEditing.toggleCompletion(task, in: modelContext)
+        TaskCompletionAnimationManager.shared.advanceCompletionControl(for: task)
         return MarkdownTaskEmbedRenderInfo.task(task)
     }
 

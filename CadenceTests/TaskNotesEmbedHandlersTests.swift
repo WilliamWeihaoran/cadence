@@ -151,31 +151,53 @@ struct TaskNotesEmbedHandlersTests {
 
     // MARK: - Editing a card: committed, or named as refused
 
-    @Test func aTickedCardIsCommittedAndClearsAnEarlierRefusal() throws {
+    /// [[T-8395]]: the tick is the shared deferred completion — the card fills first, the write
+    /// lands when the window closes, and an earlier refusal's sentence clears on the tap.
+    @Test func aTickedCardFillsThenCommitsAndClearsAnEarlierRefusal() throws {
         let (container, modelContext) = try context()
         let owner = try seededTask("Owner", in: modelContext)
         let embedded = try seededTask("Embedded", in: modelContext)
         let handlers = TaskNotesEmbedHandlers(hoverIDPrefix: "test-")
+        let manager = TaskCompletionAnimationManager.shared
+        defer { manager.cancelPending(for: embedded.id) }
         handlers.embeddedTaskFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
 
         handlers.toggleEmbeddedTask(id: embedded.id, in: scope([owner, embedded], owner: owner, modelContext))
 
-        #expect(embedded.isDone)
+        #expect(!embedded.isDone, "the card wrote completion at once instead of filling")
+        #expect(manager.isPending(embedded))
+        #expect(handlers.completionDriver.isTracking)
         #expect(handlers.embeddedTaskFailureNotice == nil)
+
+        manager.windowClosed(onCompletionOf: embedded.id)
+        handlers.completionDriver.tick()
+
+        #expect(embedded.isDone)
+        #expect(!handlers.completionDriver.isTracking)
         let stored = try ModelContext(container).fetch(FetchDescriptor<AppTask>()).first { $0.id == embedded.id }
         #expect(stored?.isDone == true, "the store does not hold the tick the card shows")
     }
 
-    @Test func aRefusedCardTickIsNamedAndLeavesTheTaskOpen() throws {
-        let (_, modelContext) = try context()
+    /// The take-back every other circle has: a tap inside the window cancels nothing and completes
+    /// nothing once it has run the walk back to open.
+    @Test func aCardTickTakenBackInsideTheWindowLeavesTheTaskOpen() throws {
+        let (container, modelContext) = try context()
         let owner = try seededTask("Owner", in: modelContext)
         let embedded = try seededTask("Embedded", in: modelContext)
-        let handlers = TaskNotesEmbedHandlers(hoverIDPrefix: "test-") { _ in throw CommitRefused() }
+        let handlers = TaskNotesEmbedHandlers(hoverIDPrefix: "test-")
+        let manager = TaskCompletionAnimationManager.shared
+        let scope = scope([owner, embedded], owner: owner, modelContext)
 
-        handlers.toggleEmbeddedTask(id: embedded.id, in: scope([owner, embedded], owner: owner, modelContext))
+        handlers.toggleEmbeddedTask(id: embedded.id, in: scope)
+        handlers.toggleEmbeddedTask(id: embedded.id, in: scope)
+        handlers.toggleEmbeddedTask(id: embedded.id, in: scope)
+        manager.windowClosed(onCompletionOf: embedded.id)
+        manager.windowClosed(onCancellationOf: embedded.id)
 
-        #expect(!embedded.isDone)
-        #expect(handlers.embeddedTaskFailureNotice == CadenceTaskFieldEditCommit.saveFailureNotice)
+        #expect(embedded.status == .todo)
+        #expect(!handlers.completionDriver.isTracking)
+        let stored = try ModelContext(container).fetch(FetchDescriptor<AppTask>()).first { $0.id == embedded.id }
+        #expect(stored?.status == .todo, "a taken-back card still settled its task")
     }
 
     /// [[T-8394]]: a cancelled card's circle restores it to todo, as iOS's embed card and every
