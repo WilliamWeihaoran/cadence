@@ -4432,10 +4432,19 @@ Creating (`QuickCreateChoicePopover`, `offersTaskRepeat: true`) draws `CadenceSc
 `SchedulePanelComponents`. **The owner chose: align the EDIT surface to the CREATE panel**, closing the
 split exactly as T-8593 did on iOS. The four files above are granted to you.
 
-Mind the commit-model difference rather than flattening it: creation drafts and commits on Save, while
-the inspector writes as you go. Aligning the *look and the vocabulary* must not silently turn an
-edit-in-place surface into one that only writes on Save, or the reverse — say in your inbox entry which
-model each ends up with and why.
+**CORRECTED 2026-11-02 — the commit model is DRAFT-AND-ASK-AT-SAVE.** An earlier draft of this
+request told you to preserve the inspector's immediate writes. That was the coordinator's error and it
+contradicted the ledger. T-8701's recorded decision of 2026-10-31 reads, verbatim: *"the inspector draws
+the panel's Repeat / Ends rows (`offersTaskRepeat: true`), **asks the scope at Save rather than writing
+the store live**, and `TaskInspectorRecurrenceControl` goes."* Implement that. The inspector stops
+writing recurrence live, drafts it like the create panel, and raises the scope question on Save; the
+retired control is removed rather than left unreachable. Where the ledger and a request disagree, the
+ledger is the owner's own words and wins — you were right to stop and ask.
+
+Note the consequence and say in your inbox entry how you handled it: the inspector's OTHER fields keep
+writing as you go, so one sheet will hold both commit models. If that turns out to read badly or to need
+a Save affordance the inspector does not have, STOP and report rather than inventing one — that is a
+design call for the owner, not a detail to settle in passing.
 
 **Item 2 — answer a question, write no code for it.** [[T-8736]] says Settings → Account (Sign in with
 Apple, Sign Out, Delete Account, diagnostics) is Mac-only, and `CadenceMobileSettingsLayout.desktopOnly`
