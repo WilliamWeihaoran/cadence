@@ -521,15 +521,15 @@ private struct ListDetailTabBarView: View {
             action: { showArchivedKanbanColumns.toggle() }
         ) {
             HStack(spacing: 6) {
-                Image(systemName: showArchivedKanbanColumns ? "archivebox.fill" : "archivebox")
+                Image(systemName: ListDetailKanbanBoard.ArchivedColumnsToggle.systemImage(showingArchived: showArchivedKanbanColumns))
                     .font(.system(size: 11, weight: .semibold))
                     .frame(width: 14)
-                Text(showArchivedKanbanColumns ? "Archived" : "Show Archived")
+                Text(ListDetailKanbanBoard.ArchivedColumnsToggle.title(showingArchived: showArchivedKanbanColumns))
                     .font(.system(size: 11, weight: .semibold))
             }
             .foregroundStyle(showArchivedKanbanColumns ? Theme.text : Theme.dim)
         }
-        .accessibilityLabel(showArchivedKanbanColumns ? "Hide archived columns" : "Show archived columns")
+        .accessibilityLabel(ListDetailKanbanBoard.ArchivedColumnsToggle.accessibilityLabel(showingArchived: showArchivedKanbanColumns))
         .accessibilityAddTraits(showArchivedKanbanColumns ? .isSelected : [])
     }
 }

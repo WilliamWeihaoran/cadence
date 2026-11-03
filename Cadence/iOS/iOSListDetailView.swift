@@ -36,6 +36,12 @@ struct iOSListDetailView: View {
     @State private var selectedPage: ListDetailPage?
     @State private var selectedPageListKey: String?
     @AppStorage(CadencePreferenceKeys.listDetailDefaultPage) private var defaultPageRaw = ListDetailPage.defaultPage.rawValue
+    /// **The Kanban tab's "Show Archived" chip, the Mac's `showArchivedKanbanColumns`** ([[T-8565]]).
+    /// Stored as the list it was switched on for rather than as a bare `Bool`, for the reason
+    /// `selectedPageListKey` is: the iPad sidebar swaps lists under this one live view, and an
+    /// untagged "on" made on list A would open list B on its archived columns (T-7032). The Mac
+    /// gets the same per-list reset from keying its page on the list ([[T-5831]]).
+    @State private var showArchivedKanbanColumnsListKey: String?
 
     init(
         area: Area,
@@ -105,6 +111,18 @@ struct iOSListDetailView: View {
             selectedPageListKey = key
             CadenceDefaults.store.set(newPage.rawValue, forKey: key)
         })
+    }
+
+    private var showArchivedKanbanColumns: Bool {
+        showArchivedKanbanColumnsListKey == rememberedPageKey
+    }
+
+    /// The columns the Kanban tab draws. Off, the board it always drew (live columns, then any
+    /// section only a task names); on, the list's archived columns through the rule the Mac board
+    /// reads, `ListDetailKanbanBoard.visibleSectionConfigs` ([[T-8565]]).
+    private var kanbanSectionNames: [String] {
+        guard showArchivedKanbanColumns else { return sectionNames }
+        return ListDetailKanbanBoard.visibleSectionConfigs(sectionConfigs, showArchived: true).map(\.name)
     }
 
     /// Which list this page is showing, as a value SwiftUI can compare across an update.
@@ -250,25 +268,7 @@ struct iOSListDetailView: View {
         case .tasks:
             taskColumn
         case .kanban:
-            iOSListKanbanPanel(
-                tasks: activeTasks,
-                // [[T-9837]]: the finished half, which the board used never to be given at all --
-                // so a column whose work was all done read "0" and empty here while the Mac showed
-                // it behind a Completed toggle. The page's own Completed TAB keeps this same list;
-                // one surface naming finished work does not excuse the other dropping it, which is
-                // the Mac's position on its own list page.
-                completedTasks: completedTasks,
-                sectionNames: sectionNames,
-                sectionConfigs: sectionConfigs,
-                hideSectionDueDateIfEmpty: hideSectionDueDateIfEmpty,
-                accent: accent,
-                container: containerSelection,
-                listName: title,
-                highlightedSectionName: highlightedSectionName,
-                area: area,
-                project: project,
-                spanTasks: filteredTasks
-            )
+            kanbanPage
         case .documents:
             // `iOSListNotesView`, not the old `iOSListNotesPanel`: this list may hold many notes,
             // filed into folders on a Mac, and the panel showed exactly one of them at the root of
@@ -280,6 +280,67 @@ struct iOSListDetailView: View {
         case .completed:
             iOSListCompletedPanel(tasks: completedTasks)
         }
+    }
+
+    /// The Kanban tab: the "Show Archived" chip on a band of its own, as the Tasks tab carries
+    /// Sort, then the board ([[T-8565]]). The Mac draws the same pill in its tab bar.
+    private var kanbanPage: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                archivedColumnsChip
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 4)
+
+            iOSListKanbanPanel(
+                tasks: activeTasks,
+                // [[T-9837]]: the finished half, which the board used never to be given at all --
+                // so a column whose work was all done read "0" and empty here while the Mac showed
+                // it behind a Completed toggle. The page's own Completed TAB keeps this same list;
+                // one surface naming finished work does not excuse the other dropping it, which is
+                // the Mac's position on its own list page.
+                completedTasks: completedTasks,
+                sectionNames: kanbanSectionNames,
+                sectionConfigs: sectionConfigs,
+                hideSectionDueDateIfEmpty: hideSectionDueDateIfEmpty,
+                accent: accent,
+                container: containerSelection,
+                listName: title,
+                highlightedSectionName: highlightedSectionName,
+                area: area,
+                project: project,
+                spanTasks: filteredTasks,
+                showsArchivedColumns: showArchivedKanbanColumns
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Theme.bg)
+    }
+
+    /// The Mac pill's words, glyph and "on" cues (`ListDetailTabBarView.archivedColumnsButton`) on the
+    /// chip shape the Sort chip beside the Tasks tab already uses: neutral, never accent-tinted;
+    /// on reads as a brighter fill, brighter label, filled glyph and the shorter label.
+    private var archivedColumnsChip: some View {
+        let isOn = showArchivedKanbanColumns
+        return Button {
+            showArchivedKanbanColumnsListKey = isOn ? nil : rememberedPageKey
+        } label: {
+            Label(
+                ListDetailKanbanBoard.ArchivedColumnsToggle.title(showingArchived: isOn),
+                systemImage: ListDetailKanbanBoard.ArchivedColumnsToggle.systemImage(showingArchived: isOn)
+            )
+            .cadenceFont(.controlLabel, base: iOSTaskChipMetrics.fontSize)
+            .foregroundStyle(isOn ? Theme.text : Theme.dim)
+            .padding(.horizontal, iOSTaskChipMetrics.horizontalPadding)
+            .frame(minHeight: 44)
+            .background(Theme.surfaceElevated.opacity(isOn ? 1 : 0.72))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+        }
+        .buttonStyle(.iosPressable)
+        .accessibilityLabel(ListDetailKanbanBoard.ArchivedColumnsToggle.accessibilityLabel(showingArchived: isOn))
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 
     private var taskColumn: some View {

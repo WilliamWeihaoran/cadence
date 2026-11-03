@@ -504,8 +504,8 @@ struct ListSectionKanbanColumn: View {
             onToggleArchive: toggleSectionArchive,
             onDelete: {
                 deleteConfirmationManager.present(
-                    title: "Delete Column?",
-                    message: "This will delete the column \"\(section.name)\" and move its tasks into Default."
+                    title: CadenceSectionEditingSupport.columnDeleteConfirmationTitle,
+                    message: CadenceSectionEditingSupport.columnDeleteConfirmationMessage(columnName: section.name)
                 ) {
                     guard deleteSection() else { return }
                     showEditor = false

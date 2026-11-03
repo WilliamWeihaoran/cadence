@@ -73,6 +73,30 @@ struct CadenceSectionDraft: Identifiable, Hashable {
 /// exactly this; iOS did not, which stranded tasks on a name no column had any more. Those then
 /// surfaced back on macOS as a phantom column, via `CadenceReadService`'s `extraSections`.
 enum CadenceSectionEditingSupport {
+    /// **Deleting a column, in the Mac's words on both platforms** ([[T-8564]]). The Mac board's
+    /// column popover raised this before it deleted; the iOS list editor's swipe removed the row
+    /// and said nothing, and on Save the column's cards moved to Default unannounced. One
+    /// sentence, read by `KanbanSectionColumnView` and `iOSListEditorSheet`.
+    static let columnDeleteConfirmationTitle = "Delete Column?"
+
+    static func columnDeleteConfirmationMessage(columnName: String) -> String {
+        "This will delete the column \"\(columnName)\" and move its tasks into \(TaskSectionDefaults.defaultName)."
+    }
+
+    /// Whether removing this draft from the iOS list editor asks first ([[T-8564]]). Only a column
+    /// the editor opened with: one added during this edit has no `TaskSectionConfig` on disk, so
+    /// no task can be in it and there is nothing to say about where its cards go.
+    static func deletionNeedsConfirmation(_ draft: CadenceSectionDraft) -> Bool {
+        draft.originalName != nil && !draft.isDefaultColumn
+    }
+
+    /// The name the confirmation states: what the row reads now, or the saved name when the
+    /// field has been cleared, since a blank pair of quotes names nothing.
+    static func deletionConfirmationName(for draft: CadenceSectionDraft) -> String {
+        let typed = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return typed.isEmpty ? (draft.originalName ?? typed) : typed
+    }
+
     static func creationRefusal(
         for name: String,
         existingConfigs: [TaskSectionConfig]

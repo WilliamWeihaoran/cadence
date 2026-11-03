@@ -55,6 +55,10 @@ struct iOSListEditorSheet: View {
     /// Set only when `CadenceContainerWindDownSummary.requiresConfirmation` says the column has
     /// open work to settle. See `requestColumnWindDown`.
     @State private var pendingColumnWindDown: iOSColumnWindDownTarget?
+    /// A saved column swiped away, awaiting "Delete Column?" ([[T-8564]]). The row stays until the
+    /// answer: Delete drafts the removal (Save still commits it, Cancel on the sheet still undoes
+    /// it), and the alert's own Cancel leaves the column where it was.
+    @State private var pendingColumnDeletion: CadenceSectionDraft?
     /// Set when the commit was refused. The editor stays open holding it — see `save()`.
     @State private var saveFailureNotice: String?
     /// Set when *this editor* declined a column name rather than the store declining the write
@@ -284,9 +288,7 @@ struct iOSListEditorSheet: View {
                             // grey and with no due date — a delete that only erased its settings.
                             .deleteDisabled(draft.isDefaultColumn)
                     }
-                    .onDelete { offsets in
-                        sectionDrafts.remove(atOffsets: offsets)
-                    }
+                    .onDelete(perform: requestColumnDeletion)
                     .onMove { source, destination in
                         sectionDrafts.move(fromOffsets: source, toOffset: destination)
                     }
@@ -344,6 +346,24 @@ struct iOSListEditorSheet: View {
                 showAreaPicker = false
             }
             .iOSColumnWindDown(target: $pendingColumnWindDown, perform: applyColumnWindDown)
+            .alert(
+                CadenceSectionEditingSupport.columnDeleteConfirmationTitle,
+                isPresented: Binding(
+                    get: { pendingColumnDeletion != nil },
+                    set: { if !$0 { pendingColumnDeletion = nil } }
+                ),
+                presenting: pendingColumnDeletion
+            ) { draft in
+                Button("Delete", role: .destructive) {
+                    sectionDrafts.removeAll { $0.id == draft.id }
+                    pendingColumnDeletion = nil
+                }
+                Button("Cancel", role: .cancel) { pendingColumnDeletion = nil }
+            } message: { draft in
+                Text(CadenceSectionEditingSupport.columnDeleteConfirmationMessage(
+                    columnName: CadenceSectionEditingSupport.deletionConfirmationName(for: draft)
+                ))
+            }
             // [[T-5174]]: Save is the only write, so an unsaved name, colour or column edit lives
             // nowhere but this sheet's state; a swipe that dropped it said nothing. (b) brought the
             // NEW-list mode under the same rule — a half-typed list is typed text too. Every
@@ -357,6 +377,20 @@ struct iOSListEditorSheet: View {
     }
 
     // MARK: - Column lifecycle
+
+    /// **A swipe on a saved column asks first, in the Mac's words** ([[T-8564]]). The Mac board's
+    /// column popover confirms "Delete Column?" and says the cards go to Default; this swipe used
+    /// to drop the row silently and move the cards on Save. A column added during this edit holds
+    /// no card and goes at once, as it always did.
+    private func requestColumnDeletion(at offsets: IndexSet) {
+        let swiped = offsets.map { sectionDrafts[$0] }
+        let confirmed = swiped.filter { CadenceSectionEditingSupport.deletionNeedsConfirmation($0) }
+        let immediate = Set(swiped.filter { !CadenceSectionEditingSupport.deletionNeedsConfirmation($0) }.map(\.id))
+        sectionDrafts.removeAll { immediate.contains($0.id) }
+        if let first = confirmed.first {
+            pendingColumnDeletion = first
+        }
+    }
 
     /// The list being edited, or `nil` for a list that does not exist yet. A column can only be
     /// wound down against a saved list, because until then it has no `TaskSectionConfig` on disk

@@ -185,6 +185,37 @@ enum ListDetailKanbanBoard {
         return byColumn
     }
 
+    /// **Which configured columns the list board draws, on both platforms** ([[T-8565]]).
+    ///
+    /// The Mac's Kanban tab has a "Show Archived" pill (`showArchivedKanbanColumns`) that swaps the
+    /// board to the list's ARCHIVED columns and back; iOS had no such control, so an archived
+    /// column was reachable on iPhone and iPad only as a row in the list editor. A toggle is not
+    /// pointer- or width-shaped, so under [[T-8201]] that was drift. One rule for both boards:
+    /// off draws the live columns, on draws the archived ones and only those.
+    static func visibleSectionConfigs(
+        _ configs: [TaskSectionConfig],
+        showArchived: Bool
+    ) -> [TaskSectionConfig] {
+        configs.filter { $0.isArchived == showArchived }
+    }
+
+    /// The "Show Archived" control's words and glyph, one spelling for both boards ([[T-8565]]).
+    /// The label shortens to "Archived" while on, one of the four neutral cues the Mac pill uses
+    /// for its "on" state instead of an accent.
+    enum ArchivedColumnsToggle {
+        static func title(showingArchived: Bool) -> String {
+            showingArchived ? "Archived" : "Show Archived"
+        }
+
+        static func systemImage(showingArchived: Bool) -> String {
+            showingArchived ? "archivebox.fill" : "archivebox"
+        }
+
+        static func accessibilityLabel(showingArchived: Bool) -> String {
+            showingArchived ? "Hide archived columns" : "Show archived columns"
+        }
+    }
+
     /// The empty panel stands in only when the list has no column at all (every section archived).
     /// An open-task count is not the question: an empty column is a place to put work.
     static func drawsColumns(_ columns: [CadenceTaskDisplayGroup]) -> Bool {

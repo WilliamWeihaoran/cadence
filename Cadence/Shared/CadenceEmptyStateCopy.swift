@@ -79,6 +79,11 @@ nonisolated enum CadenceEmptyStateCopy {
     /// subtitle names the control under it, `CadenceSectionCreationRow`.
     static let listKanbanTitle = "No columns"
     static let listKanbanSubtitle = "Add a section below to start this board."
+    /// The same board under "Show Archived" when the list has no archived column ([[T-8565]]).
+    /// The add-column control is not drawn there -- a new column is never archived -- so the
+    /// subtitle above, which points at it, would name something that is not on screen.
+    static let listKanbanArchivedTitle = "No archived columns"
+    static let listKanbanArchivedSubtitle = "Archived columns appear here."
 
     // MARK: - Pages that exist at two widths
 

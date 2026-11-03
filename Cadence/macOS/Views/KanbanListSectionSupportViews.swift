@@ -35,8 +35,8 @@ struct ListSectionsKanbanView: View {
     }
 
     private var sectionConfigs: [TaskSectionConfig] {
-        let configs = baseSectionConfigs
-        return showArchivedBinding.wrappedValue ? configs.filter(\.isArchived) : configs.filter { !$0.isArchived }
+        // [[T-8565]]: the rule the iOS list board's "Show Archived" chip reads too.
+        ListDetailKanbanBoard.visibleSectionConfigs(baseSectionConfigs, showArchived: showArchivedBinding.wrappedValue)
     }
 
     private var allowsSectionEditing: Bool {

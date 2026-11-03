@@ -489,6 +489,11 @@ struct iOSListKanbanPanel: View {
     /// renumbers, which `tasks` (the open cards only) is not. The same array macOS's list board
     /// hands its columns as `spanTasks` ([[T-1175]], [[T-8183]]).
     var spanTasks: [AppTask]?
+    /// True while the page's "Show Archived" chip is on ([[T-8565]]), so `sectionNames` are the
+    /// list's ARCHIVED columns. Like the Mac's `ListSectionsKanbanView`, the board then draws no
+    /// add-column control: a column made there would be a live one, drawn on a board that is not
+    /// showing live columns.
+    var showsArchivedColumns = false
 
     @Environment(\.modelContext) private var modelContext
 
@@ -523,9 +528,13 @@ struct iOSListKanbanPanel: View {
             if !ListDetailKanbanBoard.drawsColumns(columns) {
                 VStack(spacing: 0) {
                     iOSEmptyPanel(
-                        systemImage: "square.grid.3x2",
-                        title: CadenceEmptyStateCopy.listKanbanTitle,
-                        subtitle: CadenceEmptyStateCopy.listKanbanSubtitle
+                        systemImage: showsArchivedColumns ? "archivebox" : "square.grid.3x2",
+                        title: showsArchivedColumns
+                            ? CadenceEmptyStateCopy.listKanbanArchivedTitle
+                            : CadenceEmptyStateCopy.listKanbanTitle,
+                        subtitle: showsArchivedColumns
+                            ? CadenceEmptyStateCopy.listKanbanArchivedSubtitle
+                            : CadenceEmptyStateCopy.listKanbanSubtitle
                     )
                     // The list itself, for the same reason the Tasks tab's empty state takes it:
                     // with no columns drawn there is nothing narrower to point at.
@@ -535,9 +544,11 @@ struct iOSListKanbanPanel: View {
                             listName: listName
                         )
                     )
-                    CadenceSectionCreationRow(area: area, project: project)
-                        .frame(width: iOSBoardColumnWidth, alignment: .leading)
-                        .padding(.bottom, 16)
+                    if !showsArchivedColumns {
+                        CadenceSectionCreationRow(area: area, project: project)
+                            .frame(width: iOSBoardColumnWidth, alignment: .leading)
+                            .padding(.bottom, 16)
+                    }
                 }
             } else {
                 ScrollViewReader { proxy in
@@ -585,8 +596,10 @@ struct iOSListKanbanPanel: View {
                             // The trailing add-column rail macOS ends every list board with
                             // (`ListSectionsKanbanView.addSectionRail`), at a column's width so the
                             // name field has room. T-7033.
-                            CadenceSectionCreationRow(area: area, project: project)
-                                .frame(width: iOSBoardColumnWidth, alignment: .topLeading)
+                            if !showsArchivedColumns {
+                                CadenceSectionCreationRow(area: area, project: project)
+                                    .frame(width: iOSBoardColumnWidth, alignment: .topLeading)
+                            }
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 16)
