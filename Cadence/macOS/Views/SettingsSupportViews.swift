@@ -463,14 +463,12 @@ struct SidebarTabEditorSheet: View {
                             .foregroundStyle(Color(hex: tintHex))
                     }
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(destination.label)
-                        .font(.system(size: 19, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text("Set this tab's color and visibility.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                }
+                // [[T-9627]]: the name alone. A "Set this tab's color and visibility." subtitle sat
+                // here above the Color grid and the Visible switch -- a header describing the sheet
+                // the user is already looking at, which AGENTS.md's page-header rule removes.
+                Text(destination.label)
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(Theme.text)
 
                 Spacer()
             }
@@ -492,11 +490,12 @@ struct SidebarTabEditorSheet: View {
             ) {
                 // `.labelsHidden()` is new alongside the name: an empty label already drew
                 // nothing, and a named one without it would put the title on screen twice.
+                // [[T-9625]]: regular size and the system accent, as every other Mac Settings switch
+                // (Notifications' reminders, each calendar's Active) is drawn. This one alone was
+                // `.controlSize(.small)` in `Theme.blue`, so Settings drew its switches two ways.
                 Toggle("Visible in Sidebar", isOn: $isVisible)
                     .labelsHidden()
                     .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .tint(Theme.blue)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)

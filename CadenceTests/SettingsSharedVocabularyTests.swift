@@ -667,6 +667,48 @@ struct SettingsSevenPaneVocabularyTests {
         #expect(hits.isEmpty, "settingsPanelRow still declared in \(hits)")
     }
 
+    /// **[[T-9627]].** The sidebar tab editor's header is the tab's glyph and name. A "Set this
+    /// tab's color and visibility." subtitle described the sheet the user is already on, directly
+    /// above the Color grid and the Visible switch it named.
+    @Test func theSidebarTabEditorHeaderIsTheNameAlone() throws {
+        // Comments stripped, literals kept: the sentence this guards against IS a literal.
+        let code = CadenceSourceScan.strippingComments(
+            try t20SourceFile("Cadence/macOS/Views/SettingsSupportViews.swift")
+        )
+        let sheet = try #require(
+            CadenceSourceScan.declarationBody("struct SidebarTabEditorSheet: View", in: code),
+            "SidebarTabEditorSheet moved"
+        )
+        #expect(sheet.contains("Text(destination.label)"), "non-vacuity: the header no longer names the tab")
+        #expect(sheet.contains("SectionEyebrowLabel(text: \"Color\")"), "non-vacuity: the Color section moved")
+        #expect(!sheet.contains("Set this tab"), "the header describes the sheet again")
+    }
+
+    /// **[[T-9625]].** Every Mac Settings switch is drawn one way: regular size, system accent. The
+    /// sidebar tab editor's alone was `.controlSize(.small)` in `Theme.blue`.
+    @Test func everyMacSettingsSwitchIsDrawnOneWay() throws {
+        let files = [
+            "Cadence/macOS/Views/SettingsSupportViews.swift",
+            "Cadence/macOS/Views/SettingsNotificationsSection.swift",
+            "Cadence/macOS/Views/SettingsListManagementSections.swift",
+        ]
+        var switches = 0
+        for path in files {
+            let code = CadenceSourceScan.strippingComments(try t20SourceFile(path))
+            let lines = code.components(separatedBy: "\n")
+            for (index, line) in lines.enumerated() where line.contains(".toggleStyle(.switch)") {
+                switches += 1
+                // The modifiers on the same chain: the lines around the style up to the next blank
+                // or closing brace.
+                let window = lines[max(0, index - 4)...min(lines.count - 1, index + 4)].joined(separator: "\n")
+                #expect(!window.contains(".controlSize("), "\(path):\(index + 1) sizes its switch")
+                #expect(!window.contains(".tint("), "\(path):\(index + 1) tints its switch")
+            }
+        }
+        // Non-vacuity: the tab editor's, the reminders' and each calendar's switch.
+        #expect(switches == 3, "expected 3 Mac Settings switches, found \(switches)")
+    }
+
     /// The glyph is **absent** on a row that reports no verdict, not blank.
     ///
     /// `systemImage: String = ""` would have satisfied the call-site count above while drawing an
