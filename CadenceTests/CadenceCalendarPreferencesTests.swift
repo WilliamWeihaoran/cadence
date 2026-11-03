@@ -13,6 +13,15 @@ import Testing
 struct CadenceCalendarPreferencesTests {
     private static let scope = "CadenceTests.calendarPreferences"
 
+    /// The Mac toolbar's zoom steps. `TimelineZoom` is Mac-only and this suite also compiles into the
+    /// iOS test target ([[T-10860]]), so the phone pins the same three steps; the Mac leg reads the
+    /// real range and catches a change to it.
+    #if os(macOS)
+    private static let macTimelineLevels = TimelineZoom.levels
+    #else
+    private static let macTimelineLevels = 1...3
+    #endif
+
     // MARK: - The migration
 
     /// The phone's three stored choices reach the shared keys, once, and stay on disk.
@@ -46,7 +55,7 @@ struct CadenceCalendarPreferencesTests {
     /// The Mac's `Int` zoom reaches the shared `Double`, and every step it could hold survives.
     @Test func theMacsIntegerZoomIsCopiedIntoTheSharedDouble() throws {
         try withTemporaryDefaults(Self.scope) { defaults in
-            for level in TimelineZoom.levels {
+            for level in Self.macTimelineLevels {
                 defaults.removeObject(forKey: CadenceCalendarZoom.storageKey)
                 defaults.set(level, forKey: CadenceCalendarZoom.legacyMacStorageKey)
 
@@ -111,7 +120,7 @@ struct CadenceCalendarPreferencesTests {
         #expect(CadenceCalendarZoom.timelineLevel(for: 1.6) == 2)
         #expect(CadenceCalendarZoom.timelineLevel(for: 2.6) == 3)
         for wild in [0, -4, 9, .infinity, .nan] as [Double] {
-            #expect(TimelineZoom.levels.contains(CadenceCalendarZoom.timelineLevel(for: wild)), "\(wild)")
+            #expect(Self.macTimelineLevels.contains(CadenceCalendarZoom.timelineLevel(for: wild)), "\(wild)")
         }
     }
 
