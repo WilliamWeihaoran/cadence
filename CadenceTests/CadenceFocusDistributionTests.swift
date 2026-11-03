@@ -116,6 +116,46 @@ struct CadenceFocusDistributionTests {
         #expect(uncapped.count == 25)
     }
 
+    /// [[T-8012]]: the line over the Mac picker names the real total, never the cap. Over 25 ready
+    /// tasks the capped list shows 18, and the line says "Top 18 of 25 ready tasks" -- it used to
+    /// say "Best matches / 18 tasks", naming the cap as the count.
+    @Test func thepickerSummaryNamesTheReadyTotalWhenTheCapBites() {
+        let ready = (0..<25).map { AppTask(title: "Ready \($0)") }
+        let capped = CadenceFocusPickItem.filtered(tasks: ready, query: "", todayKey: "2026-08-22")
+
+        #expect(
+            CadenceFocusPickItem.summary(shownCount: capped.count, readyCount: ready.count, query: "")
+                == "Top 18 of 25 ready tasks"
+        )
+    }
+
+    /// Under the cap the line is the plain total, singular at one; nothing ready says so.
+    @Test func thepickerSummaryIsThePlainTotalWhenNothingIsCapped() {
+        let ready = (0..<5).map { AppTask(title: "Ready \($0)") }
+        let shown = CadenceFocusPickItem.filtered(tasks: ready, query: "", todayKey: "2026-08-22")
+
+        #expect(CadenceFocusPickItem.summary(shownCount: shown.count, readyCount: ready.count, query: "") == "5 ready tasks")
+        #expect(CadenceFocusPickItem.summary(shownCount: 1, readyCount: 1, query: " ") == "1 ready task")
+        #expect(CadenceFocusPickItem.summary(shownCount: 0, readyCount: 0, query: "") == "No ready sessions")
+    }
+
+    /// A search states only how many rows matched, never "Top" or the ready total.
+    @Test func thepickerSummaryCountsMatchesWhileSearching() {
+        #expect(CadenceFocusPickItem.summary(shownCount: 30, readyCount: 40, query: "a") == "30 matches")
+        #expect(CadenceFocusPickItem.summary(shownCount: 1, readyCount: 40, query: "a") == "1 match")
+        #expect(CadenceFocusPickItem.summary(shownCount: 0, readyCount: 40, query: "zz") == "No matches")
+    }
+
+    /// The Mac card reads that helper and the uncapped total; no hand-rolled summary is left.
+    @Test func themacPickerReadsTheSharedSummaryOverTheUncappedTotal() throws {
+        let card = try strippingFocusTestComments(focusSourceFile("Cadence/macOS/Views/FocusPickerSupportViews.swift"))
+        let page = try strippingFocusTestComments(focusSourceFile("Cadence/macOS/Views/FocusView.swift"))
+
+        #expect(occurrencesInFocusSource(of: "FocusPickItem.summary(shownCount: items.count, readyCount: readyCount", in: card) == 1)
+        #expect(occurrencesInFocusSource(of: "Best matches", in: card) == 0)
+        #expect(occurrencesInFocusSource(of: "readyCount: readyTasks.count", in: page) == 1)
+    }
+
     /// A row names the subject it would run against, which is how a surface re-finds the session it
     /// started without comparing titles.
     @Test func apickItemNamesItsOwnTarget() {
@@ -161,7 +201,8 @@ struct CadenceFocusDistributionTests {
     @Test func thesourceReaderActuallyReadsTheseFilesInFocusDistribution() throws {
         for path in [
             "Cadence/iOS/iOSFocusView.swift",
-            "Cadence/macOS/Views/FocusPickerSupportViews.swift"
+            "Cadence/macOS/Views/FocusPickerSupportViews.swift",
+            "Cadence/macOS/Views/FocusView.swift"
         ] {
             let source = try strippingFocusTestComments(focusSourceFile(path))
             #expect(source.count > 2_000)

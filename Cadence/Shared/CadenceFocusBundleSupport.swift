@@ -70,6 +70,22 @@ enum CadenceFocusPickItem: Identifiable {
         return items.filter { $0.matches(cleanedQuery) }
     }
 
+    /// The line over the picker's rows ([[T-8012]]). It names the real total, never the display
+    /// cap: with 40 ready tasks and the Mac's cap of 18 it says "Top 18 of 40 ready tasks", and
+    /// "40 ready tasks" once nothing is capped -- the same total iOS's "40 ready" names for that
+    /// store. A search states only how many rows matched.
+    static func summary(shownCount: Int, readyCount: Int, query: String) -> String {
+        let isSearching = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if isSearching {
+            return shownCount == 0
+                ? "No matches"
+                : CadencePluralization.phrase(shownCount, singular: "match", plural: "matches")
+        }
+        guard readyCount > 0 else { return "No ready sessions" }
+        let total = CadencePluralization.phrase(readyCount, singular: "ready task", plural: "ready tasks")
+        return shownCount < readyCount ? "Top \(shownCount) of \(total)" : total
+    }
+
     private func matches(_ query: String) -> Bool {
         let needle = query.lowercased()
         return searchText.lowercased().contains(needle)

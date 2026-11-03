@@ -13,6 +13,8 @@ struct FocusPickSessionCard: View {
     let clockDisplay: String
     @Binding var searchText: String
     let items: [FocusPickItem]
+    /// Every ready task, before the unfiltered cap ([[T-8012]]): the summary names this total.
+    let readyCount: Int
     let onSelectTask: (AppTask) -> Void
     @FocusState private var searchFieldFocused: Bool
 
@@ -132,15 +134,7 @@ struct FocusPickSessionCard: View {
     }
 
     private var resultSummary: String {
-        if items.isEmpty {
-            return isSearching ? "No matches" : "No ready sessions"
-        }
-
-        if isSearching {
-            return "\(items.count) match\(items.count == 1 ? "" : "es")"
-        }
-
-        return "Best matches / \(items.count) task\(items.count == 1 ? "" : "s")"
+        FocusPickItem.summary(shownCount: items.count, readyCount: readyCount, query: searchText)
     }
 
     private var isSearching: Bool {

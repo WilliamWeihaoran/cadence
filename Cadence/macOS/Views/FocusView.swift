@@ -193,6 +193,7 @@ struct FocusView: View {
                         clockDisplay: clockDisplay,
                         searchText: $idleSearchText,
                         items: focusPickerItems,
+                        readyCount: readyTasks.count,
                         onSelectTask: { task in reportingFocusFailure { try focusManager.startFocus(task: task, in: modelContext) } }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
