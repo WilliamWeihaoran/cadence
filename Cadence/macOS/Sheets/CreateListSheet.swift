@@ -20,6 +20,8 @@ struct CreateListSheet: View {
     @Query private var projects: [Project]
 
     @State private var selectedContextID: UUID?
+    /// [[T-10180]]: the parent area of a new project. Read only by the `.project` arm.
+    @State private var selectedAreaID: UUID?
     @State private var name = ""
     /// The list's `desc`. Written raw, exactly as iOS's list editor writes it — see `create()`.
     @State private var details = ""
@@ -128,6 +130,9 @@ struct CreateListSheet: View {
                 TaskInspectorFieldDivider()
 
                 if listType == .project {
+                    ListEditorAreaRow(areas: areas, selectedID: $selectedAreaID)
+                    TaskInspectorFieldDivider()
+
                     TaskInspectorDateControl(
                         label: "Due",
                         reservesIconSlot: false,
@@ -183,9 +188,14 @@ struct CreateListSheet: View {
             modelContext.insert(area)
             inserted = area
         case .project:
-            let project = Project(name: trimmed, context: selectedContext, colorHex: selectedColor)
+            let project = Self.makeNewProject(
+                name: trimmed,
+                context: selectedContext,
+                area: selectedArea,
+                colorHex: selectedColor,
+                icon: selectedIcon
+            )
             project.desc = details
-            project.icon = selectedIcon
             project.order = nextListOrder
             project.hideDueDateIfEmpty = hideDueDateIfEmpty
             project.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
@@ -206,6 +216,26 @@ struct CreateListSheet: View {
     private var selectedContext: Context? {
         guard let selectedContextID else { return nil }
         return contexts.first { $0.id == selectedContextID }
+    }
+
+    private var selectedArea: Area? {
+        guard let selectedAreaID else { return nil }
+        return areas.first { $0.id == selectedAreaID }
+    }
+
+    /// [[T-10180]]: the project the `.project` arm inserts, filed under `area` the way iOS's
+    /// editor files it (`Project(name:context:area:colorHex:)`). It used to be built with no area,
+    /// so a project made on the Mac could only be put under one from the iPhone.
+    static func makeNewProject(
+        name: String,
+        context: Context?,
+        area: Area?,
+        colorHex: String,
+        icon: String
+    ) -> Project {
+        let project = Project(name: name, context: context, area: area, colorHex: colorHex)
+        project.icon = icon
+        return project
     }
 
     /// One past the highest `order` among the lists the new one will sit beside.

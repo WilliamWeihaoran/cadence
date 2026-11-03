@@ -466,9 +466,15 @@ struct CadenceContextlessListSurfaceTests {
                 in: code
             ) == 2
         )
+        // [[T-10180]]: the project editor writes its context beside its new parent area, through
+        // `EditProjectSheet.applyOwnership` — behaviour-tested in `CadenceMacProjectAreaFieldTests`.
+        let writeBack = [
+            "area": "area.context = selectedContext",
+            "project": "Self.applyOwnership(to: project, context: selectedContext, area: selectedArea)"
+        ]
         for model in ["area", "project"] {
             #expect(code.contains("State(initialValue: \(model).context?.id)"), "\(model) editor does not seed the row")
-            #expect(code.contains("\(model).context = selectedContext"), "\(model) editor does not write the row back")
+            #expect(code.contains(writeBack[model] ?? "<missing>"), "\(model) editor does not write the row back")
         }
 
         // **The half a behavioural test cannot reach.** `applyEdits()` is private to a SwiftUI

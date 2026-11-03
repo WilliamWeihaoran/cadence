@@ -385,6 +385,111 @@ struct ListEditorContextRow: View {
     }
 }
 
+// MARK: - Area row
+
+/// **[[T-10180]].** Which area a project sits under, as a field row in the Mac's project sheets.
+///
+/// iOS's list editor has offered this row in project mode since the editor existed, and the Mac had
+/// no view that wrote `project.area` at all — a project's area could be set on the iPhone and only
+/// read here, with no hardware or input constraint to explain it ([[T-8201]]).
+///
+/// The list is `CadenceAreaPickerSupport`'s, the one the iOS row reads: the "completed or archived
+/// areas are not offered, unless already assigned" rule, the sort and the untitled fallback are not
+/// respelled here ([[T-488]]). The row's value and the popover's rows come off the same helper for
+/// the reason `ListEditorContextRow` gives. Every area row draws the canonical
+/// `CadenceListKindIcon.area` glyph rather than the area's own `icon`, as the iOS row does
+/// ([[T-10145]]): a chooser speaks one per-kind vocabulary. "None" is iOS's word for this row.
+struct ListEditorAreaRow: View {
+    let areas: [Area]
+    @Binding var selectedID: UUID?
+
+    @State private var showPicker = false
+
+    static let noneTitle = "None"
+
+    var body: some View {
+        TaskInspectorFieldButtonRow(
+            label: "Area",
+            reservesIconSlot: false,
+            valueText: CadenceAreaPickerSupport.selectionTitle(
+                from: areas,
+                selectedID: selectedID,
+                noneTitle: Self.noneTitle
+            ),
+            isSet: selectedID != nil
+        ) {
+            showPicker.toggle()
+        }
+        .popover(isPresented: $showPicker, arrowEdge: .bottom) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(
+                        CadenceAreaPickerSupport.items(
+                            from: areas,
+                            selectedID: selectedID,
+                            noneTitle: Self.noneTitle
+                        )
+                    ) { item in
+                        // The canonical area glyph, read at this call site as iOS's row reads it.
+                        row(item, systemImage: item.isNone ? nil : CadenceListKindIcon.area)
+                        if item.isNone {
+                            Divider().background(Theme.borderSubtle).padding(.vertical, 2)
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .frame(width: 260)
+            .frame(maxHeight: 320)
+            .background(Theme.surface)
+        }
+    }
+
+    /// The row `CadenceContextPickerList` draws, minus its keyboard search: the area list is short
+    /// and iOS offers none.
+    @ViewBuilder
+    private func row(_ item: CadenceAreaPickerSupport.Item, systemImage: String?) -> some View {
+        let isSelected = selectedID == item.id
+        let tint = item.tint
+
+        Button {
+            selectedID = item.id
+            showPicker = false
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage ?? "circle")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 22, height: 22)
+                    .background(tint.opacity(item.isNone ? 0.06 : 0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                Text(item.title)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+                    .lineLimit(1)
+
+                Spacer()
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.blue)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .frame(minHeight: 32)
+            .background(isSelected ? Theme.blue.opacity(0.08) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .contentShape(RoundedRectangle(cornerRadius: 6))
+        }
+        // [[T-9465]]: the row style is the one hover plate.
+        .buttonStyle(.cadenceMenuRow)
+        .padding(.horizontal, 4)
+    }
+}
+
 // MARK: - Apple Calendar row
 
 /// **T-441.** The row asks `CadenceCalendarLink` what the link is, rather than looking one title up

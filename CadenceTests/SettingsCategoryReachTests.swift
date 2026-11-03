@@ -520,8 +520,12 @@ struct CadenceR67ParityTests {
                 searchStart = call.upperBound
             }
         }
-        // Non-vacuity: the one Area picker this ticket fixed is the one the walk reached.
-        #expect(builders == ["Cadence/iOS/iOSListEditorViews.swift": 1])
+        // Non-vacuity: the one Area picker this ticket fixed is the one the walk reached, and
+        // [[T-10180]]'s Mac `ListEditorAreaRow` is held to the same rule.
+        #expect(builders == [
+            "Cadence/iOS/iOSListEditorViews.swift": 1,
+            "Cadence/macOS/Sheets/ListEditorSupportViews.swift": 1
+        ])
 
         let panel = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceSchedulePanel.swift"))
         #expect(panel.contains(#"CadenceFieldRow(label: "List", systemImage: CadenceListKindIcon.inbox,"#))

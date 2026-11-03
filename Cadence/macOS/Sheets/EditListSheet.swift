@@ -255,8 +255,11 @@ struct EditProjectSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
     @Query(sort: \Context.order) private var contexts: [Context]
+    @Query(sort: \Area.order) private var areas: [Area]
 
     @State private var selectedContextID: UUID?
+    /// [[T-10180]]: the parent area, which iOS's editor could set and this sheet could not.
+    @State private var selectedAreaID: UUID?
     @State private var name: String
     /// `Project.desc`. Loaded and saved raw — same rule as `EditAreaSheet`.
     @State private var details: String
@@ -276,6 +279,7 @@ struct EditProjectSheet: View {
     init(project: Project) {
         self.project = project
         _selectedContextID = State(initialValue: project.context?.id)
+        _selectedAreaID = State(initialValue: project.area?.id)
         _name = State(initialValue: project.name)
         _details = State(initialValue: project.desc)
         _selectedColor = State(initialValue: project.colorHex)
@@ -321,6 +325,9 @@ struct EditProjectSheet: View {
 
             TaskInspectorRecessedGroup {
                 ListEditorContextRow(contexts: contexts, selectedID: $selectedContextID)
+                TaskInspectorFieldDivider()
+
+                ListEditorAreaRow(areas: areas, selectedID: $selectedAreaID)
                 TaskInspectorFieldDivider()
 
                 TaskInspectorDateControl(
@@ -390,12 +397,12 @@ struct EditProjectSheet: View {
     /// context through `resolvedContext` — its own if set, otherwise its area's — so clearing this
     /// row does not orphan its tasks, it hands them back to the area's context. There is no cascade
     /// on this branch: nothing inherits from a project.
+    ///
+    /// [[T-10180]]: the area is written beside the context, by `applyOwnership`, because a project
+    /// with no context of its own reads its area's — so a moved area re-points its tasks exactly as
+    /// a moved context does.
     private func applyEdits() {
-        let contextChanged = project.context?.id != selectedContextID
-        project.context = selectedContext
-        if contextChanged {
-            CadenceTaskMutationSupport.reassignInheritedContext(project: project)
-        }
+        Self.applyOwnership(to: project, context: selectedContext, area: selectedArea)
         project.name = CadenceTitleNormalization.normalized(name)
         project.desc = details
         project.colorHex = selectedColor
@@ -461,9 +468,17 @@ struct EditProjectSheet: View {
         return contexts.first { $0.id == selectedContextID }
     }
 
-    /// Same contract as `EditAreaSheet.contextChangeTargets`.
+    private var selectedArea: Area? {
+        guard let selectedAreaID else { return nil }
+        return areas.first { $0.id == selectedAreaID }
+    }
+
+    /// Same contract as `EditAreaSheet.contextChangeTargets`, widened to a moved area
+    /// ([[T-10180]]) — the tasks `applyOwnership` re-points when either one moves.
     private var contextChangeTargets: [AppTask] {
-        guard project.context?.id != selectedContextID else { return [] }
+        guard Self.ownershipChanged(project, contextID: selectedContextID, areaID: selectedAreaID) else {
+            return []
+        }
         return CadenceTaskMutationSupport.inheritedContextTargets(project: project)
     }
 
@@ -479,6 +494,29 @@ struct EditProjectSheet: View {
         }
         deleteFailureNotice = nil
         dismiss()
+    }
+}
+
+// MARK: - Project ownership (T-10180)
+
+extension EditProjectSheet {
+    /// Whether the sheet's context or area differs from the project's — the condition under which
+    /// its tasks' denormalized `context` has to be re-derived.
+    static func ownershipChanged(_ project: Project, contextID: UUID?, areaID: UUID?) -> Bool {
+        project.context?.id != contextID || project.area?.id != areaID
+    }
+
+    /// Writes the project's context and parent area, as iOS's editor writes them
+    /// (`project.context = selectedContext; project.area = selectedArea`), and re-points its
+    /// tasks when either moved. `CadenceListEditSnapshot` already holds `project.area`, so a
+    /// refused commit puts the area back with everything else.
+    static func applyOwnership(to project: Project, context: Context?, area: Area?) {
+        let changed = ownershipChanged(project, contextID: context?.id, areaID: area?.id)
+        project.context = context
+        project.area = area
+        if changed {
+            CadenceTaskMutationSupport.reassignInheritedContext(project: project)
+        }
     }
 }
 

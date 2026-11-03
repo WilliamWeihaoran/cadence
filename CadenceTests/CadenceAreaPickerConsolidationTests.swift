@@ -154,7 +154,9 @@ struct CadenceAreaPickerConsolidationTests {
     private static let areaPickerSources = [
         "Cadence/Shared/CadencePickerSupport.swift",
         "Cadence/Shared/CadenceAreaPickerSupport.swift",
-        "Cadence/iOS/iOSListEditorViews.swift"
+        "Cadence/iOS/iOSListEditorViews.swift",
+        // [[T-10180]]: the Mac project sheets' Area row.
+        "Cadence/macOS/Sheets/ListEditorSupportViews.swift"
     ]
 
     private static let ruleSources = [
@@ -212,14 +214,15 @@ struct CadenceAreaPickerConsolidationTests {
             }
         )
 
+        // [[T-10180]]: the Mac's `ListEditorAreaRow` reads the same list.
         let hits = try reads.sweep(
-            ["Cadence/iOS/iOSListEditorViews.swift"],
-            atLeast: 1,
+            ["Cadence/iOS/iOSListEditorViews.swift", "Cadence/macOS/Sheets/ListEditorSupportViews.swift"],
+            atLeast: 2,
             including: "Cadence/iOS/iOSListEditorViews.swift",
             read: readCodeOnly
         )
 
-        #expect(hits == ["Cadence/iOS/iOSListEditorViews.swift"])
+        #expect(hits == ["Cadence/iOS/iOSListEditorViews.swift", "Cadence/macOS/Sheets/ListEditorSupportViews.swift"])
     }
 
     /// **One file states the rules.** The cheap fix for T-488 was a copy of
