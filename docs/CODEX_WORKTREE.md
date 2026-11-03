@@ -232,6 +232,11 @@ CadenceTests/SettingsCategoryReachTests.swift
 Cadence/macOS/Views/TildeContainerPicker.swift
 Cadence/macOS/Views/ContainerPickerSupportViews.swift
 CadenceTests/CadenceCaptureCardSeriesEndSeedTests.swift
+CadenceTests/CadenceRecurrenceEndAndSyncSurfaceTests.swift
+CadenceTests/CadenceInspectorChildPopoverPlacementTests.swift
+CadenceTests/CadenceMacTaskInspectorStatusActionsTests.swift
+CadenceTests/CadenceMacHunt0938CopyTests.swift
+CadenceTests/CadenceCodexMacInspectorPanelTests.swift
 ```
 
 Each pattern above has one row below naming the branch its grant was made for, the date it
@@ -414,6 +419,11 @@ Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift      branch=codex/r6
 CadenceTests/CadenceQuickCreateTaskInspectorTests.swift          branch=codex/subtasks-inspector    granted=2026-10-23  grant=460313ab  spent=21834d4c
 # superseded 2026-11-02, kept as history: Cadence/macOS/Views/SchedulePanelComponents.swift                branch=codex/subtasks-inspector    granted=2026-10-23  grant=6bb56ed7  spent=21834d4c
 Cadence/macOS/Views/SchedulePanelComponents.swift                branch=codex/r68-repeat           granted=2026-11-02  grant=8580f8c6
+CadenceTests/CadenceRecurrenceEndAndSyncSurfaceTests.swift       branch=codex/r68-repeat           granted=2026-11-02  grant=715aa388
+CadenceTests/CadenceInspectorChildPopoverPlacementTests.swift    branch=codex/r68-repeat           granted=2026-11-02  grant=715aa388
+CadenceTests/CadenceMacTaskInspectorStatusActionsTests.swift     branch=codex/r68-repeat           granted=2026-11-02  grant=715aa388
+CadenceTests/CadenceMacHunt0938CopyTests.swift                   branch=codex/r68-repeat           granted=2026-11-02  grant=715aa388
+CadenceTests/CadenceCodexMacInspectorPanelTests.swift            branch=codex/r68-repeat           granted=2026-11-02  grant=715aa388
 Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift       branch=codex/subtasks-inspector    granted=2026-10-23  grant=6bb56ed7  spent=21834d4c
 AGENTS.md                                                        branch=codex/agents-cap-t3149      granted=2026-10-23  grant=703df4f9  spent=7198f79e
 CadenceMCPServer/AGENTS.md                                       branch=codex/agents-cap-t3149      granted=2026-10-23  grant=703df4f9  spent=7198f79e
