@@ -439,7 +439,8 @@ enum MarkdownTaskEmbedDrawing {
         CadenceTaskEmbedSubtaskRow.layoutWithOverflow(
             task.visibleSubtasks,
             totalCount: task.subtaskTotalCount,
-            fallbackTitle: "Untitled subtask",
+            // [[T-10186]]: "Untitled", as the iOS card and every other subtask row say it.
+            fallbackTitle: TaskTitleSupport.defaultCompactDisplayTitle,
             minX: cardRect.minX + 59,
             maxX: cardRect.maxX - 12,
             rowY: cardRect.minY + 70,
@@ -526,7 +527,7 @@ enum MarkdownTaskEmbedDrawing {
             check.stroke()
         }
 
-        let title = TaskTitleSupport.displayTitle(subtask.title, fallback: "Untitled subtask")
+        let title = TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle)
         (title as NSString).draw(in: textRect, withAttributes: subtaskAttributes(done: subtask.isDone))
     }
 

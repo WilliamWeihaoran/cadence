@@ -166,17 +166,11 @@ struct CadenceUndeclaredPlaceholderLabel {
 /// and once the prompt said that, `everyUndeclaredPlaceholderLabelIsStillUndeclaredAndStillTyped`
 /// failed on the entry rather than letting it sit. An entry retiring itself is not the list
 /// shrinking under pressure — a *new* label still has to be declared or written down.
+///
+/// **One since [[T-10186]].** `"Untitled subtask"` left by being retired: the Mac task-embed card now
+/// reads `TaskTitleSupport.defaultCompactDisplayTitle`, as the iOS card and every other subtask
+/// row already did.
 let cadenceUndeclaredPlaceholderLabels: [CadenceUndeclaredPlaceholderLabel] = [
-    CadenceUndeclaredPlaceholderLabel(
-        "Untitled subtask",
-        path: "Cadence/macOS/Editor/MarkdownTaskEmbedDrawingSupport.swift",
-        why: """
-        Two sites in one file, both inside the same embed drawing. Below [[T-505]]'s bar and \
-        staying there: a reader editing one of the two has the other on screen. Lower-cased like \
-        the "Untitled task" rows [[T-513]] fixed, but unlike those it has no capitalised twin \
-        anywhere to disagree with — there is no `defaultSubtaskTitle`.
-        """
-    ),
     CadenceUndeclaredPlaceholderLabel(
         "Untitled Column",
         path: "Cadence/iOS/iOSColumnWindDownSupport.swift",
@@ -765,7 +759,8 @@ struct CadenceSharedConstantReuseSweepTests {
         // 3 until [[T-3170]]'s trio pass deleted `TaskBundlePickerSupportViews.swift`, whose
         // "Untitled List" row left with it. This number is the list's own length, so it moves
         // only when a row is added or a file holding one is removed -- never silently.
-        #expect(cadenceUndeclaredPlaceholderLabels.count == 2,
+        // 2 until [[T-10186]] retired "Untitled subtask" for the shared "Untitled".
+        #expect(cadenceUndeclaredPlaceholderLabels.count == 1,
                 "the recorded list changed size; re-read T-515's decision before adding to it")
 
         for entry in cadenceUndeclaredPlaceholderLabels {

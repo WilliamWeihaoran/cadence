@@ -161,4 +161,22 @@ struct CadenceTaskEmbedSubtaskRowTests {
         #expect(!source.contains("\"[x] \""))
         #expect(!source.contains("\"[ ] \""))
     }
+
+    /// **[[T-10186]]: both task-embed cards name a blank subtask "Untitled"**, as every other
+    /// subtask row does. The Mac card typed "Untitled subtask" at its layout and its draw; the
+    /// label also sets the item's measured width, so both sites must read the one fallback.
+    @Test func bothEmbedCardsNameABlankSubtaskWithTheSharedCompactFallback() throws {
+        #expect(TaskTitleSupport.defaultCompactDisplayTitle == "Untitled")
+        let fallback = "TaskTitleSupport.defaultCompactDisplayTitle"
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Editor/MarkdownTaskEmbedDrawingSupport.swift")
+        )
+        #expect(mac.contains("fallbackTitle: \(fallback),"), "the Mac layout's fallback")
+        #expect(mac.contains("displayTitle(subtask.title, fallback: \(fallback))"), "the Mac draw's fallback")
+        #expect(!mac.contains("\"Untitled subtask\""))
+        let iOS = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownTaskEmbedLayoutInfo.swift")
+        )
+        #expect(iOS.contains("fallbackTitle: \(fallback),"), "the iOS layout's fallback")
+    }
 }
