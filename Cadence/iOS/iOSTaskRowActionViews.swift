@@ -612,19 +612,19 @@ struct iOSTaskRowContextMenu: View {
             Button {
                 CadenceTaskDateEditing.scheduleToday(task, in: modelContext)
             } label: {
-                Label("Today", systemImage: "sun.max.fill")
+                Label("Today", systemImage: CadenceTaskDateMenuLabel.glyph(.today, dateKey: task.scheduledDate, otherwise: "sun.max.fill"))
             }
 
             Button {
                 CadenceTaskDateEditing.scheduleTomorrow(task, in: modelContext)
             } label: {
-                Label("Tomorrow", systemImage: "calendar")
+                Label("Tomorrow", systemImage: CadenceTaskDateMenuLabel.glyph(.tomorrow, dateKey: task.scheduledDate, otherwise: "calendar"))
             }
 
             Button {
                 CadenceTaskDateEditing.scheduleNextWeek(task, in: modelContext)
             } label: {
-                Label("Next Week", systemImage: "calendar.badge.clock")
+                Label("Next Week", systemImage: CadenceTaskDateMenuLabel.glyph(.nextWeek, dateKey: task.scheduledDate, otherwise: "calendar.badge.clock"))
             }
 
             if !task.scheduledDate.isEmpty {
@@ -635,7 +635,7 @@ struct iOSTaskRowContextMenu: View {
                 }
             }
         } label: {
-            Label("Do Date", systemImage: "sun.max.fill")
+            Label(CadenceTaskDateMenuLabel.title("Do Date", dateKey: task.scheduledDate), systemImage: "sun.max.fill")
         }
     }
 
@@ -644,19 +644,19 @@ struct iOSTaskRowContextMenu: View {
             Button {
                 CadenceTaskDateEditing.dueToday(task, in: modelContext)
             } label: {
-                Label("Today", systemImage: "flag.fill")
+                Label("Today", systemImage: CadenceTaskDateMenuLabel.glyph(.today, dateKey: task.dueDate, otherwise: "flag.fill"))
             }
 
             Button {
                 CadenceTaskDateEditing.dueTomorrow(task, in: modelContext)
             } label: {
-                Label("Tomorrow", systemImage: "calendar")
+                Label("Tomorrow", systemImage: CadenceTaskDateMenuLabel.glyph(.tomorrow, dateKey: task.dueDate, otherwise: "calendar"))
             }
 
             Button {
                 CadenceTaskDateEditing.dueNextWeek(task, in: modelContext)
             } label: {
-                Label("Next Week", systemImage: "calendar.badge.clock")
+                Label("Next Week", systemImage: CadenceTaskDateMenuLabel.glyph(.nextWeek, dateKey: task.dueDate, otherwise: "calendar.badge.clock"))
             }
 
             if !task.dueDate.isEmpty {
@@ -667,7 +667,7 @@ struct iOSTaskRowContextMenu: View {
                 }
             }
         } label: {
-            Label("Due Date", systemImage: "flag.fill")
+            Label(CadenceTaskDateMenuLabel.title("Due Date", dateKey: task.dueDate), systemImage: "flag.fill")
         }
     }
 

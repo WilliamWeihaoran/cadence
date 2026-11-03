@@ -198,5 +198,54 @@ struct MacTaskRowContextMenuParityTests {
         #expect(MacTaskRowMenuFailure.move.message == CadenceTaskFieldEditCommit.saveFailureNotice)
         #expect(MacTaskRowMenuFailure.duplicate.message == CadenceTaskFieldEditCommit.saveFailureNotice)
     }
+
+    // MARK: - [[T-8107]] The date submenus say the date
+
+    /// The submenu label carries the set date the way "Priority: High" carries the level, and is
+    /// the bare title when nothing (or no parseable date) is set.
+    @Test func theDateSubmenuTitleCarriesTheSetDate() {
+        #expect(CadenceTaskDateMenuLabel.title("Due Date", dateKey: "2025-10-31") == "Due Date: Fri, Oct 31")
+        #expect(CadenceTaskDateMenuLabel.title("Do Date", dateKey: "2026-11-02") == "Do Date: Mon, Nov 2")
+        #expect(CadenceTaskDateMenuLabel.title("Due Date", dateKey: "") == "Due Date")
+        #expect(CadenceTaskDateMenuLabel.title("Do Date", dateKey: "not a date") == "Do Date")
+    }
+
+    /// The quick row that would write the set date is the checked one; an arbitrary date checks
+    /// none, which is why the label has to carry the date ([[T-8107]]'s decision).
+    @Test func theQuickRowThatWouldWriteTheSetDateIsChecked() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let now = try #require(calendar.date(from: DateComponents(year: 2026, month: 11, day: 2, hour: 10)))
+        func key(_ offset: Int) throws -> String {
+            DateFormatters.dateKey(from: try #require(calendar.date(byAdding: .day, value: offset, to: now)))
+        }
+
+        #expect(CadenceTaskDateMenuLabel.checkedPick(for: try key(0), now: now, calendar: calendar) == .today)
+        #expect(CadenceTaskDateMenuLabel.checkedPick(for: try key(1), now: now, calendar: calendar) == .tomorrow)
+        #expect(CadenceTaskDateMenuLabel.checkedPick(for: try key(7), now: now, calendar: calendar) == .nextWeek)
+        #expect(CadenceTaskDateMenuLabel.checkedPick(for: try key(3), now: now, calendar: calendar) == nil)
+        #expect(CadenceTaskDateMenuLabel.checkedPick(for: "", now: now, calendar: calendar) == nil)
+
+        let today = DateFormatters.todayKey()
+        #expect(CadenceTaskDateMenuLabel.glyph(.today, dateKey: today, otherwise: "flag.fill") == "checkmark.circle.fill")
+        #expect(CadenceTaskDateMenuLabel.glyph(.tomorrow, dateKey: today, otherwise: "calendar") == "calendar")
+    }
+
+    /// Both menus read that one helper for both submenus: a title per submenu and a glyph per quick
+    /// row, each over the field its submenu edits. Counted per menu, so either platform dropping it
+    /// goes red.
+    @Test func bothMenusTitleAndCheckTheirDateSubmenusThroughTheSharedHelper() throws {
+        for (declaration, path) in [
+            ("struct iOSTaskRowContextMenu: View", Self.iOSPath),
+            ("struct MacTaskRowContextMenu: View", Self.macMenuPath),
+        ] {
+            let menu = try body(declaration, in: path)
+            #expect(CadenceSourceScan.matchCount(#"CadenceTaskDateMenuLabel\.title\("Do Date", dateKey: task\.scheduledDate\)"#, in: menu) == 1, "\(path)")
+            #expect(CadenceSourceScan.matchCount(#"CadenceTaskDateMenuLabel\.title\("Due Date", dateKey: task\.dueDate\)"#, in: menu) == 1, "\(path)")
+            #expect(CadenceSourceScan.matchCount(#"CadenceTaskDateMenuLabel\.glyph\(\.\w+, dateKey: task\.scheduledDate,"#, in: menu) == 3, "\(path)")
+            #expect(CadenceSourceScan.matchCount(#"CadenceTaskDateMenuLabel\.glyph\(\.\w+, dateKey: task\.dueDate,"#, in: menu) == 3, "\(path)")
+            #expect(CadenceSourceScan.matchCount(#"Label\("(?:Do|Due) Date", systemImage"#, in: menu) == 0, "\(path) still has a bare date submenu title")
+        }
+    }
 }
 #endif

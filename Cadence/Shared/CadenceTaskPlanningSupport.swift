@@ -308,3 +308,46 @@ struct CadenceTaskDateBuckets {
         overdueIDs.contains(task.id) || dueTodayIDs.contains(task.id) || doTodayIDs.contains(task.id)
     }
 }
+
+// MARK: - What the row menu's date submenus say ([[T-8107]])
+
+/// The task row menu's Do Date and Due Date submenus state the set date the way its Priority
+/// submenu states the level -- "Due Date: Fri, Oct 31" -- and check the quick row that would set the
+/// date the task already has. One reader for `MacTaskRowContextMenu` and `iOSTaskRowContextMenu`,
+/// so the two menus cannot say a date two ways.
+nonisolated enum CadenceTaskDateMenuLabel {
+    /// The three quick rows, in menu order, each the day offset its button writes
+    /// (`CadenceTaskMutationSupport.scheduleTomorrow` / `scheduleNextWeek` and their due twins).
+    enum QuickPick: Int, CaseIterable, Sendable {
+        case today = 0
+        case tomorrow = 1
+        case nextWeek = 7
+    }
+
+    /// `title` alone when nothing is set, or when the stored key is not a date; otherwise
+    /// `"<title>: EEE, MMM d"`.
+    static func title(_ title: String, dateKey: String) -> String {
+        guard let date = DateFormatters.date(from: dateKey) else { return title }
+        return "\(title): \(DateFormatters.compactLongDate.string(from: date))"
+    }
+
+    /// The quick row whose button would write `dateKey` today, or `nil` when the set date is
+    /// none of them (an arbitrary date, or nothing set).
+    static func checkedPick(
+        for dateKey: String,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> QuickPick? {
+        guard !dateKey.isEmpty else { return nil }
+        return QuickPick.allCases.first { pick in
+            let day = calendar.date(byAdding: .day, value: pick.rawValue, to: now) ?? now
+            return DateFormatters.dateKey(from: day) == dateKey
+        }
+    }
+
+    /// The quick row's glyph: the checkmark the Priority and Repeat rows use when it is the set
+    /// date, its own symbol otherwise.
+    static func glyph(_ pick: QuickPick, dateKey: String, otherwise symbol: String) -> String {
+        checkedPick(for: dateKey) == pick ? "checkmark.circle.fill" : symbol
+    }
+}
