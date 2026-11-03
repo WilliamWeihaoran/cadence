@@ -13,10 +13,11 @@ struct iOSCalendarView: View {
     /// The grid's drop writes through this ([[T-8141]]); nothing else on this page needed it.
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @AppStorage("ios.calendar.viewMode") private var viewModeRaw = CadenceCalendarViewMode.week.rawValue
-    @AppStorage("ios.calendar.presentation") private var presentationRaw = CadenceCalendarPresentation.timeline.rawValue
-    /// Continuous now, and a real multiplier of the base hour height. The key is unchanged because
-    /// a value the old `− 1x +` control stored is still a legal one — see `CadenceCalendarZoom`.
+    @AppStorage(CadenceCalendarPreferences.viewModeKey) private var viewModeRaw = CadenceCalendarViewMode.week.rawValue
+    @AppStorage(CadenceCalendarPreferences.presentationKey) private var presentationRaw = CadenceCalendarPresentation.timeline.rawValue
+    /// Continuous now, and a real multiplier of the base hour height. Shared with the Mac since
+    /// [[T-8737]]; the old `ios.calendar.zoomLevel` value is copied in at launch — see
+    /// `CadenceCalendarPreferences`.
     @AppStorage(CadenceCalendarZoom.storageKey) private var zoomLevel = CadenceCalendarZoom.defaultZoom
     /// Month's Agenda/Day toggle. Written from a tap on that control and from nowhere else — never
     /// from `paneWidth`, the size class, or anything else the window decides. See

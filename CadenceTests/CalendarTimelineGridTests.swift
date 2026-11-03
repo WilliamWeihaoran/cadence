@@ -115,9 +115,21 @@ struct CadenceCalendarZoomTests {
 
         // `matchCount` answers -1 for a pattern that does not compile, which a `== 0` assertion
         // would sail straight past. Prove the pattern finds the literal before trusting a miss.
-        let pattern = "\"ios\\.calendar\\.zoomLevel\""
-        #expect(CadenceSourceScan.matchCount(pattern, in: "\"ios.calendar.zoomLevel\"") == 1)
-        #expect(CadenceSourceScan.matchCount(pattern, in: "CadenceCalendarZoom.storageKey") == 0)
+        //
+        // [[T-8737]] moved the key to `calendarZoom`, shared with the Mac, and kept both retired
+        // spellings beside it for the launch migration. All three are held to the same rule.
+        let patterns = [
+            "\"calendarZoom\"",
+            "\"ios\\.calendar\\.zoomLevel\"",
+            "\"calendarZoomLevel\""
+        ]
+        #expect(CadenceSourceScan.matchCount(patterns[0], in: "\"calendarZoom\"") == 1)
+        #expect(CadenceSourceScan.matchCount(patterns[0], in: "\"calendarZoomLevel\"") == 0)
+        #expect(CadenceSourceScan.matchCount(patterns[1], in: "\"ios.calendar.zoomLevel\"") == 1)
+        #expect(CadenceSourceScan.matchCount(patterns[2], in: "\"calendarZoomLevel\"") == 1)
+        for pattern in patterns {
+            #expect(CadenceSourceScan.matchCount(pattern, in: "CadenceCalendarZoom.storageKey") == 0)
+        }
 
         var scannedFiles = 0
         var strippedSomething = false
@@ -129,8 +141,10 @@ struct CadenceCalendarZoomTests {
             let code = CadenceSourceScan.strippingComments(raw)
             if code != raw { strippedSomething = true }
             if code.count != raw.count { keptItsLength = false }
-            for _ in 0..<max(0, CadenceSourceScan.matchCount(pattern, in: code)) {
-                spellings.append(url.lastPathComponent)
+            for pattern in patterns {
+                for _ in 0..<max(0, CadenceSourceScan.matchCount(pattern, in: code)) {
+                    spellings.append(url.lastPathComponent)
+                }
             }
         }
 
@@ -139,7 +153,7 @@ struct CadenceCalendarZoomTests {
         #expect(scannedFiles > 400, "the scan read only \(scannedFiles) Swift files")
         #expect(strippedSomething, "the comment stripper never fired, so it read prose as code")
         #expect(keptItsLength, "the comment stripper changed a file's length, so it is not blanking")
-        #expect(spellings == ["CadenceCalendarTimedGridSupport.swift"], "got \(spellings)")
+        #expect(spellings == Array(repeating: "CadenceCalendarTimedGridSupport.swift", count: 3), "got \(spellings)")
     }
 
     /// The other half of the drift: the type. Settings' picker binding is a SwiftUI `@Binding`

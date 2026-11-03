@@ -17,11 +17,16 @@ struct CalendarPageView: View {
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
 
-    @State private var viewMode: CadenceCalendarViewMode = .week
-    @State private var presentation: CadenceCalendarPresentation = .timeline
+    // [[T-8737]]: the view, style and zoom are app-wide defaults, stored under the keys iOS reads
+    // and the Settings → Navigation → Defaults rows write. These were `@State` (`.week`,
+    // `.timeline`), so this page opened on Week / Timeline at every launch whatever was chosen.
+    @AppStorage(CadenceCalendarPreferences.viewModeKey) private var viewModeRaw = CadenceCalendarViewMode.week.rawValue
+    @AppStorage(CadenceCalendarPreferences.presentationKey) private var presentationRaw = CadenceCalendarPresentation.timeline.rawValue
+    /// The shared continuous zoom. This grid steps 1…3, so it reads the nearest step and writes a
+    /// step back only when its own control moves — see `CadenceCalendarZoom.timelineLevel(for:)`.
+    @AppStorage(CadenceCalendarZoom.storageKey) private var sharedZoom = CadenceCalendarZoom.defaultZoom
     @State private var selectedBoardDate = Calendar.current.startOfDay(for: Date())
     @State private var scrollToTodayTrigger = false
-    @AppStorage("calendarZoomLevel") private var zoomLevel: Int = 1
     // The remembered timeline position. Both are written from **this** view only, through the
     // `schedulePersistVisibleTimeline*` closures below, which the timeline calls only once
     // `didRestoreTimelineScroll` is set — so a restore-time scroll report cannot overwrite the very
@@ -55,6 +60,23 @@ struct CalendarPageView: View {
     @State private var timelineScrollState = CalendarTimelineScrollState()
     @State private var observedDay = CadenceObservedDay()
 
+    private var viewMode: CadenceCalendarViewMode {
+        get { CadenceCalendarViewMode(rawValue: viewModeRaw) ?? .week }
+        nonmutating set { viewModeRaw = newValue.rawValue }
+    }
+
+    private var presentation: CadenceCalendarPresentation {
+        get { CadenceCalendarPresentation(rawValue: presentationRaw) ?? .timeline }
+        nonmutating set { presentationRaw = newValue.rawValue }
+    }
+
+    private var zoomLevel: Binding<Int> {
+        Binding(
+            get: { CadenceCalendarZoom.timelineLevel(for: sharedZoom) },
+            set: { sharedZoom = Double($0) }
+        )
+    }
+
     private let cal = Calendar.current
     /// The day this page was opened, which every column and month block is counted from
     /// ([[T-5352]]). Held, not read from the clock: a page left open across midnight keeps its
@@ -84,7 +106,7 @@ struct CalendarPageView: View {
                 setPresentation: { setPresentation($0) },
                 moveBoardWindow: { moveBoardWindow(by: $0) },
                 canMoveBoardWindowBack: canMoveBoardWindowBack,
-                zoomLevel: $zoomLevel
+                zoomLevel: zoomLevel
             )
 
             Divider().background(Theme.borderSubtle.opacity(CalendarVisualStyle.dividerOpacity))
@@ -122,7 +144,7 @@ struct CalendarPageView: View {
                         todayKey: observedDay.todayKey,
                         geoSize: geo.size,
                         viewMode: viewMode,
-                        zoomLevel: $zoomLevel,
+                        zoomLevel: zoomLevel,
                         bufferStart: bufferStart,
                         allTasks: allTasks,
                         areas: areas,
@@ -163,6 +185,11 @@ struct CalendarPageView: View {
         // Applied at the page root so it covers all three presentations, not just the timeline.
         .calendarWriteFailureAlert()
         .onAppear {
+            // A remembered Board opens on the remembered day, the way switching to it does,
+            // rather than on the `@State` default of today ([[T-8737]]).
+            if presentation == .board {
+                prepareBoardSelectionFromCurrentCalendarState()
+            }
             if let request = calendarNavigationManager.request {
                 applyExternalCalendarJump(request)
             }

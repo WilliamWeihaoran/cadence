@@ -79,6 +79,22 @@ enum CadenceCalendarPageView: Hashable, CaseIterable {
         }
     }
 
+    /// What a Settings "Calendar view" row reads for the stored pair, on both platforms
+    /// ([[T-8737]]). A `.twoWeeks` an older build persisted reads as itself rather than as Week,
+    /// the way the toolbar lights no pill for it.
+    static func settingsTitle(
+        presentation: CadenceCalendarPresentation,
+        viewMode: CadenceCalendarViewMode
+    ) -> String {
+        CadenceCalendarPageView(presentation: presentation, viewMode: viewMode)?.title ?? viewMode.rawValue
+    }
+
+    /// Board keeps the line it had as a "Calendar style": it is the one choice whose name does not
+    /// say what it draws. Week and Month do.
+    var settingsSubtitle: String? {
+        self == .board ? "Columns per day, with overdue and unscheduled rails." : nil
+    }
+
     /// The write the toolbar makes. Board keeps the stored mode, so leaving Board returns to the
     /// timeline range the reader had.
     func apply(

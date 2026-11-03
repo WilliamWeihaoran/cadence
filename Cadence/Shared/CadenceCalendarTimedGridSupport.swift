@@ -20,9 +20,26 @@ enum CadenceCalendarZoom {
     static let maximum: Double = 3
     static let defaultZoom: Double = 1
 
-    /// The `@AppStorage` key. Named here rather than at the two call sites so the migration note
-    /// above sits with the key it is about.
-    static let storageKey = "ios.calendar.zoomLevel"
+    /// The `@AppStorage` key, read by both platforms since [[T-8737]]. Named here rather than at
+    /// the call sites so the migration note above sits with the key it is about.
+    ///
+    /// It was `ios.calendar.zoomLevel` on the phone, while the Mac kept its own `Int` under
+    /// `calendarZoomLevel`. Both are legacy keys now, copied into this one at launch by
+    /// `CadenceCalendarPreferences.migrateLegacyKeys` and left on disk.
+    static let storageKey = "calendarZoom"
+    static let legacyIOSStorageKey = "ios.calendar.zoomLevel"
+    static let legacyMacStorageKey = "calendarZoomLevel"
+
+    /// The Mac timeline's discrete level for a stored zoom ([[T-8737]]).
+    ///
+    /// The Mac grid sizes an hour by how many fit the viewport (`TimelineZoom.targetHours`, 12 / 8
+    /// / 4) rather than by a multiplier, and its toolbar steps 1…3. Those three steps are the same
+    /// Compact / Comfort / Spacious ordering as `densityPresets`, so a preset reads as its own
+    /// step and a pinched zoom between two presets reads as the nearest. **Reading rounds; it
+    /// never writes** — the stored continuous value survives until the Mac's own control is used.
+    static func timelineLevel(for zoom: Double) -> Int {
+        Int(clamp(zoom).rounded())
+    }
 
     /// The densities Settings offers, and the labels it offers them under.
     ///

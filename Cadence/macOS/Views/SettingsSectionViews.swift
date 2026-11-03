@@ -337,6 +337,8 @@ struct SettingsNavigationSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
+            // [[T-8737]]: the phone's two calendar Defaults rows, over the same keys.
+            SettingsCalendarDefaultsSection()
             listOpeningSection
             SettingsQuickCaptureSection(registration: hotKeyStatus.registration)
         }

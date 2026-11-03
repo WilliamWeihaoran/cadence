@@ -142,6 +142,9 @@ struct CadenceChoicePickerDismissalTests {
             // `iOSEnumChoiceChip` the Inbox and All Tasks bar draws three of.
             "Cadence/iOS/iOSTaskViews.swift": (2, 0),
             "Cadence/macOS/Views/SettingsArchiveImportCard.swift": (1, 0),
+            // [[T-8737]]: Settings → Navigation's calendar view and timeline density rows, the
+            // phone's two Defaults pickers. Preference writes, so neither commits.
+            "Cadence/macOS/Views/SettingsCalendarDefaultsSection.swift": (2, 0),
             "Cadence/macOS/Views/SettingsCalendarWorkHoursSection.swift": (1, 0),
             "Cadence/macOS/Views/SettingsSectionViews.swift": (1, 0),
             // [[T-5015]] (b): the Mac task row's repeat picker, the macOS twin of the committing
@@ -213,7 +216,9 @@ struct CadenceChoicePickerDismissalTests {
         // custom panel states it rather than offering it a second time.
         // [[T-7074]] folds iOS Settings' "Calendar style" picker into "Calendar view", one
         // Week / Month / Board list as the Calendar toolbar has it: 30, still 4.
-        #expect(found.values.map(\.calls).reduce(0, +) == 30)
+        // [[T-8737]] gives the Mac's Settings the phone's calendar view and density rows: 32,
+        // still 4.
+        #expect(found.values.map(\.calls).reduce(0, +) == 32)
         #expect(found.values.map(\.committing).reduce(0, +) == 4)
     }
 

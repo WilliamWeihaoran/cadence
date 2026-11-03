@@ -13,8 +13,8 @@ struct iOSSettingsView: View {
     @AppStorage(NotificationManager.notificationsEnabledDefaultsKey) private var notificationsEnabled = false
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage(NoteTemplateLibrary.storageKey) private var noteTemplateOverridesRaw = ""
-    @AppStorage("ios.calendar.viewMode") private var calendarViewModeRaw = CadenceCalendarViewMode.week.rawValue
-    @AppStorage("ios.calendar.presentation") private var calendarPresentationRaw = CadenceCalendarPresentation.timeline.rawValue
+    @AppStorage(CadenceCalendarPreferences.viewModeKey) private var calendarViewModeRaw = CadenceCalendarViewMode.week.rawValue
+    @AppStorage(CadenceCalendarPreferences.presentationKey) private var calendarPresentationRaw = CadenceCalendarPresentation.timeline.rawValue
     /// The same `Double` the calendar's pinch writes, through the same shared key. It was
     /// `@AppStorage("ios.calendar.zoomLevel") ... = 1` — the key re-spelled as a literal and
     /// typed `Int`, which is how the two ends of one preference drifted apart (T-392).

@@ -68,6 +68,11 @@ struct CadenceApp: App {
         // and a no-op on a device that has never stored the old value — see
         // `CadenceTaskPresentationPreferences`.
         CadenceTaskPresentationPreferences.migrateLegacyIOSSortModes()
+        // [[T-8737]]: the same door for the Calendar page's view, style and zoom, which both
+        // platforms read from one set of keys now. Seeds each from the phone's `ios.calendar.*`
+        // or the Mac's `calendarZoomLevel` only while it is unset — see
+        // `CadenceCalendarPreferences`.
+        CadenceCalendarPreferences.migrateLegacyKeys()
         // The same shape as the line above, one layer further out: a retired feature's leftovers
         // cleared on every cold launch, idempotently. The difference is where they live — these
         // are not this app's `UserDefaults` but the *operating system's* pending-notification

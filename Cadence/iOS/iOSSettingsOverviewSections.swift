@@ -275,7 +275,7 @@ struct iOSNavigationSettingsSection: View {
                             iOSChoiceRow(
                                 value: choice,
                                 title: choice.title,
-                                subtitle: calendarViewSubtitle(choice),
+                                subtitle: choice.settingsSubtitle,
                                 systemImage: choice.systemImage,
                                 color: Theme.purple
                             )
@@ -288,11 +288,10 @@ struct iOSNavigationSettingsSection: View {
         }
     }
 
-    /// The stored pair as the one choice. A `.twoWeeks` an older build persisted reads as itself
-    /// rather than as Week, the way the toolbar lights no pill for it.
+    /// The stored pair as the one choice — `CadenceCalendarPageView.settingsTitle`, shared with the
+    /// Mac's row since [[T-8737]].
     private var calendarViewTitle: String {
-        CadenceCalendarPageView(presentation: calendarPresentation, viewMode: calendarViewMode)?.title
-            ?? calendarViewMode.rawValue
+        CadenceCalendarPageView.settingsTitle(presentation: calendarPresentation, viewMode: calendarViewMode)
     }
 
     private var calendarViewSelection: Binding<CadenceCalendarPageView> {
@@ -309,12 +308,6 @@ struct iOSNavigationSettingsSection: View {
                 if presentation != calendarPresentation { calendarPresentation = presentation }
             }
         )
-    }
-
-    /// Board keeps the line it had as a "Calendar style": it is the one choice whose name does not
-    /// say what it draws. Week and Month do.
-    private func calendarViewSubtitle(_ choice: CadenceCalendarPageView) -> String? {
-        choice == .board ? "Columns per day, with overdue and unscheduled rails." : nil
     }
 
     private var timelineDensityRow: some View {
