@@ -57,6 +57,44 @@ struct CadenceMacTaskBoardAccessibilityTests {
                 "the add-column rail is an unnamed + again")
     }
 
+    // MARK: T-7085
+
+    /// The owner's call: a board's new column is "New Column" and its add row says "Add column";
+    /// the Tasks tab keeps "section". Both platforms read the words from one shared noun.
+    @Test func aBoardMakesColumnsAndTheTasksTabMakesSections() throws {
+        #expect(CadenceSectionCreationNoun.column.buttonTitle == "Column")
+        #expect(CadenceSectionCreationNoun.column.namePlaceholder == "Column name")
+        #expect(CadenceSectionCreationNoun.column.addLabel == "Add column")
+        #expect(CadenceSectionCreationNoun.column.cancelLabel == "Cancel column")
+        #expect(CadenceSectionCreationNoun.section.buttonTitle == "Section")
+        #expect(CadenceSectionCreationNoun.section.namePlaceholder == "Section name")
+        #expect(CadenceSectionCreationNoun.section.addLabel == "Add section")
+        #expect(CadenceSectionCreationNoun.section.cancelLabel == "Cancel section")
+        #expect(KanbanBoardSupport.addColumnLabel == CadenceSectionCreationNoun.column.addLabel)
+
+        let row = try source("Cadence/Shared/Components/CadenceSectionCreationRow.swift")
+        let body = try #require(CadenceSourceScan.declarationBody("struct CadenceSectionCreationRow: View", in: row))
+        #expect(body.contains("var noun: CadenceSectionCreationNoun = .section"))
+        for word in ["\"Section\"", "\"Section name\"", "\"Add section\"", "\"Cancel section\""] {
+            #expect(!body.contains(word), "the add row spells \(word) itself again")
+        }
+
+        let board = try source("Cadence/iOS/iOSListSupportViews.swift")
+        #expect(CadenceSourceScan.matchCount(#"CadenceSectionCreationRow\(area: area, project: project, noun: \.column\)"#, in: board) == 2,
+                "the iOS Kanban tab's add row says section again")
+        #expect(!board.contains("CadenceSectionCreationRow(area: area, project: project)"))
+    }
+
+    @Test func theRailNamesANewColumnNewColumn() {
+        #expect(KanbanBoardSupport.nextSectionName(from: [TaskSectionConfig(name: TaskSectionDefaults.defaultName)]) == "New Column")
+        // An older rail's "New Section" is the user's column now; it does not reserve the new name.
+        #expect(KanbanBoardSupport.nextSectionName(from: [TaskSectionConfig(name: "New Section")]) == "New Column")
+        #expect(KanbanBoardSupport.nextSectionName(from: [TaskSectionConfig(name: "new column")]) == "New Column 2")
+        #expect(KanbanBoardSupport.nextSectionName(from: [
+            TaskSectionConfig(name: "New Column"), TaskSectionConfig(name: "New Column 2")
+        ]) == "New Column 3")
+    }
+
     // MARK: T-7083
 
     @Test func theCardCompletionCircleIsNamedForItsState() throws {

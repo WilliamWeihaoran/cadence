@@ -32,7 +32,7 @@ struct CadenceMacInlineFormKeyboardTests {
             "struct CadenceSectionCreationRow: View",
             in: "Cadence/Shared/Components/CadenceSectionCreationRow.swift"
         )
-        #expect(row.contains("TextField(\"Sectionname\""), "the slice is not the section row")
+        #expect(row.contains("TextField(noun.namePlaceholder,"), "the slice is not the section row")
         #expect(
             row.contains("#ifos(macOS).onExitCommand(perform:cancel)#endif"),
             "Escape from the focused Section name field must cancel through cancel()"

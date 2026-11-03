@@ -291,19 +291,23 @@ enum KanbanBoardSupport {
     }
 
     /// The add-column rail's name and tooltip ([[T-7082]]).
-    static let addColumnLabel = "Add column"
+    static let addColumnLabel = CadenceSectionCreationNoun.column.addLabel
 
+    /// The rail's new column: "New Column", then "New Column 2" ([[T-7085]]; it said "New Section"
+    /// on a board whose every control says "column"). Matched case-insensitively, as section
+    /// names are unique within a list.
     static func nextSectionName(from sectionConfigs: [TaskSectionConfig]) -> String {
+        let base = CadenceSectionCreationNoun.newColumnBaseName
         let existingNames = Set(sectionConfigs.map { $0.name.lowercased() })
-        if !existingNames.contains("new section") {
-            return "New Section"
+        if !existingNames.contains(base.lowercased()) {
+            return base
         }
 
         var index = 2
-        while existingNames.contains("new section \(index)") {
+        while existingNames.contains("\(base.lowercased()) \(index)") {
             index += 1
         }
-        return "New Section \(index)"
+        return "\(base) \(index)"
     }
 
     static func reorderedSectionConfigs(

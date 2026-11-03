@@ -545,7 +545,7 @@ struct iOSListKanbanPanel: View {
                         )
                     )
                     if !showsArchivedColumns {
-                        CadenceSectionCreationRow(area: area, project: project)
+                        CadenceSectionCreationRow(area: area, project: project, noun: .column)
                             .frame(width: iOSBoardColumnWidth, alignment: .leading)
                             .padding(.bottom, 16)
                     }
@@ -597,7 +597,7 @@ struct iOSListKanbanPanel: View {
                             // (`ListSectionsKanbanView.addSectionRail`), at a column's width so the
                             // name field has room. T-7033.
                             if !showsArchivedColumns {
-                                CadenceSectionCreationRow(area: area, project: project)
+                                CadenceSectionCreationRow(area: area, project: project, noun: .column)
                                     .frame(width: iOSBoardColumnWidth, alignment: .topLeading)
                             }
                         }
