@@ -121,8 +121,8 @@ struct ContainerPickerFilterSupportTests {
         var highlightIdx = 0
         #expect(ContainerPickerFilterSupport.highlighted(at: highlightIdx, in: selections) == .area(design.id))
 
-        // Enter commits whatever the highlight names — the checkmark and the commit read the same
-        // value, which is why the rows carry no separate "selected" state.
+        // Enter commits whatever the highlight names. The checkmark does not: it marks the list the
+        // task is in ([[T-8101]]), pinned below.
         highlightIdx = TaskPickerHighlightSupport.clampedMovedIndex(highlightIdx, by: 1, count: selections.count)
         let committed = ContainerPickerFilterSupport.highlighted(at: highlightIdx, in: selections)
         #expect(committed == .area(deployment.id))
@@ -444,6 +444,57 @@ struct ContainerPickerFilterSupportTests {
             #expect(CadenceSourceScan.matchCount("ContainerPickerPopoverContent\\(", in: source) == 1)
             #expect(CadenceSourceScan.matchCount("selection:\\s*\\.inbox", in: source) == 0)
         }
+    }
+
+    // MARK: - [[T-8101]]: the checkmark is the task's list, and the highlight opens on it
+
+    /// A task in a list other than the first row opens the picker with that row highlighted, so a
+    /// Return straight after opening is a no-op rather than a move to the Inbox.
+    @Test func theHighlightOpensOnTheListTheTaskIsIn() throws {
+        let fixture = try makeFixture()
+        let errands = try #require(fixture.areas.first { $0.name == "Errands" })
+        let delta = try #require(fixture.projects.first { $0.name == "Delta Launch" })
+        for selection in [TaskContainerSelection.area(errands.id), .project(delta.id), .inbox] {
+            let selections = ContainerPickerFilterSupport.flatSelections(
+                inGroups: ContainerPickerFilterSupport.groups(
+                    contexts: fixture.contexts, areas: fixture.areas, projects: fixture.projects,
+                    selection: selection, query: ""
+                ),
+                includingInbox: true
+            )
+            let index = ContainerPickerFilterSupport.openingHighlightIndex(for: selection, in: selections)
+            #expect(ContainerPickerFilterSupport.highlighted(at: index, in: selections) == selection)
+        }
+        // Non-vacuity: Errands is not row 0, so opening on row 0 would have named another list.
+        let errandsRows = ContainerPickerFilterSupport.flatSelections(
+            inGroups: ContainerPickerFilterSupport.groups(
+                contexts: fixture.contexts, areas: fixture.areas, projects: fixture.projects,
+                selection: .area(errands.id), query: ""
+            ),
+            includingInbox: true
+        )
+        #expect(ContainerPickerFilterSupport.openingHighlightIndex(for: .area(errands.id), in: errandsRows) > 0)
+        // A selection the rows do not hold falls back to the first row.
+        #expect(ContainerPickerFilterSupport.openingHighlightIndex(for: .area(UUID()), in: errandsRows) == 0)
+    }
+
+    /// The row draws its checkmark from `isSelected`, every row is handed `selection ==` its own
+    /// tag, and the popover opens its highlight through `openingHighlightIndex`.
+    @Test func theCheckmarkMarksTheTaskListAndNotTheHighlight() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ContainerPickerSupportViews.swift")
+        )
+        let row = try #require(CadenceSourceScan.declarationBody("private struct ContainerPickerRow: View", in: source))
+        #expect(row.contains("let isSelected: Bool"))
+        #expect(CadenceSourceScan.matchCount("if isSelected \\{\\s*Image\\(systemName: \"checkmark\"\\)", in: row) == 1)
+        #expect(CadenceSourceScan.matchCount("if isHighlighted", in: row) == 0)
+        // The highlight is still drawn, as the fill.
+        #expect(row.contains(".background(isHighlighted ? Theme.blue.opacity(0.08) : Color.clear)"))
+
+        let popover = try #require(CadenceSourceScan.declarationBody("struct ContainerPickerPopoverContent: View", in: source))
+        #expect(CadenceSourceScan.matchCount("ContainerPickerRow\\(", in: popover) == 3)
+        #expect(CadenceSourceScan.matchCount("isSelected: selection == ", in: popover) == 3)
+        #expect(popover.contains("highlightIdx = ContainerPickerFilterSupport.openingHighlightIndex("))
     }
 }
 #endif

@@ -139,6 +139,14 @@ enum ContainerPickerFilterSupport {
         guard !selections.isEmpty else { return nil }
         return selections[TaskPickerHighlightSupport.clampedIndex(index, count: selections.count)]
     }
+
+    /// The row the highlight opens on: the list the task is already in, so a Return straight after
+    /// opening re-files it where it is rather than into the Inbox ([[T-8101]]). The first row when
+    /// that list is not offered, which an empty query never leaves out (`groups` keeps the
+    /// assigned list whatever its status).
+    static func openingHighlightIndex(for selection: TaskContainerSelection, in selections: [TaskContainerSelection]) -> Int {
+        selections.firstIndex(of: selection) ?? 0
+    }
 }
 
 /// The searchable, context-grouped list picker. Every container control presents this same body;
@@ -151,9 +159,11 @@ struct ContainerPickerPopoverContent: View {
     let projects: [Project]
     /// Where the task being filed already is.
     ///
-    /// **Not for drawing a checkmark** — the checkmark tracks the keyboard highlight, deliberately,
-    /// and `ContainerPickerRow` still carries no `isSelected`. This is what lets the list narrow
-    /// without dropping the row that names where the task is *now*; see
+    /// **It draws the checkmark, and the highlight opens on it ([[T-8101]]).** The checkmark used
+    /// to track the keyboard highlight, which always opened on Inbox: a task in "Work" opened onto
+    /// "checkmark Inbox", and one Return moved it there. Now the mark names the list the task is in,
+    /// as the row menu's Move to List does, and the highlight is a fill only. It also lets the list
+    /// narrow without dropping the row that names where the task is *now*; see
     /// `ContainerPickerFilterSupport.groups`. Composers pass the container their draft is holding,
     /// which is the same question asked before the task exists.
     let selection: TaskContainerSelection
@@ -201,6 +211,7 @@ struct ContainerPickerPopoverContent: View {
                             name: "Inbox",
                             color: Theme.dim,
                             isHighlighted: highlighted == .inbox,
+                            isSelected: selection == .inbox,
                             action: { onSelect(.inbox) }
                         )
                     }
@@ -224,6 +235,7 @@ struct ContainerPickerPopoverContent: View {
                                     name: ContainerPickerFilterSupport.rowName(for: area),
                                     color: Color(hex: area.colorHex),
                                     isHighlighted: highlighted == .area(area.id),
+                                    isSelected: selection == .area(area.id),
                                     action: { onSelect(.area(area.id)) }
                                 )
                             }
@@ -234,6 +246,7 @@ struct ContainerPickerPopoverContent: View {
                                     name: ContainerPickerFilterSupport.rowName(for: project),
                                     color: Color(hex: project.colorHex),
                                     isHighlighted: highlighted == .project(project.id),
+                                    isSelected: selection == .project(project.id),
                                     action: { onSelect(.project(project.id)) }
                                 )
                             }
@@ -248,10 +261,18 @@ struct ContainerPickerPopoverContent: View {
         .background(Theme.surfaceElevated)
         .onAppear {
             // This is also the reset-on-close: popover content is rebuilt per presentation, so
-            // clearing here guarantees every open starts on the first row with an empty query
-            // regardless of what the previous session left behind.
+            // clearing here guarantees every open starts on the task's own list with an empty
+            // query regardless of what the previous session left behind ([[T-8101]]).
             searchQuery = ""
-            highlightIdx = 0
+            highlightIdx = ContainerPickerFilterSupport.openingHighlightIndex(
+                for: selection,
+                in: ContainerPickerFilterSupport.flatSelections(
+                    inGroups: ContainerPickerFilterSupport.groups(
+                        contexts: contexts, areas: areas, projects: projects, selection: selection, query: ""
+                    ),
+                    includingInbox: true
+                )
+            )
             DispatchQueue.main.async { isSearchFocused = true }
         }
         .onChange(of: searchQuery) { _, _ in
@@ -282,13 +303,14 @@ struct ContainerPickerPopoverContent: View {
 }
 
 /// A dedicated struct rather than a `@ViewBuilder` function so a highlight change updates the
-/// affected rows in place. The checkmark tracks `isHighlighted` — the keyboard cursor — which is
-/// why there is deliberately no `isSelected` here.
+/// affected rows in place. The checkmark marks `isSelected` — the list the task is in — and the
+/// keyboard cursor is the fill alone ([[T-8101]]).
 private struct ContainerPickerRow: View {
     let icon: String
     let name: String
     let color: Color
     let isHighlighted: Bool
+    let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
@@ -297,7 +319,7 @@ private struct ContainerPickerRow: View {
                 Image(systemName: icon).font(.system(size: 12)).foregroundStyle(color).frame(width: 16)
                 Text(name).font(.system(size: 13)).foregroundStyle(Theme.text).lineLimit(1)
                 Spacer()
-                if isHighlighted {
+                if isSelected {
                     Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.blue)
                 }
             }
