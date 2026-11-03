@@ -296,9 +296,10 @@ nonisolated extension CadenceFeatureDestination {
     /// Settings rather than beside the task surfaces, because from here it searches everything.
     ///
     /// The Progress section is Focus alone since T-2076 took Goals and Habits out of the
-    /// navigation. It keeps its eyebrow rather than folding Focus in with the lists: Focus is a
-    /// timer, not a place you organise things in, and a one-row section reads as a one-row section
-    /// rather than as a mislabelled row.
+    /// navigation. It stays its own group rather than folding Focus in with the lists -- Focus is
+    /// a timer, not a place you organise things in -- but since [[T-8645]] a group of one row
+    /// draws no eyebrow (`CadenceFeatureSection.eyebrow`), so Focus and Lists stand bare and only
+    /// Workspace is named.
     static let compactMoreSections: [CadenceFeatureSection] = [
         CadenceFeatureSection(kind: .progress, destinations: [.focus]),
         CadenceFeatureSection(kind: .organize, destinations: [.lists]),

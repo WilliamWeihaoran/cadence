@@ -22,6 +22,12 @@ nonisolated struct CadenceFeatureSection: Identifiable, Hashable {
 
     var id: CadenceFeatureSectionKind { kind }
     var title: String { kind.title }
+
+    /// The eyebrow drawn over this group, or `nil` when it heads a single row ([[T-8645]], owner
+    /// call of 2026-11-02). An eyebrow over one row says less than the row does -- "Progress" over
+    /// Focus alone was the case -- and the iPad and Mac sidebars already draw Focus under no
+    /// heading, so a lone row stands bare and only a group of two or more is named.
+    var eyebrow: String? { destinations.count > 1 ? title : nil }
 }
 
 nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, Hashable {

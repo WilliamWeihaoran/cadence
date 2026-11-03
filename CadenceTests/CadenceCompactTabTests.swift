@@ -363,6 +363,9 @@ struct CadenceMoreTabGroupingTests {
         #expect(sections.count == 3)
         #expect(sections.map(\.kind) == [.progress, .organize, .workspace])
         #expect(sections.map(\.title) == ["Progress", "Organize", "Workspace"])
+        // [[T-8645]]: a group heading one row draws no eyebrow, so Focus stands with no
+        // "Progress" over it and Lists with no "Organize"; only Workspace is named.
+        #expect(sections.map(\.eyebrow) == [nil, nil, "Workspace"])
         #expect(
             sections.map(\.destinations) == [
                 [.focus],
@@ -377,7 +380,7 @@ struct CadenceMoreTabGroupingTests {
     ///
     /// `Organize` holding a single row is deliberate and not a smell — Settings' `About` sits in a
     /// group of one for the same reason — so this asserts groups are non-*empty*, not that they
-    /// hold more than one.
+    /// hold more than one. A one-row group draws no eyebrow ([[T-8645]]); every larger one does.
     @Test func everyMoreRowIsFiledUnderExactlyOneNonEmptyGroup() {
         let sections = CadenceFeatureDestination.compactMoreSections
         let filed = sections.flatMap(\.destinations)
@@ -387,6 +390,11 @@ struct CadenceMoreTabGroupingTests {
 
         for section in sections {
             #expect(!section.destinations.isEmpty, "\(section.title) is an eyebrow over nothing")
+            #expect(
+                (section.eyebrow == nil) == (section.destinations.count == 1),
+                "\(section.title): an eyebrow over one row, or a group of several left unnamed"
+            )
+            if let eyebrow = section.eyebrow { #expect(eyebrow == section.title) }
         }
 
         // `CadenceFeatureSection` is `Identifiable` by its `kind`, so two sections of one kind
@@ -416,8 +424,8 @@ struct CadenceMoreTabGroupingTests {
 ///
 /// That gap is the whole of T-161: a correct grouped value read by a view that flattens it back
 /// into one run of rows leaves every assertion above green and ships the bug. So this asserts the
-/// three structural facts that *are* the grouping — an outer loop over the sections, one eyebrow
-/// per section, an inner loop over that section's own destinations — positively rather than banning
+/// three structural facts that *are* the grouping — an outer loop over the sections, the
+/// section's own optional eyebrow ([[T-8645]]), an inner loop over that section's own destinations — positively rather than banning
 /// a needle like `flatMap`, which correct code could legitimately grow.
 struct CadenceMoreTabGroupingSurfaceTests {
     @Test func theMoreTabDrawsOneEyebrowAndOneRowRunPerGroup() throws {
@@ -427,10 +435,16 @@ struct CadenceMoreTabGroupingSurfaceTests {
             source.contains("ForEach(CadenceFeatureDestination.compactMoreSections)"),
             "the More tab stopped iterating the shared grouping"
         )
+        // [[T-8645]]: the eyebrow is the section's optional one, so a one-row group draws none.
         #expect(
-            source.contains("SectionEyebrowLabel(text: section.title)"),
+            source.contains("if let eyebrow = section.eyebrow {"),
+            "the More tab draws an eyebrow over a group of one row again"
+        )
+        #expect(
+            source.contains("SectionEyebrowLabel(text: eyebrow)"),
             "the More tab's groups lost the eyebrow that names them"
         )
+        #expect(!source.contains("SectionEyebrowLabel(text: section.title)"))
         #expect(
             source.contains("ForEach(section.destinations)"),
             "the More tab draws its rows from something other than the group it is inside"
@@ -459,7 +473,7 @@ struct CadenceMoreTabGroupingSurfaceTests {
 /// a literal. A site typing `2` again — or `4` — reds the count below.
 struct CadenceCardListEyebrowInsetSurfaceTests {
     private static let sites: [(path: String, eyebrow: String)] = [
-        ("Cadence/iOS/iOSMoreTabView.swift", "SectionEyebrowLabel(text: section.title)"),
+        ("Cadence/iOS/iOSMoreTabView.swift", "SectionEyebrowLabel(text: eyebrow)"),
         ("Cadence/iOS/iOSSettingsComponents.swift", "SectionEyebrowLabel(text: group.title)"),
         ("Cadence/iOS/iOSListsRegularPane.swift", "SectionEyebrowLabel(text: title)"),
         // [[T-9792]]: the two Search eyebrows, the search result groups and the Calendar Events card.

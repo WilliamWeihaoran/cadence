@@ -6,7 +6,8 @@ import SwiftUI
 ///
 /// No page title. The bar item under your thumb already says More, and a heading repeating it is
 /// the case the subtitle rule was written for. The eyebrows are the headings this screen needs —
-/// they say what each group *is*, which the rows below them do not.
+/// they say what each group *is*, which the rows below them do not. A group of one row draws
+/// none ([[T-8645]]): there the row already says everything the eyebrow could.
 ///
 /// Rows carry a count only where a number means something (`CadenceCompactShellSupport.countLabel`).
 /// The one row whose count was a fraction rather than a tally was Habits — `2/5`, today's
@@ -28,8 +29,10 @@ struct iOSMoreTabView: View {
             VStack(alignment: .leading, spacing: 18) {
                 ForEach(CadenceFeatureDestination.compactMoreSections) { section in
                     VStack(alignment: .leading, spacing: 8) {
-                        SectionEyebrowLabel(text: section.title)
-                            .padding(.horizontal, SectionEyebrowLabel.cardListInset)
+                        if let eyebrow = section.eyebrow {
+                            SectionEyebrowLabel(text: eyebrow)
+                                .padding(.horizontal, SectionEyebrowLabel.cardListInset)
+                        }
 
                         VStack(spacing: 8) {
                             ForEach(section.destinations) { destination in
