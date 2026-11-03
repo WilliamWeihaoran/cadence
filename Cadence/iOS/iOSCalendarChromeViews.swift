@@ -259,7 +259,7 @@ struct iOSCalendarToolbar: View {
             ForEach(CadenceCalendarViewMode.pickerCases, id: \.self) { mode in
                 iOSSegmentedPill(
                     title: mode.rawValue,
-                    systemImage: mode == .month ? "calendar" : "rectangle.split.3x1",
+                    systemImage: mode.systemImage,
                     isSelected: presentation == .timeline && viewMode == mode
                 ) {
                     presentation = .timeline
@@ -269,7 +269,7 @@ struct iOSCalendarToolbar: View {
 
             iOSSegmentedPill(
                 title: "Board",
-                systemImage: "rectangle.grid.2x2",
+                systemImage: CadenceCalendarPresentation.boardSystemImage,
                 isSelected: presentation == .board
             ) {
                 presentation = .board

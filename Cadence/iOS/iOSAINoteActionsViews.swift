@@ -383,6 +383,7 @@ private struct iOSAITaskDraftCard: View {
     @Binding var draft: AITaskDraft
     @Binding var isApproved: Bool
     let validation: AITaskDraftValidation
+    @FocusState private var isTitleFocused: Bool
 
     /// `nil` when the model's answer is not one of the four priorities — so no segment lights up,
     /// rather than "None" lighting up and disagreeing with the error underneath. Shared with the
@@ -468,10 +469,18 @@ private struct iOSAITaskDraftCard: View {
             .accessibilityValue(CadenceAIDraftReview.approvalAccessibilityValue(isApproved: isApproved))
             .accessibilityHint(CadenceAIDraftReview.approvalAccessibilityHint(isApproved: isApproved))
 
+            // [[T-10220]]: Return ends the title instead of typing a line break into it. A
+            // vertical-axis field with no `onSubmit` inserts "\n" on Return, and the break went
+            // into the task as typed -- `TaskCreationDraft.trimmedTitle` trims only the ends. The
+            // Mac card's title is single-line and cannot hold one; the axis stays so a long title
+            // still wraps, the rule `CadenceSchedulePanel.titleField` already follows.
             TextField("Task title", text: $draft.title, axis: .vertical)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.text)
                 .textInputAutocapitalization(.sentences)
+                .focused($isTitleFocused)
+                .submitLabel(.done)
+                .onSubmit { isTitleFocused = false }
         }
     }
 

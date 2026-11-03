@@ -273,7 +273,7 @@ struct iOSNavigationSettingsSection: View {
                             iOSChoiceRow(
                                 value: mode,
                                 title: mode.rawValue,
-                                systemImage: "calendar",
+                                systemImage: mode.systemImage,
                                 color: Theme.purple
                             )
                         },
@@ -301,7 +301,7 @@ struct iOSNavigationSettingsSection: View {
                                 value: CadenceCalendarPresentation.board,
                                 title: CadenceCalendarPresentation.board.rawValue,
                                 subtitle: "Columns per day, with overdue and unscheduled rails.",
-                                systemImage: "square.grid.2x2",
+                                systemImage: CadenceCalendarPresentation.boardSystemImage,
                                 color: Theme.blue
                             )
                         ],
