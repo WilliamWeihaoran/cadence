@@ -4409,3 +4409,45 @@ does (`Cadence/Shared/Components/CadenceSchedulePanel.swift:754-760`). **Do not 
 suite. Read the real `XCODEBUILD_EXIT=` line from `xcb.sh`'s result block, never `$?` after a pipe.
 Warning baseline is **zero**. Never a bare `xcodebuild`. Items 1, 3 and 4 touch iOS, so the iOS leg
 is mandatory for them — a macOS build compiles no `#if os(iOS)` code.
+
+## R68 — The Mac's repeat split, and one question to answer before anyone builds on it
+
+**The lease rule first, because a retroactive grant costs far more than a refusal.** Work in your own
+worktree, on a branch named **`codex/r68-repeat`** based on `origin/main` — **`git fetch origin` and
+rebase before you start**; the grants below landed after any fetch you already have. Re-read
+`docs/CODEX_WORKTREE.md` and R66 before your first branch. **Commit with plain `git commit`; never run
+`scripts/agent-commit.sh`.** **Never touch `docs/TODO.md` or `docs/TODO_DONE.md`** — file your ticket
+entries into `docs/CODEX_LEDGER_INBOX.md`, newest last, from your reserved range **T-4100..T-4129**.
+**Stay inside the fenced lease**; stop at an unfenced path and ask, as you did twice on R67 — both stops
+were right, and the second found a defect nobody had counted. Run
+`./scripts/codex-land.sh review codex/r68-repeat` yourself before handing over.
+
+**Item 1 — implement [[T-8701]]. The owner decided this on 2026-10-31; do not re-litigate it.**
+On the Mac a repeating task's Repeat / Ends look and behave differently when the task is CREATED versus
+when it is EDITED — the same split [[T-8593]] removed on iOS, with a commit-model difference on top.
+Creating (`QuickCreateChoicePopover`, `offersTaskRepeat: true`) draws `CadenceSchedulePanel.repeatRow` /
+`seriesEndRows`, drafted to Save. Editing (`TaskInspectorScheduleEditor` in
+`TaskInspectorContentSupportViews.swift`, `offersTaskRepeat: false`) draws
+`TaskInspectorRecurrenceControl` in `TaskInspectorWorkflowSupportViews.swift`, reached from
+`SchedulePanelComponents`. **The owner chose: align the EDIT surface to the CREATE panel**, closing the
+split exactly as T-8593 did on iOS. The four files above are granted to you.
+
+Mind the commit-model difference rather than flattening it: creation drafts and commits on Save, while
+the inspector writes as you go. Aligning the *look and the vocabulary* must not silently turn an
+edit-in-place surface into one that only writes on Save, or the reverse — say in your inbox entry which
+model each ends up with and why.
+
+**Item 2 — answer a question, write no code for it.** [[T-8736]] says Settings → Account (Sign in with
+Apple, Sign Out, Delete Account, diagnostics) is Mac-only, and `CadenceMobileSettingsLayout.desktopOnly`
+in `Cadence/Shared/CadenceSettingsPresentationSupport.swift` lists `.account` with a comment calling it
+"entitlement-gated". The owner has decided iOS should gain the full Account surface, partly because App
+Store rule 5.1.1(v) requires in-app account deletion wherever an account can be created. **Before anyone
+builds it: is that comment still true?** Read `Cadence/macOS/Services/AppleAccountManager.swift`, the
+entitlements files and the project settings, and report whether Sign in with Apple is genuinely
+unavailable to the iOS target or whether the comment is stale. That answer decides whether T-8736 is a
+day or a week, and it is pure reading — **do not change the lease, the entitlements, or any code for it.**
+
+House rules: `-only-testing:` takes `CadenceTests/<SuiteName>` — a **filename** runs zero tests and exits
+0, and so does a nonexistent suite. Read the real `XCODEBUILD_EXIT=` line from `xcb.sh`'s result block,
+never `$?` after a pipe. Warning baseline is **zero** on both legs. Never a bare `xcodebuild`. Item 1
+needs the macOS leg; neither item needs a simulator.
