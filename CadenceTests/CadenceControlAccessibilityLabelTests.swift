@@ -419,14 +419,22 @@ struct CadenceControlAccessibilityLabelTests {
         // rather than counted: a count stays green when two buttons share one name by accident.
         // The header's add/cancel button takes both from `SavedLinkAddForm` (T-7256), whose
         // values `CadenceSavedLinkAddFormTests` pins; this scan only proves the button reads them.
-        for (symbol, label) in [
-            ("addForm.headerSymbol", "addForm.headerLabel"),
+        // [[T-10710]]: since T-7257 the header is a labelled `CadenceActionButton` ("Add Link"), so
+        // its symbol is passed as `systemImage:` rather than drawn as a bare `Image`.
+        for (symbol, drawn, label) in [
+            ("addForm.headerSymbol", "systemImage: addForm.headerSymbol", "addForm.headerLabel"),
             // [[T-10165]]: the row's hover glyphs are the menu's, read from the shared set.
-            ("CadenceSavedLinkRowMenu.openSystemImage", #""Open link""#),
-            ("CadenceSavedLinkRowMenu.deleteSystemImage", #""Delete link""#),
+            (
+                "CadenceSavedLinkRowMenu.openSystemImage",
+                "Image(systemName: CadenceSavedLinkRowMenu.openSystemImage)", #""Open link""#
+            ),
+            (
+                "CadenceSavedLinkRowMenu.deleteSystemImage",
+                "Image(systemName: CadenceSavedLinkRowMenu.deleteSystemImage)", #""Delete link""#
+            ),
         ] {
             #expect(
-                source.contains("Image(systemName: \(symbol))"),
+                source.contains(drawn),
                 "LinksView no longer draws the \(symbol) button"
             )
             #expect(
@@ -436,11 +444,11 @@ struct CadenceControlAccessibilityLabelTests {
             )
         }
 
-        // Every icon-only *button* is named. The fourth `Image(systemName:)` in the file is the
+        // Every icon-only *button* is named. The third `Image(systemName:)` in the file is the
         // row's leading "link" glyph, which is decorative — it sits beside the title and URL it
         // would otherwise repeat — so it is deliberately not in the list above.
         #expect(
-            CadenceSourceScan.matchCount(#"Image\(systemName:"#, in: source) == 4,
+            CadenceSourceScan.matchCount(#"Image\(systemName:"#, in: source) == 3,
             "LinksView's icon inventory changed; recheck which of them are buttons"
         )
         #expect(
