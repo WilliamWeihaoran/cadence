@@ -663,6 +663,22 @@ extension CadenceTaskMutationSupport {
             : "This will permanently delete \"\(title)\"."
     }
 
+    /// **[[T-10038]]: one subtask-delete confirmation, in the Mac's words, on both platforms.**
+    ///
+    /// The Mac inspector asked "Delete Subtask?" before its trash glyph committed, while the iOS
+    /// sheet's glyph deleted at once with no undo — one mis-tap on a 44pt row lost typed work. The
+    /// owner call was to ask on both, so the Mac overlay (`TaskDetailPopover.subtasksSection`) and
+    /// the iOS alert (`iOSTaskDetailSheet`) read this pair, the same shape as
+    /// `deleteConfirmationTitle(for:)` for the task itself.
+    static let subtaskDeleteConfirmationTitle = "Delete Subtask?"
+
+    /// The sentence under `subtaskDeleteConfirmationTitle`, naming the subtask the way its row's
+    /// buttons do (`TaskTitleSupport.defaultCompactDisplayTitle` for a blank title).
+    static func subtaskDeleteConfirmationMessage(for subtask: Subtask) -> String {
+        let title = TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle)
+        return "This will permanently delete \"\(title)\"."
+    }
+
     /// The alert title for a refused **settle** — ticking or un-ticking a task's circle (T-628).
     ///
     /// It carries `CadencePendingChangePersistence.editFailureNotice`, and the "Nothing was

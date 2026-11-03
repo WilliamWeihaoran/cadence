@@ -671,6 +671,42 @@ struct CadenceSubtaskInverseParityTests {
             #expect(inverseWrites == 0, "\(site.path) still writes the subtask inverse by hand \(inverseWrites) times")
         }
     }
+
+    // MARK: - T-10038: one subtask-delete confirmation on both platforms
+
+    /// The shared pair, in the Mac's long-standing words, naming the subtask the way its row does.
+    @Test func theSubtaskDeleteConfirmationNamesTheSubtaskInTheMacsWords() {
+        #expect(CadenceTaskMutationSupport.subtaskDeleteConfirmationTitle == "Delete Subtask?")
+        #expect(
+            CadenceTaskMutationSupport.subtaskDeleteConfirmationMessage(for: Subtask(title: "Call the bank"))
+                == "This will permanently delete \"Call the bank\"."
+        )
+        let blank = CadenceTaskMutationSupport.subtaskDeleteConfirmationMessage(for: Subtask(title: "  "))
+        #expect(blank == "This will permanently delete \"\(TaskTitleSupport.defaultCompactDisplayTitle)\".")
+    }
+
+    /// **[[T-10038]].** The iOS trash glyph used to delete on one tap while the Mac asked first.
+    /// Both now raise the shared pair, the iOS sheet's glyph only fills the pending subtask, and
+    /// the commit runs from the alert's Delete. Source-scanned: `Cadence/iOS/` is not compiled
+    /// into this macOS test target.
+    @Test func bothSubtaskTrashGlyphsAskBeforeDeletingFromOneSharedSentence() throws {
+        let mac = strippingSwiftComments(try subtaskSourceFile("Cadence/macOS/Views/SchedulePanelComponents.swift"))
+        let sheet = strippingSwiftComments(try subtaskSourceFile("Cadence/iOS/iOSTaskDetailSheet.swift"))
+        let components = strippingSwiftComments(try subtaskSourceFile("Cadence/iOS/iOSTaskDetailComponents.swift"))
+        #expect(mac.count > 500 && sheet.count > 500 && components.count > 500)
+
+        for (path, code) in [("SchedulePanelComponents", mac), ("iOSTaskDetailComponents", components)] {
+            #expect(occurrences(of: "CadenceTaskMutationSupport.subtaskDeleteConfirmationTitle", in: code) == 1, "\(path)")
+            #expect(occurrences(of: "CadenceTaskMutationSupport.subtaskDeleteConfirmationMessage(for:", in: code) == 1, "\(path)")
+            #expect(!code.contains("\"Delete Subtask?\""), "\(path) spells the title itself again")
+            #expect(!code.contains("This will permanently delete"), "\(path) spells the sentence itself again")
+        }
+
+        #expect(sheet.contains("onDelete: { subtaskToDelete = $0 }"), "the iOS trash glyph no longer only asks")
+        #expect(!sheet.contains("onDelete: deleteSubtask"), "the iOS trash glyph deletes at once again")
+        #expect(occurrences(of: ".iOSSubtaskDeleteConfirmation(subtask: $subtaskToDelete) { deleteSubtask($0) }", in: sheet) == 1)
+        #expect(occurrences(of: "func iOSSubtaskDeleteConfirmation(", in: components) == 1)
+    }
 }
 
 // MARK: - Source access

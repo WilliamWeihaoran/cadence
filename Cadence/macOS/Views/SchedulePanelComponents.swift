@@ -99,8 +99,8 @@ struct TaskDetailPopover: View {
                 onAddSubtask: addSubtask,
                 onDeleteSubtask: { subtask in
                     deleteConfirmationManager.present(
-                        title: "Delete Subtask?",
-                        message: "This will permanently delete \"\(TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))\"."
+                        title: CadenceTaskMutationSupport.subtaskDeleteConfirmationTitle,
+                        message: CadenceTaskMutationSupport.subtaskDeleteConfirmationMessage(for: subtask)
                     ) { deleteSubtask(subtask) }
                 }
             )

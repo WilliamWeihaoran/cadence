@@ -640,4 +640,37 @@ struct iOSSubtaskRow: View {
     }
 }
 
+/// **[[T-10038]]: the subtask trash glyph asks before it deletes, in the Mac's words.**
+///
+/// The glyph used to commit on one tap with no undo, while the Mac inspector raised "Delete
+/// Subtask?" over the same row. Both now read `CadenceTaskMutationSupport`'s pair, so the
+/// sentence lives once. Shaped like `iOSSavedLinkDeletionModifier`: the pending subtask is the
+/// presentation, and clearing it dismisses.
+private struct iOSSubtaskDeleteConfirmationModifier: ViewModifier {
+    @Binding var subtask: Subtask?
+    let perform: (Subtask) -> Void
+
+    private var isPresented: Binding<Bool> {
+        Binding(get: { subtask != nil }, set: { if !$0 { subtask = nil } })
+    }
+
+    func body(content: Content) -> some View {
+        content.alert(CadenceTaskMutationSupport.subtaskDeleteConfirmationTitle, isPresented: isPresented, presenting: subtask) { selected in
+            Button("Delete", role: .destructive) {
+                perform(selected)
+                subtask = nil
+            }
+            Button("Cancel", role: .cancel) { subtask = nil }
+        } message: { selected in
+            Text(CadenceTaskMutationSupport.subtaskDeleteConfirmationMessage(for: selected))
+        }
+    }
+}
+
+extension View {
+    func iOSSubtaskDeleteConfirmation(subtask: Binding<Subtask?>, perform: @escaping (Subtask) -> Void) -> some View {
+        modifier(iOSSubtaskDeleteConfirmationModifier(subtask: subtask, perform: perform))
+    }
+}
+
 #endif

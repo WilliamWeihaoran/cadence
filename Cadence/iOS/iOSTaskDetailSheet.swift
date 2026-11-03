@@ -30,6 +30,8 @@ struct iOSTaskDetailSheet: View {
     @State private var newSubtaskTitle = ""
     /// Set when a subtask insert or delete was refused by the store. See `addSubtask()`.
     @State private var subtaskFailureNotice: String?
+    /// The subtask whose trash glyph was tapped, awaiting "Delete Subtask?" ([[T-10038]]).
+    @State private var subtaskToDelete: Subtask?
     @State private var newTagName = ""
     @State private var showDeleteConfirmation = false
     /// Set when the delete's commit was refused and rolled back. Same flag, same sentence and the
@@ -153,6 +155,7 @@ struct iOSTaskDetailSheet: View {
             } message: {
                 Text(CadenceRecurrenceScopeCopy.taskScopeMessage)
             }
+            .iOSSubtaskDeleteConfirmation(subtask: $subtaskToDelete) { deleteSubtask($0) }
             .iOSMarkdownReferenceSheets(
                 selectedNote: $selectedReferenceNote,
                 selectedTask: $selectedReferenceTask
@@ -328,7 +331,8 @@ struct iOSTaskDetailSheet: View {
             failureNotice: subtaskFailureNotice,
             onAdd: { addSubtask() },
             onToggle: toggleSubtask,
-            onDelete: deleteSubtask
+            // [[T-10038]]: the trash glyph asks first, as the Mac inspector does.
+            onDelete: { subtaskToDelete = $0 }
         )
     }
 
