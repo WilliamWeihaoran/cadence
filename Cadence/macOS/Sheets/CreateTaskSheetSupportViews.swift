@@ -242,9 +242,11 @@ struct TaskDateChip: View {
                         ? activeColor.opacity(isDoDate && cal.isDateInToday(date) ? 0.0 : 0.1)
                         : Color.clear
                 )
+                // [[T-9963]]: the outline follows the contents' tint, so a today Do Date is amber
+                // all through rather than amber inside a blue hairline.
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.radiusControlCompact)
-                        .strokeBorder(isOn ? activeColor.opacity(0.25) : Theme.borderSubtle, lineWidth: 1)
+                        .strokeBorder(isOn ? effectiveIconColor.opacity(0.25) : Theme.borderSubtle, lineWidth: 1)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
             }

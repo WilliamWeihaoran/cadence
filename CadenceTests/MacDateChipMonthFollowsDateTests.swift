@@ -53,6 +53,18 @@ struct MacDateChipMonthFollowsDateTests {
     /// the field on, Clear turns it off, an unset field shows no pick and no Clear), and tints the
     /// picked pill with its own accent, which the shared pill now reads instead of a literal blue.
     /// Not parameterised, so `mutate.sh` can baseline it (T-3212).
+    /// [[T-9963]], owner-decided 2026-11-02, option (a): a Do Date chip set to today turns its
+    /// glyph and label amber, so its hairline reads the same `effectiveIconColor` rather than
+    /// keeping the caller's blue around amber contents.
+    @Test func theSetChipsOutlineTakesTheTintOfItsContents() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Sheets/CreateTaskSheetSupportViews.swift")
+        )
+        let chip = try #require(CadenceSourceScan.declarationBody("struct TaskDateChip: View", in: source))
+        #expect(chip.contains(".strokeBorder(isOn ? effectiveIconColor.opacity(0.25) : Theme.borderSubtle, lineWidth: 1)"))
+        #expect(!chip.contains("activeColor.opacity(0.25)"), "the outline must not keep the caller's tint")
+    }
+
     @Test func bothDateControlsHostTheSharedQuickDatePopoverRatherThanACopy() throws {
         let sites = [
             ("Cadence/macOS/Sheets/CreateTaskSheetSupportViews.swift", "struct TaskDateChip: View"),
