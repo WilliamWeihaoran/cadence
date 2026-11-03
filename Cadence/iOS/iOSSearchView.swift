@@ -493,8 +493,9 @@ struct iOSSearchView: View {
         // The title, glyph and button are the Calendar page's and Settings' words, by way of the
         // one notice type (T-5954), rather than a third spelling: this card said "Calendar access
         // is off" / "Allow Calendar Access" where the Calendar tab's bar above the same missing
-        // events said "Connect Apple Calendar" / "Allow Access". The sentence stays Search's own,
-        // because it says what the missing access costs *here*.
+        // events said "Connect Apple Calendar" / "Allow Access". The offer's sentence stays
+        // Search's own, because it says what the missing access costs *here*; the denied one is
+        // the notice's ([[T-10050]]), because it says where the button beside it lands.
         if let notice = CadenceCalendarAccessNotice.resolve(
             isAuthorized: calendarManager.isAuthorized,
             isDenied: calendarManager.isDenied
@@ -519,7 +520,7 @@ struct iOSSearchView: View {
                                 .cadenceFont(.bodyText, weight: .semibold)
                                 .foregroundStyle(Theme.text)
 
-                            Text(notice == .denied ? "Enable Calendar access in Settings to include Apple Calendar events in search." : "Allow Calendar access to search and edit Apple Calendar events from Cadence.")
+                            Text(notice == .denied ? notice.detail(on: .mobile) : "Allow Calendar access to search and edit Apple Calendar events from Cadence.")
                                 .cadenceFont(.fieldLabel, weight: .regular)
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)

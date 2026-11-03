@@ -344,8 +344,10 @@ struct iOSCalendarAccessNoticeBar: View {
 
             if !stacks { Spacer(minLength: 0) }
 
+            // [[T-9955]]: glyphed like every other iOS access button, Open Settings on amber.
             iOSActionButton(
                 title: notice.actionTitle(on: .mobile),
+                systemImage: notice.mobileButtonSystemImage,
                 role: .primary,
                 size: .compact,
                 tint: tint

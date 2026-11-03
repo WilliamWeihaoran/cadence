@@ -132,8 +132,9 @@ enum RemindersConnectionState: Equatable {
     }
 
     /// The only genuinely platform-split strings in this type, and the split is smaller than it
-    /// was. The privacy pane is still reached through "System Settings" on macOS and "Settings" on
-    /// iOS, which is a real difference in what the sentence has to name.
+    /// was. `.denied` names where each platform's button lands -- the privacy pane in System
+    /// Settings on macOS, Cadence's own page in the Settings app on iOS -- which is a real
+    /// difference in what the sentence has to name (`deniedMessage(on:)`, [[T-10050]]).
     ///
     /// The `.connected` pair is **not** that any more. It used to be split because macOS read
     /// reminders in the Inbox and iOS did not, so telling an iPhone user their reminders would
@@ -150,11 +151,7 @@ enum RemindersConnectionState: Equatable {
             return "Your reminder lists and how much is still open appear below."
             #endif
         case .denied:
-            #if os(macOS)
-            return "Allow Cadence from System Settings, Privacy & Security, Reminders."
-            #else
-            return "Allow Cadence from Settings, Privacy & Security, Reminders."
-            #endif
+            return Self.deniedMessage(on: .current)
         case .restricted:
             // No `#if` split: unlike `.denied`, this never names a settings pane to visit,
             // because there isn't one that will help — a restriction is imposed by whoever
@@ -168,6 +165,20 @@ enum RemindersConnectionState: Equatable {
             // `NSRemindersFullAccessUsageDescription` says, so the offer says so on both
             // ([[T-8201]]: there is no hardware reason for the iPhone to promise less).
             return "Allow Cadence to read your active reminders and mark them complete."
+        }
+    }
+
+    /// The denied sentence on each platform, split where the button beside it splits
+    /// ([[T-10050]]). The Mac's button opens the Reminders privacy pane, so the sentence names that
+    /// path; iOS's opens Cadence's own page in the Settings app, so it says what Calendar's does,
+    /// through `CadenceAppSettingsPageCopy`. Named by platform rather than `#if`-ed so the macOS
+    /// test host can read the iOS sentence.
+    static func deniedMessage(on platform: CadenceCalendarAccessNotice.Platform) -> String {
+        switch platform {
+        case .mac:
+            return "Allow Cadence from System Settings, Privacy & Security, Reminders."
+        case .mobile:
+            return CadenceAppSettingsPageCopy.deniedDetail(granting: CadenceAppSettingsPageCopy.remindersToggle)
         }
     }
 

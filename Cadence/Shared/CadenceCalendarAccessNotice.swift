@@ -63,7 +63,8 @@ nonisolated enum CadenceCalendarAccessNotice: Equatable {
     }
 
     /// The denied sentence names where the reader has to go, which differs per platform — the
-    /// same split each Settings card makes, in the same words.
+    /// same split each Settings card makes, in the same words. On iOS it is Reminders' shape too
+    /// ([[T-10050]]): `CadenceAppSettingsPageCopy`, which names where the button beside it lands.
     func detail(on platform: Platform) -> String {
         switch (self, platform) {
         case (.connectOffer, _):
@@ -71,7 +72,7 @@ nonisolated enum CadenceCalendarAccessNotice: Equatable {
         case (.denied, .mac):
             return "Allow Cadence from System Settings, Privacy & Security, Calendars."
         case (.denied, .mobile):
-            return "Allow Cadence from the iOS Settings app to show Apple Calendar events."
+            return CadenceAppSettingsPageCopy.deniedDetail(granting: CadenceAppSettingsPageCopy.calendarsToggle)
         }
     }
 
@@ -138,8 +139,33 @@ nonisolated enum CadenceCalendarAccessNotice: Equatable {
 /// put `checkmark.circle.fill` on Allow Access, Search put `checkmark.shield.fill` and the capture
 /// card `calendar.badge.plus`; Calendar's three Open Settings buttons drew `gearshape.fill` (the
 /// app's own Settings glyph, `CadenceFeatureDestination.settings`) and Reminders' two drew `gear`.
-/// The majority spelling of each, stated once. The Mac's access buttons carry no glyph.
+/// The majority spelling of each, stated once.
+///
+/// **[[T-9955]].** `openSettings` is every platform's now, not iOS's alone: each "Open Settings"
+/// button for a refused permission -- the Mac's Settings > Calendar and Settings > Reminders, its
+/// Calendar page strip and Inbox reminders row, and iOS's Calendar page bar beside the cards
+/// above -- draws this glyph on `Theme.amber`, the attention colour a refused permission is.
+/// The Mac's Settings cards drew it dim and its strip and Inbox row accent blue, with no glyph.
 nonisolated enum CadenceAccessButtonGlyph {
     static let requestAccess = "checkmark.circle.fill"
     static let openSettings = "gearshape.fill"
+}
+
+/// **[[T-10050]]: one iOS sentence shape for a refused Calendar and a refused Reminders.**
+///
+/// On iOS each card's "Open Settings" opens `UIApplication.openSettingsURLString`, which is
+/// Cadence's own page in the Settings app, holding both toggles. Calendar said "Allow Cadence
+/// from the iOS Settings app to show Apple Calendar events." and Reminders "Allow Cadence from
+/// Settings, Privacy & Security, Reminders." -- a second, also-valid route that disagreed with
+/// the button beside it -- and iOS Search said a third thing. Every iOS denied sentence now names
+/// where the button lands, through this one shape. The Mac keeps its privacy-pane sentences: its
+/// buttons open those panes.
+nonisolated enum CadenceAppSettingsPageCopy {
+    /// The toggle names on Cadence's Settings page.
+    static let calendarsToggle = "Calendars"
+    static let remindersToggle = "Reminders"
+
+    static func deniedDetail(granting toggle: String) -> String {
+        "Allow \(toggle) access on Cadence's page in the Settings app."
+    }
 }

@@ -52,7 +52,8 @@ struct CadenceCalendarAccessNoticeTests {
         let mac = CadenceCalendarAccessNotice.denied.detail(on: .mac)
         let mobile = CadenceCalendarAccessNotice.denied.detail(on: .mobile)
         #expect(mac.contains("System Settings"))
-        #expect(mobile.contains("iOS Settings"))
+        // [[T-10050]]: iOS names where its Open Settings button lands, Cadence's own page.
+        #expect(mobile == "Allow Calendars access on Cadence's page in the Settings app.")
         #expect(mac != mobile)
         #expect(CadenceCalendarAccessNotice.connectOffer.detail(on: .mac) == CadenceCalendarSettingsCopy.accessRequiredDetail)
         #expect(CadenceCalendarAccessNotice.connectOffer.detail(on: .mobile) == CadenceCalendarSettingsCopy.accessRequiredDetail)
@@ -191,6 +192,90 @@ struct CadenceCalendarAccessNoticeTests {
             for retired in ["\"gear\"", "\"gearshape.fill\"", "\"checkmark.shield.fill\""] {
                 #expect(!source.contains(retired), "\(file) spells an access glyph of its own again: \(retired)")
             }
+        }
+    }
+
+    // MARK: - [[T-10050]] One iOS denied-sentence shape, naming where the button lands
+
+    /// Calendar and Reminders say the same shape on iOS -- Cadence's own page in the Settings app,
+    /// where `openSettingsURLString` lands -- and the Mac keeps naming each privacy pane.
+    @Test func bothIOSDeniedSentencesNameCadencesOwnSettingsPage() {
+        let calendar = CadenceCalendarAccessNotice.denied.detail(on: .mobile)
+        let reminders = RemindersConnectionState.deniedMessage(on: .mobile)
+        #expect(calendar == CadenceAppSettingsPageCopy.deniedDetail(granting: CadenceAppSettingsPageCopy.calendarsToggle))
+        #expect(reminders == CadenceAppSettingsPageCopy.deniedDetail(granting: CadenceAppSettingsPageCopy.remindersToggle))
+        #expect(reminders == "Allow Reminders access on Cadence's page in the Settings app.")
+        // The one shape: the two differ only in the toggle they name.
+        #expect(calendar.replacingOccurrences(of: "Calendars", with: "Reminders") == reminders)
+        for sentence in [calendar, reminders] {
+            #expect(!sentence.contains("Privacy & Security"), "an iOS sentence names the privacy path again")
+        }
+        // The Mac's buttons open the privacy panes, so its sentences still name them.
+        #expect(RemindersConnectionState.deniedMessage(on: .mac) == "Allow Cadence from System Settings, Privacy & Security, Reminders.")
+        #expect(CadenceCalendarAccessNotice.denied.detail(on: .mac) == "Allow Cadence from System Settings, Privacy & Security, Calendars.")
+        // This build's accessMessage is its own platform's.
+        #expect(RemindersConnectionState.denied.accessMessage == RemindersConnectionState.deniedMessage(on: .current))
+    }
+
+    /// iOS Search's denied card reads the notice's sentence instead of its own third wording, and
+    /// no iOS surface types an older iOS sentence.
+    @Test func iOSSearchsDeniedCardReadsTheNoticesSentence() throws {
+        let search = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchView.swift"))
+        #expect(search.contains("Text(notice == .denied ? notice.detail(on: .mobile) : "))
+        #expect(!search.contains("Enable Calendar access in Settings"))
+        let reminders = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceRemindersPresentationSupport.swift")
+        )
+        #expect(reminders.contains("case .denied:\n            return Self.deniedMessage(on: .current)"))
+        for path in [
+            "Cadence/iOS/iOSSearchView.swift",
+            "Cadence/iOS/iOSCalendarSettingsSection.swift",
+            "Cadence/Shared/CadenceCalendarAccessNotice.swift",
+            "Cadence/Shared/CadenceRemindersPresentationSupport.swift"
+        ] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(!code.contains("from the iOS Settings app"), "\(path) types the old iOS Calendar sentence")
+            #expect(!code.contains("\"Allow Cadence from Settings, Privacy & Security"), "\(path) types the old iOS Reminders sentence")
+        }
+    }
+
+    // MARK: - [[T-9955]] Every Open Settings button is amber with the shared glyph
+
+    /// The Mac's four Open Settings buttons and the iOS Calendar page bar draw
+    /// `CadenceAccessButtonGlyph.openSettings` on `Theme.amber`, as the iOS cards already did.
+    /// Read as source: the iOS file never compiles in this target, and the Mac views are private.
+    @Test func everyOpenSettingsButtonIsAmberWithTheSharedGlyph() throws {
+        let sites: [(file: String, scope: String, reads: [String])] = [
+            ("Cadence/macOS/Views/SettingsListManagementSections.swift", "private var calendarAccessCard: some View", [
+                "SettingsActionButton(tone: .filled(Theme.amber), action: openCalendarPrivacySettings)",
+                "CadenceCalendarAccessNotice.denied.actionTitle(on: .mac),\n                            systemImage: CadenceAccessButtonGlyph.openSettings"
+            ]),
+            ("Cadence/macOS/Views/SettingsRemindersSection.swift", "private var accessCard: some View", [
+                "tone: action == .requestAccess ? .filled(Theme.blue) : .filled(Theme.amber)",
+                "Label(action.title, systemImage: CadenceAccessButtonGlyph.openSettings)"
+            ]),
+            ("Cadence/macOS/Views/CalendarPageSupportViews.swift", "struct CalendarPageAccessNoticeStrip: View", [
+                "systemImage: notice.action == .openSystemSettings ? CadenceAccessButtonGlyph.openSettings : nil",
+                "tint: notice.action == .openSystemSettings ? Theme.amber : nil"
+            ]),
+            ("Cadence/macOS/Views/InboxSupportViews.swift", "private struct AppleRemindersAccessRow: View", [
+                "systemImage: action == .openSystemSettings ? CadenceAccessButtonGlyph.openSettings : nil",
+                "tint: action == .openSystemSettings ? Theme.amber : nil"
+            ]),
+            ("Cadence/iOS/iOSCalendarChromeViews.swift", "struct iOSCalendarAccessNoticeBar: View", [
+                "let tint = notice == .denied ? Theme.amber : Theme.blue",
+                "systemImage: notice.mobileButtonSystemImage",
+                "tint: tint"
+            ])
+        ]
+        for site in sites {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(site.file))
+            let body = try #require(CadenceSourceScan.declarationBody(site.scope, in: code), "\(site.file): \(site.scope) is gone")
+            for needle in site.reads {
+                #expect(body.contains(needle), "\(site.file) no longer reads `\(needle)`")
+            }
+            #expect(!body.contains(".filled(Theme.dim)"), "\(site.file) draws Open Settings dim again")
+            #expect(!body.contains("\"gearshape.fill\""), "\(site.file) spells the glyph of its own")
         }
     }
 }

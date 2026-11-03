@@ -213,7 +213,7 @@ struct iOSCalendarSettingsSection: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     iOSActionButton(
-                        title: calendarManager.isDenied ? "Open Settings" : "Allow Access",
+                        title: (calendarManager.isDenied ? CadenceCalendarAccessNotice.denied : .connectOffer).actionTitle(on: .mobile),
                         systemImage: calendarManager.isDenied ? CadenceAccessButtonGlyph.openSettings : CadenceAccessButtonGlyph.requestAccess,
                         role: .primary,
                         size: .compact,

@@ -10,8 +10,9 @@ import Foundation
 /// recorded on `calendarAccess…Title` below rather than papered over.
 ///
 /// Only wording **both** surfaces show is here. Copy that is true on one platform and false on the
-/// other — "Allow Cadence from the iOS Settings app…" against "…from System Settings, Privacy &
-/// Security, Calendars." — stays at its own call site, because a constant would invite exactly the
+/// other — the iOS denied sentence naming Cadence's page in the Settings app against "…from System
+/// Settings, Privacy & Security, Calendars." — stays split by platform
+/// (`CadenceCalendarAccessNotice.detail(on:)`), because one constant would invite exactly the
 /// substitution that makes it wrong.
 ///
 /// `nonisolated` for the reason `CadenceEmptyStateCopy` carries the same keyword: the project sets

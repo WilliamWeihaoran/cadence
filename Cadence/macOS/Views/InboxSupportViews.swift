@@ -276,10 +276,13 @@ private struct AppleRemindersAccessRow: View {
             // is no settings pane that can lift a device restriction, so offering a button would be
             // the dead-button bug T-256 exists to close, not fix it a third time.
             if let action = state.accessAction {
+                // [[T-9955]]: Open Settings is amber with the shared glyph on every surface.
                 CadenceActionButton(
                     title: action.title,
+                    systemImage: action == .openSystemSettings ? CadenceAccessButtonGlyph.openSettings : nil,
                     role: .primary,
                     size: .compact,
+                    tint: action == .openSystemSettings ? Theme.amber : nil,
                     action: { onAction(action) }
                 )
             }

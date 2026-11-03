@@ -493,10 +493,13 @@ struct CalendarPageAccessNoticeStrip: View {
             title: notice.title,
             detail: notice.detail(on: .mac)
         ) {
+            // [[T-9955]]: Open Settings is amber with the shared glyph on every surface.
             CadenceActionButton(
                 title: notice.actionTitle(on: .mac),
+                systemImage: notice.action == .openSystemSettings ? CadenceAccessButtonGlyph.openSettings : nil,
                 role: .primary,
                 size: .compact,
+                tint: notice.action == .openSystemSettings ? Theme.amber : nil,
                 action: { onAction(notice.action) }
             )
         }

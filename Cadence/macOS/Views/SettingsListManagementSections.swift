@@ -227,8 +227,12 @@ struct SettingsCalendarSection: View {
                     : CadenceCalendarSettingsCopy.accessRequiredDetail
             ) {
                 if calendarManager.isDenied {
-                    SettingsActionButton(tone: .filled(Theme.dim), action: openCalendarPrivacySettings) {
-                        Text("Open Calendar Settings")
+                    // [[T-9955]]: amber with the shared glyph, as every Open Settings button is.
+                    SettingsActionButton(tone: .filled(Theme.amber), action: openCalendarPrivacySettings) {
+                        Label(
+                            CadenceCalendarAccessNotice.denied.actionTitle(on: .mac),
+                            systemImage: CadenceAccessButtonGlyph.openSettings
+                        )
                     }
                 } else {
                     SettingsActionButton(tone: .filled(Theme.blue), action: requestCalendarAccess) {

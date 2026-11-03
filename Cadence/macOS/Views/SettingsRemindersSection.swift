@@ -43,11 +43,16 @@ struct SettingsRemindersSection: View {
                 detail: state.accessMessage
             ) {
                 if let action = state.accessAction {
+                    // [[T-9955]]: Open Settings is amber with the shared glyph on every surface.
                     SettingsActionButton(
-                        tone: action == .requestAccess ? .filled(Theme.blue) : .filled(Theme.dim),
+                        tone: action == .requestAccess ? .filled(Theme.blue) : .filled(Theme.amber),
                         action: { perform(action) }
                     ) {
-                        Text(action.title)
+                        if action == .openSystemSettings {
+                            Label(action.title, systemImage: CadenceAccessButtonGlyph.openSettings)
+                        } else {
+                            Text(action.title)
+                        }
                     }
                 } else if state.isConnected {
                     // T-6974: the "Check iCloud Status" shape. Once reminders are listed the
