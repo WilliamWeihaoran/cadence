@@ -63,8 +63,11 @@ import Testing
 
         let cell = CadenceScheduleSupport.monthTasksByDate(tasks)[Self.dayKey]?.map(\.title)
         #expect(cell == ["Gym", "Gym twin, low", "Call bank", "Urgent untimed", "Low untimed", "Due only"])
-        // The Mac page reads the same order.
+        // The Mac page reads the same order. `CalendarPageDataSupport` is Mac-only and this suite
+        // also compiles into the iOS test target ([[T-10863]]).
+        #if os(macOS)
         #expect(CalendarPageDataSupport.monthTasksByDate(tasks)[Self.dayKey]?.map(\.title) == cell)
+        #endif
     }
 
     /// Both chips read the one helper, and iOS counts a timed task's second line toward the cell's
