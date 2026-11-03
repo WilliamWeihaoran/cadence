@@ -452,15 +452,12 @@ struct iOSListNotesView: View {
                     Button {
                         taskInspector(task)
                     } label: {
-                        NoteFolderListRow(
-                            title: TaskTitleSupport.displayTitle(task.title),
-                            detail: task.notes
-                                .replacingOccurrences(of: "\n", with: " ")
-                                .trimmingCharacters(in: .whitespacesAndNewlines),
-                            tags: task.sortedTags,
+                        // The Mac's row ([[T-8535]]): done circle, title, due-first second line.
+                        TaskNoteListRow(
+                            task: task,
                             isSelected: false,
-                            metrics: metrics,
-                            systemImage: "circle"
+                            todayKey: observedDay.todayKey,
+                            metrics: metrics
                         )
                     }
                     .buttonStyle(.iosPressable)

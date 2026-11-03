@@ -161,10 +161,17 @@ struct CadenceListPagesObservedDayTests {
         #expect(section.contains("todayKey: todayKey,"))
 
         let row = try #require(CadenceSourceScan.declarationBody(
-            "struct TaskNoteListRow: View", in: try Self.code("Cadence/macOS/Views/ListNotesListSupportViews.swift")
+            "struct TaskNoteListRow: View", in: try Self.code("Cadence/Shared/CadenceNoteFolderSupport.swift")
         ))
         #expect(row.contains("let todayKey: String"))
         #expect(!row.contains("DateFormatters.todayKey()"))
+
+        // [[T-8535]]: the iOS column draws the same row, handed its own page's observed day.
+        let ios = try #require(CadenceSourceScan.declarationBody(
+            "private var taskNoteSection: some View", in: try Self.code("Cadence/iOS/iOSListNotesView.swift")
+        ))
+        #expect(ios.contains("TaskNoteListRow("))
+        #expect(ios.contains("todayKey: observedDay.todayKey"))
     }
 
     // **`theGoalsPageHandsItsObservedDayToEveryDueFlag` left with [[T-5002]].** T-5012 (b)-(d)

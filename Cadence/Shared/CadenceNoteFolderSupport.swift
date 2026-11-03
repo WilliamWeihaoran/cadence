@@ -146,9 +146,17 @@ struct NoteFolderListRow: View {
     var tags: [Tag] = []
     let isSelected: Bool
     var metrics: CadenceNotesListMetrics = .desktop
-    /// The leading glyph. A list note is a document; the iPad tab's task-note rows ([[T-7031]])
-    /// draw the open-task circle macOS's `TaskNoteListRow` draws.
+    /// The leading glyph. A list note is a document; a task note ([[T-7031]], `TaskNoteListRow`)
+    /// draws the task's done/open circle.
     var systemImage: String = "doc.text"
+    /// The glyph's tint when the row's own state should colour it — a done task's green circle.
+    /// Nil keeps the selection-driven tint every note row uses.
+    var glyphColor: Color?
+    /// A label that claims the second line BEFORE `detail` and never truncates — a task note's due
+    /// date ([[T-8535]]). The detail is what gives way when the row runs out of width.
+    var leadingDetail: String?
+    /// Draws `leadingDetail` red: the task is overdue.
+    var leadingDetailIsAlert = false
     /// Non-nil while the row is being renamed in place — macOS's double-click rename. The text
     /// field takes the title's own slot rather than the row drawing a second form of itself, and it
     /// claims focus on appear because it only exists while editing.
@@ -181,7 +189,7 @@ struct NoteFolderListRow: View {
         HStack(alignment: .firstTextBaseline, spacing: Self.glyphSpacing) {
             Image(systemName: systemImage)
                 .font(.system(size: metrics.dayNumberSize))
-                .foregroundStyle(isSelected ? Theme.text : Theme.dim)
+                .foregroundStyle(glyphColor ?? (isSelected ? Theme.text : Theme.dim))
                 .frame(width: metrics.dayNumberWidth)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -201,13 +209,7 @@ struct NoteFolderListRow: View {
                         .truncationMode(.tail)
                 }
 
-                if let detail, !detail.isEmpty {
-                    Text(detail)
-                        .font(.system(size: metrics.detailSize))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
+                secondLine
 
                 CompactTagStrip(tags: tags, limit: 3)
             }
@@ -221,6 +223,68 @@ struct NoteFolderListRow: View {
         .contentShape(shape)
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovered)
+    }
+
+    private var trimmedDetail: String? {
+        guard let detail, !detail.isEmpty else { return nil }
+        return detail
+    }
+
+    @ViewBuilder
+    private var secondLine: some View {
+        if leadingDetail != nil || trimmedDetail != nil {
+            HStack(spacing: 6) {
+                if let leadingDetail {
+                    Text(leadingDetail)
+                        .font(.system(size: metrics.detailSize, weight: .semibold))
+                        .foregroundStyle(leadingDetailIsAlert ? Theme.red : Theme.muted)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .layoutPriority(1)
+                }
+                if let trimmedDetail {
+                    Text(trimmedDetail)
+                        .font(.system(size: metrics.detailSize))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Task note row
+
+/// A list's `Task Notes` row. Both platforms ([[T-8535]], owner call: the Mac's anatomy, one row).
+///
+/// The task's done/open circle, its title, and a second line that leads with the DUE label (red
+/// when overdue, never truncated) before the notes excerpt; no tag strip. It is `NoteFolderListRow`
+/// with the task's state handed in, so it shares the column's one fill, metrics and glyph slot
+/// with the list-note rows above it rather than drawing a second row shape.
+struct TaskNoteListRow: View {
+    @Bindable var task: AppTask
+    let isSelected: Bool
+    /// The host page's observed day ([[T-5012]]): the due label and the red tint below were clock
+    /// reads in a body whose inputs do not change at midnight.
+    let todayKey: String
+    var metrics: CadenceNotesListMetrics = .desktop
+
+    var body: some View {
+        NoteFolderListRow(
+            title: TaskTitleSupport.displayTitle(task.title),
+            detail: task.notes
+                .replacingOccurrences(of: "\n", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            isSelected: isSelected,
+            metrics: metrics,
+            systemImage: task.isDone ? "checkmark.circle.fill" : "circle",
+            glyphColor: task.isDone ? Theme.green : nil,
+            leadingDetail: CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey),
+            leadingDetailIsAlert: task.isOverdue(todayKey: todayKey)
+        )
+        // [[T-7068]]: the open task is a blue fill, which an assistive client cannot read.
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

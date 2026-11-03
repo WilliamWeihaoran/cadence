@@ -444,12 +444,23 @@ struct CadenceNoteFolderSurfaceTests {
             "Cadence/iOS/iOSListNotesView.swift": 1,
             "Cadence/macOS/Views/ListNotesView.swift": 1
         ])
-        // Two on iOS since [[T-7031]]: the list-note row and the "Task Notes" row, which is the
-        // same row shape with the open-task glyph (macOS draws its task notes with its own
-        // `TaskNoteListRow`).
+        // One per platform for the list-note row. The "Task Notes" row ([[T-7031]], [[T-8535]]) is
+        // the shared `TaskNoteListRow`, which is itself this row with the task's state handed in:
+        // both columns call it, and neither platform declares a task-note row of its own.
         try expectFolderOccurrences(of: "NoteFolderListRow(", at: [
-            "Cadence/iOS/iOSListNotesView.swift": 2,
-            "Cadence/macOS/Views/ListNotesListSupportViews.swift": 1
+            "Cadence/iOS/iOSListNotesView.swift": 1,
+            "Cadence/macOS/Views/ListNotesListSupportViews.swift": 1,
+            "Cadence/Shared/CadenceNoteFolderSupport.swift": 1
+        ])
+        try expectFolderOccurrences(of: "TaskNoteListRow(", at: [
+            "Cadence/iOS/iOSListNotesView.swift": 1,
+            "Cadence/macOS/Views/ListNotesViewSupportViews.swift": 1
+        ])
+        try expectFolderOccurrences(of: "struct TaskNoteListRow", at: [
+            "Cadence/Shared/CadenceNoteFolderSupport.swift": 1,
+            "Cadence/iOS/iOSListNotesView.swift": 0,
+            "Cadence/macOS/Views/ListNotesListSupportViews.swift": 0,
+            "Cadence/macOS/Views/ListNotesViewSupportViews.swift": 0
         ])
         try expectFolderOccurrences(of: "NoteFolderMoveMenu(", at: [
             "Cadence/iOS/iOSListNotesView.swift": 1,
