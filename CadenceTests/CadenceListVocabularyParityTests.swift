@@ -123,4 +123,29 @@ struct CadenceListVocabularyParityTests {
             #expect(!code.contains("\"Project name"), "\(path) spells its own project placeholder")
         }
     }
+
+    /// [[T-10571]]: an archived context or tag comes back through the same "Unarchive" as an
+    /// archived list, on both platforms -- the archived-context rows, the Settings tag sections'
+    /// "is archived" notices, the tag-completion subtitles and the Mac tag picker's row. Backup
+    /// restore and the cancelled-task undo keep "Restore"; neither file is read here.
+    @Test func anArchivedContextOrTagIsUnarchivedThroughTheSharedWord() throws {
+        #expect(CadenceListVocabularyCopy.unarchiveTagSubtitle == "Unarchive tag")
+        #expect(CadenceListVocabularyCopy.unarchiveRowTitle(name: "bug") == "Unarchive \"bug\"")
+        #expect(CadenceTagChipStyle.unarchiveControlLabel(name: "Work", slug: "work") == "Unarchive Work")
+
+        let sites: [(path: String, needle: String)] = [
+            ("Cadence/iOS/iOSSettingsContextSection.swift", "title: CadenceListVocabularyCopy.unarchiveActionTitle,"),
+            ("Cadence/macOS/Views/SettingsSupportViews.swift", "CadenceActionButton(title: CadenceListVocabularyCopy.unarchiveActionTitle, role: .secondary"),
+            ("Cadence/iOS/iOSSettingsTagsSection.swift", "actionTitle: CadenceListVocabularyCopy.unarchiveActionTitle,"),
+            ("Cadence/macOS/Views/SettingsTagsSection.swift", "actionTitle: CadenceListVocabularyCopy.unarchiveActionTitle"),
+            ("Cadence/iOS/iOSMarkdownAccessoryViews.swift", "tag.isArchived ? CadenceListVocabularyCopy.unarchiveTagSubtitle :"),
+            ("Cadence/macOS/Editor/MarkdownSlashCommandSupport.swift", "tag.isArchived ? CadenceListVocabularyCopy.unarchiveTagSubtitle :"),
+            ("Cadence/macOS/Views/TagPickerPopoverViews.swift", "Text(CadenceListVocabularyCopy.unarchiveRowTitle(name: archivedQueryMatch.name))")
+        ]
+        for site in sites {
+            let code = try Self.ios(site.path)
+            #expect(code.contains(site.needle), "\(site.path) does not read the shared Unarchive")
+            #expect(!code.contains("\"Restore"), "\(site.path) brings an archived thing back through Restore again")
+        }
+    }
 }

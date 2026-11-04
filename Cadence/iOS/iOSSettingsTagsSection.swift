@@ -124,7 +124,7 @@ struct iOSTagsSettingsSection: View {
                         iOSTagNoticeRow(
                             icon: "archivebox.fill",
                             text: "\"\(matchingArchived.name)\" is archived.",
-                            actionTitle: "Restore",
+                            actionTitle: CadenceListVocabularyCopy.unarchiveActionTitle,
                             action: {
                                 restore(matchingArchived)
                                 clearDraft()
@@ -374,7 +374,7 @@ private struct iOSTagSettingsRow: View {
                 systemImage: isArchivedList ? "arrow.uturn.backward" : "archivebox",
                 // T-7382: named for the tag, as the pencil beside it is (T-7361).
                 accessibilityLabel: isArchivedList
-                    ? CadenceTagChipStyle.restoreControlLabel(for: tag)
+                    ? CadenceTagChipStyle.unarchiveControlLabel(for: tag)
                     : CadenceTagChipStyle.archiveControlLabel(for: tag),
                 tint: isArchivedList ? Theme.blue : Theme.amber,
                 isSelected: true

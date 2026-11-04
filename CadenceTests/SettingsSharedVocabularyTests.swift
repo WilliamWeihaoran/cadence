@@ -982,8 +982,8 @@ struct SettingsSevenPaneVocabularyTests {
         #expect(archived.contains("Text(context.name).font(.system(size:13)).foregroundStyle(Theme.muted).lineLimit(1).truncationMode(.tail)"),
                 "the archived context's name can wrap again")
         // [[T-9461]]: the shared action button (its label is one line), held at its width.
-        #expect(archived.contains("CadenceActionButton(title:\"Restore\",role:.secondary,size:.compact,tint:Theme.text,action:onRestore).fixedSize()"),
-                "Restore can be squeezed into wrapping again")
+        #expect(archived.contains("CadenceActionButton(title:CadenceListVocabularyCopy.unarchiveActionTitle,role:.secondary,size:.compact,tint:Theme.text,action:onRestore).fixedSize()"),
+                "Unarchive can be squeezed into wrapping again")
         #expect(archived.contains("CadenceActionButton(title:\"Delete\",role:.primary,size:.compact,tint:Theme.red,action:onDelete).fixedSize()"),
                 "Delete can be squeezed into wrapping again")
 

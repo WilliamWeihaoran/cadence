@@ -78,7 +78,7 @@ struct SettingsTagsSection: View {
                         TagNoticeRow(
                             icon: "archivebox.fill",
                             text: "\"\(matchingArchivedTag.name)\" is archived.",
-                            actionTitle: "Restore"
+                            actionTitle: CadenceListVocabularyCopy.unarchiveActionTitle
                         ) {
                             restore(matchingArchivedTag)
                             clearCreateFields()
@@ -326,7 +326,7 @@ private struct SettingsTagRow: View {
                         startEditing()
                     }
                     if isArchivedList {
-                        rowButton(icon: "arrow.uturn.backward", color: Theme.blue, accessibilityLabel: CadenceTagChipStyle.restoreControlLabel(for: tag), action: onRestore)
+                        rowButton(icon: "arrow.uturn.backward", color: Theme.blue, accessibilityLabel: CadenceTagChipStyle.unarchiveControlLabel(for: tag), action: onRestore)
                     } else {
                         rowButton(icon: "archivebox", color: Theme.amber, accessibilityLabel: CadenceTagChipStyle.archiveControlLabel(for: tag), action: onArchive)
                     }

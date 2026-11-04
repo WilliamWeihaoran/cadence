@@ -316,7 +316,7 @@ struct iOSSettingsArchivedContextRow: View {
             Spacer(minLength: 8)
 
             iOSActionButton(
-                title: "Restore",
+                title: CadenceListVocabularyCopy.unarchiveActionTitle,
                 role: .secondary,
                 size: .compact,
                 action: restore

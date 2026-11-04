@@ -265,9 +265,20 @@ nonisolated enum CadenceListVocabularyCopy {
     /// edit sheets; a creation sheet names what it does, as the Mac's always has.
     static let createActionTitle = "Create"
 
-    /// Bringing an archived list back. iOS's Lists page alone said "Restore"; Settings > Lists on
-    /// both platforms already said "Unarchive".
+    /// Bringing an archived list, context or tag back. iOS's Lists page alone said "Restore";
+    /// Settings > Lists on both platforms already said "Unarchive". [[T-10571]]: archived
+    /// contexts and tags said "Restore" on both platforms, so one action had two verbs by object
+    /// type; its opposite is "Archive" everywhere. Backup restore and the cancelled-task undo keep
+    /// "Restore" -- they are different actions.
     static let unarchiveActionTitle = "Unarchive"
+
+    /// The tag-completion rows' subtitle under an archived tag: picking it unarchives it.
+    static let unarchiveTagSubtitle = "\(unarchiveActionTitle) tag"
+
+    /// The tag picker's row offering an archived tag that matches the query.
+    static func unarchiveRowTitle(name: String) -> String {
+        "\(unarchiveActionTitle) \"\(name)\""
+    }
 
     /// The list editor's two due-date toggles, plural because each governs every row (iOS's
     /// spelling; the Mac's create and edit sheets read "due date").

@@ -90,7 +90,7 @@ struct TagPickerPopover: View {
                                 Image(systemName: "arrow.uturn.backward.circle.fill")
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(Theme.blue)
-                                Text("Restore \"\(archivedQueryMatch.name)\"")
+                                Text(CadenceListVocabularyCopy.unarchiveRowTitle(name: archivedQueryMatch.name))
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundStyle(Theme.text)
                                 Spacer()

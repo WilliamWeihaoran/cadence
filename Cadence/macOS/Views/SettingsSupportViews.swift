@@ -318,7 +318,7 @@ struct ArchivedContextRow: View {
             // plate -- these padded and filled OUTSIDE `.buttonStyle(.cadencePlain)`, so each
             // plate's rim was dead to a click ([[T-9351]]'s shape). `.fixedSize()` keeps
             // [[T-9291]]'s natural width.
-            CadenceActionButton(title: "Restore", role: .secondary, size: .compact, tint: Theme.text, action: onRestore)
+            CadenceActionButton(title: CadenceListVocabularyCopy.unarchiveActionTitle, role: .secondary, size: .compact, tint: Theme.text, action: onRestore)
                 .fixedSize()
 
             CadenceActionButton(title: "Delete", role: .primary, size: .compact, tint: Theme.red, action: onDelete)

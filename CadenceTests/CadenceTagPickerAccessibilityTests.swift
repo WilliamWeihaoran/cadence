@@ -72,15 +72,15 @@ struct CadenceTagPickerAccessibilityTests {
     /// "Restore tag" on every row.
     @Test func settingsTagListArchiveAndRestoreControlsAreNamedForTheirTag() throws {
         #expect(CadenceTagChipStyle.archiveControlLabel(name: "Work", slug: "work") == "Archive Work")
-        #expect(CadenceTagChipStyle.restoreControlLabel(name: "Work", slug: "work") == "Restore Work")
+        #expect(CadenceTagChipStyle.unarchiveControlLabel(name: "Work", slug: "work") == "Unarchive Work")
         #expect(CadenceTagChipStyle.archiveControlLabel(name: " ", slug: "deep-work") == "Archive deep-work",
                 "an unnamed tag falls back to its slug, as the chip does")
-        #expect(CadenceTagChipStyle.restoreControlLabel(name: " ", slug: "deep-work") == "Restore deep-work")
+        #expect(CadenceTagChipStyle.unarchiveControlLabel(name: " ", slug: "deep-work") == "Unarchive deep-work")
 
         let mac = try Self.compactBody("private var displayContent: some View", in: Self.macSettingsPath)
         #expect(mac.contains("action:onArchive") && mac.contains("action:onRestore"),
                 "non-vacuity: the Mac Settings row still draws both archive controls")
-        #expect(mac.contains(#"accessibilityLabel:CadenceTagChipStyle.restoreControlLabel(for:tag),action:onRestore"#),
+        #expect(mac.contains(#"accessibilityLabel:CadenceTagChipStyle.unarchiveControlLabel(for:tag),action:onRestore"#),
                 "the Mac Settings tag row's restore control is not named for its tag")
         #expect(mac.contains(#"accessibilityLabel:CadenceTagChipStyle.archiveControlLabel(for:tag),action:onArchive"#),
                 "the Mac Settings tag row's archive control is not named for its tag")
@@ -89,7 +89,7 @@ struct CadenceTagPickerAccessibilityTests {
         let ios = try Self.compactBody("private var displayContent: some View", in: Self.iosSettingsTagsPath)
         #expect(ios.contains("isArchivedList?restore():archive()"),
                 "non-vacuity: the iOS Settings row still draws its archive control")
-        #expect(ios.contains("accessibilityLabel:isArchivedList?CadenceTagChipStyle.restoreControlLabel(for:tag):CadenceTagChipStyle.archiveControlLabel(for:tag)"),
+        #expect(ios.contains("accessibilityLabel:isArchivedList?CadenceTagChipStyle.unarchiveControlLabel(for:tag):CadenceTagChipStyle.archiveControlLabel(for:tag)"),
                 "the iOS Settings tag row's archive / restore control is not named for its tag")
         #expect(!ios.contains(#""Archivetag""#) && !ios.contains(#""Restoretag""#))
     }

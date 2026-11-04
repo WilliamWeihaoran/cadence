@@ -431,8 +431,9 @@ nonisolated struct CadenceTagChipStyle: Equatable {
         "Edit \(displayName(name: name, slug: slug))"
     }
 
-    /// The Archive / Restore siblings of `editControlLabel` ([[T-7382]]): the Settings tag lists'
-    /// rows each drew an "Archive tag" or "Restore tag" button that named none of them.
+    /// The Archive / Unarchive siblings of `editControlLabel` ([[T-7382]], [[T-10571]]): the
+    /// Settings tag lists' rows each drew an "Archive tag" or "Restore tag" button that named none
+    /// of them. The verb is the shared `CadenceListVocabularyCopy.unarchiveActionTitle`.
     static func archiveControlLabel(for tag: Tag) -> String {
         archiveControlLabel(name: tag.name, slug: tag.slug)
     }
@@ -441,12 +442,12 @@ nonisolated struct CadenceTagChipStyle: Equatable {
         "Archive \(displayName(name: name, slug: slug))"
     }
 
-    static func restoreControlLabel(for tag: Tag) -> String {
-        restoreControlLabel(name: tag.name, slug: tag.slug)
+    static func unarchiveControlLabel(for tag: Tag) -> String {
+        unarchiveControlLabel(name: tag.name, slug: tag.slug)
     }
 
-    static func restoreControlLabel(name: String, slug: String) -> String {
-        "Restore \(displayName(name: name, slug: slug))"
+    static func unarchiveControlLabel(name: String, slug: String) -> String {
+        "\(CadenceListVocabularyCopy.unarchiveActionTitle) \(displayName(name: name, slug: slug))"
     }
 }
 

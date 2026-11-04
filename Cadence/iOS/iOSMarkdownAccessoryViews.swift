@@ -522,7 +522,7 @@ struct iOSMarkdownTagCompletionStrip: View {
                 case .existing(let tag):
                     iOSMarkdownSuggestionPill(
                         title: tag.name,
-                        subtitle: tag.isArchived ? "Restore archived tag" : "#\(tag.slug)",
+                        subtitle: tag.isArchived ? CadenceListVocabularyCopy.unarchiveTagSubtitle : "#\(tag.slug)",
                         action: { apply(choice) }
                     ) {
                         Circle()

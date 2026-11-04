@@ -460,7 +460,7 @@ private struct MarkdownTagPickerView: View {
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Color(nsColor: MarkdownStylist.textColor))
                         .lineLimit(1)
-                    Text(tag.isArchived ? "Restore archived tag" : tag.slug)
+                    Text(tag.isArchived ? CadenceListVocabularyCopy.unarchiveTagSubtitle : tag.slug)
                         .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(Color(nsColor: MarkdownStylist.dimColor))
                         .lineLimit(1)
