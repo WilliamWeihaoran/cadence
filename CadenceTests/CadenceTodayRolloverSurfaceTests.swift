@@ -321,6 +321,43 @@ struct CadenceTodayRolloverSurfaceTests {
         #expect(!CadenceTodayRolloverSupport.title.contains("are rolling"))
     }
 
+    // MARK: - How late each row is (T-10491)
+
+    /// Each row says how late its leftover is, in the row's own do-date chip's words: a task
+    /// planned yesterday and one planned three weeks ago no longer read alike in the offer.
+    @Test func eachRolloverRowReadsItsDoDateInTheChipsWords() throws {
+        let calendar = Calendar.current
+        let now = Date()
+        func key(daysAgo: Int) -> String {
+            DateFormatters.dateKey(from: calendar.date(byAdding: .day, value: -daysAgo, to: now)!)
+        }
+        let yesterday = task(title: "Yesterday's plan", scheduled: key(daysAgo: 1))
+        let longAgo = task(title: "Three weeks back", scheduled: key(daysAgo: 22))
+        let rolled = CadenceTodayRolloverSupport.pastDoTasks(
+            from: [yesterday, longAgo],
+            todayKey: DateFormatters.dateKey(from: now)
+        )
+        #expect(rolled.count == 2, "non-vacuity: both are leftovers")
+        #expect(CadenceTaskPresentationSupport.scheduledDayLabel(for: yesterday) == "Yesterday")
+        #expect(CadenceTaskPresentationSupport.scheduledDayLabel(for: longAgo) == "22 days ago")
+
+        let banner = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceTodayRolloverBanner.swift"))
+        // Both row layouts (wrapping and not) draw the day, after the list name.
+        let row = try cadenceFunctionBody("private func taskRow(_ task: AppTask) -> some View", in: banner)
+        #expect(row.components(separatedBy: "doDay(task)").count - 1 == 2)
+        #expect(row.components(separatedBy: "containerName(task)").count - 1 == 2)
+        let day = try cadenceFunctionBody("private func doDay(_ task: AppTask) -> some View", in: banner)
+        // The shared formatter, not a new one.
+        #expect(day.contains("Text(CadenceTaskPresentationSupport.scheduledDayLabel(for: task))"))
+        #expect(!day.contains("DateFormatters."))
+        // Secondary text, styled as the list name beside it.
+        let list = try cadenceFunctionBody("private func containerName(_ task: AppTask) -> some View", in: banner)
+        for styling in [".cadenceFont(.metadata, base: 10, weight: .regular)", ".foregroundStyle(Theme.dim)"] {
+            #expect(list.contains(styling), "non-vacuity: the list name is still \(styling)")
+            #expect(day.contains(styling), "the do day is not styled as the list name: \(styling)")
+        }
+    }
+
     // MARK: - Withholding
 
     @Test func theGroupedListWithholdsExactlyWhatTheBannerIsOffering() throws {

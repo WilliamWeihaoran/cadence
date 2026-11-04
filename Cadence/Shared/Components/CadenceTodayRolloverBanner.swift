@@ -193,6 +193,7 @@ struct CadenceTodayRolloverBanner: View {
                 HStack(spacing: 8) {
                     taskDot(task)
                     containerName(task)
+                    doDay(task)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -202,7 +203,26 @@ struct CadenceTodayRolloverBanner: View {
                 taskTitle(task)
                 Spacer()
                 containerName(task)
+                doDay(task)
             }
+        }
+    }
+
+    /// How late the leftover is ([[T-10491]]): the do date's relative day — "Yesterday",
+    /// "22 days ago" — so a task planned yesterday and one planned three weeks ago no longer read
+    /// alike in the offer to move both. The words are the row's own do-date chip's, from
+    /// `CadenceTaskPresentationSupport.scheduledDayLabel(for:)`, never a second formatter; the
+    /// styling is the list name's beside it. It keeps its width (`layoutPriority`) so the title,
+    /// not the lateness, is what truncates on a narrow row.
+    @ViewBuilder
+    private func doDay(_ task: AppTask) -> some View {
+        if !task.scheduledDate.isEmpty {
+            Text(CadenceTaskPresentationSupport.scheduledDayLabel(for: task))
+                .cadenceFont(.metadata, base: 10, weight: .regular)
+                .foregroundStyle(Theme.dim)
+                .lineLimit(wraps ? nil : 1)
+                .fixedSize(horizontal: !wraps, vertical: wraps)
+                .layoutPriority(1)
         }
     }
 
