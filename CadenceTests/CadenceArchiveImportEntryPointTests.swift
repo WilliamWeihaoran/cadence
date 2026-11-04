@@ -594,28 +594,79 @@ struct CadenceArchiveImportEntryPointTests {
     // MARK: - Naming a table for a reader
 
     /// `HabitCompletion: 240` tells the user about the schema. These are the words the app uses.
-    @Test func everySchemaEntityGetsAReadableNameInThePreview() {
-        let names = CadenceSchema.schema.entities.map(\.name)
-        #expect(names.count >= 20, "CadenceSchema reports only \(names.count) entities")
-
-        for name in names {
-            let title = CadenceArchiveImportPresentation.entityTitle(name)
-            #expect(!title.isEmpty)
-            #expect(title.hasSuffix("s"), "\(name) reads as \(title)")
-            #expect(
-                title.dropFirst().allSatisfy { !$0.isUppercase },
-                "\(name) still reads as a type name: \(title)"
-            )
+    ///
+    /// [[T-10501]]: an exact title per schema entity, not the shape of one. The shape check this
+    /// replaced passed "Perm notes", "Documents" and "Task bundles" — plural, lower-case, and words
+    /// no surface in the app shows. A table added to `CadenceSchema` fails here until someone
+    /// decides what the preview calls it.
+    @Test func everySchemaEntityGetsTheAppsOwnWordInThePreview() {
+        let expected: [String: String] = [
+            "Context": "Contexts",
+            "Area": "Areas",
+            "Project": "Projects",
+            "Tag": "Tags",
+            "AppTask": "Tasks",
+            "Subtask": "Subtasks",
+            "Note": "Notes",
+            "SavedLink": "Saved links",
+            "FocusSessionLog": "Focus sessions",
+            "MarkdownImageAsset": "Note images",
+            "Goal": "Retained legacy records",
+            "GoalListLink": "Retained legacy records",
+            "Habit": "Retained legacy records",
+            "HabitCompletion": "Retained legacy records",
+            "Pursuit": "Retained legacy records",
+            "TaskBundle": "Retained legacy records",
+            "DailyNote": "Older notes",
+            "WeeklyNote": "Older notes",
+            "PermNote": "Older notes",
+            "EventNote": "Older notes",
+            "Document": "Older notes",
+            "SidebarLayoutPreference": "Settings",
+            "LookPreference": "Settings",
+            "NoteTemplatePreference": "Settings",
+        ]
+        let names = Set(CadenceSchema.schema.entities.map(\.name))
+        #expect(names == Set(expected.keys), "schema and pinned titles differ: \(names.symmetricDifference(expected.keys).sorted())")
+        for name in names.sorted() {
+            #expect(CadenceArchiveImportPresentation.entityTitle(name) == expected[name], "\(name)")
         }
     }
 
-    /// The one override and the pluralisation rules, pinned. The override exists because "App
+    /// [[T-10501]]: a pre-migration store's archive previews its legacy note tables as one
+    /// "Older notes" row and its preference tables as one "Settings" row, each summing its tables'
+    /// counts — so the rows still add up to the totals `planSummary` states.
+    @Test func legacyNoteAndPreferenceTablesShareOneRowEachWithoutLosingCounts() throws {
+        for mode in [CadenceArchiveImportMode.mergeKeepingExistingRows, .restoreOverwritingExistingRows] {
+            let plan = Self.plan(
+                mode: mode,
+                inserts: ["Note": 120, "PermNote": 40, "DailyNote": 30, "Document": 6, "LookPreference": 1, "TaskBundle": 2],
+                matches: ["EventNote": 4, "WeeklyNote": 2, "SidebarLayoutPreference": 1, "NoteTemplatePreference": 1]
+            )
+            let lines = CadenceArchiveImportPresentation.planLines(plan)
+            #expect(lines.map(\.title) == ["Notes", "Older notes", "Settings", "Retained legacy records"])
+
+            let older = try #require(lines.first { $0.title == "Older notes" })
+            #expect(older.addedCount == 76)
+            #expect(older.matchedCount == 6)
+            let settings = try #require(lines.first { $0.title == "Settings" })
+            #expect(settings.addedCount == 1)
+            #expect(settings.matchedCount == 2)
+
+            #expect(Set(lines.map(\.id)).count == lines.count, "a folded row must not share an id with another row")
+            #expect(lines.reduce(0) { $0 + $1.addedCount } == plan.totalInsertCount)
+            #expect(lines.reduce(0) { $0 + $1.matchedCount } == plan.totalMatchedCount)
+        }
+    }
+
+    /// The overrides and the pluralisation rules, pinned. The overrides exist because "App
     /// tasks" is the type's name and "Tasks" is the app's word for the same thing.
     @Test func theEntityNamerOverridesTasksAndPluralisesTheAwkwardEndings() {
         #expect(CadenceArchiveImportPresentation.entityTitle("AppTask") == "Tasks")
         #expect(CadenceArchiveImportPresentation.entityTitle("HabitCompletion") == "Retained legacy records")
         #expect(CadenceArchiveImportPresentation.entityTitle("SavedLink") == "Saved links")
-        #expect(CadenceArchiveImportPresentation.entityTitle("MarkdownImageAsset") == "Markdown image assets")
+        #expect(CadenceArchiveImportPresentation.entityTitle("MarkdownImageAsset") == "Note images")
+        #expect(CadenceArchiveImportPresentation.entityTitle("FocusSessionLog") == "Focus sessions")
         // Consonant + y pluralises to -ies; a vowel before it does not.
         #expect(CadenceArchiveImportPresentation.entityTitle("Category") == "Categories")
         #expect(CadenceArchiveImportPresentation.entityTitle("Day") == "Days")

@@ -176,8 +176,12 @@ nonisolated enum CadenceArchiveImportPresentation {
         "\(count) record\(count == 1 ? "" : "s")"
     }
 
-    /// The rows the preview lists, biggest first. Retired tracking tables share one retained-data
-    /// row; their insert/match counts and backend entity keys are unchanged.
+    /// The rows the preview lists, biggest first. Tables the user does not think of as separate
+    /// kinds share one row ([[T-10501]]): retired tracking tables and `TaskBundle` read as
+    /// "Retained legacy records", the five pre-migration note tables as "Older notes" (the outcome
+    /// sentence's own word for them), the three preference tables as "Settings". Each shared row's
+    /// counts are the sum of its tables', so the rows still add up to `planSummary`'s totals; the
+    /// plan's per-entity keys are unchanged.
     ///
     /// A kind the plan counts at zero on both sides is dropped. `CadenceArchiveImportPlan`'s keys
     /// are every entity in `CadenceSchema`, and a preview that listed all of them would bury the
@@ -188,7 +192,7 @@ nonisolated enum CadenceArchiveImportPresentation {
 
         var counts: [String: (added: Int, matched: Int)] = [:]
         for name in names {
-            let displayName = retainedEntityNames.contains(name) ? retainedRecordsEntityName : name
+            let displayName = foldedEntityNames[name] ?? name
             let previous = counts[displayName] ?? (added: 0, matched: 0)
             counts[displayName] = (
                 added: previous.added + (plan.insertCountsByEntityName[name] ?? 0),
@@ -398,13 +402,16 @@ nonisolated enum CadenceArchiveImportPresentation {
     /// `CadenceSchema`'s entity names are Swift type names, and a preview that says
     /// "HabitCompletion: 240" is telling the user about the schema rather than about their data.
     ///
-    /// Mechanical rather than a twenty-one-entry table, because such a table is the next thing to
-    /// go stale: a model added next year gets a readable name here without anyone remembering to
-    /// come back. Exactly one override, for the one name where the mechanical answer is wrong
-    /// rather than merely plain — `AppTask` is the type; "tasks" is the word the whole app uses.
+    /// Mechanical for the ordinary case, so a model added next year gets a readable name without
+    /// anyone remembering to come back — and `CadenceArchiveImportEntryPointTests` pins an exact
+    /// title for every schema entity, so a new table that reads wrong fails there. On top of that,
+    /// overrides where the mechanical answer is wrong rather than merely plain (`AppTask` is the
+    /// type; "Tasks" is the app's word), and the shared rows `planLines` folds tables into
+    /// ([[T-10501]]): a pre-migration store's archive must not list "Perm notes" and "Documents"
+    /// beside Notes, counting the same notes twice under words the app never uses.
     static func entityTitle(_ entityName: String) -> String {
-        if retainedEntityNames.contains(entityName) || entityName == retainedRecordsEntityName {
-            return "Retained legacy records"
+        if let folded = foldedEntityTitles[foldedEntityNames[entityName] ?? entityName] {
+            return folded
         }
         if let override = entityTitleOverrides[entityName] { return override }
         let words = splitCamelCase(entityName)
@@ -415,10 +422,42 @@ nonisolated enum CadenceArchiveImportPresentation {
             .joined(separator: " ")
     }
 
-    private static let entityTitleOverrides = ["AppTask": "Tasks"]
+    private static let entityTitleOverrides = [
+        "AppTask": "Tasks",
+        "FocusSessionLog": "Focus sessions",
+        "MarkdownImageAsset": "Note images",
+    ]
+
+    /// The keys of the shared rows. None is a `CadenceSchema` entity name, so a folded row can never
+    /// collide with a real table's row.
     private static let retainedRecordsEntityName = "RetainedLegacyRecord"
-    private static let retainedEntityNames: Set<String> = [
-        "Goal", "GoalListLink", "Habit", "HabitCompletion", "Pursuit"
+    private static let olderNotesEntityName = "FoldedLegacyNoteTables"
+    private static let settingsEntityName = "FoldedPreferenceTables"
+
+    private static let foldedEntityTitles = [
+        retainedRecordsEntityName: "Retained legacy records",
+        olderNotesEntityName: "Older notes",
+        settingsEntityName: "Settings",
+    ]
+
+    /// Entity name -> the shared row it is counted under. `TaskBundle` is here because no surface
+    /// draws a block any more ([[T-3170]], `CadenceTaskBundleRetirement`); its rows are retained
+    /// data, not a kind the user can find.
+    private static let foldedEntityNames: [String: String] = [
+        "Goal": retainedRecordsEntityName,
+        "GoalListLink": retainedRecordsEntityName,
+        "Habit": retainedRecordsEntityName,
+        "HabitCompletion": retainedRecordsEntityName,
+        "Pursuit": retainedRecordsEntityName,
+        "TaskBundle": retainedRecordsEntityName,
+        "DailyNote": olderNotesEntityName,
+        "WeeklyNote": olderNotesEntityName,
+        "PermNote": olderNotesEntityName,
+        "EventNote": olderNotesEntityName,
+        "Document": olderNotesEntityName,
+        "SidebarLayoutPreference": settingsEntityName,
+        "LookPreference": settingsEntityName,
+        "NoteTemplatePreference": settingsEntityName,
     ]
 
     /// Upper-cases the first character and leaves the rest alone, unlike `capitalized`, which would
