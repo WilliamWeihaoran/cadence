@@ -52,9 +52,20 @@ struct iOSStoreBackupSettingsSection: View {
                 iOSSettingsCard {
                     VStack(alignment: .leading, spacing: 0) {
                         if backups.isEmpty {
-                            Text(CadenceStoreBackupPresentation.noBackupsText)
-                                .cadenceFont(.controlLabel, base: 13, weight: .regular)
-                                .foregroundStyle(Theme.dim)
+                            // [[T-10022]]: a glyph row, as the Mac's empty card draws, rather
+                            // than the bare line the card used to be.
+                            HStack(alignment: .center, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
+                                Image(systemName: "externaldrive")
+                                    .cadenceFont(.controlLabel, base: 14, weight: .semibold)
+                                    .foregroundStyle(Theme.dim)
+                                    .frame(width: iOSSettingsMetrics.glyphSlot)
+                                    .accessibilityHidden(true)
+                                Text(CadenceStoreBackupPresentation.noBackupsText)
+                                    .cadenceFont(.controlLabel, base: 13, weight: .regular)
+                                    .foregroundStyle(Theme.dim)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.vertical, iOSSettingsMetrics.rowVerticalPadding)
                         } else {
                             let listed = Array(backups.prefix(CadenceStoreBackupPresentation.listedBackupLimit))
                             ForEach(Array(listed.enumerated()), id: \.element.id) { index, backup in
@@ -193,19 +204,21 @@ struct iOSStoreBackupSettingsSection: View {
         VStack(alignment: .leading, spacing: 10) {
             CadenceSettingsSectionLabel(text: CadenceStoreBackupPresentation.unrestoredSectionTitle)
             iOSSettingsCard {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 0) {
                     Text(CadenceStoreBackupPresentation.unrestoredExplanation)
                         .cadenceFont(.metadata, base: 12, weight: .regular)
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 12)
 
                     // Read-only, as on the Mac: it may be the only copy of those files.
-                    ForEach(retainedUnrestoredDirectories, id: \.self) { directoryURL in
-                        Text(directoryURL.path)
-                            .cadenceFont(.metadata, base: 12, weight: .regular, design: .monospaced)
-                            .foregroundStyle(Theme.text)
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
+                    // [[T-10022]]: one row per folder with a divider between, the Mac's
+                    // `RetainedUnrestoredOriginalsRow` without its Reveal.
+                    ForEach(Array(retainedUnrestoredDirectories.enumerated()), id: \.element) { index, directoryURL in
+                        iOSRetainedUnrestoredDirectoryRow(directoryURL: directoryURL)
+                        if index < retainedUnrestoredDirectories.count - 1 {
+                            iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
+                        }
                     }
                 }
             }
@@ -241,6 +254,41 @@ struct iOSStoreBackupSettingsSection: View {
         guard let controls else { return }
         statusMessage = controls.cancelStagedRestore()
         refresh()
+    }
+}
+
+/// One folder of store files an unfinished restore moved aside and Cadence retained ([[T-10022]]).
+///
+/// **One member, no action** -- the shape of `iOSUnmanagedStoreDirectoryRow`, and for its reason:
+/// iOS has no Files route for a Reveal, and a row that cannot be handed an action cannot grow a
+/// destructive one for what may be the only copy of a store.
+private struct iOSRetainedUnrestoredDirectoryRow: View {
+    let directoryURL: URL
+
+    var body: some View {
+        HStack(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
+            iOSIconTile(
+                systemImage: "exclamationmark.triangle",
+                color: Theme.amber,
+                size: iOSSettingsMetrics.glyphSlot,
+                iconSize: 13
+            )
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(directoryURL.path)
+                    .cadenceFont(.metadata, base: 12, weight: .regular, design: .monospaced)
+                    .foregroundStyle(Theme.text)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(CadenceStoreBackupPresentation.unrestoredRowDetail)
+                    .cadenceFont(.metadata, base: 11, weight: .regular)
+                    .foregroundStyle(Theme.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 10)
     }
 }
 

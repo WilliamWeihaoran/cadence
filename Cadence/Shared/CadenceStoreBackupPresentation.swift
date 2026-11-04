@@ -160,4 +160,8 @@ enum CadenceStoreBackupPresentation {
     static let unrestoredSectionTitle = "Unrestored Store Files"
 
     static let unrestoredExplanation = "A restore that did not finish moved these store files aside, and Cadence kept them rather than delete them. They can be the only copy of your data as it was before that restore. Cadence does not back them up or read them; deleting all Cadence data removes them, and nothing else does."
+
+    /// Each retained folder's second line, under its path ([[T-10022]]). Shared because the Mac's
+    /// `RetainedUnrestoredOriginalsRow` carried it as a literal and the phone now draws the same row.
+    static let unrestoredRowDetail = "Kept by an unfinished restore • not read by Cadence"
 }

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import Cadence
 
-/// [[T-10020]], [[T-10021]]: the iOS Backups card on Settings → Data Safety drew its main button
+/// [[T-10020]], [[T-10021]], [[T-10022]]: the iOS Backups card on Settings → Data Safety drew its main button
 /// and its heading differently from the Mac's Backups card and from the three cards above it.
 ///
 /// - Create Backup was a tinted `.secondary` plate, the same weight as Clean Automatic beside it,
@@ -10,6 +10,10 @@ import Testing
 /// - The card opened on its description paragraph. The Export, Import and Delete Cadence Data cards
 ///   above it each open with a semibold title under their section label, and the Mac's Backups
 ///   card opens with `CadenceStoreBackupPresentation.title`.
+///
+/// - [[T-10022]]: an empty Available Backups card was a bare line where the Mac draws an
+///   `externaldrive` glyph row, and Unrestored Store Files listed bare paths 8pt apart where the Mac
+///   draws a row per folder divided by `CadenceRowDivider`.
 ///
 /// `Cadence/iOS/` is `#if os(iOS)` and this target's default leg builds for macOS, so these are
 /// source reads of the named declarations, comments blanked, each with a non-vacuity anchor.
@@ -69,5 +73,61 @@ struct CadenceIOSStoreBackupCardTests {
         #expect(export.contains(
             "Text(CadenceDataExportPresentation.title).cadenceFont(.rowTitle,base:15,weight:.semibold).foregroundStyle(Theme.text)"
         ), "the sibling no longer draws the title this pins against")
+    }
+
+    // MARK: - [[T-10022]]
+
+    private var phoneSection: String {
+        get throws { try body("struct iOSStoreBackupSettingsSection: View", in: phonePath) }
+    }
+
+    @Test func anEmptyBackupListIsAGlyphRowAsOnTheMac() throws {
+        let mac = try body("var body: some View", in: "Cadence/macOS/Views/SettingsDataSafetySection.swift")
+        #expect(
+            mac.contains("ifbackups.isEmpty{HStack(spacing:12){Image(systemName:\"externaldrive\")"),
+            "the Mac no longer draws the glyph row this pins against"
+        )
+
+        let section = try phoneSection
+        let empty = section.range(of: "ifbackups.isEmpty{")
+        let populated = section.range(of: "}else{letlisted=")
+        #expect(empty != nil && populated != nil, "the scan no longer reaches the empty branch")
+        guard let empty, let populated, empty.upperBound < populated.lowerBound else { return }
+
+        let branch = section[empty.upperBound..<populated.lowerBound]
+        #expect(branch.hasPrefix("HStack("), "the empty state is a row, not a bare line")
+        let glyph = branch.range(of: "Image(systemName:\"externaldrive\")")
+        let text = branch.range(of: "Text(CadenceStoreBackupPresentation.noBackupsText)")
+        #expect(glyph != nil && text != nil)
+        if let glyph, let text {
+            #expect(glyph.upperBound < text.lowerBound, "the glyph leads the line")
+        }
+    }
+
+    @Test func unrestoredFoldersAreDividedRowsWithoutAnAction() throws {
+        let card = try body("private var unrestoredCard: some View", in: phonePath)
+        #expect(card.contains("ForEach(Array(retainedUnrestoredDirectories.enumerated())"), "the scan no longer reaches the list")
+        #expect(card.contains("iOSRetainedUnrestoredDirectoryRow(directoryURL:directoryURL)"))
+        #expect(card.contains(
+            "ifindex<retainedUnrestoredDirectories.count-1{iOSRowDivider(leadingInset:iOSSettingsMetrics.rowTextInset)}"
+        ), "one divider between rows, as the Unmanaged Store card divides its own")
+        #expect(!card.contains("Text(directoryURL.path)"), "a bare path is back in the card")
+
+        let row = try body("private struct iOSRetainedUnrestoredDirectoryRow: View", in: phonePath)
+        #expect(row.contains("iOSIconTile(systemImage:\"exclamationmark.triangle\",color:Theme.amber,"))
+        let path = row.range(of: "Text(directoryURL.path)")
+        let detail = row.range(of: "Text(CadenceStoreBackupPresentation.unrestoredRowDetail)")
+        #expect(path != nil && detail != nil)
+        if let path, let detail { #expect(path.upperBound < detail.lowerBound, "path, then detail") }
+        // Read-only: no closure member and no button, so nothing destructive can be handed to it.
+        #expect(!row.contains("->Void"))
+        #expect(!row.contains("Button") && !row.contains("ActionButton"))
+
+        // The Mac's row reads the same shared detail, so the two cannot drift apart.
+        let macRow = try body(
+            "private struct RetainedUnrestoredOriginalsRow: View",
+            in: "Cadence/macOS/Views/SettingsDataSafetySection.swift"
+        )
+        #expect(macRow.contains("Text(CadenceStoreBackupPresentation.unrestoredRowDetail)"))
     }
 }

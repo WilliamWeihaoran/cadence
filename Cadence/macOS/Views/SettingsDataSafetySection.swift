@@ -777,7 +777,7 @@ private struct RetainedUnrestoredOriginalsRow: View {
                     .foregroundStyle(Theme.text)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Kept by an unfinished restore • not read by Cadence")
+                Text(CadenceStoreBackupPresentation.unrestoredRowDetail)
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.dim)
             }
