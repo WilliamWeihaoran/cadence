@@ -408,22 +408,22 @@ CadenceTests/CadenceTaskInspectorHostTests.swift                 branch=codex/ba
 CadenceTests/CadenceSharedBoardChromeTests.swift                 branch=codex/batch2-cleanup        granted=2026-10-21  grant=9e020baa  spent=82901ff6
 Cadence/Shared/CadenceScheduleDraft.swift                        branch=codex/subtasks-inspector    granted=2026-10-23  grant=460313ab  spent=21834d4c
 # superseded 2026-11-02, kept as history: Cadence/macOS/Views/QuickCreateChoicePopover.swift               branch=codex/subtasks-inspector    granted=2026-10-23  grant=460313ab  spent=21834d4c
-Cadence/macOS/Views/QuickCreateChoicePopover.swift               branch=codex/r68-repeat           granted=2026-11-02  grant=8580f8c6
+Cadence/macOS/Views/QuickCreateChoicePopover.swift               branch=codex/r68-repeat           granted=2026-11-02  grant=8580f8c6  spent=11e0b345
 Cadence/macOS/Views/SchedulePanelShellViews.swift                branch=codex/subtasks-inspector    granted=2026-10-23  grant=460313ab  spent=21834d4c
 # superseded 2026-11-02, kept as history: Cadence/macOS/Views/TaskInspectorContentSupportViews.swift       branch=codex/subtasks-inspector    granted=2026-10-23  grant=460313ab  spent=21834d4c
-Cadence/macOS/Views/TaskInspectorContentSupportViews.swift       branch=codex/r68-repeat           granted=2026-11-02  grant=8580f8c6
+Cadence/macOS/Views/TaskInspectorContentSupportViews.swift       branch=codex/r68-repeat           granted=2026-11-02  grant=8580f8c6  spent=11e0b345
 Cadence/macOS/Views/TaskInspectorFieldSupportViews.swift         branch=codex/subtasks-inspector    granted=2026-10-23  grant=460313ab  spent=21834d4c
 Cadence/macOS/Views/TaskInspectorStatusActionsRow.swift          branch=codex/subtasks-inspector    granted=2026-10-23  grant=460313ab  spent=21834d4c
 # superseded 2026-11-02, kept as history: Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift      branch=codex/subtasks-inspector    granted=2026-10-23  grant=460313ab  spent=21834d4c
-Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift      branch=codex/r68-repeat           granted=2026-11-02  grant=8580f8c6
+Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift      branch=codex/r68-repeat           granted=2026-11-02  grant=8580f8c6  spent=11e0b345
 CadenceTests/CadenceQuickCreateTaskInspectorTests.swift          branch=codex/subtasks-inspector    granted=2026-10-23  grant=460313ab  spent=21834d4c
 # superseded 2026-11-02, kept as history: Cadence/macOS/Views/SchedulePanelComponents.swift                branch=codex/subtasks-inspector    granted=2026-10-23  grant=6bb56ed7  spent=21834d4c
-Cadence/macOS/Views/SchedulePanelComponents.swift                branch=codex/r68-repeat           granted=2026-11-02  grant=8580f8c6
-CadenceTests/CadenceRecurrenceEndAndSyncSurfaceTests.swift       branch=codex/r68-repeat           granted=2026-11-02  grant=715aa388
-CadenceTests/CadenceInspectorChildPopoverPlacementTests.swift    branch=codex/r68-repeat           granted=2026-11-02  grant=715aa388
-CadenceTests/CadenceMacTaskInspectorStatusActionsTests.swift     branch=codex/r68-repeat           granted=2026-11-02  grant=715aa388
-CadenceTests/CadenceMacHunt0938CopyTests.swift                   branch=codex/r68-repeat           granted=2026-11-02  grant=715aa388
-CadenceTests/CadenceCodexMacInspectorPanelTests.swift            branch=codex/r68-repeat           granted=2026-11-02  grant=715aa388
+Cadence/macOS/Views/SchedulePanelComponents.swift                branch=codex/r68-repeat           granted=2026-11-02  grant=8580f8c6  spent=11e0b345
+CadenceTests/CadenceRecurrenceEndAndSyncSurfaceTests.swift       branch=codex/r68-repeat           granted=2026-11-02  grant=715aa388  spent=11e0b345
+CadenceTests/CadenceInspectorChildPopoverPlacementTests.swift    branch=codex/r68-repeat           granted=2026-11-02  grant=715aa388  spent=11e0b345
+CadenceTests/CadenceMacTaskInspectorStatusActionsTests.swift     branch=codex/r68-repeat           granted=2026-11-02  grant=715aa388  spent=11e0b345
+CadenceTests/CadenceMacHunt0938CopyTests.swift                   branch=codex/r68-repeat           granted=2026-11-02  grant=715aa388  spent=11e0b345
+CadenceTests/CadenceCodexMacInspectorPanelTests.swift            branch=codex/r68-repeat           granted=2026-11-02  grant=715aa388  spent=11e0b345
 Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift       branch=codex/subtasks-inspector    granted=2026-10-23  grant=6bb56ed7  spent=21834d4c
 AGENTS.md                                                        branch=codex/agents-cap-t3149      granted=2026-10-23  grant=703df4f9  spent=7198f79e
 CadenceMCPServer/AGENTS.md                                       branch=codex/agents-cap-t3149      granted=2026-10-23  grant=703df4f9  spent=7198f79e
