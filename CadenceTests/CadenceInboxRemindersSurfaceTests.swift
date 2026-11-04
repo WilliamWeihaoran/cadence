@@ -767,6 +767,43 @@ struct CadenceInboxRemindersSurfaceTests {
         }
     }
 
+    // MARK: - [[T-11213]] One Inbox reminders row on both platforms
+
+    /// The ticked reminder's title dims and strikes on both rows. The Mac row faded only its
+    /// opacity, so the same tick read "done" on iOS and "dimmed" on the Mac, beside a `MacTaskRow`
+    /// that strikes its own done titles. Exact counts: one title per row file.
+    @Test func bothReminderRowsDimAndStrikeTheTickedTitle() throws {
+        let rowFiles = [
+            "Cadence/macOS/Views/InboxSupportViews.swift",
+            "Cadence/iOS/iOSInboxRemindersSection.swift",
+        ]
+        try expectOccurrences(
+            of: ".strikethrough(rowState.isCompleting, color: Theme.dim)",
+            at: Dictionary(uniqueKeysWithValues: rowFiles.map { ($0, 1) })
+        )
+        try expectOccurrences(
+            of: ".foregroundStyle(rowState.isCompleting ? Theme.dim : Theme.text)",
+            at: Dictionary(uniqueKeysWithValues: rowFiles.map { ($0, 1) })
+        )
+    }
+
+    /// Both Inbox access rows draw the button glyph from the one shared value, so Allow Access is
+    /// not bare on the Mac beside iOS's `checkmark.circle.fill`. The value test pins the pair.
+    @Test func bothInboxAccessRowsDrawTheSharedButtonGlyph() throws {
+        #expect(RemindersAccessAction.requestAccess.buttonSystemImage == CadenceAccessButtonGlyph.requestAccess)
+        #expect(RemindersAccessAction.openSystemSettings.buttonSystemImage == CadenceAccessButtonGlyph.openSettings)
+
+        try expectOccurrences(
+            of: "systemImage: action.buttonSystemImage",
+            at: [
+                "Cadence/macOS/Views/InboxSupportViews.swift": 1,
+                "Cadence/iOS/iOSInboxRemindersSection.swift": 1,
+            ]
+        )
+        let mac = try strippingComments(sourceFile("Cadence/macOS/Views/InboxSupportViews.swift"))
+        #expect(!mac.contains("CadenceAccessButtonGlyph."), "the Mac Inbox row picks its own glyph again")
+    }
+
     // MARK: - The manager reconciles its own view
 
     /// Which reconcile each outcome asks for, stated as a value. Two of the five mean the row is

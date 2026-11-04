@@ -69,7 +69,7 @@ struct iOSRemindersSettingsSection: View {
                         // [[T-9952]], [[T-9953]]: Calendar's words, glyph and tint for the same two acts.
                         iOSActionButton(
                             title: action.title(on: .mobile),
-                            systemImage: action.mobileButtonSystemImage,
+                            systemImage: action.buttonSystemImage,
                             role: .primary,
                             size: .compact,
                             tint: action == .openSystemSettings ? Theme.amber : Theme.blue,

@@ -81,8 +81,8 @@ struct RemindersConnectionStateTests {
 
     /// **[[T-9953]].** The iOS button glyphs are Calendar's.
     @Test func theMobileButtonGlyphsAreCalendars() {
-        #expect(RemindersAccessAction.requestAccess.mobileButtonSystemImage == CadenceCalendarAccessNotice.connectOffer.mobileButtonSystemImage)
-        #expect(RemindersAccessAction.openSystemSettings.mobileButtonSystemImage == CadenceCalendarAccessNotice.denied.mobileButtonSystemImage)
+        #expect(RemindersAccessAction.requestAccess.buttonSystemImage == CadenceCalendarAccessNotice.connectOffer.mobileButtonSystemImage)
+        #expect(RemindersAccessAction.openSystemSettings.buttonSystemImage == CadenceCalendarAccessNotice.denied.mobileButtonSystemImage)
     }
 
     /// **T-846.** The first visit to this screen used to say "Reminders access required" — a

@@ -157,9 +157,12 @@ private struct AppleReminderTaskRow: View {
             .help(completionControlLabel)
             .padding(.horizontal, Self.completionCircleInset)
 
+            // [[T-11213]]: the ticked title dims and strikes, as `iOSInboxReminderRow`'s does and
+            // as `MacTaskRow` draws a done task beside it; this row only faded its opacity.
             Text(CadenceTitleNormalization.display(reminder.title, fallback: CadenceTitleNormalization.defaultReminderTitle))
                 .font(.system(size: 15))
-                .foregroundStyle(Theme.text)
+                .foregroundStyle(rowState.isCompleting ? Theme.dim : Theme.text)
+                .strikethrough(rowState.isCompleting, color: Theme.dim)
                 .lineLimit(1)
 
             Spacer(minLength: 8)
@@ -277,9 +280,11 @@ private struct AppleRemindersAccessRow: View {
             // the dead-button bug T-256 exists to close, not fix it a third time.
             if let action = state.accessAction {
                 // [[T-9955]]: Open Settings is amber with the shared glyph on every surface.
+                // [[T-11213]]: Allow Access wears the request glyph too, the one pair iOS's Inbox
+                // row reads; `nil` tint is `CadenceActionButton`'s blue, iOS's Allow Access tint.
                 CadenceActionButton(
                     title: action.title,
-                    systemImage: action == .openSystemSettings ? CadenceAccessButtonGlyph.openSettings : nil,
+                    systemImage: action.buttonSystemImage,
                     role: .primary,
                     size: .compact,
                     tint: action == .openSystemSettings ? Theme.amber : nil,

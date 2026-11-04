@@ -229,9 +229,11 @@ enum RemindersAccessAction: Equatable {
         #endif
     }
 
-    /// The glyph an iOS access button draws for this action ([[T-9953]]): Calendar's, through
-    /// the one pair every iOS access card reads.
-    var mobileButtonSystemImage: String {
+    /// The glyph an access button draws for this action ([[T-9953]]): Calendar's, through the one
+    /// pair every iOS access card reads. **Both platforms since [[T-11213]]**: the Mac Inbox's
+    /// access row drew Allow Access bare beside iOS's `checkmark.circle.fill`, and a glyph names no
+    /// hardware, so the property lost its `mobile` prefix rather than gaining a Mac twin.
+    var buttonSystemImage: String {
         switch self {
         case .requestAccess: return CadenceAccessButtonGlyph.requestAccess
         case .openSystemSettings: return CadenceAccessButtonGlyph.openSettings

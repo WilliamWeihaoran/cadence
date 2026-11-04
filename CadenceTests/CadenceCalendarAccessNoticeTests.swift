@@ -167,12 +167,12 @@ struct CadenceCalendarAccessNoticeTests {
         let needles: [(file: String, reads: [String])] = [
             ("Cadence/iOS/iOSRemindersSettingsSection.swift", [
                 "title: action.title(on: .mobile)",
-                "systemImage: action.mobileButtonSystemImage",
+                "systemImage: action.buttonSystemImage",
                 "tint: action == .openSystemSettings ? Theme.amber : Theme.blue"
             ]),
             ("Cadence/iOS/iOSInboxRemindersSection.swift", [
                 "title: action.title(on: .mobile)",
-                "systemImage: action.mobileButtonSystemImage",
+                "systemImage: action.buttonSystemImage",
                 "tint: action == .openSystemSettings ? Theme.amber : Theme.blue"
             ]),
             ("Cadence/iOS/iOSCalendarSettingsSection.swift", [
@@ -259,7 +259,8 @@ struct CadenceCalendarAccessNoticeTests {
                 "tint: notice.action == .openSystemSettings ? Theme.amber : nil"
             ]),
             ("Cadence/macOS/Views/InboxSupportViews.swift", "private struct AppleRemindersAccessRow: View", [
-                "systemImage: action == .openSystemSettings ? CadenceAccessButtonGlyph.openSettings : nil",
+                // [[T-11213]]: both actions read the shared pair, as iOS's Inbox row does.
+                "systemImage: action.buttonSystemImage",
                 "tint: action == .openSystemSettings ? Theme.amber : nil"
             ]),
             ("Cadence/iOS/iOSCalendarChromeViews.swift", "struct iOSCalendarAccessNoticeBar: View", [
