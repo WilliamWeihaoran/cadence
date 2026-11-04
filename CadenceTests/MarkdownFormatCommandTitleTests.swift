@@ -48,52 +48,39 @@ struct MarkdownFormatCommandTitleTests {
         #expect(MarkdownFormatCommandTitle.sentenceCase(for: .unorderedList) != slashBulletTitle)
     }
 
-    /// iOS's format toolbar reads the shared table now, at every one of the sixteen items in
-    /// `primaryItems` — including the six `compactItems` repeats without their own second copy.
+    /// iOS's format toolbar reads the shared table now. Since [[T-8584]] it reads it through
+    /// `MarkdownFormatToolbarCatalog`, whose items take their title from the command, so the file
+    /// has no item builder left to type a literal into.
     @Test func iOSFormatToolbarReadsTheSharedTitleTable() throws {
         let source = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSMarkdownAccessoryViews.swift")
 
-        // The builders compute the title from the command; a call site no longer passes a literal
-        // string as the second argument to either.
+        #expect(source.contains("MarkdownFormatToolbarCatalog.items"), "non-vacuity: the toolbar no longer reads the catalog")
         #expect(
-            CadenceSourceScan.matchCount(#"\.icon\("[^"]+", "[^"]+", \."#, in: source) == 0,
-            "iOSMarkdownFormatToolbarItem.icon is still called with a literal title"
+            CadenceSourceScan.matchCount(#"\.(?:icon|text)\("[^"]+", "[^"]+", \."#, in: source) == 0,
+            "an item builder is called with a literal title again"
         )
-        #expect(
-            CadenceSourceScan.matchCount(#"\.text\("[^"]+", "[^"]+", \."#, in: source) == 0,
-            "iOSMarkdownFormatToolbarItem.text is still called with a literal accessibility title"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"MarkdownFormatCommandTitle\.sentenceCase\(for: command\)"#, in: source) == 2,
-            "the two builders (icon, text) no longer read the shared table"
-        )
-
-        // Non-vacuity: `primaryItems`' thirteen `.icon` entries plus `compactItems`' six repeats,
-        // all now spelled with two arguments — the count would fall if either list lost an entry
-        // or a call reverted to three arguments.
-        #expect(CadenceSourceScan.matchCount(#"\.icon\("[a-zA-Z.]+", \."#, in: source) == 19)
-        #expect(CadenceSourceScan.matchCount(#"\.icon\("list\.bullet", \.unorderedList\)"#, in: source) == 2)
-        #expect(CadenceSourceScan.matchCount(#"\.text\("[A-Z0-9]+", \."#, in: source) == 3)
+        #expect(source.contains(".accessibilityLabel(item.title)"))
+        #expect(source.contains("Label(item.title, systemImage: item.menuSystemImage)"))
     }
 
-    /// macOS's toolbar reads the shared table at every multi-word item; the tests above already
-    /// pin `H1`/`H2` (`CadenceControlAccessibilityLabelTests`) and the image button's "Image" is
-    /// intentionally untouched (single word, and not a `MarkdownFormatCommand` at all).
+    /// The catalog both toolbars read takes every item's title from the shared table.
+    @Test func theToolbarCatalogReadsTheSharedTitleTable() throws {
+        let source = try CadenceCommitSurfaceScan.scanned("Cadence/Services/MarkdownSlashCommandCoreSupport.swift")
+        #expect(source.contains("var title: String { MarkdownFormatCommandTitle.sentenceCase(for: command) }"))
+        for item in MarkdownFormatToolbarCatalog.items {
+            #expect(item.title == MarkdownFormatCommandTitle.sentenceCase(for: item.command))
+        }
+    }
+
+    /// macOS's toolbar reads the shared table at every item, through the catalog since
+    /// [[T-8584]]; the image button's "Image" is intentionally untouched (single word, and not a
+    /// `MarkdownFormatCommand` at all).
     @Test func macOSToolbarReadsTheSharedTitleTable() throws {
         let source = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Editor/MarkdownEditorView.swift")
 
-        for command in [
-            "bold", "italic", "strikethrough", "highlight", "inlineCode", "link", "noteLink",
-            "taskReference", "unorderedList", "orderedList", "todoList", "quote", "codeBlock", "divider",
-        ] {
-            #expect(
-                CadenceSourceScan.matchCount(
-                    #"MarkdownFormatCommandTitle\.sentenceCase\(for: \."# + command + #"\)"#,
-                    in: source
-                ) == 1,
-                "MarkdownEditorToolbar no longer reads the shared title for .\(command)"
-            )
-        }
+        #expect(source.contains("MarkdownFormatToolbarCatalog.groups"), "non-vacuity: the toolbar no longer reads the catalog")
+        // Every button and menu is named by the item, never by a typed string.
+        #expect(CadenceSourceScan.matchCount(#"accessibilityLabel: item\.title"#, in: source) == 4)
 
         // The literals these replaced are gone from the toolbar body, not just supplemented.
         for retired in [

@@ -518,6 +518,8 @@ struct iOSListNotesView: View {
                 onOpenReference: openMarkdownReference,
                 embeddedTaskArea: area,
                 embeddedTaskProject: project,
+                // [[T-8584]]: `/` lists this note's templates, as the Mac's note editor does.
+                slashTemplateKind: note.kind,
                 flush: editorFlush
             )
             .id(note.id)

@@ -57,7 +57,7 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
         // two surfaces read as the same integration.
         case .reminders: return "checklist"
         case .notifications: return "bell.fill"
-        case .contexts: return "square.stack.3d.up.fill"
+        case .contexts: return CadenceListKindIcon.context
         case .lists: return CadenceFeatureDestination.lists.systemImage
         case .tags: return "tag.fill"
         case .templates: return "doc.text.fill"

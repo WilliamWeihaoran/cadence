@@ -6,6 +6,13 @@ enum CadenceListKindIcon {
     static let inbox = "tray.fill"
     static let area = "folder.fill"
     static let project = "square.stack.3d.up.fill"
+    /// **[[T-10187]].** A context's glyph wherever the kind is drawn rather than one context's own
+    /// icon: the Settings category, its empty-state rows and the iOS Local Data tile. It is the
+    /// default every new context already wears (`Context.icon`), and it is not the project's
+    /// stacked squares, which the Contexts surfaces used to borrow.
+    static let context = "square.stack.fill"
+    /// The unfilled form, for the empty-state rows that draw outline glyphs.
+    static let contextOutline = "square.stack"
 }
 
 /// The list and section rows a **creating** `CadenceSchedulePanel` offers, as data, for either

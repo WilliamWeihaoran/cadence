@@ -121,8 +121,7 @@ struct MarkdownEditor: View {
     /// The `/` menu without `/image` when images are refused, rather than with an entry whose
     /// follow-up does nothing.
     private var availableSlashCommands: [MarkdownSlashCommand] {
-        let all = MarkdownSlashCommand.all + MarkdownSlashCommand.templateCommands(for: slashTemplates)
-        return allowsImageInsertion ? all : MarkdownSlashCommand.refusingImageInsertion(all)
+        MarkdownSlashCommand.offered(templates: slashTemplates, allowingImages: allowsImageInsertion)
     }
 
     var body: some View {
@@ -297,67 +296,15 @@ private struct MarkdownEditorToolbar: View {
         HStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
-                    MarkdownToolbarTextButton(title: "H1", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .heading(1))) {
-                        textView?.performMarkdownFormatCommand(.heading(1))
-                    }
-                    MarkdownToolbarTextButton(title: "H2", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .heading(2))) {
-                        textView?.performMarkdownFormatCommand(.heading(2))
-                    }
-                    toolbarDivider
-                    MarkdownToolbarButton(systemName: "bold", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .bold)) {
-                        textView?.performMarkdownFormatCommand(.bold)
-                    }
-                    MarkdownToolbarButton(systemName: "italic", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .italic)) {
-                        textView?.performMarkdownFormatCommand(.italic)
-                    }
-                    MarkdownToolbarButton(systemName: "strikethrough", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .strikethrough)) {
-                        textView?.performMarkdownFormatCommand(.strikethrough)
-                    }
-                    MarkdownToolbarButton(systemName: "highlighter", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .highlight)) {
-                        textView?.performMarkdownFormatCommand(.highlight)
-                    }
-                    MarkdownToolbarButton(systemName: "chevron.left.forwardslash.chevron.right", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .inlineCode)) {
-                        textView?.performMarkdownFormatCommand(.inlineCode)
-                    }
-                    toolbarDivider
-                    MarkdownToolbarButton(systemName: "link", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .link)) {
-                        textView?.performMarkdownFormatCommand(.link)
-                    }
-                    MarkdownReferenceMenuButton(
-                        systemName: "text.badge.plus",
-                        accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .noteLink),
-                        emptyTitle: "Blank Note Link",
-                        suggestions: noteSuggestions,
-                        blankAction: { textView?.performMarkdownFormatCommand(.noteLink) },
-                        selectAction: { textView?.insertMarkdownReference($0.markdown) }
-                    )
-                    MarkdownReferenceMenuButton(
-                        systemName: "checkmark.circle",
-                        accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .taskReference),
-                        emptyTitle: "Blank Task Reference",
-                        suggestions: taskSuggestions,
-                        blankAction: { textView?.performMarkdownFormatCommand(.taskReference) },
-                        selectAction: { textView?.insertMarkdownReference($0.markdown) }
-                    )
-                    toolbarDivider
-                    MarkdownToolbarButton(systemName: "list.bullet", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .unorderedList)) {
-                        textView?.performMarkdownFormatCommand(.unorderedList)
-                    }
-                    MarkdownToolbarButton(systemName: "list.number", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .orderedList)) {
-                        textView?.performMarkdownFormatCommand(.orderedList)
-                    }
-                    MarkdownToolbarButton(systemName: "checklist", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .todoList)) {
-                        textView?.performMarkdownFormatCommand(.todoList)
-                    }
-                    MarkdownToolbarButton(systemName: "text.quote", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .quote)) {
-                        textView?.performMarkdownFormatCommand(.quote)
-                    }
-                    toolbarDivider
-                    MarkdownToolbarButton(systemName: "curlybraces.square", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .codeBlock)) {
-                        textView?.performMarkdownFormatCommand(.codeBlock)
-                    }
-                    MarkdownToolbarButton(systemName: "minus", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .divider)) {
-                        textView?.performMarkdownFormatCommand(.divider)
+                    // [[T-8584]]: the shared command list iOS's toolbar reads too, so the two
+                    // cannot drift into different command sets again.
+                    ForEach(Array(MarkdownFormatToolbarCatalog.groups.enumerated()), id: \.offset) { index, group in
+                        if index > 0 {
+                            toolbarDivider
+                        }
+                        ForEach(group) { item in
+                            toolbarControl(for: item)
+                        }
                     }
                     if let onChooseImages {
                         MarkdownToolbarButton(systemName: "photo", accessibilityLabel: "Image") {
@@ -383,6 +330,40 @@ private struct MarkdownEditorToolbar: View {
         .background(Theme.surfaceElevated)
         .overlay(alignment: .bottom) {
             Divider().background(Theme.borderSubtle)
+        }
+    }
+
+    /// The note and task reference buttons open a menu of suggestions — the pointer's way of
+    /// choosing from a list, where iOS presents a picker sheet for the same command.
+    @ViewBuilder
+    private func toolbarControl(for item: MarkdownFormatToolbarItem) -> some View {
+        switch (item.command, item.glyph) {
+        case (.noteLink, .symbol(let name)):
+            MarkdownReferenceMenuButton(
+                systemName: name,
+                accessibilityLabel: item.title,
+                emptyTitle: "Blank Note Link",
+                suggestions: noteSuggestions,
+                blankAction: { textView?.performMarkdownFormatCommand(.noteLink) },
+                selectAction: { textView?.insertMarkdownReference($0.markdown) }
+            )
+        case (.taskReference, .symbol(let name)):
+            MarkdownReferenceMenuButton(
+                systemName: name,
+                accessibilityLabel: item.title,
+                emptyTitle: "Blank Task Reference",
+                suggestions: taskSuggestions,
+                blankAction: { textView?.performMarkdownFormatCommand(.taskReference) },
+                selectAction: { textView?.insertMarkdownReference($0.markdown) }
+            )
+        case (_, .text(let glyph)):
+            MarkdownToolbarTextButton(title: glyph, accessibilityLabel: item.title) {
+                textView?.performMarkdownFormatCommand(item.command)
+            }
+        case (_, .symbol(let name)):
+            MarkdownToolbarButton(systemName: name, accessibilityLabel: item.title) {
+                textView?.performMarkdownFormatCommand(item.command)
+            }
         }
     }
 

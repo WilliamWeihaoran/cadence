@@ -352,7 +352,7 @@ struct iOSSettingsView: View {
                 VStack(spacing: 0) {
                     if activeContexts.isEmpty {
                         iOSSettingsEmptyInlineRow(
-                            systemImage: "square.stack.3d.up",
+                            systemImage: CadenceListKindIcon.contextOutline,
                             title: CadenceSettingsEmptyStateCopy.contextsTitle,
                             subtitle: CadenceSettingsEmptyStateCopy.contextsSubtitle
                         )

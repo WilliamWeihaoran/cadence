@@ -122,8 +122,8 @@ nonisolated enum MarkdownReferenceCompletionSupport {
     /// The tasks a `[[task:` completion offers: open before done, then priority, then the total
     /// tie-break.
     ///
-    /// The inline menu truncates this with `.prefix(6)`, so an incomplete tie-break did not merely
-    /// reorder the menu — it changed *which six tasks were offered* between one keystroke and the
+    /// The inline menu truncates this to `inlineShortlistLimit`, so an incomplete tie-break did not
+    /// merely reorder the menu — it changed *which tasks were offered* between one keystroke and the
     /// next. `order` is per-container and these candidates come from every list, so equal `order`
     /// is the normal case rather than the edge one; `TaskOrdering.fallbackPrecedes` closes it.
     nonisolated static func candidateTasks(from tasks: [AppTask], query: String) -> [AppTask] {

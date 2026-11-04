@@ -54,6 +54,12 @@ struct iOSMarkdownEditingSurface: View {
     /// template menu belongs in the format row rather than a page header.
     var templateKind: NoteKind? = nil
     var applyTemplate: ((NoteTemplate) -> Void)? = nil
+    /// **[[T-8584]].** The note kind whose templates a bare `/` lists after the built-ins, as the
+    /// Mac's `MarkdownEditor(slashTemplates:)` does at the same hosts: the note editors, never a
+    /// task's notes, an event draft or a template body. Separate from `templateKind`, which only
+    /// says whether the format row carries the template MENU — a host whose page header carries
+    /// the menu still offers its templates from `/`.
+    var slashTemplateKind: NoteKind? = nil
     /// **[[T-8761]].** The note whose tag control rides in the format row — set by the hosts that
     /// also hand this row the template menu, and nil where the page header carries both.
     var tagNote: Note? = nil
@@ -61,6 +67,7 @@ struct iOSMarkdownEditingSurface: View {
     /// and the host can `flush()` it before it commits, and read `hasPendingEdit` in its dirty
     /// guard; leave it nil and the editor keeps its own, which nobody outside can reach.
     var flush: iOSMarkdownEditorFlush? = nil
+    @AppStorage(NoteTemplateLibrary.storageKey) private var noteTemplateOverridesRaw = ""
     @State private var draftText = ""
     @State private var hasLoadedDraft = false
     @State private var ownFlush = iOSMarkdownEditorFlush()
@@ -514,7 +521,7 @@ struct iOSMarkdownEditingSurface: View {
         case .note:
             return MarkdownReferenceCompletionSupport
                 .candidateNotes(from: linkableNotes, query: context.query)
-                .prefix(6)
+                .prefix(MarkdownReferenceCompletionSupport.inlineShortlistLimit)
                 .map { note in
                     iOSMarkdownReferenceCompletionChoice(
                         id: "note-\(note.id.uuidString)",
@@ -530,7 +537,7 @@ struct iOSMarkdownEditingSurface: View {
         case .task:
             return MarkdownReferenceCompletionSupport
                 .candidateTasks(from: referenceTasks, query: context.query)
-                .prefix(6)
+                .prefix(MarkdownReferenceCompletionSupport.inlineShortlistLimit)
                 .map { task in
                     let title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
                     let subtitle = task.containerName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -554,6 +561,11 @@ struct iOSMarkdownEditingSurface: View {
         ))
     }
 
+    private var slashTemplates: [NoteTemplate] {
+        guard let slashTemplateKind else { return [] }
+        return NoteTemplateLibrary.templates(for: slashTemplateKind, overridesRaw: noteTemplateOverridesRaw)
+    }
+
     private func slashCommandChoices(for context: MarkdownSlashCommandContext) -> [MarkdownSlashCommand] {
         // A command whose follow-up this host refuses is not offered. Leaving it in the strip and
         // swallowing the tap is the worse half of a disabled feature. The predicate itself is
@@ -561,9 +573,12 @@ struct iOSMarkdownEditingSurface: View {
         // out here: macOS's `/` menu has to make the same refusal (T-442), and which commands an
         // out-of-store host may run is not a per-platform decision. It is a separate pass from the
         // query filter below because the two answer different questions.
-        let offered = allowsImageInsertion
-            ? MarkdownSlashCommand.all
-            : MarkdownSlashCommand.refusingImageInsertion(MarkdownSlashCommand.all)
+        // [[T-8584]]: and the note's templates after the built-ins, as the Mac's `/` menu lists
+        // them, through the one function both platforms read.
+        let offered = MarkdownSlashCommand.offered(
+            templates: slashTemplates,
+            allowingImages: allowsImageInsertion
+        )
         // Every match, not the first eight ([[T-8581]]): the strip scrolls sideways, and a cap
         // here left Table, Highlight and eight more commands out of a bare `/`.
         return MarkdownSlashCommand.matching(offered, query: context.query)

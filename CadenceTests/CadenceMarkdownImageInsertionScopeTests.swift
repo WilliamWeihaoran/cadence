@@ -67,9 +67,13 @@ struct CadenceMarkdownImageInsertionScopeTests {
         // `/` menu had to make the identical refusal and open-coding `case .chooseImage` a second
         // time is the shape T-374 exists to stop. What is pinned here is that this strip *reads*
         // it; `theSlashMenuDropsTheImageCommandThroughOneSharedPredicate` pins what it returns.
+        //
+        // [[T-8584]]: both platforms now reach it through `MarkdownSlashCommand.offered`, which
+        // also appends the host's templates; `theSharedSlashOfferAppendsTemplatesAndDropsRefusedImages`
+        // pins what that returns.
         #expect(
-            code.contains("MarkdownSlashCommand.refusingImageInsertion(MarkdownSlashCommand.all)"),
-            "the iOS slash strip no longer reads the shared refusal"
+            code.contains("let offered = MarkdownSlashCommand.offered(\n            templates: slashTemplates,\n            allowingImages: allowsImageInsertion\n        )"),
+            "the iOS slash strip no longer reads the shared offer"
         )
         // Scoped to the one function, not the file: `applySlashCommand` legitimately switches on
         // `.chooseImage` to run the follow-up, and a file-wide count would read that as the strip
@@ -83,8 +87,8 @@ struct CadenceMarkdownImageInsertionScopeTests {
             "the iOS strip re-tests the command's action itself instead of reading the shared predicate"
         )
         #expect(
-            choices.contains("refusingImageInsertion"),
-            "the shared refusal is read somewhere else in the file, not by the strip"
+            choices.contains("MarkdownSlashCommand.offered("),
+            "the shared offer is read somewhere else in the file, not by the strip"
         )
 
         // The picker presenter, which `/image` reaches directly rather than through the toolbar.
@@ -245,7 +249,7 @@ struct CadenceMarkdownImageInsertionScopeTests {
         )
 
         // Door 2 — the `/image` entry, dropped from the menu the editor is handed.
-        #expect(code.contains("MarkdownSlashCommand.refusingImageInsertion(all)"))
+        #expect(code.contains("MarkdownSlashCommand.offered(templates: slashTemplates, allowingImages: allowsImageInsertion)"))
         #expect(code.contains("slashCommands: availableSlashCommands,"))
 
         // Door 3 — the open panel, which `/image` also reaches through the coordinator's follow-up.

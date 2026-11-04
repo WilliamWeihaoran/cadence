@@ -581,46 +581,13 @@ struct iOSMarkdownFormatToolbar: View {
     /// One touch target plus the row's own padding.
     static let height: CGFloat = iOSMarkdownChromeMetrics.touchTarget + 12
 
-    /// Indices the full toolbar draws a separator *before*, grouping block style / inline style /
-    /// lists / blocks / references.
-    private static let fullSeparatorIndices: Set<Int> = [3, 8, 11, 14]
     private static let compactWidthThreshold: CGFloat = 620
 
-    private let primaryItems: [iOSMarkdownFormatToolbarItem] = [
-        .text("P", .paragraph),
-        .text("H1", .heading(1)),
-        .text("H2", .heading(2)),
-        .icon("bold", .bold),
-        .icon("italic", .italic),
-        .icon("strikethrough", .strikethrough),
-        .icon("chevron.left.forwardslash.chevron.right", .inlineCode),
-        .icon("link", .link),
-        .icon("list.bullet", .unorderedList),
-        .icon("list.number", .orderedList),
-        .icon("checklist", .todoList),
-        .icon("text.quote", .quote),
-        .icon("curlybraces.square", .codeBlock),
-        .icon("minus", .divider),
-        .icon("text.badge.plus", .noteLink),
-        .icon("checkmark.circle", .taskReference)
-    ]
-
-    private var compactItems: [iOSMarkdownFormatToolbarItem] {
-        [
-            .icon("bold", .bold),
-            .icon("italic", .italic),
-            .icon("link", .link),
-            .icon("list.bullet", .unorderedList),
-            .icon("checklist", .todoList),
-            .icon("text.badge.plus", .noteLink)
-        ]
-    }
-
-    private var compactMoreItems: [iOSMarkdownFormatToolbarItem] {
-        primaryItems.filter { item in
-            !compactItems.contains(where: { $0.id == item.id })
-        }
-    }
+    /// [[T-8584]]: the one command list the Mac toolbar reads too. The compact row's subset and
+    /// its overflow are width answers, also kept there, so the two lists cannot fall out of step.
+    private var primaryItems: [MarkdownFormatToolbarItem] { MarkdownFormatToolbarCatalog.items }
+    private var compactItems: [MarkdownFormatToolbarItem] { MarkdownFormatToolbarCatalog.compactItems }
+    private var compactMoreItems: [MarkdownFormatToolbarItem] { MarkdownFormatToolbarCatalog.compactOverflowItems }
 
     var body: some View {
         GeometryReader { proxy in
@@ -643,7 +610,7 @@ struct iOSMarkdownFormatToolbar: View {
         ScrollView(.horizontal) {
             HStack(spacing: 4) {
                 ForEach(Array((isCompact ? compactItems : primaryItems).enumerated()), id: \.element.id) { index, item in
-                    if !isCompact, Self.fullSeparatorIndices.contains(index) {
+                    if !isCompact, MarkdownFormatToolbarCatalog.separatorIndices.contains(index) {
                         separator
                     }
 
@@ -689,11 +656,7 @@ struct iOSMarkdownFormatToolbar: View {
                             Button {
                                 apply(item.command)
                             } label: {
-                                if let systemImage = item.systemImage {
-                                    Label(item.title, systemImage: systemImage)
-                                } else {
-                                    Label(item.id, systemImage: item.menuSystemImage)
-                                }
+                                Label(item.title, systemImage: item.menuSystemImage)
                             }
                         }
                     } label: {
@@ -732,53 +695,22 @@ struct iOSMarkdownFormatToolbar: View {
     }
 }
 
-private struct iOSMarkdownFormatToolbarItem: Identifiable {
-    let id: String
-    let title: String
-    let systemImage: String?
-    let command: MarkdownFormatCommand
-
-    /// **T-845.** `title` used to be typed at every call site below; it is now
-    /// `MarkdownFormatCommandTitle.sentenceCase(for:)`, so a fourteenth button cannot retype it a
-    /// third way (macOS's toolbar is the second) and cannot pick Title Case by habit the way this
-    /// file's own two copies — `primaryItems` and `compactItems` — used to.
-    static func icon(_ systemImage: String, _ command: MarkdownFormatCommand) -> iOSMarkdownFormatToolbarItem {
-        let title = MarkdownFormatCommandTitle.sentenceCase(for: command)
-        return iOSMarkdownFormatToolbarItem(id: title, title: title, systemImage: systemImage, command: command)
-    }
-
-    static func text(_ glyph: String, _ command: MarkdownFormatCommand) -> iOSMarkdownFormatToolbarItem {
-        let accessibilityTitle = MarkdownFormatCommandTitle.sentenceCase(for: command)
-        return iOSMarkdownFormatToolbarItem(id: accessibilityTitle, title: glyph, systemImage: nil, command: command)
-    }
-
-    var menuSystemImage: String {
-        switch command {
-        case .paragraph:
-            return "paragraphsign"
-        case .heading:
-            return "textformat.size"
-        default:
-            return systemImage ?? "textformat"
-        }
-    }
-}
-
 /// Not `iOSIconButton`: three of the toolbar's items ("P", "H1", "H2") are text glyphs rather than
 /// SF Symbols, and a row where half the buttons wore the design system's plate and half wore a
 /// hand-made one is exactly the drift this pass exists to remove. It wears the same plate instead.
 private struct iOSMarkdownFormatButton: View {
-    let item: iOSMarkdownFormatToolbarItem
+    let item: MarkdownFormatToolbarItem
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Group {
-                if let systemImage = item.systemImage {
+                switch item.glyph {
+                case .symbol(let systemImage):
                     Image(systemName: systemImage)
                         .font(.system(size: 13, weight: .semibold))
-                } else {
-                    Text(item.title)
+                case .text(let glyph):
+                    Text(glyph)
                         .font(.system(size: 12, weight: .bold))
                 }
             }
@@ -786,7 +718,7 @@ private struct iOSMarkdownFormatButton: View {
             .modifier(iOSMarkdownChromePlate(width: iOSMarkdownChromeMetrics.buttonPlate))
         }
         .buttonStyle(.iosPressable)
-        .accessibilityLabel(item.id)
+        .accessibilityLabel(item.title)
     }
 }
 

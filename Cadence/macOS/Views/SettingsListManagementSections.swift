@@ -657,7 +657,7 @@ struct SettingsContextsSection: View {
                             // "Create one here" is true on this platform too: the **New Context**
                             // button is in this same card, directly under the divider below.
                             CadenceSettingsNoticeRow(
-                                systemImage: "square.stack.3d.up",
+                                systemImage: CadenceListKindIcon.contextOutline,
                                 title: CadenceSettingsEmptyStateCopy.contextsTitle,
                                 detail: CadenceSettingsEmptyStateCopy.contextsSubtitle
                             ) {

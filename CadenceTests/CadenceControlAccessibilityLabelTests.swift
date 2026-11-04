@@ -91,17 +91,16 @@ struct CadenceControlAccessibilityLabelTests {
     /// (asserted separately below) rather than from the retired literal is what proves the
     /// substitution still holds.
     @Test func theTwoHeadingButtonsAreNamedForTheHeadingRatherThanForTheGlyph() throws {
+        // [[T-8584]]: the glyph and the name now come from one catalog item, so the text button
+        // is built once, from `.text(let glyph)`, and named by the item's title.
         let text = try CadenceSourceScan.sourceFile(Self.toolbarPath)
-        #expect(
-            text.contains(
-                #"MarkdownToolbarTextButton(title: "H1", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .heading(1)))"#
-            )
-        )
-        #expect(
-            text.contains(
-                #"MarkdownToolbarTextButton(title: "H2", accessibilityLabel: MarkdownFormatCommandTitle.sentenceCase(for: .heading(2)))"#
-            )
-        )
+        #expect(text.contains("MarkdownToolbarTextButton(title: glyph, accessibilityLabel: item.title)"))
+        let headings = MarkdownFormatToolbarCatalog.items.filter {
+            if case .heading = $0.command { return true }
+            return false
+        }
+        #expect(headings.map(\.glyph) == [.text("H1"), .text("H2")])
+        #expect(headings.map(\.title) == ["Heading 1", "Heading 2"])
         #expect(MarkdownFormatCommandTitle.sentenceCase(for: .heading(1)) == "Heading 1")
         #expect(MarkdownFormatCommandTitle.sentenceCase(for: .heading(2)) == "Heading 2")
     }

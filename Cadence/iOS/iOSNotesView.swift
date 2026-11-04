@@ -522,6 +522,7 @@ struct iOSNotesView: View {
                     onOpenReference: openMarkdownReference,
                     templateKind: showsHeaderTemplateMenu ? nil : activeTab.coreTab?.noteKind,
                     applyTemplate: showsHeaderTemplateMenu ? nil : { apply($0, to: note) },
+                    slashTemplateKind: note.kind,
                     tagNote: showsHeaderTemplateMenu ? nil : note,
                     flush: editorFlush
                 )
@@ -934,6 +935,7 @@ struct iOSNoteEditorCover: View {
                 embeddedTaskProject: embeddedTaskProject,
                 templateKind: templateKind,
                 applyTemplate: templateKind == nil ? nil : { apply($0) },
+                slashTemplateKind: note.kind,
                 // [[T-8761]]: this cover is the one-column form, whose header has no room.
                 tagNote: note,
                 flush: editorFlush

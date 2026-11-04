@@ -339,7 +339,7 @@ final class MarkdownReferencePickerController {
         let filtered = allSuggestions
             .filter { $0.kind == context.kind }
             .filter { $0.matches(query: query) }
-            .prefix(8)
+            .prefix(MarkdownReferenceCompletionSupport.inlineShortlistLimit)
 
         let matches = Array(filtered)
         guard !matches.isEmpty else {

@@ -315,3 +315,136 @@ nonisolated enum MarkdownFormatCommandTitle {
         }
     }
 }
+
+/// One button of the note editor's format toolbar: the command it runs and what it draws.
+///
+/// **[[T-8584]].** Both toolbars build from `MarkdownFormatToolbarCatalog` now. Their accessible
+/// name is the shared `MarkdownFormatCommandTitle`, so neither platform types a title either.
+nonisolated struct MarkdownFormatToolbarItem: Identifiable, Hashable {
+    enum Glyph: Hashable {
+        /// A short text glyph ("P", "H1") where no SF Symbol says it better.
+        case text(String)
+        case symbol(String)
+    }
+
+    let command: MarkdownFormatCommand
+    let glyph: Glyph
+
+    /// The accessible name, which is also the item's identity: no two toolbar commands share one.
+    var id: String { title }
+    var title: String { MarkdownFormatCommandTitle.sentenceCase(for: command) }
+
+    var systemImage: String? {
+        if case .symbol(let name) = glyph { return name }
+        return nil
+    }
+
+    /// The symbol an overflow menu row draws, where a text glyph cannot stand in for an icon.
+    var menuSystemImage: String {
+        switch command {
+        case .paragraph: return "paragraphsign"
+        case .heading: return "textformat.size"
+        default: return systemImage ?? "textformat"
+        }
+    }
+
+    static func text(_ glyph: String, _ command: MarkdownFormatCommand) -> MarkdownFormatToolbarItem {
+        MarkdownFormatToolbarItem(command: command, glyph: .text(glyph))
+    }
+
+    static func symbol(_ name: String, _ command: MarkdownFormatCommand) -> MarkdownFormatToolbarItem {
+        MarkdownFormatToolbarItem(command: command, glyph: .symbol(name))
+    }
+}
+
+/// **The note editor's format commands, once, for the Mac toolbar and the iOS one ([[T-8584]]).**
+///
+/// The two toolbars were typed separately and had drifted: the Mac had Highlight and no
+/// Paragraph, iOS had Paragraph and no Highlight, and they ordered the rest differently. Neither
+/// difference answered a hardware or input constraint ([[T-8201]]), so both platforms now draw the
+/// union in this order. What still differs is width only: the iPhone's compact row shows
+/// `compactCommands` and moves the rest into its overflow menu, because sixteen 44pt touch
+/// targets do not fit a 393pt screen. The Mac's note and task reference buttons open a menu of
+/// suggestions and iOS's open a picker sheet — the presentation each platform has for "choose from
+/// a list", not a different command.
+///
+/// The image button and the template menu are not here: neither is a `MarkdownFormatCommand`, and
+/// each host gates them on its own (`allowsImageInsertion`, a note kind).
+nonisolated enum MarkdownFormatToolbarCatalog {
+    /// Block style / inline style / references / lists / blocks. Each toolbar draws a separator
+    /// between groups.
+    static let groups: [[MarkdownFormatToolbarItem]] = [
+        [
+            .text("P", .paragraph),
+            .text("H1", .heading(1)),
+            .text("H2", .heading(2)),
+        ],
+        [
+            .symbol("bold", .bold),
+            .symbol("italic", .italic),
+            .symbol("strikethrough", .strikethrough),
+            .symbol("highlighter", .highlight),
+            .symbol("chevron.left.forwardslash.chevron.right", .inlineCode),
+        ],
+        [
+            .symbol("link", .link),
+            .symbol("text.badge.plus", .noteLink),
+            .symbol("checkmark.circle", .taskReference),
+        ],
+        [
+            .symbol("list.bullet", .unorderedList),
+            .symbol("list.number", .orderedList),
+            .symbol("checklist", .todoList),
+            .symbol("text.quote", .quote),
+        ],
+        [
+            .symbol("curlybraces.square", .codeBlock),
+            .symbol("minus", .divider),
+        ],
+    ]
+
+    static var items: [MarkdownFormatToolbarItem] { groups.flatMap { $0 } }
+
+    /// The indices of `items` a full-width toolbar draws a separator before.
+    static var separatorIndices: Set<Int> {
+        var indices = Set<Int>()
+        var start = 0
+        for group in groups.dropLast() {
+            start += group.count
+            indices.insert(start)
+        }
+        return indices
+    }
+
+    /// What a compact (iPhone-width) row keeps in line; every other item goes into its overflow
+    /// menu, in catalog order.
+    static let compactCommands: [MarkdownFormatCommand] = [
+        .bold, .italic, .link, .unorderedList, .todoList, .noteLink,
+    ]
+
+    static var compactItems: [MarkdownFormatToolbarItem] {
+        compactCommands.compactMap { command in items.first(where: { $0.command == command }) }
+    }
+
+    static var compactOverflowItems: [MarkdownFormatToolbarItem] {
+        items.filter { !compactCommands.contains($0.command) }
+    }
+}
+
+extension MarkdownSlashCommand {
+    /// **What a bare `/` offers at a host, on both platforms ([[T-8584]]).** The built-ins, then
+    /// the host's note templates, less the image command where the host refuses images. The Mac
+    /// appended templates and iOS never did, so on iPhone and iPad a template was reachable only
+    /// from the toolbar's menu; a typed `/` is not an input one platform lacks.
+    nonisolated static func offered(templates: [NoteTemplate], allowingImages: Bool) -> [MarkdownSlashCommand] {
+        let all = MarkdownSlashCommand.all + MarkdownSlashCommand.templateCommands(for: templates)
+        return allowingImages ? all : MarkdownSlashCommand.refusingImageInsertion(all)
+    }
+}
+
+extension MarkdownReferenceCompletionSupport {
+    /// **How many `[[` matches the inline menu shows, on both platforms ([[T-8584]]).** The Mac's
+    /// picker kept 8 and iOS's strip kept 6; the strip scrolls sideways, so the smaller number was
+    /// never a screen limit.
+    nonisolated static let inlineShortlistLimit = 8
+}

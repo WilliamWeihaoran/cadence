@@ -29,7 +29,7 @@ struct CadenceMacPageAccessibilityAuditTests {
         var actions: [String] = []
         /// The element's screen frame ([[T-9351]]), read by key like `isSelected`; `.zero` where unanswered.
         var frame: NSRect = .zero
-        /// `accessibilityTitle` as plain text ([[T-9533]]). A SwiftUI `Menu`'s `.accessibilityLabel`
+        /// The element's accessibility title as plain text ([[T-9533]]). A SwiftUI `Menu`'s `.accessibilityLabel`
         /// lands here on macOS 27, as an attributed string, not in `accessibilityLabel`; CI's macOS 26
         /// leaves it unanswered (run 41247660990).
         var title: String = ""

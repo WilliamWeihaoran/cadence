@@ -150,10 +150,12 @@ struct iOSLocalDataSettingsSection: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
                         iOSSettingsMetricTile(title: "Active tasks", value: "\(activeTaskCount)", icon: "checklist", color: Theme.blue)
                         iOSSettingsMetricTile(title: "Completed", value: "\(completedTaskCount)", icon: "checkmark.circle.fill", color: Theme.green)
-                        iOSSettingsMetricTile(title: "Inbox", value: "\(inboxTaskCount)", icon: "tray.fill", color: Theme.blue)
-                        iOSSettingsMetricTile(title: "Contexts", value: "\(activeContextCount)", icon: "square.stack.3d.up.fill", color: Theme.red)
-                        iOSSettingsMetricTile(title: "Areas", value: "\(activeAreaCount)", icon: "folder.fill", color: Theme.green)
-                        iOSSettingsMetricTile(title: "Projects", value: "\(activeProjectCount)", icon: "flag.fill", color: Theme.amber)
+                        // [[T-10187]]: each list kind wears the glyph the list choosers and the Mac
+                        // draw for it, not a flag (the Due Date / Priority glyph) for projects.
+                        iOSSettingsMetricTile(title: "Inbox", value: "\(inboxTaskCount)", icon: CadenceListKindIcon.inbox, color: Theme.blue)
+                        iOSSettingsMetricTile(title: "Contexts", value: "\(activeContextCount)", icon: CadenceListKindIcon.context, color: Theme.red)
+                        iOSSettingsMetricTile(title: "Areas", value: "\(activeAreaCount)", icon: CadenceListKindIcon.area, color: Theme.green)
+                        iOSSettingsMetricTile(title: "Projects", value: "\(activeProjectCount)", icon: CadenceListKindIcon.project, color: Theme.amber)
                         iOSSettingsMetricTile(title: "Notes", value: "\(noteCount)", icon: "doc.text.fill", color: Theme.purple)
                     }
 
