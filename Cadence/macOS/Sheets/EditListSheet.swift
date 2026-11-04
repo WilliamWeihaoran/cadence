@@ -40,9 +40,17 @@ struct EditAreaSheet: View {
     }
 
     private var statusLabel: String {
-        if area.isDone { return "Completed" }
-        if area.isArchived { return "Archived" }
-        return "Active"
+        CadenceListEditorFieldSet.statusLabel(area.status)
+    }
+
+    /// [[T-8562]]: the shared field list both platforms' editors draw. `.columns` is in it and not
+    /// drawn here yet -- see the SHIP-NOTE on T-8562; the board's column popover edits them.
+    private var fields: [CadenceListEditorField] {
+        CadenceListEditorFieldSet.fields(
+            kind: .area,
+            isEditing: true,
+            isCalendarAccessGranted: calendarManager.isAuthorized
+        )
     }
 
     var body: some View {
@@ -64,7 +72,7 @@ struct EditAreaSheet: View {
                 ListEditorContextRow(contexts: contexts, selectedID: $selectedContextID)
                 TaskInspectorFieldDivider()
 
-                if calendarManager.isAuthorized {
+                if fields.contains(.appleCalendar) {
                     ListEditorCalendarRow(
                         calendars: calendarManager.availableCalendars,
                         allCalendars: calendarManager.allCalendars,
@@ -301,13 +309,16 @@ struct EditProjectSheet: View {
     /// Projects can also be paused or cancelled, so the row reports the stored status instead of
     /// assuming it is one of the three the picker offers.
     private var statusLabel: String {
-        switch project.status {
-        case .active:    return "Active"
-        case .done:      return "Completed"
-        case .archived:  return "Archived"
-        case .paused:    return "Paused"
-        case .cancelled: return "Canceled"
-        }
+        CadenceListEditorFieldSet.statusLabel(project.status)
+    }
+
+    /// [[T-8562]]: same shared field list as `EditAreaSheet.fields`.
+    private var fields: [CadenceListEditorField] {
+        CadenceListEditorFieldSet.fields(
+            kind: .project,
+            isEditing: true,
+            isCalendarAccessGranted: calendarManager.isAuthorized
+        )
     }
 
     var body: some View {
@@ -334,7 +345,7 @@ struct EditProjectSheet: View {
 
                 ListEditorDueDateRow(dueDateKey: $dueDateKey, seed: $dueDate)
 
-                if calendarManager.isAuthorized {
+                if fields.contains(.appleCalendar) {
                     TaskInspectorFieldDivider()
                     ListEditorCalendarRow(
                         calendars: calendarManager.availableCalendars,

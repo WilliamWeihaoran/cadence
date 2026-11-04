@@ -96,6 +96,16 @@ struct CreateListSheet: View {
         }
     }
 
+    /// [[T-8562]]: the shared field list both platforms' editors draw. `.columns` is in it and not
+    /// drawn here yet -- see the SHIP-NOTE on T-8562.
+    private var fields: [CadenceListEditorField] {
+        CadenceListEditorFieldSet.fields(
+            kind: listType == .project ? .project : .area,
+            isEditing: false,
+            isCalendarAccessGranted: false
+        )
+    }
+
     var body: some View {
         ListEditorSheetShell(
             title: "New List",
@@ -131,10 +141,12 @@ struct CreateListSheet: View {
                 ListEditorContextRow(contexts: contexts, selectedID: $selectedContextID)
                 TaskInspectorFieldDivider()
 
-                if listType == .project {
+                if fields.contains(.area) {
                     ListEditorAreaRow(areas: areas, selectedID: $selectedAreaID)
                     TaskInspectorFieldDivider()
+                }
 
+                if fields.contains(.dueDate) {
                     ListEditorDueDateRow(dueDateKey: $dueDateKey, seed: $dueDate)
                     TaskInspectorFieldDivider()
                 }

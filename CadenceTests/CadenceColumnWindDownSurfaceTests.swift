@@ -292,8 +292,10 @@ struct CadenceColumnWindDownSurfaceTests {
         #expect(!editor.contains("Toggle(\"Completed\""))
         #expect(!editor.contains("Toggle(\"Archived\""))
 
+        // Two since [[T-8562]]: the column's decision, and the whole list's for the editor's own
+        // Status / Archive rows -- each asked once, neither by a row.
         try expectOccurrences(of: "requiresConfirmation", at: [
-            "Cadence/iOS/iOSListEditorViews.swift": 1,
+            "Cadence/iOS/iOSListEditorViews.swift": 2,
             "Cadence/iOS/iOSColumnWindDownSupport.swift": 0
         ])
 

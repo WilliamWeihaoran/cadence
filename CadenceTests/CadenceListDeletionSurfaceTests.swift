@@ -549,9 +549,11 @@ struct CadenceListDeletionSurfaceTests {
 
         // The modifier is attached on the two hosts, and only there: the iPad pane and the settings
         // list section *request* a deletion up to their host rather than owning a second sheet.
+        // [[T-8562]]: the list editor's Delete row is a third host, for the list it edits.
         try expectCallSites(of: ".iOSListDeletion", at: [
             "Cadence/iOS/iOSListViews.swift": 1,
             "Cadence/iOS/iOSSettingsView.swift": 1,
+            "Cadence/iOS/iOSListEditorViews.swift": 1,
             "Cadence/iOS/iOSListsRegularPane.swift": 0,
             "Cadence/iOS/iOSSettingsTemplateAndListSections.swift": 0
         ])
@@ -559,6 +561,7 @@ struct CadenceListDeletionSurfaceTests {
         // Areas and projects on both the iPhone list and the iPad pane; contexts in settings.
         try expectCallSites(of: "iOSListDeleteMenuButton", at: [
             "Cadence/iOS/iOSListViews.swift": 2,
+            "Cadence/iOS/iOSListEditorViews.swift": 1,
             "Cadence/iOS/iOSListsRegularPane.swift": 2,
             "Cadence/iOS/iOSSettingsView.swift": 1
         ])

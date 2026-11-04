@@ -215,19 +215,32 @@ extension View {
     /// says the wind-down would settle something; a list with nothing open is wound down on the
     /// spot. Both the iPhone list and the iPad pane route their swipe and their context menu through
     /// that one decision, so the two cannot answer it differently.
-    func iOSListWindDown(target: Binding<iOSListWindDownTarget?>) -> some View {
-        modifier(iOSListWindDownModifier(target: target))
+    ///
+    /// `perform` is `nil` on the Lists page, which winds the list down and nothing else. The list
+    /// editor ([[T-8562]]) hands its own, because a confirmed wind-down there also writes the
+    /// editor's pending field edits first and closes the editor -- the same `perform` it runs on
+    /// the immediate path, as `iOSColumnWindDown` does for a column.
+    func iOSListWindDown(
+        target: Binding<iOSListWindDownTarget?>,
+        perform: ((iOSListWindDownTarget) -> Void)? = nil
+    ) -> some View {
+        modifier(iOSListWindDownModifier(target: target, perform: perform))
     }
 }
 
 private struct iOSListWindDownModifier: ViewModifier {
     @Binding var target: iOSListWindDownTarget?
+    let perform: ((iOSListWindDownTarget) -> Void)?
     @Environment(\.modelContext) private var modelContext
 
     func body(content: Content) -> some View {
         content.sheet(item: $target) { target in
             iOSWindDownConfirmationSheet(subject: target.windDownSubject) {
-                modelContext.windDownList(target)
+                if let perform {
+                    perform(target)
+                } else {
+                    modelContext.windDownList(target)
+                }
             }
             .cadenceFixedTypography()
         }

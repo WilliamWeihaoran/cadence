@@ -81,13 +81,20 @@ extension View {
     /// pane, Settings → Lists, Settings → Contexts — sets this binding and nothing else. The
     /// cascade is reached from exactly one place in `Cadence/iOS/`, which is the property
     /// `CadenceListDeletionSurfaceTests` pins.
-    func iOSListDeletion(target: Binding<iOSListDeletionTarget?>) -> some View {
-        modifier(iOSListDeletionModifier(target: target))
+    ///
+    /// `onDeleted` runs only after the cascade committed. The list editor ([[T-8562]]) passes its
+    /// own dismissal, because an editor left open over a deleted list has nothing to edit.
+    func iOSListDeletion(
+        target: Binding<iOSListDeletionTarget?>,
+        onDeleted: (() -> Void)? = nil
+    ) -> some View {
+        modifier(iOSListDeletionModifier(target: target, onDeleted: onDeleted))
     }
 }
 
 private struct iOSListDeletionModifier: ViewModifier {
     @Binding var target: iOSListDeletionTarget?
+    let onDeleted: (() -> Void)?
     @Environment(\.modelContext) private var modelContext
 
     func body(content: Content) -> some View {
@@ -99,6 +106,7 @@ private struct iOSListDeletionModifier: ViewModifier {
                 summary: target.summary(in: modelContext)
             ) {
                 try perform(target)
+                onDeleted?()
             }
             .cadenceFixedTypography()
         }

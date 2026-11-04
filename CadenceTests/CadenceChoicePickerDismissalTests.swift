@@ -128,7 +128,7 @@ struct CadenceChoicePickerDismissalTests {
             "Cadence/Shared/Components/CadenceStartTimeFieldRow.swift": (1, 0),
             "Cadence/iOS/iOSArchiveImportSettingsSection.swift": (1, 0),
             "Cadence/iOS/iOSCalendarSettingsSection.swift": (1, 0),
-            "Cadence/iOS/iOSListEditorViews.swift": (2, 0),
+            "Cadence/iOS/iOSListEditorViews.swift": (3, 0),
             "Cadence/iOS/iOSSettingsOverviewSections.swift": (3, 0), // [[T-7074]]: one Calendar view row, was two
             // [[T-3171]]: the task inspector is the shared schedule panel. The components file's
             // three — the title card's priority, the breadcrumb's list and section — went with the
@@ -218,7 +218,9 @@ struct CadenceChoicePickerDismissalTests {
         // Week / Month / Board list as the Calendar toolbar has it: 30, still 4.
         // [[T-8737]] gives the Mac's Settings the phone's calendar view and density rows: 32,
         // still 4.
-        #expect(found.values.map(\.calls).reduce(0, +) == 32)
+        // [[T-8562]] gives the iOS list editor the Mac's Apple Calendar row, a draft picker the
+        // editor's Save commits: 33, still 4.
+        #expect(found.values.map(\.calls).reduce(0, +) == 33)
         #expect(found.values.map(\.committing).reduce(0, +) == 4)
     }
 

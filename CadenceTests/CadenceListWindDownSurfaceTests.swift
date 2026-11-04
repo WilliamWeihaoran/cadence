@@ -432,9 +432,12 @@ struct CadenceListWindDownSurfaceTests {
 
         // `windDownList` is declared once and called once: the immediate path in the host, and the
         // confirmed path in the modifier.
+        // [[T-8562]]: the list editor's Status / Archive rows are the third host, and call it once
+        // on their immediate path, as the Lists page does.
         try expectOccurrences(of: "windDownList(", at: [
             "Cadence/iOS/iOSListWindDownSupport.swift": 2,
-            "Cadence/iOS/iOSListViews.swift": 1
+            "Cadence/iOS/iOSListViews.swift": 1,
+            "Cadence/iOS/iOSListEditorViews.swift": 1
         ])
 
         // And nothing reroutes a bulk settle through the single-task transitions, which would
@@ -490,7 +493,8 @@ struct CadenceListWindDownSurfaceTests {
 
         try expectCallSites(of: ".iOSListWindDown", at: [
             "Cadence/iOS/iOSListViews.swift": 1,
-            "Cadence/iOS/iOSListsRegularPane.swift": 0
+            "Cadence/iOS/iOSListsRegularPane.swift": 0,
+            "Cadence/iOS/iOSListEditorViews.swift": 1
         ])
 
         // The conditional-confirmation test is asked once, by the host, for both directions. The

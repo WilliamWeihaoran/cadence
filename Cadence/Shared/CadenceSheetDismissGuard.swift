@@ -82,6 +82,9 @@ struct CadenceListEditorDraftSnapshot: Equatable {
     var hideEmptyDueDates: Bool
     var hideEmptySectionDueDates: Bool
     var columns: [Column]
+    /// [[T-8562]]: the Apple Calendar link the editor now carries. Defaulted, and last, so a
+    /// snapshot built without calendar access reads "" exactly as the editor holds it then.
+    var linkedCalendarID: String = ""
 }
 
 /// Every field `iOSContextEditorSheet.save()` writes back, as the sheet holds it.

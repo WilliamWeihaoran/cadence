@@ -1,4 +1,5 @@
 #if os(iOS)
+import EventKit
 import SwiftData
 import SwiftUI
 
@@ -29,9 +30,15 @@ struct iOSListEditorSheet: View {
     var seededContext: Context?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    /// [[T-8562]]: read for `isAuthorized` and the calendar lists only. Nothing here requests
+    /// access; with none granted the Apple Calendar row is not drawn at all.
+    @Environment(iOSCalendarManager.self) private var calendarManager
     @Query(sort: \Context.order) private var contexts: [Context]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
+    /// [[T-8562]], T-624: the identifiers this device has seen EventKit carry -- the evidence the
+    /// macOS `ListEditorCalendarRow` reads, so a synced link another device made is not called gone.
+    @AppStorage(CadenceCalendarLinkObservations.observedCalendarIDsKey) private var observedCalendarIDsRaw = ""
     @State private var name = ""
     @State private var details = ""
     @State private var icon = ""
@@ -51,6 +58,17 @@ struct iOSListEditorSheet: View {
     /// Where the picker opens while the project is undated, and the last day picked. Never read as
     /// the due date on its own: a cleared project still holds the cleared day here.
     @State private var projectDueDate = Date()
+    /// [[T-8562]]: the list's `linkedCalendarID` as Save will write it, "" for none.
+    @State private var selectedCalendarID = ""
+    @State private var showCalendarPicker = false
+    /// [[T-8562]]: the editor's Complete / Archive, awaiting the shared confirmation. Set only
+    /// when `CadenceContainerWindDownSummary.requiresConfirmation` says there is work to settle.
+    @State private var pendingListWindDown: iOSListWindDownTarget?
+    /// [[T-8562]]: the editor's Delete, awaiting the shared cascade confirmation.
+    @State private var pendingListDeletion: iOSListDeletionTarget?
+    /// [[T-8562]]: the lifecycle move a Status / Archive row hands the one `save()` it calls. Set
+    /// immediately before that call and cleared by it; `nil` for the Save button.
+    @State private var lifecycleStep: iOSListEditorLifecycleStep?
     @State private var hasLoaded = false
     /// [[T-5174]]: the draft as `load()` left it, against which a swipe-down is refused.
     @State private var openedDraft: CadenceListEditorDraftSnapshot?
@@ -118,6 +136,50 @@ struct iOSListEditorSheet: View {
         return isProjectMode ? "Edit Project" : "Edit Area"
     }
 
+    /// [[T-8562]]: the one field list the macOS sheets read too. iOS draws every field in it.
+    private var fields: [CadenceListEditorField] {
+        CadenceListEditorFieldSet.fields(
+            kind: isProjectMode ? .project : .area,
+            isEditing: isEditing,
+            isCalendarAccessGranted: calendarManager.isAuthorized
+        )
+    }
+
+    /// [[T-8562]]: the same `CadenceCalendarLink` macOS's `ListEditorCalendarRow` builds, so the
+    /// row's value and the picker's offer come off one decision on both platforms (T-441, T-464),
+    /// with `.synced` evidence because `linkedCalendarID` is CloudKit-synced (T-624).
+    private var calendarLink: CadenceCalendarLink {
+        CadenceCalendarLink(
+            linkedCalendarID: selectedCalendarID,
+            allCalendars: calendarManager.allCalendars,
+            visibleCalendars: calendarManager.availableCalendars,
+            evidence: .synced(
+                observedCalendarIDs: CadenceCalendarLinkObservations.observedCalendarIDs(
+                    from: observedCalendarIDsRaw
+                )
+            )
+        )
+    }
+
+    /// The Status row's value, worded by the shared field set as the Mac's is.
+    private var statusLabel: String {
+        if let editedArea { return CadenceListEditorFieldSet.statusLabel(editedArea.status) }
+        if let editedProject { return CadenceListEditorFieldSet.statusLabel(editedProject.status) }
+        return CadenceListEditorFieldSet.statusLabel(AreaStatus.active)
+    }
+
+    private var editedIsDone: Bool {
+        editedArea?.isDone ?? editedProject?.isDone ?? false
+    }
+
+    private var editedIsArchived: Bool {
+        editedArea?.isArchived ?? editedProject?.isArchived ?? false
+    }
+
+    private var listNoun: String {
+        isProjectMode ? "Project" : "Area"
+    }
+
     /// The same rule as `contextTitle`, one row down, and for the same reason (T-488): this used to
     /// resolve against `areas.filter(\.isActive)` while `save()` resolved `selectedArea` against
     /// the unfiltered query, so a project whose area had been completed or archived read "None"
@@ -146,7 +208,8 @@ struct iOSListEditorSheet: View {
             dueDateKey: projectDueDateKey,
             hideEmptyDueDates: hideEmptyDueDates,
             hideEmptySectionDueDates: hideEmptySectionDueDates,
-            columns: sectionDrafts.map { CadenceListEditorDraftSnapshot.Column($0) }
+            columns: sectionDrafts.map { CadenceListEditorDraftSnapshot.Column($0) },
+            linkedCalendarID: selectedCalendarID
         )
     }
 
@@ -286,6 +349,12 @@ struct iOSListEditorSheet: View {
                         }
                     }
 
+                    // [[T-8562]]: the Apple Calendar link macOS's edit sheets carry. Gated on
+                    // access already granted -- the row never asks for it.
+                    if fields.contains(.appleCalendar) {
+                        calendarRow
+                    }
+
                     // Lives here rather than under "Columns", where it read as a column setting:
                     // `hideDueDateIfEmpty` is about the *task* rows in this list.
                     Toggle(CadenceListVocabularyCopy.hideEmptyTaskDueDatesToggle, isOn: $hideEmptyDueDates)
@@ -331,6 +400,10 @@ struct iOSListEditorSheet: View {
                     iOSListEditorSectionHeader(title: "Columns")
                 }
                 .iOSListEditorSectionChrome()
+
+                if fields.contains(.status) {
+                    lifecycleSection
+                }
             }
             .scrollContentBackground(.hidden)
             .background(Theme.bg)
@@ -366,6 +439,8 @@ struct iOSListEditorSheet: View {
                 showAreaPicker = false
             }
             .iOSColumnWindDown(target: $pendingColumnWindDown, perform: applyColumnWindDown)
+            .iOSListWindDown(target: $pendingListWindDown, perform: performListWindDown)
+            .iOSListDeletion(target: $pendingListDeletion, onDeleted: { dismiss() })
             .alert(
                 CadenceSectionEditingSupport.columnDeleteConfirmationTitle,
                 isPresented: Binding(
@@ -394,6 +469,140 @@ struct iOSListEditorSheet: View {
             )
         }
         .preferredColorScheme(.dark)
+    }
+
+    // MARK: - Apple Calendar (T-8562)
+
+    /// The row's offer: Cadence's visible calendars plus the one already linked when it is hidden,
+    /// off the same `CadenceCalendarLink` the value is read from, so the row can never name a
+    /// calendar the menu under it does not offer (T-464).
+    private var calendarChoiceRows: [iOSChoiceRow<String>] {
+        let link = calendarLink
+        let none = iOSChoiceRow(
+            value: "",
+            title: CadenceCalendarLinkRowState.unlinkedText,
+            systemImage: "circle",
+            color: Theme.dim
+        )
+        return [none] + link.pickableCalendars(from: calendarManager.allCalendars).map { calendar in
+            iOSChoiceRow(
+                value: calendar.calendarIdentifier,
+                title: link.pickerLabel(title: calendar.title, calendarID: calendar.calendarIdentifier),
+                systemImage: "circle.fill",
+                color: Color(cgColor: calendar.cgColor)
+            )
+        }
+    }
+
+    private var calendarRow: some View {
+        let state = calendarLink.rowState
+        return HStack {
+            Text(CadenceAppleCalendarNaming.integrationSectionTitle)
+            Spacer()
+            iOSChoiceValueButton(title: state.valueText, color: state.isSet ? Theme.text : Theme.dim) {
+                showCalendarPicker = true
+            }
+            .popover(isPresented: $showCalendarPicker) {
+                iOSChoicePopoverList(
+                    rows: calendarChoiceRows,
+                    selection: $selectedCalendarID,
+                    isPresented: $showCalendarPicker
+                )
+            }
+        }
+    }
+
+    // MARK: - List lifecycle (T-8562)
+
+    /// Status, Archive and Delete, the three rows macOS's edit sheets carry. Every one goes through
+    /// the Lists page's own machinery -- `iOSListWindDownTarget` and its confirmation for the two
+    /// wind-downs, `iOSListDeletionTarget` and its cascade confirmation for Delete -- so the editor
+    /// cannot settle or delete a list any differently from the row's context menu.
+    private var lifecycleSection: some View {
+        Section {
+            HStack {
+                Text("Status")
+                Spacer()
+                Menu {
+                    Button {
+                        reopenList()
+                    } label: {
+                        Label("Active", systemImage: editedIsDone || editedIsArchived ? "circle" : "checkmark")
+                    }
+                    .disabled(!(editedIsDone || editedIsArchived))
+                    Button {
+                        requestListWindDown(.complete)
+                    } label: {
+                        Label("Completed", systemImage: editedIsDone ? "checkmark" : iOSListWindDownAction.complete.icon)
+                    }
+                    .disabled(editedIsDone)
+                } label: {
+                    Text(statusLabel)
+                        .foregroundStyle(Theme.text)
+                }
+            }
+
+            if fields.contains(.archive) {
+                Button {
+                    if editedIsArchived { reopenList() } else { requestListWindDown(.archive) }
+                } label: {
+                    Label(
+                        editedIsArchived ? "Unarchive \(listNoun)" : "Archive \(listNoun)",
+                        systemImage: editedIsArchived ? "tray.and.arrow.up" : iOSListWindDownAction.archive.icon
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.text)
+            }
+
+            if fields.contains(.delete), let target = deletionTarget {
+                // The context menu's own row, so the title and glyph are spelled once.
+                iOSListDeleteMenuButton(target: target) { pendingListDeletion = $0 }
+                    .foregroundStyle(Theme.red)
+            }
+        } header: {
+            iOSListEditorSectionHeader(title: "Status")
+        }
+        .iOSListEditorSectionChrome()
+    }
+
+    private var deletionTarget: iOSListDeletionTarget? {
+        if let editedArea { return .area(editedArea) }
+        if let editedProject { return .project(editedProject) }
+        return nil
+    }
+
+    private func windDownTarget(_ action: iOSListWindDownAction) -> iOSListWindDownTarget? {
+        if let editedArea { return .area(editedArea, action) }
+        if let editedProject { return .project(editedProject, action) }
+        return nil
+    }
+
+    /// The Lists page's rule: confirmed when there is open work to settle, done at once when not.
+    private func requestListWindDown(_ action: iOSListWindDownAction) {
+        guard let target = windDownTarget(action) else { return }
+        guard target.summary.requiresConfirmation else {
+            performListWindDown(target)
+            return
+        }
+        pendingListWindDown = target
+    }
+
+    /// As macOS's `apply(_:)` does, the pending field edits are written first -- a lifecycle move
+    /// closes the editor, and the dismissal must not throw them away. So the move is handed to
+    /// `save()`, which settles it after its own commit and not at all when that commit is refused.
+    private func performListWindDown(_ target: iOSListWindDownTarget) {
+        lifecycleStep = .windDown(target)
+        save()
+    }
+
+    /// Back to Active. Reopening settles nothing, so it is not a wind-down: `save()` writes the
+    /// status inside the edit's own commit, whose snapshot already holds it for the undo.
+    private func reopenList() {
+        lifecycleStep = .reopen
+        save()
     }
 
     // MARK: - Column lifecycle
@@ -541,6 +750,7 @@ struct iOSListEditorSheet: View {
             sectionDrafts = CadenceSectionEditingSupport.drafts(from: originalSectionConfigs)
             hideEmptyDueDates = area.hideDueDateIfEmpty
             hideEmptySectionDueDates = area.hideSectionDueDateIfEmpty
+            selectedCalendarID = area.linkedCalendarID
         case .editProject(let project):
             name = project.name
             details = project.desc
@@ -552,6 +762,7 @@ struct iOSListEditorSheet: View {
             sectionDrafts = CadenceSectionEditingSupport.drafts(from: originalSectionConfigs)
             hideEmptyDueDates = project.hideDueDateIfEmpty
             hideEmptySectionDueDates = project.hideSectionDueDateIfEmpty
+            selectedCalendarID = project.linkedCalendarID
             if let date = DateFormatters.date(from: project.dueDate) {
                 projectDueDate = date
                 projectDueDateKey = DateFormatters.dateKey(from: date)
@@ -588,6 +799,8 @@ struct iOSListEditorSheet: View {
     }
 
     private func save() {
+        // [[T-8562]]: a lifecycle row's step lives for this one call, whichever way it ends.
+        defer { lifecycleStep = nil }
         // **A column whose name the user cleared is a refused rename, not a delete (T-1053).**
         // `CadenceSectionEditingSupport.configs(from:)` used to drop such a draft, which read as
         // "this caller removed the column" — so the column left the blob, its colour and due date
@@ -648,6 +861,11 @@ struct iOSListEditorSheet: View {
                 reassignTasks(in: area.tasks ?? [], area: area)
                 area.hideDueDateIfEmpty = hideEmptyDueDates
                 area.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
+                // [[T-8562]], T-624: before the assignment, as macOS's `EditAreaSheet` does -- only a
+                // changed pick is evidence this device has seen the calendar.
+                CadenceCalendarLinkObservations.recordPick(selectedCalendarID, replacing: area.linkedCalendarID)
+                area.linkedCalendarID = selectedCalendarID
+                if case .reopen? = lifecycleStep { area.status = .active }
                 try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: undo.restore)
             case .editProject(let project):
                 // Nothing inherits from a project, so this is `project.tasks` — asked for by the
@@ -668,6 +886,9 @@ struct iOSListEditorSheet: View {
                 project.hideDueDateIfEmpty = hideEmptyDueDates
                 project.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
                 project.dueDate = projectDueDateKey
+                CadenceCalendarLinkObservations.recordPick(selectedCalendarID, replacing: project.linkedCalendarID)
+                project.linkedCalendarID = selectedCalendarID
+                if case .reopen? = lifecycleStep { project.status = .active }
                 try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: undo.restore)
             }
         } catch {
@@ -680,6 +901,11 @@ struct iOSListEditorSheet: View {
         // save has already landed and been committed, exactly as the macOS column popover leaves
         // a refused rename's colour and date in the store with the popover still up (T-914).
         guard refusal == nil else { return }
+        // [[T-8562]]: a Complete / Archive from the Status rows settles only once the edits it
+        // carries have landed -- macOS's `apply(_:)` order -- and never over a refused save.
+        if case .windDown(let target)? = lifecycleStep {
+            modelContext.windDownList(target)
+        }
         dismiss()
     }
 
@@ -1054,5 +1280,12 @@ private extension View {
         listRowBackground(Theme.surface)
             .listRowSeparatorTint(Theme.borderSubtle)
     }
+}
+/// [[T-8562]]: what a list editor's Status or Archive row asks `save()` to do after its commit.
+enum iOSListEditorLifecycleStep {
+    /// Back to Active, inside the edit's own commit.
+    case reopen
+    /// Complete or Archive, through `ModelContext.windDownList` once the edit has landed.
+    case windDown(iOSListWindDownTarget)
 }
 #endif
