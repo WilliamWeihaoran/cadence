@@ -36,8 +36,9 @@ import AppKit
 /// which is [[T-1444]]'s ~2.5µs and **not** the ~100µs a cold `NSRegularExpression` construction
 /// costs, because `NSRegularExpression` caches compiled patterns internally. A 400-line note's
 /// preview parse goes 2.75ms -> 1.14ms. `blocks(in:)` is not on a keystroke path: its callers are
-/// `iOSMarkdownPreview` and `CadenceMarkdownPresentationSupport.plainPreviewText`, which draws the
-/// excerpt under each iOS search result and note row, so it is paid per row per list build.
+/// `CadenceMarkdownPresentationSupport.plainPreviewText`, which draws the excerpt under each iOS
+/// search result and note row, so it is paid per row per list build (iOSMarkdownPreview, its other
+/// caller when this was written, was deleted as dead code in [[T-10900]]).
 ///
 /// **The honest justification for this change is therefore the duplication, not the speed.** Ten
 /// copies of a pattern are ten places heading syntax can be edited apart — and one of them,

@@ -6,9 +6,10 @@ import Testing
 /// T-180. Three heading ramps for six levels, two of them on the same platform.
 ///
 /// The macOS editor set `30/26/22/19/17/15`, the iOS editor `28/24/21/18/16/15`, and
-/// `iOSMarkdownPreview` a third `25/21/18/16/15` whose `default:` swallowed level 5 *and* level 6.
+/// iOSMarkdownPreview a third `25/21/18/16/15` whose `default:` swallowed level 5 *and* level 6.
 /// So one note's H1 was 28pt with the caret in it and 25pt in the read-only preview, and an H5 came
-/// out at body size.
+/// out at body size. The preview itself was deleted as dead code in [[T-10900]], so the iOS canvas
+/// is the one mobile reader left.
 ///
 /// **Two kinds of test here, and the second kind is the point.** Pinning `MarkdownHeadingRamp`'s
 /// numbers proves the ramp is right; it proves nothing about anybody *reading* it, and a ramp with
@@ -202,16 +203,16 @@ struct MarkdownHeadingRampTests {
 
     // MARK: - The call sites, which are the actual bug
 
+    /// One entry since [[T-10900]] deleted `iOSMarkdownPreview.swift`, the read-only second reader.
+    /// A new mobile surface that draws headings belongs in this list.
     private static let mobileSurfaces = [
         "Cadence/iOS/iOSMarkdownStylingSupport.swift",
-        "Cadence/iOS/iOSMarkdownPreview.swift",
     ]
 
-    /// **The regression this file exists to catch.** The canvas and the read-only preview are the
-    /// two surfaces that render the same note on the same device, so they have to resolve a heading
-    /// through the same ramp *at the same tier*. Either one going back to a local `headingSize` is
-    /// the T-180 bug again, and neither of them is a symbol this target can call.
-    @Test func theIOSCanvasAndTheIOSPreviewBothResolveHeadingsThroughTheSharedRampAtTheSameTier() throws {
+    /// **The regression this file exists to catch.** Every iOS surface that renders a note's
+    /// headings has to resolve them through the shared ramp *at the mobile tier*. One going back
+    /// to a local `headingSize` is the T-180 bug again, and none is a symbol this target can call.
+    @Test func everyIOSHeadingSurfaceResolvesHeadingsThroughTheSharedRampAtTheMobileTier() throws {
         for path in Self.mobileSurfaces {
             let code = strippingComments(try sourceFile(path))
 
@@ -220,9 +221,9 @@ struct MarkdownHeadingRampTests {
             #expect(!code.contains("surface: .desktop"), "\(path) reads the desktop ramp")
             // T-211. `bodyPointSize` is optional so the desktop call site need not restate a
             // constant it owns; on iOS, omitting it silently pins the ramp to the *default* Dynamic
-            // Type body and puts the bug straight back. Both mobile surfaces must state one, and
-            // both must state `baseFont.pointSize` — a preview that quoted its own 15pt paragraph
-            // size instead would render the same H1 at a different size from the canvas.
+            // Type body and puts the bug straight back. Every mobile surface must state one, and
+            // it must be `baseFont.pointSize` — a surface that quoted its own 15pt paragraph size
+            // instead would render the same H1 at a different size from the canvas.
             #expect(code.contains("bodyPointSize:"), "\(path) resolves headings against the default body rather than the live one")
             #expect(code.contains("bodyPointSize: baseFont.pointSize")
                 || code.contains("bodyPointSize: iOSMarkdownStyler.baseFont.pointSize"),
@@ -230,7 +231,7 @@ struct MarkdownHeadingRampTests {
         }
     }
 
-    /// The macOS canvas is the third reader, and the only one on its tier. Its heading dispatch also
+    /// The macOS canvas is the other reader, and the only one on its tier. Its heading dispatch also
     /// stopped passing a marker length beside a point size — two parameters that had to agree, where
     /// `prefixLen` was always `level + 1` — so `prefixLen` gone is part of the fix, not a rename.
     @Test func theMacOSCanvasResolvesHeadingsThroughTheDesktopRamp() throws {
@@ -263,10 +264,11 @@ struct MarkdownHeadingRampTests {
         #expect(offenders.isEmpty, "these files still declare a heading ramp: \(offenders)")
     }
 
-    /// Exactly four files in the app know the ramp exists: the ramp, and its three readers. A fifth
+    /// Exactly three files in the app know the ramp exists: the ramp, and its two readers (three
+    /// until [[T-10900]] deleted the dead `iOSMarkdownPreview.swift`). A fourth
     /// is not forbidden — a new markdown surface *should* read it — but it should show up here as a
     /// deliberate edit rather than as a silent fourth ramp somewhere.
-    @Test func theRampHasExactlyThreeReaders() throws {
+    @Test func theRampHasExactlyTwoReaders() throws {
         var readers: [String] = []
 
         for path in try swiftFiles(under: "Cadence") {
@@ -276,7 +278,6 @@ struct MarkdownHeadingRampTests {
 
         #expect(readers.sorted() == [
             "Cadence/Services/MarkdownHeadingRampSupport.swift",
-            "Cadence/iOS/iOSMarkdownPreview.swift",
             "Cadence/iOS/iOSMarkdownStylingSupport.swift",
             "Cadence/macOS/Editor/MarkdownEditorSupport.swift",
         ].sorted(), "the ramp's readers changed: \(readers.sorted())")

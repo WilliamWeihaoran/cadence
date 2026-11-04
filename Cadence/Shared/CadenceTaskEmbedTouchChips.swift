@@ -6,8 +6,8 @@ nonisolated struct CadenceTaskEmbedTouchChip: Equatable {
     let tint: Color
 }
 
-/// The chip row the iOS task-embed card draws, in the note editor (`iOSMarkdownTaskEmbedLayoutInfo`)
-/// and in Focus's read-only note (`iOSMarkdownPreview`).
+/// The chip row the iOS task-embed card draws, in the note editor (`iOSMarkdownTaskEmbedLayoutInfo`).
+/// Focus's read-only note (iOSMarkdownPreview) drew it too until [[T-10900]] deleted that dead view.
 ///
 /// [[T-9271]]: those two files each built this row privately, and both had drifted from the rule
 /// the Mac card (`MarkdownTaskEmbedDrawingSupport.displayChips`) and the rest of the app follow:

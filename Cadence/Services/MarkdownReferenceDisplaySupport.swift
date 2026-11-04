@@ -69,11 +69,9 @@ nonisolated struct MarkdownReferenceDisplayRange: Equatable {
 /// The editor keeps the text honest by writing it instead — see
 /// `MarkdownTaskEmbedParser.reconcilingReferenceTitles`.
 ///
-/// One reader still shows the cache, and it is recorded here rather than papered over with an
-/// unused parameter on these functions: `iOSMarkdownPreview` — the read-only note preview in Focus
-/// — resolves standalone embeds through the `taskEmbeds` map it is handed, and inline references
-/// not at all. It wants a `resolving(_:titles:)` call where its markdown enters the view, the same
-/// one line the note-index rows use.
+/// A read-only surface added later wants a `resolving(_:titles:)` call where its markdown enters
+/// the view, the same one line the note-index rows use. (iOSMarkdownPreview, the one reader that
+/// lacked it, had no caller and was deleted in [[T-10900]].)
 nonisolated enum MarkdownReferenceDisplaySupport {
     /// **The `[[…]]` pattern, written once and compiled once per process.**
     ///

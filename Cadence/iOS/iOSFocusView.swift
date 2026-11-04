@@ -640,7 +640,7 @@ struct iOSFocusView: View {
     /// **The Mac's task-notes panel, on iOS** ([[T-8734]], under [[T-8201]]).
     ///
     /// It used to draw nothing at all unless `task.notes` was non-blank, and then only the
-    /// read-only `iOSMarkdownPreview`: checklists and embed cards ticked ([[T-5060]] (b)), but no
+    /// read-only iOSMarkdownPreview: checklists and embed cards ticked ([[T-5060]] (b)), but no
     /// text could be typed, so an iPhone user could not jot anything during a session and an empty
     /// note gave no hint that they could. macOS's `FocusNotesPanel` has always put a titled, live
     /// editor under the timer in every session. The owner chose that for iOS on 2026-10-31:

@@ -4,7 +4,7 @@ import Foundation
 /// **The markdown heading type ramp: one per platform, read by every surface that draws a heading.**
 ///
 /// There were three ramps for six levels. The macOS editor set `30/26/22/19/17/15`, the iOS editor
-/// `28/24/21/18/16/15`, and `iOSMarkdownPreview` a third `25/21/18/16/15` whose `default:` case
+/// `28/24/21/18/16/15`, and iOSMarkdownPreview a third `25/21/18/16/15` whose `default:` case
 /// swallowed level 5 *and* level 6. Two of those three were on the same platform, so the same note's
 /// H1 was 28pt with the caret in it and 25pt in the read-only preview, and an H5 came out at body
 /// size — exactly the "canvas and preview render the same block differently" failure
@@ -58,7 +58,8 @@ nonisolated enum MarkdownHeadingRamp {
     /// Which platform's ramp to read. Two cases, not three: iPhone and iPad are one style, so there
     /// is no `.compact`/`.regular` split here — a heading is the same size on both.
     enum Surface: CaseIterable {
-        /// iOS and iPadOS — the `iOSMarkdownStyler` canvas and `iOSMarkdownPreview`.
+        /// iOS and iPadOS — the `iOSMarkdownStyler` canvas. (iOSMarkdownPreview read it too until
+        /// [[T-10900]] deleted that dead view.)
         case mobile
         /// macOS — the `MarkdownEditorSupport` canvas. There is no macOS preview surface today; when
         /// one arrives it reads this and does not invent a fourth ramp.

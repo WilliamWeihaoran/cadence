@@ -126,7 +126,8 @@ struct CadencePluralizationTests {
         let cases: [(path: String, needle: String, retired: String)] = [
             ("CadenceWidgets/TodayTasksWidgetView.swift", "Text(entry.snapshot.tasksInViewLabel)", "totalCount) tasks in view\")"),
             ("Cadence/iOS/iOSTaskViews.swift", "CadenceTaskPresentationSupport.moreSubtasksAccessibilityLabel(hidden: hidden)", "more subtasks\")"),
-            ("Cadence/iOS/iOSMarkdownPreview.swift", "CadenceSubtaskProgress(completed: task.completedSubtaskCount, total: task.subtaskTotalCount).label", "subtaskTotalCount) subtasks\")"),
+            // `iOSMarkdownPreview.swift`'s `CadenceSubtaskProgress(…).label` site went with the file,
+            // deleted as dead code in [[T-10900]].
             // The two `GoalLinkPresentation.linkedListCountLabel` readers — macOS's
             // `GoalsSupportViews.swift` and iOS's `iOSFeatureDetailViews.swift` — left with
             // [[T-5002]]. The formatter itself still has readers and is asserted by value above.

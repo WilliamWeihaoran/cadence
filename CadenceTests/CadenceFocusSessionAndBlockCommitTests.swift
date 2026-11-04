@@ -180,7 +180,7 @@ struct CadenceFocusSessionAndBlockCommitTests {
     /// **The iOS focus note is editable, under the Mac's heading and prompt** ([[T-8734]], the
     /// owner's decision of 2026-10-31 under [[T-8201]]).
     ///
-    /// It drew nothing at all on an empty note and a read-only `iOSMarkdownPreview` otherwise, so
+    /// It drew nothing at all on an empty note and a read-only iOSMarkdownPreview otherwise, so
     /// an iPhone user could not jot anything mid-session and an empty note said nothing about
     /// being able to. It is now the editor the task sheet's Notes section uses, under
     /// `CadenceFocusSupport.taskNotesTitle` and `taskNotesPrompt` -- the two strings macOS's

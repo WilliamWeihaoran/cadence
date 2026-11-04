@@ -48,23 +48,6 @@ struct CadenceIOSListEditorAddColumnRowTests {
     }
 }
 
-/// [[T-9485]]: a read-only note's task embed ticks a subtask on a near-miss of its circle instead
-/// of letting the tap fall through to the card's open-task gesture.
-struct CadenceIOSMarkdownPreviewEmbedSubtaskHitTests {
-    @Test func theSubtaskCircleTakesATapAcrossItsFrameAndRowPitch() throws {
-        let source = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownPreview.swift")
-        let block = try #require(CadenceSourceScan.declarationBody("private struct iOSMarkdownPreviewTaskEmbedBlock: View", in: source))
-        let body = CadenceSourceScan.strippingComments(block)
-        let start = try #require(body.range(of: "onToggleSubtask?(task.id, subtask.id)"))
-        let tail = String(body[start.upperBound...])
-        let label = try #require(tail.components(separatedBy: ".buttonStyle(.plain)").first)
-        #expect(label.contains(".frame(width: 22, height: 22)"), "non-vacuity: the slice holds the subtask circle")
-        #expect(label.contains(".onTapGesture") == false, "non-vacuity: the slice stopped at the subtask button")
-        #expect(CadenceSourceScan.matchCount(#"\.frame\(width: 22, height: 22\)\s*\.iOSExpandedHitArea\(3\)"#, in: label) == 1,
-                "the subtask circle is hit only on its glyph, so a near-miss opens the task")
-    }
-}
-
 /// [[T-9511]]: the note editor's Outline and Unlinked mentions links take a tap across the 44pt row
 /// they are framed to, not only on their 12pt words.
 struct CadenceIOSNoteNavigationLinkHitTests {

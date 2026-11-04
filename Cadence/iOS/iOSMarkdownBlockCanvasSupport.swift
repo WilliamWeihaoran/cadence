@@ -215,5 +215,5 @@ struct iOSMarkdownLiveCodeBlockLayoutInfo {
 // `MarkdownRenderedBlockLimits.tableRowLimit` rows with a "+ N more rows" footer. T-221 replaced it
 // with `iOSMarkdownTableGridRendering`, which draws the whole table in vectors so every row is one
 // you can reach and edit. The cap and its footer went with it; the limit type itself is still read
-// by the fenced-code canvas and by `iOSMarkdownPreview`.
+// by the fenced-code canvas (iOSMarkdownPreview, its other reader, was deleted in [[T-10900]]).
 #endif

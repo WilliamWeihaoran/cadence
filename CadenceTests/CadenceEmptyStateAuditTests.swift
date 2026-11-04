@@ -512,10 +512,12 @@ struct CadenceEmptyStateAuditTests {
         // fail a test that is about the derivation working. The floor was 20, then 19 when
         // [[T-3170]]'s trio pass deleted BundleInspectorEmptyTasksView with
         // TimelineBundleBlockSupportViews.swift, and is 17 since [[T-5002]] took GoalsEmptyDetail
-        // and HabitsEmptyDetail with the Goals and Habits screens. Each number is the full-tree
-        // count measured on the day, so a component leaving the app does not read as the walk
-        // failing. (Named without backticks: this tree is swept for symbol claims too.)
-        #expect(derived.count >= 17, "the derivation found only \(derived.count) components")
+        // and HabitsEmptyDetail with the Goals and Habits screens, and 16 since [[T-10900]]
+        // deleted the dead read-only note preview and iOSMarkdownPreviewEmptyState with it. Each
+        // number is the full-tree count measured on the day, so a component leaving the app does
+        // not read as the walk failing. (Named without backticks: this tree is swept for symbol
+        // claims too.)
+        #expect(derived.count >= 16, "the derivation found only \(derived.count) components")
     }
 
     /// **A view shaped like an empty state is one the sweep reads** — the guard that makes an
