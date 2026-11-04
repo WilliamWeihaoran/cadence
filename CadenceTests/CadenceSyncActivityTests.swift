@@ -731,7 +731,7 @@ struct CadenceSyncActivitySurfaceParityTests {
         // And the honest control the sync pane *does* have is still there, so the sweep above is
         // not green because the pane lost all of its buttons.
         let mac = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/Views/SettingsSyncSection.swift")
-        #expect(mac.contains(#"Text("Check iCloud Status")"#))
+        #expect(mac.contains(#"Label("Check iCloud Status", systemImage: CadenceSettingsActionGlyph.refresh)"#))
     }
 }
 

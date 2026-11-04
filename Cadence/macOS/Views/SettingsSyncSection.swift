@@ -71,8 +71,9 @@ struct SettingsSyncSection: View {
                         .controlSize(.small)
                 }
 
+                // [[T-11199]]: the glyph iOS's button has always drawn.
                 SettingsActionButton(tone: .tinted(Theme.blue), action: probe.refresh) {
-                    Text("Check iCloud Status")
+                    Label("Check iCloud Status", systemImage: CadenceSettingsActionGlyph.refresh)
                 }
                 .disabled(probe.isChecking)
             }

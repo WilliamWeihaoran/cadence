@@ -76,7 +76,7 @@ struct iOSSyncSettingsSection: View {
                     HStack {
                         iOSActionButton(
                             title: "Check iCloud Status",
-                            systemImage: "arrow.clockwise",
+                            systemImage: CadenceSettingsActionGlyph.refresh,
                             role: .primary,
                             size: .compact,
                             isDisabled: probe.isChecking,
@@ -403,6 +403,38 @@ struct iOSNavigationSettingsSection: View {
             get: { openPicker == picker },
             set: { openPicker = $0 ? picker : nil }
         )
+    }
+}
+
+/// Settings > Data Safety's Privacy card ([[T-11199]], under [[T-8201]]): what the Mac's Data
+/// Safety pane opens on (`SettingsPrivacyStatementSection`), which this screen did not have. The
+/// words and glyph are `CadenceDataSafetyPrivacyCopy`'s, so the two cannot describe different apps;
+/// the card is drawn in this screen's own card vocabulary, as every iOS settings card is.
+struct iOSPrivacyStatementSettingsSection: View {
+    var body: some View {
+        iOSSettingsCard {
+            HStack(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
+                iOSIconTile(
+                    systemImage: CadenceDataSafetyPrivacyCopy.systemImage,
+                    color: Theme.blue,
+                    size: 34,
+                    iconSize: 16
+                )
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(CadenceDataSafetyPrivacyCopy.title)
+                        .cadenceFont(.rowTitle, base: 15, weight: .semibold)
+                        .foregroundStyle(Theme.text)
+
+                    Text(CadenceDataSafetyPrivacyCopy.statement)
+                        .cadenceFont(.metadata, base: 12, weight: .regular)
+                        .foregroundStyle(Theme.subdued)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
     }
 }
 

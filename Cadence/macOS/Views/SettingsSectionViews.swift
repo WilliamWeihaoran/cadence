@@ -435,7 +435,7 @@ struct SettingsSidebarSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SettingsSectionLabel(text: "Main Sidebar Tabs")
+            SettingsSectionLabel(text: CadenceSidebarSettingsCopy.sectionTitle)
             SettingsCard {
                 VStack(spacing: 0) {
                     ForEach(Array(orderedSidebarTabs.enumerated()), id: \.element.id) { index, destination in

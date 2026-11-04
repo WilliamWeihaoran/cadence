@@ -553,3 +553,40 @@ nonisolated enum CadenceUnmanagedStoreCopy {
         return recovery + " Data Safety lists those under \(sectionTitle) with their full paths."
     }
 }
+
+/// Settings → Data Safety's Privacy card, on both surfaces ([[T-11199]], under [[T-8201]]).
+///
+/// The Mac's Data Safety pane has opened on this card since the review-links paragraph became it
+/// (`SettingsPrivacyStatementSection`, [[T-7208]] for the AI clause); the phone's Data Safety
+/// screen had no such card, so the one place a reader looks for "what leaves my device" said it on
+/// one platform and nothing on the other. Every clause is true of both: the store is local and in
+/// the private iCloud database on each, both read EventKit for the Calendar, and both send the
+/// same AI request (`CadenceAISettingsCopy.keyPrivacyDisclosure`). One title, one sentence, one
+/// glyph, so neither card can come to describe a different app.
+nonisolated enum CadenceDataSafetyPrivacyCopy {
+    static let title = "Privacy"
+    static let statement = "Cadence stores planning data locally and in your private iCloud database when sync is available. Calendar access is used for calendar features, and AI actions send a note's title, full text, and list name to OpenAI only when you run one."
+    static let systemImage = "hand.raised.fill"
+}
+
+/// The sidebar layout card's eyebrow, on both surfaces ([[T-11199]], under [[T-8201]]).
+///
+/// Both edit the one synced `SidebarLayoutPreference` ([[T-1274]]) -- the Mac under Settings →
+/// Sidebar, iPhone and iPad under Settings → Navigation -- and the Mac called the card "Main
+/// Sidebar Tabs" while iOS called it "Sidebar Rows". The sidebar draws rows, not tabs, and the
+/// store's own refusal already says so (`CadenceSidebarLayoutPreferenceStore.lastVisibleRowNotice`),
+/// so iOS's noun wins. Where the card sits (its own Mac category, a group inside iOS's Navigation)
+/// is recorded separately as an owner call.
+nonisolated enum CadenceSidebarSettingsCopy {
+    static let sectionTitle = "Sidebar Rows"
+}
+
+/// Glyphs for the Settings buttons that are not access requests ([[T-11199]], under [[T-8201]]).
+///
+/// iOS's Settings → Reminders **Refresh** and Settings → iCloud Sync **Check iCloud Status** drew
+/// `arrow.clockwise`; the Mac's drew the same words with no glyph, beside its own Tags pane's
+/// **Add Defaults**, which already carries one. Nothing about pointer or touch asks for a bare
+/// label, so both platforms draw this one.
+nonisolated enum CadenceSettingsActionGlyph {
+    static let refresh = "arrow.clockwise"
+}

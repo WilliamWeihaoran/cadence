@@ -422,20 +422,21 @@ private struct SettingsPrivacyStatementSection: View {
                     .fill(Theme.blue.opacity(0.16))
                     .frame(width: 42, height: 42)
                     .overlay {
-                        Image(systemName: "hand.raised.fill")
+                        Image(systemName: CadenceDataSafetyPrivacyCopy.systemImage)
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(Theme.blue)
                     }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Privacy")
+                    Text(CadenceDataSafetyPrivacyCopy.title)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.text)
                     // [[T-7208]]: it said "selected note content", the clause [[T-1322]] took out
                     // of the AI pane's disclosure as the one a reader could not check. An AI
                     // action sends the note's title, whole text and list name, which is what the
                     // AI pane (`CadenceAISettingsCopy.keyPrivacyDisclosure`) and privacy.html say.
-                    Text("Cadence stores planning data locally and in your private iCloud database when sync is available. Calendar access is used for calendar features, and AI actions send a note's title, full text, and list name to OpenAI only when you run one.")
+                    // [[T-11199]]: the words are shared with iOS's Data Safety card now.
+                    Text(CadenceDataSafetyPrivacyCopy.statement)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)

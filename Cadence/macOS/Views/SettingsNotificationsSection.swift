@@ -57,7 +57,10 @@ struct SettingsNotificationsSection: View {
             detail: CadenceNotificationSettingsCopy.accessRequiredDetail
         ) {
             SettingsActionButton(tone: .filled(Theme.blue), action: requestAuthorization) {
-                Text(CadenceNotificationSettingsCopy.enableNotificationsAction)
+                Label(
+                    CadenceNotificationSettingsCopy.enableNotificationsAction,
+                    systemImage: CadenceAccessButtonGlyph.requestAccess
+                )
             }
         }
     }

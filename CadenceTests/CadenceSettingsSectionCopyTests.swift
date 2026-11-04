@@ -1636,10 +1636,13 @@ struct CadenceSettingsSectionCopyTests {
             CadenceSourceScan.declarationBody("struct SettingsPrivacyStatementSection: View", in: code),
             "non-vacuity: the Privacy card was not found"
         )
-        #expect(card.contains("Cadence stores planning data locally"), "non-vacuity: wrong body")
-        #expect(card.contains("selected note content") == false, "the card still says \"selected note content\"")
+        // [[T-11199]]: the sentence moved to `CadenceDataSafetyPrivacyCopy`, which iOS reads too.
+        #expect(card.contains("Text(CadenceDataSafetyPrivacyCopy.statement)"), "non-vacuity: wrong body")
+        let statement = CadenceDataSafetyPrivacyCopy.statement
+        #expect(statement.hasPrefix("Cadence stores planning data locally"))
+        #expect(statement.contains("selected note content") == false, "the card still says \"selected note content\"")
         #expect(
-            card.contains("AI actions send a note's title, full text, and list name to OpenAI only when you run one."),
+            statement.contains("AI actions send a note's title, full text, and list name to OpenAI only when you run one."),
             "the card does not name the three fields an AI action sends"
         )
     }

@@ -287,7 +287,9 @@ struct MacSettingsAboutAndHabitMetricsTests {
             at: ["Cadence/macOS/Views/SettingsDataSafetySection.swift": 1]
         )
         let dataSafety = try strippingComments(sourceFile("Cadence/macOS/Views/SettingsDataSafetySection.swift"))
-        #expect(dataSafety.contains("Cadence stores planning data locally and in your private iCloud database"))
+        // [[T-11199]]: the paragraph is the shared constant iOS's Data Safety card reads too.
+        #expect(dataSafety.contains("Text(CadenceDataSafetyPrivacyCopy.statement)"))
+        #expect(CadenceDataSafetyPrivacyCopy.statement.hasPrefix("Cadence stores planning data locally and in your private iCloud database"))
     }
 
     /// The scan itself works. Without this, a wrong repository root or a broken enumerator makes

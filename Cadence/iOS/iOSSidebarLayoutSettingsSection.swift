@@ -80,7 +80,7 @@ struct iOSSidebarLayoutSettingsSection: View {
         let hidden = layout.hidden
 
         return VStack(alignment: .leading, spacing: 10) {
-            CadenceSettingsSectionLabel(text: "Sidebar Rows")
+            CadenceSettingsSectionLabel(text: CadenceSidebarSettingsCopy.sectionTitle)
 
             iOSSettingsCard {
                 VStack(spacing: 0) {

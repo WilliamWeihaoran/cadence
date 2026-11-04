@@ -235,8 +235,12 @@ struct SettingsCalendarSection: View {
                         )
                     }
                 } else {
+                    // [[T-11199]]: the notice's own words and the request glyph, as on iOS.
                     SettingsActionButton(tone: .filled(Theme.blue), action: requestCalendarAccess) {
-                        Text("Allow Access")
+                        Label(
+                            CadenceCalendarAccessNotice.connectOffer.actionTitle(on: .mac),
+                            systemImage: CadenceAccessButtonGlyph.requestAccess
+                        )
                     }
                 }
             }

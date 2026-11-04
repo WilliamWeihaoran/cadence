@@ -83,7 +83,7 @@ struct iOSRemindersSettingsSection: View {
                         HStack(spacing: 10) {
                             iOSActionButton(
                                 title: "Refresh",
-                                systemImage: "arrow.clockwise",
+                                systemImage: CadenceSettingsActionGlyph.refresh,
                                 role: .secondary,
                                 size: .compact,
                                 isDisabled: remindersManager.isLoading,

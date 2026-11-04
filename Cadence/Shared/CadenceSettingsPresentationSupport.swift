@@ -139,7 +139,10 @@ enum CadenceMobileSettingsLayout {
 
     /// The categories mobile deliberately does not offer, and the *only* ones it may omit.
     ///
-    /// `sidebar` configures a column iPhone does not have and iPad does not let you rearrange.
+    /// `sidebar` has no mobile category of its own: iPhone and iPad edit the same synced layout
+    /// from a "Sidebar Rows" group inside Navigation ([[T-1274]], `iOSSidebarLayoutSettingsSection`),
+    /// with Move Up / Move Down, so iPad DOES let you rearrange it. Whether the placement should match
+    /// the Mac's own Sidebar category is an open owner call ([[T-11200]]), not a hardware fact.
     /// `account` sat here too, described as "the entitlement-gated Sign in with Apple surface,
     /// macOS-only today" — a current state rather than a constraint: `Cadence-iOS.entitlements`
     /// already declared `com.apple.developer.applesignin`, and the only thing missing was
@@ -208,8 +211,9 @@ enum CadenceMobileSettingsNavigation {
 
     /// A stored category mobile actually offers, or `nil`.
     ///
-    /// Filtered against `CadenceMobileSettingsLayout.categories`, not merely parsed: `sidebar` and
-    /// `account` are real `CadenceSettingsCategoryKind` cases with no mobile screen, so a raw value
+    /// Filtered against `CadenceMobileSettingsLayout.categories`, not merely parsed: `sidebar` is a
+    /// real `CadenceSettingsCategoryKind` case with no mobile category (`account` has had one since
+    /// [[T-8736]]), so a raw value
     /// arriving from anywhere else — a synced default, a future desktop-only addition — must not
     /// select a category the rail cannot draw and the detail cannot render.
     private static func category(storedRawValue: String) -> CadenceSettingsCategoryKind? {

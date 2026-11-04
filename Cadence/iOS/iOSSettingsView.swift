@@ -297,6 +297,9 @@ struct iOSSettingsView: View {
             )
             #endif
 
+            // [[T-11199]]: the Mac's first Data Safety card, above the controls it describes.
+            iOSPrivacyStatementSettingsSection()
+
             // Keep-a-copy, then read-one-back, then delete-everything. The export is the only
             // route on this device to data that outlives the app, and the import is the only route
             // back from one; both belong above the control that ends it.

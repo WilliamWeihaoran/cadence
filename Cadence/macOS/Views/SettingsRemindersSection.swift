@@ -48,10 +48,11 @@ struct SettingsRemindersSection: View {
                         tone: action == .requestAccess ? .filled(Theme.blue) : .filled(Theme.amber),
                         action: { perform(action) }
                     ) {
+                        // [[T-11199]]: Allow Access wears the request glyph, as on iOS.
                         if action == .openSystemSettings {
                             Label(action.title, systemImage: CadenceAccessButtonGlyph.openSettings)
                         } else {
-                            Text(action.title)
+                            Label(action.title, systemImage: CadenceAccessButtonGlyph.requestAccess)
                         }
                     }
                 } else if state.isConnected {
@@ -64,7 +65,7 @@ struct SettingsRemindersSection: View {
                     }
 
                     SettingsActionButton(tone: .tinted(Theme.blue), action: remindersManager.reload) {
-                        Text("Refresh")
+                        Label("Refresh", systemImage: CadenceSettingsActionGlyph.refresh)
                     }
                     .disabled(remindersManager.isLoading)
                 }
