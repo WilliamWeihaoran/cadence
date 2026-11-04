@@ -313,6 +313,16 @@ struct iOSBoardTaskCard: View {
             }
         )
         .contentShape(Rectangle())
+        // **[[T-9614]]: the long-press lift takes the card's own outline.** The rectangle above is
+        // there so the whole card takes the tap, but a context menu's preview takes its outline
+        // from the content shape too, so the lifted card would sit inside a square-cornered plate
+        // around its rounded one. This names the preview's shape separately, as the same
+        // `RoundedRectangle` `CadenceLedgerCard` clips to; the tap keeps the rectangle. iOS only:
+        // the Mac's menu is an `NSMenu`, which lifts no preview to outline.
+        .contentShape(
+            .contextMenuPreview,
+            RoundedRectangle(cornerRadius: CadenceLedgerCardMetrics.cornerRadius, style: .continuous)
+        )
         .onTapGesture(perform: openDetail)
         // **[[T-8182]]: the task action menu, on a long press.** The menu is the task row's own
         // `iOSTaskRowContextMenu`, not a board copy of it — the same parity macOS's `KanbanCard`

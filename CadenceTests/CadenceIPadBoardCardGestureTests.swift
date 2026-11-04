@@ -238,6 +238,27 @@ struct CadenceIPadBoardCardGestureTests {
         )
     }
 
+    /// [[T-9614]]: the lifted preview is outlined by the card's own rounded shape, not by the
+    /// whole-card tap rectangle. Both halves are pinned: the preview shape at the card's radius and
+    /// style, applied before the menu it outlines, and the tap rectangle still there.
+    @Test func theLongPressPreviewIsOutlinedByTheCardsOwnRoundedShape() throws {
+        let card = try cardBody()
+        let preview = #"\.contentShape\(\s*\.contextMenuPreview,\s*RoundedRectangle\(cornerRadius: CadenceLedgerCardMetrics\.cornerRadius, style: \.continuous\)\s*\)"#
+        #expect(CadenceSourceScan.matchCount(preview, in: card) == 1,
+                "the board card's context-menu preview no longer takes the card's rounded outline")
+        #expect(CadenceSourceScan.matchCount(#"\.contentShape\(Rectangle\(\)\)"#, in: card) == 1,
+                "the board card lost the rectangle that lets the whole card take the tap")
+        let previewAt = try #require(card.range(of: ".contextMenuPreview"))
+        let menuAt = try #require(card.range(of: ".contextMenu {"))
+        #expect(previewAt.lowerBound < menuAt.lowerBound,
+                "the preview shape is applied after the context menu, outside the view it outlines")
+        // The radius named is the one the card clips to, so the two cannot drift apart.
+        let ledger = try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceBoardLedgerCard.swift")
+        #expect(CadenceSourceScan.matchCount(
+            #"RoundedRectangle\(cornerRadius: CadenceLedgerCardMetrics\.cornerRadius, style: \.continuous\)"#,
+            in: ledger) >= 1, "CadenceLedgerCard no longer clips to CadenceLedgerCardMetrics.cornerRadius")
+    }
+
     /// Each question the menu asks has somewhere to be shown. Without these the menu's Delete,
     /// repeat-scope and refusal paths would set a flag that nothing on the board reads.
     @Test func everyStateTheMenuAsksForIsPresentedByTheCard() throws {
