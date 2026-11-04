@@ -469,25 +469,26 @@ nonisolated enum CadenceDataResetCopy {
     ///
     /// What follows "plus" is what `deleteCadenceDataAndLocalArtifacts` removes **outside** the
     /// store: the pending notifications (`CadenceNotificationCanceller`), the backups and the
-    /// pending restore (`removeStoredBackups`), and the saved key (`removeStoredAPIKey`). The
-    /// macOS-only account profile is said beside this, on the Mac, because the phone has none
-    /// (T-474).
+    /// pending restore (`removeStoredBackups`), the saved key (`removeStoredAPIKey`), and the
+    /// Sign in with Apple profile (`clearAppleAccountProfile`). That last clause was the Mac's
+    /// own, said beside this sentence, while the phone had no account ([[T-474]]); since
+    /// [[T-8736]] both platforms clear one, so it is part of the one sentence.
     static let gateDeletesEverything =
         "This permanently deletes everything Cadence holds in this store, retained legacy records "
         + "included, plus its scheduled notifications, local Cadence backups, any pending restore, "
-        + "and the saved OpenAI key."
+        + "the saved OpenAI key, and the local Cadence account profile."
 
     /// What the reset deletes, as both Data Safety **cards** say it before the gate opens
     /// ([[T-10721]], under [[T-7209]] (b) and [[T-8201]]). The phone's card still enumerated store
     /// kinds — task, list, note, tag, saved link — and left out documents, focus history and
     /// images, which the sweep deletes; the Mac's said "Cadence data from this store" and left out
     /// the scheduled notifications. Same claim as `gateDeletesEverything`, without the gate's
-    /// "permanently", which the gate says right before its irreversible button. The Mac adds its
-    /// account-profile clause beside this; the phone has none (T-474).
+    /// "permanently", which the gate says right before its irreversible button. The account
+    /// profile is in it on both platforms since [[T-8736]], as in `gateDeletesEverything`.
     static let cardDeletesEverything =
         "Deletes everything Cadence holds in this store, retained legacy records included, plus "
-        + "its scheduled notifications, local Cadence backups, any pending restore, and the saved "
-        + "OpenAI key."
+        + "its scheduled notifications, local Cadence backups, any pending restore, the saved "
+        + "OpenAI key, and the local Cadence account profile."
 }
 
 /// The sentences both platforms say about the store folders Cadence is **not** using, and the

@@ -105,7 +105,7 @@ struct iOSDataExportSettingsSection: View {
     /// the one where this card matters most: a launch that fell back to a recovery store exported
     /// an archive of nothing, and on this platform that was the whole escape route — iOS then
     /// scheduled no restore and listed no backup (T-1477 added both), and it still has no Files
-    /// route into the container, while Delete Cadence Data on the screen below reaches
+    /// route into the container, while Delete Account & Data on the screen below reaches
     /// `deleteAllBackups()`. The decision about which store to read lives in
     /// `PersistenceController`, with the search it reuses, so it can
     /// be driven against real isolated stores by a macOS test target that never compiles this file.

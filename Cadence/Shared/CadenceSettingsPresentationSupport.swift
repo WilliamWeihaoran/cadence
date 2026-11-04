@@ -26,8 +26,8 @@ enum CadenceSettingsCategoryKind: String, CaseIterable, Identifiable {
         case .sidebar: return "Sidebar"
         // T-580: "Account & Sync" for a category that is one iCloud status card on both
         // platforms, and — on macOS, where `.account` also exists — a second row reading
-        // "Account" two groups below it. Neither screen shows an account here: iOS has no
-        // Sign in with Apple at all, and macOS's is the `.account` pane. "iCloud Sync" is what
+        // "Account" two groups below it. Neither screen shows an account here: the Sign in with
+        // Apple card is the `.account` pane, on both platforms since [[T-8736]]. "iCloud Sync" is what
         // both actually draw, and what iOS's own card eyebrow has always said.
         case .sync: return "iCloud Sync"
         case .dataSafety: return "Data Safety"
@@ -139,13 +139,16 @@ enum CadenceMobileSettingsLayout {
 
     /// The categories mobile deliberately does not offer, and the *only* ones it may omit.
     ///
-    /// `sidebar` configures a column iPhone does not have and iPad does not let you rearrange;
-    /// `account` is the entitlement-gated Sign in with Apple surface, macOS-only today. Stating
-    /// the exclusions positively is what makes "mobile is missing a category" a test failure
+    /// `sidebar` configures a column iPhone does not have and iPad does not let you rearrange.
+    /// `account` sat here too, described as "the entitlement-gated Sign in with Apple surface,
+    /// macOS-only today" — a current state rather than a constraint: `Cadence-iOS.entitlements`
+    /// already declared `com.apple.developer.applesignin`, and the only thing missing was
+    /// `AppleAccountManager`'s `#if os(macOS)`, lifted in [[T-8736]]. Stating the exclusions
+    /// positively is what makes "mobile is missing a category" a test failure
     /// rather than something you find by opening the app: `reminders` sat outside this list for
     /// months on the theory that EventKit reminders were a desktop concern, and nothing said
     /// otherwise because absence looks exactly like a deliberate omission.
-    static let desktopOnly: Set<CadenceSettingsCategoryKind> = [.sidebar, .account]
+    static let desktopOnly: Set<CadenceSettingsCategoryKind> = [.sidebar]
 
     /// Both mobile presentations filter the canonical groups, retaining their names and order.
     static let groups: [CadenceSettingsCategoryGroup] = CadenceSettingsLayout.groups.compactMap { group in

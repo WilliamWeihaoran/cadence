@@ -6,6 +6,7 @@ struct iOSSettingsView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
     @Environment(AISettingsManager.self) private var aiSettingsManager
+    @Environment(AppleAccountManager.self) private var appleAccountManager
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Environment(NotificationManager.self) private var notificationManager
     @Environment(RemindersManager.self) private var remindersManager
@@ -55,7 +56,7 @@ struct iOSSettingsView: View {
     /// only sometimes reachable is the kind of control that looks tappable and does nothing.
     @AppStorage("ios.settings.category") private var settingsCategoryRaw = CadenceMobileSettingsNavigation.categoryListRawValue
     @State private var aiAPIKeyDraft = ""
-    /// [[T-5807]]: advanced each time "Delete Cadence Data" finishes, so the backup section drawn
+    /// [[T-5807]]: advanced each time "Delete Account & Data" finishes, so the backup section drawn
     /// below it on the same page re-reads a backups directory the reset just emptied. Its own
     /// `.onAppear` does not fire again for a page that never left the screen.
     @State private var dataResetGeneration = 0
@@ -247,6 +248,13 @@ struct iOSSettingsView: View {
             iOSAISettingsSection(
                 aiSettingsManager: aiSettingsManager,
                 aiAPIKeyDraft: $aiAPIKeyDraft
+            )
+        case .account:
+            // [[T-8736]]: Delete Account… routes to Data Safety, where the shared reset runs
+            // behind its typed-phrase gate — the Mac's `onDeleteAccount` does the same.
+            iOSAccountSettingsSection(
+                appleAccountManager: appleAccountManager,
+                onDeleteAccount: { select(.data) }
             )
         case .data:
             dataSafetySection

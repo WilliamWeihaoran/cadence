@@ -263,6 +263,62 @@ struct CadencePrivacyDataResetSurfaceTests {
         }
     }
 
+    /// **[[T-8736]]: the reset signs the Apple account out, on both platforms.** The sign-out was
+    /// a line at the Mac's call site while `AppleAccountManager` was `#if os(macOS)`; it is a step
+    /// of the shared sequence now, so the iOS Account section's Delete Account route clears the
+    /// same profile. Driven over a temporary defaults suite — never the app's own — because the
+    /// whole reset deletes the real backups directory and no test may call it.
+    @Test func clearingTheAppleAccountProfileSignsTheManagerOut() throws {
+        try withTemporaryDefaults("cadence.tests.privacy-reset.account") { defaults in
+            let storage = AppleAccountDefaultsStorage(defaults: defaults)
+            storage.saveProfile(AppleAccountProfile(
+                userIdentifier: "apple-user-reset",
+                email: "person@example.com",
+                givenName: "Ada",
+                familyName: "Lovelace",
+                signedInAt: Date(timeIntervalSince1970: 1_000)
+            ))
+            let manager = AppleAccountManager(storage: storage)
+            // Positive control: a manager that loaded no profile would pass the absences below.
+            #expect(manager.isSignedIn, "the fixture profile did not load, so there is nothing to clear")
+
+            PrivacyDataResetService.clearAppleAccountProfile(using: manager)
+
+            #expect(!manager.isSignedIn, "the reset left the Apple account signed in (T-8736)")
+            #expect(storage.loadProfile() == nil, "the reset left the Apple account profile stored (T-8736)")
+            #expect(manager.credentialStatus == .unavailable)
+        }
+    }
+
+    /// And the step sits in phase two, after the only `try`: a refused store deletion leaves the
+    /// user signed in, which is what the Mac's call site did before the step moved. Both callers
+    /// hand the reset their environment's manager rather than signing out themselves.
+    @Test func theResetSignsOutAfterTheStoreDeletionAndBothCallersPassTheManager() throws {
+        let live = try strippingComments(sourceFile("Cadence/Services/CadencePrivacyDataResetService.swift"))
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "deleteCadenceDataAndLocalArtifacts", in: live),
+            "the whole-reset entry point is gone"
+        )
+        let phaseOne = try #require(body.range(of: "try await deleteCadenceData(in: modelContext)"))
+        let signOut = try #require(
+            body.range(of: "clearAppleAccountProfile(using: appleAccountManager)"),
+            "the reset no longer clears the Apple account profile (T-8736)"
+        )
+        #expect(phaseOne.upperBound <= signOut.lowerBound, "the reset signs out before the store deletion can fail")
+
+        for path in [
+            "Cadence/iOS/iOSDataResetSettingsSection.swift",
+            "Cadence/macOS/Views/SettingsDataSafetySection.swift",
+        ] {
+            let code = try strippingComments(sourceFile(path))
+            #expect(
+                code.components(separatedBy: "appleAccountManager: appleAccountManager").count - 1 == 1,
+                "\(path) does not hand the reset its Apple account manager exactly once"
+            )
+            #expect(!code.contains(".signOut()"), "\(path) signs out itself again beside the shared sequence")
+        }
+    }
+
     // MARK: - iOS reaches the reset
 
     /// **The T-161 test for this ticket.** Delete the iOS call site and this fails; nothing else
@@ -520,11 +576,11 @@ struct CadencePrivacyDataResetSurfaceTests {
     // MARK: - The wording both platforms show
 
     /// macOS's two status strings were inline in the view. They are the outcome's now, so neither
-    /// platform invents a sentence — but there are **two** sentences, because the two platforms do
-    /// not delete the same things.
+    /// platform invents a sentence. There are still **two** sentences, but since [[T-8736]] they
+    /// differ only in the Mac's Finder route: both platforms clear the Sign in with Apple profile,
+    /// so both say an account was deleted.
     ///
-    /// Both are pinned verbatim, plural included, so a "cleanup" that collapsed them back into one
-    /// shared string fails here instead of shipping.
+    /// Both are pinned verbatim, plural included.
     @Test func theOutcomeSentenceIsSharedAndCountsCorrectlyInPrivacyDataResetSurface() {
         #expect(PrivacyDataResetOutcome(removedBackupCount: 0).accountAndDataStatusMessage
             == "Cadence account and data were deleted.")
@@ -533,34 +589,27 @@ struct CadencePrivacyDataResetSurfaceTests {
         #expect(PrivacyDataResetOutcome(removedBackupCount: 4).accountAndDataStatusMessage
             == "Cadence account, data, and 4 backups were deleted.")
 
-        #expect(PrivacyDataResetOutcome(removedBackupCount: 0).dataOnlyStatusMessage
-            == "Cadence data was deleted.")
-        #expect(PrivacyDataResetOutcome(removedBackupCount: 1).dataOnlyStatusMessage
-            == "Cadence data and 1 backup were deleted.")
-        #expect(PrivacyDataResetOutcome(removedBackupCount: 4).dataOnlyStatusMessage
-            == "Cadence data and 4 backups were deleted.")
+        #expect(PrivacyDataResetOutcome(removedBackupCount: 0).mobileAccountAndDataStatusMessage
+            == "Cadence account and data were deleted.")
+        #expect(PrivacyDataResetOutcome(removedBackupCount: 1).mobileAccountAndDataStatusMessage
+            == "Cadence account, data, and 1 backup were deleted.")
+        #expect(PrivacyDataResetOutcome(removedBackupCount: 4).mobileAccountAndDataStatusMessage
+            == "Cadence account, data, and 4 backups were deleted.")
     }
 
-    /// **T-474, as the property rather than as three string comparisons.**
-    ///
-    /// The iOS screen explains that Sign in with Apple is macOS-only and that there is no account
-    /// profile to clear here — and then printed "Cadence account and data were deleted." on the way
-    /// out. The sentence iOS shows must not contain the word "account" in any casing, at any backup
-    /// count, including counts nobody wrote a literal for above.
-    @Test func theSentenceIOSShowsNeverClaimsAnAccountWasDeleted() {
+    /// **[[T-8736]], replacing [[T-474]]'s property.** T-474 held that the iOS sentence never said
+    /// "account", because iOS then had no account profile to clear. iOS has one now, and the shared
+    /// reset clears it (`clearAppleAccountProfile`), so the property is the reverse: at every
+    /// backup count, both sentences say the account was deleted, and a clean reset reads the same
+    /// on both platforms.
+    @Test func bothPlatformsSentencesSayTheAccountWasDeleted() {
         for count in [0, 1, 2, 4, 11] {
             let outcome = PrivacyDataResetOutcome(removedBackupCount: count)
-
-            #expect(
-                !outcome.dataOnlyStatusMessage.lowercased().contains("account"),
-                "the iOS success notice claims an account was deleted: \(outcome.dataOnlyStatusMessage)"
-            )
-            // Non-vacuity in both directions. An outcome whose two messages were both the empty
-            // string would satisfy the assertion above: the iOS sentence has to be a sentence, and
-            // the macOS one — the sentence this must *not* be — still says "account".
-            #expect(outcome.dataOnlyStatusMessage.hasPrefix("Cadence data"))
-            #expect(outcome.dataOnlyStatusMessage.hasSuffix("deleted."))
-            #expect(outcome.accountAndDataStatusMessage.lowercased().contains("account"))
+            for message in [outcome.accountAndDataStatusMessage, outcome.mobileAccountAndDataStatusMessage] {
+                #expect(message.hasPrefix("Cadence account"), "the sentence no longer names the account: \(message)")
+                #expect(message.hasSuffix("deleted."))
+            }
+            #expect(outcome.accountAndDataStatusMessage == outcome.mobileAccountAndDataStatusMessage)
         }
     }
 
@@ -570,11 +619,11 @@ struct CadencePrivacyDataResetSurfaceTests {
     @Test func eachPlatformPrintsTheSentenceThatMatchesWhatItDeleted() throws {
         let expectations: [String: [String: Int]] = [
             "Cadence/iOS/iOSDataResetSettingsSection.swift": [
-                "outcome.dataOnlyStatusMessage": 1,
+                "outcome.mobileAccountAndDataStatusMessage": 1,
                 "outcome.accountAndDataStatusMessage": 0,
             ],
             "Cadence/macOS/Views/SettingsDataSafetySection.swift": [
-                "outcome.dataOnlyStatusMessage": 0,
+                "outcome.mobileAccountAndDataStatusMessage": 0,
                 "outcome.accountAndDataStatusMessage": 1,
             ],
         ]
@@ -672,26 +721,19 @@ struct CadencePrivacyDataResetSurfaceTests {
         )
     }
 
-    /// The rest of the iOS screen, which was already right about the account — which is why the
-    /// success notice read as a contradiction rather than as a slip.
-    ///
-    /// Stated as an absence over the whole file's live code, so it covers the button, the card
-    /// title *and* the section label. The label said "Delete Account & Data" — macOS's words on the
-    /// platform with no account — which is the notice's claim again, one control earlier.
-    @Test func theIOSResetScreenNeverNamesAnAccountInAnythingItDraws() throws {
-        let code = try strippingComments(sourceFile("Cadence/iOS/iOSDataResetSettingsSection.swift"))
-
-        #expect(code.contains("struct iOSDataResetSettingsSection"), "non-vacuity: wrong file")
-        #expect(code.contains("Delete Cadence Data"), "non-vacuity: the screen draws no delete control")
-        #expect(
-            !code.lowercased().contains("account"),
-            "the iOS reset screen names an account in something it draws (T-474)"
-        )
-
-        // macOS keeps the word, because macOS keeps the account. Without this the assertion above
-        // is satisfiable by deleting the concept from both platforms, which is the opposite fix.
-        let desktop = try strippingComments(sourceFile("Cadence/macOS/Views/SettingsDataSafetySection.swift"))
-        #expect(desktop.contains("Delete Account & Data"))
+    /// **[[T-8736]], replacing [[T-474]]'s absence.** The iOS screen was named for data alone
+    /// ("Delete Cadence Data") while iOS had no account; it clears the account profile now, so it
+    /// carries the Mac's name for the same deletion, and neither platform types the other's.
+    @Test func bothResetScreensNameTheAccountTheyDelete() throws {
+        for path in [
+            "Cadence/iOS/iOSDataResetSettingsSection.swift",
+            "Cadence/macOS/Views/SettingsDataSafetySection.swift",
+        ] {
+            let code = try strippingComments(sourceFile(path))
+            #expect(code.contains("PrivacyDataResetService"), "non-vacuity: \(path) is not a caller of the reset")
+            #expect(code.contains("Delete Account & Data"), "\(path) does not name the account it deletes")
+            #expect(!code.contains("Delete Cadence Data"), "\(path) still names the data-only deletion")
+        }
     }
 
     // MARK: - The shipped documents
@@ -702,17 +744,21 @@ struct CadencePrivacyDataResetSurfaceTests {
         let privacy = try repositoryFile("docs/privacy.html")
         let review = try repositoryFile("docs/app-review-notes.md")
 
-        // The unqualified "Settings, Account or Settings, Data Safety" promise is gone, and the
-        // iOS route is named.
+        // The unqualified "Settings, Account or Settings, Data Safety" promise is gone, and every
+        // platform is named. [[T-8736]]: the promise is true on iOS now, because iOS has the
+        // Account section, so the policy names both routes on every platform and no longer says
+        // iOS has no account profile.
         #expect(!privacy.contains("You can delete your Cadence account and data in the app from Settings, Account or Settings, Data Safety."))
-        #expect(privacy.contains("On iPhone and iPad the same deletion is in Settings, Data Safety."))
+        #expect(privacy.contains("On a Mac, iPhone or iPad you can delete your Cadence account and data in the app from Settings, Account or Settings, Data Safety."))
+        #expect(!privacy.contains("no Cadence account profile"))
 
         // The second falsehood: Calendar access is not revoked in macOS System Settings on a phone.
         #expect(!privacy.contains("in macOS System Settings"))
         #expect(privacy.contains("in the Settings app on iPhone and iPad"))
 
         #expect(!review.contains("- Users can delete their Cadence account and data in Settings > Account or Settings > Data Safety."))
-        #expect(review.contains("On iPhone and iPad, users delete their Cadence data in Settings > Data Safety."))
+        #expect(review.contains("On macOS, iPhone and iPad, users delete their Cadence account and data in Settings > Account or Settings > Data Safety."))
+        #expect(!review.contains("Sign in with Apple is macOS-only"))
         // The notes have to say something true and specific about the gate, not just name a screen.
         #expect(review.contains("requires the word DELETE to be typed"))
     }
@@ -929,29 +975,28 @@ struct CadencePrivacyDataResetSurfaceTests {
                 retainedAPIKeyReason: "Keychain returned status -34018."
             )
 
-            for message in [outcome.accountAndDataStatusMessage, outcome.dataOnlyStatusMessage] {
+            for message in [outcome.accountAndDataStatusMessage, outcome.mobileAccountAndDataStatusMessage] {
                 #expect(message.contains("The saved OpenAI key was not removed and is still in the Keychain"))
                 #expect(message.contains("Keychain returned status -34018"))
                 #expect(message.contains("Delete it in Settings → AI."))
                 // The deletion that *did* happen is still reported, because it did happen.
                 #expect(message.hasPrefix("Cadence "))
             }
-            // T-474 still holds of the longer sentence: iOS names no account, at any count.
-            #expect(!outcome.dataOnlyStatusMessage.lowercased().contains("account"))
-            #expect(outcome.accountAndDataStatusMessage.lowercased().contains("account"))
+            // [[T-8736]]: a retained key differs by no word between the platforms.
+            #expect(outcome.mobileAccountAndDataStatusMessage == outcome.accountAndDataStatusMessage)
         }
 
         // A blank reason is still a retained key. Read from the presence of the value, never from
         // its text, so an error with no description cannot fall back to the wording that says the
         // key is gone.
         let blank = PrivacyDataResetOutcome(removedBackupCount: 0, retainedAPIKeyReason: "  ")
-        #expect(blank.dataOnlyStatusMessage.contains("was not removed"))
-        #expect(blank.dataOnlyStatusMessage.contains("the Keychain refused the deletion"))
+        #expect(blank.mobileAccountAndDataStatusMessage.contains("was not removed"))
+        #expect(blank.mobileAccountAndDataStatusMessage.contains("the Keychain refused the deletion"))
 
         // And a reset that removed the key says nothing about one, at either sentence.
         let clean = PrivacyDataResetOutcome(removedBackupCount: 2)
         #expect(clean.accountAndDataStatusMessage == "Cadence account, data, and 2 backups were deleted.")
-        #expect(clean.dataOnlyStatusMessage == "Cadence data and 2 backups were deleted.")
+        #expect(clean.mobileAccountAndDataStatusMessage == "Cadence account, data, and 2 backups were deleted.")
     }
 
     /// The report is worth nothing if the reset does not feed it. Read as text for this file's
@@ -996,6 +1041,9 @@ struct CadencePrivacyDataResetSurfaceTests {
             // reset is the thing that calls it.
             "CadenceStartupCostLedger.clearStoredState()",
             "removeStoredBackups()",
+            // [[T-8736]]: the Sign in with Apple profile, cleared on both platforms. Driven over a
+            // temporary store in `clearingTheAppleAccountProfileSignsTheManagerOut`.
+            "clearAppleAccountProfile(using: appleAccountManager)",
         ] {
             #expect(body.contains(step), "the reset stopped performing \(step)")
         }
@@ -1128,34 +1176,33 @@ struct CadencePrivacyDataResetSurfaceTests {
         )
 
         #expect(outcome.accountAndDataStatusMessage.hasPrefix("Cadence account and data were deleted."))
-        #expect(outcome.dataOnlyStatusMessage.hasPrefix("Cadence data was deleted."))
-        for message in [outcome.accountAndDataStatusMessage, outcome.dataOnlyStatusMessage] {
+        #expect(outcome.mobileAccountAndDataStatusMessage.hasPrefix("Cadence account and data were deleted."))
+        for message in [outcome.accountAndDataStatusMessage, outcome.mobileAccountAndDataStatusMessage] {
             #expect(message.contains("Local store backups or store folders were not removed and are still inside Cadence"))
             #expect(message.contains("You don’t have permission to save the file"))
             #expect(!message.lowercased().contains("could not delete"))
         }
-        // The Finder route exists on macOS's pane and nowhere on iOS, so only one sentence names
-        // it — the same rule T-474 applied to the word "account".
+        // The Finder route exists on macOS's pane and nowhere on iOS, which has no Finder, so only
+        // one sentence names it. It is the one clause the two sentences differ by ([[T-8736]]).
         #expect(outcome.accountAndDataStatusMessage.contains("Settings → Data Safety → Show Folder"))
-        #expect(!outcome.dataOnlyStatusMessage.contains("Settings → Data Safety"))
-        #expect(!outcome.dataOnlyStatusMessage.lowercased().contains("account"))
+        #expect(!outcome.mobileAccountAndDataStatusMessage.contains("Settings → Data Safety"))
 
         // Read from the presence of the reason, never from its text: an error with no description
         // still left the files behind.
         let blank = PrivacyDataResetOutcome(removedBackupCount: 0, retainedBackupReason: "   ")
-        #expect(blank.dataOnlyStatusMessage.contains("were not removed and are still inside Cadence"))
-        #expect(blank.dataOnlyStatusMessage.contains("the files could not be removed"))
+        #expect(blank.mobileAccountAndDataStatusMessage.contains("were not removed and are still inside Cadence"))
+        #expect(blank.mobileAccountAndDataStatusMessage.contains("the files could not be removed"))
 
         // A reset that removed them says nothing about them, and both clauses can coexist.
-        #expect(PrivacyDataResetOutcome(removedBackupCount: 2).dataOnlyStatusMessage
-            == "Cadence data and 2 backups were deleted.")
+        #expect(PrivacyDataResetOutcome(removedBackupCount: 2).mobileAccountAndDataStatusMessage
+            == "Cadence account, data, and 2 backups were deleted.")
         let both = PrivacyDataResetOutcome(
             removedBackupCount: 0,
             retainedAPIKeyReason: "Keychain returned status -34018.",
             retainedBackupReason: "You don’t have permission to save the file."
         )
-        #expect(both.dataOnlyStatusMessage.contains("still in the Keychain"))
-        #expect(both.dataOnlyStatusMessage.contains("still inside Cadence"))
+        #expect(both.mobileAccountAndDataStatusMessage.contains("still in the Keychain"))
+        #expect(both.mobileAccountAndDataStatusMessage.contains("still inside Cadence"))
     }
 
     // MARK: - Fixtures

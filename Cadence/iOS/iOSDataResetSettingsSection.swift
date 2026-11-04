@@ -6,14 +6,15 @@ import SwiftUI
 ///
 /// **Why this exists.** `docs/privacy.html` and `docs/app-review-notes.md` both promised the user
 /// could delete their Cadence account and data from Settings > Account or Settings > Data Safety.
-/// On iOS neither route existed: `.account` is `CadenceMobileSettingsLayout.desktopOnly`, and
-/// `.dataSafety` drew read-only count tiles. The reset itself was written, tested and sitting
+/// On iOS neither route existed: `.account` was `CadenceMobileSettingsLayout.desktopOnly` (until
+/// [[T-8736]]), and `.dataSafety` drew read-only count tiles. The reset itself was written, tested and sitting
 /// behind an `#if os(macOS)` that nothing in it needed — the `RemindersManager` shape exactly.
 ///
 /// The sequence it runs is `PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts`, the same
 /// function macOS's pane calls, so "delete my data" cannot come to mean two different things on
-/// two platforms. Sign in with Apple is macOS-only, so there is no account profile to clear here
-/// and this screen does not claim one.
+/// two platforms. [[T-474]] named this screen for data alone while iOS had no Sign in with Apple;
+/// since [[T-8736]] iOS has the Account section, the shared reset clears its profile, and the
+/// screen uses the Mac's words because it now deletes the same things.
 ///
 /// One view for both size classes: iPhone and iPad differ in the width this is handed, not in how
 /// a card, a sheet or a button inside it looks.
@@ -25,14 +26,14 @@ struct iOSDataResetSettingsSection: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(AISettingsManager.self) private var aiSettingsManager
+    @Environment(AppleAccountManager.self) private var appleAccountManager
     @State private var isConfirming = false
     @State private var statusMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // "Delete Account & Data" on macOS, where an account profile exists to delete.
-            // Not here.
-            CadenceSettingsSectionLabel(text: "Delete Cadence Data")
+            // The Mac's label: both platforms clear an account profile since [[T-8736]].
+            CadenceSettingsSectionLabel(text: "Delete Account & Data")
 
             iOSSettingsCard {
                 VStack(alignment: .leading, spacing: 12) {
@@ -45,7 +46,7 @@ struct iOSDataResetSettingsSection: View {
                         )
 
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Delete Cadence Data")
+                            Text("Delete Account & Data")
                                 .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                                 .foregroundStyle(Theme.text)
 
@@ -76,7 +77,7 @@ struct iOSDataResetSettingsSection: View {
                     // the destructive control lives only there — the same shape macOS's pane has
                     // since T-575. See `PrivacyDataResetConfirmation`.
                     iOSActionButton(
-                        title: "Delete Cadence Data",
+                        title: "Delete Account & Data",
                         systemImage: "trash.fill",
                         role: .destructive,
                         size: .compact,
@@ -98,15 +99,15 @@ struct iOSDataResetSettingsSection: View {
             do {
                 let outcome = try await PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts(
                     in: modelContext,
-                    aiSettingsManager: aiSettingsManager
+                    aiSettingsManager: aiSettingsManager,
+                    appleAccountManager: appleAccountManager
                 )
-                // `dataOnlyStatusMessage`, not the account one: this screen has already told
-                // the reader that Sign in with Apple is macOS-only, and the shared sentence used
-                // to contradict that on the way out (T-474).
-                statusMessage = outcome.dataOnlyStatusMessage
+                // The mobile sentence: the Mac's, minus its Finder route, which iOS has no
+                // Finder for.
+                statusMessage = outcome.mobileAccountAndDataStatusMessage
                 onDidReset()
             } catch {
-                statusMessage = "Could not delete Cadence data: \(error.localizedDescription)"
+                statusMessage = "Could not delete Cadence account and data: \(error.localizedDescription)"
             }
         }
     }
@@ -198,7 +199,7 @@ private struct iOSDataResetConfirmationSheet: View {
             .scrollIndicators(.hidden)
             .cadenceScaledTypography()
             .background(Theme.bg.ignoresSafeArea())
-            .navigationTitle("Delete Cadence Data")
+            .navigationTitle("Delete Account & Data")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

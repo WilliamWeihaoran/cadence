@@ -7,11 +7,10 @@ struct SettingsAccountSection: View {
     let appleAccountManager: AppleAccountManager
     let onDeleteAccount: () -> Void
 
-    /// "Signed in Oct 20" this year, "Signed in Oct 20, 2025" from another ([[T-6433]]): the
-    /// sign-in date persists indefinitely, so a bare month and day made a sign-in from last year
-    /// read like last week. Same rule as `DateFormatters.absoluteDay` ([[T-6252]]).
+    /// "Signed in Oct 20" this year, "Signed in Oct 20, 2025" from another ([[T-6433]]). The rule
+    /// is `CadenceAccountSettingsCopy`'s, which iOS's Account section reads too ([[T-8736]]).
     static func signedInLabel(_ signedInAt: Date, relativeTo referenceDate: Date = Date()) -> String {
-        "Signed in \(DateFormatters.absoluteDay(signedInAt, relativeTo: referenceDate))"
+        CadenceAccountSettingsCopy.signedInLabel(signedInAt, relativeTo: referenceDate)
     }
 
     var body: some View {
@@ -42,10 +41,10 @@ struct SettingsAccountSection: View {
                                     .font(.system(size: 11))
                                     .foregroundStyle(Theme.muted)
                             } else {
-                                Text("Apple Account")
+                                Text(CadenceAccountSettingsCopy.accountTitle)
                                     .font(.system(size: 15, weight: .semibold))
                                     .foregroundStyle(Theme.text)
-                                Text("Optional identity for Cadence. Local access and iCloud sync do not depend on signing in.")
+                                Text(CadenceAccountSettingsCopy.signedOutDetail)
                                     .font(.system(size: 12))
                                     .foregroundStyle(Theme.dim)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -67,11 +66,11 @@ struct SettingsAccountSection: View {
                             // so the rim of each plate was dead to a click and hover lit only the
                             // label ([[T-9351]]'s shape).
                             HStack(spacing: 10) {
-                                CadenceActionButton(title: "Sign Out", role: .destructive, size: .compact) {
+                                CadenceActionButton(title: CadenceAccountSettingsCopy.signOutTitle, role: .destructive, size: .compact) {
                                     appleAccountManager.signOut()
                                 }
 
-                                CadenceActionButton(title: "Delete Account…", role: .primary, size: .compact, tint: Theme.red) {
+                                CadenceActionButton(title: CadenceAccountSettingsCopy.deleteAccountTitle, role: .primary, size: .compact, tint: Theme.red) {
                                     onDeleteAccount()
                                 }
                             }
@@ -82,7 +81,7 @@ struct SettingsAccountSection: View {
                                 HStack(spacing: 7) {
                                     Image(systemName: "apple.logo")
                                         .font(.system(size: 12, weight: .semibold))
-                                    Text(appleAccountManager.isAuthorizing ? "Signing In…" : "Sign in with Apple")
+                                    Text(CadenceAccountSettingsCopy.signInTitle(isAuthorizing: appleAccountManager.isAuthorizing))
                                         .font(.system(size: 12, weight: .semibold))
                                 }
                                 // Plain `Theme.onColor`, not `onColor(for:)`: Sign in with Apple is
@@ -104,12 +103,12 @@ struct SettingsAccountSection: View {
 
                     VStack(spacing: 8) {
                         accountDiagnosticRow(
-                            title: "Credential Status",
+                            title: CadenceAccountSettingsCopy.credentialStatusTitle,
                             value: appleAccountManager.credentialStatus.title,
                             color: appleAccountManager.credentialStatus == .authorized ? Theme.green : Theme.dim
                         )
                         accountDiagnosticRow(
-                            title: "Apple Sign-In Entitlement",
+                            title: CadenceAccountSettingsCopy.entitlementStatusTitle,
                             value: appleAccountManager.entitlementStatus.title,
                             color: appleAccountManager.entitlementStatus.isConfigured ? Theme.green : Theme.amber,
                             detail: appleAccountManager.entitlementStatus.detail

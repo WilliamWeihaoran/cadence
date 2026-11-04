@@ -7,15 +7,17 @@ import SwiftData
 /// `Cadence/iOS/` is inside `#if os(iOS)` and invisible to the macOS-built test target: the
 /// wording is the part worth pinning, and this is where a test can reach it.
 ///
-/// **Two sentences, one deletion (T-474).** There was one `statusMessage` and it said "Cadence
-/// account and data were deleted." on both platforms. Sign in with Apple is macOS-only, so on
-/// iPhone and iPad there is no account profile to clear — the iOS screen says so in its own
-/// header text and its own button, and then printed a success notice claiming otherwise.
-/// `docs/app-review-notes.md` already draws the line the UI was crossing.
+/// **Two sentences, one deletion.** [[T-474]] split one shared sentence in two because iOS then
+/// had no Sign in with Apple and so no account profile to clear, and the iOS screen printed
+/// "Cadence account and data were deleted." anyway. [[T-8736]] brought the Account section to iOS
+/// and moved the sign-out into the shared sequence, so both platforms now clear an account
+/// profile and both sentences say so. They still differ in one clause: only the Mac names a
+/// Finder route for backups the reset could not remove, because iOS has no Finder and its Data
+/// Safety screen has no folder to reveal.
 ///
 /// The split is **presentational only**: `deleteCadenceDataAndLocalArtifacts` is still one
 /// sequence called from both panes, which is what keeps "delete my data" from coming to mean two
-/// different things. What differs is the sentence, and it differs because the platforms differ.
+/// different things.
 struct PrivacyDataResetOutcome: Equatable, Sendable {
     /// Local Cadence store backups deleted along with the store's contents.
     let removedBackupCount: Int
@@ -55,33 +57,33 @@ struct PrivacyDataResetOutcome: Equatable, Sendable {
         self.retainedBackupReason = retainedBackupReason
     }
 
-    /// macOS, where the reset also clears the local Sign in with Apple profile.
+    /// macOS: the deletion sentence, plus the Finder route to backups the reset left behind.
     var accountAndDataStatusMessage: String {
-        let deleted = removedBackupCount == 0
-            ? "Cadence account and data were deleted."
-            : "Cadence account, data, and \(backupPhrase) were deleted."
         // The Finder route is named only here. macOS's Data Safety pane has a **Show Folder**
         // button over the backup directory, so the sentence can point at something real; iOS has
         // no backup surface at all, and naming a control that does not exist there would be the
         // same class of untrue sentence this ticket removed.
         return appendingRetainedBackupSentence(
-            to: appendingRetainedKeySentence(to: deleted),
+            to: appendingRetainedKeySentence(to: deletedSentence),
             retry: " Open Settings → Data Safety → Show Folder to remove them."
         )
     }
 
-    /// iOS and iPadOS, where there is no account profile to clear.
-    ///
-    /// It must not contain the word "account" in any casing — that is the whole ticket, and it is
-    /// asserted rather than left to review.
-    var dataOnlyStatusMessage: String {
-        let deleted = removedBackupCount == 0
-            ? "Cadence data was deleted."
-            : "Cadence data and \(backupPhrase) were deleted."
-        return appendingRetainedBackupSentence(
-            to: appendingRetainedKeySentence(to: deleted),
+    /// iOS and iPadOS: the same deletion sentence, with no Finder route, because there is no
+    /// Finder on iPhone or iPad and the iOS Data Safety screen has no folder to reveal.
+    var mobileAccountAndDataStatusMessage: String {
+        appendingRetainedBackupSentence(
+            to: appendingRetainedKeySentence(to: deletedSentence),
             retry: nil
         )
+    }
+
+    /// Both platforms clear the local Sign in with Apple profile since [[T-8736]], so the first
+    /// sentence is one sentence.
+    private var deletedSentence: String {
+        removedBackupCount == 0
+            ? "Cadence account and data were deleted."
+            : "Cadence account, data, and \(backupPhrase) were deleted."
     }
 
     private var backupPhrase: String {
@@ -134,8 +136,9 @@ struct PrivacyDataResetOutcome: Equatable, Sendable {
 /// This used to describe a deliberate split: macOS behind a window-modal `confirmationDialog`,
 /// iOS behind a sheet with this phrase typed into it, "same bar, different mechanism". It was not
 /// the same bar. The Mac's dialog put a live **Delete Account & Data** button one click from the
-/// settings pane, and the Mac's reset is the *larger* one — Sign in with Apple is macOS-only, so
-/// only there is there an account profile to sign out as well. The less guarded path deleted more.
+/// settings pane, and the Mac's reset was then the *larger* one — Sign in with Apple was
+/// macOS-only, so only there was there an account profile to sign out as well (both platforms
+/// sign one out since [[T-8736]]). The less guarded path deleted more.
 ///
 /// Both surfaces now present a modal that enumerates what is about to be lost and keeps its
 /// destructive control disabled until `authorizes(_:)` says otherwise:
@@ -279,13 +282,14 @@ enum PrivacyDataResetService {
         CadenceWidgetRefreshCenter.reloadAllWidgets(force: true, userDefaults: userDefaults)
     }
 
-    /// The whole reset both platforms perform, minus the one piece that is genuinely macOS-only.
+    /// The whole reset both platforms perform, the Apple account profile included.
     ///
     /// macOS's Data Safety pane assembled this inline; iOS needed the same sequence, and a second
     /// hand-written copy of it is exactly how "delete my data" ends up meaning two different
-    /// things on two platforms. Sign in with Apple is entitlement-gated and macOS-only
-    /// (`AppleAccountManager` is inside `#if os(macOS)`), so signing that profile out stays at the
-    /// macOS call site rather than becoming an optional parameter nobody on iOS can pass.
+    /// things on two platforms. The local Sign in with Apple profile was the one step left at the
+    /// macOS call site while `AppleAccountManager` was `#if os(macOS)`; since [[T-8736]] the
+    /// manager is shared and iOS offers Sign in with Apple too, so clearing it is a step here,
+    /// behind `clearAppleAccountProfile`, like every other artifact.
     ///
     /// **Two phases, and only the first may throw (T-1313).**
     ///
@@ -307,9 +311,13 @@ enum PrivacyDataResetService {
     @MainActor
     static func deleteCadenceDataAndLocalArtifacts(
         in modelContext: ModelContext,
-        aiSettingsManager: AISettingsManager
+        aiSettingsManager: AISettingsManager,
+        appleAccountManager: AppleAccountManager
     ) async throws -> PrivacyDataResetOutcome {
         try await deleteCadenceData(in: modelContext)
+        // Phase two, so a refused store deletion leaves the user signed in, which is what the
+        // Mac's call site did when this step lived there. Signing out cannot fail.
+        clearAppleAccountProfile(using: appleAccountManager)
         // Reported, not swallowed, and the remaining artifacts are still cleaned up: the store is
         // already gone by the time the Keychain is reached, so a refused key deletion cannot fail
         // the reset — it can only fail to be *mentioned*, which is what it did (T-1101).
@@ -396,6 +404,17 @@ enum PrivacyDataResetService {
         var seen = Set<String>()
         let unique = reasons.filter { seen.insert($0).inserted }
         return (removedBackupCount, unique.isEmpty ? nil : unique.joined(separator: "; "))
+    }
+
+    /// The account half of phase two, as its own function for the reason `clearWidgetState` is
+    /// one: the whole reset deletes the real backups directory, so no test may call it, and this is
+    /// the step a test drives over a manager backed by temporary storage ([[T-8736]]).
+    ///
+    /// `signOut()` clears the stored profile and the in-memory one, so the Account section that
+    /// reads the same manager stops naming the deleted identity without a relaunch.
+    @MainActor
+    static func clearAppleAccountProfile(using appleAccountManager: AppleAccountManager) {
+        appleAccountManager.signOut()
     }
 
     /// The credential half of the reset, as its own function for the reason `clearWidgetState` is

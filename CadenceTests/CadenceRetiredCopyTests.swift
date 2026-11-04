@@ -113,21 +113,12 @@ let cadenceRetiredCopy: [CadenceRetiredPhrase] = [
         "Cadence account and data were deleted.",
         retiredBy: "T-474",
         why: """
-        Sign in with Apple is macOS-only, so on iPhone and iPad the reset clears no account profile \
-        and the success notice must not say it did. The sentence itself is not retired — macOS \
-        still shows it — so it is allowed exactly where it is defined and nowhere else.
+        Retired as an inline literal, not as a sentence. T-474 kept it out of iOS while iPhone and \
+        iPad had no Sign in with Apple; since T-8736 both platforms clear the account profile and \
+        both show it, but through `PrivacyDataResetOutcome`, so it is still allowed exactly where \
+        it is defined and nowhere else.
         """,
         stillAllowedIn: ["Cadence/Services/CadencePrivacyDataResetService.swift"]
-    ),
-    CadenceRetiredPhrase(
-        "Delete Account & Data",
-        retiredBy: "T-474",
-        why: """
-        The same claim as the notice above, one control earlier: it was the iOS section label while \
-        the button beneath it correctly read "Delete Cadence Data". macOS keeps it, because macOS \
-        keeps the account.
-        """,
-        stillAllowedIn: ["Cadence/macOS/Views/SettingsDataSafetySection.swift"]
     ),
     CadenceRetiredPhrase(
         "cannot read an archive back in yet",

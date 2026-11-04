@@ -1468,7 +1468,9 @@ struct CadenceContrastFloorTests {
             // `Theme.onColor` *because* the fill under it is solved to a luminance that admits it,
             // which is the whole point of solving the fill.
             "Cadence/Shared/CadenceCalendarEventStyle.swift",
-            // Sign in with Apple: a brand-locked black fill with a mandated white label.
+            // Sign in with Apple: a brand-locked black fill with a mandated white label, on the
+            // iOS Account section ([[T-8736]]) and the Mac card it mirrors.
+            "Cadence/iOS/iOSAccountSettingsSection.swift",
             "Cadence/macOS/Views/SettingsSectionViews.swift",
             // The neutral rest edge of a timeline block: a white *wash* over a block, not ink read
             // against one. `borderColor`'s `idleTintOpacity` is how the rail treatment declines it

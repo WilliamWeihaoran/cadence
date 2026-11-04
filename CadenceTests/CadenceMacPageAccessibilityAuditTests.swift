@@ -379,8 +379,9 @@ struct CadenceMacPageAccessibilityAuditTests {
         }
         let account = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SettingsSectionViews.swift")
         let section = try #require(CadenceSourceScan.declarationBody("struct SettingsAccountSection: View", in: account))
-        #expect(section.contains(#"CadenceActionButton(title: "Sign Out""#), "Sign Out is not the shared action button")
-        #expect(section.contains(#"CadenceActionButton(title: "Delete Account…""#), "Delete Account is not the shared action button")
+        // [[T-8736]]: the titles are `CadenceAccountSettingsCopy`'s, which iOS's section reads too.
+        #expect(section.contains("CadenceActionButton(title: CadenceAccountSettingsCopy.signOutTitle"), "Sign Out is not the shared action button")
+        #expect(section.contains("CadenceActionButton(title: CadenceAccountSettingsCopy.deleteAccountTitle"), "Delete Account is not the shared action button")
     }
 
     /// **[[T-9532]].** [[T-9351]]'s shape with the modifiers in the other order, on the list

@@ -391,13 +391,13 @@ struct SettingsDataSafetySection: View {
             do {
                 // The sequence itself is in `PrivacyDataResetService` rather than here, so iOS's
                 // Data Safety screen runs the same reset instead of a second hand-written copy.
+                // [[T-8736]]: the Apple account sign-out is a step of the shared sequence now,
+                // so both platforms clear the profile rather than only this call site.
                 let outcome = try await PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts(
                     in: modelContext,
-                    aiSettingsManager: aiSettingsManager
+                    aiSettingsManager: aiSettingsManager,
+                    appleAccountManager: appleAccountManager
                 )
-                // Sign in with Apple is entitlement-gated and macOS-only (`AppleAccountManager` is
-                // inside `#if os(macOS)`), so this is the one step the shared sweep cannot take.
-                appleAccountManager.signOut()
                 statusMessage = outcome.accountAndDataStatusMessage
                 refreshBackups()
             } catch {
@@ -518,8 +518,8 @@ private struct SettingsDataResetCard: View {
                     // `Recovery/` store and every earlier store location too, so the clause now
                     // names that deletion here as well as in the modal, before anyone presses
                     // anything. [[T-10721]]: what it deletes is the phone card's shared
-                    // sentence; only the account profile is the Mac's own.
-                    Text("\(CadenceDataResetCopy.cardDeletesEverything) On this Mac it also deletes the local Cadence account profile. \(CadenceUnmanagedStoreCopy.resetDeletesThem)")
+                    // sentence, account profile included since [[T-8736]].
+                    Text("\(CadenceDataResetCopy.cardDeletesEverything) \(CadenceUnmanagedStoreCopy.resetDeletesThem)")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)
@@ -593,8 +593,8 @@ private struct SettingsDataResetConfirmationSheet: View {
                                 // T-1840: the trailing claim names the recovery store before the
                                 // button is live, and not the one this launch is running on.
                                 // [[T-7209]] (b): what it deletes is the shared sentence the
-                                // phone's gate reads; only the account profile is the Mac's own.
-                                Text("\(CadenceDataResetCopy.gateDeletesEverything) On this Mac it also deletes the local Cadence account profile. \(CadenceDataResetCopy.deletionsReachOtherDevices) Apple Calendar events that already exist in Calendar are not deleted. \(CadenceUnmanagedStoreCopy.resetGateDeletesThem(runningOnRecoveryStore: PersistenceController.startupIssue?.kind == .recoveryStore))")
+                                // phone's gate reads, account profile included since [[T-8736]].
+                                Text("\(CadenceDataResetCopy.gateDeletesEverything) \(CadenceDataResetCopy.deletionsReachOtherDevices) Apple Calendar events that already exist in Calendar are not deleted. \(CadenceUnmanagedStoreCopy.resetGateDeletesThem(runningOnRecoveryStore: PersistenceController.startupIssue?.kind == .recoveryStore))")
                                     .font(.system(size: 12))
                                     .foregroundStyle(Theme.dim)
                                     .fixedSize(horizontal: false, vertical: true)

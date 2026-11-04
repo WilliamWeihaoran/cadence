@@ -126,9 +126,9 @@ widened — a copy decision for the owner, not a correction.
 ## App Description (iOS/iPadOS)
 
 Paste into the iOS version page's Description field (4000-character limit). It differs from the
-Mac copy where the platforms differ: no Sign in with Apple (macOS-only; iPhone and iPad have no
-Cadence account and no Settings > Account), and deletion is of data, from Settings > Data Safety.
-It claims no feature the iOS build lacks and does not claim parity with the Mac.
+Mac copy where the platforms differ. Since T-8736 Sign in with Apple, Settings > Account and account
+deletion are on iPhone and iPad too, so the Privacy paragraph is the Mac's. It claims no feature the
+iOS build lacks and does not claim parity with the Mac.
 
 ```
 Cadence is a productivity app for iPhone and iPad for planning your day, your week, and the work ahead in one place.
@@ -155,7 +155,7 @@ Optional AI Assistance
 If you add your own OpenAI API key in Settings, Cadence can run optional AI actions on note content you select. AI is off by default and only runs when you choose to use it.
 
 Privacy
-Cadence has no ads, no third-party tracking, no in-app purchases, and no account to create. You can delete all of your Cadence data at any time from Settings.
+Cadence has no ads, no third-party tracking, and no in-app purchases. Sign in with Apple is optional, and you can delete your account and all of your Cadence data at any time from Settings.
 ```
 
 ## Review Notes

@@ -148,6 +148,8 @@ struct CadenceApp: App {
                     // macOS says this with `FocusManager.startFocus(…)`, which it already has.
                     .environment(CadenceFocusHandoffCenter.shared)
                     .environment(AISettingsManager.shared)
+                    // [[T-8736]]: Settings → Account and the shared data reset read it on iOS too.
+                    .environment(AppleAccountManager.shared)
                     .environment(iOSCalendarManager.shared)
                     .environment(NotificationManager.shared)
                     .environment(RemindersManager.shared)

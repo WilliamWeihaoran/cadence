@@ -199,7 +199,7 @@ struct MobileSettingsLayoutTests {
     ///
     /// A second, literal assertion sat under this one and read `13` — it had to be edited again the
     /// moment `.coverage` was deleted, which is the maintenance cost the derived form exists to
-    /// avoid. `onlyTheTwoDesktopShellCategoriesAreExcluded` below does the strong half by set
+    /// avoid. `onlyTheDesktopShellCategoryIsExcluded` below does the strong half by set
     /// equality, so the literal was buying nothing that the pair of them did not already say.
     @Test func mobileOffersEveryCategoryItDoesNotDeliberatelyExclude() {
         let expected = CadenceSettingsCategoryKind.allCases.count - CadenceMobileSettingsLayout.desktopOnly.count
@@ -208,16 +208,21 @@ struct MobileSettingsLayoutTests {
         #expect(expected > 8)
     }
 
-    /// The categories mobile deliberately does not offer, and the only two it may omit.
+    /// The categories mobile deliberately does not offer, and the only one it may omit.
+    ///
+    /// It was two until [[T-8736]]: `.account` sat here as "entitlement-gated, macOS-only today",
+    /// which named a file's `#if os(macOS)` rather than a platform constraint, and iOS has the
+    /// Account section now.
     ///
     /// This test used to assert `!mobile.contains(.reminders)` alongside these, which is how the
     /// bug it encoded survived: Apple Reminders were unreachable from iOS Settings, and the suite
     /// asserted that was correct. EventKit reminders are fully available on iOS and
     /// `NSRemindersFullAccessUsageDescription` already shipped in the app's `Info.plist`; nothing
     /// about the platform justified the omission.
-    @Test func onlyTheTwoDesktopShellCategoriesAreExcluded() {
+    @Test func onlyTheDesktopShellCategoryIsExcluded() {
         let mobile = Set(CadenceMobileSettingsLayout.categories)
-        #expect(CadenceMobileSettingsLayout.desktopOnly == [.sidebar, .account])
+        #expect(CadenceMobileSettingsLayout.desktopOnly == [.sidebar])
+        #expect(mobile.contains(.account), "Settings → Account fell out of mobile again (T-8736)")
         #expect(mobile.isDisjoint(with: CadenceMobileSettingsLayout.desktopOnly))
         // The strong half: not "these two are absent" but "nothing else is". A category dropped
         // from `groups` fails here even if nobody remembered to add an assertion for it.

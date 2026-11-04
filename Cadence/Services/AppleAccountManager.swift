@@ -1,9 +1,20 @@
-#if os(macOS)
-import AppKit
 import AuthenticationServices
 import Foundation
 import Observation
 import Security
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
+
+// One manager for both platforms ([[T-8736]]). It sat under `Cadence/macOS/Services/` inside
+// `#if os(macOS)` while the iOS target already declared `com.apple.developer.applesignin` in
+// `Cadence-iOS.entitlements`, so the "macOS-only" account surface was a file location, not a
+// platform constraint ([[T-8201]]). Two members still differ, and each names the constraint that
+// forces it beside it: the presentation anchor (an `NSWindow` on the Mac, a `UIWindow` on iPhone
+// and iPad, because `ASPresentationAnchor` is that platform's window type) and the entitlement
+// read (the iOS SDK ships no `SecTask`, so a process there cannot read its own entitlements).
 
 struct AppleAccountProfile: Equatable {
     var userIdentifier: String
@@ -19,7 +30,7 @@ struct AppleAccountProfile: Equatable {
             .joined(separator: " ")
         if !fullName.isEmpty { return fullName }
         if !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return email }
-        return "Apple Account"
+        return CadenceAccountSettingsCopy.accountTitle
     }
 }
 
@@ -131,6 +142,10 @@ struct AppleSignInEntitlementStatus: Equatable {
         values.isEmpty ? "No Sign in with Apple entitlement found." : values.joined(separator: ", ")
     }
 
+    /// macOS only, because the read is `SecTaskCopyValueForEntitlement` and the iOS and iPadOS
+    /// SDKs do not ship `SecTask.h` at all: a process there has no public API for reading its own
+    /// entitlements, so iOS draws no entitlement row rather than one that could only guess.
+    #if os(macOS)
     static func current() -> AppleSignInEntitlementStatus {
         guard let task = SecTaskCreateFromSelf(kCFAllocatorDefault),
               let value = SecTaskCopyValueForEntitlement(
@@ -142,6 +157,7 @@ struct AppleSignInEntitlementStatus: Equatable {
         }
         return parsed(from: value)
     }
+    #endif
 
     static func parsed(from value: Any?) -> AppleSignInEntitlementStatus {
         if let values = value as? [String] {
@@ -164,7 +180,10 @@ final class AppleAccountManager: NSObject, ASAuthorizationControllerDelegate, AS
     var statusMessage: String?
     var isAuthorizing = false
     var credentialStatus: AppleAccountCredentialStatus
+    #if os(macOS)
+    /// macOS only: see `AppleSignInEntitlementStatus.current()` for why iOS cannot read it.
     var entitlementStatus: AppleSignInEntitlementStatus
+    #endif
 
     var isSignedIn: Bool { profile != nil }
 
@@ -173,12 +192,22 @@ final class AppleAccountManager: NSObject, ASAuthorizationControllerDelegate, AS
         self.storage = storage
         self.profile = loadedProfile
         self.credentialStatus = loadedProfile == nil ? .unavailable : .unchecked
+        #if os(macOS)
         self.entitlementStatus = AppleSignInEntitlementStatus.current()
+        #endif
         super.init()
     }
 
     func signIn() {
         statusMessage = nil
+        #if os(iOS)
+        // The anchor below is a window on a connected scene, and iOS has no window without one.
+        // A tap reaches here only from a drawn button, so this refusal is a guard, not a path.
+        guard !Self.windowScenes.isEmpty else {
+            statusMessage = "Could not sign in with Apple."
+            return
+        }
+        #endif
         isAuthorizing = true
 
         let provider = ASAuthorizationAppleIDProvider()
@@ -199,7 +228,9 @@ final class AppleAccountManager: NSObject, ASAuthorizationControllerDelegate, AS
     }
 
     func refreshCredentialState() {
+        #if os(macOS)
         entitlementStatus = AppleSignInEntitlementStatus.current()
+        #endif
         guard let userIdentifier = profile?.userIdentifier else {
             credentialStatus = .unavailable
             return
@@ -260,8 +291,30 @@ final class AppleAccountManager: NSObject, ASAuthorizationControllerDelegate, AS
         }
     }
 
+    /// The one presentation difference, and it is the platform's window type rather than a
+    /// choice: `ASPresentationAnchor` is `NSWindow` on macOS and `UIWindow` on iOS and iPadOS, and
+    /// the system sheet attaches to whichever window is key on that platform.
     func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+        #if os(macOS)
         NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first ?? NSWindow()
+        #else
+        let scenes = Self.windowScenes
+        let windows = scenes.flatMap(\.windows)
+        if let window = windows.first(where: \.isKeyWindow) ?? windows.first {
+            return window
+        }
+        // A scene with no window yet still takes one; `signIn()` refuses to start a request
+        // while no scene is connected, so the last line is unreachable.
+        guard let scene = scenes.first else {
+            preconditionFailure("signIn() starts a request only while a window scene is connected")
+        }
+        return UIWindow(windowScene: scene)
+        #endif
     }
+
+    #if os(iOS)
+    private static var windowScenes: [UIWindowScene] {
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+    }
+    #endif
 }
-#endif

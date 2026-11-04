@@ -105,7 +105,7 @@ nonisolated enum CadenceDataExportPresentation {
     /// "the backups are somewhere safe" are different claims and only the first was ever true.
     static let localBackupLocationNote = """
         These backups are copies of the local store kept inside Cadence's own container, so they \
-        survive a bad launch but not a lost device, a deleted app, or Delete Cadence Data. Export \
+        survive a bad launch but not a lost device, a deleted app, or Delete Account & Data. Export \
         an archive for a copy that outlives the app.
         """
 }

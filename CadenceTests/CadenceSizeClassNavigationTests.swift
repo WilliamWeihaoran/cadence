@@ -143,9 +143,10 @@ struct CadenceMobileSettingsNavigationTests {
         )
     }
 
-    /// A stored value mobile has no screen for must not select one. `sidebar` and `account` parse
-    /// perfectly well as `CadenceSettingsCategoryKind` and are exactly the two mobile omits, so
-    /// parsing alone would put the rail on a category the detail cannot render.
+    /// A stored value mobile has no screen for must not select one. `sidebar` parses perfectly
+    /// well as `CadenceSettingsCategoryKind` and is exactly what mobile omits (`account` was the
+    /// second until [[T-8736]]), so parsing alone would put the rail on a category the detail
+    /// cannot render.
     @Test func aCategoryMobileDoesNotOfferIsRefusedRatherThanSelected() {
         for kind in CadenceMobileSettingsLayout.desktopOnly {
             #expect(

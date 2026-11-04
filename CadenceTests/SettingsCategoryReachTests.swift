@@ -352,12 +352,12 @@ struct SettingsCategoryTitleTests {
         )
     }
 
-    /// Mobile draws `.sync` and does **not** draw `.account`, which is the half that made the old
-    /// title wrong there rather than merely redundant.
-    @Test func mobileOffersTheSyncCategoryAndNoAccountCategory() {
+    /// Mobile draws `.sync` and, since [[T-8736]], `.account` as well — so the two titles have to
+    /// stay distinct on mobile too, which is the uniqueness test above's job.
+    @Test func mobileOffersTheSyncCategoryAndTheAccountCategory() {
         #expect(CadenceMobileSettingsLayout.categories.contains(.sync))
-        #expect(!CadenceMobileSettingsLayout.categories.contains(.account))
-        #expect(CadenceMobileSettingsLayout.desktopOnly.contains(.account))
+        #expect(CadenceMobileSettingsLayout.categories.contains(.account))
+        #expect(!CadenceMobileSettingsLayout.desktopOnly.contains(.account))
     }
 }
 

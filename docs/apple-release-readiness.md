@@ -44,7 +44,7 @@ That is the only definition Apple publishes; *Describing data use in privacy man
 
 | Data or access | What actually leaves the device | App Store label posture |
 | --- | --- | --- |
-| Name | Nothing. Sign in with Apple's `givenName`/`familyName` are written to local `UserDefaults` by `AppleAccountDefaultsStorage` (`macOS/Services/AppleAccountManager.swift`) and read from nowhere else. There is no Cadence backend, no upload, and no CloudKit record for the profile | **Not collected.** Apple's own collection during the sign-in flow is Apple's, not the developer's |
+| Name | Nothing. Sign in with Apple's `givenName`/`familyName` are written to local `UserDefaults` by `AppleAccountDefaultsStorage` (`Services/AppleAccountManager.swift`) and read from nowhere else. There is no Cadence backend, no upload, and no CloudKit record for the profile | **Not collected.** Apple's own collection during the sign-in flow is Apple's, not the developer's |
 | Email address | Nothing. Same local-defaults store, whether Apple returns a real address or a private relay one | **Not collected**, same reasoning |
 | User ID | Nothing. The Apple user identifier is the key of that same local profile. It is not in `CadenceSchema`, so it does not even sync | **Not collected**, same reasoning |
 | User content | The **optional AI action**, and only that: note title, the owning list's name, and the note's full trimmed body, to OpenAI. The body goes whole and unstripped, so everything the user typed into it goes with it — YAML frontmatter, inline `#tags`, and `[[task:UUID\|Title]]` embeds, which carry the embedded task's title and its Cadence record UUID. The **records** — `Tag`, task, goal, habit, link rows and settings — stay on device or in the user's private CloudKit database, as does any note never run through an AI action | **Collected: Other User Content, app functionality.** This one row carries the whole label, and it is earned by the transfer below rather than by storage. Do not delete it when "simplifying" |
@@ -111,8 +111,8 @@ Current privacy manifest requirements:
 
 Use this as the human test script before upload and as the basis for App Review notes. Run it on
 each platform submitted: the Mac, an iPhone, and an iPad. The two lists differ only where the apps
-do — Sign in with Apple and its Account category exist on macOS only, and the deletion control is
-named for what it deletes.
+do, which is device layout. Sign in with Apple, its Account category and Delete Account & Data
+exist on every platform since T-8736.
 
 On macOS:
 
@@ -130,14 +130,15 @@ On macOS:
 On iPhone and iPad:
 
 1. Launch Cadence on iPhone or iPad running iOS/iPadOS 26.1 or later. Run the list on both devices: the iPhone build is portrait only, and the iPad build has a sidebar layout and rotates.
-2. Confirm the app opens without requiring sign-in, and that Settings has no Account category — there is no Cadence account on iPhone or iPad.
-3. Open Settings, About. Verify the Privacy Policy and Support links open.
-4. Open Settings, Data Safety. Verify Delete Cadence Data is available.
-5. Open Settings, Calendar. Deny Calendar access and verify the app remains usable; grant access and verify Calendar features can load.
-6. Create a task, note, list, and saved link. Verify they remain local app content.
-7. Save an OpenAI API key only on a test account if AI is being reviewed. Run an AI action from a selected note, then remove the key.
-8. Add Cadence widgets to the Home Screen and verify they show Cadence data or a clear unavailable state.
-9. Delete Cadence data from Settings, Data Safety and verify local Cadence content, backups, pending restores, widget state, and saved OpenAI key are removed.
+2. Confirm the app opens without requiring sign-in.
+3. Open Settings, Account. Verify Sign in with Apple is optional and that account deletion is available.
+4. Open Settings, About. Verify the Privacy Policy and Support links open.
+5. Open Settings, Data Safety. Verify Delete Account & Data is available.
+6. Open Settings, Calendar. Deny Calendar access and verify the app remains usable; grant access and verify Calendar features can load.
+7. Create a task, note, list, and saved link. Verify they remain local app content.
+8. Save an OpenAI API key only on a test account if AI is being reviewed. Run an AI action from a selected note, then remove the key.
+9. Add Cadence widgets to the Home Screen and verify they show Cadence data or a clear unavailable state.
+10. Delete account/data from Settings, Data Safety and verify local Cadence content, backups, pending restores, widget state, saved OpenAI key, and local Apple account profile are removed.
 
 Corrected against the source for T-7681, where the old macOS-only script disagreed with it: the
 Privacy Policy and Support links are in Settings > About on both platforms (both About screens

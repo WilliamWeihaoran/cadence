@@ -1557,7 +1557,7 @@ struct CadenceSettingsSectionCopyTests {
     @Test func bothDataResetGatesReadOneSentenceForWhatTheyDelete() throws {
         let sentence = CadenceDataResetCopy.gateDeletesEverything
         #expect(sentence.contains("permanently deletes everything Cadence holds in this store"))
-        for outsideTheStore in ["scheduled notifications", "local Cadence backups", "pending restore", "saved OpenAI key"] {
+        for outsideTheStore in ["scheduled notifications", "local Cadence backups", "pending restore", "saved OpenAI key", "local Cadence account profile"] {
             #expect(sentence.contains(outsideTheStore), "the gate sentence does not say it deletes \(outsideTheStore)")
         }
         // The sequence the sentence describes still removes those, so the claim has a source.
@@ -1566,7 +1566,7 @@ struct CadenceSettingsSectionCopyTests {
             CadenceSourceScan.functionBody(named: "deleteCadenceDataAndLocalArtifacts", in: service),
             "non-vacuity: the reset sequence was not found"
         )
-        for step in ["deleteCadenceData(in:", "removeStoredAPIKey(", "removeStoredBackups("] {
+        for step in ["deleteCadenceData(in:", "removeStoredAPIKey(", "removeStoredBackups(", "clearAppleAccountProfile("] {
             #expect(sequence.contains(step), "the reset sequence no longer calls \(step)")
         }
 
@@ -1596,14 +1596,15 @@ struct CadenceSettingsSectionCopyTests {
     /// and it does not enumerate store kinds.** [[T-7209]] (b) retired the enumeration from both
     /// gates; the phone's card above its gate still listed task, list, note, tag and saved link,
     /// and left out documents, focus history and images. One app ([[T-8201]]): the Mac's card
-    /// reads the same sentence and adds only the account profile, which the phone has none of.
+    /// reads the same sentence. It used to add the account profile on its own, while the phone
+    /// had none; since [[T-8736]] the profile is in the shared sentence and neither card adds it.
     @Test func bothDataResetCardsReadOneSentenceForWhatTheyDelete() throws {
         let sentence = CadenceDataResetCopy.cardDeletesEverything
         #expect(sentence.contains("everything Cadence holds in this store"))
         for named in ["retained legacy records", "scheduled notifications", "local Cadence backups", "pending restore", "saved OpenAI key"] {
             #expect(sentence.contains(named), "the card sentence does not say it deletes \(named)")
         }
-        #expect(sentence.lowercased().contains("account") == false, "the phone's card would claim an account profile (T-474)")
+        #expect(sentence.contains("local Cadence account profile"), "the card sentence does not say it deletes the account profile (T-8736)")
 
         let cards: [(path: String, declaration: String, enumerated: String)] = [
             ("Cadence/macOS/Views/SettingsDataSafetySection.swift", "private struct SettingsDataResetCard: View", "Cadence data from this store"),
@@ -1622,6 +1623,7 @@ struct CadenceSettingsSectionCopyTests {
             )
             #expect(body.contains(card.enumerated) == false, "\(card.path)'s card still types its own list of what it deletes")
             #expect(body.contains("saved OpenAI key") == false, "\(card.path)'s card types its own list beside the shared sentence")
+            #expect(body.contains("account profile") == false, "\(card.path)'s card types the account clause beside the shared sentence (T-8736)")
         }
     }
 

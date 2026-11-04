@@ -20,10 +20,10 @@ Reminders access:
 - On both macOS and iOS/iPadOS, reminders appear in Settings > Reminders and in the Inbox. Reminders are held in memory for display only; Cadence does not copy them into its own store or sync them through iCloud with Cadence data.
 
 Sign in with Apple:
-- Sign in with Apple is optional, and is offered on macOS only. iPhone and iPad have no Cadence account, so Settings has no Account category there.
+- Sign in with Apple is optional, and is offered on macOS, iPhone and iPad, in Settings > Account.
 - Local app use and iCloud sync do not depend on signing in with Apple.
-- Users can sign out in Settings > Account on macOS.
-- On macOS, Settings > Account also offers account deletion; its delete action opens the account and data deletion controls in Settings > Data Safety.
+- Users can sign out in Settings > Account on every platform.
+- On every platform, Settings > Account also offers account deletion; its delete action opens the account and data deletion controls in Settings > Data Safety.
 
 AI features:
 - AI features are optional.
@@ -33,10 +33,9 @@ AI features:
 - Users can remove the saved API key in Settings.
 
 Account and data deletion:
-- On macOS, users delete their Cadence account and data in Settings > Account or Settings > Data Safety.
-- On iPhone and iPad, users delete their Cadence data in Settings > Data Safety. There is no Account category on those platforms because Sign in with Apple is macOS-only, so there is no separate account to delete.
+- On macOS, iPhone and iPad, users delete their Cadence account and data in Settings > Account or Settings > Data Safety.
 - On every platform, Settings > Data Safety also offers Export an Archive: a single JSON file holding all Cadence-created content, written through the system save panel to a destination the user picks. Nothing is uploaded and the app retains no copy of the exported file. Cadence cannot import an archive back in.
-- Both platforms run the same deletion: it removes Cadence-created content from the current store, removes local Cadence backups and pending restores, removes the saved OpenAI API key, and cancels pending Cadence notifications. On macOS it additionally clears the local Apple account profile.
+- Both platforms run the same deletion: it removes Cadence-created content from the current store, removes local Cadence backups and pending restores, removes the saved OpenAI API key, cancels pending Cadence notifications, and clears the local Apple account profile.
 - Deletion is confirmed before anything is removed. On every platform Cadence opens a modal confirmation that lists what will be deleted and requires the word DELETE to be typed before the destructive button becomes active.
 - Because Cadence syncs through the user's private iCloud database, deletions propagate to the user's other devices. Apple Calendar events that already exist in Calendar are managed by Calendar and are not deleted.
 

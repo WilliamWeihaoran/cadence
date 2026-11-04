@@ -467,6 +467,9 @@ struct CadenceTagChipScaleTests {
         let undeclaredControls: Set<String> = [
             "Cadence/Shared/Components/HabitProgressViews.swift",
             "Cadence/iOS/iOSAINoteActionsViews.swift",
+            // [[T-8736]]: the Account section draws an `iOSIconTile` and compact `iOSActionButton`s
+            // and inherits the declared Settings workflow scope, as its Reminders sibling does.
+            "Cadence/iOS/iOSAccountSettingsSection.swift",
             // [[T-5954]]: the Calendar page's access notice bar draws an `iOSIconTile` and a
             // compact `iOSActionButton`. It declares no scope of its own and reads the page's.
             "Cadence/iOS/iOSCalendarChromeViews.swift",

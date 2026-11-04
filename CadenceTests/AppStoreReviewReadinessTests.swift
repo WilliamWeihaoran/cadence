@@ -59,7 +59,8 @@ struct AppStoreReviewReadinessTests {
     /// **Three rows did not, and are gone (T-1323).** `Name`, `EmailAddress` and `UserID` came
     /// from Sign in with Apple. They live in five local `UserDefaults` keys written by
     /// `AppleAccountDefaultsStorage.saveProfile`, are read back only by `AppleAccountManager.init`,
-    /// and surface only in the macOS Settings Account card. Nothing transmits them — the premise
+    /// and surface only in the Settings Account card (both platforms since [[T-8736]]). Nothing
+    /// transmits them — the premise
     /// `theOnlyOutboundNetworkSurfaceIsTheAIProvider()` below pins — so declaring them told every
     /// reader of the product page that this app collects identity data it does not. Over-declaring
     /// is not an App Review rejection, but "You're responsible for keeping your responses accurate
@@ -130,7 +131,7 @@ struct AppStoreReviewReadinessTests {
         )
 
         let trees: [(root: String, floor: Int, witness: String)] = [
-            ("Cadence", 500, "Cadence/macOS/Services/AppleAccountManager.swift"),
+            ("Cadence", 500, "Cadence/Services/AppleAccountManager.swift"),
             ("CadenceWidgets", 6, "CadenceWidgets/TodayTasksWidget.swift"),
             ("CadenceMCPServer", 4, "CadenceMCPServer/CadenceMCPToolRouter.swift"),
         ]
@@ -144,7 +145,7 @@ struct AppStoreReviewReadinessTests {
         let sessionHolders = try instrument.sweep(
             walked,
             atLeast: 510,
-            including: "Cadence/macOS/Services/AppleAccountManager.swift",
+            including: "Cadence/Services/AppleAccountManager.swift",
             read: CadenceSourceScan.strippedSourceReader()
         )
 
@@ -485,7 +486,9 @@ struct AppStoreReviewReadinessTests {
             encoding: .utf8
         )
 
-        #expect(accountSettings.contains("Delete Account…"))
+        // [[T-8736]]: the title is shared copy, read by the Mac's card and the iOS section alike.
+        #expect(CadenceAccountSettingsCopy.deleteAccountTitle == "Delete Account…")
+        #expect(accountSettings.contains("CadenceAccountSettingsCopy.deleteAccountTitle"))
         #expect(dataSafetySettings.contains("Delete Account & Data"))
         #expect(deletionBody.contains("PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts"))
         #expect(resetService.contains("StoreBackupManager.deleteAllBackups"))
@@ -707,11 +710,13 @@ struct AppStoreReviewReadinessTests {
         )
         #expect(script.contains("On macOS:\n\n1. Launch Cadence on macOS 26.1 or later."))
         #expect(script.contains("On iPhone and iPad:\n\n1. Launch Cadence on iPhone or iPad running iOS/iPadOS 26.1 or later."))
-        // The iOS run must not inherit the macOS-only Account step: there is no Account category on
-        // iPhone or iPad (`iOSSettingsCategory.init?(kind:)` returns nil for `.account`).
+        // [[T-8736]]: the iOS run has the Account step too, because iPhone and iPad have the
+        // Account category (`iOSSettingsCategory.init?(kind:)` maps `.account`). It used to assert
+        // the reverse, which held the script to a gap the owner decided to close.
         let iosRun = try #require(script.range(of: "On iPhone and iPad:").map { String(script[$0.upperBound...]) })
-        #expect(!iosRun.contains("Open Settings, Account"))
-        #expect(iosRun.contains("Settings has no Account category"))
+        #expect(iosRun.contains("Open Settings, Account. Verify Sign in with Apple is optional and that account deletion is available."))
+        #expect(!iosRun.contains("Settings has no Account category"))
+        #expect(iosRun.contains("Verify Delete Account & Data is available."))
     }
 
     /// **T-7276: the app and the widget extension it embeds must agree on both version keys.**

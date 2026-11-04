@@ -14,6 +14,7 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
     case tags
     case templates
     case ai
+    case account
     case about
 
     var id: String { rawValue }
@@ -33,9 +34,10 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
         }
     }
 
-    /// `nil` for the two categories that are genuinely macOS-shell concerns and have no mobile
+    /// `nil` for the one category that is genuinely a macOS-shell concern and has no mobile
     /// screen: `sidebar` (there is no sidebar to configure on iPhone, and the iPad one is not
-    /// user-arranged) and `account` (Sign in with Apple is a macOS-only entitlement here).
+    /// user-arranged). `account` used to be the second, as "a macOS-only entitlement"; the iOS
+    /// entitlements file already declared Sign in with Apple, and [[T-8736]] gave it a screen.
     ///
     /// This comment used to name a third, `reminders`, and calling it a shell concern is what
     /// kept Apple Reminders unreachable from iOS Settings: EventKit reminders are fully
@@ -63,8 +65,9 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
         case .tags: self = .tags
         case .templates: self = .templates
         case .ai: self = .ai
+        case .account: self = .account
         case .about: self = .about
-        case .sidebar, .account: return nil
+        case .sidebar: return nil
         }
     }
 
@@ -82,6 +85,7 @@ enum iOSSettingsCategory: String, CaseIterable, Identifiable {
         case .tags: return .tags
         case .templates: return .templates
         case .ai: return .ai
+        case .account: return .account
         case .about: return .about
         }
     }
