@@ -55,8 +55,9 @@ struct iOSMarkdownEditingSurface: View {
     var templateKind: NoteKind? = nil
     var applyTemplate: ((NoteTemplate) -> Void)? = nil
     /// **[[T-8584]].** The note kind whose templates a bare `/` lists after the built-ins, as the
-    /// Mac's `MarkdownEditor(slashTemplates:)` does at the same hosts: the note editors, never a
-    /// task's notes, an event draft or a template body. Separate from `templateKind`, which only
+    /// Mac's `MarkdownEditor(slashTemplates:)` does at the same hosts: the note editors and a
+    /// task's notes ([[T-11085]], `NoteTemplateLibrary.taskNotesKind`), never an event draft or a
+    /// template body. Separate from `templateKind`, which only
     /// says whether the format row carries the template MENU — a host whose page header carries
     /// the menu still offers its templates from `/`.
     var slashTemplateKind: NoteKind? = nil

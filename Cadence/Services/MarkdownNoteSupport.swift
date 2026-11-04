@@ -16,6 +16,16 @@ nonisolated struct NoteTemplateOverride: Codable, Equatable {
 nonisolated enum NoteTemplateLibrary {
     static let storageKey = "noteTemplateOverrides"
 
+    /// **[[T-11085]].** The note kind whose templates a task's notes offer from `/` — on every
+    /// editor of them: the Mac's task-notes pane and the inspector's inline notes, and iOS's task
+    /// sheet. One answer read by all three, so no editor of the same text offers a different set.
+    static let taskNotesKind: NoteKind = .list
+
+    /// The templates `taskNotesKind` names, with the user's overrides — what a task's `/` lists.
+    static func taskNotesTemplates(overridesRaw: String? = nil) -> [NoteTemplate] {
+        templates(for: taskNotesKind, overridesRaw: overridesRaw)
+    }
+
     static func templates(for kind: NoteKind, overridesRaw: String? = nil) -> [NoteTemplate] {
         let overrides = overrides(from: overridesRaw ?? CadenceDefaults.store.string(forKey: storageKey) ?? "")
         switch kind {

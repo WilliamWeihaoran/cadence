@@ -50,7 +50,7 @@ struct TaskNoteEditorPane: View {
     }
 
     private var templates: [NoteTemplate] {
-        NoteTemplateLibrary.templates(for: .list, overridesRaw: noteTemplateOverridesRaw)
+        NoteTemplateLibrary.taskNotesTemplates(overridesRaw: noteTemplateOverridesRaw)
     }
 
     /// Drives the empty-body placeholder — same rule as `applyTemplate`'s fill-vs-append branch.

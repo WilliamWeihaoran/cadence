@@ -135,14 +135,44 @@ struct CadenceNoteEditorCommandParityTests {
         #expect(CadenceSourceScan.matchCount(#"slashTemplateKind: note\.kind,"#, in: notes) == 2)
         let listNotes = try code("Cadence/iOS/iOSListNotesView.swift")
         #expect(CadenceSourceScan.matchCount(#"slashTemplateKind: note\.kind,"#, in: listNotes) == 1)
-        // A task's notes, an event draft and a template body offer none, as on the Mac.
+        // An event draft and a template body offer none, as on the Mac.
         for path in [
-            "Cadence/iOS/iOSTaskDetailSheetSections.swift",
             "Cadence/iOS/iOSCalendarEventEditSheet.swift",
             "Cadence/iOS/iOSSettingsTemplateAndListSections.swift",
         ] {
             #expect(!(try code(path)).contains("slashTemplateKind:"), "\(path) offers templates from /")
         }
+    }
+
+    // MARK: - A task's notes ([[T-11085]])
+
+    /// Every editor of a task's notes offers the list templates from `/`: the Mac's task-notes
+    /// pane, the inspector's inline notes, and iOS's task sheet — through one shared answer.
+    @Test func taskNotesTemplatesAreTheListKindsTemplates() {
+        #expect(NoteTemplateLibrary.taskNotesKind == .list)
+        let task = NoteTemplateLibrary.taskNotesTemplates(overridesRaw: "")
+        #expect(!task.isEmpty)
+        #expect(task == NoteTemplateLibrary.templates(for: .list, overridesRaw: ""))
+    }
+
+    @Test func everyTaskNotesEditorOffersTheSharedTemplatesFromSlash() throws {
+        let read = "slashTemplates: NoteTemplateLibrary.taskNotesTemplates(overridesRaw: noteTemplateOverridesRaw),"
+
+        let inspector = try code("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift")
+        let inline = try #require(CadenceSourceScan.declarationBody("struct TaskDetailNotesSection: View", in: inspector))
+        #expect(CadenceSourceScan.matchCount(NSRegularExpression.escapedPattern(for: read), in: inline) == 1,
+                "the inspector's inline task notes offer no templates from /")
+
+        let pane = try code("Cadence/macOS/Views/ListNotesSupportViews.swift")
+        let editorPane = try #require(CadenceSourceScan.declarationBody("struct TaskNoteEditorPane: View", in: pane))
+        #expect(editorPane.contains("NoteTemplateLibrary.taskNotesTemplates(overridesRaw: noteTemplateOverridesRaw)"))
+        #expect(editorPane.contains("slashTemplates: templates,"))
+        #expect(!editorPane.contains("templates(for: .list"), "the pane keeps its own copy of the kind")
+
+        let sheet = try code("Cadence/iOS/iOSTaskDetailSheetSections.swift")
+        let section = try #require(CadenceSourceScan.declarationBody("struct iOSTaskNotesSection: View", in: sheet))
+        #expect(CadenceSourceScan.matchCount(#"slashTemplateKind: NoteTemplateLibrary\.taskNotesKind,"#, in: section) == 1,
+                "iOS's task notes offer no templates from /")
     }
 
     // MARK: - The `[[` shortlist

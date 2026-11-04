@@ -310,6 +310,9 @@ struct iOSTaskNotesSection: View {
                 referenceNotes: referenceNotes,
                 referenceTasks: referenceTasks,
                 onOpenReference: onOpenReference,
+                // [[T-11085]]: a task's notes offer the list templates from `/`, as both Mac
+                // editors of them do, through the one kind all three read.
+                slashTemplateKind: NoteTemplateLibrary.taskNotesKind,
                 flush: flush
             )
             .iOSMarkdownWell()

@@ -24,6 +24,9 @@ struct TaskDetailNotesSection: View {
     /// The live-card embed handlers, shared with `TaskNoteEditorPane` and `FocusNotesPanel`
     /// ([[T-5120]]).
     @State private var embeds = TaskNotesEmbedHandlers(hoverIDPrefix: "task-inspector-note-embed-task-")
+    /// [[T-11085]]: the template overrides the inline editor's `/` menu reads, as
+    /// `TaskNoteEditorPane`'s does — both edit the same task's notes.
+    @AppStorage(NoteTemplateLibrary.storageKey) private var noteTemplateOverridesRaw = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -41,6 +44,7 @@ struct TaskDetailNotesSection: View {
                 MarkdownEditor(
                     text: taskNotesBinding,
                     showsToolbar: false,
+                    slashTemplates: NoteTemplateLibrary.taskNotesTemplates(overridesRaw: noteTemplateOverridesRaw),
                     referenceNotes: referenceNotes,
                     referenceTasks: referenceTasks,
                     onOpenNoteReference: openNoteReference,
