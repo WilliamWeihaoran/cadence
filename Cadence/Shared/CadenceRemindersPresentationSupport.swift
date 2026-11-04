@@ -93,9 +93,22 @@ enum RemindersConnectionState: Equatable {
     /// split T-543 already drew for Calendar's equivalent card (`calendar.badge.plus` beside the
     /// triangle) gets a neutral offer glyph here too, and the triangle is reserved for `.denied`
     /// and `.restricted`, which genuinely are.
+    ///
+    /// **T-11342.** The offer glyph used to name a symbol this system does not have, so
+    /// NSImage(systemSymbolName:) answered nothing for it and all four call sites drew the 32pt
+    /// tinted tile with nothing inside it, on both platforms. A tree-wide census of every
+    /// symbol-shaped literal under Cadence and CadenceWidgets found it was the only such name.
+    /// There is no checklist-with-a-plus that would mirror Calendar's calendar.badge.plus exactly,
+    /// so the choice was between keeping the KIND (the unchecked checklist chosen here) and
+    /// keeping the INVITATION (the text form with a plus badge). Kind wins: the card already
+    /// carries the invitation in its title, its message and a blue "Allow Access" button, so the
+    /// glyph's only remaining job is to say WHICH service this is, and a text badge says the wrong
+    /// one. The unchecked-to-checked progression on connect is a bonus, not the reason. The
+    /// resolution census in `RemindersConnectionStateTests` pins every name this property can
+    /// answer against the live symbol set, which is the half of the fix that stops a recurrence.
     var accessIconName: String {
         if isConnected { return "checklist" }
-        return isDenied ? "exclamationmark.triangle.fill" : "list.bullet.badge.plus"
+        return isDenied ? "exclamationmark.triangle.fill" : "checklist.unchecked"
     }
 
     /// **T-858.** Mirrors `accessIconName`'s split: the not-yet-asked offer reads as a neutral

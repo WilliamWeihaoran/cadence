@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 #if os(macOS)
+import AppKit
 import EventKit
 #endif
 @testable import Cadence
@@ -179,7 +180,7 @@ struct RemindersConnectionStateTests {
         let state = RemindersConnectionState.notDetermined
 
         #expect(state.isDenied == false)
-        #expect(state.accessIconName == "list.bullet.badge.plus")
+        #expect(state.accessIconName == "checklist.unchecked")
         #expect(state.accessIconName != "exclamationmark.triangle.fill")
         #expect(state.accessIconTint == Theme.blue)
         #expect(state.accessIconTint != Theme.amber)
@@ -193,6 +194,26 @@ struct RemindersConnectionStateTests {
             #expect(state.isDenied)
             #expect(state.accessIconName == "exclamationmark.triangle.fill")
             #expect(state.accessIconTint == Theme.amber)
+        }
+    }
+
+    /// **T-11342.** The reason the empty tile survived four call sites and every sighting so far:
+    /// nothing anywhere asserted that these names are names the system actually has. SwiftUI draws
+    /// a missing `Image(systemName:)` as empty space rather than failing, and the two glyphs every
+    /// earlier sighting happened to hit (`checklist` for a connected card, the triangle for a
+    /// denied one) both resolve — so the one broken name was the one nobody had looked at. An
+    /// equality assertion on the string cannot catch this; only resolution can.
+    @Test func symbolsThatThisPropertyCanAnswerAllResolve() {
+        for state: RemindersConnectionState in [.notDetermined, .denied, .restricted, .connected] {
+            let name = state.accessIconName
+            // A concatenation is a `String`, and `#expect`'s second argument is a `Comment`,
+            // which only a literal converts to implicitly — hence the explicit wrap.
+            let why = "\(state) answers \"\(name)\", which this system has no symbol for; "
+                + "SwiftUI draws the tile empty rather than failing."
+            #expect(
+                NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil,
+                Comment(rawValue: why)
+            )
         }
     }
 
