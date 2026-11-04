@@ -98,7 +98,13 @@ struct FocusSessionHeader: View {
                 }
 
                 if let dueLabel {
+                    // [[T-11209]]: red when overdue, the rule iOS's due chip in the same header
+                    // reads, through the same predicate.
                     Text(dueLabel)
+                        .foregroundStyle(
+                            CadenceFocusSupport.isOverdue(dueDateKey: task.dueDate, todayKey: DateFormatters.todayKey())
+                                ? Theme.red : Theme.dim
+                        )
                     if hasEstimate { FocusMetaSeparator() }
                 }
 
@@ -113,6 +119,9 @@ struct FocusSessionHeader: View {
 
 struct FocusTimerPanel<Controls: View>: View {
     let clockDisplay: String
+    /// What finishing will bank, under the clock -- `CadenceFocusSupport.logHint`, the line iOS's
+    /// timer card draws in the same place ([[T-11209]], under [[T-8201]]).
+    let logHint: String
     /// Running, paused, or never started -- the iOS card's three words (T-7018).
     let phase: CadenceFocusTimerPhase
     let accent: Color
@@ -131,14 +140,20 @@ struct FocusTimerPanel<Controls: View>: View {
 
             Spacer(minLength: 0)
 
-            Text(clockDisplay)
-                .font(.system(size: 78, weight: .ultraLight, design: .monospaced))
-                .foregroundStyle(isRunning ? Theme.text : Theme.muted)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.68)
-                .contentTransition(.numericText())
-                .shadow(color: accent.opacity(isRunning ? 0.34 : 0), radius: 24)
+            VStack(spacing: 6) {
+                Text(clockDisplay)
+                    .font(.system(size: 78, weight: .ultraLight, design: .monospaced))
+                    .foregroundStyle(isRunning ? Theme.text : Theme.muted)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.68)
+                    .contentTransition(.numericText())
+                    .shadow(color: accent.opacity(isRunning ? 0.34 : 0), radius: 24)
+                Text(logHint)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.subdued)
+                    .lineLimit(1)
+            }
 
             controls()
 

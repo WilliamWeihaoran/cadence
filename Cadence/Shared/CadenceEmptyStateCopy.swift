@@ -37,6 +37,15 @@ nonisolated enum CadenceEmptyStateCopy {
     static let focusSearchTitle = "No matching tasks"
     static let focusSearchSubtitle = "Try a project, task title, priority, or date."
 
+    /// **The glyph over `focusTitle`, on both platforms** ([[T-11209]], under [[T-8201]]). iOS
+    /// drew `timer` over "No open tasks" in all three of its Focus empty panels; the Mac pick card
+    /// drew a green `checkmark.circle`, which reads "all done" over a state that also covers a
+    /// store with no task in it at all, and the subtitle asks for a task to be added. The searching
+    /// state draws the app's one search glyph, `magnifyingglass`, on both, and has no constant of
+    /// its own: a dozen search fields type that name, and `CadenceSharedConstantReuseSweepTests`
+    /// would read a Focus-only constant as one they all retype.
+    static let focusSystemImage = "timer"
+
     /// A list, project or area detail page with nothing in it — the Mac's `ListTasksView` and the
     /// phone's `iOSListDetailView`, which are the same page at two widths.
     ///

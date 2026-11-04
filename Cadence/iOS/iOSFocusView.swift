@@ -320,7 +320,7 @@ struct iOSFocusView: View {
                     // near-duplicate "nothing here" messages stacked on top
                     // of each other (task list pane + focus detail pane).
                     iOSEmptyPanel(
-                        systemImage: "timer",
+                        systemImage: CadenceEmptyStateCopy.focusSystemImage,
                         title: CadenceEmptyStateCopy.focusTitle,
                         subtitle: CadenceEmptyStateCopy.focusSubtitle
                     )
@@ -364,7 +364,7 @@ struct iOSFocusView: View {
                     )
                 } else {
                     iOSEmptyPanel(
-                        systemImage: "timer",
+                        systemImage: CadenceEmptyStateCopy.focusSystemImage,
                         title: CadenceEmptyStateCopy.focusTitle,
                         subtitle: CadenceEmptyStateCopy.focusSubtitle
                     )
@@ -492,7 +492,7 @@ struct iOSFocusView: View {
     private var unselectedDetail: some View {
         if pickItems.isEmpty {
             iOSEmptyPanel(
-                systemImage: "timer",
+                systemImage: CadenceEmptyStateCopy.focusSystemImage,
                 title: CadenceEmptyStateCopy.focusTitle,
                 subtitle: CadenceEmptyStateCopy.focusSubtitle
             )

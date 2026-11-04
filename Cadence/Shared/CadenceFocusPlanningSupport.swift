@@ -344,7 +344,8 @@ enum CadenceFocusSupport {
         max(0, Int((Double(seconds) / 60.0).rounded()))
     }
 
-    /// The line under the iOS focus clock that says what finishing will bank (T-9201).
+    /// The line under the focus clock that says what finishing will bank (T-9201), on both
+    /// platforms since [[T-11209]]: the Mac's `FocusTimerPanel` had no such line.
     ///
     /// It echoed the raw minute count -- "Logs 90m when you finish" -- while the 90 minutes it
     /// banks read "1h 30m" on every chip, the inspector and the timeline, the same drift [[T-9121]]

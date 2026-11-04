@@ -114,9 +114,11 @@ struct FocusPickSessionCard: View {
 
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Image(systemName: isSearching ? "magnifyingglass" : "checkmark.circle")
+            // [[T-11209]]: iOS's glyph, from one constant, and dim in both states as iOS's
+            // `EmptyStateView` draws it. A green check read "all done" over an empty store.
+            Image(systemName: isSearching ? "magnifyingglass" : CadenceEmptyStateCopy.focusSystemImage)
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(isSearching ? Theme.dim : Theme.green)
+                .foregroundStyle(Theme.dim)
 
             Text(isSearching ? CadenceEmptyStateCopy.focusSearchTitle : CadenceEmptyStateCopy.focusTitle)
                 .font(.system(size: 13, weight: .semibold))

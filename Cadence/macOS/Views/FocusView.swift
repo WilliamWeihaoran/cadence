@@ -78,11 +78,13 @@ struct FocusView: View {
                     VStack(spacing: 14) {
                         FocusTimerPanel(
                             clockDisplay: clockDisplay,
+                            logHint: CadenceFocusSupport.logHint(elapsedSeconds: focusManager.elapsedSeconds(at: displayTick)),
                             phase: phase,
                             accent: Color(hex: task.containerColor),
                             controls: { timerControls(task: task) }
                         )
-                        .frame(height: 218)
+                        // 218 + the hint line and its gap ([[T-11209]]), so the clock keeps its size.
+                        .frame(height: 236)
 
                         FocusNotesPanel(task: task)
                             .frame(minHeight: 280)
