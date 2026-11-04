@@ -276,6 +276,30 @@ nonisolated enum CadenceCaptureAction: String, CaseIterable, Identifiable, Senda
     var tint: Color { destination.tint }
 }
 
+/// What the capture `+` says to VoiceOver.
+///
+/// **T-8646 (owner call, 2026-11-04): the hint may not name a gesture VoiceOver does not deliver.**
+/// The hint used to read "Touch and hold for event and note". Under VoiceOver a touch-and-hold
+/// becomes a double-tap-and-hold pass-through, which opens the palette with no way to slide onto a
+/// segment — so the sentence described a route that cannot be walked. The route that does work was
+/// already wired and simply unnamed: `iOSCaptureRadialMenuButton` publishes Event and Note as
+/// accessibility actions, which VoiceOver surfaces on the actions rotor, reached by swiping up or
+/// down. Naming the rotor costs one sentence and makes the two segments reachable in practice
+/// rather than only in principle.
+///
+/// Both capture buttons read this one hint — the iPhone tab bar's and the iPad corner's. The Mac's
+/// floating button has no hint because it has no palette.
+nonisolated enum CadenceCaptureAccessibilityCopy: Sendable {
+    /// The gesture vocabulary VoiceOver actually passes through. Spelled here, not at the call
+    /// site, so a test can hold it to the promise it makes.
+    static let captureButtonHint =
+        "Double tap to capture a task. Swipe up or down for event and note."
+
+    /// The wording this replaced. Kept so the test can assert the app never drifts back to it;
+    /// nothing draws it.
+    static let retiredHoldPhrasing = "Touch and hold"
+}
+
 // MARK: - Where the segments sit, and which one a finger is over
 
 /// The semicircle: where each segment is drawn, and which one a given offset selects.

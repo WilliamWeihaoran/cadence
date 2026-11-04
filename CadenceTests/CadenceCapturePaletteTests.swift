@@ -1310,6 +1310,38 @@ struct CadenceCapturePaletteTests {
         #expect(forCreation.contains("return .event(dateKey: dateKey, startMinute: startMinute)"))
         #expect(forCreation.contains("DateFormatters.todayKey()") == false)
     }
+
+    // MARK: - T-8646: the hint may only name a gesture VoiceOver delivers
+
+    /// The hint used to read "Touch and hold for event and note". VoiceOver turns a touch-and-hold
+    /// into a double-tap-and-hold pass-through: the palette opens and there is no way to slide onto
+    /// a segment, so the sentence described a route that cannot be walked. The route that works was
+    /// wired the whole time and simply unnamed — Event and Note are published as accessibility
+    /// actions, which VoiceOver puts on the actions rotor, reached by swiping up or down.
+    @Test func theCaptureHintNamesTheRouteVoiceOverCanActuallyWalk() {
+        let hint = CadenceCaptureAccessibilityCopy.captureButtonHint
+        #expect(hint.localizedCaseInsensitiveContains("swipe up or down"))
+        #expect(
+            !hint.localizedCaseInsensitiveContains(
+                CadenceCaptureAccessibilityCopy.retiredHoldPhrasing
+            )
+        )
+        // Both segments stay named, so the sentence remains a description of what is on the rotor
+        // rather than a generic nod at it.
+        for action in [CadenceCaptureAction.event, .note] {
+            #expect(hint.localizedCaseInsensitiveContains(action.title))
+        }
+    }
+
+    /// A constant only holds the line for as long as the view reads it, so this is the half that
+    /// catches drift: the file drawing both capture buttons may not spell a hint of its own.
+    @Test func theCaptureButtonReadsTheSharedHintRatherThanSpellingOne() throws {
+        let source = try strippingComments(sourceFile("Cadence/iOS/iOSCaptureRadialMenu.swift"))
+        #expect(
+            source.contains(".accessibilityHint(CadenceCaptureAccessibilityCopy.captureButtonHint)")
+        )
+        #expect(!source.contains(".accessibilityHint(\""))
+    }
 }
 
 // MARK: - Source access

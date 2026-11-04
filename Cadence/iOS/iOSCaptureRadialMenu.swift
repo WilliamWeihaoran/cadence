@@ -357,7 +357,7 @@ struct iOSCaptureRadialMenuButton: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("New Task")
             .accessibilityAddTraits(.isButton)
-            .accessibilityHint("Double tap to capture a task. Touch and hold for event and note.")
+            .accessibilityHint(CadenceCaptureAccessibilityCopy.captureButtonHint)
             // VoiceOver cannot slide around a radial menu, so the segments are also plain actions.
             // Same three commitments, reached without the gesture.
             .accessibilityAction(named: Text(CadenceCaptureAction.event.title)) {
