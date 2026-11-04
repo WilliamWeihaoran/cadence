@@ -53,6 +53,21 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     }
 }
 
+extension SettingsCategory {
+    /// **[[T-11451]] — the category a seeded launch opens Settings on, or `nil` for the default.**
+    ///
+    /// The gate lives in `CadenceUITestSettingsCategory` and is [[T-3200]]'s: UI-test mode AND a
+    /// recognised name. This only maps the shared kind back onto the macOS rail's own case, which
+    /// is 1:1 through `sharedKind`, so a kind this rail does not carry answers `nil` rather than
+    /// landing on some near-miss pane.
+    static func launchRequested(
+        in environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> SettingsCategory? {
+        guard let kind = CadenceUITestSettingsCategory.requested(in: environment) else { return nil }
+        return SettingsCategory.allCases.first { $0.sharedKind == kind }
+    }
+}
+
 /// The rail's grouping, and the reason it is `internal` rather than `private`.
 ///
 /// It was `private`, so the only way a test could state "every category is filed in a group" was to

@@ -26,7 +26,10 @@ struct SettingsView: View {
     @Query(sort: \Project.order) private var projects: [Project]
     @Query(sort: \Tag.order) private var tags: [Tag]
     @Query private var sidebarLayoutPreferences: [SidebarLayoutPreference]
-    @State private var selectedCategory: SettingsCategory = .navigation
+    /// Navigation unless a seeded launch named a category ([[T-11451]]). The selector is gated on
+    /// UI-test mode, so a shipping launch gets the `.navigation` this line always opened on; what
+    /// it buys is a window capture of a pane other than the first one, with no pointer.
+    @State private var selectedCategory: SettingsCategory = SettingsCategory.launchRequested() ?? .navigation
     @State private var pendingDeleteArea: Area?
     @State private var pendingDeleteProject: Project?
     @State private var pendingDeleteContext: Context?

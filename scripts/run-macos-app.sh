@@ -127,6 +127,15 @@
 # inbox, notes, calendar, focus, settings at T-3200), which sets CADENCE_UI_TEST_PAGE and -- because
 # the app ignores it outside UI-test mode -- CADENCE_UI_TEST_MODE=1 even with scenario `none`:
 #   ./scripts/run-macos-app.sh up calendar-hues <id> calendar
+# THE SETTINGS CATEGORY (T-11451). `settings` is one page but sixteen panes, over one `@State`
+# that starts on Navigation and is persisted nowhere -- so a capture could only ever photograph
+# Settings > Navigation and every other pane needed a CLICK, which is not available here. A 5th
+# `up` / 6th `start` argument names a `CadenceSettingsCategoryKind` raw value (read from
+# `Cadence/Shared/CadenceSettingsPresentationSupport.swift`, never retyped here: appearance,
+# navigation, sidebar, sync, dataSafety, calendar, reminders, notifications, contexts, lists, tags,
+# templates, ai, account, about), sets CADENCE_UI_TEST_SETTINGS_CATEGORY and brings
+# CADENCE_UI_TEST_PAGE=settings + CADENCE_UI_TEST_MODE=1 with it:
+#   ./scripts/run-macos-app.sh up none <id> settings sidebar
 # `start` refuses any bundle that is not `.../Build/Products/Debug/Cadence.app` (exit 5): never
 # the shipping configuration, never /Applications. `stop` kills the recorded pid only if `ps`
 # still names the binary `start` launched (exit 6 otherwise) -- it never matches by name.
@@ -139,9 +148,10 @@ SELF="${0:A}"
 ROOT_DIR="${SELF:h:h}"
 SCENARIO=""
 PAGE=""
+CATEGORY=""
 case "$CMD" in
-  start) ID="${3:-agent-$$}"; SCENARIO="${4:-}"; PAGE="${5:-}" ;;
-  up)    SCENARIO="${2:-}"; ID="${3:-agent-$$}"; PAGE="${4:-}" ;;
+  start) ID="${3:-agent-$$}"; SCENARIO="${4:-}"; PAGE="${5:-}"; CATEGORY="${6:-}" ;;
+  up)    SCENARIO="${2:-}"; ID="${3:-agent-$$}"; PAGE="${4:-}"; CATEGORY="${5:-}" ;;
   *)     ID="${2:-agent-$$}" ;;
 esac
 [[ "$SCENARIO" == "none" ]] && SCENARIO=""
@@ -150,6 +160,7 @@ PIDFILE="$RUNDIR/$ID.pid"
 BINFILE="$RUNDIR/$ID.bin"
 SCENARIO_SOURCE="$ROOT_DIR/Cadence/Services/CadenceUITestScenarioSeed.swift"
 PAGE_SOURCE="$ROOT_DIR/Cadence/Services/CadenceUITestLaunchPage.swift"
+CATEGORY_SOURCE="$ROOT_DIR/Cadence/Shared/CadenceSettingsPresentationSupport.swift"
 TMP_BASE="${TMPDIR:-/private/tmp/}"; [[ "$TMP_BASE" != */ ]] && TMP_BASE="$TMP_BASE/"
 # Where the sandboxed app actually puts CADENCE_UI_TEST_STORE_ID -- see the header.
 APP_STORE_ROOT="$HOME/Library/Containers/com.haoranwei.Cadence/Data/tmp/CadenceUITestStores"
@@ -195,6 +206,31 @@ refuse_bad_scenario() {
 known_pages() {
   [[ -r "$PAGE_SOURCE" ]] || return 1
   grep -oE 'case [A-Za-z]+ = "[a-z0-9-]+"' "$PAGE_SOURCE" | sed -E 's/.*"(.*)"/\1/'
+}
+
+# The settings categories this tree's app can open on, read from the SHARED category table rather
+# than retyped (T-11451). `CadenceSettingsCategoryKind` takes its raw values implicitly from the
+# case names, so the extractor is a bare `case <name>` at the enum's indent -- not the
+# `case x = "y"` shape the scenario and page enums use.
+known_categories() {
+  [[ -r "$CATEGORY_SOURCE" ]] || return 1
+  awk '/^enum CadenceSettingsCategoryKind/{inside=1; next} inside && /^}/{exit} inside' "$CATEGORY_SOURCE" \
+    | grep -oE '^    case [a-zA-Z]+$' | awk '{print $2}'
+}
+
+refuse_bad_category() {
+  [[ -z "$CATEGORY" ]] && return 0
+  local -a known; known=("${(@f)$(known_categories)}")
+  if (( ! ${known[(Ie)$CATEGORY]} )); then
+    print -r -- "REFUSING: unknown settings category '$CATEGORY'. Known (from ${CATEGORY_SOURCE:t}): ${known[*]:-<none read>}"
+    print -r -- "   The app ignores a name it does not know and opens on Navigation, so the capture"
+    print -r -- "   would look like the pane you asked for had simply regressed (T-11451)."
+    exit 7
+  fi
+  if [[ -n "$PAGE" && "$PAGE" != "settings" ]]; then
+    print -r -- "REFUSING: a settings category needs page 'settings'; this launch asks for '$PAGE'."
+    exit 7
+  fi
 }
 
 refuse_bad_page() {
@@ -293,6 +329,7 @@ case "$CMD" in
     fi
     refuse_bad_scenario
     refuse_bad_page
+    refuse_bad_category
     refuse_if_owner_running
     BIN="$APP/Contents/MacOS/Cadence"
     # The seed half (T-3247) is its own word list, not more VAR= words on the launch line: the
@@ -305,13 +342,19 @@ case "$CMD" in
       (( ${seed_env[(Ie)CADENCE_UI_TEST_MODE=1]} )) || seed_env+=("CADENCE_UI_TEST_MODE=1")
       seed_env+=("CADENCE_UI_TEST_PAGE=$PAGE")
     fi
+    # The settings category (T-11451) rides the same gate, and is read only on the settings page.
+    if [[ -n "$CATEGORY" ]]; then
+      (( ${seed_env[(Ie)CADENCE_UI_TEST_MODE=1]} )) || seed_env+=("CADENCE_UI_TEST_MODE=1")
+      (( ${seed_env[(Ie)CADENCE_UI_TEST_PAGE=settings]} )) || seed_env+=("CADENCE_UI_TEST_PAGE=settings")
+      seed_env+=("CADENCE_UI_TEST_SETTINGS_CATEGORY=$CATEGORY")
+    fi
     env "${seed_env[@]}" CADENCE_LOCAL_STORE_ONLY=1 CADENCE_UI_TEST_STORE_ID="$ID" \
       "$BIN" -CadenceSuiteName "$ID" -ApplePersistenceIgnoreState YES >"$RUNDIR/$ID.log" 2>&1 &
     print -r -- "$!" > "$PIDFILE"
     print -r -- "$BIN" > "$BINFILE"
     sleep 2
     if kill -0 "$(<$PIDFILE)" 2>/dev/null; then
-      print -r -- "started pid $(<$PIDFILE)  id=$ID  store=$APP_STORE_ROOT/$ID  scenario=${SCENARIO:-none}  page=${PAGE:-today (default)}"
+      print -r -- "started pid $(<$PIDFILE)  id=$ID  store=$APP_STORE_ROOT/$ID  scenario=${SCENARIO:-none}  page=${PAGE:-today (default)}${CATEGORY:+  settings-category=$CATEGORY}"
       print -r -- "  defaults: $SUITE_PREFIX$ID   (-CadenceSuiteName, T-1157)"
       print -r -- "REMEMBER: $0 stop $ID   — in this same turn."
     else
@@ -320,9 +363,10 @@ case "$CMD" in
     ;;
   up)
     refuse_bad_id
-    [[ -n "${2:-}" ]] || { print -r -- "usage: $0 up <scenario|none> <id> [page]"; exit 2 }
+    [[ -n "${2:-}" ]] || { print -r -- "usage: $0 up <scenario|none> <id> [page] [settings-category]"; exit 2 }
     refuse_bad_scenario
     refuse_bad_page
+    refuse_bad_category
     # Checked before the build too, so a refused launch does not first spend minutes compiling.
     refuse_if_owner_running
     # xcb.sh owns the private DerivedData (${TMP_BASE}cadence-dd-<id>) and every build guard.
@@ -331,7 +375,10 @@ case "$CMD" in
     (( brc )) && { print -r -- "!! build failed (xcb.sh exit $brc); nothing launched."; exit 1 }
     APP="${TMP_BASE}cadence-dd-$ID/Build/Products/Debug/Cadence.app"
     [[ -x "$APP/Contents/MacOS/Cadence" ]] || { print -r -- "!! no product at $APP"; exit 1 }
-    zsh "$SELF" start "$APP" "$ID" "${SCENARIO:-none}" $PAGE || exit $?
+    # Quoted, and the category forwarded (T-11451): an unquoted empty $PAGE collapsed to no
+    # word at all, which was invisible while the page was the last argument and would have slid
+    # the category into the page's position the moment one followed it.
+    zsh "$SELF" start "$APP" "$ID" "${SCENARIO:-none}" "$PAGE" "$CATEGORY" || exit $?
     WIN=$(wait_window 60); wrc=$?
     if (( wrc )); then print -r -- "!! no capturable window (exit $wrc). Still run: $0 stop $ID"; exit $wrc; fi
     print -r -- "WINDOW=$WIN"
