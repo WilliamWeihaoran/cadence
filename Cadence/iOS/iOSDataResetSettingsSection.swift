@@ -54,8 +54,9 @@ struct iOSDataResetSettingsSection: View {
                             // the reset also takes the store folders Cadence is not using, and the
                             // clause is `CadenceUnmanagedStoreCopy`'s rather than a second copy of
                             // macOS's, so the two cannot drift into promising different things
-                            // about the same reset.
-                            Text("Removes every task, list, note, tag, saved link, and retained legacy record Cadence holds in this store, along with local Cadence backups, pending restores, and the saved OpenAI key. \(CadenceUnmanagedStoreCopy.resetDeletesThem)")
+                            // about the same reset. [[T-10721]]: the store half is the shared
+                            // card sentence the Mac's card reads, not an enumeration.
+                            Text("\(CadenceDataResetCopy.cardDeletesEverything) \(CadenceUnmanagedStoreCopy.resetDeletesThem)")
                                 .cadenceFont(.metadata, base: 12, weight: .regular)
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)

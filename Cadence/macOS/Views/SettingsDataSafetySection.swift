@@ -516,8 +516,9 @@ private struct SettingsDataResetCard: View {
                     // exhaustive. T-1840 (owner decision 2026-10-22) made the reset take the
                     // `Recovery/` store and every earlier store location too, so the clause now
                     // names that deletion here as well as in the modal, before anyone presses
-                    // anything.
-                    Text("Delete the local Cadence account profile, Cadence data from this store, local Cadence backups, pending restores, and the saved OpenAI key. \(CadenceUnmanagedStoreCopy.resetDeletesThem)")
+                    // anything. [[T-10721]]: what it deletes is the phone card's shared
+                    // sentence; only the account profile is the Mac's own.
+                    Text("\(CadenceDataResetCopy.cardDeletesEverything) On this Mac it also deletes the local Cadence account profile. \(CadenceUnmanagedStoreCopy.resetDeletesThem)")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)

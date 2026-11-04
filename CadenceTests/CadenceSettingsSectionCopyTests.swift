@@ -1592,6 +1592,39 @@ struct CadenceSettingsSectionCopyTests {
         }
     }
 
+    /// **[[T-10721]]: both Data Safety cards say what the reset deletes in one shared sentence,
+    /// and it does not enumerate store kinds.** [[T-7209]] (b) retired the enumeration from both
+    /// gates; the phone's card above its gate still listed task, list, note, tag and saved link,
+    /// and left out documents, focus history and images. One app ([[T-8201]]): the Mac's card
+    /// reads the same sentence and adds only the account profile, which the phone has none of.
+    @Test func bothDataResetCardsReadOneSentenceForWhatTheyDelete() throws {
+        let sentence = CadenceDataResetCopy.cardDeletesEverything
+        #expect(sentence.contains("everything Cadence holds in this store"))
+        for named in ["retained legacy records", "scheduled notifications", "local Cadence backups", "pending restore", "saved OpenAI key"] {
+            #expect(sentence.contains(named), "the card sentence does not say it deletes \(named)")
+        }
+        #expect(sentence.lowercased().contains("account") == false, "the phone's card would claim an account profile (T-474)")
+
+        let cards: [(path: String, declaration: String, enumerated: String)] = [
+            ("Cadence/macOS/Views/SettingsDataSafetySection.swift", "private struct SettingsDataResetCard: View", "Cadence data from this store"),
+            ("Cadence/iOS/iOSDataResetSettingsSection.swift", "struct iOSDataResetSettingsSection: View", "task, list, note"),
+        ]
+        for card in cards {
+            let code = try Self.strippedSource(at: card.path)
+            let body = try #require(
+                CadenceSourceScan.declarationBody(card.declaration, in: code),
+                "non-vacuity: \(card.declaration) was not found in \(card.path)"
+            )
+            #expect(body.contains("CadenceUnmanagedStoreCopy.resetDeletesThem"), "non-vacuity: \(card.path)'s body is not the card")
+            #expect(
+                CadenceSourceScan.matchCount("CadenceDataResetCopy\\.cardDeletesEverything", in: body) == 1,
+                "\(card.path)'s card does not read the shared sentence for what it deletes exactly once"
+            )
+            #expect(body.contains(card.enumerated) == false, "\(card.path)'s card still types its own list of what it deletes")
+            #expect(body.contains("saved OpenAI key") == false, "\(card.path)'s card types its own list beside the shared sentence")
+        }
+    }
+
     /// **[[T-7208]]: the Mac's Privacy card names what an AI action sends.** It said "selected
     /// note content", the clause [[T-1322]] removed from the AI pane's disclosure because the
     /// request carries the note's title, its whole text and its list's name.

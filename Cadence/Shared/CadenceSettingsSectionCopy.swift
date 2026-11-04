@@ -476,6 +476,18 @@ nonisolated enum CadenceDataResetCopy {
         "This permanently deletes everything Cadence holds in this store, retained legacy records "
         + "included, plus its scheduled notifications, local Cadence backups, any pending restore, "
         + "and the saved OpenAI key."
+
+    /// What the reset deletes, as both Data Safety **cards** say it before the gate opens
+    /// ([[T-10721]], under [[T-7209]] (b) and [[T-8201]]). The phone's card still enumerated store
+    /// kinds — task, list, note, tag, saved link — and left out documents, focus history and
+    /// images, which the sweep deletes; the Mac's said "Cadence data from this store" and left out
+    /// the scheduled notifications. Same claim as `gateDeletesEverything`, without the gate's
+    /// "permanently", which the gate says right before its irreversible button. The Mac adds its
+    /// account-profile clause beside this; the phone has none (T-474).
+    static let cardDeletesEverything =
+        "Deletes everything Cadence holds in this store, retained legacy records included, plus "
+        + "its scheduled notifications, local Cadence backups, any pending restore, and the saved "
+        + "OpenAI key."
 }
 
 /// The sentences both platforms say about the store folders Cadence is **not** using, and the
