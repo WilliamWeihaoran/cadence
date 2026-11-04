@@ -101,7 +101,10 @@ struct CadenceCodexFunctionalParityTests {
             )
         )
         #expect(shared.contains(".foregroundStyle(isSettled ? Theme.dim : Theme.text)"))
-        #expect(shared.contains(".strikethrough(isStruckThrough, color: Theme.dim)"))
+        #expect(shared.contains(".strikethrough(isSettled, color: Theme.dim)"))
+        // [[T-11221]]: no second strike predicate a card can fill with its own spelling -- the
+        // Mac's was `task.isDone || isPendingCancel`, which left a cancelled card un-struck.
+        #expect(!ledger.contains("isStruckThrough"), "the ledger card takes a separate strike flag again")
         #expect(ledger.contains("listColor.opacity(CadenceLedgerCardMetrics.gutterWashOpacity(isSettled: isSettled))"))
         #expect(!shared.contains(".strikethrough(task.isDone"))
 

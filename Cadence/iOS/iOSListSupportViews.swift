@@ -528,7 +528,9 @@ struct iOSListKanbanPanel: View {
             if !ListDetailKanbanBoard.drawsColumns(columns) {
                 VStack(spacing: 0) {
                     iOSEmptyPanel(
-                        systemImage: showsArchivedColumns ? "archivebox" : "square.grid.3x2",
+                        systemImage: showsArchivedColumns
+                            ? CadenceEmptyStateCopy.listKanbanArchivedSystemImage
+                            : CadenceEmptyStateCopy.listKanbanSystemImage,
                         title: showsArchivedColumns
                             ? CadenceEmptyStateCopy.listKanbanArchivedTitle
                             : CadenceEmptyStateCopy.listKanbanTitle,
@@ -567,6 +569,7 @@ struct iOSListKanbanPanel: View {
                                     title: column.title,
                                     dotColor: dotColor(for: column.title),
                                     dueDatePlan: dueDatePlan(for: column.title),
+                                    lifecycleLabel: lifecycleLabel(for: column.title),
                                     tasks: column.tasks,
                                     completedTasks: finished[column.title] ?? [],
                                     isHighlighted: isHighlighted(column.title),
@@ -660,9 +663,15 @@ struct iOSListKanbanPanel: View {
         }
     }
 
+    /// The Mac section column's rule, not a second one ([[T-11221]]): Default is neutral, a
+    /// completed column green, a column the list no longer configures the list's own colour.
     private func dotColor(for name: String) -> Color {
-        guard let config = config(for: name) else { return accent }
-        return config.isCompleted ? Theme.green : Color(hex: config.colorHex)
+        CadenceBoardColumnTint.dot(for: config(for: name)).color(listAccent: accent)
+    }
+
+    /// "Completed" under a completed column's header, the Mac's words ([[T-11221]]).
+    private func lifecycleLabel(for name: String) -> String? {
+        CadenceBoardColumnLifecycleCopy.label(isCompleted: config(for: name)?.isCompleted ?? false)
     }
 
     /// A column the list no longer configures has no due date to show, but it still obeys the
@@ -696,6 +705,9 @@ private struct iOSListKanbanColumn: View {
     /// the line; it does not edit it — a section's due date is set in the list editor on iOS, the
     /// way macOS sets it from the header popover.
     let dueDatePlan: CadenceBoardColumnDueDatePlan
+    /// "Completed" for a completed column, under the due date as the Mac's header draws it
+    /// ([[T-11221]]); `nil` for an open one.
+    var lifecycleLabel: String? = nil
     let tasks: [AppTask]
     /// **The column's finished cards, drawn behind a collapsed "Completed N" toggle at the foot of
     /// the stack** ([[T-9837]]) -- where macOS's `ListSectionKanbanColumn` closes with
@@ -747,6 +759,10 @@ private struct iOSListKanbanColumn: View {
                 detail: {
                     if dueDatePlan.isVisible {
                         CadenceBoardColumnDueDateLine(plan: dueDatePlan)
+                            .padding(.leading, CadenceBoardColumnHeaderMetrics.detailLeadingInset)
+                    }
+                    if let lifecycleLabel {
+                        CadenceBoardColumnLifecycleLine(label: lifecycleLabel)
                             .padding(.leading, CadenceBoardColumnHeaderMetrics.detailLeadingInset)
                     }
                 }

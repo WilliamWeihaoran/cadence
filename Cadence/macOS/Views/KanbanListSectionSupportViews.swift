@@ -77,6 +77,17 @@ struct ListSectionsKanbanView: View {
                         .padding(.top, 12)
                 }
 
+                // [[T-11221]]: Show Archived over a list with no archived column drew an empty
+                // page here, where the iOS board says why in these words. Live columns cannot run
+                // out -- Default is never archived -- so this is the archived board's case alone.
+                if columns.isEmpty && showArchivedBinding.wrappedValue {
+                    EmptyStateView(
+                        message: CadenceEmptyStateCopy.listKanbanArchivedTitle,
+                        subtitle: CadenceEmptyStateCopy.listKanbanArchivedSubtitle,
+                        icon: CadenceEmptyStateCopy.listKanbanArchivedSystemImage
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(alignment: .top, spacing: 12) {
@@ -129,6 +140,7 @@ struct ListSectionsKanbanView: View {
                     .onChange(of: highlightedSectionName) { _, _ in
                         applyHighlightIfNeeded(with: proxy)
                     }
+                }
                 }
             }
         }

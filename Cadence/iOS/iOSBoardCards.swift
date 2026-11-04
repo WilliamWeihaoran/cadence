@@ -295,7 +295,6 @@ struct iOSBoardTaskCard: View {
         CadenceLedgerCard(
             title: TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle),
             isSettled: isSettled,
-            isStruckThrough: isSettled,
             listColor: listColor,
             priority: task.priority,
             isRecurring: task.isRecurring,

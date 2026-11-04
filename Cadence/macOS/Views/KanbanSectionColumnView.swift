@@ -103,8 +103,10 @@ struct ListSectionKanbanColumn: View {
         KanbanBoardSupport.columnHalves(from: tasks)
     }
 
+    /// The column's own colour, which the iOS board's dot reads through the same rule
+    /// ([[T-11221]]): Default is neutral, every other column its stored hex.
     private var columnColor: Color {
-        section.isDefault ? Theme.dim : Color(hex: section.colorHex)
+        CadenceBoardColumnTint.base(for: section).color(listAccent: Theme.dim)
     }
 
     private var sectionHoverID: String {

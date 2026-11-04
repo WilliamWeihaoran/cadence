@@ -388,11 +388,16 @@ struct CadenceLedgerTokenLabel: View {
 /// `isHovered` is the same thing: a board card has no hover state on a touch device.
 struct CadenceLedgerCard<Ring: View, TokenView: View, Subtasks: View, SettlingOverlay: View>: View {
     let title: String
-    /// `CadenceTaskCompletionState.isSettled` — done or cancelled. A settled card collapses.
+    /// `CadenceTaskCompletionState.isSettled` — done or cancelled. A settled card collapses, dims
+    /// and is struck through.
+    ///
+    /// **One predicate for all three, on both boards** ([[T-11221]]). The card used to take a
+    /// separate strike flag, which iOS filled with this value and the Mac with
+    /// `task.isDone || isPendingCancel` -- so a cancelled card collapsed and dimmed on the Mac
+    /// with its title un-struck, and a card counting down to a cancellation was struck before it
+    /// was anything. Neither is an input question, and `MacTaskRow` and `iOSTaskRow` both strike
+    /// exactly the settled states, so the card does too.
     let isSettled: Bool
-    /// Struck through. Not the same question as `isSettled`: macOS strikes a card the moment a
-    /// completion starts settling, before the status has changed.
-    let isStruckThrough: Bool
     let listColor: Color
     let priority: TaskPriority
     let isRecurring: Bool
@@ -478,7 +483,7 @@ struct CadenceLedgerCard<Ring: View, TokenView: View, Subtasks: View, SettlingOv
         Text(title)
             .cadenceFont(.rowTitle, base: CadenceLedgerCardMetrics.titleBase, weight: .semibold)
             .foregroundStyle(isSettled ? Theme.dim : Theme.text)
-            .strikethrough(isStruckThrough, color: Theme.dim)
+            .strikethrough(isSettled, color: Theme.dim)
             .lineLimit(isSettled ? 1 : titleLineLimit)
             .fixedSize(horizontal: false, vertical: scaling == .enabled)
             .frame(maxWidth: .infinity, alignment: .leading)

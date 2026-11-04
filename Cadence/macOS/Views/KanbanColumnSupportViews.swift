@@ -301,8 +301,11 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
 
     /// Column containers are gone, so the header is the only place the section's color
     /// survives — a single 7pt dot. Everything else is neutral, quiet type.
+    ///
+    /// The same `CadenceBoardColumnTint.dot` the iOS board's dot reads ([[T-11221]]).
     private var dotColor: Color {
-        section.isCompleted || isPendingCompletion ? Theme.green : columnColor
+        CadenceBoardColumnTint.dot(for: section, isPendingCompletion: isPendingCompletion)
+            .color(listAccent: columnColor)
     }
 
     /// Shown-or-not, what it reads, and whether it is late — one shared value rather than three
@@ -334,10 +337,12 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
                 .padding(.leading, CadenceBoardColumnHeaderMetrics.detailLeadingInset)
         }
 
-        if section.isCompleted || isPendingCompletion {
-            Text(section.isCompleted ? "Completed" : "Completing…")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Theme.green)
+        // [[T-11221]]: the shared words and drawing, which the iOS board's column now says too.
+        if let lifecycle = CadenceBoardColumnLifecycleCopy.label(
+            isCompleted: section.isCompleted,
+            isPendingCompletion: isPendingCompletion
+        ) {
+            CadenceBoardColumnLifecycleLine(label: lifecycle)
                 .padding(.leading, CadenceBoardColumnHeaderMetrics.detailLeadingInset)
         }
 

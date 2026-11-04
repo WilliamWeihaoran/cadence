@@ -93,6 +93,11 @@ nonisolated enum CadenceEmptyStateCopy {
     /// subtitle above, which points at it, would name something that is not on screen.
     static let listKanbanArchivedTitle = "No archived columns"
     static let listKanbanArchivedSubtitle = "Archived columns appear here."
+    /// The two boards' glyphs for those states. The Mac board drew nothing at all under Show
+    /// Archived with no archived column -- a blank page where iOS said why ([[T-11221]]); both read
+    /// these now.
+    static let listKanbanSystemImage = "square.grid.3x2"
+    static let listKanbanArchivedSystemImage = "archivebox"
 
     // MARK: - Pages that exist at two widths
 

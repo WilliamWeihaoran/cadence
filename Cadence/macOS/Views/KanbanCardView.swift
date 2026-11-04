@@ -56,7 +56,6 @@ struct KanbanCard: View {
         CadenceLedgerCard(
             title: TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle),
             isSettled: isSettled,
-            isStruckThrough: task.isDone || isPendingCancel,
             listColor: listColor,
             priority: task.priority,
             isRecurring: task.isRecurring,

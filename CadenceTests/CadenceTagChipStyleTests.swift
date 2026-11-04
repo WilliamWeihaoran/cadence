@@ -352,6 +352,8 @@ struct CadenceTagChipScaleTests {
                     "Cadence/iOS/iOSAINoteActionsViews.swift",
                     "Cadence/iOS/iOSCalendarMonthAgendaViews.swift",
                     "Cadence/iOS/iOSTaskViews.swift",
+                    // [[T-11221]]: the Mac list board's Show Archived empty state.
+                    "Cadence/macOS/Views/KanbanListSectionSupportViews.swift",
                     "Cadence/macOS/Views/LinksView.swift",
                     "Cadence/macOS/Views/ListDetailComponents.swift",
                     "Cadence/macOS/Views/ListDetailSupportViews.swift",
