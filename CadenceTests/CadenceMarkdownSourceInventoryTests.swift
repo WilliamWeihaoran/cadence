@@ -439,7 +439,9 @@ struct CadenceMarkdownSourceInventoryTests {
         "MarkdownImageAsset": ["mimeType", "originalFilename", "altText"],
         "Note": [
             "kindRaw", "title", "dateKey", "weekKey", "calendarEventID", "calendarID",
-            "eventDateKey", "legacySourceKindRaw", "legacySourceID", "folderPath"
+            "eventDateKey", "legacySourceKindRaw", "legacySourceID", "folderPath",
+            // Two SHA-256 hex digests ([[T-8162]] / [[T-8163]]'s merge baseline). Never markdown.
+            "eventNotesMergedNativeHash", "eventNotesMergedContentHash"
         ],
         "Project": [
             "name", "desc", "statusRaw", "colorHex", "icon", "dueDate", "linkedCalendarID",

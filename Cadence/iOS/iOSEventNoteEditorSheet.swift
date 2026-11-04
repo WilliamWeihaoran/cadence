@@ -258,8 +258,27 @@ enum iOSEventNoteCommit {
             save: { try modelContext.save() },
             syncToNativeEvent: {
                 syncNoteToNativeEvent(note, event: event, calendarManager: calendarManager)
+            },
+            recordSyncPoint: {
+                recordSyncPoint(note, event: event, calendarManager: calendarManager)
             }
         )
+    }
+
+    /// **[[T-8163]]** — after a mirror lands, the note's merge baseline is what Apple Calendar now
+    /// holds, read back from the event itself rather than assumed: a read-only calendar takes no
+    /// write, and `recordBaseline` refuses any text the note does not hold.
+    static func recordSyncPoint(_ note: Note, event: EKEvent?, calendarManager: iOSCalendarManager) -> Bool {
+        let target: EKEvent?
+        if let event, CadenceEventNoteSupport.matches(event, identifier: note.calendarEventID) {
+            target = event
+        } else if !note.calendarEventID.isEmpty {
+            target = calendarManager.event(for: note)
+        } else {
+            target = nil
+        }
+        guard let target else { return false }
+        return CadenceEventNotesMerge.recordBaseline(note, nativeNotes: target.notes)
     }
 
     /// Whether Apple Calendar now holds this note's text. A note with no native event to mirror

@@ -482,8 +482,9 @@ struct CalendarEventEditPopover: View {
         hasLoadedNotes
             ? notesDraft
             : CadenceEventNotesMerge.displayText(
-                noteContent: linkedEventNote?.content,
-                nativeNotes: item.ekEvent.notes
+                note: linkedEventNote,
+                nativeNotes: item.ekEvent.notes,
+                nativeEditedAt: item.ekEvent.lastModifiedDate
             )
     }
 
@@ -497,8 +498,9 @@ struct CalendarEventEditPopover: View {
     private func loadNotesIfNeeded() {
         guard !hasLoadedNotes else { return }
         notesDraft = CadenceEventNotesMerge.displayText(
-            noteContent: linkedEventNote?.content,
-            nativeNotes: item.ekEvent.notes
+            note: linkedEventNote,
+            nativeNotes: item.ekEvent.notes,
+            nativeEditedAt: item.ekEvent.lastModifiedDate
         )
         loadedNotesText = notesDraft
         hasLoadedNotes = true
@@ -511,8 +513,9 @@ struct CalendarEventEditPopover: View {
     private func reloadNotesIfUntouched() {
         guard hasLoadedNotes, pendingNotesCommit == nil else { return }
         let fresh = CadenceEventNotesMerge.displayText(
-            noteContent: linkedEventNote?.content,
-            nativeNotes: item.ekEvent.notes
+            note: linkedEventNote,
+            nativeNotes: item.ekEvent.notes,
+            nativeEditedAt: item.ekEvent.lastModifiedDate
         )
         guard let refreshed = CadenceEventNotesMerge.refreshedText(
             shown: notesDraft,
@@ -702,9 +705,16 @@ struct CalendarEventEditPopover: View {
         // hold one thing while `EKEvent.notes` holds another, and the field showing both is not
         // the same as the note carrying both. It is written the moment the note is handed to an
         // editor or to a keystroke, before any mirror can run.
-        if let merged = CadenceEventNotesMerge.mergedContent(noteContent: note.content, nativeNotes: item.ekEvent.notes) {
+        // **[[T-8162]] / [[T-8163]]**, as on iOS: resolved against the synced merge baseline, then
+        // the baseline recorded while the note holds Apple's text.
+        if let merged = CadenceEventNotesMerge.resolvedContent(
+            note: note,
+            nativeNotes: item.ekEvent.notes,
+            nativeEditedAt: item.ekEvent.lastModifiedDate
+        ) {
             CadenceCoreNoteSupport.applyContent(note, content: merged, in: modelContext)
         }
+        CadenceEventNotesMerge.recordBaseline(note, nativeNotes: item.ekEvent.notes)
 
         do {
             try CadencePendingChangePersistence.commitInsert(of: inserted, in: modelContext)

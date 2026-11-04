@@ -181,7 +181,17 @@ Re-checked 2026-10-20 by reading the tree rather than this file. Two of these ar
 likely to be wrong at the moment a build is cut, so they are written as measurements with a date on
 them rather than as standing claims.
 
-- **No new CloudKit schema obligation since the 2026-10-02 deploy.** The deploy that discharged
+- **OWED (2026-11-04, [[T-8162]] / [[T-8163]], agent `eventmeta0838`): THREE NEW FIELDS ON THE DEPLOYED
+  `CD_Note` RECORD TYPE — `eventNotesMergedAt` (`Date?`), `eventNotesMergedNativeHash` (`String`,
+  default empty) and `eventNotesMergedContentHash` (`String`, default empty).** The event note's synced
+  merge baseline, the ONE schema change both owner decisions of 2026-10-31 accepted. Additive only;
+  nothing else on `Note` moved. **This is the exact case the CloudKit row above warns is invisible to
+  the deployment diff** — new optional/defaulted fields on a live type — so: run a debug build that
+  saves a meeting note through the event editor, confirm Development's `CD_Note` gains the three
+  `CD_eventNotesMerged*` fields, press *Deploy Schema Changes*, and count Production's fields against
+  the model's stored properties **before distributing any TestFlight build at or after the commit that
+  adds them**. Owner-only; nothing in the build will say so. Delete this bullet once verified.
+- **Was: no new CloudKit schema obligation since the 2026-10-02 deploy** (true until the bullet above). The deploy that discharged
   `CD_NoteTemplatePreference` and `calendarPresentationRaw` was 2026-10-02. Every commit touching
   `Cadence/Models/` since then was read: four commits, none of them adding a `var`, an `@Attribute`
   or an `@Relationship` to a `@Model`. So nothing is owed, measured the way the paragraph above

@@ -53,6 +53,25 @@ nonisolated enum NoteKind: String, CaseIterable {
     var eventStartMin: Int = -1
     var eventEndMin: Int = -1
 
+    /// **[[T-8162]] / [[T-8163]] — the event note's merge baseline: the moment this note last held
+    /// Apple Calendar's text, and fingerprints of both sides at that moment.** Synced, so every
+    /// device reads the same baseline. `nil` / empty on every note older than this field, which is
+    /// exactly the containment-only behaviour those notes had before it.
+    ///
+    /// ADDITIVE ONLY, and that is a decision, not a convenience: CloudKit's Production schema can
+    /// gain fields but never lose or retype one, so these are optional or defaulted and nothing
+    /// else on the model moved. **A new field on a deployed record type is owed a CloudKit Console
+    /// deploy before a build carrying it ships** (`Models/AGENTS.md`, "A New `@Model` Needs A
+    /// CloudKit Console Deploy"). `CadenceEventNotesMerge` owns every read and write of them.
+    var eventNotesMergedAt: Date? = nil
+    /// SHA-256 of Apple Calendar's trimmed text at `eventNotesMergedAt`. **This is [[T-8162]]'s
+    /// synced dismissal marker**: while Apple's text still hashes to it, the note has already taken
+    /// that text once, so a note that no longer contains it had it deleted and must not get it back.
+    var eventNotesMergedNativeHash: String = ""
+    /// SHA-256 of the note's flattened, trimmed content at `eventNotesMergedAt` — how
+    /// [[T-8163]] tells "only Apple changed" (rule 2) from "both changed" (rule 3).
+    var eventNotesMergedContentHash: String = ""
+
     var legacySourceKindRaw: String = ""
     var legacySourceID: String = ""
     var folderPath: String = ""

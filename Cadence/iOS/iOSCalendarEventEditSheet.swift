@@ -384,8 +384,9 @@ struct iOSCalendarEventEditSheet: View {
         Binding(
             get: {
                 CadenceEventNotesMerge.displayText(
-                    noteContent: linkedEventNote?.content,
-                    nativeNotes: event.notes
+                    note: linkedEventNote,
+                    nativeNotes: event.notes,
+                    nativeEditedAt: event.lastModifiedDate
                 )
             },
             set: { applyNotesEdit($0) }
@@ -497,9 +498,19 @@ struct iOSCalendarEventEditSheet: View {
         // writes it. So it is written here — the moment the note is handed to an editor or to a
         // keystroke, and before any mirror can run — because the full note editor does not merge
         // and its next commit would otherwise push the Cadence half over the Apple one.
-        if let merged = CadenceEventNotesMerge.mergedContent(noteContent: note.content, nativeNotes: event.notes) {
+        //
+        // **[[T-8162]] / [[T-8163]]:** resolved against the note's synced merge baseline, so a
+        // paragraph the user deleted stays deleted, an Apple-only edit refreshes in place, and a
+        // two-sided edit keeps both under labelled sides. The baseline is then recorded — only
+        // while the note holds Apple's text, which is what keeps a deletion's old baseline intact.
+        if let merged = CadenceEventNotesMerge.resolvedContent(
+            note: note,
+            nativeNotes: event.notes,
+            nativeEditedAt: event.lastModifiedDate
+        ) {
             CadenceCoreNoteSupport.applyContent(note, content: merged, in: modelContext)
         }
+        CadenceEventNotesMerge.recordBaseline(note, nativeNotes: event.notes)
 
         do {
             try CadencePendingChangePersistence.commitInsert(of: inserted, in: modelContext)

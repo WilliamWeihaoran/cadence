@@ -250,15 +250,23 @@ struct CadenceEventNotesMergeTests {
         ] {
             let code = try scanned(path)
             let ensure = try #require(CadenceSourceScan.functionBody(named: "ensureEventNote", in: code))
+            // [[T-8162]] / [[T-8163]]: through the baseline-aware resolution, never containment alone.
             #expect(
-                ensure.contains("if let merged = CadenceEventNotesMerge.mergedContent(noteContent: note.content, nativeNotes: \(native))"),
+                ensure.contains("if let merged = CadenceEventNotesMerge.resolvedContent(\n            note: note,\n            nativeNotes: \(native),"),
                 "\(path) hands over a note that may be missing its Apple Calendar half"
             )
+            #expect(!ensure.contains("CadenceEventNotesMerge.mergedContent("), "\(path) still merges by containment alone")
             #expect(ensure.contains("CadenceCoreNoteSupport.applyContent(note, content: merged, in: modelContext)"))
-            // Before the commit, so one save carries it.
+            #expect(
+                ensure.contains("CadenceEventNotesMerge.recordBaseline(note, nativeNotes: \(native))"),
+                "\(path) never records the synced merge baseline, so a deleted paragraph comes back"
+            )
+            // Merge, then baseline, then the commit — so one save carries both.
             let mergeIndex = try #require(ensure.range(of: "applyContent(note, content: merged"))
+            let baselineIndex = try #require(ensure.range(of: "CadenceEventNotesMerge.recordBaseline("))
             let commitIndex = try #require(ensure.range(of: "CadencePendingChangePersistence.commitInsert"))
-            #expect(mergeIndex.lowerBound < commitIndex.lowerBound, "\(path) commits before it merges")
+            #expect(mergeIndex.lowerBound < baselineIndex.lowerBound, "\(path) records a baseline before it merges")
+            #expect(baselineIndex.lowerBound < commitIndex.lowerBound, "\(path) commits before it records the baseline")
         }
     }
 

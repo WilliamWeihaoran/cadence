@@ -684,6 +684,9 @@ private struct MeetingNotesPage: View {
             save: { try modelContext.save() },
             syncToNativeEvent: {
                 EventNoteSupport.syncNativeCalendarNotes(for: note, content: content, calendarManager: calendarManager)
+            },
+            recordSyncPoint: {
+                EventNoteSupport.recordSyncPoint(note, event: nil, calendarManager: calendarManager)
             }
         )
         commitNotice = outcome.notice

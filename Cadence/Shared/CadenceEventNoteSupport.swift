@@ -387,10 +387,17 @@ enum CadenceEventNoteSupport {
     ///     provoked out of an in-memory container, and an ordering no test can reach is an
     ///     ordering no test can prove.
     ///   - syncToNativeEvent: Returns whether Apple Calendar took the change.
+    ///   - recordSyncPoint: **[[T-8163]].** Runs only after Apple Calendar took the mirror, and
+    ///     returns whether it changed the note's merge baseline. A mirror is the moment the two
+    ///     sides agree, so it is a baseline; without one, the next Apple Calendar edit would read
+    ///     as "both changed" and draw a conflict for an edit only one side made. It can never run
+    ///     BEFORE the mirror lands: a baseline claiming Apple holds text it was refused would let
+    ///     rule (2) replace the user's note with Apple's older text.
     static func commitNote(
         syncToCalendar: Bool,
         save: () throws -> Void,
-        syncToNativeEvent: () -> Bool
+        syncToNativeEvent: () -> Bool,
+        recordSyncPoint: () -> Bool = { false }
     ) -> CadenceEventNoteCommitOutcome {
         do {
             try save()
@@ -398,7 +405,18 @@ enum CadenceEventNoteSupport {
             return .notSaved(error.localizedDescription)
         }
         guard syncToCalendar else { return .savedWithoutSync }
-        return syncToNativeEvent() ? .saved : .savedButNotSynced
+        guard syncToNativeEvent() else { return .savedButNotSynced }
+        if recordSyncPoint() {
+            // The note and the mirror both landed; this save carries only the baseline. If it is
+            // refused the baseline stays pending in the context for the next commit, and the
+            // worst a stale baseline does is label an Apple edit as a conflict — never lose text.
+            do {
+                try save()
+            } catch {
+                return .saved
+            }
+        }
+        return .saved
     }
 
     private static func recurringOccurrenceDate(for event: EKEvent) -> Date? {
