@@ -154,12 +154,14 @@ struct iOSSearchView: View {
     /// to `isActive`, so a completed or archived list was findable on the Mac and invisible here
     /// even though tapping one would have opened its detail page perfectly well.
     private var listResults: [CadenceSearchSection: [iOSSearchResult]] {
+        // [[T-8526]]: the facts are `CadenceListSearchSupport.rowFacts`'s, the same Cmd+K draws;
+        // this row keeps its own two lines and separators.
         let listItems = areas.filter { CadenceListSearchSupport.isSearchable($0, query: trimmedQuery) }.map { area in
-            let count = CadenceTaskQuerySupport.openTaskCount(for: area)
+            let facts = CadenceListSearchSupport.rowFacts(for: area)
             return iOSSearchListCandidate(
                 title: CadenceListSearchSupport.resultTitle(for: area),
-                subtitle: area.context?.name ?? "Area",
-                detail: CadenceListSearchSupport.rowDetail(lifecycle: CadenceListSearchSupport.lifecycle(of: area), openTaskCount: count),
+                subtitle: facts.containers.joined(separator: " / "),
+                detail: facts.status.joined(separator: " · "),
                 icon: area.icon,
                 color: Color(hex: area.colorHex),
                 route: .area(area.id),
@@ -167,11 +169,11 @@ struct iOSSearchView: View {
                 fields: CadenceListSearchSupport.searchFields(for: area)
             )
         } + projects.filter { CadenceListSearchSupport.isSearchable($0, query: trimmedQuery) }.map { project in
-            let count = CadenceTaskQuerySupport.openTaskCount(for: project)
+            let facts = CadenceListSearchSupport.rowFacts(for: project)
             return iOSSearchListCandidate(
                 title: CadenceListSearchSupport.resultTitle(for: project),
-                subtitle: CadenceListSearchSupport.containerNames(for: project).joined(separator: " / "),
-                detail: CadenceListSearchSupport.rowDetail(lifecycle: CadenceListSearchSupport.lifecycle(of: project), openTaskCount: count),
+                subtitle: facts.containers.joined(separator: " / "),
+                detail: facts.status.joined(separator: " · "),
                 icon: project.icon,
                 color: Color(hex: project.colorHex),
                 route: .project(project.id),

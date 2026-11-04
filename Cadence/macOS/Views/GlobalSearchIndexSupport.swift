@@ -195,12 +195,13 @@ enum GlobalSearchIndexSupport {
     /// rendering, built from the shared lifecycle fact rather than from a second
     /// `isArchived ? … : isDone ? …` chain, which labelled a *cancelled* project "Active".
     /// The open count reads through `GoalLinkTarget.openTaskLabel(count:)`, so one open task says
-    /// "1 active task" rather than the hand-spelled "1 active tasks" ([[T-4455]]).
+    /// "1 active task" rather than the hand-spelled "1 active tasks" ([[T-4455]]). Which facts the
+    /// subtitle names, and in what order, is `CadenceListSearchSupport.rowFacts` — the same facts
+    /// iOS Search's row lays out on two lines ([[T-8526]]); only the ` • ` is this surface's.
     static func areaResults(areas: [Area], query: String) -> [GlobalSearchResult] {
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
         return rankedResults(areas.compactMap { area in
             guard CadenceListSearchSupport.isSearchable(area, query: query) else { return nil }
-            let contextName = area.context?.name ?? "No context"
             guard matches(query: preparedQuery, fields: CadenceListSearchSupport.searchFields(for: area)) else { return nil }
             return GlobalSearchResult(
                 id: CadenceSearchIdentity.area(area.id),
@@ -208,7 +209,7 @@ enum GlobalSearchIndexSupport {
                 // [[T-7202]]: a blank name drew a row with no title; iOS Search's list rows
                 // already say "Untitled Area" / "Untitled Project".
                 title: CadenceTitleNormalization.display(area.name, fallback: CadenceTitleNormalization.defaultAreaName),
-                subtitle: "\(contextName) • \(GoalLinkTarget.openTaskLabel(count: CadenceTaskQuerySupport.openTaskCount(for: area))) • \(CadenceListSearchSupport.lifecycle(of: area).statusLabel)",
+                subtitle: CadenceListSearchSupport.rowFacts(for: area).facts.joined(separator: " • "),
                 icon: area.icon,
                 tintHex: area.colorHex,
                 destination: .area(area.id)
@@ -220,15 +221,12 @@ enum GlobalSearchIndexSupport {
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
         return rankedResults(projects.compactMap { project in
             guard CadenceListSearchSupport.isSearchable(project, query: query) else { return nil }
-            let contextName = project.context?.name ?? "No context"
-            let areaName = project.area?.name
-            let summary = [contextName, areaName].compactMap { $0 }.joined(separator: " • ")
             guard matches(query: preparedQuery, fields: CadenceListSearchSupport.searchFields(for: project)) else { return nil }
             return GlobalSearchResult(
                 id: CadenceSearchIdentity.project(project.id),
                 category: .projects,
                 title: CadenceTitleNormalization.display(project.name, fallback: CadenceTitleNormalization.defaultProjectName),
-                subtitle: "\(summary) • \(GoalLinkTarget.openTaskLabel(count: CadenceTaskQuerySupport.openTaskCount(for: project))) • \(CadenceListSearchSupport.lifecycle(of: project).statusLabel)",
+                subtitle: CadenceListSearchSupport.rowFacts(for: project).facts.joined(separator: " • "),
                 icon: project.icon,
                 tintHex: project.colorHex,
                 destination: .project(project.id)

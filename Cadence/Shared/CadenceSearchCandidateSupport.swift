@@ -298,16 +298,62 @@ nonisolated enum CadenceListSearchSupport {
     }
 }
 
+/// The facts an Area or Project search row shows, in the order both rows show them ([[T-8526]]).
+///
+/// iOS Search and Cmd+K used to describe one list with different facts: Cmd+K typed
+/// `No context` for a list with no context, iOS typed `Area` for an area and nothing for a
+/// project, Cmd+K said `Active` on every active row, and iOS dropped the count on a finished
+/// one. The owner call ([[T-11030]], under [[T-8201]]): the context name when there is one, the
+/// area for a project when there is one, `N active tasks` always, then the lifecycle word only
+/// when the list is not active. A word that names an absence is noise, and so is `Active` on a
+/// row that is.
+///
+/// Split in two because the iOS row lays the containers and the status on separate lines; Cmd+K
+/// draws `facts` on one. Each platform keeps its own separator ([[T-7205]]) — the facts are
+/// this type's.
+nonisolated struct CadenceListSearchRowFacts: Equatable {
+    /// The names the list sits under, blank ones dropped: the context, then (for a project) the area.
+    let containers: [String]
+    /// The open count in `GoalLinkTarget.openTaskLabel`'s words, then the lifecycle word when the
+    /// list is not active.
+    let status: [String]
+
+    /// Every fact, containers first.
+    var facts: [String] { containers + status }
+}
+
 extension CadenceListSearchSupport {
-    /// The iOS Lists row's detail line: the open count in Cmd+K's words, or the lifecycle word on a
-    /// finished list ([[T-8525]]). iOS said "3 tasks" for what macOS's row calls "3 active tasks",
-    /// and the number is the *open* count (`CadenceTaskQuerySupport.openTaskCount`), so a list
-    /// holding ten tasks with seven done read "3 tasks". Wording is not a hardware difference
-    /// ([[T-8201]]); `GoalLinkTarget.openTaskLabel` is the one spelling.
+    /// The pure half, so the order and the omissions are testable without a model.
     @MainActor
-    static func rowDetail(lifecycle: CadenceListSearchLifecycle, openTaskCount: Int) -> String {
-        guard lifecycle.isActive else { return lifecycle.statusLabel }
-        return GoalLinkTarget.openTaskLabel(count: openTaskCount)
+    static func rowFacts(
+        containers: [String],
+        lifecycle: CadenceListSearchLifecycle,
+        openTaskCount: Int
+    ) -> CadenceListSearchRowFacts {
+        let named = containers
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        var status = [GoalLinkTarget.openTaskLabel(count: openTaskCount)]
+        if !lifecycle.isActive { status.append(lifecycle.statusLabel) }
+        return CadenceListSearchRowFacts(containers: named, status: status)
+    }
+
+    @MainActor
+    static func rowFacts(for area: Area) -> CadenceListSearchRowFacts {
+        rowFacts(
+            containers: [area.context?.name].compactMap { $0 },
+            lifecycle: lifecycle(of: area),
+            openTaskCount: CadenceTaskQuerySupport.openTaskCount(for: area)
+        )
+    }
+
+    @MainActor
+    static func rowFacts(for project: Project) -> CadenceListSearchRowFacts {
+        rowFacts(
+            containers: containerNames(for: project),
+            lifecycle: lifecycle(of: project),
+            openTaskCount: CadenceTaskQuerySupport.openTaskCount(for: project)
+        )
     }
 }
 

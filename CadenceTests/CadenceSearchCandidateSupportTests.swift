@@ -407,11 +407,12 @@ struct CadenceSearchCandidateSupportTests {
         #expect(pluralRow.title == "Twin Errands")
         #expect(projectRow.title == "Solo Launch")
 
-        #expect(areaRow.subtitle.contains("• 1 active task •"))
+        // [[T-8526]]: an active list ends on its count; no trailing "Active".
+        #expect(areaRow.subtitle == "Home • 1 active task")
         #expect(!areaRow.subtitle.contains("active tasks"))
-        #expect(projectRow.subtitle.contains("• 1 active task •"))
+        #expect(projectRow.subtitle == "Home • 1 active task")
         #expect(!projectRow.subtitle.contains("active tasks"))
-        #expect(pluralRow.subtitle.contains("• 2 active tasks •"))
+        #expect(pluralRow.subtitle == "Home • 2 active tasks")
     }
 
     // MARK: - The iOS half, read as source
@@ -491,7 +492,8 @@ struct CadenceSearchCandidateSupportTests {
         #expect(stripped.contains("CadenceListSearchSupport.isSearchable($0, query: trimmedQuery)"))
         #expect(stripped.contains("CadenceListSearchSupport.searchFields(for: area)"))
         #expect(stripped.contains("CadenceListSearchSupport.searchFields(for: project)"))
-        #expect(stripped.contains("CadenceListSearchSupport.lifecycle(of: area)"))
+        // The lifecycle is read inside the shared row facts since [[T-8526]], not beside them.
+        #expect(stripped.contains("CadenceListSearchSupport.rowFacts(for: area)"))
 
         // The pre-filter this ticket removed. `filter(\.isActive)` is still the right thing for a
         // picker; it is no longer the right thing for search.
@@ -1011,17 +1013,84 @@ struct CadenceSearchCandidateSupportTests {
         #expect(CadenceListSearchSupport.containerNames(for: bare).isEmpty)
     }
 
-    /// **[[T-8525]].** The iOS row's count is the open count in Cmd+K's words, and a finished list
-    /// still says what it is instead of a count.
-    @Test func anIOSListRowCountsActiveTasksInCmdKsWords() {
-        #expect(CadenceListSearchSupport.rowDetail(lifecycle: .active, openTaskCount: 1) == "1 active task")
-        #expect(CadenceListSearchSupport.rowDetail(lifecycle: .active, openTaskCount: 3) == "3 active tasks")
-        #expect(CadenceListSearchSupport.rowDetail(lifecycle: .active, openTaskCount: 3) == GoalLinkTarget.openTaskLabel(count: 3))
-        #expect(CadenceListSearchSupport.rowDetail(lifecycle: .archived, openTaskCount: 3) == "Archived")
-        #expect(CadenceListSearchSupport.rowDetail(lifecycle: .completed, openTaskCount: 0) == "Completed")
+    /// **[[T-8525]], [[T-8526]].** The count is the open count in `openTaskLabel`'s words, on
+    /// every row; the lifecycle word follows it only on a finished list.
+    @Test func aListRowCountsActiveTasksAndNamesOnlyAFinishedLifecycle() {
+        let active = CadenceListSearchSupport.rowFacts(containers: ["Work"], lifecycle: .active, openTaskCount: 1)
+        #expect(active.containers == ["Work"])
+        #expect(active.status == ["1 active task"])
+        #expect(CadenceListSearchSupport.rowFacts(containers: [], lifecycle: .active, openTaskCount: 3).status
+            == [GoalLinkTarget.openTaskLabel(count: 3)])
+
+        let archived = CadenceListSearchSupport.rowFacts(containers: ["Work", "Ops"], lifecycle: .archived, openTaskCount: 3)
+        #expect(archived.facts == ["Work", "Ops", "3 active tasks", "Archived"])
+        #expect(CadenceListSearchSupport.rowFacts(containers: [], lifecycle: .completed, openTaskCount: 0).facts
+            == ["0 active tasks", "Completed"])
+
+        // No placeholder names an absence: a blank container is dropped, not spelled.
+        let loose = CadenceListSearchSupport.rowFacts(containers: ["  ", ""], lifecycle: .active, openTaskCount: 0)
+        #expect(loose.facts == ["0 active tasks"])
     }
 
-    /// The iOS view reads the three helpers above and no longer spells any of them. Source-scanned
+    /// **[[T-8526]].** The iOS Lists row and the Cmd+K row for the same area and project name the
+    /// same facts, in the same order. Cmd+K is called; the iOS row is source-scanned (the bundle
+    /// is macOS-only) for laying out exactly `rowFacts`' two halves and nothing typed beside them.
+    @Test func theIOSAndMacListRowsNameTheSameFacts() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let work = Context(name: "Work")
+        let ops = Area(name: "Ops Desk", context: work)
+        let looseArea = Area(name: "Loose Desk")
+        let launch = Project(name: "Desk Launch", context: work, area: ops)
+        launch.status = .archived
+        let looseProject = Project(name: "Desk Drift")
+        let open = AppTask(title: "Open one")
+        open.project = launch
+        let done = AppTask(title: "Done one")
+        done.status = .done
+        done.project = launch
+
+        modelContext.insert(work)
+        for area in [ops, looseArea] { modelContext.insert(area) }
+        for project in [launch, looseProject] { modelContext.insert(project) }
+        for task in [open, done] { modelContext.insert(task) }
+        try modelContext.save()
+
+        let expected: [String: [String]] = [
+            "Ops Desk": ["Work", "0 active tasks"],
+            "Loose Desk": ["0 active tasks"],
+            "Desk Launch": ["Work", "Ops Desk", "1 active task", "Archived"],
+            "Desk Drift": ["0 active tasks"],
+        ]
+        let areaRows = GlobalSearchIndexSupport.areaResults(areas: [ops, looseArea], query: "desk")
+        let projectRows = GlobalSearchIndexSupport.projectResults(projects: [launch, looseProject], query: "desk")
+        // Non-vacuity: every list was found.
+        #expect(Set((areaRows + projectRows).map(\.title)) == Set(expected.keys))
+
+        for row in areaRows + projectRows {
+            #expect(row.subtitle.components(separatedBy: " • ") == expected[row.title], "\(row.title)")
+        }
+        for area in [ops, looseArea] {
+            #expect(CadenceListSearchSupport.rowFacts(for: area).facts == expected[area.name])
+        }
+        for project in [launch, looseProject] {
+            #expect(CadenceListSearchSupport.rowFacts(for: project).facts == expected[project.name])
+        }
+
+        let raw = try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath)
+        let stripped = CadenceSourceScan.strippingComments(raw)
+        let body = try #require(CadenceSourceScan.declarationBody("private var listResults", in: stripped))
+        #expect(body.contains("CadenceListSearchSupport.rowFacts(for: area)"))
+        #expect(body.contains("CadenceListSearchSupport.rowFacts(for: project)"))
+        #expect(body.components(separatedBy: "subtitle: facts.containers.joined(separator: \" / \")").count - 1 == 2)
+        #expect(body.components(separatedBy: "detail: facts.status.joined(separator: \" · \")").count - 1 == 2)
+        #expect(!body.contains("\"Area\""), "the iOS area row still names a missing context")
+        #expect(!body.contains("openTaskCount"), "the iOS row counts beside the shared facts")
+        #expect(!body.contains("statusLabel"), "the iOS row spells the lifecycle beside the shared facts")
+    }
+
+    /// The iOS view reads the shared title helper and no longer spells it. Source-scanned
     /// because `Cadence/iOS/` does not compile into this macOS bundle.
     @Test func theIOSListRowReadsTheSharedTitleContainerAndCount() throws {
         let raw = try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath)
@@ -1031,8 +1100,6 @@ struct CadenceSearchCandidateSupportTests {
 
         #expect(stripped.contains("title: CadenceListSearchSupport.resultTitle(for: area)"))
         #expect(stripped.contains("title: CadenceListSearchSupport.resultTitle(for: project)"))
-        #expect(stripped.contains("subtitle: CadenceListSearchSupport.containerNames(for: project).joined(separator: \" / \")"))
-        #expect(stripped.components(separatedBy: "detail: CadenceListSearchSupport.rowDetail(").count - 1 == 2)
 
         #expect(!stripped.contains("name.isEmpty ? CadenceTitleNormalization"))
         #expect(!stripped.contains("compactMap { $0 }.joined(separator: \" / \")"))
