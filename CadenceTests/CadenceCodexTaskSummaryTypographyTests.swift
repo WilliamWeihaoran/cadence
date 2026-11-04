@@ -39,6 +39,20 @@ struct CadenceCodexTaskSummaryTypographyTests {
         #expect(CadenceTodayRolloverMetrics.iconSide(at: .accessibility5, scaling: .enabled) > additiveOnly)
     }
 
+    /// **T-10015: a wrapped empty-state heading is centred, not flush left.** The subtitle always
+    /// carried `.multilineTextAlignment(.center)` and the heading did not, so a heading that wrapped
+    /// at an accessibility size took SwiftUI's default leading alignment under a centred icon. The
+    /// check is scoped to the heading's own modifier chain — from `Text(message)` to the subtitle
+    /// branch — because a file-wide `contains` is satisfied by the subtitle alone.
+    @Test func emptyStateHeadingCentresItsWrappedLines() throws {
+        let source = try CadenceSourceScan.strippedSourceReader()("Cadence/Shared/Components/EmptyStateView.swift")
+        let start = try #require(source.range(of: "Text(message)"))
+        let end = try #require(source.range(of: "if !subtitle.isEmpty", range: start.upperBound..<source.endIndex))
+        let heading = source[start.upperBound..<end.lowerBound]
+        #expect(heading.contains(".multilineTextAlignment(.center)"))
+        #expect(heading.contains(".fixedSize(horizontal: false, vertical: scaling == .enabled)"))
+    }
+
     @Test func codexNewlyLeasedComponentsUseTheirScaleAndKeepWrappingUncapped() throws {
         let read = CadenceSourceScan.strippedSourceReader()
         let empty = try read("Cadence/Shared/Components/EmptyStateView.swift")

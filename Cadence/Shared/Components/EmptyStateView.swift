@@ -38,9 +38,12 @@ struct EmptyStateView: View {
             }
 
             VStack(spacing: 5) {
+                // T-10015: centred like the subtitle, so a heading that wraps at an accessibility
+                // size does not sit flush left under the centred icon.
                 Text(message)
                     .cadenceFont(.bodyText, weight: .semibold)
                     .foregroundStyle(Theme.muted)
+                    .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: scaling == .enabled)
                 if !subtitle.isEmpty {
                     Text(subtitle)
