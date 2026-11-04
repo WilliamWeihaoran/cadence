@@ -2310,6 +2310,107 @@ struct CadenceArchiveImportSurfaceTests {
         return (archive, container, archived.id)
     }
 
+    // MARK: - T-11132: the event note's merge baseline
+
+    /// **The three baseline fields survive export, the JSON the user keeps, and import
+    /// ([[T-11132]]).** Before this, an imported event note had no baseline at all, so a paragraph
+    /// the user had deleted from it came back once ([[T-8162]]'s dismissal was lost).
+    @Test func anEventNotesMergeBaselineRoundTripsThroughTheArchive() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let note = Self.eventNoteWithBaseline()
+        source.insert(note)
+        try source.save()
+
+        let data = try CadenceDataExportService.encode(try CadenceDataExportService.makeArchive(in: source))
+        let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let rows = try #require(json["notes"] as? [[String: Any]])
+        let row = try #require(rows.first { ($0["id"] as? String) == note.id.uuidString })
+        for key in Self.baselineKeys {
+            #expect(row[key] != nil, "the export dropped \(key)")
+        }
+
+        let destination = ModelContext(try CadenceTestStore.container())
+        try CadenceArchiveImportService.apply(try CadenceDataExportService.decode(data), in: destination)
+        let restored = try #require(try destination.fetch(FetchDescriptor<Note>()).first { $0.id == note.id })
+        #expect(restored.eventNotesMergedAt == Self.baselineDate)
+        #expect(restored.eventNotesMergedNativeHash == Self.baselineNativeHash)
+        #expect(restored.eventNotesMergedContentHash == Self.baselineContentHash)
+    }
+
+    /// **An archive written before the fields still decodes and imports, with no baseline.** And
+    /// an OVERWRITE from it clears the destination's baseline rather than keeping it: the baseline
+    /// fingerprints the content the overwrite just replaced, so keeping it would assert a state the
+    /// note is no longer in. No baseline is the lossless pre-[[T-8162]] containment behaviour.
+    @Test func aNoteWrittenBeforeTheMergeBaselineImportsWithNoBaseline() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let archived = Self.eventNoteWithBaseline()
+        archived.content = "The archive's own words"
+        source.insert(archived)
+        try source.save()
+
+        let data = try CadenceDataExportService.encode(try CadenceDataExportService.makeArchive(in: source))
+        var json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var rows = try #require(json["notes"] as? [[String: Any]])
+        let index = try #require(rows.firstIndex { ($0["id"] as? String) == archived.id.uuidString })
+        for key in Self.baselineKeys {
+            #expect(rows[index][key] != nil, "nothing to remove; this test proves nothing")
+            rows[index].removeValue(forKey: key)
+        }
+        json["notes"] = rows
+        let older = try CadenceDataExportService.decode(try JSONSerialization.data(withJSONObject: json))
+        let record = try #require(older.notes.first { $0.id == archived.id }, "the note row became unreadable")
+        #expect(record.eventNotesMergedAt == nil)
+
+        // Into an empty store.
+        let fresh = ModelContext(try CadenceTestStore.container())
+        try CadenceArchiveImportService.apply(older, in: fresh)
+        let inserted = try #require(try fresh.fetch(FetchDescriptor<Note>()).first { $0.id == archived.id })
+        #expect(inserted.eventNotesMergedAt == nil)
+        #expect(inserted.eventNotesMergedNativeHash.isEmpty)
+        #expect(inserted.eventNotesMergedContentHash.isEmpty)
+
+        // Over a note that has a baseline of its own.
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+        let local = Self.eventNoteWithBaseline()
+        local.id = archived.id
+        local.content = "This device's words"
+        destination.insert(local)
+        try destination.save()
+        let outcome = try CadenceArchiveImportService.apply(
+            older, mode: .restoreOverwritingExistingRows, in: ModelContext(container)
+        )
+        #expect(outcome.overwrittenRecordCount >= 1)
+        let overwritten = try #require(
+            try ModelContext(container).fetch(FetchDescriptor<Note>()).first { $0.id == archived.id }
+        )
+        #expect(overwritten.content == "The archive's own words", "overwrite stopped overwriting")
+        #expect(overwritten.eventNotesMergedAt == nil, "a baseline outlived the content it fingerprints")
+        #expect(overwritten.eventNotesMergedNativeHash.isEmpty)
+        #expect(overwritten.eventNotesMergedContentHash.isEmpty)
+    }
+
+    private static let baselineKeys = [
+        "eventNotesMergedAt", "eventNotesMergedNativeHash", "eventNotesMergedContentHash",
+    ]
+    /// A whole second, so the archive's millisecond precision is not what is being tested.
+    private static let baselineDate = Date(timeIntervalSince1970: 1_793_000_000)
+    private static let baselineNativeHash = CadenceEventNotesMerge.fingerprint("Apple's paragraph")
+    private static let baselineContentHash = CadenceEventNotesMerge.fingerprint("The note's paragraph")
+
+    private static func eventNoteWithBaseline() -> Note {
+        let note = Note(
+            kind: .meeting,
+            title: "Design review",
+            content: "The note's paragraph",
+            calendarEventID: "event-11132"
+        )
+        note.eventNotesMergedAt = baselineDate
+        note.eventNotesMergedNativeHash = baselineNativeHash
+        note.eventNotesMergedContentHash = baselineContentHash
+        return note
+    }
+
     // MARK: - T-3110: a tag already here under another id
 
     /// **The restore route's duplicate.** Between a reset and the import the user types `bug` in a

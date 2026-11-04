@@ -656,6 +656,16 @@ nonisolated struct CadenceArchiveNote: Codable, Equatable, Identifiable, Sendabl
     var eventDateKey: String
     var eventStartMin: Int
     var eventEndMin: Int
+    /// **[[T-11132]] — the event note's merge baseline ([[T-8162]] / [[T-8163]]), carried as ONE
+    /// unit with `content`.** All three are **optional**: an archive written before the fields has
+    /// no such keys, and a synthesized `init(from:)` throws `keyNotFound` for a missing key rather
+    /// than taking a default. Absent means "no baseline", which is exactly how a note older than the
+    /// fields behaves (containment), so the importer writes nil / `""` for them — it does not keep
+    /// the destination's baseline, because a baseline is a statement about the content it sits
+    /// beside, and an overwrite replaces that content with the archive's.
+    var eventNotesMergedAt: Date?
+    var eventNotesMergedNativeHash: String?
+    var eventNotesMergedContentHash: String?
     var legacySourceKindRaw: String
     var legacySourceID: String
     var folderPath: String
@@ -678,6 +688,9 @@ nonisolated struct CadenceArchiveNote: Codable, Equatable, Identifiable, Sendabl
         eventDateKey = model.eventDateKey
         eventStartMin = model.eventStartMin
         eventEndMin = model.eventEndMin
+        eventNotesMergedAt = CadenceArchiveTimestamp.normalized(model.eventNotesMergedAt)
+        eventNotesMergedNativeHash = model.eventNotesMergedNativeHash
+        eventNotesMergedContentHash = model.eventNotesMergedContentHash
         legacySourceKindRaw = model.legacySourceKindRaw
         legacySourceID = model.legacySourceID
         folderPath = model.folderPath

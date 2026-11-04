@@ -463,6 +463,92 @@ struct DataIntegrityRepairServiceTests {
         #expect(notes.count == 2)
     }
 
+    // MARK: - T-11132, the event note's merge baseline survives a duplicate-note merge
+
+    /// **The survivor keeps the NEWER baseline, all three fields from one row ([[T-11132]]).**
+    /// Two meeting notes for one event merge; the fuller one survives. Run both ways round: when
+    /// the merged-away copy holds the newer baseline the survivor takes it whole, and when the
+    /// survivor's is newer it is left alone. Then the reason it matters: Apple's text still hashes
+    /// to the newer baseline's native fingerprint, so the merged note is a dismissal and resolves
+    /// to nothing, where the older baseline would have re-appended the deleted paragraph.
+    @Test func mergingDuplicateEventNotesKeepsTheNewerMergeBaselineWhole() throws {
+        for survivorIsNewer in [false, true] {
+            let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+            let modelContext = ModelContext(container)
+            let survivor = Note(
+                kind: .meeting,
+                title: "Design review",
+                content: String(repeating: "Agenda line. ", count: 20),
+                calendarEventID: "event-11132"
+            )
+            let mergedAway = Note(kind: .meeting, title: "", content: "x", calendarEventID: "event-11132")
+            let older = Date(timeIntervalSince1970: 1_000)
+            let newer = Date(timeIntervalSince1970: 2_000)
+            let olderNative = CadenceEventNotesMerge.fingerprint("Apple text, first version")
+            let newerNative = CadenceEventNotesMerge.fingerprint("Apple text, second version")
+            let (newRow, oldRow) = survivorIsNewer ? (survivor, mergedAway) : (mergedAway, survivor)
+            newRow.eventNotesMergedAt = newer
+            newRow.eventNotesMergedNativeHash = newerNative
+            newRow.eventNotesMergedContentHash = "content-of-the-newer-row"
+            oldRow.eventNotesMergedAt = older
+            oldRow.eventNotesMergedNativeHash = olderNative
+            oldRow.eventNotesMergedContentHash = "content-of-the-older-row"
+            let survivorID = survivor.id
+            modelContext.insert(survivor)
+            modelContext.insert(mergedAway)
+            try modelContext.save()
+
+            let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+            let notes = try modelContext.fetch(FetchDescriptor<Note>())
+
+            #expect(report.duplicateNotesMerged == 1)
+            let note = try #require(notes.first { $0.id == survivorID }, "the fixture pins the fuller note as the survivor")
+            #expect(notes.count == 1)
+            #expect(note.eventNotesMergedAt == newer, "survivorIsNewer=\(survivorIsNewer): the older baseline won")
+            #expect(note.eventNotesMergedNativeHash == newerNative, "survivorIsNewer=\(survivorIsNewer)")
+            #expect(note.eventNotesMergedContentHash == "content-of-the-newer-row",
+                    "survivorIsNewer=\(survivorIsNewer): the baseline was mixed field by field")
+            #expect(
+                CadenceEventNotesMerge.resolvedContent(
+                    note: note, nativeNotes: "Apple text, second version", nativeEditedAt: nil
+                ) == nil,
+                "survivorIsNewer=\(survivorIsNewer): a paragraph dismissed on the newer row came back"
+            )
+        }
+    }
+
+    /// The other half: a merged-away copy with **no** baseline takes nothing from the survivor, and
+    /// a survivor with none adopts the copy's whole.
+    @Test func aDuplicateEventNoteWithoutABaselineNeitherClearsNorBlocksTheOther() throws {
+        for survivorHasIt in [true, false] {
+            let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+            let modelContext = ModelContext(container)
+            let survivor = Note(
+                kind: .meeting,
+                title: "Design review",
+                content: String(repeating: "Agenda line. ", count: 20),
+                calendarEventID: "event-11132-b"
+            )
+            let mergedAway = Note(kind: .meeting, title: "", content: "x", calendarEventID: "event-11132-b")
+            let holder = survivorHasIt ? survivor : mergedAway
+            let stamp = Date(timeIntervalSince1970: 3_000)
+            holder.eventNotesMergedAt = stamp
+            holder.eventNotesMergedNativeHash = "native-hash"
+            holder.eventNotesMergedContentHash = "content-hash"
+            let survivorID = survivor.id
+            modelContext.insert(survivor)
+            modelContext.insert(mergedAway)
+            try modelContext.save()
+
+            let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+            #expect(report.duplicateNotesMerged == 1)
+            let note = try #require(try modelContext.fetch(FetchDescriptor<Note>()).first { $0.id == survivorID })
+            #expect(note.eventNotesMergedAt == stamp, "survivorHasIt=\(survivorHasIt)")
+            #expect(note.eventNotesMergedNativeHash == "native-hash", "survivorHasIt=\(survivorHasIt)")
+            #expect(note.eventNotesMergedContentHash == "content-hash", "survivorHasIt=\(survivorHasIt)")
+        }
+    }
+
     // MARK: - T-340, the tasks already in the surviving project
 
     /// **The merge branch.** Two `Work` contexts and a project present under each with the same

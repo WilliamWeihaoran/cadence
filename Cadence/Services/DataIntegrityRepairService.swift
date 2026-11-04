@@ -1388,6 +1388,7 @@ nonisolated enum DataIntegrityRepairService {
         if target.eventEndMin < 0, source.eventEndMin >= 0 {
             target.eventEndMin = source.eventEndMin
         }
+        mergeEventNotesBaseline(from: source, into: target)
         if target.area == nil {
             target.area = source.area
         }
@@ -1396,6 +1397,24 @@ nonisolated enum DataIntegrityRepairService {
         }
 
         target.tags = mergedTags(primary: target.tags ?? [], secondary: source.tags ?? [])
+    }
+
+    /// **[[T-11132]] — the survivor keeps the NEWER merge baseline, the three fields as one unit.**
+    /// The baseline ([[T-8162]] / [[T-8163]]) says "at `eventNotesMergedAt` this note held Apple
+    /// Calendar's text, which hashed to X, beside content that hashed to Y". The newest one is the
+    /// latest thing either duplicate saw from Apple, so it carries the most recent dismissal: a
+    /// paragraph the user deleted on the newer row stays deleted, where the older row's baseline
+    /// would re-append it under conflict labels. A tie, or a source with none, keeps the target's.
+    /// Never mixed field by field — a native hash from one row beside a content hash from the other
+    /// asserts a state neither row was ever in. If the merge above glued the two bodies, the content
+    /// hash no longer matches, so a later Apple edit is a labelled conflict (rule 3) rather than an
+    /// in-place refresh: the honest answer, and lossless.
+    private static func mergeEventNotesBaseline(from source: Note, into target: Note) {
+        guard let sourceMergedAt = source.eventNotesMergedAt else { return }
+        if let targetMergedAt = target.eventNotesMergedAt, targetMergedAt >= sourceMergedAt { return }
+        target.eventNotesMergedAt = sourceMergedAt
+        target.eventNotesMergedNativeHash = source.eventNotesMergedNativeHash
+        target.eventNotesMergedContentHash = source.eventNotesMergedContentHash
     }
 
     private static func fillEmptyString(_ keyPath: ReferenceWritableKeyPath<Note, String>, on target: Note, from source: Note) {

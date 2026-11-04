@@ -1287,6 +1287,15 @@ nonisolated enum CadenceArchiveImportService {
             model.eventDateKey = record.eventDateKey
             model.eventStartMin = record.eventStartMin
             model.eventEndMin = record.eventEndMin
+            // [[T-11132]]: the merge baseline travels WITH the content just written, as one unit,
+            // and an archive older than the fields means no baseline rather than "keep this
+            // device's". Deliberately unlike [[T-3116]]'s calendar pairs, which describe nothing
+            // the archive overwrites: this baseline fingerprints `content`, so the destination's
+            // would describe text the overwrite has just replaced. No baseline is the lossless,
+            // pre-[[T-8162]] containment behaviour.
+            model.eventNotesMergedAt = record.eventNotesMergedAt
+            model.eventNotesMergedNativeHash = record.eventNotesMergedNativeHash ?? ""
+            model.eventNotesMergedContentHash = record.eventNotesMergedContentHash ?? ""
             model.legacySourceKindRaw = record.legacySourceKindRaw
             model.legacySourceID = record.legacySourceID
             // Through the shared filing helper, not `model.folderPath = record.folderPath`.
