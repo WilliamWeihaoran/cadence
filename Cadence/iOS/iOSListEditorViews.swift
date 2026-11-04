@@ -339,9 +339,12 @@ struct iOSListEditorSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
+                    // [[T-10046]]: Escape on an iPad keyboard cancels, as the Mac's list sheets'
+                    // Cancel does ([[T-7266]]).
                     Button("Cancel") {
                         dismiss()
                     }
+                    .keyboardShortcut(.cancelAction)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     // [[T-8563]] (a): a new list is created, an existing one saved.

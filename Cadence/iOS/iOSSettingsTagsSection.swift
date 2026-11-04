@@ -421,14 +421,25 @@ private struct iOSTagSettingsRow: View {
             }
             HStack(spacing: 10) {
                 Spacer(minLength: 0)
-                iOSActionButton(title: "Cancel", role: .secondary, size: .compact) {
-                    saveFailureNotice = nil
-                    isEditing = false
-                }
+                iOSActionButton(title: "Cancel", role: .secondary, size: .compact, action: cancelEditing)
                 iOSActionButton(title: "Save", role: .primary, size: .compact,
                                 isDisabled: !canSave, action: requestSave)
             }
         }
+        // [[T-10046]]: Escape cancels through the Cancel button's own `cancelEditing`, focus-scoped
+        // as the Mac tag card's is ([[T-10033]]), never a `.cancelAction` key equivalent: several
+        // cards can be open at once, and a screen-wide key would not know which it answers.
+        .onKeyPress(.escape) {
+            cancelEditing()
+            return .handled
+        }
+    }
+
+    /// **The Cancel button, and Escape in any of the card's fields.** Discards the draft and closes
+    /// the editor; the next pencil tap reloads the draft from the tag.
+    private func cancelEditing() {
+        saveFailureNotice = nil
+        isEditing = false
     }
 
     /// **The Save button. T-6261: it asks before it edits the user's own sentences.**

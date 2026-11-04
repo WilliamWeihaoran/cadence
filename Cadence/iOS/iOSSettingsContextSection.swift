@@ -108,9 +108,12 @@ struct iOSContextEditorSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     // [[T-9991]]: blue, as every other iOS sheet's Cancel is. `Theme.muted` made
                     // this the one sheet whose Cancel read as a disabled control.
+                    // [[T-10046]]: Escape on an iPad keyboard cancels, as the Mac's New Context
+                    // sheet's Cancel does ([[T-7266]]).
                     Button("Cancel") {
                         dismiss()
                     }
+                    .keyboardShortcut(.cancelAction)
                     .tint(Theme.blue)
                 }
 
