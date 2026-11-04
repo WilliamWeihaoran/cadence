@@ -481,7 +481,8 @@ nonisolated enum CadenceSearchSuggestionWindow {
     }
 }
 
-/// **What an empty search field suggests for tasks and notes, on both surfaces** ([[T-8764]]).
+/// **What an empty search field suggests for tasks, notes and lists, on both surfaces**
+/// ([[T-8764]]; lists [[T-11194]]).
 ///
 /// iOS Search already answered "what is on today's plate" and "what was I just writing"; Cmd+K had
 /// no idle branch for either section, so an empty query scored every row the same and
@@ -528,6 +529,48 @@ nonisolated enum CadenceSearchIdleSuggestions {
     static func hasVisibleText(_ note: Note) -> Bool {
         !note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
             !note.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// **Areas before projects, each in the user's own arrangement, ties broken by identity**
+    /// (T-498, [[T-11194]]) — one window across both kinds, split back into the two sections.
+    ///
+    /// iOS Search cut this window by hand from its own row candidates while Cmd+K had no idle
+    /// branch for lists at all: an empty query scored every list alike, `CadenceSearchMatcher.rank`
+    /// broke the tie on title, and the palette listed Areas and Projects **A to Z** where the phone
+    /// listed them in the order the sidebar shows them. The same defect [[T-8764]] fixed for tasks
+    /// and notes. Membership (`CadenceListSearchSupport.isSearchable`) stays the caller's; this
+    /// orders what it is given. `Area.order` and `Project.order` both default to 0, so the identity
+    /// leg decides membership at the window's edge for every list made outside the reorder UI.
+    static func lists(areas: [Area], projects: [Project], limit: Int = .max) -> (areas: [Area], projects: [Project]) {
+        enum Item {
+            case area(Area)
+            case project(Project)
+        }
+        let window = CadenceSearchSuggestionWindow.take(
+            areas.map(Item.area) + projects.map(Item.project),
+            limit: limit,
+            identity: { item in
+                switch item {
+                case .area(let area): CadenceSearchIdentity.area(area.id)
+                case .project(let project): CadenceSearchIdentity.project(project.id)
+                }
+            },
+            orderedBefore: { lhs, rhs in
+                func rank(_ item: Item) -> CadenceSearchSuggestionRank {
+                    switch item {
+                    case .area(let area): CadenceSearchSuggestionRank(table: 0, order: area.order)
+                    case .project(let project): CadenceSearchSuggestionRank(table: 1, order: project.order)
+                    }
+                }
+                return rank(lhs) < rank(rhs)
+            }
+        )
+        return window.reduce(into: (areas: [Area](), projects: [Project]())) { out, item in
+            switch item {
+            case .area(let area): out.areas.append(area)
+            case .project(let project): out.projects.append(project)
+            }
+        }
     }
 
     /// Most recently edited first, ties broken by identity (T-498). Two notes share an `updatedAt`

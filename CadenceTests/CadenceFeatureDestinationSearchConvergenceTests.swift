@@ -105,10 +105,16 @@ struct CadenceFeatureDestinationSearchConvergenceTests {
             CadenceSourceScan.declarationBody("extension GlobalSearchPageDefinition", in: source),
             "the Pages catalog no longer reads as an extension this scan can scope to"
         )
-        let entries = CadenceSourceScan.matchCount(#"\.init\(feature: \."#, in: catalog)
+        // [[T-11194]]: the catalog is the shared Pages order, not a list of its own, so the one
+        // order iOS Search draws is the one the palette draws.
         #expect(
-            entries == GlobalSearchPageDefinition.all.count,
-            "scanned \(entries) catalog entries against \(GlobalSearchPageDefinition.all.count) rows"
+            CadenceSourceScan.matchCount(#"CadenceFeatureDestination\.searchPages"#, in: catalog) == 1,
+            "the Pages catalog no longer reads the shared Pages order"
+        )
+        #expect(CadenceSourceScan.matchCount(#"\.init\(feature: \.[a-z]"#, in: catalog) == 0)
+        #expect(
+            GlobalSearchPageDefinition.all.map(\.feature)
+                == CadenceFeatureDestination.searchPages.filter { $0.macSidebarItem != nil }
         )
         #expect(
             CadenceSourceScan.matchCount(#"\""#, in: catalog) == 0,

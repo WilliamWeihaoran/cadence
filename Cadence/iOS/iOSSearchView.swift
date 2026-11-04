@@ -154,36 +154,12 @@ struct iOSSearchView: View {
     /// to `isActive`, so a completed or archived list was findable on the Mac and invisible here
     /// even though tapping one would have opened its detail page perfectly well.
     private var listResults: [CadenceSearchSection: [iOSSearchResult]] {
-        // [[T-8526]]: the facts are `CadenceListSearchSupport.rowFacts`'s, the same Cmd+K draws;
-        // this row keeps its own two lines and separators.
-        let listItems = areas.filter { CadenceListSearchSupport.isSearchable($0, query: trimmedQuery) }.map { area in
-            let facts = CadenceListSearchSupport.rowFacts(for: area)
-            return iOSSearchListCandidate(
-                title: CadenceListSearchSupport.resultTitle(for: area),
-                subtitle: facts.containers.joined(separator: " / "),
-                detail: facts.status.joined(separator: " · "),
-                icon: area.icon,
-                color: Color(hex: area.colorHex),
-                route: .area(area.id),
-                suggestionOrder: area.order,
-                fields: CadenceListSearchSupport.searchFields(for: area)
-            )
-        } + projects.filter { CadenceListSearchSupport.isSearchable($0, query: trimmedQuery) }.map { project in
-            let facts = CadenceListSearchSupport.rowFacts(for: project)
-            return iOSSearchListCandidate(
-                title: CadenceListSearchSupport.resultTitle(for: project),
-                subtitle: facts.containers.joined(separator: " / "),
-                detail: facts.status.joined(separator: " · "),
-                icon: project.icon,
-                color: Color(hex: project.colorHex),
-                route: .project(project.id),
-                suggestionOrder: project.order,
-                fields: CadenceListSearchSupport.searchFields(for: project)
-            )
-        }
+        let searchableAreas = areas.filter { CadenceListSearchSupport.isSearchable($0, query: trimmedQuery) }
+        let searchableProjects = projects.filter { CadenceListSearchSupport.isSearchable($0, query: trimmedQuery) }
 
         if isSearching {
-            let matched = listItems.compactMap { candidate -> (CadenceSearchSection, iOSSearchResult)? in
+            let candidates = searchableAreas.map(listCandidate(for:)) + searchableProjects.map(listCandidate(for:))
+            let matched = candidates.compactMap { candidate -> (CadenceSearchSection, iOSSearchResult)? in
                 guard let score = CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: candidate.fields) else {
                     return nil
                 }
@@ -196,23 +172,50 @@ struct iOSSearchView: View {
             }
         }
 
-        // Areas then projects, each in the user's arrangement, ties broken by identity (T-498).
-        // `Area.order` and `Project.order` both default to 0, so the `@Query` sort this used to
-        // prefix straight off is partial for every list made outside the reorder UI.
+        // Areas then projects, each in the user's arrangement, ties broken by identity (T-498) --
+        // the order Cmd+K's idle Areas and Projects read too ([[T-11194]]).
         //
         // **One window of eight across both kinds, split afterwards** ([[T-8765]]). The two are
         // separate sections now, but a window apiece would have doubled the idle suggestions on a
         // screen that shows five other sections under them; the rows a reader sees idle are the
         // same rows as before, under two headings instead of one.
-        let suggested = CadenceSearchSuggestionWindow.take(
-            listItems,
-            limit: 8,
-            identity: \.identity,
-            orderedBefore: { $0.suggestionRank < $1.suggestionRank }
+        let suggested = CadenceSearchIdleSuggestions.lists(
+            areas: searchableAreas,
+            projects: searchableProjects,
+            limit: CadenceSearchIdleSuggestions.limit
         )
-        return [.areas, .projects].reduce(into: [:]) { out, section in
-            out[section] = suggested.filter { $0.section == section }.map { $0.result(score: 0) }
-        }
+        return [
+            .areas: suggested.areas.map { listCandidate(for: $0).result(score: 0) },
+            .projects: suggested.projects.map { listCandidate(for: $0).result(score: 0) }
+        ]
+    }
+
+    // [[T-8526]]: the facts are `CadenceListSearchSupport.rowFacts`'s, the same Cmd+K draws; this
+    // row keeps its own two lines and separators.
+    private func listCandidate(for area: Area) -> iOSSearchListCandidate {
+        let facts = CadenceListSearchSupport.rowFacts(for: area)
+        return iOSSearchListCandidate(
+            title: CadenceListSearchSupport.resultTitle(for: area),
+            subtitle: facts.containers.joined(separator: " / "),
+            detail: facts.status.joined(separator: " · "),
+            icon: area.icon,
+            color: Color(hex: area.colorHex),
+            route: .area(area.id),
+            fields: CadenceListSearchSupport.searchFields(for: area)
+        )
+    }
+
+    private func listCandidate(for project: Project) -> iOSSearchListCandidate {
+        let facts = CadenceListSearchSupport.rowFacts(for: project)
+        return iOSSearchListCandidate(
+            title: CadenceListSearchSupport.resultTitle(for: project),
+            subtitle: facts.containers.joined(separator: " / "),
+            detail: facts.status.joined(separator: " · "),
+            icon: project.icon,
+            color: Color(hex: project.colorHex),
+            route: .project(project.id),
+            fields: CadenceListSearchSupport.searchFields(for: project)
+        )
     }
 
     /// **Event notes have their own section** ([[T-8765]]). They used to be mixed into Notes here
@@ -584,8 +587,9 @@ struct iOSSearchView: View {
         visibleSections.allSatisfy { results(for: $0).isEmpty }
     }
 
+    /// The one Pages order both surfaces draw ([[T-11194]]); the idle five are its first five.
     private var searchableFeatureDestinations: [CadenceFeatureDestination] {
-        CadenceFeatureDestination.allCases.filter { $0 != .search }
+        CadenceFeatureDestination.searchPages
     }
 
     /// How many results a section lists before its count row. Unchanged by T-3089 — the cap was

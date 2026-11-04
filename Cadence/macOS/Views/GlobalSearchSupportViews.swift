@@ -330,16 +330,14 @@ extension GlobalSearchPageDefinition {
     /// This list is still shorter than `CadenceFeatureDestination.allCases`, and deliberately:
     /// `.lists` is the sidebar's scrolling region and `.search` is the palette itself, so neither
     /// is a row the palette can open. That is a routing fact, not a copy one.
+    ///
+    /// **The order is `CadenceFeatureDestination.searchPages`'s, shared with iOS Search**
+    /// ([[T-11194]]), and the one destination it drops here is the routing fact above: `.lists`
+    /// has no `macSidebarItem`.
     static var all: [GlobalSearchPageDefinition] {
-        [
-            .init(feature: .today),
-            .init(feature: .allTasks),
-            .init(feature: .inbox),
-            .init(feature: .focus),
-            .init(feature: .calendar),
-            .init(feature: .notes),
-            .init(feature: .settings)
-        ]
+        CadenceFeatureDestination.searchPages
+            .filter { $0.macSidebarItem != nil }
+            .map { .init(feature: $0) }
     }
 }
 

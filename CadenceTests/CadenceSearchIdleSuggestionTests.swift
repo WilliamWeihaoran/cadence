@@ -2,6 +2,7 @@
 // iOS half is pinned by scanning `iOSSearchView.swift`, which this bundle cannot call.
 #if os(macOS)
 import Foundation
+import SwiftData
 import Testing
 @testable import Cadence
 
@@ -142,6 +143,107 @@ struct CadenceSearchIdleSuggestionTests {
         #expect(Set(searched.map(\.id)) == [CadenceSearchIdentity.eventNote(newer.id), CadenceSearchIdentity.eventNote(older.id)])
     }
 
+    // MARK: - [[T-11194]]: lists, pages and commands idle in one order, and event notes excerpt
+
+    private struct ListFixture {
+        let container: ModelContainer
+        let areas: [Area]
+        let projects: [Project]
+    }
+
+    /// Manual order runs opposite to title order in both tables, and two areas tie on `order` so the
+    /// identity leg has something to decide.
+    private func makeListFixture() throws -> ListFixture {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let home = Context(name: "Home")
+        modelContext.insert(home)
+        let areaZulu = Area(name: "Zulu area", context: home)
+        areaZulu.order = 0
+        let areaYankeeA = Area(name: "Yankee area", context: home)
+        areaYankeeA.order = 1
+        let areaYankeeB = Area(name: "Xray area", context: home)
+        areaYankeeB.order = 1
+        let projectWhiskey = Project(name: "Whiskey project", context: home)
+        projectWhiskey.order = 0
+        let projectAlpha = Project(name: "Alpha project", context: home)
+        projectAlpha.order = 5
+        for model in [areaZulu, areaYankeeA, areaYankeeB] { modelContext.insert(model) }
+        for model in [projectWhiskey, projectAlpha] { modelContext.insert(model) }
+        try modelContext.save()
+        return ListFixture(
+            container: container,
+            areas: [areaYankeeB, areaZulu, areaYankeeA],
+            projects: [projectAlpha, projectWhiskey]
+        )
+    }
+
+    @Test func theSharedListRuleIsAreasThenProjectsInTheUsersOrderTiesOnIdentity() throws {
+        let fixture = try makeListFixture()
+        let areas = fixture.areas
+        let tied = [areas[0], areas[2]].sorted { $0.id.uuidString < $1.id.uuidString }
+        let expectedAreas = [areas[1]] + tied
+        let expectedProjects = [fixture.projects[1], fixture.projects[0]]
+
+        let all = CadenceSearchIdleSuggestions.lists(areas: fixture.areas, projects: fixture.projects)
+        #expect(all.areas.map(\.id) == expectedAreas.map(\.id))
+        #expect(all.projects.map(\.id) == expectedProjects.map(\.id))
+
+        // One window across both kinds: four rows is all three areas and the first project.
+        let window = CadenceSearchIdleSuggestions.lists(areas: fixture.areas, projects: fixture.projects, limit: 4)
+        #expect(window.areas.map(\.id) == expectedAreas.map(\.id))
+        #expect(window.projects.map(\.id) == [expectedProjects[0].id])
+    }
+
+    @Test func anEmptyPaletteQueryListsAreasAndProjectsInTheUsersOrderNotAToZ() throws {
+        let fixture = try makeListFixture()
+        let shared = CadenceSearchIdleSuggestions.lists(areas: fixture.areas, projects: fixture.projects)
+
+        for query in ["", "   "] {
+            let areas = GlobalSearchIndexSupport.areaResults(areas: fixture.areas, query: query)
+            let projects = GlobalSearchIndexSupport.projectResults(projects: fixture.projects, query: query)
+            #expect(areas.map(\.id) == shared.areas.map { CadenceSearchIdentity.area($0.id) }, "query \"\(query)\"")
+            #expect(projects.map(\.id) == shared.projects.map { CadenceSearchIdentity.project($0.id) }, "query \"\(query)\"")
+        }
+        // Non-vacuity: A to Z, which the palette drew before, is a different list for both kinds.
+        let idleAreas = GlobalSearchIndexSupport.areaResults(areas: fixture.areas, query: "")
+        #expect(idleAreas.map(\.title) != idleAreas.map(\.title).sorted())
+        let idleProjects = GlobalSearchIndexSupport.projectResults(projects: fixture.projects, query: "")
+        #expect(idleProjects.map(\.title) == ["Whiskey project", "Alpha project"])
+
+        // Searching still ranks.
+        let searched = GlobalSearchIndexSupport.projectResults(projects: fixture.projects, query: "alpha")
+        #expect(searched.map(\.title) == ["Alpha project"])
+    }
+
+    @Test func anEmptyPaletteQueryListsPagesAndCommandsInCatalogOrder() {
+        let pages = GlobalSearchIndexSupport.pageResults(query: "", hiddenTabs: [], sidebarTabColorsRaw: "")
+        let expectedPages = CadenceFeatureDestination.searchPages.filter { $0.macSidebarItem != nil }
+        #expect(pages.map(\.title) == expectedPages.map(\.title))
+        #expect(pages.count == 7, "read \(pages.count) idle page rows")
+        // The one destination the palette leaves out is the routing fact, and nothing else.
+        #expect(Set(CadenceFeatureDestination.searchPages).subtracting(expectedPages) == [.lists])
+        #expect(!CadenceFeatureDestination.searchPages.contains(.search))
+        #expect(pages.map(\.title) != pages.map(\.title).sorted(), "the idle Pages section reads A to Z again")
+
+        let commands = GlobalSearchIndexSupport.commandResults(query: "", sidebarTabColorsRaw: "")
+        #expect(commands.map(\.title) == GlobalSearchCommandDefinition.all.map(\.title))
+        #expect(commands.first?.title == "New Task")
+
+        // Searching still ranks: an exact title beats the catalog's first row.
+        #expect(GlobalSearchIndexSupport.pageResults(query: "settings", hiddenTabs: [], sidebarTabColorsRaw: "").first?.title == "Settings")
+    }
+
+    @Test func aPaletteEventNoteRowCarriesTheSharedBodyExcerpt() {
+        let note = Note(kind: .meeting, title: "Planning sync", content: "Agree the **launch** date")
+        let row = GlobalSearchIndexSupport.eventNoteResults(notes: [note], query: "planning", taskTitles: [:]).first
+        #expect(row?.detail == CadenceSearchNoteExcerpt.text(for: note, taskTitles: [:]))
+        #expect(row?.detail.isEmpty == false)
+        #expect(row?.detail.contains("launch") == true)
+        let idle = GlobalSearchIndexSupport.eventNoteResults(notes: [note], query: "", taskTitles: [:]).first
+        #expect(idle?.detail == row?.detail)
+    }
+
     // MARK: - iOS reads it (source shape: `Cadence/iOS/` is behind `#if os(iOS)`)
 
     @Test func iOSSearchCutsItsIdleTaskAndNoteWindowsFromTheSharedRule() throws {
@@ -152,9 +254,20 @@ struct CadenceSearchIdleSuggestionTests {
 
         #expect(CadenceSourceScan.matchCount(#"CadenceSearchIdleSuggestions\.tasks\("#, in: code) == 1)
         #expect(CadenceSourceScan.matchCount(#"CadenceSearchIdleSuggestions\.notes\("#, in: code) == 1)
-        #expect(CadenceSourceScan.matchCount(#"limit: CadenceSearchIdleSuggestions\.limit"#, in: code) == 2)
+        // Three: tasks, notes, and the lists window [[T-11194]] moved onto the shared rule.
+        #expect(CadenceSourceScan.matchCount(#"limit: CadenceSearchIdleSuggestions\.limit"#, in: code) == 3)
         // The hand-rolled task predicate the shared rule replaced.
         #expect(!code.contains("$0.scheduledDate == today"))
+    }
+
+    @Test func iOSSearchCutsItsIdleListsAndPagesFromTheSharedOrder() throws {
+        let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchView.swift"))
+        #expect(code.contains("struct iOSSearchView"))
+        #expect(CadenceSourceScan.matchCount(#"CadenceSearchIdleSuggestions\.lists\("#, in: code) == 1)
+        #expect(CadenceSourceScan.matchCount(#"CadenceFeatureDestination\.searchPages"#, in: code) == 1)
+        // The two the shared order replaced: a window cut from the row candidates, and allCases.
+        #expect(!code.contains("CadenceSearchSuggestionWindow.take("))
+        #expect(!code.contains("CadenceFeatureDestination.allCases"))
     }
 }
 #endif

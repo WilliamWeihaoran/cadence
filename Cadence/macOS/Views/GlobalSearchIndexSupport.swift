@@ -142,9 +142,13 @@ enum GlobalSearchIndexSupport {
     /// Settings → Sidebar writes and both sidebars read. Threading it this far is the point of
     /// T-244: the palette hand-assigned its own `Theme` accents and never read this string, so a
     /// retinted destination kept its old colour here.
+    ///
+    /// **An empty query lists the catalog in its declared order** ([[T-11194]]). Ranking it scored
+    /// every row alike and broke the tie on title, so the idle section read All Tasks, Calendar,
+    /// Focus, New Task: the [[T-8764]] defect, in the one section that defect left behind.
     static func commandResults(query: String, sidebarTabColorsRaw: String) -> [GlobalSearchResult] {
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
-        return rankedResults(
+        return idleOrRanked(
             GlobalSearchCommandDefinition.all.compactMap { definition in
                 guard matches(query: preparedQuery, fields: [definition.title, definition.subtitle, definition.aliases]) else { return nil }
                 return GlobalSearchResult(
@@ -161,13 +165,15 @@ enum GlobalSearchIndexSupport {
         )
     }
 
+    /// Idle, the catalog order, which is `CadenceFeatureDestination.searchPages` -- the order iOS
+    /// Search draws its Pages section in ([[T-11194]]); searching, ranked.
     static func pageResults(
         query: String,
         hiddenTabs: Set<SidebarStaticDestination>,
         sidebarTabColorsRaw: String
     ) -> [GlobalSearchResult] {
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
-        return rankedResults(GlobalSearchPageDefinition.all.compactMap { page in
+        return idleOrRanked(GlobalSearchPageDefinition.all.compactMap { page in
             // A destination the sidebar does not route to as a page cannot be a palette row.
             // Every entry in the catalog has one; this is the guard rather than a fallback so a
             // future `.lists` or `.search` entry drops out instead of opening the wrong page.
@@ -198,40 +204,59 @@ enum GlobalSearchIndexSupport {
     /// "1 active task" rather than the hand-spelled "1 active tasks" ([[T-4455]]). Which facts the
     /// subtitle names, and in what order, is `CadenceListSearchSupport.rowFacts` — the same facts
     /// iOS Search's row lays out on two lines ([[T-8526]]); only the ` • ` is this surface's.
+    ///
+    /// **An empty query suggests the lists in the user's own arrangement** ([[T-11194]]), through
+    /// `CadenceSearchIdleSuggestions.lists` as iOS Search does, rather than ranking every list alike
+    /// and listing them A to Z. The palette keeps every one (its Areas and Projects are uncapped);
+    /// the phone cuts the same order at eight.
     static func areaResults(areas: [Area], query: String) -> [GlobalSearchResult] {
+        let searchable = areas.filter { CadenceListSearchSupport.isSearchable($0, query: query) }
+        guard CadenceListSearchSupport.isSearching(query) else {
+            return CadenceSearchIdleSuggestions.lists(areas: searchable, projects: []).areas.map { areaResult(for: $0) }
+        }
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
-        return rankedResults(areas.compactMap { area in
-            guard CadenceListSearchSupport.isSearchable(area, query: query) else { return nil }
+        return rankedResults(searchable.compactMap { area in
             guard matches(query: preparedQuery, fields: CadenceListSearchSupport.searchFields(for: area)) else { return nil }
-            return GlobalSearchResult(
-                id: CadenceSearchIdentity.area(area.id),
-                category: .areas,
-                // [[T-7202]]: a blank name drew a row with no title; iOS Search's list rows
-                // already say "Untitled Area" / "Untitled Project".
-                title: CadenceTitleNormalization.display(area.name, fallback: CadenceTitleNormalization.defaultAreaName),
-                subtitle: CadenceListSearchSupport.rowFacts(for: area).facts.joined(separator: " • "),
-                icon: area.icon,
-                tintHex: area.colorHex,
-                destination: .area(area.id)
-            )
+            return areaResult(for: area)
         }, query: query, preparedQuery: preparedQuery)
     }
 
+    static func areaResult(for area: Area) -> GlobalSearchResult {
+        GlobalSearchResult(
+            id: CadenceSearchIdentity.area(area.id),
+            category: .areas,
+            // [[T-7202]]: a blank name drew a row with no title; iOS Search's list rows
+            // already say "Untitled Area" / "Untitled Project".
+            title: CadenceTitleNormalization.display(area.name, fallback: CadenceTitleNormalization.defaultAreaName),
+            subtitle: CadenceListSearchSupport.rowFacts(for: area).facts.joined(separator: " • "),
+            icon: area.icon,
+            tintHex: area.colorHex,
+            destination: .area(area.id)
+        )
+    }
+
     static func projectResults(projects: [Project], query: String) -> [GlobalSearchResult] {
+        let searchable = projects.filter { CadenceListSearchSupport.isSearchable($0, query: query) }
+        guard CadenceListSearchSupport.isSearching(query) else {
+            return CadenceSearchIdleSuggestions.lists(areas: [], projects: searchable).projects.map { projectResult(for: $0) }
+        }
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
-        return rankedResults(projects.compactMap { project in
-            guard CadenceListSearchSupport.isSearchable(project, query: query) else { return nil }
+        return rankedResults(searchable.compactMap { project in
             guard matches(query: preparedQuery, fields: CadenceListSearchSupport.searchFields(for: project)) else { return nil }
-            return GlobalSearchResult(
-                id: CadenceSearchIdentity.project(project.id),
-                category: .projects,
-                title: CadenceTitleNormalization.display(project.name, fallback: CadenceTitleNormalization.defaultProjectName),
-                subtitle: CadenceListSearchSupport.rowFacts(for: project).facts.joined(separator: " • "),
-                icon: project.icon,
-                tintHex: project.colorHex,
-                destination: .project(project.id)
-            )
+            return projectResult(for: project)
         }, query: query, preparedQuery: preparedQuery)
+    }
+
+    static func projectResult(for project: Project) -> GlobalSearchResult {
+        GlobalSearchResult(
+            id: CadenceSearchIdentity.project(project.id),
+            category: .projects,
+            title: CadenceTitleNormalization.display(project.name, fallback: CadenceTitleNormalization.defaultProjectName),
+            subtitle: CadenceListSearchSupport.rowFacts(for: project).facts.joined(separator: " • "),
+            icon: project.icon,
+            tintHex: project.colorHex,
+            destination: .project(project.id)
+        )
     }
 
     /// **Completed work is excluded unless the caller asks for it** (T-1476), which is the iOS
@@ -433,7 +458,10 @@ enum GlobalSearchIndexSupport {
                 subtitle: dateLabel,
                 icon: "doc.text",
                 tintHex: Theme.purpleHex,
-                destination: .eventNote(note.id)
+                destination: .eventNote(note.id),
+                // [[T-11194]]: the body excerpt iOS Search draws under the same event note, from
+                // the one shared rule the Notes rows below already read ([[T-8763]]).
+                detail: CadenceSearchNoteExcerpt.text(for: note, taskTitles: taskTitles)
             )
         }
         guard isSearching else { return rows }
@@ -541,6 +569,17 @@ enum GlobalSearchIndexSupport {
             fields: { [$0.title, $0.subtitle] },
             identity: { $0.id }
         )
+    }
+
+    /// The two fixed catalogs, Commands and Pages: in declared order while nothing is typed,
+    /// ranked once something is ([[T-11194]]).
+    static func idleOrRanked(
+        _ results: [GlobalSearchResult],
+        query: String,
+        preparedQuery: CadenceSearchMatcher.PreparedQuery? = nil
+    ) -> [GlobalSearchResult] {
+        guard CadenceListSearchSupport.isSearching(query) else { return results }
+        return rankedResults(results, query: query, preparedQuery: preparedQuery)
     }
 
     static func matches(query: CadenceSearchMatcher.PreparedQuery, fields: [String]) -> Bool {

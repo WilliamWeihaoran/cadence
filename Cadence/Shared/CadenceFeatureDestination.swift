@@ -64,6 +64,27 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         .focus
     ]
 
+    /// **The Pages section of search, in the order both surfaces draw it** ([[T-11194]]).
+    ///
+    /// iOS Search listed `allCases` minus `.search` (Focus before Inbox) and Cmd+K kept its own
+    /// catalog (Inbox before Focus), then ranked an empty query, which ordered the idle section
+    /// A to Z; so the phone opened on Today, All Tasks, Focus, Inbox, Calendar and the Mac on All
+    /// Tasks, Calendar, Focus, Inbox, Notes. One order now, the Mac catalog's: Inbox sits by All
+    /// Tasks because it is a view inside that destination. `.search` is the surface itself.
+    /// What each platform leaves out of this list is a routing fact, not a second order: Cmd+K
+    /// drops `.lists`, which the Mac sidebar draws as a scrolling region rather than a page
+    /// (`macSidebarItem` is `nil`). How many rows an idle section shows stays each surface's.
+    static let searchPages: [CadenceFeatureDestination] = [
+        .today,
+        .allTasks,
+        .inbox,
+        .focus,
+        .calendar,
+        .notes,
+        .lists,
+        .settings
+    ]
+
     // `workspaceDrawerSections` used to list every destination for the iPad drawer to draw. The
     // drawer is gone entirely — lists are rows in the sidebar now — and `primaryOrder`,
     // `secondaryOrder` and `utilityOrder` went with it: they were the iPad sidebar's own PLAN /

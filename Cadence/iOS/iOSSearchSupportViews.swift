@@ -95,28 +95,15 @@ struct iOSSearchListCandidate {
     let icon: String
     let color: Color
     let route: iOSListRoute
-    /// The row's `Area.order` / `Project.order` — the user's own arrangement, which is what the
-    /// **idle** suggestion list is cut from. See `suggestionRank`.
-    let suggestionOrder: Int
     let fields: [String]
 
-    /// Areas and projects are drawn as two sections since [[T-8765]], but they are still cut from
-    /// one idle suggestion window, so the identity has to carry which table the row came from —
-    /// `CadenceSearchIdentity`'s prefix is exactly that.
+    /// `CadenceSearchIdentity`'s spelling, which carries which table the row came from. The idle
+    /// window is cut on the models by `CadenceSearchIdleSuggestions.lists` ([[T-11194]]), the
+    /// order Cmd+K reads too, so this candidate no longer carries a suggestion rank of its own.
     var identity: String {
         switch route {
         case .area(let id): CadenceSearchIdentity.area(id)
         case .project(let id): CadenceSearchIdentity.project(id)
-        }
-    }
-
-    /// Areas before projects, then the user's manual order. Derived from `route` rather than
-    /// passed in for the same reason `identity` is: a table half that disagrees with the row's
-    /// destination is not representable.
-    var suggestionRank: CadenceSearchSuggestionRank {
-        switch route {
-        case .area: CadenceSearchSuggestionRank(table: 0, order: suggestionOrder)
-        case .project: CadenceSearchSuggestionRank(table: 1, order: suggestionOrder)
         }
     }
 

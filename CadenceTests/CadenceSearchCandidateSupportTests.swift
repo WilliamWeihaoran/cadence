@@ -879,10 +879,11 @@ struct CadenceSearchCandidateSupportTests {
         }
         #expect(!stripped.contains("private var progressResults"))
 
-        // Three idle branches, three windows: the lists window here, and the task and note windows
-        // through `CadenceSearchIdleSuggestions`, which cuts them with the same helper and is the
-        // rule Cmd+K shares ([[T-8764]]).
-        #expect(CadenceSourceScan.matchCount("CadenceSearchSuggestionWindow\\.take\\(", in: stripped) == 1)
+        // Three idle branches, three windows, all through `CadenceSearchIdleSuggestions`, which
+        // cuts them with the one helper and is the rule Cmd+K shares ([[T-8764]]; the lists window
+        // moved there from this file under [[T-11194]], so none is cut here by hand).
+        #expect(CadenceSourceScan.matchCount("CadenceSearchSuggestionWindow\\.take\\(", in: stripped) == 0)
+        #expect(CadenceSourceScan.matchCount("CadenceSearchIdleSuggestions\\.lists\\(", in: stripped) == 1)
         #expect(CadenceSourceScan.matchCount("CadenceSearchIdleSuggestions\\.tasks\\(", in: stripped) == 1)
         #expect(CadenceSourceScan.matchCount("CadenceSearchIdleSuggestions\\.notes\\(", in: stripped) == 1)
 
@@ -897,13 +898,14 @@ struct CadenceSearchCandidateSupportTests {
         #expect(CadenceSourceScan.matchCount("\\.prefix\\(8\\)", in: "  return notes.prefix(8)\n") == 1)
 
         // Each window's identity leg is the shared spelling, not a tenth inline one.
-        #expect(stripped.contains("identity: \\.identity"), "the lists window ties on something else")
         let shared = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceSearchCandidateSupport.swift")
         )
         for identity in [
             "identity: { CadenceSearchIdentity.task($0.id) }",
-            "identity: { CadenceSearchIdentity.note($0.id) }"
+            "identity: { CadenceSearchIdentity.note($0.id) }",
+            "case .area(let area): CadenceSearchIdentity.area(area.id)",
+            "case .project(let project): CadenceSearchIdentity.project(project.id)"
         ] {
             #expect(shared.contains(identity), "a shared idle window ties on something else: \(identity)")
         }
@@ -1080,7 +1082,11 @@ struct CadenceSearchCandidateSupportTests {
 
         let raw = try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath)
         let stripped = CadenceSourceScan.strippingComments(raw)
-        let body = try #require(CadenceSourceScan.declarationBody("private var listResults", in: stripped))
+        // [[T-11194]]: the two row builders moved out of `listResults` into one function per kind,
+        // so the idle window could be cut on the models; the facts they read are unchanged.
+        let body = try ["private func listCandidate(for area: Area)", "private func listCandidate(for project: Project)"]
+            .map { try #require(CadenceSourceScan.declarationBody($0, in: stripped)) }
+            .joined(separator: "\n")
         #expect(body.contains("CadenceListSearchSupport.rowFacts(for: area)"))
         #expect(body.contains("CadenceListSearchSupport.rowFacts(for: project)"))
         #expect(body.components(separatedBy: "subtitle: facts.containers.joined(separator: \" / \")").count - 1 == 2)
