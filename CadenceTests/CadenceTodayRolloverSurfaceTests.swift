@@ -326,20 +326,29 @@ struct CadenceTodayRolloverSurfaceTests {
     /// Each row says how late its leftover is, in the row's own do-date chip's words: a task
     /// planned yesterday and one planned three weeks ago no longer read alike in the offer.
     @Test func eachRolloverRowReadsItsDoDateInTheChipsWords() throws {
-        let calendar = Calendar.current
-        let now = Date()
+        // A stated instant in the pinned zone, so the words do not depend on the host's clock or
+        // zone (CadenceTimeZoneIndependenceTests).
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
+        let now = try #require(calendar.date(from: DateComponents(year: 2026, month: 11, day: 3, hour: 12)))
         func key(daysAgo: Int) -> String {
-            DateFormatters.dateKey(from: calendar.date(byAdding: .day, value: -daysAgo, to: now)!)
+            DateFormatters.dateKey(from: calendar.date(byAdding: .day, value: -daysAgo, to: now)!, calendar: calendar)
         }
         let yesterday = task(title: "Yesterday's plan", scheduled: key(daysAgo: 1))
         let longAgo = task(title: "Three weeks back", scheduled: key(daysAgo: 22))
         let rolled = CadenceTodayRolloverSupport.pastDoTasks(
             from: [yesterday, longAgo],
-            todayKey: DateFormatters.dateKey(from: now)
+            todayKey: DateFormatters.dateKey(from: now, calendar: calendar)
         )
         #expect(rolled.count == 2, "non-vacuity: both are leftovers")
-        #expect(CadenceTaskPresentationSupport.scheduledDayLabel(for: yesterday) == "Yesterday")
-        #expect(CadenceTaskPresentationSupport.scheduledDayLabel(for: longAgo) == "22 days ago")
+        #expect(DateFormatters.relativeDate(from: yesterday.scheduledDate, relativeTo: now) == "Yesterday")
+        #expect(DateFormatters.relativeDate(from: longAgo.scheduledDate, relativeTo: now) == "22 days ago")
+        // The banner's label is the chips' formatter over the do date, nothing of its own.
+        for leftover in [yesterday, longAgo] {
+            #expect(
+                CadenceTaskPresentationSupport.scheduledDayLabel(for: leftover)
+                    == DateFormatters.relativeDate(from: leftover.scheduledDate)
+            )
+        }
 
         let banner = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceTodayRolloverBanner.swift"))
         // Both row layouts (wrapping and not) draw the day, after the list name.

@@ -374,6 +374,11 @@ struct TaskBundleTests {
             "Cadence/Services/CadenceDataExportService.swift": [
                 "\"TaskBundle\""
             ],
+            // [[T-10501]]: the archive import preview maps the same schema-entity key to its
+            // "Retained legacy records" row; the key is never drawn.
+            "Cadence/Shared/CadenceArchiveImportPresentation.swift": [
+                "\"TaskBundle\""
+            ],
             // The importer reads the same schema-entity key the exporter writes, in the
             // per-table validation errors and the destination index. Technical, not vocabulary:
             // it names a SwiftData entity in a diagnostic, and never reaches a surface.
