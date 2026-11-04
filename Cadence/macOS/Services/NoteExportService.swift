@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import PDFKit
 import UniformTypeIdentifiers
 
 /// The macOS half of note export: an `NSSavePanel` and a PDF drawn by the live editor.
@@ -190,7 +191,19 @@ enum NoteExportService {
         // Same width as above; only the measured height is new.
         textView.frame = NSRect(x: 0, y: 0, width: options.pageWidth, height: documentHeight)
 
-        return textView.dataWithPDF(inside: textView.bounds)
+        return stampingDocumentInfo(on: textView.dataWithPDF(inside: textView.bounds))
+    }
+
+    /// `dataWithPDF` takes no document info, so the shared `NoteExportSupport.pdfCreator` is
+    /// written on afterwards — the creator iOS hands `UIGraphicsPDFRendererFormat`. Bytes PDFKit
+    /// cannot reopen are returned untouched rather than lost: an unstamped file beats none.
+    @MainActor
+    private static func stampingDocumentInfo(on data: Data) -> Data {
+        guard let document = PDFDocument(data: data) else { return data }
+        var attributes = document.documentAttributes ?? [:]
+        attributes[PDFDocumentAttribute.creatorAttribute.rawValue] = NoteExportSupport.pdfCreator
+        document.documentAttributes = attributes
+        return document.dataRepresentation() ?? data
     }
 }
 #endif

@@ -1,5 +1,8 @@
 import CoreGraphics
 import Foundation
+#if os(macOS)
+import PDFKit
+#endif
 import SwiftData
 import Testing
 import UniformTypeIdentifiers
@@ -217,6 +220,37 @@ struct NoteExportSurfaceTests {
 
         #expect(declarations == ["Cadence/Services/CadenceNoteExportSupport.swift"], "\(declarations)")
     }
+
+    /// **[[T-11186]].** Both PDFs name Cadence as their creator, from one dictionary. iOS stamped
+    /// `Creator` itself and macOS's `dataWithPDF` stamped nothing, so Preview's inspector and
+    /// Finder's Get Info told a Mac export and a phone export of the same note apart.
+    @Test func bothRenderersStampTheSharedCreator() throws {
+        #expect(NoteExportSupport.pdfCreator == "Cadence")
+
+        for path in Self.renderers {
+            let code = strippingNoteExportComments(try noteExportSource(path))
+
+            #expect(code.contains("NoteExportSupport.pdfCreator"), "\(path) does not stamp the shared creator")
+            #expect(!code.contains("\"Cadence\""), "\(path) spells its own creator")
+        }
+    }
+
+#if os(macOS)
+    /// The behaviour, off the Mac renderer's real output: the stamp survives PDFKit's rewrite, and
+    /// the rewrite keeps the page — its text and its measured height.
+    @MainActor
+    @Test func theMacPDFNamesCadenceAsItsCreatorAndKeepsItsPage() throws {
+        let options = NotePDFRenderOptions()
+        let data = try #require(NoteExportService.renderedPDFData(content: "Weekly Review", imageAssets: [], options: options))
+        let document = try #require(PDFDocument(data: data))
+
+        #expect(document.documentAttributes?[PDFDocumentAttribute.creatorAttribute] as? String == NoteExportSupport.pdfCreator)
+        #expect(document.pageCount == 1)
+        let page = try #require(document.page(at: 0))
+        #expect(page.string?.contains("Weekly Review") == true)
+        #expect(page.bounds(for: .mediaBox).width == options.pageWidth)
+    }
+#endif
 
     /// The iOS renderer must lay out through `iOSMarkdownBlockCanvasLayoutManager`, not a plain
     /// `NSLayoutManager`. Tables, fenced code, dividers, images and task-embed cards are not glyphs

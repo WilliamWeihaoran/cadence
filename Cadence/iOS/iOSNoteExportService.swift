@@ -91,7 +91,7 @@ enum iOSNoteExportService {
         let origin = CGPoint(x: options.horizontalInset, y: options.verticalInset)
 
         let rendererFormat = UIGraphicsPDFRendererFormat()
-        rendererFormat.documentInfo = [kCGPDFContextCreator as String: "Cadence"]
+        rendererFormat.documentInfo = [kCGPDFContextCreator as String: NoteExportSupport.pdfCreator]
 
         return UIGraphicsPDFRenderer(bounds: pageRect, format: rendererFormat).pdfData { context in
             context.beginPage()

@@ -134,6 +134,19 @@ nonisolated enum NoteExportSupport {
         MarkdownTaskEmbedTitleCache.embeddedTasks(in: note.content, modelContext: modelContext)
     }
 
+    // MARK: - What the PDF says about itself
+
+    /// The creator both PDF renderers stamp into the document info.
+    ///
+    /// **Shared because only one renderer had it.** iOS set `Creator` on its
+    /// `UIGraphicsPDFRendererFormat`; macOS's `dataWithPDF` sets nothing but Quartz's own
+    /// `Producer`, so the same note exported from a Mac read no content creator in Preview's
+    /// inspector and Finder's Get Info, and "Cadence" from a phone. No hardware answers that.
+    /// Only the value is shared: each renderer files it under its own API's key
+    /// (`kCGPDFContextCreator` for the Core Graphics renderer format, whose raw value is that
+    /// constant's name, and `PDFDocumentAttribute.creatorAttribute` for PDFKit).
+    nonisolated static let pdfCreator = "Cadence"
+
     // MARK: - What the user is told when no file appears (T-506)
 
     /// An export can produce no file two ways, and both platforms say so in these words.
