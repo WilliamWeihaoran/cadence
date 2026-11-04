@@ -557,6 +557,15 @@ struct iOSSidebarListsRegion: View {
     /// against its own query.
     let onCreateList: (UUID?) -> Void
 
+    /// The one writer this view has: list order within a section ([[T-7260]](a)). The rows are
+    /// values, so the move resolves them in the store through `CadenceSidebarListReorder`, the
+    /// commit the Mac's drag makes too — which is why neither host has to pass a closure for it.
+    @Environment(\.modelContext) private var modelContext
+    /// Set when the store refused a move, keyed by the section it was made in; the rows are back
+    /// in their old order by then, so the column and the sentence agree — `ContextSection`'s
+    /// `reorderFailureNotice`, on this column.
+    @State private var orderFailureSectionID: String?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
@@ -648,13 +657,25 @@ struct iOSSidebarListsRegion: View {
             .padding(.top, iOSSidebarMetrics.contextHeaderTopPadding)
             .padding(.bottom, iOSSidebarMetrics.contextHeaderBottomPadding)
 
-            ForEach(section.items) { item in
+            if orderFailureSectionID == section.id {
+                CadenceInlineFailureNotice(text: CadenceOrderCommit.failureNotice)
+                    .padding(.horizontal, iOSSidebarMetrics.rowHorizontalPadding)
+            }
+
+            ForEach(Array(section.items.enumerated()), id: \.element.id) { index, item in
                 iOSSidebarListRow(
                     item: item,
                     isSelected: isSelected(item),
                     todayKey: todayKey,
                     onSelect: { onSelect(item) },
-                    onEdit: { onEdit(item) }
+                    onEdit: { onEdit(item) },
+                    canMoveUp: CadenceSidebarListReorder.neighbourIndex(
+                        of: index, by: -1, count: section.items.count
+                    ) != nil,
+                    canMoveDown: CadenceSidebarListReorder.neighbourIndex(
+                        of: index, by: 1, count: section.items.count
+                    ) != nil,
+                    onMove: { offset in move(item, by: offset, in: section) }
                 )
                 // A row is a list, so it offers what every other list row in the app offers: a
                 // task in it. Same identity, same key, same ghost — this column joins the table
@@ -675,6 +696,19 @@ struct iOSSidebarListsRegion: View {
                 return CadenceTaskDropSupport.newListDropKey(contextID: contextID)
             }
         )
+    }
+
+    /// Move Up / Move Down from a row's context menu ([[T-7260]](a)): one step within the
+    /// section, through the commit the Mac's drag makes. A refusal leaves every row where it was
+    /// and names it under this section's header.
+    private func move(_ item: CadenceSidebarLists.Item, by offset: Int, in section: CadenceSidebarLists.Section) {
+        guard let landed = CadenceSidebarListReorder.commitStep(
+            moving: item,
+            by: offset,
+            within: section.items,
+            in: modelContext
+        ) else { return }
+        orderFailureSectionID = landed ? nil : section.id
     }
 
     /// The `list:` value a sidebar row hands a dropped `+`, in the one spelling
@@ -1165,6 +1199,11 @@ struct iOSSidebarListRow: View {
     let todayKey: String
     let onSelect: () -> Void
     let onEdit: () -> Void
+    /// Whether this row has a neighbour above / below it in its section ([[T-7260]](a)).
+    let canMoveUp: Bool
+    let canMoveDown: Bool
+    /// One step up (`-1`) or down (`1`) within the section.
+    let onMove: (Int) -> Void
 
     private var rowShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: iOSSidebarMetrics.selectedCornerRadius, style: .continuous)
@@ -1196,6 +1235,25 @@ struct iOSSidebarListRow: View {
                 onEdit()
             } label: {
                 Label("Edit \(item.kind == .area ? "Area" : "Project")", systemImage: "square.and.pencil")
+            }
+
+            // [[T-7260]](a): list order within the section, which only the Mac's drag could
+            // change. Settings' context rows' Move Up / Move Down, on the same touch idiom
+            // ([[T-581]]); both commit through `CadenceSidebarListReorder`.
+            Section {
+                Button {
+                    onMove(-1)
+                } label: {
+                    Label("Move Up", systemImage: "arrow.up")
+                }
+                .disabled(!canMoveUp)
+
+                Button {
+                    onMove(1)
+                } label: {
+                    Label("Move Down", systemImage: "arrow.down")
+                }
+                .disabled(!canMoveDown)
             }
         }
         // [[T-8641]]: the count and the flag below are both hidden from VoiceOver, so the row's

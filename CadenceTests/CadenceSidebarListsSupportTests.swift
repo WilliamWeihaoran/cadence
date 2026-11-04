@@ -427,7 +427,13 @@ struct CadenceSidebarListsSupportTests {
         // Non-optional since T-559: the catch-all header carries a "+" too, now that
         // `CreateListSheet` can be opened on no context at all.
         #expect(components.contains("let onAddList: () -> Void"))
-        #expect(components.contains("var sidebarListItem: CadenceSidebarLists.Item"))
+        // The row type moved to `Shared/` when iOS gained list reorder ([[T-7260]](a)); the
+        // flattening it carries is read there.
+        let entry = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceSidebarListReorder.swift")
+        )
+        #expect(entry.contains("var sidebarListItem: CadenceSidebarLists.Item"))
+        #expect(CadenceSourceScan.matchCount("sidebarListItem\\(contextID:", in: entry) == 0)
 
         // The three pre-T-538 spellings, each of which reintroduces the defect on its own.
         #expect(CadenceSourceScan.matchCount("context\\.(areas|projects)", in: components) == 0)

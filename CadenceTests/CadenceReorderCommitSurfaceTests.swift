@@ -357,10 +357,18 @@ struct CadenceReorderCommitSurfaceTests {
         let source = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/SidebarComponents.swift")
         let body = try CadenceCommitSurfaceScan.declarationBody(named: "reorderList", in: source)
 
-        #expect(body.contains("setOrder"), "non-vacuity: not the renumbering body")
+        #expect(body.contains("entries, moving: fromIndex, onto: toIndex"), "non-vacuity: not the renumbering body")
         #expect(!body.contains("try? modelContext.save()"), "the sidebar drop swallows its save again")
-        #expect(body.contains("CadenceOrderCommit.commit("))
+        // [[T-7260]](a): the renumber is the one iOS's Move Up / Move Down makes too, and that one
+        // commits through `CadenceOrderCommit`.
+        #expect(body.contains("CadenceSidebarListReorder.commit("))
         #expect(!body.contains("rollback()"), "the sidebar undo discards unrelated pending work")
+        let shared = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/CadenceSidebarListReorder.swift")
+        let sharedCommit = try CadenceCommitSurfaceScan.declarationBody(named: "commit", in: shared)
+        #expect(sharedCommit.contains("setOrder"), "non-vacuity: not the shared renumbering body")
+        #expect(sharedCommit.contains("CadenceOrderCommit.commit("))
+        #expect(!sharedCommit.contains("rollback()"))
+        #expect(!sharedCommit.contains("try? modelContext.save()"))
     }
 
     /// **T-869(b).** Both kanban card drops — the two column implementations that share

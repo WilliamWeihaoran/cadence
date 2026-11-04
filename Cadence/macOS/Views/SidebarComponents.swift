@@ -51,38 +51,9 @@ nonisolated struct SidebarListDragItem: Equatable {
     }
 }
 
-/// One row of the lists region, still holding its model object: these rows drag, and the drop
-/// delegate writes `order` straight back.
-///
-/// Internal rather than file-private because `SidebarView` builds the region's sections now — see
-/// `SidebarView.listSections`. `ContextSection` is handed a section's rows already bucketed and
-/// already sorted.
-enum SidebarListEntry: Identifiable {
-    case area(Area)
-    case project(Project)
-
-    var id: String {
-        switch self {
-        case .area(let area): return "area-\(area.id.uuidString)"
-        case .project(let project): return "project-\(project.id.uuidString)"
-        }
-    }
-
-    /// This row, flattened to what `CadenceSidebarLists` groups and orders by. `kindRank` used to
-    /// live here as a hand-rolled twin of `CadenceSidebarLists.Kind.rank`; the shared type owns it
-    /// now, and since T-538 the *flattening* is shared too.
-    ///
-    /// **It used to be `sidebarListItem(contextID: UUID)`** — a non-optional the caller filled in
-    /// from whichever `Context` it was iterating, which is precisely how a list with no context
-    /// became undrawable on this column rather than merely un-grouped. There is no parameter to
-    /// fill in now; the bridge reads `area.context?.id`, which is the optional the model declares.
-    var sidebarListItem: CadenceSidebarLists.Item {
-        switch self {
-        case .area(let area): return CadenceSidebarLists.Item(area)
-        case .project(let project): return CadenceSidebarLists.Item(project)
-        }
-    }
-
+/// The Mac's drag half of `SidebarListEntry`, which itself moved to
+/// `Cadence/Shared/CadenceSidebarListReorder.swift` when iOS gained list reorder ([[T-7260]](a)).
+extension SidebarListEntry {
     var dragItem: SidebarListDragItem {
         switch self {
         case .area(let area): return SidebarListDragItem(kind: .area, id: area.id)
@@ -94,37 +65,13 @@ enum SidebarListEntry: Identifiable {
         dragItem == item
     }
 
-    /// The paired reader for `setOrder(_:)`, and the reason `CadenceOrderCommit.commit` takes
-    /// closures rather than a `KeyPath`: this is an `enum` over two models, so its order lives
-    /// behind a `switch` and not in a stored property either case shares.
-    var order: Int {
-        switch self {
-        case .area(let area): return area.order
-        case .project(let project): return project.order
-        }
-    }
-
-    func setOrder(_ value: Int) {
-        switch self {
-        case .area(let area): area.order = value
-        case .project(let project): project.order = value
-        }
-    }
-
     /// The row a list drag names, looked up in the store rather than in one section's `entries`:
     /// a list dropped onto another context's section is, by definition, not among that section's
     /// rows ([[T-7260]](b)).
     static func resolve(_ item: SidebarListDragItem, in modelContext: ModelContext) -> SidebarListEntry? {
-        let id = item.id
         switch item.kind {
-        case .area:
-            var descriptor = FetchDescriptor<Area>(predicate: #Predicate { $0.id == id })
-            descriptor.fetchLimit = 1
-            return (try? modelContext.fetch(descriptor))?.first.map(SidebarListEntry.area)
-        case .project:
-            var descriptor = FetchDescriptor<Project>(predicate: #Predicate { $0.id == id })
-            descriptor.fetchLimit = 1
-            return (try? modelContext.fetch(descriptor))?.first.map(SidebarListEntry.project)
+        case .area: return resolve(kind: .area, id: item.id, in: modelContext)
+        case .project: return resolve(kind: .project, id: item.id, in: modelContext)
         }
     }
 }
@@ -333,14 +280,10 @@ struct ContextSection: View {
         }
         // Treat the row we drop on as the destination row itself. This avoids the
         // "no-op" feeling when dragging onto the next item down in the list.
-        let sorted = SidebarListDropPlacement.reordered(entries, moving: fromIndex, onto: toIndex)
+        // The same call iOS's Move Up / Move Down makes ([[T-7260]](a)): one arrangement, one
+        // renumber, one commit with its full restore, `CadenceOrderCommit` underneath.
         let reordered = withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
-            CadenceOrderCommit.commit(
-                sorted,
-                readOrder: { $0.order },
-                writeOrder: { $0.setOrder($1) },
-                in: modelContext
-            )
+            CadenceSidebarListReorder.commit(entries, moving: fromIndex, onto: toIndex, in: modelContext)
         }
         reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
     }
@@ -484,12 +427,10 @@ nonisolated enum SidebarListDropPlacement {
 
     /// `items` with the row at `from` moved to `onto`'s position: the dropped-on row is the
     /// destination itself, so a downward drag lands after it and an upward drag before it.
+    ///
+    /// The arithmetic is `CadenceSidebarListReorder.reordered`'s, the one iOS's one-step move uses.
     static func reordered<Element>(_ items: [Element], moving from: Int, onto to: Int) -> [Element] {
-        guard items.indices.contains(from), items.indices.contains(to) else { return items }
-        var result = items
-        let element = result.remove(at: from)
-        result.insert(element, at: min(to, result.count))
-        return result
+        CadenceSidebarListReorder.reordered(items, moving: from, onto: to)
     }
 
     /// `items` with a row from ANOTHER section inserted directly above `at` ([[T-7260]](b)) -- the

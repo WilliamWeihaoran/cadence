@@ -550,7 +550,10 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // Same retry, same clearing.
         // [[T-9663]] makes it 83: the Search sheet and the `[[link]]` sheet each drew a bare T-497
         // Done refusal, and both folded into `iOSNoteEditorCover`, which draws the one.
-        #expect(total == 83, "the inline notice has \(total) call sites, not the 83 this test was written over")
+        // [[T-7260]](a) makes it 84, and bare: the iOS sidebar's lists region names a refused
+        // Move Up / Move Down under the section header, as `ContextSection` does -- the retry is
+        // the same menu item, and the next move that lands clears it.
+        #expect(total == 84, "the inline notice has \(total) call sites, not the 84 this test was written over")
         #expect(withDismissal == 9, "\(withDismissal) call sites offer a dismissal, not 9")
 
         // And each of the nine is named, so one swapping places with another is still a failure.
