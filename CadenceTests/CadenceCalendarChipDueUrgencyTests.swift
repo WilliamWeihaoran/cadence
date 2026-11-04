@@ -173,28 +173,65 @@ struct CadenceCalendarChipDueUrgencyTests {
         #expect(header.contains("todayKey: todayKey,"), "the day header hands the band no observed day")
     }
 
-    /// **The second channel is deliberately absent, with the width reason written at the chip.**
+    /// **[[T-10821]], owner call (a): the second channel draws wherever the chip is wide enough.**
     ///
     /// macOS's `CalendarChipDueMarker` is a 9pt date that takes layout priority OVER the title. A
-    /// chip in a seven-column grid on a 393pt iPhone has about 56pt to spend, so the marker would
-    /// win that contest and leave no title. [[T-8201]] accepts a constraint sentence; it does not
-    /// accept an unexplained difference, and the ticket that holds the iPad half is named.
-    ///
-    /// *Failing-first:* deleting the sentence — the state the entry calls drift — fails here, and
-    /// so does importing the marker without recording why.
-    @Test func theIOSChipRecordsWhyItDrawsNoDueMarker() throws {
-        // The RAW file, not a declaration body: `declarationBody` answers about code, and the
-        // thing being pinned here is prose.
+    /// chip in a seven-column grid on a 393pt iPhone has about 56pt to spend, so there the marker
+    /// would win that contest and leave no title; a regular-width iPad column has the room. The
+    /// width is the one reason [[T-8201]] accepts, so it is decided by the size class in one
+    /// shared rule, not by a device check, and the iPhone keeps the tint alone.
+    @Test func theDueMarkerDrawsOnlyWhereTheColumnIsWideEnough() {
+        #expect(CalendarChipDueMarkerSupport.drawsMarker(isCompactWidth: false), "the iPad's wide cell lost the marker")
+        #expect(!CalendarChipDueMarkerSupport.drawsMarker(isCompactWidth: true), "the iPhone's column now loses its title")
+    }
+
+    /// The marker and its wording are declared once, in `Shared/`, and the Mac no longer holds a
+    /// copy -- the shape the tint rule took ([[T-8243]]).
+    @Test func theDueMarkerIsDeclaredOnceInShared() throws {
+        let shared = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceCalendarChipDueMarker.swift")
+        )
+        #expect(shared.contains("struct CalendarChipDueMarker: View"))
+        #expect(shared.contains("enum CalendarChipDueMarkerSupport"))
+        let mac = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.macOSChipsFile))
+        #expect(!mac.contains("struct CalendarChipDueMarker"), "the Mac kept a second copy of the marker")
+        #expect(!mac.contains("enum CalendarChipDueMarkerSupport"), "the Mac kept a second copy of the wording")
+        #expect(mac.contains("CalendarChipDueMarker(dueDateKey:"), "non-vacuity: the Mac chips stopped drawing it")
+    }
+
+    /// The iOS chip draws the shared marker when its host hands it a day, and both task-chip hosts
+    /// hand one only through the shared width rule, fed the size class.
+    @Test func theIOSChipHostsGateTheDueMarkerOnTheSharedWidthRule() throws {
         let month = try CadenceSourceScan.sourceFile(Self.iOSMonthFile)
+        let timeline = try CadenceSourceScan.sourceFile(Self.iOSTimelineFile)
+
+        let chip = try #require(
+            CadenceSourceScan.declarationBody("struct iOSCalendarMiniChip: View", in: month),
+            "iOSCalendarMiniChip is gone"
+        )
+        #expect(chip.contains("if let dueMarkerDayKey, let completion {"))
+        #expect(chip.contains("CalendarChipDueMarker("))
+        #expect(chip.contains("isDone: completion == .done"), "the marker reads a different done than the Mac's task.isDone")
+
+        // The width reason is still written at the chip, now naming both sides of the call.
         let property = try #require(month.range(of: "    var dueDateKey: String = \"\""),
                                     "the chip takes no deadline, so there is no decision to explain")
         let doc = String(month[month.startIndex..<property.lowerBound].suffix(2600))
-        #expect(doc.contains("[[T-10821]]"), "the marker half names no ticket, so it is invisible to the brief")
+        #expect(doc.contains("[[T-10821]]"))
         #expect(doc.contains("[[T-8201]]"), "the width reason does not say which rule it answers")
-        #expect(doc.contains("CalendarChipDueMarker"), "the sentence does not say which channel is missing")
-        #expect(
-            !CadenceSourceScan.strippingComments(month).contains("CalendarChipDueMarker"),
-            "the iOS chip drew the marker after all, so the recorded reason is now wrong"
+
+        let rule = "CalendarChipDueMarkerSupport.drawsMarker(isCompactWidth: horizontalSizeClass == .compact)"
+        for (source, declaration) in [
+            (month, "private struct iOSCalendarMonthDayCell: View"),
+            (timeline, "private struct iOSCalendarAllDayBandChips: View")
+        ] {
+            let body = try #require(CadenceSourceScan.declarationBody(declaration, in: source), "\(declaration) is gone")
+            #expect(body.contains(rule), "\(declaration) decides the marker without the shared width rule")
+            #expect(body.contains("dueMarkerDayKey: dueMarkerDayKey"), "\(declaration) never hands its chips the marker")
+        }
+        let header = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayHeader: View", in: timeline)
         )
+        #expect(header.contains("dayKey: DateFormatters.dateKey(from: date),"), "the band names deadlines against no day")
     }
 }

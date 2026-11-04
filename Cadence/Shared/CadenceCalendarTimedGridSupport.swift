@@ -29,6 +29,10 @@ enum CadenceCalendarZoom {
     static let storageKey = "calendarZoom"
     static let legacyIOSStorageKey = "ios.calendar.zoomLevel"
     static let legacyMacStorageKey = "calendarZoomLevel"
+    /// The Mac Today panel's own `Int` 1…3, retired by [[T-10712]]: Today's timeline follows the
+    /// calendar density on both platforms (one app, [[T-8201]]; iOS Today already read this key).
+    /// It seeds the shared key only while that key is absent, and is left on disk.
+    static let legacyMacSchedulePanelStorageKey = "scheduleZoomLevel"
 
     /// The Mac timeline's discrete level for a stored zoom ([[T-8737]]).
     ///
@@ -39,6 +43,15 @@ enum CadenceCalendarZoom {
     /// never writes** — the stored continuous value survives until the Mac's own control is used.
     static func timelineLevel(for zoom: Double) -> Int {
         Int(clamp(zoom).rounded())
+    }
+
+    /// A Mac timeline's `−/+` over the shared zoom: it reads the nearest step and writes the step
+    /// it moved to, so the Calendar page and Today's panel are one setting ([[T-10712]]).
+    static func timelineLevelBinding(_ zoom: Binding<Double>) -> Binding<Int> {
+        Binding(
+            get: { timelineLevel(for: zoom.wrappedValue) },
+            set: { zoom.wrappedValue = Double($0) }
+        )
     }
 
     /// The densities Settings offers, and the labels it offers them under.

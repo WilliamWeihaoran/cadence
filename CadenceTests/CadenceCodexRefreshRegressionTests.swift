@@ -134,7 +134,9 @@ struct CadenceCodexRefreshRegressionTests {
             #expect(dense.contains("dueDateKey:task.dueDate,todayKey:todayKey"))
             #expect(chip.contains("CalendarChipDueMarker(dueDateKey: task.dueDate, dayKey: dayKey, todayKey: todayKey, isDone: task.isDone)"))
         }
-        let marker = try #require(CadenceSourceScan.declarationBody("struct CalendarChipDueMarker", in: month))
+        // [[T-10821]] moved the marker to `Shared/` so the iPad chip draws the same one.
+        let sharedMarker = try read("Cadence/Shared/CadenceCalendarChipDueMarker.swift")
+        let marker = try #require(CadenceSourceScan.declarationBody("struct CalendarChipDueMarker", in: sharedMarker))
         #expect(marker.contains("CadenceDueUrgency.evaluate(dueDateKey: dueDateKey, isDone: isDone, todayKey: todayKey)"))
         for file in ["TimelineDayCanvas.swift", "TimelineDayCanvasSupportLayers.swift", "TimelineTaskBlock.swift"] {
             let source = try read(prefix + file)

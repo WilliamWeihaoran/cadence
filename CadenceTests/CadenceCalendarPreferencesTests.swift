@@ -80,6 +80,40 @@ struct CadenceCalendarPreferencesTests {
         }
     }
 
+    /// **[[T-10712]]: the Mac Today panel's old `Int` zoom seeds the calendar density only while it
+    /// is unset**, after the Calendar's own legacy choice, and stays on disk.
+    @Test func theMacTodayPanelsOldZoomSeedsTheSharedDensityOnlyWhileUnset() throws {
+        try withTemporaryDefaults(Self.scope) { defaults in
+            defaults.set(3, forKey: CadenceCalendarZoom.legacyMacSchedulePanelStorageKey)
+            #expect(CadenceCalendarPreferences.migrateLegacyKeys(in: defaults) == [CadenceCalendarZoom.storageKey])
+            #expect(defaults.double(forKey: CadenceCalendarZoom.storageKey) == 3)
+            #expect(defaults.integer(forKey: CadenceCalendarZoom.legacyMacSchedulePanelStorageKey) == 3, "left on disk")
+
+            // A density already chosen is never overwritten by the panel's old value.
+            defaults.set(1.5, forKey: CadenceCalendarZoom.storageKey)
+            #expect(CadenceCalendarPreferences.migrateLegacyKeys(in: defaults).isEmpty)
+            #expect(defaults.double(forKey: CadenceCalendarZoom.storageKey) == 1.5)
+
+            // The Calendar's own legacy choice wins over the panel's: Today follows the calendar.
+            defaults.removeObject(forKey: CadenceCalendarZoom.storageKey)
+            defaults.set(2, forKey: CadenceCalendarZoom.legacyMacStorageKey)
+            CadenceCalendarPreferences.migrateLegacyKeys(in: defaults)
+            #expect(defaults.double(forKey: CadenceCalendarZoom.storageKey) == 2)
+        }
+    }
+
+    /// The Mac panels' `−/+` reads the nearest step of the shared zoom and writes the step it moved to.
+    @Test func aMacTimelineStepperReadsAndWritesTheSharedZoom() {
+        var stored = 2.4
+        let zoom = Binding(get: { stored }, set: { stored = $0 })
+        let level = CadenceCalendarZoom.timelineLevelBinding(zoom)
+        #expect(level.wrappedValue == 2)
+        level.wrappedValue = 3
+        #expect(stored == 3)
+        stored = 0.2
+        #expect(level.wrappedValue == 1, "a stored zoom is clamped before it is stepped")
+    }
+
     /// A choice already on a shared key is never overwritten, and a device with nothing stored —
     /// or with an unparseable legacy value — gets nothing written.
     @Test func theCalendarMigrationNeverOverwritesAChoiceOrSeedsGarbage() throws {

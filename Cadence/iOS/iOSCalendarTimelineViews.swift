@@ -1071,6 +1071,7 @@ private struct iOSCalendarTimelineDayHeader: View {
                 unscheduledTasks: unscheduledTasks,
                 split: split,
                 todayKey: todayKey,
+                dayKey: DateFormatters.dateKey(from: date),
                 onOpenEvent: onOpenEvent,
                 draftTitle: draftTitle
             )
@@ -1106,6 +1107,7 @@ private struct iOSCalendarTimelineDayHeader: View {
 /// pays its inset once because the date block above it carries the top one; the strip pays it on
 /// both edges), and a view that owned them could not be shared.
 private struct iOSCalendarAllDayBandChips: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let allDayEvents: [EKEvent]
     let unscheduledTasks: [AppTask]
     let split: CadenceCalendarMonthCellPriority.Split
@@ -1113,6 +1115,9 @@ private struct iOSCalendarAllDayBandChips: View {
     /// measures against ([[T-8243]]). Defaulted because the single-day strip below draws no task
     /// chips at all, so it has no day to hand down and nothing that would read one.
     var todayKey: String = DateFormatters.todayKey()
+    /// The `yyyy-MM-dd` day this band belongs to, which the due marker names a deadline against
+    /// ([[T-10821]]). Empty on the single-day strip, for the reason `todayKey` gives.
+    var dayKey: String = ""
     /// What a tap on an all-day event chip does, or nil for a chip that takes no tap ([[T-5356]]).
     /// Both callers pass the grid's opener now — the owner's answer was that a chip in the
     /// scrolling grid's day header opens its event too, and the header gets there by drawing this
@@ -1146,6 +1151,14 @@ private struct iOSCalendarAllDayBandChips: View {
     /// properties so the memberwise initialiser its two callers use is unchanged by it.
     @Environment(\.iOSTaskInspector) private var taskInspector
 
+    /// This band's day for the due marker, or `nil` where the column is too narrow to draw one
+    /// ([[T-10821]]) -- the shared width rule, fed the size class.
+    private var dueMarkerDayKey: String? {
+        CalendarChipDueMarkerSupport.drawsMarker(isCompactWidth: horizontalSizeClass == .compact)
+            ? dayKey
+            : nil
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: iOSCalendarTimelineMetrics.bandLineSpacing) {
             if let draftTitle {
@@ -1178,7 +1191,10 @@ private struct iOSCalendarAllDayBandChips: View {
                     // The dashed rim says "no time yet"; this says whether the deadline has already
                     // gone. They are different facts and the band now carries both.
                     dueDateKey: task.dueDate,
-                    todayKey: todayKey
+                    todayKey: todayKey,
+                    // [[T-10821]]: the Mac's all-day lane draws the marker; a regular-width iPad
+                    // column has the room to, a compact-width iPhone column does not.
+                    dueMarkerDayKey: dueMarkerDayKey
                 )
                 // **The event chip's own four modifiers, for the task chip's own opener**
                 // ([[T-9613]]): the same `iOSCalendarAllDayChipOpen` the all-day event beside it

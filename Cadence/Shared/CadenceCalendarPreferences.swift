@@ -30,14 +30,19 @@ enum CadenceCalendarPreferences {
     static let legacyIOSViewModeKey = "ios.calendar.viewMode"
     static let legacyIOSPresentationKey = "ios.calendar.presentation"
 
-    /// The zoom's two legacy sources, in the order they are tried. Both are legal multipliers of
+    /// The zoom's legacy sources, in the order they are tried. Both are legal multipliers of
     /// the shared `Double`: iOS's already was one, and the Mac's `Int` 1/2/3 is the same Compact /
     /// Comfort / Spacious ordering (`CadenceCalendarZoom.timelineLevel(for:)`). Only one of them
     /// exists on any real device; the order matters only to a domain holding both, where the
     /// continuous value is the more precise record of the choice. Neither is cleared.
+    ///
+    /// The Mac Today panel's `scheduleZoomLevel` comes last ([[T-10712]]): it is the same `Int`
+    /// 1…3, and it is tried only after the Calendar's own choice, because the panel now follows the
+    /// calendar density rather than the other way round.
     static let legacyZoomKeys = [
         CadenceCalendarZoom.legacyIOSStorageKey,
-        CadenceCalendarZoom.legacyMacStorageKey
+        CadenceCalendarZoom.legacyMacStorageKey,
+        CadenceCalendarZoom.legacyMacSchedulePanelStorageKey
     ]
 
     /// Seeds each shared key that is still absent from its legacy source. Returns the keys it

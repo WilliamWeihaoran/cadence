@@ -989,14 +989,17 @@ struct CadenceTodayUnificationTests {
         ).components(separatedBy: "\nstruct ").first ?? ""
         #expect(paneBody.contains(#"Text("Today Timeline")"#), "non-vacuity: wrong struct read")
         #expect(
-            paneBody.contains("SchedulePanelHeaderControls(zoomLevel: $zoomLevel, onExport: { exportRequest += 1 })"),
+            paneBody.contains("onExport: { exportRequest += 1 })"),
             "the pane's title row lost the Export and zoom controls"
         )
-        #expect(paneBody.contains("@AppStorage(SchedulePanel.zoomLevelStorageKey)"))
+        // [[T-10712]]: the pane and the panel both read the calendar density.
+        #expect(paneBody.contains("@AppStorage(CadenceCalendarZoom.storageKey)"))
+        #expect(paneBody.contains("SchedulePanelHeaderControls(zoomLevel: CadenceCalendarZoom.timelineLevelBinding($sharedZoom)"))
         #expect(paneBody.contains("SchedulePanel(presentation: .hosted, exportRequest: exportRequest)"))
 
         let panel = try strippingComments(sourceFile("Cadence/macOS/Views/SchedulePanel.swift"))
-        #expect(panel.contains("@AppStorage(SchedulePanel.zoomLevelStorageKey)"))
+        #expect(panel.contains("@AppStorage(CadenceCalendarZoom.storageKey)"))
+        #expect(!panel.contains("scheduleZoomLevel"), "the panel kept a second zoom setting")
         #expect(
             panel.contains(".onChange(of: exportRequest) { _, _ in exportTodayPlan() }"),
             "the panel no longer answers its host's Export"
@@ -1007,7 +1010,10 @@ struct CadenceTodayUnificationTests {
         let shell = try strippingComments(sourceFile("Cadence/macOS/Views/SchedulePanelShellViews.swift"))
         #expect(shell.components(separatedBy: "SchedulePanelHeaderControls(zoomLevel:").count - 1 == 2)
         #expect(shell.components(separatedBy: #""Export schedule""#).count - 1 == 1)
-        #expect(SchedulePanel.zoomLevelStorageKey == "scheduleZoomLevel", "the stored zoom would reset")
+        #expect(
+            CadenceCalendarZoom.legacyMacSchedulePanelStorageKey == "scheduleZoomLevel",
+            "the panel's old zoom would no longer seed the shared one"
+        )
     }
 
     /// The metrics that fed the tile go with it — a size table entry nothing reads is the same

@@ -71,14 +71,15 @@ struct SchedulePanel: View {
     /// export stays here and only the button moves. `0`, never bumped, everywhere else.
     var exportRequest = 0
 
-    /// The zoom level's `UserDefaults` key, read by this panel and by a host that draws the zoom
-    /// pair for it ([[T-10052]]), so the pair and the ladder it scales cannot read two settings.
-    nonisolated static let zoomLevelStorageKey = "scheduleZoomLevel"
     @Query private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
 
-    @AppStorage(SchedulePanel.zoomLevelStorageKey) private var zoomLevel: Int = 1
+    /// The calendar density, the key iOS Today and the Mac Calendar read ([[T-10712]]). A host that
+    /// draws the zoom pair for this panel ([[T-10052]]) reads the same key, so the pair and the
+    /// ladder it scales cannot read two settings. The panel steps 1…3 and reads the nearest step.
+    @AppStorage(CadenceCalendarZoom.storageKey) private var sharedZoom = CadenceCalendarZoom.defaultZoom
+    private var zoomLevel: Int { CadenceCalendarZoom.timelineLevel(for: sharedZoom) }
     @AppStorage("scheduleRememberedScrollHour") private var rememberedScrollHour: Int = -1
     @State private var isRestoringScroll = true
     @State private var didRestoreScroll = false
@@ -157,7 +158,7 @@ struct SchedulePanel: View {
             if presentation.drawsOwnHeader {
                 SchedulePanelHeader(
                     presentation: presentation,
-                    zoomLevel: $zoomLevel,
+                    zoomLevel: CadenceCalendarZoom.timelineLevelBinding($sharedZoom),
                     onExport: exportTodayPlan
                 )
                 .frame(height: headerHeight, alignment: .top)

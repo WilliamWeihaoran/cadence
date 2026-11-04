@@ -616,7 +616,9 @@ private struct iOSCalendarMonthDayCell: View {
                     // [[T-8243]]: the cell's own observed day, not a fresh clock read inside each
                     // chip, so every chip in the grid turns over at the midnight the badges do.
                     dueDateKey: task.dueDate,
-                    todayKey: todayKey
+                    todayKey: todayKey,
+                    // [[T-10821]]: the iPad's regular-width cell has the room the Mac's does.
+                    dueMarkerDayKey: dueMarkerDayKey
                 )
                 .modifier(iOSCalendarMonthChipOpen(onOpen: opens ? { taskInspector(task) } : nil))
             }
@@ -637,6 +639,14 @@ private struct iOSCalendarMonthDayCell: View {
 
     /// Exactly what the count capsule shows — one number, read once.
     private var itemCount: Int { tasks.count + events.count }
+
+    /// This cell's day for the due marker, or `nil` where the column is too narrow to draw one
+    /// ([[T-10821]]) -- the shared width rule, fed the size class the time labels above already read.
+    private var dueMarkerDayKey: String? {
+        CalendarChipDueMarkerSupport.drawsMarker(isCompactWidth: horizontalSizeClass == .compact)
+            ? DateFormatters.dateKey(from: date)
+            : nil
+    }
 
     /// **The plate is what says "not this month" now (T-568)** — the shape macOS's month grid
     /// settled on, and the reason it can avoid a cell-wide `.opacity`, which would fade the today
@@ -771,17 +781,23 @@ struct iOSCalendarMiniChip: View {
     /// keeps the neutral tier it always had. The chip takes the KEY rather than the task because
     /// it is handed events too, and an event has no task to read it from.
     ///
-    /// **macOS's SECOND due-date channel is deliberately not here.** That one is
-    /// `CalendarChipDueMarker`, a 9pt date drawn after the title and given layout priority OVER
-    /// it. This chip is a column of a seven-column grid: on the owner's 393pt iPhone that column
-    /// is about 56pt wide and the title is already down to a few characters, so a marker that wins
-    /// the width contest would leave no title at all. That is a screen-width reason, the kind
-    /// [[T-8201]] accepts, and it is why only the tint -- which costs no width whatever -- crossed.
-    /// The marker half is [[T-10821]], where the iPad's much wider cell is the open question.
+    /// **macOS's SECOND due-date channel draws only where the chip is wide enough** ([[T-10821]]).
+    /// That one is `CalendarChipDueMarker`, a 9pt date drawn after the title and given layout
+    /// priority OVER it. On the owner's 393pt iPhone a seven-column grid leaves a column about
+    /// 56pt wide and the title already down to a few characters, so a marker that wins the width
+    /// contest would leave no title at all. That is a screen-width reason, the kind [[T-8201]]
+    /// accepts, and it is why a compact-width chip carries the tint alone -- which costs no width
+    /// whatever. A regular-width chip (the iPad month cell, the iPad week band) has the width, so
+    /// it draws the marker the Mac draws; the host decides through
+    /// `CalendarChipDueMarkerSupport.drawsMarker(isCompactWidth:)` and says so with `dueMarkerDayKey`.
     var dueDateKey: String = ""
     /// The surface's observed day ([[T-5010]]), so a chip left on screen past midnight re-tints
     /// with the grid around it instead of holding yesterday's red.
     var todayKey: String = DateFormatters.todayKey()
+    /// The `yyyy-MM-dd` day this chip is drawn on, when its host has the width for the due marker
+    /// ([[T-10821]]); `nil` -- the default, and every compact-width host's -- draws no marker. The
+    /// marker needs the day because it names the deadline only when the chip is NOT on it.
+    var dueMarkerDayKey: String? = nil
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
@@ -897,6 +913,16 @@ struct iOSCalendarMiniChip: View {
                 .cadenceFont(.metadata, base: 10, weight: .medium)
                 .foregroundStyle(titleInk)
                 .lineLimit(1)
+            if let dueMarkerDayKey, let completion {
+                // An event has no completion and no deadline, so it never reaches here. `isDone`
+                // is the Mac's `task.isDone` -- done, not cancelled -- read off the same state.
+                CalendarChipDueMarker(
+                    dueDateKey: dueDateKey,
+                    dayKey: dueMarkerDayKey,
+                    todayKey: todayKey,
+                    isDone: completion == .done
+                )
+            }
         }
     }
 }

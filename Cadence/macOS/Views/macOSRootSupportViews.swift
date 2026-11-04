@@ -339,8 +339,9 @@ struct RootSidebarToggleButton: View {
 struct RootTimelineSidebarPane: View {
     let onClose: () -> Void
 
-    /// The hosted panel's zoom, drawn here because the panel draws no header of its own ([[T-10052]]).
-    @AppStorage(SchedulePanel.zoomLevelStorageKey) private var zoomLevel: Int = 1
+    /// The hosted panel's zoom, drawn here because the panel draws no header of its own ([[T-10052]]):
+    /// the calendar density, the key the panel reads ([[T-10712]]).
+    @AppStorage(CadenceCalendarZoom.storageKey) private var sharedZoom = CadenceCalendarZoom.defaultZoom
     /// Bumped by this row's Export; the panel below runs the export it owns.
     @State private var exportRequest = 0
 
@@ -353,7 +354,7 @@ struct RootTimelineSidebarPane: View {
                 Spacer()
                 // [[T-10052]]: the Export and zoom controls every other timeline header carries.
                 // [[T-615]] dropped the hosted panel's header for its title, and these went with it.
-                SchedulePanelHeaderControls(zoomLevel: $zoomLevel, onExport: { exportRequest += 1 })
+                SchedulePanelHeaderControls(zoomLevel: CadenceCalendarZoom.timelineLevelBinding($sharedZoom), onExport: { exportRequest += 1 })
                 CadenceIconButton(
                     systemImage: "xmark",
                     accessibilityLabel: "Close timeline",
