@@ -50,7 +50,6 @@ struct CadenceRecurrenceEndSurfaceTests {
             of: "CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceEnd",
             at: [
                 "Cadence/Shared/CadenceScheduleDraftTaskEditing.swift": 2,
-                "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift": 2,
             ]
         )
     }
@@ -101,7 +100,6 @@ struct CadenceRecurrenceEndSurfaceTests {
                 "Cadence/Shared/CadenceTaskFieldEditCommit.swift",
                 "Cadence/Shared/CadenceTaskMutationSupport.swift",
                 "Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift",
-                "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
             ].sorted(),
             "recurrenceEndCount is read or written from \(endCountReaders)"
         )
@@ -113,7 +111,6 @@ struct CadenceRecurrenceEndSurfaceTests {
             "Cadence/iOS/iOSTaskDetailSheetSections.swift",
             "Cadence/iOS/iOSTaskDetailSheet.swift",
             "Cadence/Shared/CadenceScheduleDraftTaskEditing.swift",
-            "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
             "Cadence/Services/CadenceDataExportService.swift",
         ] {
             let source = try strippingComments(sourceFile(path))
@@ -216,7 +213,7 @@ struct CadenceRecurrenceEndSurfaceTests {
     @Test func neitherPlatformSpellsTheEndSummaryItself() throws {
         for path in [
             "Cadence/iOS/iOSTaskDetailSheetSections.swift",
-            "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
+            "Cadence/Shared/Components/CadenceSchedulePanel.swift",
         ] {
             let source = try strippingComments(sourceFile(path))
             #expect(
@@ -300,6 +297,7 @@ struct CadenceRecurrenceEndSurfaceTests {
                 "Cadence/iOS/iOSTaskDetailSheet.swift": 1,
                 "Cadence/iOS/iOSTaskRowActionViews.swift": 1,
                 "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift": 1,
+                "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift": 1,
             ]
         )
         try expectConstantReads(
@@ -308,6 +306,7 @@ struct CadenceRecurrenceEndSurfaceTests {
                 "Cadence/iOS/iOSTaskDetailSheet.swift": 1,
                 "Cadence/iOS/iOSTaskRowActionViews.swift": 1,
                 "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift": 1,
+                "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift": 1,
             ]
         )
     }
@@ -586,8 +585,8 @@ struct CadenceRecurrenceEndSurfaceTests {
     }
 
     /// The helper is worth nothing if an editor still calls the unfloored one. Every After-count
-    /// resolve / clamp in the two editors passes the occurrence number; the one exception is
-    /// macOS's `selectEnd`, whose only caller is the picker panel that has already floored.
+    /// resolve / clamp in the two editors passes the occurrence number. (macOS's one exception, the
+    /// live popover's end setter, was deleted with that popover under [[T-8701]].)
     /// [[T-6191]]: the owner's ruling is to repair an After count stored below its occurrence
     /// when the task is OPENED. The three task editors are the opens; each calls the one repair,
     /// once, and nothing else in the app calls it -- it is never a sweep.
@@ -612,7 +611,7 @@ struct CadenceRecurrenceEndSurfaceTests {
         let floored = #"(resolvedEndCount|normalizedEndCount)\([^\n]*occurrenceNumber:"#
         let unfloored = #"(resolvedEndCount|normalizedEndCount)\((?![^\n]*occurrenceNumber:)"#
         let ios = try strippingComments(sourceFile("Cadence/iOS/iOSTaskDetailSheetSections.swift"))
-        let mac = try strippingComments(sourceFile("Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift"))
+        let mac = try strippingComments(sourceFile("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift"))
 
         // [[T-8593]]: the iOS sheet floors nothing itself any more. Its Ends rows write through the
         // draft's `selectSeriesEnd` / `setSeriesEndCount`, which floor at the occurrence
@@ -622,25 +621,18 @@ struct CadenceRecurrenceEndSurfaceTests {
         #expect(CadenceSourceScan.matchCount(unfloored, in: ios) == 0)
         #expect(ios.contains("in: draft.seriesEndCountRange"))
 
-        #expect(CadenceSourceScan.matchCount(floored, in: mac) == 2)
-        #expect(CadenceSourceScan.matchCount(unfloored, in: mac) == 1)
-        #expect(CadenceSourceScan.matchCount(#"occurrenceNumber: task\.recurrenceOccurrenceNumber"#, in: mac) == 2)
+        #expect(CadenceSourceScan.matchCount(floored, in: mac) == 0)
+        #expect(CadenceSourceScan.matchCount(unfloored, in: mac) == 0)
+        #expect(mac.contains("offersTaskRepeat: true"))
+        let panel = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceSchedulePanel.swift"))
+        #expect(panel.contains("CadenceSeriesEndCountRow(count: seriesEndCountBinding, in: draft.seriesEndCountRange)"))
+
     }
 
-    /// **[[T-9973]]: both single-choice groups in the Mac repeat popover draw one mark.** APPLY TO
-    /// marked its choice with a leading checkmark while ENDS drew a radio circle, two marks for
-    /// one kind of choice stacked in one popover. Both rows now draw `TaskRecurrenceRadioIndicator`.
-    @Test func bothRepeatPopoverChoiceGroupsDrawTheRadioIndicator() throws {
-        let mac = try strippingComments(sourceFile("Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift"))
-        let scopeRow = try #require(
-            CadenceSourceScan.declarationBody("private func scopeRow(_ title: String, value: CadenceTaskRecurrenceEditScope) -> some View", in: mac)
-        )
-        let endRow = try #require(CadenceSourceScan.declarationBody("private struct TaskRecurrenceEndOptionRow<Trailing: View>: View", in: mac))
-        for (name, body) in [("scopeRow", scopeRow), ("TaskRecurrenceEndOptionRow", endRow)] {
-            #expect(CadenceSourceScan.matchCount(#"TaskRecurrenceRadioIndicator\(isSelected: isSelected\)"#, in: body) == 1, "\(name)")
-            #expect(!body.contains(#"Image(systemName: "checkmark")"#), "\(name) still marks its choice with a checkmark")
-        }
-    }
+    // [[T-9973]] pinned the Mac repeat popover's two single-choice groups to one radio mark. The
+    // popover (`TaskRecurrencePickerPanel`, with `TaskRecurrenceRadioIndicator`) is deleted under
+    // [[T-8701]]: the inspector draws the shared panel's Repeat / Ends rows and asks the scope in
+    // the shared dialog at Save, so the APPLY TO group that test read no longer exists.
 
     @Test func theSeededEndDateIsAMonthOutAndParses() throws {
         let reference = try #require(DateFormatters.date(from: "2026-01-31"))
@@ -706,7 +698,7 @@ struct CadenceRecurrenceEndSurfaceTests {
         #expect(files.count > 300, "the source scan found \(files.count) files and cannot be doing its job")
         #expect(files.contains("Cadence/iOS/iOSTaskDetailSheet.swift"))
         #expect(files.contains("Cadence/iOS/iOSTaskDetailSheetSections.swift"))
-        #expect(files.contains("Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift"))
+        #expect(files.contains("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift"))
         #expect(files.contains("Cadence/Shared/CadenceTaskRecurrenceEndPresentation.swift"))
 
         // Reading *content*, not just listing names: a positive control on a string that is

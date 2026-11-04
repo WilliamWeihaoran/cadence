@@ -18,8 +18,9 @@ import Foundation
 /// **The buttons are deliberately not here.** They are `CalendarRecurrenceEditScope.label` and
 /// `CadenceTaskRecurrenceEditScope.label`, which belong with the enum that also decides the
 /// `EKSpan`/series semantics — a button whose words and whose effect come from one value cannot
-/// name the wrong scope. `TaskInspectorWorkflowSupportViews.scopeOptions` uses a shorter inline
-/// wording for the same two cases on purpose; its own comment records why.
+/// name the wrong scope. The Mac inspector's inline APPLY TO row, the one place that spelled the
+/// two cases more briefly, was deleted with its popover under [[T-8701]]; the inspector now asks
+/// this dialog at Save.
 ///
 /// **A third dialog joined them for the delete ([[T-6115]])**, which is the same question asked of
 /// a repeating task at the one other point a live occurrence can leave its series. Its buttons are

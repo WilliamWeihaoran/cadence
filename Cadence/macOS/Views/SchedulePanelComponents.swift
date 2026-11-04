@@ -71,7 +71,7 @@ struct TaskDetailPopover: View {
     }
 
     /// Record actions keep their existing immediate commit boundaries; the panel owns the draft
-    /// of the task's title, placement and schedule. Recurrence keeps its own scope picker.
+    /// of the task's title, placement, schedule and recurrence.
     private var recordSections: some View {
         VStack(alignment: .leading, spacing: 12) {
             TagPickerControl(
@@ -81,7 +81,6 @@ struct TaskDetailPopover: View {
                 triggerSymbol: "plus"
             )
             if let tagFailureNotice { CadenceInlineFailureNotice(text: tagFailureNotice) }
-            TaskInspectorRecurrenceControl(task: task, childPlacement: .besideInspector)
             subtasksSection
             TaskInspectorSectionGroup(title: "Notes") {
                 TaskDetailNotesSection(task: task, flush: notesFlush)

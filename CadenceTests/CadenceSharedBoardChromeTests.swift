@@ -1314,7 +1314,6 @@ struct CadenceCompactEyebrowConvergenceTests {
             "Cadence/macOS/Views/AIActionsSupportViews.swift": 1,
             "Cadence/macOS/Views/ContainerPickerSupportViews.swift": 1,
             "Cadence/macOS/Views/TaskInspectorFieldSupportViews.swift": 1,
-            "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift": 1,
             "Cadence/Shared/Components/EstimatePickerControl.swift": 1,
             "Cadence/iOS/iOSChoicePicker.swift": 1
         ])

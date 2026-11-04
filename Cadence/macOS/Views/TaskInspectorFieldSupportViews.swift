@@ -15,53 +15,15 @@ nonisolated enum TaskInspectorPopoverMetrics {
     static var contentColumnWidth: CGFloat { width - contentInset * 2 }
 }
 
-/// The widths of the panels the inspector opens, for the two that have no metrics type of their
-/// own.
-///
-/// **Why these two are here and the other two are not.** The inspector opens four panels: the date
-/// panel (Do and Due), the estimate roller, the priority picker and the recurrence picker. The
-/// first two already answer from a named metric — `CadenceDateSelectionMetrics.width(at:)` and
-/// `EstimateRollerMetrics.panelWidth(at:scaling:)` — because both are shared controls that grow
-/// with type size. The other two are macOS-only panels of fixed width and ended their bodies in a
-/// bare `.frame(width: 160)` and `.frame(width: 268)`.
-///
-/// That mattered because **the whole argument in `TaskInspectorChildPopoverPlacement` is
-/// arithmetic over a panel's width against `TaskInspectorPopoverMetrics.contentColumnWidth`**, and
-/// half of it was unreadable: T-1510 had to take the priority panel's width out of a view body to
-/// do its sums, and T-1480 quoted the recurrence panel as "268" from the same literal. A width a
-/// placement rule reasons about has to be a width the placement rule can read (T-1600).
+/// Widths of the surviving inspector child panels. Recurrence uses the standard schedule panel
+/// alongside Do and Due; only the legacy date control still uses this placement model.
+/// The source census in `CadenceInspectorChildPopoverPlacementTests` verifies this list against
+/// the child popovers whose arrow edge reads `TaskInspectorChildPopoverPlacement`.
 nonisolated enum TaskInspectorPanelMetrics {
-    /// `TaskRecurrencePickerPanel` — APPLY TO / REPEATS / ENDS.
-    static let recurrenceWidth: CGFloat = 268
-
-    /// Every panel the inspector can open, named, at one type size.
-    ///
-    /// **Two since [[T-6232]].** The estimate roller and the priority panel were opened from
-    /// `TaskDetailHeaderSection`'s title row; that view was deleted as dead code (the inspector draws
-    /// its title through `CadenceSchedulePanel`, whose priority control cycles in place), so they
-    /// are no longer panels the inspector opens and the source count below agrees.
-    ///
-    /// **It is a typed list, and it has to be: a width is a value, not a spelling** (T-1941). Two
-    /// of the four are computed from a `DynamicTypeSize` by types that live elsewhere, so nothing
-    /// that reads source text can produce this array. What *can* be read out of source is how many
-    /// panels there are to have a width — the inspector's child popovers are the ones whose
-    /// `arrowEdge:` comes from a `TaskInspectorChildPopoverPlacement` — and
-    /// `CadenceInspectorChildPopoverPlacementTests.theEnumeratedPanelsAreCountedAgainstTheInspectorsOwnPopovers`
-    /// counts them and fails when this list is one short. Before that, the only test over this list
-    /// asserted `count == 4` *against this list*, so a fifth panel was invisible to every relation
-    /// asserted over it and nothing went red.
-    ///
-    /// `dynamicTypeSize` is a parameter rather than `.large` baked in even though the inspector is
-    /// macOS-only: the two shared panels genuinely widen with type, and a caller that wants the
-    /// desktop reading should have to say so.
-    ///
-    /// `@MainActor` because `EstimateRollerMetrics.panelWidth(at:scaling:)` is: the roller's
-    /// metrics are view code. Nothing here is, so the rest of the type stays `nonisolated`.
     @MainActor
     static func allWidths(at dynamicTypeSize: DynamicTypeSize) -> [(name: String, width: CGFloat)] {
         [
-            ("date", CadenceDateSelectionMetrics.width(at: dynamicTypeSize)),
-            ("recurrence", recurrenceWidth)
+            ("date", CadenceDateSelectionMetrics.width(at: dynamicTypeSize))
         ]
     }
 }

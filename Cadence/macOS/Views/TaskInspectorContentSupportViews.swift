@@ -675,12 +675,17 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @State private var draft: CadenceScheduleDraft
+    @State private var openedDraft: CadenceScheduleDraft
+    @State private var isAskingRecurrenceScope = false
+    @State private var saveFailureNotice: String?
 
     init(task: AppTask, beforeSave: @escaping () -> Bool, @ViewBuilder content: @escaping () -> Content) {
         _task = Bindable(wrappedValue: task)
         self.beforeSave = beforeSave
         self.content = content
-        _draft = State(initialValue: CadenceScheduleDraft(editing: task))
+        let opened = CadenceScheduleDraft(editing: task)
+        _openedDraft = State(initialValue: opened)
+        _draft = State(initialValue: opened)
     }
 
     private var selection: TaskContainerSelection {
@@ -705,6 +710,7 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
                     areas: areas, projects: projects, selection: selection
                 ),
                 sectionChoices: CadenceTaskMutationSupport.sectionNames(forArea: selectedArea, project: selectedProject),
+                failureNotice: saveFailureNotice,
                 titleStatus: CadenceSchedulePanelTitleStatus(
                     // Cancelled alone since [[T-5015]] (b) retired In Progress; the sibling
                     // eyebrows in `iOSTaskDetailSheet` and `CadenceTaskInlinePanel` read the same.
@@ -712,8 +718,7 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
                     eyebrowTint: CadenceTaskPresentationSupport.statusColor(task.status),
                     isSettled: CadenceTaskCompletionState.resolve(task: task).isSettled
                 ),
-                // The host's recurrence control includes its existing end and scope picker.
-                offersTaskRepeat: false,
+                offersTaskRepeat: true,
                 actions: CadenceSchedulePanelActions(
                     commit: save,
                     cancel: { dismiss() },
@@ -731,31 +736,62 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
         // repaired when the task is opened, and only then. A coherent count is not written.
         .onAppear { CadenceTaskRecurrenceWorkflowSupport.repairEndCountOnOpen(task, in: modelContext) }
         .onChange(of: task.statusRaw) { _, _ in draft.isDone = task.isDone }
+        .confirmationDialog(
+            CadenceRecurrenceScopeCopy.taskScopeTitle,
+            isPresented: $isAskingRecurrenceScope,
+            titleVisibility: .visible
+        ) {
+            Button(CadenceTaskRecurrenceEditScope.thisTask.label) {
+                saveFailureNotice = applySave(scope: .thisTask)
+            }
+            Button(CadenceTaskRecurrenceEditScope.thisAndFuture.label) {
+                saveFailureNotice = applySave(scope: .thisAndFuture)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(CadenceRecurrenceScopeCopy.taskScopeMessage)
+        }
         // No `.onChange(of: draft.listToken)` here: the panel reconciles the Section row itself,
         // over the `sectionChoices` above ([[T-8591]], host copy removed under [[T-8601]]).
     }
 
     private func save() -> String? {
         guard beforeSave() else { return CadenceTaskInspectorSupport.subtaskAddFailureNotice }
+        if TaskInspectorScheduleCommit.needsRecurrenceScope(draft, opened: openedDraft, task: task) {
+            isAskingRecurrenceScope = true
+            return nil
+        }
+        return applySave(scope: .thisTask)
+    }
+
+    private func applySave(scope: CadenceTaskRecurrenceEditScope) -> String? {
         guard TaskInspectorScheduleCommit.save(
-            draft, to: task, areas: areas, projects: projects, allTasks: allTasks,
-            in: modelContext, commit: { try $0.save() }
+            draft, opened: openedDraft, to: task, areas: areas, projects: projects, allTasks: allTasks,
+            scope: scope, in: modelContext, commit: { try $0.save() }
         ) else { return CadenceTaskFieldEditCommit.saveFailureNotice }
         dismiss()
         return nil
     }
 }
 
-/// The host edits recurrence and notes through existing record controls. Read those fields at
-/// Save, after the markdown flush, so a schedule edit cannot restore their opening values.
+/// The panel drafts recurrence alongside title, placement and schedule. Notes and record actions
+/// still commit independently, so Save reads their current values after the host's flush.
 @MainActor
 enum TaskInspectorScheduleCommit {
+    static func needsRecurrenceScope(
+        _ draft: CadenceScheduleDraft, opened: CadenceScheduleDraft, task: AppTask
+    ) -> Bool {
+        draft.changesRecurrence(from: opened) && task.isRecurrenceSeriesMember
+    }
+
     static func save(
         _ draft: CadenceScheduleDraft,
+        opened: CadenceScheduleDraft,
         to task: AppTask,
         areas: [Area],
         projects: [Project],
         allTasks: [AppTask],
+        scope: CadenceTaskRecurrenceEditScope = .thisTask,
         in modelContext: ModelContext,
         commit: (ModelContext) throws -> Void
     ) -> Bool {
@@ -767,20 +803,22 @@ enum TaskInspectorScheduleCommit {
         let current = CadenceScheduleDraft(editing: task)
         var payload = draft
         payload.notes = task.notes
-        payload.repeatRule = current.repeatRule
-        payload.seriesEndMode = current.seriesEndMode
-        payload.seriesEndDateKey = current.seriesEndDateKey
-        payload.seriesEndCount = current.seriesEndCount
+        // An untouched recurrence draft must not overwrite a sync or another editor's change.
+        if !draft.changesRecurrence(from: opened) {
+            payload.repeatRule = current.repeatRule
+            payload.seriesEndMode = current.seriesEndMode
+            payload.seriesEndDateKey = current.seriesEndDateKey
+            payload.seriesEndCount = current.seriesEndCount
+        }
         payload.seriesOccurrenceNumber = current.seriesOccurrenceNumber
         payload.isDone = current.isDone
         let clearsSchedule = (payload.startDateKey.isEmpty && !current.startDateKey.isEmpty)
             || (payload.scheduledStartMin < 0 && current.scheduledStartMin >= 0)
         return CadenceTaskEditDraftCommit.save(
             payload, opened: current, to: task, area: area, project: project,
-            allTasks: allTasks, scope: .thisTask, in: modelContext,
+            allTasks: allTasks, scope: scope, in: modelContext,
             commit: { context in
-                // The old Unschedule action also retired this legacy link. Stay inside the
-                // field snapshot's commit so a refusal restores the link with the schedule.
+                // Keep the legacy Unschedule link inside the same refusal snapshot.
                 if clearsSchedule { SchedulingActions.removeFromCalendar(task) }
                 try commit(context)
             }

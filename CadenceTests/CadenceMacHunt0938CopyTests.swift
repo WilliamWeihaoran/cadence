@@ -9,17 +9,11 @@ import Testing
 struct CadenceMacHunt0938CopyTests {
     // MARK: T-9255 -- the inspector's "After N times" end count
 
-    /// The word after the count field was a literal "times", so a series ending after one
-    /// occurrence read "After 1 times".
+    /// The inspector now uses the shared After stepper and its singular/plural label.
     @Test func theEndCountUnitIsSingularAtOne() {
-        #expect(TaskInspectorRecurrenceControl.endCountUnit(forCountText: "1") == "time")
-        #expect(TaskInspectorRecurrenceControl.endCountUnit(forCountText: "2") == "times")
-        #expect(TaskInspectorRecurrenceControl.endCountUnit(forCountText: "10") == "times")
-        // Read off the digits the commit parses, so a stray character does not flip the word.
-        #expect(TaskInspectorRecurrenceControl.endCountUnit(forCountText: " 1") == "time")
-        // A field mid-edit (empty) keeps the plural, the form that reads next to no number.
-        #expect(TaskInspectorRecurrenceControl.endCountUnit(forCountText: "") == "times")
-        #expect(TaskInspectorRecurrenceControl.endCountUnit(forCountText: "11") == "times")
+        #expect(CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(1) == "1 occurrence")
+        #expect(CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(2) == "2 occurrences")
+        #expect(CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(10) == "10 occurrences")
     }
 
     // MARK: T-9256 -- the hover-shortcut date panel's Clear

@@ -201,38 +201,17 @@ struct CadenceInspectorChildPopoverPlacementTests {
 
     // MARK: - The call sites
 
-    /// **Every** inspector row that opens a child panel asks for the beside-inspector placement,
-    /// not just the one the screenshot caught. *Do* is the row that opened the panel; *Due* and
-    /// *Repeat* are two of the rows it sliced ("Set" and "er"), and each of them opens a panel of
-    /// its own that is narrower than the same column. One column, one rule.
-    ///
-    /// **Repointed by [[T-6561]].** This read the old Schedule well section long after nothing drew
-    /// it; the live inspector (`TaskDetailPopover`) keeps Do and Due inside `CadenceSchedulePanel`
-    /// and hangs only Repeat off its own record sections, so that is the body read now.
-    ///
-    /// Counted as a **relation between two counts** rather than against a fixed figure, so a
-    /// panel-opening row added to the record sections is caught rather than ignored.
+    /// Schedule controls now share the standard panel; no narrower legacy child remains in
+    /// recordSections to slice its notes and subtasks.
     @Test
     func everyRowInTheScheduleWellAsksForTheBesideInspectorPlacement() throws {
-        let source = try CadenceCommitSurfaceScan.scanned(
-            "Cadence/macOS/Views/SchedulePanelComponents.swift"
-        )
-        let body = try #require(
-            CadenceSourceScan.declarationBody("private var recordSections: some View", in: source),
-            "TaskDetailPopover.recordSections no longer reads as a declaration this scan can scope to"
-        )
-
-        let controls = CadenceSourceScan.matchCount(
-            #"TaskInspector(DateControl|RecurrenceControl)\("#, in: body
-        )
-        let placements = CadenceSourceScan.matchCount(
-            #"childPlacement:\s*\.besideInspector"#, in: body
-        )
-        #expect(controls >= 1, "expected at least the Repeat row, found \(controls)")
-        #expect(
-            placements == controls,
-            "a row in the inspector's Schedule well no longer asks for .besideInspector, so its panel slices the rows below it (T-1480)"
-        )
+        let source = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/SchedulePanelComponents.swift")
+        let body = try #require(CadenceSourceScan.declarationBody("private var recordSections: some View", in: source))
+        #expect(body.contains("TaskDetailNotesSection("))
+        #expect(CadenceSourceScan.matchCount(#"TaskInspector(DateControl|RecurrenceControl)\("#, in: body) == 0)
+        let editor = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift")
+        #expect(editor.contains("CadenceSchedulePanel("))
+        #expect(editor.contains("offersTaskRepeat: true"))
     }
 
     /// Each control presents its panel on the placement it was handed, not on an edge typed into
@@ -243,7 +222,6 @@ struct CadenceInspectorChildPopoverPlacementTests {
     func theScheduleControlsPresentOnThePlacementTheyWereHanded() throws {
         let sites = [
             ("Cadence/macOS/Views/TaskInspectorFieldSupportViews.swift", "struct TaskInspectorDateControl: View"),
-            ("Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift", "struct TaskInspectorRecurrenceControl: View"),
         ]
 
         for (path, declaration) in sites {
@@ -428,10 +406,10 @@ struct CadenceInspectorChildPopoverPlacementTests {
     /// own popovers out of the source.
     @MainActor
     @Test
-    func theInspectorOpensTwoPanelsAndEachOneNamesItsWidth() {
+    func theInspectorRetainsOnlyTheDatePanelWithItsNamedWidth() {
         let panels = TaskInspectorPanelMetrics.allWidths(at: Self.desktopTypeSize)
-        #expect(panels.count == 2, "read \(panels.count) inspector panels")
-        #expect(Set(panels.map(\.name)) == ["date", "recurrence"])
+        #expect(panels.count == 1, "read \(panels.count) inspector panels")
+        #expect(Set(panels.map(\.name)) == ["date"])
         for panel in panels {
             #expect(panel.width > 0, "\(panel.name) reports a \(panel.width)pt panel")
         }
@@ -469,37 +447,15 @@ struct CadenceInspectorChildPopoverPlacementTests {
         }
     }
 
-    /// **The views frame from the metric, not from a literal that happens to equal it.** The needle
-    /// is built *from* the constant, so a panel left framing the old number fails the moment the
-    /// constant moves — which is the exact failure mode this test exists to rule out. The priority
-    /// panel's site left with that panel and its width metric, which nothing drew after the
-    /// inspector's header section was deleted ([[T-6561]]).
+    /// The retired recurrence popover has no remaining declaration; the standard panel owns it.
     @Test
-    func theRecurrencePanelFramesItselfFromItsNamedWidth() throws {
-        let sites: [(path: String, declaration: String, metric: String, width: CGFloat)] = [
-            (
-                "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
-                "private struct TaskRecurrencePickerPanel: View",
-                "TaskInspectorPanelMetrics.recurrenceWidth",
-                TaskInspectorPanelMetrics.recurrenceWidth
-            )
-        ]
-
-        for site in sites {
-            let source = try CadenceCommitSurfaceScan.scanned(site.path)
-            let body = try #require(
-                CadenceSourceScan.declarationBody(site.declaration, in: source),
-                "\(site.declaration) no longer reads as a declaration this scan can scope to"
-            )
-            #expect(
-                CadenceSourceScan.matchCount(#"\.frame\(width: \#(site.metric)\)"#, in: body) == 1,
-                "\(site.declaration) no longer frames itself from \(site.metric) (T-1600)"
-            )
-            #expect(
-                CadenceSourceScan.matchCount(#"\.frame\(width: \#(Int(site.width))[,)]"#, in: body) == 0,
-                "\(site.declaration) frames itself from the bare number \(Int(site.width)) again, so the width the placement rule reads and the width the panel draws are two facts (T-1600)"
-            )
-        }
+    func theInspectorUsesSharedRecurrenceRowsWithoutALegacyPopover() throws {
+        let source = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift")
+        let editor = try #require(CadenceSourceScan.declarationBody("struct TaskInspectorScheduleEditor<Content: View>: View", in: source))
+        #expect(editor.contains("CadenceSchedulePanel("))
+        #expect(editor.contains("offersTaskRepeat: true"))
+        let retired = try CadenceSourceScan.swiftFiles(under: "Cadence")
+        #expect(!retired.contains("Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift"))
     }
 
     /// **One owner for the priority tile's 28** (T-1600), kept for the half that still has an
@@ -580,7 +536,7 @@ struct CadenceInspectorChildPopoverPlacementTests {
 
     /// **The enumeration is checked against the source, not against itself** (T-1941).
     ///
-    /// `theInspectorOpensTwoPanelsAndEachOneNamesItsWidth` above asserts a count against
+    /// `theInspectorRetainsOnlyTheDatePanelWithItsNamedWidth` above asserts a count against
     /// `allWidths(at:)` — the same hand-written list it is trying to protect. That is circular with
     /// respect to the thing at risk: a fifth `.popover` added to the inspector changes neither
     /// side, and every relation in this section — narrower than the content column, slices the rows
@@ -605,9 +561,9 @@ struct CadenceInspectorChildPopoverPlacementTests {
         let enumerated = TaskInspectorPanelMetrics.allWidths(at: Self.desktopTypeSize)
 
         // Floors first: an empty sweep must fail here rather than agree with an empty enumeration.
-        #expect(scan.sites.count >= 2, "scanned \(scan.sites.count) inspector child popovers: \(scan.sites)")
-        #expect(scan.panels >= 2, "scanned \(scan.panels) inspector panels: \(scan.sites)")
-        #expect(enumerated.count >= 2, "enumerated \(enumerated.count) panels")
+        #expect(scan.sites.count >= 1, "scanned \(scan.sites.count) inspector child popovers: \(scan.sites)")
+        #expect(scan.panels >= 1, "scanned \(scan.panels) inspector panels: \(scan.sites)")
+        #expect(enumerated.count >= 1, "enumerated \(enumerated.count) panels")
 
         #expect(
             scan.panels == enumerated.count,
@@ -634,13 +590,7 @@ struct CadenceInspectorChildPopoverPlacementTests {
             "the inspector filter matched every popover in the app (\(all)), so it is not filtering on the placement type (T-1941)"
         )
 
-        // And it is anchored on the placement rather than on a file: the two it does match are
-        // the ones whose arrow edge comes from TaskInspectorChildPopoverPlacement. (The header's
-        // two-panel popover was the third, and went with `TaskDetailHeaderSection`, [[T-6232]].)
-        #expect(
-            scanned.sites.contains { $0.contains("TaskInspectorWorkflowSupportViews.swift") },
-            "the recurrence panel fell out of the sweep: \(scanned.sites)"
-        )
+        // The surviving date panel anchors the placement sweep after recurrence's retirement.
         #expect(
             scanned.sites.contains { $0.contains("TaskInspectorFieldSupportViews.swift") },
             "the date panel fell out of the sweep: \(scanned.sites)"

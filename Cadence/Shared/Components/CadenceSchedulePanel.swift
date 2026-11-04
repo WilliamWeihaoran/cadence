@@ -85,8 +85,9 @@ struct CadenceSchedulePanelActions {
 /// - `titleStatus` — an existing task's state, drawn on the title row. See the type.
 /// - `offersTaskRepeat` — `false` where the host draws a task's series itself. The iOS task sheet
 ///   does so on its plate (`iOSTaskFieldListSection`), in this panel's own rows and draft writes
-///   ([[T-8593]]); the Mac inspector still keeps its own live-writing control ([[T-8701]]). It is
-///   no longer "because a creating panel has no end condition": [[T-6901]] gave it one.
+///   ([[T-8593]]). The Mac inspector passes `true` and drafts the series in these rows, asking
+///   the scope at Save ([[T-8701]]). It is no longer "because a creating panel has no end
+///   condition": [[T-6901]] gave it one.
 /// - `offersTaskDue` — `false` where the host has nowhere to write a due date: a Due row whose
 ///   value is dropped on the way to the store is the inert control T-470 went through this app
 ///   removing. (The macOS drag-create popover was that host until [[T-3171]] (iii) gave its task

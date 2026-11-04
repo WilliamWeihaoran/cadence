@@ -169,21 +169,14 @@ struct CadenceMacTaskInspectorStatusActionsTests {
         #expect(task.status == .todo)
     }
 
-    /// **[[T-7201]]: the series' "After N times" count field has a VoiceOver name.** It is a
-    /// `TextField("", …)` — a title would draw as a placeholder over the count — so without an
-    /// explicit label VoiceOver announced an unnamed text field.
+    /// The shared stepper passes its spoken count label even though it hides the drawn label.
     @Test func theRecurrenceCountFieldIsNamed() throws {
-        #expect(TaskInspectorRecurrenceControl.endCountFieldAccessibilityLabel == "Number of times")
         let source = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift")
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceSchedulePanel.swift")
         )
-        let untitledFields = CadenceSourceScan.matchCount(#"TextField\(""#, in: source)
-        #expect(untitledFields == 1, "non-vacuity: the one untitled count field is still here")
-        let named = CadenceSourceScan.matchCount(
-            #"TextField\("", text: \$countText\)\s*\.textFieldStyle\(\.plain\)\s*\.accessibilityLabel\(TaskInspectorRecurrenceControl\.endCountFieldAccessibilityLabel\)"#,
-            in: source
-        )
-        #expect(named == 1, "the untitled count field lost its accessibility label (T-7201)")
+        let body = try #require(CadenceSourceScan.declarationBody("struct CadenceSeriesEndCountRow: View", in: source))
+        #expect(body.contains("let label = CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(count)"))
+        #expect(body.contains("Stepper(label, value: $count, in: range)"))
     }
 
     private static func actionsSection() throws -> String {
