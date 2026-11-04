@@ -129,6 +129,24 @@ enum RootCommandEventSupport {
         }
     }
 
+    /// **[[T-7203]] — the one body behind Cmd+K, Cmd+O and Cmd+\ and their View-menu items.**
+    ///
+    /// The `case 40` / `case 31` / `case 42` arms below call this and return `nil`, so the key is
+    /// consumed before `performKeyEquivalent` and the menu item's own key equivalent never fires
+    /// from the keyboard while the monitor runs: one press, one action. A click on the item comes
+    /// through `RootCommandHandler.handleViewMenuCommand`, which lands here too.
+    static func performViewCommand(_ command: CadenceViewMenuCommand, context: RootCommandContext) {
+        switch command {
+        case .search:
+            context.clearAppEditingFocus()
+            context.globalSearchManager.present()
+        case .toggleSidebar:
+            context.toggleSidebarVisibility()
+        case .toggleTimeline:
+            RootCommandActionSupport.handleTimelineShortcut(context: context)
+        }
+    }
+
     /// The app's Cmd-key table. A case returns `nil` when it consumed the key and `event` when it
     /// did not, so anything absent from the switch falls through to the responder chain.
     ///
@@ -154,8 +172,8 @@ enum RootCommandEventSupport {
             // Search — over letting it reach an editable text view, so the editor's insert-link
             // shortcut moved to Cmd+Shift+K (`MarkdownKeyboardShortcutSupport.handle`) and this
             // arm does **not** grow a text-editing exception.
-            context.clearAppEditingFocus()
-            context.globalSearchManager.present()
+            // [[T-7203]]: View ▸ Search names this key; both run `performViewCommand`.
+            performViewCommand(.search, context: context)
             return nil
         case 51:
             if context.hoveredEditableManager.triggerDelete() { return nil }
@@ -210,7 +228,7 @@ enum RootCommandEventSupport {
             if context.hoveredKanbanColumnManager.triggerCreateTask() { return nil }
             return event
         case 42:
-            RootCommandActionSupport.handleTimelineShortcut(context: context)
+            performViewCommand(.toggleTimeline, context: context)
             return nil
         case 1:
             guard let task = context.hoveredTaskManager.hoveredTask else { return event }
@@ -218,7 +236,7 @@ enum RootCommandEventSupport {
             _ = context.hoveredEditableManager.triggerEdit()
             return nil
         case 31:
-            context.toggleSidebarVisibility()
+            performViewCommand(.toggleSidebar, context: context)
             return nil
         case 24, 27:
             guard event.modifierFlags.contains(.shift),

@@ -66,8 +66,9 @@ struct CadenceMacNewItemMenuTests {
         let menu = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/Views/macOSRootMenuCommands.swift")
         let group = try #require(CadenceSourceScan.declarationBody("CommandGroup(replacing: .newItem)", in: menu))
         #expect(CadenceSourceScan.matchCount(#"\.keyboardShortcut\("#, in: group) == 1)
-        // [[T-7232]]: the file's one other shortcut is Settings…'s Cmd+, , in its own group.
-        #expect(CadenceSourceScan.matchCount(#"\.keyboardShortcut\("#, in: menu) == 2)
+        // [[T-7232]]: Settings…'s Cmd+, , in its own group; [[T-7203]]: the View group's one,
+        // written once inside the `ForEach` over `CadenceViewMenu.items`.
+        #expect(CadenceSourceScan.matchCount(#"\.keyboardShortcut\("#, in: menu) == 3)
         #expect(menu.contains("KeyEquivalent(CadenceNewItemMenu.newTaskShortcut), modifiers: .command"))
         #expect(menu.contains("TaskCreationManager.shared.present()"), "Cmd+N no longer opens the New Task panel")
         #expect(menu.contains("openWindow(id: CadenceWindowGroupID.main)"), "New Window opens nothing")

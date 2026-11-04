@@ -65,6 +65,7 @@ struct macOSRootView: View {
     private let hoveredSectionManager = HoveredSectionManager.shared
     private let taskCompletionAnimationManager = TaskCompletionAnimationManager.shared
     private let menuCommandRoute = CadenceMenuCommandRoute.shared
+    private let viewMenuRoute = CadenceViewMenuRoute.shared
 
     /// The context every read and write in this view must go through.
     ///
@@ -179,6 +180,11 @@ struct macOSRootView: View {
         .onChange(of: menuCommandRoute.request?.token) { _, _ in
             guard let request = menuCommandRoute.request else { return }
             RootCommandHandler.handleMenuCommand(request.command, context: makeSearchSelectionContext())
+        }
+        // T-7203. View ▸ Search / Toggle Sidebar / Toggle Timeline — the key monitor's own actions.
+        .onChange(of: viewMenuRoute.request?.token) { _, _ in
+            guard let request = viewMenuRoute.request else { return }
+            RootCommandHandler.handleViewMenuCommand(request.command, context: makeCommandContext())
         }
         .onChange(of: selection) { _, newValue in
             macOSRootLifecycleSupport.handleSelectionChange(

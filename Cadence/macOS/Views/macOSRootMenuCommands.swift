@@ -43,6 +43,72 @@ struct macOSRootMenuCommands: Commands {
             }
             .keyboardShortcut(KeyEquivalent(CadenceAppSettingsMenu.settingsShortcut), modifiers: .command)
         }
+
+        // T-7203. The system View menu, not a `CommandMenu("View")`, which would add a second
+        // menu titled View beside the one SwiftUI already draws (Show Tab Bar, Enter Full Screen).
+        CommandGroup(before: .toolbar) {
+            ForEach(CadenceViewMenu.items, id: \.command) { item in
+                Button(item.title) {
+                    CadenceViewMenuRoute.shared.send(item.command)
+                }
+                .keyboardShortcut(KeyEquivalent(item.shortcut), modifiers: .command)
+            }
+            Divider()
+        }
+    }
+}
+
+/// **[[T-7203]] — View ▸ Search, Toggle Sidebar and Toggle Timeline, as data.**
+///
+/// Cmd+K, Cmd+O and Cmd+\ lived only in the root key monitor's `case 40` / `case 31` / `case 42`
+/// arms, so nothing on screen named Cmd+O or Cmd+\ at all. The menu names them; it does not take
+/// them over. The monitor sees a key before `performKeyEquivalent` and consumes these three, so
+/// from the keyboard the arm acts and the item's key equivalent is never reached. A click goes
+/// through `CadenceViewMenuRoute` to `RootCommandHandler.handleViewMenuCommand`, and both paths
+/// run `RootCommandEventSupport.performViewCommand`. Cmd+O stays the sidebar key (owner decision,
+/// 2026-11-02): Cadence has no Open… for it to collide with.
+nonisolated enum CadenceViewMenuCommand: Hashable, CaseIterable {
+    case search
+    case toggleSidebar
+    case toggleTimeline
+}
+
+nonisolated enum CadenceViewMenu {
+    struct Item: Equatable {
+        let command: CadenceViewMenuCommand
+        let title: String
+        /// The Cmd-key equivalent the item shows and binds.
+        let shortcut: Character
+        /// The root monitor's arm for the same key, which consumes it first.
+        let keyCode: UInt16
+    }
+
+    static let search = Item(command: .search, title: "Search", shortcut: "k", keyCode: 40)
+    static let toggleSidebar = Item(command: .toggleSidebar, title: "Toggle Sidebar", shortcut: "o", keyCode: 31)
+    static let toggleTimeline = Item(command: .toggleTimeline, title: "Toggle Timeline", shortcut: "\\", keyCode: 42)
+
+    static let items: [Item] = [search, toggleSidebar, toggleTimeline]
+}
+
+/// **[[T-7203]] — how a View-menu item reaches the root**, for the reason `CadenceMenuCommandRoute`
+/// exists: a `Commands` value holds no handle on the root's sidebar or timeline state. A fresh
+/// token per send lets the same item fire twice in a row.
+@Observable
+final class CadenceViewMenuRoute {
+    struct Request: Equatable {
+        let command: CadenceViewMenuCommand
+        let token: UUID
+    }
+
+    static let shared = CadenceViewMenuRoute()
+
+    private(set) var request: Request?
+
+    /// Internal rather than private so a test can drive its own instance, not the app's.
+    init() {}
+
+    func send(_ command: CadenceViewMenuCommand) {
+        request = Request(command: command, token: UUID())
     }
 }
 
