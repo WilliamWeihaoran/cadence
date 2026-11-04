@@ -169,4 +169,29 @@ struct CadenceColumnEditorDefaultAndDateTests {
             #expect(!sheet.contains("TaskInspectorDateControl("), "\(path) bypasses the derived row")
         }
     }
+
+    /// **[[T-10982]]: an undated project reads "No due date" on the Mac too.** The control read
+    /// "Set" while empty -- the task inspector's idiom -- where iOS and both platforms' column rows
+    /// read `CadenceBoardColumnDueDatePlan.emptyLabel`. The control now takes an empty label whose
+    /// default stays "Set", and the project row passes the shared one.
+    @Test func macProjectDueRowReadsTheSharedEmptyLabel() throws {
+        let support = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/Sheets/ListEditorSupportViews.swift")
+        let row = try #require(CadenceSourceScan.declarationBody("struct ListEditorDueDateRow: View", in: support))
+        #expect(
+            CadenceSourceScan.matchCount("emptyLabel: CadenceBoardColumnDueDatePlan\\.emptyLabel,", in: row) == 1,
+            "the project Due row passes the shared empty label"
+        )
+        #expect(CadenceBoardColumnDueDatePlan.emptyLabel == "No due date")
+        #if os(macOS)
+        #expect(TaskInspectorDateControl.defaultEmptyLabel == "Set", "the task inspector keeps its own word")
+        let empty = TaskInspectorDateControl.displayValue(
+            isOn: false, date: Date(), emptyLabel: CadenceBoardColumnDueDatePlan.emptyLabel
+        )
+        #expect(empty == CadenceBoardColumnDueDatePlan.emptyLabel)
+        let dated = TaskInspectorDateControl.displayValue(
+            isOn: true, date: Date(), emptyLabel: CadenceBoardColumnDueDatePlan.emptyLabel
+        )
+        #expect(dated != CadenceBoardColumnDueDatePlan.emptyLabel, "a dated row shows its date")
+        #endif
+    }
 }

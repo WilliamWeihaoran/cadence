@@ -436,15 +436,27 @@ struct TaskInspectorDateControl: View {
     /// Where the date panel opens relative to this row. The default suits a host wider than the
     /// panel; the task inspector is not one and passes `.besideInspector` (T-1480).
     var childPlacement: TaskInspectorChildPopoverPlacement = .belowRow
+    /// What the row reads while unset. The task inspector keeps "Set"; a project's Due row passes
+    /// `CadenceBoardColumnDueDatePlan.emptyLabel` so it reads what iOS and both column rows read
+    /// ([[T-10982]], one app under [[T-8201]]).
+    var emptyLabel: String = TaskInspectorDateControl.defaultEmptyLabel
     @Binding var isOn: Bool
     @Binding var date: Date
 
     @State private var showPicker = false
     @State private var viewMonth: Date = Calendar.current.startOfDay(for: Date())
 
-    private var displayValue: String {
-        guard isOn else { return "Set" }
+    /// The task inspector's own empty value.
+    static let defaultEmptyLabel = "Set"
+
+    /// The row's value text: `emptyLabel` while unset, else the relative date.
+    static func displayValue(isOn: Bool, date: Date, emptyLabel: String) -> String {
+        guard isOn else { return emptyLabel }
         return DateFormatters.relativeDate(from: DateFormatters.dateKey(from: date))
+    }
+
+    private var displayValue: String {
+        Self.displayValue(isOn: isOn, date: date, emptyLabel: emptyLabel)
     }
 
     var body: some View {

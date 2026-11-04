@@ -310,9 +310,11 @@ private struct ListEditorIconCell: View {
 /// that can disagree with it, the same rule as the iOS editor's placeholder picker and the column
 /// popover's. `seed` is only where the panel opens and the day last picked.
 ///
-/// `TaskInspectorDateControl` is already the one-trigger shape (it reads "Set" while empty, a pick
-/// sets the field, the panel's Clear unsets it), so this row derives its `isOn:` / `date:` from the
-/// key rather than changing the control its other callers share.
+/// `TaskInspectorDateControl` is already the one-trigger shape (a pick sets the field, the panel's
+/// Clear unsets it), so this row derives its `isOn:` / `date:` from the key rather than changing
+/// the control its other callers share. [[T-10982]]: while empty it reads
+/// `CadenceBoardColumnDueDatePlan.emptyLabel`, the words iOS and both column rows use, not the
+/// task inspector's "Set" -- no hardware makes the Mac sheet say something else ([[T-8201]]).
 struct ListEditorDueDateRow: View {
     @Binding var dueDateKey: String
     @Binding var seed: Date
@@ -321,6 +323,7 @@ struct ListEditorDueDateRow: View {
         TaskInspectorDateControl(
             label: "Due",
             reservesIconSlot: false,
+            emptyLabel: CadenceBoardColumnDueDatePlan.emptyLabel,
             isOn: Binding(
                 get: { !dueDateKey.isEmpty },
                 set: { dated in

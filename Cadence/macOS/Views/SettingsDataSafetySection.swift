@@ -195,8 +195,9 @@ struct SettingsDataSafetySection: View {
             //
             // Reveal only, for the reason the two lists below are: it may be the only copy of
             // those files, and the one thing allowed to remove it is Delete Account & Data,
-            // which says so. iOS has no section because iOS has no way to schedule a restore yet
-            // (T-1477 is PARTIAL: the phone's section is parked, and lists these when it lands).
+            // which says so. iOS lists these folders too, read-only
+            // (`iOSStoreBackupSettingsSection`, T-10022): only the Mac can Reveal them, because
+            // iOS has no Files route into Cadence's container.
             if !retainedUnrestoredDirectories.isEmpty {
                 VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
                     SettingsSectionLabel(text: CadenceStoreBackupPresentation.unrestoredSectionTitle)
