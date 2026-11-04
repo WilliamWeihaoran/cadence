@@ -325,10 +325,12 @@ struct CadenceColumnWindDownSurfaceTests {
         #expect(files.contains("Cadence/macOS/Views/KanbanSectionColumnView.swift"))
 
         // The `Toggle("Completed"` / `Toggle("Archived"` absence checks would pass vacuously if the
-        // row had stopped drawing toggles at all, or if the reader had returned nothing.
+        // reader had returned nothing or no longer saw a `Toggle(` spelling. The anchor is the
+        // sheet's hide-empty toggle: [[T-9804]] retired both "Due date" switches (the column row's,
+        // then the project's), which this line used to read.
         let editor = try strippingComments(sourceFile("Cadence/iOS/iOSListEditorViews.swift"))
         #expect(editor.contains("private struct iOSSectionDraftRow: View"))
-        #expect(editor.contains("Toggle(\"Due date\""))
+        #expect(editor.contains("Toggle(CadenceListVocabularyCopy.hideEmptyTaskDueDatesToggle"))
         #expect(editor.contains("lifecycle: iOSSectionRowLifecycle?"))
         // The Default column is gated out of the wind-down, for the reason the model test above
         // pins. Asserted as live code, so deleting the guard is a failure here as well as a

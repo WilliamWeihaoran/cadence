@@ -265,8 +265,10 @@ struct EditProjectSheet: View {
     @State private var details: String
     @State private var selectedColor: String
     @State private var selectedIcon: String
+    /// [[T-9804]]: the due date as `applyEdits()` stores it, "" for none -- whether the project is
+    /// dated is this alone. `dueDate` is only where the picker opens. See `ListEditorDueDateRow`.
+    @State private var dueDateKey: String
     @State private var dueDate: Date
-    @State private var hasDueDate: Bool
     @State private var selectedCalendarID: String
     @State private var hideDueDateIfEmpty: Bool
     @State private var hideSectionDueDateIfEmpty: Bool
@@ -288,10 +290,10 @@ struct EditProjectSheet: View {
         _hideDueDateIfEmpty = State(initialValue: project.hideDueDateIfEmpty)
         _hideSectionDueDateIfEmpty = State(initialValue: project.hideSectionDueDateIfEmpty)
         if !project.dueDate.isEmpty, let d = DateFormatters.date(from: project.dueDate) {
-            _hasDueDate = State(initialValue: true)
+            _dueDateKey = State(initialValue: DateFormatters.dateKey(from: d))
             _dueDate = State(initialValue: d)
         } else {
-            _hasDueDate = State(initialValue: false)
+            _dueDateKey = State(initialValue: "")
             _dueDate = State(initialValue: Date())
         }
     }
@@ -330,12 +332,7 @@ struct EditProjectSheet: View {
                 ListEditorAreaRow(areas: areas, selectedID: $selectedAreaID)
                 TaskInspectorFieldDivider()
 
-                TaskInspectorDateControl(
-                    label: "Due",
-                    reservesIconSlot: false,
-                    isOn: $hasDueDate,
-                    date: $dueDate
-                )
+                ListEditorDueDateRow(dueDateKey: $dueDateKey, seed: $dueDate)
 
                 if calendarManager.isAuthorized {
                     TaskInspectorFieldDivider()
@@ -407,7 +404,7 @@ struct EditProjectSheet: View {
         project.desc = details
         project.colorHex = selectedColor
         project.icon = selectedIcon
-        project.dueDate = hasDueDate ? DateFormatters.dateKey(from: dueDate) : ""
+        project.dueDate = dueDateKey
         // **T-624**, as in `EditAreaSheet.applyEdits()` above — before the assignment, so the
         // comparison still has the stored value to compare against.
         CadenceCalendarLinkObservations.recordPick(selectedCalendarID, replacing: project.linkedCalendarID)

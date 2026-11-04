@@ -28,8 +28,10 @@ struct CreateListSheet: View {
     @State private var listType: ListType = .area
     @State private var selectedColor = ListType.area.defaultColor
     @State private var selectedIcon = ListType.area.defaultIcon
+    /// [[T-9804]]: the new project's due date as `create()` stores it, "" for none. `dueDate` is
+    /// only where the picker opens. See `ListEditorDueDateRow`.
+    @State private var dueDateKey = ""
     @State private var dueDate: Date = Date()
-    @State private var hasDueDate: Bool = false
     @State private var hideDueDateIfEmpty = true
     @State private var hideSectionDueDateIfEmpty = true
     @State private var createFailureNotice: String?
@@ -133,12 +135,7 @@ struct CreateListSheet: View {
                     ListEditorAreaRow(areas: areas, selectedID: $selectedAreaID)
                     TaskInspectorFieldDivider()
 
-                    TaskInspectorDateControl(
-                        label: "Due",
-                        reservesIconSlot: false,
-                        isOn: $hasDueDate,
-                        date: $dueDate
-                    )
+                    ListEditorDueDateRow(dueDateKey: $dueDateKey, seed: $dueDate)
                     TaskInspectorFieldDivider()
                 }
 
@@ -199,7 +196,7 @@ struct CreateListSheet: View {
             project.order = nextListOrder
             project.hideDueDateIfEmpty = hideDueDateIfEmpty
             project.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
-            if hasDueDate { project.dueDate = DateFormatters.dateKey(from: dueDate) }
+            project.dueDate = dueDateKey
             modelContext.insert(project)
             inserted = project
         }

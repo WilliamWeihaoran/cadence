@@ -120,4 +120,53 @@ struct CadenceColumnEditorDefaultAndDateTests {
         #expect(!row.contains("hasDueDate"))
         #expect(!row.contains(".onChange(of: dueDate)"))
     }
+
+    /// **[[T-9804]], step two: the iOS project due date is the column row's placeholder picker.**
+    /// `iOSListEditorSheet` drew `Toggle("Due date")` and, only when on, a picker with no
+    /// placeholder or clear. It now holds the stored key itself (`projectDueDateKey`, "" for none),
+    /// so "is the project dated" is that value alone, and both save branches -- creating a project
+    /// and editing one -- write it as it stands: "" once cleared, the picked day once set.
+    @Test func iOSProjectDueDateIsOnePlaceholderPicker() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let source = try read("Cadence/iOS/iOSListEditorViews.swift")
+        let sheet = try #require(CadenceSourceScan.declarationBody("struct iOSListEditorSheet: View", in: source))
+
+        #expect(!sheet.contains("Toggle(\"Due date\""), "the separate switch is back")
+        #expect(!sheet.contains("hasProjectDueDate"), "a second flag can disagree with the stored key")
+        #expect(!sheet.contains("CadenceDatePicker(selection: $projectDueDate)"))
+        #expect(sheet.contains("placeholder: projectDueDateKey.isEmpty ? CadenceBoardColumnDueDatePlan.emptyLabel : nil"))
+        #expect(sheet.contains("showsClear: !projectDueDateKey.isEmpty"))
+        #expect(sheet.contains("onClear: { projectDueDateKey = \"\" }"))
+        #expect(sheet.contains("projectDueDateKey = DateFormatters.dateKey(from: newValue)"), "a pick commits through the setter")
+
+        // Both save branches (new project, edited project) write the key as it stands.
+        #expect(CadenceSourceScan.matchCount("project\\.dueDate = projectDueDateKey", in: sheet) == 2)
+        #expect(sheet.contains("dueDateKey: projectDueDateKey,"), "the dismiss guard's snapshot reads the same key")
+        // An existing dated project opens dated; an undated or unreadable one opens empty.
+        let load = try #require(CadenceSourceScan.declarationBody("private func load()", in: source))
+        #expect(load.contains("projectDueDateKey = DateFormatters.dateKey(from: date)"))
+        #expect(CadenceSourceScan.matchCount("projectDueDateKey = \"\"", in: load) == 3)
+    }
+
+    /// **[[T-9804]], step two on the Mac.** Both list sheets drew the due date through
+    /// `TaskInspectorDateControl` -- already one trigger, no switch -- but held a separate
+    /// `hasDueDate` flag beside the date. They now hold the stored key and go through
+    /// `ListEditorDueDateRow`, which derives the control's `isOn:` from that key, so the save writes
+    /// the key as it stands. The control itself, shared with no other caller shape, is unchanged.
+    @Test func macProjectDueDateIsDerivedFromTheStoredKey() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let support = try read("Cadence/macOS/Sheets/ListEditorSupportViews.swift")
+        let row = try #require(CadenceSourceScan.declarationBody("struct ListEditorDueDateRow: View", in: support))
+        #expect(row.contains("get: { !dueDateKey.isEmpty }"), "dated is the stored key alone")
+        #expect(row.contains("dueDateKey = dated ? DateFormatters.dateKey(from: seed) : \"\""), "Clear empties the key")
+        #expect(row.contains("dueDateKey = DateFormatters.dateKey(from: newValue)"), "a pick writes the key")
+
+        for path in ["Cadence/macOS/Sheets/EditListSheet.swift", "Cadence/macOS/Sheets/CreateListSheet.swift"] {
+            let sheet = try read(path)
+            #expect(sheet.contains("ListEditorDueDateRow(dueDateKey: $dueDateKey, seed: $dueDate)"), "\(path)")
+            #expect(sheet.contains("project.dueDate = dueDateKey"), "\(path) saves the key as it stands")
+            #expect(!sheet.contains("hasDueDate"), "\(path) holds a second flag again")
+            #expect(!sheet.contains("TaskInspectorDateControl("), "\(path) bypasses the derived row")
+        }
+    }
 }

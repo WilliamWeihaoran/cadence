@@ -35,7 +35,7 @@ struct CadenceCodexListCreationChoiceTests {
         #expect(change.contains("if icon == oldIcon"))
         #expect(change.contains("if colorHex == oldColor"))
         #expect(change.contains("showAreaPicker = false"))
-        for field in ["selectedContextID", "selectedAreaID", "name", "details", "sectionDrafts", "hasProjectDueDate"] {
+        for field in ["selectedContextID", "selectedAreaID", "name", "details", "sectionDrafts", "projectDueDateKey"] {
             #expect(!change.contains(field + " ="), "type selection must not clear \(field)")
         }
     }

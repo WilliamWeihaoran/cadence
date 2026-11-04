@@ -45,7 +45,11 @@ struct iOSListEditorSheet: View {
     /// The list's `hideSectionDueDateIfEmpty`. iOS could set a *column's* due date and had no say
     /// over whether an empty one showed, because iOS drew no column due dates at all — see T-331.
     @State private var hideEmptySectionDueDates = true
-    @State private var hasProjectDueDate = false
+    /// [[T-9804]]: the project's due date exactly as `save()` stores it -- "" for none. Whether the
+    /// project is dated is this value alone; there is no separate "Due date" switch to disagree with it.
+    @State private var projectDueDateKey = ""
+    /// Where the picker opens while the project is undated, and the last day picked. Never read as
+    /// the due date on its own: a cleared project still holds the cleared day here.
     @State private var projectDueDate = Date()
     @State private var hasLoaded = false
     /// [[T-5174]]: the draft as `load()` left it, against which a swipe-down is refused.
@@ -139,7 +143,7 @@ struct iOSListEditorSheet: View {
             colorHex: colorHex,
             selectedContextID: selectedContextID,
             selectedAreaID: selectedAreaID,
-            dueDateKey: hasProjectDueDate ? DateFormatters.dateKey(from: projectDueDate) : "",
+            dueDateKey: projectDueDateKey,
             hideEmptyDueDates: hideEmptyDueDates,
             hideEmptySectionDueDates: hideEmptySectionDueDates,
             columns: sectionDrafts.map { CadenceListEditorDraftSnapshot.Column($0) }
@@ -257,15 +261,28 @@ struct iOSListEditorSheet: View {
                         }
                     }
 
+                    // [[T-9804]]: the column row's one placeholder picker, not a "Due date" switch
+                    // plus a picker. It reads "No due date" while empty, a pick sets the date and
+                    // Clear unsets it. Every pick commits through the setter rather than `.onChange`:
+                    // after a clear the bound day is still the cleared one, and picking it again
+                    // changes nothing.
                     if isProjectMode {
-                        Toggle("Due date", isOn: $hasProjectDueDate)
-                        if hasProjectDueDate {
-                            HStack {
-                                Text("Due")
-                                    .foregroundStyle(Theme.subdued)
-                                Spacer()
-                                CadenceDatePicker(selection: $projectDueDate)
-                            }
+                        HStack {
+                            Text("Due date")
+                                .foregroundStyle(Theme.subdued)
+                            Spacer()
+                            CadenceDatePicker(
+                                selection: Binding(
+                                    get: { projectDueDate },
+                                    set: { newValue in
+                                        projectDueDate = newValue
+                                        projectDueDateKey = DateFormatters.dateKey(from: newValue)
+                                    }
+                                ),
+                                placeholder: projectDueDateKey.isEmpty ? CadenceBoardColumnDueDatePlan.emptyLabel : nil,
+                                showsClear: !projectDueDateKey.isEmpty,
+                                onClear: { projectDueDateKey = "" }
+                            )
                         }
                     }
 
@@ -497,7 +514,7 @@ struct iOSListEditorSheet: View {
             details = ""
             icon = "folder.fill"
             colorHex = CadenceColorPalette.areaDefault
-            hasProjectDueDate = false
+            projectDueDateKey = ""
             projectDueDate = Date()
             hideEmptySectionDueDates = true
             selectedContextID = seededContextValue
@@ -507,7 +524,7 @@ struct iOSListEditorSheet: View {
             details = ""
             icon = "checklist"
             colorHex = CadenceColorPalette.projectDefault
-            hasProjectDueDate = false
+            projectDueDateKey = ""
             projectDueDate = Date()
             hideEmptySectionDueDates = true
             selectedContextID = seededContextValue
@@ -534,10 +551,10 @@ struct iOSListEditorSheet: View {
             hideEmptySectionDueDates = project.hideSectionDueDateIfEmpty
             if let date = DateFormatters.date(from: project.dueDate) {
                 projectDueDate = date
-                hasProjectDueDate = true
+                projectDueDateKey = DateFormatters.dateKey(from: date)
             } else {
                 projectDueDate = Date()
-                hasProjectDueDate = false
+                projectDueDateKey = ""
             }
         }
         // [[T-5174]] (b): every mode snapshots, creation included. A new list opens on defaults —
@@ -596,7 +613,7 @@ struct iOSListEditorSheet: View {
                 project.sectionConfigs = normalizedSectionConfigs
                 project.hideDueDateIfEmpty = hideEmptyDueDates
                 project.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
-                project.dueDate = hasProjectDueDate ? DateFormatters.dateKey(from: projectDueDate) : ""
+                project.dueDate = projectDueDateKey
                 modelContext.insert(project)
                 try CadencePendingChangePersistence.commitInsert(of: project, in: modelContext)
             case .editArea(let area):
@@ -647,7 +664,7 @@ struct iOSListEditorSheet: View {
                 reassignTasks(in: project.tasks ?? [], project: project)
                 project.hideDueDateIfEmpty = hideEmptyDueDates
                 project.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
-                project.dueDate = hasProjectDueDate ? DateFormatters.dateKey(from: projectDueDate) : ""
+                project.dueDate = projectDueDateKey
                 try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: undo.restore)
             }
         } catch {

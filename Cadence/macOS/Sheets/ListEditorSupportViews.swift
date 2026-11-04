@@ -303,6 +303,41 @@ private struct ListEditorIconCell: View {
     }
 }
 
+// MARK: - Due date row
+
+/// [[T-9804]]: a project's "Due" row in both macOS list sheets. Whether the project is dated is
+/// `dueDateKey` alone -- the value the sheet stores, "" for none -- so there is no second flag
+/// that can disagree with it, the same rule as the iOS editor's placeholder picker and the column
+/// popover's. `seed` is only where the panel opens and the day last picked.
+///
+/// `TaskInspectorDateControl` is already the one-trigger shape (it reads "Set" while empty, a pick
+/// sets the field, the panel's Clear unsets it), so this row derives its `isOn:` / `date:` from the
+/// key rather than changing the control its other callers share.
+struct ListEditorDueDateRow: View {
+    @Binding var dueDateKey: String
+    @Binding var seed: Date
+
+    var body: some View {
+        TaskInspectorDateControl(
+            label: "Due",
+            reservesIconSlot: false,
+            isOn: Binding(
+                get: { !dueDateKey.isEmpty },
+                set: { dated in
+                    dueDateKey = dated ? DateFormatters.dateKey(from: seed) : ""
+                }
+            ),
+            date: Binding(
+                get: { seed },
+                set: { newValue in
+                    seed = newValue
+                    dueDateKey = DateFormatters.dateKey(from: newValue)
+                }
+            )
+        )
+    }
+}
+
 // MARK: - Check row
 
 /// A boolean field row. The mark is right-aligned and reads as "on", so a setting that is off
