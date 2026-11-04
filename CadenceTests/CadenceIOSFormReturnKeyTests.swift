@@ -43,15 +43,42 @@ struct CadenceIOSFormReturnKeyTests {
         )
     }
 
+    /// [[T-10303]]: the description joined name and hex. It was `axis: .vertical`, where a
+    /// hardware Return resigned the field with neither a newline nor a save; the Mac's tag card
+    /// description is single-line and saves on Return ([[T-10033]]).
     @Test func tagCardEditorSavesOnReturnInItsSingleLineFields() throws {
         let editor = try Self.compactBody("private var editContent: some View", in: Self.tagsPath)
         #expect(
-            Self.count(".onSubmit(requestSave)", in: editor) == 2,
-            "Return in the tag card's name or hex field must save"
+            Self.count(".onSubmit(requestSave)", in: editor) == 3,
+            "Return in the tag card's name, description or hex field must save"
         )
+        #expect(Self.count("TextField(", in: editor) == 3, "every field in the card is accounted for")
+        #expect(!editor.contains("axis:"), "no tag card field is multi-line, as on the Mac")
+        #expect(editor.contains(
+            "TextField(CadenceTagSettingsCopy.descriptionFieldPlaceholder,text:$draftDescription).tagSettingsTextInput().onSubmit(requestSave)"
+        ))
         #expect(editor.contains("isDisabled:!canSave,action:requestSave"))
         let request = try Self.compactBody("private func requestSave()", in: Self.tagsPath)
         #expect(request.contains("guardcanSaveelse{return}"))
+    }
+
+    /// [[T-10302]]: both description fields autocapitalised and autocorrected (`alpha` stored as
+    /// `Alpha`) while NAME and HEX beside them did not. Every field on the screen now goes through
+    /// one modifier that turns both off, as the Mac's fields type as written.
+    @Test func everyTagSettingsFieldTypesAsWritten() throws {
+        let file = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.tagsPath))
+            .filter { !$0.isWhitespace }
+        let fields = Self.count("TextField(", in: file)
+        #expect(fields == 5, "Create Tag name/description, tag card name/description/hex")
+        #expect(Self.count(".tagSettingsTextInput()", in: file) == fields,
+                "every tag settings field goes through the one modifier")
+        let createDescription = "TextField(CadenceTagSettingsCopy.descriptionFieldPlaceholder,text:$newDescription).tagSettingsTextInput()"
+        let cardDescription = "TextField(CadenceTagSettingsCopy.descriptionFieldPlaceholder,text:$draftDescription).tagSettingsTextInput()"
+        #expect(file.contains(createDescription))
+        #expect(file.contains(cardDescription))
+        let modifier = try Self.compactBody("func tagSettingsTextInput() -> some View", in: Self.tagsPath)
+        #expect(modifier.contains("textInputAutocapitalization(.never)"))
+        #expect(modifier.contains(".autocorrectionDisabled()"))
     }
 
     @Test func contextEditorSavesOnReturnUnlessTheNameIsBlank() throws {

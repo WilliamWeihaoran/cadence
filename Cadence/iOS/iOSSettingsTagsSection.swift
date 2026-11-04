@@ -105,13 +105,13 @@ struct iOSTagsSettingsSection: View {
                         // [[T-10033]]. `createTag` reads the same `creationDecision` as the
                         // disabled button, so a blank, duplicate or archived name does nothing.
                         TextField(CadenceTagSettingsCopy.nameFieldPlaceholder, text: $newName)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
+                            .tagSettingsTextInput()
                             .onSubmit(createTag)
                     }
 
                     iOSSettingsField(title: "Description") {
                         TextField(CadenceTagSettingsCopy.descriptionFieldPlaceholder, text: $newDescription)
+                            .tagSettingsTextInput()
                             .onSubmit(createTag)
                     }
 
@@ -388,23 +388,26 @@ private struct iOSTagSettingsRow: View {
         VStack(alignment: .leading, spacing: 12) {
             iOSSettingsField(title: "Name") {
                 // [[T-10044]]: Return saves through the Save button's own `requestSave` (gated
-                // by `canSave`, still asking about inline mentions first), as on the Mac. The
-                // description field is multi-line, so Return there is a newline.
+                // by `canSave`, still asking about inline mentions first), as on the Mac.
                 TextField(CadenceTagSettingsCopy.nameFieldPlaceholder, text: $draftName)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                    .tagSettingsTextInput()
                     .onSubmit(requestSave)
             }
             iOSSettingsField(title: "Description") {
-                TextField(CadenceTagSettingsCopy.descriptionFieldPlaceholder, text: $draftDescription, axis: .vertical)
+                // [[T-10303]]: single-line and saving on Return, as the Mac's tag card
+                // description and this screen's own Create Tag description are. It was
+                // `axis: .vertical`, the one multi-line tag description on either platform, and a
+                // hardware Return there resigned the field without a newline or a save.
+                TextField(CadenceTagSettingsCopy.descriptionFieldPlaceholder, text: $draftDescription)
+                    .tagSettingsTextInput()
+                    .onSubmit(requestSave)
             }
             VStack(alignment: .leading, spacing: 7) {
                 SectionEyebrowLabel(text: "Color")
                 iOSSettingsColorSwatchRow(selectedHex: $draftColorHex, fallbackHex: tag.colorHex)
                 iOSSettingsField(title: "Hex") {
                     TextField("#hex", text: $draftColorHex)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
+                        .tagSettingsTextInput()
                         .onSubmit(requestSave)
                 }
             }
@@ -488,6 +491,17 @@ private struct iOSTagNoticeRow: View {
         .padding(.vertical, 6)
         .background(Theme.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+    }
+}
+
+private extension View {
+    /// [[T-10302]]: every tag-editor field on this screen types exactly what was typed, as the
+    /// Mac's do. The two description fields carried neither modifier while NAME and HEX beside
+    /// them carried both, so `alpha` was stored as `Alpha`. One modifier, so the next field cannot
+    /// drift.
+    func tagSettingsTextInput() -> some View {
+        textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
     }
 }
 #endif

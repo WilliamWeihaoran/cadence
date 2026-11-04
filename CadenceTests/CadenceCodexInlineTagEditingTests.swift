@@ -119,7 +119,8 @@ struct CadenceCodexInlineTagEditingTests {
                 "each row's edit button is named for its tag (T-7361)")
         // [[T-10032]]: the placeholders are the shared tag-editor copy, which the Mac reads too.
         #expect(source.contains("TextField(CadenceTagSettingsCopy.nameFieldPlaceholder, text: $draftName)"))
-        #expect(source.contains("TextField(CadenceTagSettingsCopy.descriptionFieldPlaceholder, text: $draftDescription, axis: .vertical)"))
+        // [[T-10303]]: single-line, as the Mac's tag card description is.
+        #expect(source.contains("TextField(CadenceTagSettingsCopy.descriptionFieldPlaceholder, text: $draftDescription)"))
         #expect(source.contains("iOSSettingsColorSwatchRow(selectedHex: $draftColorHex, fallbackHex: tag.colorHex)"))
         #expect(source.contains("A tag with this name already exists."))
         #expect(source.contains("CadenceInlineFailureNotice(text: saveFailureNotice)"))
