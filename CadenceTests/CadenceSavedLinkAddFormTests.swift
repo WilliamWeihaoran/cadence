@@ -87,7 +87,7 @@ struct CadenceSavedLinkAddFormTests {
         let panel = try #require(CadenceSourceScan.declarationBody("struct iOSListLinksPanel: View", in: ios))
         let menu = try #require(CadenceSourceScan.declarationBody(".contextMenu", in: panel), "the iOS link row has no long-press menu")
         let titles = CadenceSourceScan.captures(#"Label\(CadenceSavedLinkRowMenu\.(\w+)"#, in: menu, group: 1).map(\.text)
-        #expect(titles == ["openTitle", "copyTitle", "deleteTitle"], "measured: \(titles)")
+        #expect(titles == ["openTitle", "copyTitle", "editTitle", "deleteTitle"], "measured: \(titles)")
         #expect(menu.contains("open(link)"))
         #expect(menu.contains("UIPasteboard.general.string = link.url"))
         #expect(menu.contains("linkToDelete = link"), "the menu's Delete must ask first, as the swipe does")
@@ -106,9 +106,10 @@ struct CadenceSavedLinkAddFormTests {
         let shared = [
             "openSystemImage": CadenceSavedLinkRowMenu.openSystemImage,
             "copySystemImage": CadenceSavedLinkRowMenu.copySystemImage,
+            "editSystemImage": CadenceSavedLinkRowMenu.editSystemImage,
             "deleteSystemImage": CadenceSavedLinkRowMenu.deleteSystemImage
         ]
-        #expect(Set(shared.values).count == 3, "two items share a glyph: \(shared)")
+        #expect(Set(shared.values).count == 4, "two items share a glyph: \(shared)")
         #expect(shared.values.allSatisfy { !$0.isEmpty })
 
         let mac = CadenceSourceScan.strippingComments(
@@ -126,7 +127,7 @@ struct CadenceSavedLinkAddFormTests {
         for (platform, menu) in menus {
             let glyphs = CadenceSourceScan.captures(glyphPattern, in: menu, group: 1).map(\.text)
             #expect(
-                glyphs == ["openSystemImage", "copySystemImage", "deleteSystemImage"],
+                glyphs == ["openSystemImage", "copySystemImage", "editSystemImage", "deleteSystemImage"],
                 "\(platform) link menu glyphs, measured: \(glyphs)"
             )
             #expect(

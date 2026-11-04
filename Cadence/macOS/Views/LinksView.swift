@@ -49,7 +49,7 @@ struct LinksView: View {
                 AddLinkBar(
                     title: $addForm.title,
                     url: $addForm.url,
-                    onSave: { addLink() },
+                    onSave: { saveForm() },
                     onCancel: { addForm.cancel(); actionError = nil }
                 )
             }
@@ -85,6 +85,10 @@ struct LinksView: View {
                                 ) {
                                     deleteLink(link)
                                 }
+                            } onEdit: {
+                                // [[T-7259]]: the add form, reopened on this link.
+                                addForm.beginEditing(id: link.id, title: link.title, url: link.url)
+                                actionError = nil
                             }
                         }
                     }
@@ -93,6 +97,15 @@ struct LinksView: View {
             }
         }
         .background(Theme.bg)
+    }
+
+    /// The form's Save: an edit when it was opened on a link ([[T-7259]]), an add otherwise.
+    private func saveForm() {
+        if addForm.isEditing {
+            actionError = CadenceSavedLinkPersistence.saveEdit(&addForm, among: links, in: modelContext)
+        } else {
+            addLink()
+        }
     }
 
     private func addLink() {
@@ -212,10 +225,12 @@ private struct AddLinkBar: View {
 /// actions that run the same three operations the hover buttons and the click run.
 enum MacSavedLinkRowActions {
     static let openActionName = "Open link"
+    static let editActionName = "Edit link"
     static let deleteActionName = "Delete link"
 
     static let openMenuTitle = CadenceSavedLinkRowMenu.openTitle
     static let copyMenuTitle = CadenceSavedLinkRowMenu.copyTitle
+    static let editMenuTitle = CadenceSavedLinkRowMenu.editTitle
     static let deleteMenuTitle = CadenceSavedLinkRowMenu.deleteTitle
 
     static func open(_ urlString: String) {
@@ -237,6 +252,8 @@ enum MacSavedLinkRowActions {
 private struct LinkRow: View {
     @Bindable var link: SavedLink
     let onDelete: () -> Void
+    /// Opens the Links tab's form on this link ([[T-7259]]).
+    let onEdit: () -> Void
     @State private var isHovering = false
 
     var body: some View {
@@ -310,6 +327,9 @@ private struct LinkRow: View {
             Button(action: copyLink) {
                 Label(MacSavedLinkRowActions.copyMenuTitle, systemImage: CadenceSavedLinkRowMenu.copySystemImage)
             }
+            Button(action: onEdit) {
+                Label(MacSavedLinkRowActions.editMenuTitle, systemImage: CadenceSavedLinkRowMenu.editSystemImage)
+            }
             Divider()
             Button(role: .destructive) {
                 onDelete()
@@ -321,6 +341,7 @@ private struct LinkRow: View {
         // does, so the actions have a row to sit on while the hover buttons are absent.
         .accessibilityElement(children: .contain)
         .accessibilityAction(named: MacSavedLinkRowActions.openActionName, openLink)
+        .accessibilityAction(named: MacSavedLinkRowActions.editActionName, onEdit)
         .accessibilityAction(named: MacSavedLinkRowActions.deleteActionName, onDelete)
     }
 

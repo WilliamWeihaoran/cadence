@@ -257,6 +257,7 @@ struct SidebarView: View {
         let owner = section.contextID.flatMap { id in contexts.first { $0.id == id } }
         return ContextSection(
             title: section.title,
+            context: owner,
             entries: section.elements,
             selection: $selection,
             onAddList: { newListTarget = SidebarNewListTarget(context: owner) }

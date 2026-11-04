@@ -924,7 +924,7 @@ struct iOSListLinksPanel: View {
                 iOSAddLinkForm(
                     title: $addForm.title,
                     url: $addForm.url,
-                    save: addLink
+                    save: saveForm
                 )
                 .padding(.horizontal, 16)
                 .padding(.bottom, 14)
@@ -967,6 +967,13 @@ struct iOSListLinksPanel: View {
                             } label: {
                                 Label(CadenceSavedLinkRowMenu.deleteTitle, systemImage: CadenceSavedLinkRowMenu.deleteSystemImage)
                             }
+                            // [[T-7259]]: the swipe's spelling of the menu's Edit Link.
+                            Button {
+                                beginEditing(link)
+                            } label: {
+                                Label(CadenceSavedLinkRowMenu.editTitle, systemImage: CadenceSavedLinkRowMenu.editSystemImage)
+                            }
+                            .tint(Theme.blue)
                         }
                         // [[T-10057]]: the Mac row's right-click menu, item for item and in its
                         // order. Delete asks through the same `linkToDelete` as the swipe.
@@ -980,6 +987,11 @@ struct iOSListLinksPanel: View {
                                 UIPasteboard.general.string = link.url
                             } label: {
                                 Label(CadenceSavedLinkRowMenu.copyTitle, systemImage: CadenceSavedLinkRowMenu.copySystemImage)
+                            }
+                            Button {
+                                beginEditing(link)
+                            } label: {
+                                Label(CadenceSavedLinkRowMenu.editTitle, systemImage: CadenceSavedLinkRowMenu.editSystemImage)
                             }
                             Divider()
                             Button(role: .destructive) {
@@ -997,6 +1009,25 @@ struct iOSListLinksPanel: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.bg)
         .iOSSavedLinkDeletion(link: $linkToDelete, perform: delete)
+    }
+
+    /// [[T-7259]]: the add form, reopened on this link -- the Mac row's Edit Link, through the
+    /// same `SavedLinkAddForm.beginEditing`.
+    private func beginEditing(_ link: SavedLink) {
+        withAnimation(.easeInOut(duration: 0.18)) {
+            addForm.beginEditing(id: link.id, title: link.title, url: link.url)
+        }
+        actionError = nil
+    }
+
+    /// The form's Save: an edit when it was opened on a link, an add otherwise -- the Mac's
+    /// `LinksView.saveForm()`.
+    private func saveForm() {
+        if addForm.isEditing {
+            actionError = CadenceSavedLinkPersistence.saveEdit(&addForm, among: links, in: modelContext)
+        } else {
+            addLink()
+        }
     }
 
     private func addLink() {

@@ -45,10 +45,12 @@ struct CadenceSidebarListDropPlacementTests {
         #expect(SidebarListDropPlacement.indicatorEdge(draggedIndex: 3, targetIndex: 2) == .top)
     }
 
-    /// A row from another section is not in this one's entries, and its drop changes nothing here,
-    /// so no line is drawn either.
-    @Test func aRowFromAnotherSectionDrawsNoLine() {
-        #expect(SidebarListDropPlacement.indicatorEdge(draggedIndex: nil, targetIndex: 2) == nil)
+    /// A row from another section is not in this one's entries. Its drop used to change nothing
+    /// here, so no line was drawn; since [[T-7260]](b) it moves into this section above the
+    /// target (`SidebarListContextMove`), so the line is the target's top edge. A row dropped on
+    /// itself still draws none.
+    @Test func aRowFromAnotherSectionDrawsTheLineAboveTheTarget() {
+        #expect(SidebarListDropPlacement.indicatorEdge(draggedIndex: nil, targetIndex: 2) == .top)
         #expect(SidebarListDropPlacement.indicatorEdge(draggedIndex: 2, targetIndex: 2) == nil)
     }
 }

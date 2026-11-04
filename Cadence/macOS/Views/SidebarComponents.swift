@@ -83,7 +83,7 @@ enum SidebarListEntry: Identifiable {
         }
     }
 
-    fileprivate var dragItem: SidebarListDragItem {
+    var dragItem: SidebarListDragItem {
         switch self {
         case .area(let area): return SidebarListDragItem(kind: .area, id: area.id)
         case .project(let project): return SidebarListDragItem(kind: .project, id: project.id)
@@ -110,6 +110,85 @@ enum SidebarListEntry: Identifiable {
         case .project(let project): project.order = value
         }
     }
+
+    /// The row a list drag names, looked up in the store rather than in one section's `entries`:
+    /// a list dropped onto another context's section is, by definition, not among that section's
+    /// rows ([[T-7260]](b)).
+    static func resolve(_ item: SidebarListDragItem, in modelContext: ModelContext) -> SidebarListEntry? {
+        let id = item.id
+        switch item.kind {
+        case .area:
+            var descriptor = FetchDescriptor<Area>(predicate: #Predicate { $0.id == id })
+            descriptor.fetchLimit = 1
+            return (try? modelContext.fetch(descriptor))?.first.map(SidebarListEntry.area)
+        case .project:
+            var descriptor = FetchDescriptor<Project>(predicate: #Predicate { $0.id == id })
+            descriptor.fetchLimit = 1
+            return (try? modelContext.fetch(descriptor))?.first.map(SidebarListEntry.project)
+        }
+    }
+}
+
+/// A list dropped onto a row of a DIFFERENT context's section moves into that context
+/// ([[T-7260]](b)).
+///
+/// The drop used to reach `reorderList`, find the dragged row absent from the section's `entries`
+/// and return, while `SidebarListDropDelegate.performDrop` answered `true` -- a drag the column
+/// accepted and then did nothing with. It is a context change now, the one the edit sheet's
+/// Context row makes (`EditAreaSheet` / `EditProjectSheet.applyEdits()`): the list's own `context`
+/// is written, its tasks' denormalized `context` is re-pointed by the same
+/// `CadenceTaskMutationSupport.reassignInheritedContext` ([[T-559]], [[T-293]]), and it commits with
+/// no confirmation, as the sheet's Save does. A project's parent area is left alone, as the sheet's
+/// Context row leaves it.
+///
+/// The row lands directly above the row it was dropped on (`SidebarListDropPlacement.inserted`),
+/// and the target section is renumbered whole so that position holds under
+/// `CadenceSidebarLists.sorted`. One commit carries the move and the renumber, and a refusal puts
+/// back every field and task the snapshot holds and every order it wrote, never `rollback()` --
+/// `CadenceOrderCommit`'s reason.
+enum SidebarListContextMove {
+    static func commit(
+        _ moved: SidebarListEntry,
+        into context: Context?,
+        onto targetIndex: Int,
+        among entries: [SidebarListEntry],
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let arranged = SidebarListDropPlacement.inserted(moved, into: entries, at: targetIndex)
+        let previousOrders = arranged.map(\.order)
+        let snapshot: CadenceListEditSnapshot
+        switch moved {
+        case .area(let area):
+            snapshot = CadenceListEditSnapshot(
+                area,
+                tasks: CadenceTaskMutationSupport.inheritedContextTargets(area: area)
+            )
+            area.context = context
+            CadenceTaskMutationSupport.reassignInheritedContext(area: area)
+        case .project(let project):
+            snapshot = CadenceListEditSnapshot(
+                project,
+                tasks: CadenceTaskMutationSupport.inheritedContextTargets(project: project)
+            )
+            project.context = context
+            CadenceTaskMutationSupport.reassignInheritedContext(project: project)
+        }
+        for (index, entry) in arranged.enumerated() {
+            entry.setOrder(index)
+        }
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+                snapshot.restore()
+                for (entry, order) in zip(arranged, previousOrders) {
+                    entry.setOrder(order)
+                }
+            }
+        } catch {
+            return false
+        }
+        return true
+    }
 }
 
 /// One section of the sidebar's lists region: a header, and the rows filed under it.
@@ -128,6 +207,9 @@ enum SidebarListEntry: Identifiable {
 /// reshuffle between renders on the Mac while the iPad held still. The rows arrive ordered.
 struct ContextSection: View {
     let title: String
+    /// The context this section files lists under, `nil` on the catch-all. A list dropped here
+    /// from another section moves into it ([[T-7260]](b)).
+    let context: Context?
     /// Already bucketed and already sorted, by `CadenceSidebarLists.sections`.
     let entries: [SidebarListEntry]
     @Binding var selection: SidebarItem?
@@ -240,9 +322,15 @@ struct ContextSection: View {
     /// which is what stops a drag onto the next row down from feeling like a no-op. That is a
     /// different gesture from the contexts pane's, so it keeps its own arithmetic; what it shares
     /// is the commit.
+    ///
+    /// A list dragged in from ANOTHER section is not among `entries`; it moves into this section's
+    /// context instead ([[T-7260]](b), `SidebarListContextMove`).
     private func reorderList(dropped: SidebarListDragItem, target: SidebarListDragItem) {
-        guard let fromIndex = entries.firstIndex(where: { $0.matches(dropped) }),
-              let toIndex = entries.firstIndex(where: { $0.matches(target) }) else { return }
+        guard let toIndex = entries.firstIndex(where: { $0.matches(target) }) else { return }
+        guard let fromIndex = entries.firstIndex(where: { $0.matches(dropped) }) else {
+            moveListIntoContext(dropped, onto: toIndex)
+            return
+        }
         // Treat the row we drop on as the destination row itself. This avoids the
         // "no-op" feeling when dragging onto the next item down in the list.
         let sorted = SidebarListDropPlacement.reordered(entries, moving: fromIndex, onto: toIndex)
@@ -255,6 +343,22 @@ struct ContextSection: View {
             )
         }
         reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
+    }
+
+    /// The cross-section drop ([[T-7260]](b)). A refusal reads the reorder's own sentence, under
+    /// this header: the row is back in its old section by then, so "Nothing was moved" is true.
+    private func moveListIntoContext(_ dropped: SidebarListDragItem, onto toIndex: Int) {
+        guard let moved = SidebarListEntry.resolve(dropped, in: modelContext) else { return }
+        let landed = withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
+            SidebarListContextMove.commit(
+                moved,
+                into: context,
+                onto: toIndex,
+                among: entries,
+                in: modelContext
+            )
+        }
+        reorderFailureNotice = landed ? nil : CadenceOrderCommit.failureNotice
     }
 
     /// The row's due-date flag picks or clears the project's date ([[T-4970]]).
@@ -292,15 +396,15 @@ struct ContextSection: View {
     /// It used to be pinned to the row's TOP for every drag, while `reorderList` puts the row
     /// where the target was — so a downward drag landed one row BELOW the line, and a drag onto
     /// the next row down drew the line exactly where the row already sat and then moved it. A row
-    /// dragged in from another section draws no line, because the drop does nothing there.
+    /// dragged in from another section draws the line on the target's top edge, where the
+    /// context move puts it ([[T-7260]](b)); until then it drew none, because that drop did nothing.
     @ViewBuilder
     private func dropIndicator(for target: SidebarListDragItem) -> some View {
         if dragOverListItem == target,
+           let dragged = SidebarDragContext.shared.draggedListItem,
            let toIndex = entries.firstIndex(where: { $0.matches(target) }),
            let edge = SidebarListDropPlacement.indicatorEdge(
-               draggedIndex: SidebarDragContext.shared.draggedListItem.flatMap { dragged in
-                   entries.firstIndex(where: { $0.matches(dragged) })
-               },
+               draggedIndex: entries.firstIndex(where: { $0.matches(dragged) }),
                targetIndex: toIndex
            ) {
             VStack(spacing: 0) {
@@ -388,10 +492,20 @@ nonisolated enum SidebarListDropPlacement {
         return result
     }
 
+    /// `items` with a row from ANOTHER section inserted directly above `at` ([[T-7260]](b)) -- the
+    /// position the line drawn for it promises. An index past the end appends.
+    static func inserted<Element>(_ element: Element, into items: [Element], at index: Int) -> [Element] {
+        var result = items
+        result.insert(element, at: max(0, min(index, result.count)))
+        return result
+    }
+
     /// The edge of the target row the dragged row will sit against once dropped, or `nil` when
-    /// the drop moves nothing — the row itself, or a row from another section (`nil` index).
+    /// the drop moves nothing (the row itself). A row from another section (`nil` index) is
+    /// inserted above the target, so its line is the top edge ([[T-7260]](b)).
     static func indicatorEdge(draggedIndex: Int?, targetIndex: Int) -> Edge? {
-        guard let draggedIndex, draggedIndex != targetIndex else { return nil }
+        guard let draggedIndex else { return .top }
+        guard draggedIndex != targetIndex else { return nil }
         return draggedIndex < targetIndex ? .bottom : .top
     }
 
