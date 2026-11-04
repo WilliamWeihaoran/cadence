@@ -66,7 +66,9 @@ struct CadenceCodexDateSelectionTests {
         #expect(source.contains("VStack(spacing: 6) { quickActions }"))
         #expect(source.contains("DateFormatters.longDate.string(from: day)"))
         #expect(source.contains(".accessibilityAddTraits(isSelected ? .isSelected : [])"))
-        #expect(source.contains("PickerHoverHighlight(cornerRadius: cellSide / 2, padding: 0)"))
+        // [[T-10804]]: `.cadencePlain(.circle)` is a day cell's one hover layer; the second plate is gone.
+        #expect(source.contains(".buttonStyle(.cadencePlain(.circle))"))
+        #expect(!source.contains("PickerHoverHighlight"))
         #expect(!source.contains("minimumScaleFactor"))
         let row = try #require(CadenceSourceScan.functionBody(named: "dateRow", in: source))
         #expect(row.contains("selection = day"))

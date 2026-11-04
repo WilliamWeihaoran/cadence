@@ -52,7 +52,7 @@ struct CadenceQuickDatePillRowTests {
         return (label as NSString).size(withAttributes: [.font: font]).width
     }
 
-    /// Pill width = its text, its own horizontal padding, and the hover plate wrapped around it.
+    /// Pill width = its text, its own horizontal padding, and the 2pt padded round the button.
     private static func rowWidth(
         _ labels: [String],
         fontSize: CGFloat,
@@ -139,10 +139,9 @@ struct CadenceQuickDatePillRowTests {
         )
         let pill = try #require(CadenceSourceScan.functionBody(named: "quickPill", in: source))
         let pillPadding = try Self.integer(#"\.padding\(\.horizontal, (\d+)\)"#, in: pill)
-        let hoverPadding = try Self.integer(
-            #"var padding: CGFloat = (\d+)"#,
-            in: try #require(CadenceSourceScan.declarationBody("private struct PickerHoverHighlight", in: source))
-        )
+        // [[T-10804]]: the 2pt round each pill is the button's own outer padding now that the
+        // second hover plate that used to supply it is gone.
+        let hoverPadding = try Self.integer(#"\.padding\((\d+)\)"#, in: pill)
         let rows = try #require(
             CadenceSourceScan.declarationBody("private var quickActionRows: some View", in: declaration)
         )

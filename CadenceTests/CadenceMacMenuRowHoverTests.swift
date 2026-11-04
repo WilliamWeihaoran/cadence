@@ -28,24 +28,58 @@ import Testing
         #expect(CadenceMenuRowButtonStyle.pressedOpacity > CadenceMenuRowButtonStyle.hoverOpacity)
     }
 
-    /// No Mac control pairs `.cadencePlain`'s wash with a second hover plate of its own.
+    /// No control pairs `.cadencePlain`'s wash with a second hover plate of its own.
+    ///
+    /// **[[T-10804]] widened this from `Cadence/macOS` to `Cadence/`** and from the next four lines
+    /// to the button's whole modifier chain. A SHARED component runs on the Mac too, and the date
+    /// picker's quick pills and day cells hid from the old sweep twice over: the file sat outside
+    /// it, and the day cell's second plate came seven lines after its style, behind a multi-line
+    /// `.accessibilityLabel`. `PickerHoverHighlight(cornerRadius: 999))` also matched neither old
+    /// spelling. A hover flag read for an underline or a tint is not a plate and is allowed.
     @Test func noMacControlStacksASecondPlateOnCadencePlain() throws {
         var offenders: [String] = []
         var scanned = 0
-        for path in try CadenceSourceScan.swiftFiles(under: "Cadence/macOS") {
+        var sharedScanned = 0
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence") {
             let lines = try Self.code(path).components(separatedBy: "\n")
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
-            for (index, line) in lines.enumerated() where line.contains(".buttonStyle(.cadencePlain") {
+            for (index, line) in lines.enumerated()
+            where line.trimmingCharacters(in: .whitespaces).hasPrefix(".buttonStyle(.cadencePlain") {
                 scanned += 1
-                for next in lines[(index + 1)..<min(index + 5, lines.count)]
-                where next.contains(".cadenceHoverHighlight(") || next.contains("Hover())") {
-                    offenders.append("\(path): \(next)")
+                if path.hasPrefix("Cadence/Shared/") { sharedScanned += 1 }
+                for (offset, next) in Self.modifierChain(after: index, in: lines).enumerated()
+                where Self.paintsASecondHoverPlate(next) {
+                    offenders.append("\(path):\(index + offset + 2) \(next)")
                 }
             }
         }
-        #expect(scanned > 50, "non-vacuity: only \(scanned) .cadencePlain buttons under Cadence/macOS")
+        #expect(scanned > 50, "non-vacuity: only \(scanned) .cadencePlain buttons under Cadence/")
+        #expect(sharedScanned > 10, "non-vacuity: the sweep reached only \(sharedScanned) shared .cadencePlain buttons")
         #expect(offenders.isEmpty, "a second hover plate on .cadencePlain: \(offenders)")
+    }
+
+    /// The trimmed lines of the modifier chain a `.buttonStyle(...)` line opens: every following
+    /// line indented deeper than it (a multi-line argument), or at its depth and opening with `.`
+    /// (the next modifier) or `)` (an argument's close). The first other line ends the chain.
+    static func modifierChain(after index: Int, in lines: [String]) -> [String] {
+        func depth(_ line: String) -> Int { line.prefix(while: { $0 == " " }).count }
+        let style = depth(lines[index])
+        var chain: [String] = []
+        for line in lines[(index + 1)...] {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard let first = trimmed.first else { chain.append(""); continue }
+            if depth(line) < style || (depth(line) == style && !".)".contains(first)) { break }
+            chain.append(trimmed)
+        }
+        return chain
+    }
+
+    /// A hover-highlight modifier, or a plate painted from a hover flag.
+    static func paintsASecondHoverPlate(_ line: String) -> Bool {
+        if line.contains(".cadenceHoverHighlight(") || line.contains("Hover())") { return true }
+        if line.range(of: #"\.modifier\([A-Za-z]*Hover[A-Za-z]*\("#, options: .regularExpression) != nil { return true }
+        let painters = [".background(", ".overlay(", ".fill(", ".strokeBorder("]
+        return painters.contains(where: { line.contains($0) })
+            && line.range(of: #"\bis[A-Za-z]*[Hh]overed\b"#, options: .regularExpression) != nil
     }
 
     /// Every menu the ticket named draws its rows with the row style, and the per-site plates are gone.

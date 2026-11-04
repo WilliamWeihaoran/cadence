@@ -325,7 +325,6 @@ struct MonthCalendarPanel: View {
                                                         : DateFormatters.longDate.string(from: d)
                                                 )
                                                 .accessibilityAddTraits(isSelected ? .isSelected : [])
-                                                .modifier(PickerHoverHighlight(cornerRadius: cellSide / 2, padding: 0))
                                             } else {
                                                 Color.clear.frame(width: cellSide, height: cellSide)
                                             }
@@ -589,23 +588,9 @@ struct CadenceQuickDatePopover: View {
                 .clipShape(Capsule())
         }
         .buttonStyle(.cadencePlain(.capsule))
-        .modifier(PickerHoverHighlight(cornerRadius: 999))
-    }
-}
-
-private struct PickerHoverHighlight: ViewModifier {
-    let cornerRadius: CGFloat
-    var padding: CGFloat = 2
-    @State private var isHovered = false
-
-    func body(content: Content) -> some View {
-        content
-            .padding(padding)
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(isHovered ? Theme.blue.opacity(0.08) : Color.clear)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
-            .onHover { isHovered = $0 }
+        // [[T-10804]]: `.cadencePlain(.capsule)` is the pill's ONE hover layer. The 2pt that the
+        // retired `PickerHoverHighlight` padded round it is kept here, OUTSIDE the button, so the
+        // strip's spacing does not move and the wash still meets the pill's own capsule.
+        .padding(2)
     }
 }
