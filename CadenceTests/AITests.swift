@@ -218,6 +218,124 @@ struct AIActionServiceTests {
         let descriptor = FetchDescriptor<AppTask>()
         #expect(try modelContext.fetch(descriptor).isEmpty)
     }
+
+    // MARK: - T-11611: a refused apply leaves nothing pending
+
+    private func twoDraftsWithSubtasks() -> [AITaskDraft] {
+        [
+            AITaskDraft(title: "First", priority: "high", subtaskTitles: ["One", "Two"]),
+            AITaskDraft(title: "Second", priority: "low", subtaskTitles: ["Three"])
+        ]
+    }
+
+    /// **[[T-11611]].** A refused commit used to leave every inserted draft and subtask pending in
+    /// the context, where the next unrelated `save()` landed them. The second save below is that
+    /// unrelated commit; nothing may reach the store through it.
+    ///
+    /// No `!modelContext.hasChanges` here: deleting an inserted, never-saved object leaves
+    /// `hasChanges` true on this toolchain (measured 2026-11-05, agent `drafts1638`), which is why
+    /// `CadencePendingChangePersistenceTests.afailedInsertTakesEveryInsertedObjectBackOut` asserts
+    /// fetches too. What matters is that the next commit lands nothing.
+    @Test func aRefusedApplyLeavesNoPendingTaskOrSubtaskForTheNextCommit() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let drafts = twoDraftsWithSubtasks()
+        var commits = 0
+
+        #expect(throws: CadenceUITestCommitRefusal.Refused.self) {
+            try AIActionService.applyTaskDrafts(
+                drafts,
+                selectedIDs: Set(drafts.map(\.id)),
+                areas: [],
+                projects: [],
+                modelContext: modelContext,
+                commit: { _ in commits += 1 },
+                refusing: true
+            )
+        }
+
+        #expect(commits == 0, "an armed refusal still ran the commit")
+        #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).isEmpty)
+        #expect(try modelContext.fetch(FetchDescriptor<Subtask>()).isEmpty)
+
+        try modelContext.save()
+        let fresh = ModelContext(container)
+        #expect(try fresh.fetch(FetchDescriptor<AppTask>()).isEmpty, "the next commit landed a refused draft")
+        #expect(try fresh.fetch(FetchDescriptor<Subtask>()).isEmpty, "the next commit landed a refused subtask")
+    }
+
+    /// The same for a commit that throws for real, which is what a store refusal looks like.
+    @Test func aThrowingCommitTakesEveryInsertedDraftBackOut() throws {
+        struct Refused: Error {}
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let drafts = twoDraftsWithSubtasks()
+
+        #expect(throws: Refused.self) {
+            try AIActionService.applyTaskDrafts(
+                drafts,
+                selectedIDs: Set(drafts.map(\.id)),
+                areas: [],
+                projects: [],
+                modelContext: modelContext,
+                commit: { _ in throw Refused() },
+                refusing: false
+            )
+        }
+
+        #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).isEmpty, "a refused draft is still in the context")
+        #expect(try modelContext.fetch(FetchDescriptor<Subtask>()).isEmpty, "a refused subtask is still in the context")
+        try modelContext.save()
+        let fresh = ModelContext(container)
+        #expect(try fresh.fetch(FetchDescriptor<AppTask>()).isEmpty)
+        #expect(try fresh.fetch(FetchDescriptor<Subtask>()).isEmpty)
+    }
+
+    /// Non-vacuity for the two above: an unrefused apply of the same drafts lands all of them.
+    @Test func anUnrefusedApplyLandsEveryDraftAndSubtask() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let drafts = twoDraftsWithSubtasks()
+
+        let created = try AIActionService.applyTaskDrafts(
+            drafts,
+            selectedIDs: Set(drafts.map(\.id)),
+            areas: [],
+            projects: [],
+            modelContext: modelContext,
+            refusing: false
+        )
+
+        #expect(created.count == 2)
+        let fresh = ModelContext(container)
+        #expect(try fresh.fetch(FetchDescriptor<AppTask>()).count == 2)
+        #expect(try fresh.fetch(FetchDescriptor<Subtask>()).count == 3)
+    }
+
+    /// A bad draft after a good one inserts neither. `validation(for:)` already refuses this one
+    /// before the loop, so this guards the outcome, not the ordering inside `applyTaskDrafts`: the
+    /// per-draft checks that moved ahead of the first insert repeat `validation(for:)` and are not
+    /// reachable from a draft that passes it.
+    @Test func aBadDraftAfterAGoodOneInsertsNeither() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let good = AITaskDraft(title: "Good", priority: "high", subtaskTitles: ["Kept out"])
+        let bad = AITaskDraft(title: "Bad", priority: "urgent")
+
+        #expect(throws: AIActionError.self) {
+            try AIActionService.applyTaskDrafts(
+                [good, bad],
+                selectedIDs: [good.id, bad.id],
+                areas: [],
+                projects: [],
+                modelContext: modelContext,
+                refusing: false
+            )
+        }
+
+        #expect(!modelContext.hasChanges)
+        #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).isEmpty)
+    }
 }
 
 /// **T-574: pressing Save with the field empty must never delete the saved key.**

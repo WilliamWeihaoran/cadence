@@ -126,10 +126,9 @@ struct TaskCreationService {
     /// **T-364 moved every such surface off this method.** T-759 later deleted the other one,
     /// `SchedulingActions.createTask` — a timeline drop handler that mutated pending alongside
     /// `dropTask`/`addTask` and told nobody anything — once it had zero production callers of its
-    /// own. What is left is `AIActionService.applyTaskDrafts`, which genuinely does not report
-    /// success per call: it batches many drafts into one `try modelContext.save()` and rethrows so
-    /// its review sheets can present the failure. A new caller here needs the same answer to "what
-    /// does this surface show when the save throws?"
+    /// own. [[T-11611]] moved the last one, `AIActionService.applyTaskDrafts`, onto
+    /// `insertion(from:into:)` plus `commitInsert`, so this has no production caller left. A new
+    /// caller here needs the same answer to "what does this surface show when the save throws?"
     @discardableResult
     func insertTask(from draft: TaskCreationDraft, into modelContext: ModelContext) -> AppTask? {
         insertion(from: draft, into: modelContext)?.task
@@ -168,7 +167,11 @@ struct TaskCreationService {
     }
 
     /// The task and every object inserted alongside it, which is what an undo needs to know.
-    private func insertion(
+    ///
+    /// Internal rather than private for `AIActionService.applyTaskDrafts` ([[T-11611]]), which
+    /// inserts several drafts and commits them as one unit, so it has to collect every model to
+    /// take back out if that commit is refused.
+    func insertion(
         from draft: TaskCreationDraft,
         into modelContext: ModelContext
     ) -> (task: AppTask, inserted: [any PersistentModel])? {

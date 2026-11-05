@@ -114,6 +114,21 @@ enum AIActionService {
         return AITaskDraftValidation(errors: errors)
     }
 
+    /// Creates every selected draft as one unit: all of them land, or none stays behind.
+    ///
+    /// **[[T-11611]].** This inserted each draft through `TaskCreationService.insertTask` and then
+    /// committed with a bare `try modelContext.save()`. A refused save, or a `throw` from the loop
+    /// after earlier drafts were already inserted, left those tasks and their subtasks PENDING in
+    /// the app's one context, where the next unrelated commit anywhere landed them — tasks the
+    /// review sheet had just told the user were not created. So the work is split in two:
+    /// everything that can refuse runs **before the first insert**, and the commit goes through
+    /// `CadencePendingChangePersistence.commitInsert(of:)`, which takes every inserted task and
+    /// subtask back out if it is refused. That also makes it refusable by
+    /// `CADENCE_UI_TEST_REFUSE_COMMITS`.
+    ///
+    /// - Parameters:
+    ///   - commit: Forwarded to `commitInsert`, so a refused commit is reachable from a test.
+    ///   - refusing: Forwarded to `commitInsert`; defaults to the UI-test refusal switch.
     @discardableResult
     @MainActor
     static func applyTaskDrafts(
@@ -123,23 +138,32 @@ enum AIActionService {
         project: Project? = nil,
         areas: [Area],
         projects: [Project],
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() },
+        refusing: Bool = CadencePendingChangePersistence.refusesCommitsForUITest
     ) throws -> [AppTask] {
-        var created: [AppTask] = []
         let selected = drafts.filter { selectedIDs.contains($0.id) }
         let validationErrors = selected.flatMap { validation(for: $0).errors }
         guard validationErrors.isEmpty else {
             throw AIActionError.invalidDrafts(validationErrors.joined(separator: " "))
         }
 
+        // Every check that can throw, for every draft, before anything is inserted.
         let selection = container(area: area, project: project).selection
-        let service = TaskCreationService(areas: areas, projects: projects)
+        var prepared: [(draft: TaskCreationDraft, scheduledStartMin: Int?, estimatedMinutes: Int?)] = []
         for draft in selected {
             guard let priority = TaskPriority(rawValue: draft.priority.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) else {
                 throw AIActionError.invalidPriority(draft.priority)
             }
             let dueDate = normalizedDate(draft.dueDate)
             let scheduledDate = normalizedDate(draft.scheduledDate)
+            if let scheduledStartMin = draft.scheduledStartMin {
+                guard !scheduledDate.isEmpty else { throw AIActionError.invalidDate("scheduledDate required when scheduledStartMin is set") }
+                guard (0...1439).contains(scheduledStartMin) else { throw AIActionError.invalidScheduledStartMin(scheduledStartMin) }
+            }
+            if let estimatedMinutes = draft.estimatedMinutes {
+                guard (1...1440).contains(estimatedMinutes) else { throw AIActionError.invalidEstimate(estimatedMinutes) }
+            }
             let taskDraft = TaskCreationDraft(
                 title: draft.title,
                 notes: draft.notes,
@@ -151,21 +175,31 @@ enum AIActionService {
                 subtaskTitles: draft.subtaskTitles,
                 tags: []
             )
-            guard let task = service.insertTask(from: taskDraft, into: modelContext) else { continue }
-            if let scheduledStartMin = draft.scheduledStartMin {
-                guard !scheduledDate.isEmpty else { throw AIActionError.invalidDate("scheduledDate required when scheduledStartMin is set") }
-                guard (0...1439).contains(scheduledStartMin) else { throw AIActionError.invalidScheduledStartMin(scheduledStartMin) }
-                task.scheduledStartMin = scheduledStartMin
-            }
-            if let estimatedMinutes = draft.estimatedMinutes {
-                guard (1...1440).contains(estimatedMinutes) else { throw AIActionError.invalidEstimate(estimatedMinutes) }
-                task.estimatedMinutes = estimatedMinutes
-            }
-            created.append(task)
+            prepared.append((taskDraft, draft.scheduledStartMin, draft.estimatedMinutes))
         }
-        if modelContext.hasChanges {
-            try modelContext.save()
+
+        // Nothing below throws until the commit, and the commit undoes all of it.
+        let service = TaskCreationService(areas: areas, projects: projects)
+        var created: [AppTask] = []
+        var inserted: [any PersistentModel] = []
+        for item in prepared {
+            guard let insertion = service.insertion(from: item.draft, into: modelContext) else { continue }
+            if let scheduledStartMin = item.scheduledStartMin {
+                insertion.task.scheduledStartMin = scheduledStartMin
+            }
+            if let estimatedMinutes = item.estimatedMinutes {
+                insertion.task.estimatedMinutes = estimatedMinutes
+            }
+            created.append(insertion.task)
+            inserted.append(contentsOf: insertion.inserted)
         }
+        guard !inserted.isEmpty else { return created }
+        try CadencePendingChangePersistence.commitInsert(
+            of: inserted,
+            in: modelContext,
+            commit: commit,
+            refusing: refusing
+        )
         return created
     }
 
