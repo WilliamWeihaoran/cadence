@@ -1566,14 +1566,41 @@ automation_mode_log() {
 # unanswered one read the same as one answered prompt. A prompt is outstanding when the LATEST
 # request comes after the LATEST grant. `log show` prints in time order, so that is line order;
 # fixtures are written the same way.
-# Prints "<requests> <granted> <outstanding>", outstanding being 1 or 0. The counts stay for the
-# report line, which agents and ledger entries quote as `requests=N granted=M outstanding=K`.
+# Prints "<requests> <granted> <outstanding> <requester>", outstanding being 1 or 0 and requester
+# the pid of the testmanagerd that logged the LATEST request (`-` when there is none, or the line
+# names no pid). The counts stay for the report line, which agents and ledger entries quote as
+# `requests=N granted=M outstanding=K`.
 automation_prompt_reading() {
   automation_mode_log | grep -v -- '--predicate' | awk \
     -v req="$AUTOMATION_PROMPT_REQUEST" -v gr="$AUTOMATION_PROMPT_GRANTED" '
-      index($0, req) { r++; lr = NR }
+      index($0, req) { r++; lr = NR; rp = "-"
+                       if (match($0, /testmanagerd\[[0-9]+/)) rp = substr($0, RSTART + 13, RLENGTH - 13) }
       index($0, gr)  { g++; lg = NR }
-      END { print r + 0, g + 0, (lr + 0 > lg + 0) ? 1 : 0 }'
+      END { print r + 0, g + 0, (lr + 0 > lg + 0) ? 1 : 0, (rp == "" ? "-" : rp) }'
+}
+# The live testmanagerd pids, one per word. CADENCE_AUTOMATION_LIVE_DAEMONS is the testing seam:
+# when it is SET (even empty, which means "none is running") it replaces `pgrep`, so `selftest`
+# can say whether a fixture's requesting pid is alive without asking this Mac -- the fixtures quote
+# real pids, and 51557 was this Mac's live daemon on the day the check was written.
+automation_live_daemons() {
+  if (( ${+CADENCE_AUTOMATION_LIVE_DAEMONS} )); then
+    print -r -- "$CADENCE_AUTOMATION_LIVE_DAEMONS"
+    return 0
+  fi
+  pgrep -x testmanagerd 2>/dev/null
+  return 0
+}
+# Prints the requesting pid and returns 0 when the outstanding request was raised by a testmanagerd
+# that is STILL RUNNING; returns 1 when there is no request pid or that daemon has gone. A denied or
+# failing `pgrep` reads as "gone", so this can only ever fail OPEN, to the UNMATCHED note.
+automation_prompt_requester_live() {
+  local -a c; c=( ${=$(automation_prompt_reading)} )
+  local want="${c[4]:--}" p
+  [[ "$want" == <-> ]] || return 1
+  for p in ${=$(automation_live_daemons)}; do
+    [[ "$p" == "$want" ]] && { print -r -- "$want"; return 0 }
+  done
+  return 1
 }
 automation_prompt_counts() {   # prints "<requests> <granted>"
   local -a c; c=( ${=$(automation_prompt_reading)} )
@@ -1600,15 +1627,34 @@ automation_prompt_outstanding() {
 # names. Two readings, two subsystems, one conclusion:
 #
 #   request unmatched AND a session hanging -> REFUSE. A prompt is standing and nothing can run.
-#   request unmatched, no session hanging   -> WARN, do not gate. Most likely an unattended UI run
-#                                              that timed out; the run is allowed to prove it.
+#   request unmatched AND the daemon that   -> REFUSE (T-11701, below).
+#     raised it is still the live one
+#   request unmatched, its daemon gone,     -> WARN, do not gate. The run is allowed to prove it.
+#     no session hanging
 #   no unmatched request                    -> silent.
 #
-# The second read is only paid when the first is positive, so an ordinary run still pays 2.3s.
+# THE LIVE-DAEMON READING (T-11701, measured 2026-11-05). The hanging-session reading is only
+# positive WHILE a run hangs, inside its 30m window -- so a preflight BEFORE the next run reads it
+# as 0 and lets that run through to hang too: `mutate0909` at 04:10 read outstanding=1 hanging=0,
+# was allowed, and hung 983s. What the log actually shows is that the "unattended run times out
+# and the host is fine" premise above does not hold for the daemon that raised the prompt:
+# testmanagerd[51557] logged `evaluatePolicy:2 ... "Enable UI Automation" ... (sync)` at 01:56:59,
+# its client gave up 60s later, and the daemon never logged the evaluatePolicy return, a grant, or
+# even the "Removed Automation Mode client" its own client's exit should have produced -- the
+# thread is still parked in the synchronous call. Of the seven test sessions it took after that,
+# ONE got serialized transport (02:00:28) and six never did (02:02 to 08:26). So an unmatched
+# request whose requesting testmanagerd is still running refuses on its own. When that daemon has
+# gone (a restart or a reboot), its stuck call went with it and the old line is only history: the
+# note, not a refusal. A grant after the request still clears it, as before.
+# Not measured: a prompt the owner DISMISSES logs no grant, so it would keep refusing until
+# testmanagerd restarts; an attended UI run from Xcode raises it again and its grant clears this.
+#
+# The second reads are only paid when the first is positive, so an ordinary run still pays 2.3s.
 automation_prompt_verdict() {   # prints STANDING | UNMATCHED | HEALTHY
   local -i outstanding hanging
   outstanding=$(automation_prompt_outstanding)
   (( outstanding > 0 )) || { print -r -- HEALTHY; return 0 }
+  automation_prompt_requester_live >/dev/null && { print -r -- STANDING; return 0 }
   hanging=$(runstate_transport_outstanding)
   (( hanging > 0 )) && { print -r -- STANDING; return 0 }
   print -r -- UNMATCHED
@@ -1619,8 +1665,9 @@ automation_prompt_note() {
   local -a c; c=( ${=$(automation_prompt_counts)} )
   say ""
   say "   note: AUTOMATION-PROMPT-UNMATCHED (T-2070): this Mac logged an \"Enable UI Automation\""
-  say "   request with no grant after it (requests=${c[1]}, granted=${c[2]}), but NO test session is"
-  say "   hanging, so nothing is being refused. The usual cause is an UNATTENDED UI run that raised"
+  say "   request with no grant after it (requests=${c[1]}, granted=${c[2]}), but the testmanagerd that"
+  say "   raised it is no longer running and NO test session is hanging, so nothing is being refused."
+  say "   The usual cause is an UNATTENDED UI run that raised"
   say "   the owner's prompt and timed out after ~70s -- the grant is PER-SESSION, so a cold UI run"
   say "   raises it every time. If your run then dies at ~445s with 0 tests, it is this after all:"
   say "   ./scripts/xcb.sh check-automation, and only the owner can answer the prompt."
@@ -1634,8 +1681,16 @@ automation_prompt_refusal() {
   say ""
   say "!! REFUSING -- AUTOMATION-PROMPT-OUTSTANDING (T-2070): this Mac has an unanswered \"Enable UI"
   say "   Automation\" authentication prompt (requests=${c[1]}, granted=${c[2]}, outstanding=$outstanding)."
-  say "   A test session is hanging as well (connected, never given serialized transport), which is"
-  say "   the SECOND reading and the reason this refuses rather than merely noting it."
+  local live_pid; live_pid=$(automation_prompt_requester_live)
+  if [[ -n "$live_pid" ]]; then
+    say "   The testmanagerd that raised it (pid $live_pid) is STILL the live daemon, which is the SECOND"
+    say "   reading and the reason this refuses rather than merely noting it (T-11701): that daemon's"
+    say "   synchronous evaluatePolicy is still waiting, and the runs it takes next hang -- no hanging"
+    say "   session is needed to see that coming. A restart of that daemon, or a grant, clears it."
+  else
+    say "   A test session is hanging as well (connected, never given serialized transport), which is"
+    say "   the SECOND reading and the reason this refuses rather than merely noting it."
+  fi
   say "   While it stands NO macOS test run works, the UNIT suite included: testmanagerd sits in one"
   say "   synchronous LAContext.evaluatePolicy and every run behind it dies on a fixed 445s timer."
   say "   T-2067 measured 3h11m of host and seven dead runs from exactly one of these."
@@ -2920,6 +2975,9 @@ selftest_only_testing() {
   # check hands them its own fixture, which every T-2070 check does.
   : > "$ws/autom-none.log"
   export CADENCE_AUTOMATION_LOG_FIXTURE="$ws/autom-none.log"
+  # ...and no testmanagerd is live unless a check says so: the 8e fixtures quote real pids, and one
+  # of them (51557) was this Mac's live daemon when T-11701 made a live requester refuse on its own.
+  export CADENCE_AUTOMATION_LIVE_DAEMONS=""
   # AlphaTests.swift holds two suites; SoloTests.swift holds exactly one.
   print -rl -- $'AlphaTests\tAlphaTests.swift\t3' \
                $'AlphaHelperTests\tAlphaTests.swift\t7' \
@@ -3818,6 +3876,23 @@ selftest_only_testing() {
   run_autom "$ws/autom-old-requests-then-grant.log" "$ws/autom-sess-hanging.txt"
   check "CONTROL (T-11701): two requests and one LATER grant read HEALTHY, even with a hanging session" \
     $( (( arc2 == 0 )) && [[ "$aout2" == *"requests=2 granted=1 outstanding=0"* && "$aout2" == *HEALTHY* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
+  # T-11701 (2): the LIVE-DAEMON reading. The measured shape of 2026-11-05 at 08:45 -- the request
+  # from testmanagerd[51557], nothing hanging in the 30m window, 51557 still running -- read
+  # UNMATCHED exit 0 and let the next run through to hang 983s. The requester being the live daemon
+  # refuses on its own; a requester that has gone, or a later grant, does not.
+  run_autom_live() {  # $1 = live testmanagerd pids, $2 = automation fixture; no hanging session
+    aout2=$(CADENCE_AUTOMATION_LIVE_DAEMONS="$1" CADENCE_AUTOMATION_LOG_FIXTURE="$2" \
+      CADENCE_XCTEST_SESSION_FIXTURE="$ws/autom-sess-ok.txt" zsh "$here" check-automation 2>&1); arc2=$?
+  }
+  run_autom_live "4100 51557" "$ws/autom-request-after-grants.log"
+  check "PIN (T-11701): an unmatched request from the STILL-LIVE testmanagerd refuses with NO hanging session" \
+    $( (( arc2 == AUTOMATION_PROMPT_EXIT )) && [[ "$aout2" == *"AUTOMATION-PROMPT-OUTSTANDING (T-2070)"* && "$aout2" == *"pid 51557, STILL LIVE"* && "$aout2" == *"hanging test sessions: 0"* && "$aout2" == *"is STILL the live daemon"* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
+  run_autom_live "60001" "$ws/autom-request-after-grants.log"
+  check "CONTROL (T-11701): the SAME request after its daemon has gone (another one is live) only NOTES it (exit 0)" \
+    $( (( arc2 == 0 )) && [[ "$aout2" == *"AUTOMATION-PROMPT-UNMATCHED (T-2070)"* && "$aout2" == *"no longer running"* && "$aout2" != *REFUSING* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
+  run_autom_live "88831" "$ws/autom-old-requests-then-grant.log"
+  check "CONTROL (T-11701): a request from the live daemon with a LATER grant reads HEALTHY (exit 0)" \
+    $( (( arc2 == 0 )) && [[ "$aout2" == *"outstanding=0"* && "$aout2" == *HEALTHY* && "$aout2" != *REFUSING* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
   run_autom "$ws/autom-noise-only.log"
   check "PIN: /usr/bin/log's own invocation records are not counted at all (requests=0)" \
     $( (( arc2 == 0 )) && [[ "$aout2" == *"requests=0 granted=0 outstanding=0"* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
@@ -5275,11 +5350,15 @@ if [[ "${1:-}" == "check-automation" ]]; then
   say "automation prompt: requests=${autom_counts[1]} granted=${autom_counts[2]} outstanding=$autom_out"
   autom_verdict=$(automation_prompt_verdict)
   if [[ "$autom_verdict" == STANDING ]]; then
+    autom_live=$(automation_prompt_requester_live)
+    if [[ -n "$autom_live" ]]; then say "  requesting testmanagerd: pid $autom_live, STILL LIVE"
+    else say "  requesting testmanagerd: no longer running"; fi
     say "  hanging test sessions: $(runstate_transport_outstanding) (connected, never given transport)"
     automation_prompt_refusal
     exit $AUTOMATION_PROMPT_EXIT
   fi
   if [[ "$autom_verdict" == UNMATCHED ]]; then
+    say "  requesting testmanagerd: no longer running"
     say "  hanging test sessions: $(runstate_transport_outstanding) -- nothing is hanging, so this does NOT gate."
     automation_prompt_note
     exit 0
