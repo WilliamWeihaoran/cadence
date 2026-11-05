@@ -495,6 +495,91 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         settle(Bounds.hoverSettle)
     }
 
+    /// **[[T-10803]] clause (5): the Settings tag colour swatch — the last of the six a pointer
+    /// can reach.**
+    ///
+    /// Reached without a menu or a rail click: `CadenceUITestLaunchPage` takes
+    /// `CADENCE_UI_TEST_PAGE=settings` and `CadenceUITestSettingsCategory` takes
+    /// `CADENCE_UI_TEST_SETTINGS_CATEGORY=tags`, both gated on `CADENCE_UI_TEST_MODE=1`
+    /// ([[T-3200]], [[T-11451]]). The strip is in the always-visible "Create Tag" section
+    /// (`SettingsTagsSection.swift:64`), so no tag has to exist first.
+    ///
+    /// The plate is the smallest of the six by a wide margin — `Circle().frame(width: 18, height:
+    /// 18)`, so a **9pt** radius against the floating button's 27 — which is the case most likely
+    /// to show a corner if the style ever stopped honouring its shape, because 9 * sqrt(2) is only
+    /// 3.7pt further out than 9.
+    func testTheSettingsTagColourSwatchesCirclePlateOnMacOS() throws {
+        try CadenceUITestEnvironment.requireInteractiveUITests()
+
+        try launchApp(page: Fixture.settingsPage, settingsCategory: Fixture.tagsCategory)
+        let window = app.windows.firstMatch
+
+        // **Wait for the strip BEFORE enumerating it.** `allElementsBoundByIndex` followed by a
+        // `.frame` on each raced Settings' paint on 2026-11-05 and died in 7.8s with `Failed to
+        // get matching snapshot` — the same staleness that cost a run on the Calendar page. The
+        // query is bounded by a label predicate, so the wait costs one lookup.
+        let swatchQuery = app.buttons.matching(NSPredicate(
+            format: "label == %@ OR label == %@", Fixture.unselectedSwatchLabel, Fixture.selectedSwatchLabel
+        ))
+        guard swatchQuery.firstMatch.waitForExistence(timeout: Bounds.windowAppears) else {
+            attach("tags-no-swatch")
+            XCTFail(
+                "Settings > Tags never drew a '\(Fixture.unselectedSwatchLabel)' swatch. "
+                + surfaceReport()
+            )
+            return
+        }
+        settle(Bounds.hoverSettle)
+        let swatches = swatchQuery
+            .allElementsBoundByIndex
+            .filter { $0.frame.width > 0 && $0.frame.height > 0 }
+        guard swatches.count >= Bounds.minimumSwatches else {
+            attach("tags-not-open")
+            XCTFail(
+                "Settings > Tags drew \(swatches.count) colour swatch(es); "
+                + "`TagSupport.colorOptions` gives at least \(Bounds.minimumSwatches). "
+                + surfaceReport()
+            )
+            return
+        }
+        // An UNSELECTED one: the selected swatch carries a 2pt `strokeBorder` of its own, and a
+        // wash measured over that would be measuring two shapes.
+        let swatch = swatches.first { $0.label == Fixture.unselectedSwatchLabel } ?? swatches[0]
+        let plate = swatch.frame
+        print("SWATCH frame=\(plate) label='\(swatch.label)' swatches=\(swatches.count)")
+        XCTAssertEqual(
+            plate.width, plate.height, accuracy: Bounds.squareTolerance,
+            "the swatch's frame \(plate) is not square"
+        )
+        let radius = min(plate.width, plate.height) / 2
+        attach("tags-open")
+
+        parkPointer(away: plate, in: window)
+        let cold = try XCTUnwrap(shot(of: window), "could not read the window as pixels, unhovered")
+        swatch.hover()
+        settle(Bounds.hoverSettle)
+        let warm = try XCTUnwrap(shot(of: window), "could not read the window as pixels, hovered")
+        let wash = changedPixels(cold: cold, warm: warm, window: window.frame, plate: plate)
+        print(
+            "SWATCH hover changed \(wash.count) px; inside=\(wash.insideCircle) "
+            + "outside=\(wash.outsideCircle) maxRadius=\(wash.maximumRadius)pt plateRadius=\(radius)pt "
+            + "cornerWouldBeAt=\(radius * 1.41421356)pt"
+        )
+        attach("tags-swatch-hovered")
+        XCTAssertGreaterThan(
+            wash.count, 0,
+            "hovering the tag colour swatch \(plate) changed nothing at all. " + surfaceReport()
+        )
+        XCTAssertEqual(
+            wash.outsideCircle, 0,
+            """
+            \(wash.outsideCircle) pixel(s) lit OUTSIDE the \(radius)pt circle (furthest \
+            \(wash.maximumRadius)pt), so the swatch's wash is not its plate's shape. A \
+            rounded-rectangle corner would sit at \(radius * 1.41421356)pt. Plate \(plate).
+            """
+        )
+    }
+
     /// The month grid's day buttons, found by GEOMETRY rather than by label.
     ///
     /// **Not `label CONTAINS ", 2026"`.** That was tried on 2026-11-04 and matched **nothing**:
@@ -705,6 +790,13 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         /// (`CadenceTaskPresentationSupport.swift:320`) and `FocusChromeSupportViews.swift:38`.
         static let startFocusLabel = "Start focus session"
         static let closeFocusLabel = "Close focus session"
+        /// `CadenceUITestLaunchPage.settings` and `CadenceSettingsCategoryKind.tags`.
+        static let settingsPage = "settings"
+        static let tagsCategory = "tags"
+        /// `SettingsTagsSection.swift:536` — the name is what the control DOES, because a screen
+        /// reader cannot verify a colour.
+        static let unselectedSwatchLabel = "Use this color"
+        static let selectedSwatchLabel = "Selected color"
     }
 
     private enum Bounds {
@@ -739,14 +831,23 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         /// against pinning a point figure (T-1279).
         static let dayCellMinimumSide: CGFloat = 20
         static let dayCellMaximumSide: CGFloat = 70
+        /// `TagSupport.colorOptions` is a fixed palette; this is a floor, not its count, so the
+        /// palette can grow without reddening this.
+        static let minimumSwatches = 4
     }
 
     // MARK: - Launching
 
-    private func launchApp() throws {
+    private func launchApp(page: String? = nil, settingsCategory: String? = nil) throws {
         app = XCUIApplication()
         app.launchEnvironment["CADENCE_UI_TEST_MODE"] = "1"
         app.launchEnvironment["CADENCE_UI_TEST_SCENARIO"] = Fixture.scenario
+        // [[T-3200]] / [[T-11451]]: both are ignored outside `CADENCE_UI_TEST_MODE`, so a shipping
+        // launch is unaffected and a steerable launch is an EventKit-disarmed one.
+        if let page { app.launchEnvironment["CADENCE_UI_TEST_PAGE"] = page }
+        if let settingsCategory {
+            app.launchEnvironment["CADENCE_UI_TEST_SETTINGS_CATEGORY"] = settingsCategory
+        }
         app.launchEnvironment["CADENCE_LOCAL_STORE_ONLY"] = "1"
         app.launchEnvironment["CADENCE_RESET_STORE"] = "1"
         app.launchEnvironment["CADENCE_RESET_USER_DEFAULTS"] = "1"
