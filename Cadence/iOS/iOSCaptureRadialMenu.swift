@@ -357,7 +357,11 @@ struct iOSCaptureRadialMenuButton: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("New Task")
             .accessibilityAddTraits(.isButton)
-            .accessibilityHint(CadenceCaptureAccessibilityCopy.captureButtonHint)
+            // T-8646: name the actions rotor (swipe up or down), never a touch-and-hold -- VoiceOver
+            // turns a hold into a double-tap-and-hold pass-through that cannot reach a segment. The
+            // copy lives here, in the iOS tree, because it names touch gestures: the Mac-reachable
+            // copy census forbids them in Cadence/Shared, and the Mac button has no palette.
+            .accessibilityHint("Double tap to capture a task. Swipe up or down for event and note.")
             // VoiceOver cannot slide around a radial menu, so the segments are also plain actions.
             // Same three commitments, reached without the gesture.
             .accessibilityAction(named: Text(CadenceCaptureAction.event.title)) {

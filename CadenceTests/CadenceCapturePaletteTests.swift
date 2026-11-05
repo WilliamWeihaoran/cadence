@@ -1318,29 +1318,23 @@ struct CadenceCapturePaletteTests {
     /// a segment, so the sentence described a route that cannot be walked. The route that works was
     /// wired the whole time and simply unnamed — Event and Note are published as accessibility
     /// actions, which VoiceOver puts on the actions rotor, reached by swiping up or down.
-    @Test func theCaptureHintNamesTheRouteVoiceOverCanActuallyWalk() {
-        let hint = CadenceCaptureAccessibilityCopy.captureButtonHint
+    ///
+    /// The hint is a literal in the iOS file, not a `Cadence/Shared` constant: it names touch
+    /// gestures, and `noMacReachableCopyAsksForATouchGesture` forbids those in shared copy. So this
+    /// reads the one hint the file draws and holds it to the promise.
+    @Test func theCaptureHintNamesTheRouteVoiceOverCanActuallyWalk() throws {
+        let source = try strippingComments(sourceFile("Cadence/iOS/iOSCaptureRadialMenu.swift"))
+        let hints = source.components(separatedBy: ".accessibilityHint(\"").dropFirst()
+        #expect(hints.count == 1, "the capture file draws \(hints.count) hints; expected exactly one")
+        let hint = try #require(hints.first?.components(separatedBy: "\"").first)
         #expect(hint.localizedCaseInsensitiveContains("swipe up or down"))
-        #expect(
-            !hint.localizedCaseInsensitiveContains(
-                CadenceCaptureAccessibilityCopy.retiredHoldPhrasing
-            )
-        )
+        #expect(!hint.localizedCaseInsensitiveContains("touch and hold"))
+        #expect(!source.localizedCaseInsensitiveContains("touch and hold for"))
         // Both segments stay named, so the sentence remains a description of what is on the rotor
         // rather than a generic nod at it.
         for action in [CadenceCaptureAction.event, .note] {
             #expect(hint.localizedCaseInsensitiveContains(action.title))
         }
-    }
-
-    /// A constant only holds the line for as long as the view reads it, so this is the half that
-    /// catches drift: the file drawing both capture buttons may not spell a hint of its own.
-    @Test func theCaptureButtonReadsTheSharedHintRatherThanSpellingOne() throws {
-        let source = try strippingComments(sourceFile("Cadence/iOS/iOSCaptureRadialMenu.swift"))
-        #expect(
-            source.contains(".accessibilityHint(CadenceCaptureAccessibilityCopy.captureButtonHint)")
-        )
-        #expect(!source.contains(".accessibilityHint(\""))
     }
 }
 
