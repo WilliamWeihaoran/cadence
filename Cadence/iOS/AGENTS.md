@@ -138,6 +138,10 @@ that "does nothing" is not evidence until these are ruled out.
 - **A press-and-hold lift cannot be driven.** A `touch_path` held still 0.8 s or 1.5 s then dragged
   scrolls the Calendar timeline instead of lifting a timed block. A third-tap-cancels check and a
   hold-to-lift check need a human finger on an attended run.
+- **`xcrun simctl io <udid> screenshot <file>` is the authoritative capture; the MCP `screenshot`
+  action is not.** The MCP action served pixel-identical frames with a frozen clock for minutes
+  while the app had moved two screens on ([[T-11401]]; trigger not identified). Use it to aim, but
+  re-take any load-bearing frame, and every "the control did nothing" verdict, with `simctl`.
 
 ## Reference Sections
 
