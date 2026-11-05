@@ -143,8 +143,66 @@ final class CadenceMacCalendarDragCreateUITests: XCTestCase {
         let taskChoice = app.descendants(matching: .any)
             .matching(CadenceUITestQuery.identifying(ID.scheduleKindTask))
             .firstMatch
+        let created = taskChoice.waitForExistence(timeout: CadenceUITestBounds.firstPaint)
+
+        // ── **THE NEGATIVE CONTROL, before any verdict is read from `created`.**
+        //
+        // A drag that creates nothing and a transport that cannot drag at all have the same
+        // symptom, and on 2026-11-05 the run that removed the only other explanation — a foreign
+        // dialog, dismissed here and confirmed gone — still saw nothing created. So before this
+        // is reported as the product's behaviour, the SAME gesture is asked to do something the
+        // app certainly supports: move an existing block. `XCUICoordinate.press(forDuration:
+        // thenDragTo:)` synthesises a down, a wait, a move and an up, and whether SwiftUI's
+        // `DragGesture` sees enough intermediate movement in that is exactly what is unknown.
+        //
+        // If the block MOVES and nothing was created, the transport drags and drag-create is the
+        // finding. If the block does NOT move either, this transport cannot answer the question
+        // and the run says so instead of blaming the code.
+        let controlBlock = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", Fixture.timedEventTitle))
+            .allElementsBoundByIndex
+            .filter { $0.frame.width > 0 && $0.frame.height > 0 }
+            .max { $0.frame.width < $1.frame.width }
+        var controlMoved = false
+        var controlBefore = CGRect.zero
+        var controlAfter = CGRect.zero
+        if let controlBlock {
+            controlBefore = controlBlock.frame
+            let from = controlBlock.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            let to = controlBlock.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                .withOffset(CGVector(dx: 0, dy: Drag.controlDistance))
+            from.press(forDuration: Drag.press, thenDragTo: to)
+            settle(Drag.settle)
+            controlAfter = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label CONTAINS %@", Fixture.timedEventTitle))
+                .allElementsBoundByIndex
+                .filter { $0.frame.width > 0 && $0.frame.height > 0 }
+                .max { $0.frame.width < $1.frame.width }?
+                .frame ?? controlBefore
+            controlMoved = abs(controlAfter.minY - controlBefore.minY) > Drag.controlMovedThreshold
+        }
+        print(
+            "MACDRAG created=\(created) control block before=\(controlBefore) after=\(controlAfter) "
+            + "moved=\(controlMoved) by=\(controlAfter.minY - controlBefore.minY)pt"
+        )
+        attach("mac-calendar-after-control-drag")
+
+        if !created && !controlMoved {
+            throw XCTSkip(
+                """
+                NOT ESTABLISHABLE WITH THIS TRANSPORT, and deliberately not reported as a defect. \
+                The empty-slot drag created nothing AND the negative control — the same \
+                `press(forDuration:thenDragTo:)` asked to move the fixture's \
+                '\(Fixture.timedEventTitle)' block \(Drag.controlDistance)pt down — moved it \
+                \(controlAfter.minY - controlBefore.minY)pt, i.e. not at all. So XCUITest's \
+                synthesised drag does not reach this grid's gestures and says nothing about \
+                drag-to-create. Block \(controlBefore) -> \(controlAfter).
+                """
+            )
+        }
+
         XCTAssertTrue(
-            taskChoice.waitForExistence(timeout: CadenceUITestBounds.firstPaint),
+            created,
             """
             The drag did not open the shared CadenceSchedulePanel: nothing publishes \
             '\(ID.scheduleKindTask)'. Either the drag landed somewhere that creates nothing, or \
@@ -194,6 +252,11 @@ final class CadenceMacCalendarDragCreateUITests: XCTestCase {
         static let press: TimeInterval = 0.3
         /// **Not measured.** Let the Calendar page finish drawing before its blocks are read.
         static let settleBeforeReadingBlocks: TimeInterval = 1.5
+        /// How far the negative control drags an existing block. A whole ladder hour, so a move
+        /// cannot be confused with a jitter.
+        static let controlDistance: CGFloat = 70
+        /// A block counts as moved past this. Far above layout noise, far below the drag.
+        static let controlMovedThreshold: CGFloat = 8
         static let settle: TimeInterval = 1.5
     }
 

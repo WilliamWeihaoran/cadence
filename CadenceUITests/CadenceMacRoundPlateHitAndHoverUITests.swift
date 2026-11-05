@@ -249,7 +249,7 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
             .matching(NSPredicate(format: "label == %@ OR title == %@", Fixture.doDateLabel, Fixture.doDateLabel))
             .allElementsBoundByIndex
             .first { $0.frame.width > 0 && $0.frame.height > 0 }
-        guard let chip else {
+        guard let chip = chip else {
             attach("picker-no-chip")
             XCTFail(
                 "the composer drew no '\(Fixture.doDateLabel)' chip to open the picker with. "
@@ -287,12 +287,18 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         let radius = min(cell.width, cell.height) / 2
 
         // ── (1) THE DAY CELL'S WASH.
-        parkPointer(away: cell, in: window)
-        let cold = try XCTUnwrap(shot(of: window), "could not read the window as pixels, unhovered")
+        let popoverElement = try XCTUnwrap(pickerPopoverElement(), "the picker's popover vanished")
+        let popoverFrame = popoverElement.frame
+        parkPointer(insidePopover: popoverElement, away: cell)
+        XCTAssertTrue(
+            popoverElement.exists && popoverElement.frame.height > 0,
+            "parking the pointer closed the picker's popover, so there is nothing to diff"
+        )
+        let cold = try XCTUnwrap(shot(of: popoverElement), "could not read the popover as pixels, unhovered")
         probe.hover()
         settle(Bounds.hoverSettle)
-        let warm = try XCTUnwrap(shot(of: window), "could not read the window as pixels, hovered")
-        let wash = changedPixels(cold: cold, warm: warm, window: window.frame, plate: cell)
+        let warm = try XCTUnwrap(shot(of: popoverElement), "could not read the popover as pixels, hovered")
+        let wash = changedPixels(cold: cold, warm: warm, window: popoverFrame, plate: cell)
         print(
             "DAYCELL hover changed \(wash.count) px; inside=\(wash.insideCircle) "
             + "outside=\(wash.outsideCircle) maxRadius=\(wash.maximumRadius)pt plateRadius=\(radius)pt"
@@ -304,38 +310,6 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
             """
             \(wash.outsideCircle) pixel(s) lit OUTSIDE the \(radius)pt circle (furthest \
             \(wash.maximumRadius)pt), so the day cell's wash is not its plate's shape. Cell \(cell).
-            """
-        )
-
-        // ── THE HIT REGION, on the same control [[T-11322]] measured on two iOS devices.
-        let probeDX = cell.width / 2 - Bounds.cornerInset
-        let probeDY = cell.height / 2 - Bounds.cornerInset
-        let probeDistance = (probeDX * probeDX + probeDY * probeDY).squareRoot()
-        let outsideBy = probeDistance - radius
-        let selectedBefore = drawnCells.filter(\.isSelected).map(\.label)
-        probe.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-            .withOffset(CGVector(dx: probeDX, dy: probeDY))
-            .click()
-        settle(Bounds.hoverSettle)
-        let selectedAfter = dayCells().filter(\.isSelected).map(\.label)
-        let cornerSelected = selectedAfter != selectedBefore
-        print(
-            "DAYCELL corner click at centre+(\(probeDX), \(probeDY)) = \(probeDistance)pt, "
-            + "\(outsideBy)pt outside the \(radius)pt circle — selectedBefore=\(selectedBefore) "
-            + "selectedAfter=\(selectedAfter) changed=\(cornerSelected)"
-        )
-        attach("picker-corner-click")
-        XCTAssertGreaterThan(
-            outsideBy, Bounds.minimumMargin,
-            "the corner probe is only \(outsideBy)pt outside the \(radius)pt circle — not decisive"
-        )
-        XCTAssertFalse(
-            cornerSelected,
-            """
-            a click \(probeDistance)pt from the day cell's centre — \(outsideBy)pt OUTSIDE its \
-            \(radius)pt drawn circle and inside its \(cell.width)pt square — changed the \
-            selection from \(selectedBefore) to \(selectedAfter). That is [[T-11322]]'s iOS \
-            signature on macOS, on the same shared control. Cell \(cell).
             """
         )
 
@@ -351,13 +325,15 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
             pillFrame.width, pillFrame.height,
             "the quick pill \(pillFrame) is not wider than it is tall, so it is not a capsule"
         )
-        parkPointer(away: pillFrame, in: window)
-        let pillCold = try XCTUnwrap(shot(of: window), "could not read the window as pixels, pill unhovered")
+        let pillPopover = try XCTUnwrap(pickerPopoverElement(), "the picker's popover vanished before the pill")
+        let pillPopoverFrame = pillPopover.frame
+        parkPointer(insidePopover: pillPopover, away: pillFrame)
+        let pillCold = try XCTUnwrap(shot(of: pillPopover), "could not read the popover as pixels, pill unhovered")
         pill.hover()
         settle(Bounds.hoverSettle)
-        let pillWarm = try XCTUnwrap(shot(of: window), "could not read the window as pixels, pill hovered")
+        let pillWarm = try XCTUnwrap(shot(of: pillPopover), "could not read the popover as pixels, pill hovered")
         let pillWash = changedPixels(
-            cold: pillCold, warm: pillWarm, window: window.frame, plate: pillFrame, isCapsule: true
+            cold: pillCold, warm: pillWarm, window: pillPopoverFrame, plate: pillFrame, isCapsule: true
         )
         let pillRadius = pillFrame.height / 2
         print(
@@ -373,6 +349,46 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
             \(pillWash.outsideCircle) pixel(s) lit outside the pill's capsule (furthest \
             \(pillWash.maximumRadius)pt from its spine against a \(pillRadius)pt radius), so the \
             wash is not the capsule's shape. Pill \(pillFrame).
+            """
+        )
+
+        // ── THE HIT REGION, on the same control [[T-11322]] measured on two iOS devices.
+        //
+        // **Last, because it closes the popover**, and read from the `Do Date` chip's
+        // accessibility VALUE rather than from the grid. `dayCells().filter(\.isSelected)` was
+        // tried on 2026-11-05 and died with `Failed to get matching snapshot: No matches found
+        // for Element at index 103`: re-querying every button in the app after a click races the
+        // popover's teardown. The chip is ONE element, it is outside the popover, and
+        // `TaskDateChip.displayLabel` makes its value the chosen date — so a selection that moved
+        // is one string comparison.
+        let chipValueBefore = chip.value as? String ?? ""
+        let probeDX = cell.width / 2 - Bounds.cornerInset
+        let probeDY = cell.height / 2 - Bounds.cornerInset
+        let probeDistance = (probeDX * probeDX + probeDY * probeDY).squareRoot()
+        let outsideBy = probeDistance - radius
+        XCTAssertGreaterThan(
+            outsideBy, Bounds.minimumMargin,
+            "the corner probe is only \(outsideBy)pt outside the \(radius)pt circle — not decisive"
+        )
+        probe.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .withOffset(CGVector(dx: probeDX, dy: probeDY))
+            .click()
+        settle(Bounds.composerAppears / 3)
+        let chipValueAfter = chip.value as? String ?? ""
+        let cornerSelected = chipValueAfter != chipValueBefore
+        print(
+            "DAYCELL corner click at centre+(\(probeDX), \(probeDY)) = \(probeDistance)pt, "
+            + "\(outsideBy)pt outside the \(radius)pt circle — chip '\(chipValueBefore)' -> "
+            + "'\(chipValueAfter)' changed=\(cornerSelected) (cell was '\(probe.label)')"
+        )
+        attach("picker-corner-click")
+        XCTAssertFalse(
+            cornerSelected,
+            """
+            a click \(probeDistance)pt from the day cell's centre — \(outsideBy)pt OUTSIDE its \
+            \(radius)pt drawn circle and inside its \(cell.width)pt square — moved the Do Date \
+            chip from '\(chipValueBefore)' to '\(chipValueAfter)'. That is [[T-11322]]'s iOS \
+            signature on macOS, on the same shared control. Cell \(cell), '\(probe.label)'.
             """
         )
     }
@@ -398,13 +414,22 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
             .sorted { ($0.frame.minY, $0.frame.minX) < ($1.frame.minY, $1.frame.minX) }
     }
 
-    /// The date picker's popover frame, which bounds every element this test measures.
-    private func pickerPopover() -> CGRect? {
+    /// The date picker's popover, which bounds every element this test measures.
+    ///
+    /// **It is returned as an ELEMENT, not just a rect, because the shot has to be taken OF it.**
+    /// Measured 2026-11-05: hovering the day cell and diffing two `window.screenshot()`s reported
+    /// **0 changed pixels** over a cell that was found, sized and hovered correctly. A macOS
+    /// popover is its own window, so the main window's screenshot does not contain it and the
+    /// diff was of two identical pictures of a surface the control is not on. Shooting the
+    /// popover fixes it, and the plate is then offset by the popover's origin rather than the
+    /// window's.
+    private func pickerPopoverElement() -> XCUIElement? {
         app.descendants(matching: .popover).allElementsBoundByIndex
-            .map(\.frame)
-            .filter { $0.width > 0 && $0.height > 0 }
-            .max { $0.height < $1.height }
+            .filter { $0.frame.width > 0 && $0.frame.height > 0 }
+            .max { $0.frame.height < $1.frame.height }
     }
+
+    private func pickerPopover() -> CGRect? { pickerPopoverElement()?.frame }
 
     /// The quick pills under the grid — the capsule half of [[T-10803]] clause (2). By label,
     /// because `CadenceQuickDatePopover.quickPill` spells all three (`:533-536`) and they are the only
@@ -518,6 +543,32 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
     /// — bottom-trailing by construction — can never reach.
     private func parkPointer(away plate: CGRect, in window: XCUIElement) {
         window.coordinate(withNormalizedOffset: CGVector(dx: 0.04, dy: 0.04)).hover()
+        settle(Bounds.hoverSettle)
+    }
+
+    /// The same, for a plate that lives in a POPOVER — which must not be parked away from.
+    ///
+    /// **Parking on the main window dismissed the picker, and cost two runs.** Measured
+    /// 2026-11-05: `parkPointer(away:in:)` hovers the window's top-leading corner, which is
+    /// outside a transient macOS popover, so the popover closed; the "unhovered" shot and the
+    /// "hovered" shot were then of the same dead surface and the diff reported **0 changed
+    /// pixels** over a day cell that had been found, sized and hovered correctly. The pointer
+    /// stays INSIDE the popover here, in whichever of its corners is furthest from the plate.
+    private func parkPointer(insidePopover popover: XCUIElement, away plate: CGRect) {
+        let f = popover.frame
+        let centre = CGPoint(x: plate.midX, y: plate.midY)
+        let corners: [CGVector] = [
+            CGVector(dx: 0.06, dy: 0.04), CGVector(dx: 0.94, dy: 0.04),
+            CGVector(dx: 0.06, dy: 0.96), CGVector(dx: 0.94, dy: 0.96)
+        ]
+        let furthest = corners.max { a, b in
+            func distance(_ v: CGVector) -> CGFloat {
+                let p = CGPoint(x: f.minX + f.width * v.dx, y: f.minY + f.height * v.dy)
+                return ((p.x - centre.x) * (p.x - centre.x) + (p.y - centre.y) * (p.y - centre.y)).squareRoot()
+            }
+            return distance(a) < distance(b)
+        } ?? CGVector(dx: 0.06, dy: 0.04)
+        popover.coordinate(withNormalizedOffset: furthest).hover()
         settle(Bounds.hoverSettle)
     }
 
