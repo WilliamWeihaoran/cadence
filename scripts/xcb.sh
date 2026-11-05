@@ -1522,27 +1522,68 @@ AUTOMATION_PROMPT_PREDICATE='(process == "testmanagerd" OR process == "automatio
 # The testing seam, the shape `pmset_log` and `xctest_session_log` already use: the live condition
 # needs this Mac's own authentication stack to stop answering, so `selftest` substitutes a file in
 # the format `log show --style compact` prints.
+#
+# THE WINDOW (T-11701, measured 2026-11-05). It used to be a fixed `--last 6h`, and a prompt does
+# not expire when the window moves on: testmanagerd[51557] logged its one request at 01:56:59 and
+# was still the live daemon, still waiting, at 08:40 -- but from ~07:57 the request had left the
+# window, the probe read requests=0 HEALTHY, and two agents' runs hung behind it. So the default
+# window is SINCE THE LIVE testmanagerd STARTED: a request can only be standing in the daemon that
+# raised it, and every request that daemon raised is inside that window however long ago it was
+# (1.6s for ~7h measured). With no live daemon, or an unreadable start time, it falls back to
+# `--last 24h`. CADENCE_AUTOMATION_LOG_WINDOW, when set, still overrides both.
+automation_daemon_start() {   # prints the oldest live testmanagerd's start as "YYYY-MM-DD HH:MM:SS", or nothing
+  local pids pid lstart stamp best=""
+  pids=$(pgrep -x testmanagerd 2>/dev/null) || return 0
+  for pid in ${=pids}; do
+    lstart=$(LC_ALL=C ps -o lstart= -p "$pid" 2>/dev/null)
+    lstart="${lstart%"${lstart##*[![:space:]]}"}"   # ps pads it with trailing blanks; no extendedglob here
+    [[ -n "$lstart" ]] || continue
+    stamp=$(LC_ALL=C date -j -f '%a %b %e %T %Y' "$lstart" '+%Y-%m-%d %H:%M:%S' 2>/dev/null) || continue
+    [[ -z "$best" || "$stamp" < "$best" ]] && best=$stamp
+  done
+  [[ -n "$best" ]] && print -r -- "$best"
+  return 0
+}
 automation_mode_log() {
   if [[ -n "${CADENCE_AUTOMATION_LOG_FIXTURE:-}" ]]; then
     cat -- "$CADENCE_AUTOMATION_LOG_FIXTURE" 2>/dev/null
     return 0
   fi
-  /usr/bin/log show --last "${CADENCE_AUTOMATION_LOG_WINDOW:-6h}" \
+  local -a window
+  if [[ -n "${CADENCE_AUTOMATION_LOG_WINDOW:-}" ]]; then
+    window=(--last "$CADENCE_AUTOMATION_LOG_WINDOW")
+  else
+    local since; since=$(automation_daemon_start)
+    if [[ -n "$since" ]]; then window=(--start "$since"); else window=(--last 24h); fi
+  fi
+  /usr/bin/log show "${window[@]}" \
     --predicate "$AUTOMATION_PROMPT_PREDICATE" --style compact 2>/dev/null
 }
-automation_prompt_counts() {   # prints "<requests> <granted>"
-  local text
-  text="$(automation_mode_log | grep -v -- '--predicate')"
-  local -i req granted
-  req=$(print -r -- "$text" | grep -cF -- "$AUTOMATION_PROMPT_REQUEST")
-  granted=$(print -r -- "$text" | grep -cF -- "$AUTOMATION_PROMPT_GRANTED")
-  print -r -- "$req $granted"
+# ORDER, NOT COUNT (T-11701). The probe used to print `requests - granted`, and that is wrong in
+# both directions: grants that came BEFORE a request cancel it (measured over 24h on 2026-11-05:
+# seven grants at 18:30-18:56, one unanswered request at 01:56 -> requests=1 granted=7
+# outstanding=-6, HEALTHY over a standing prompt), and two answered prompts followed by one
+# unanswered one read the same as one answered prompt. A prompt is outstanding when the LATEST
+# request comes after the LATEST grant. `log show` prints in time order, so that is line order;
+# fixtures are written the same way.
+# Prints "<requests> <granted> <outstanding>", outstanding being 1 or 0. The counts stay for the
+# report line, which agents and ledger entries quote as `requests=N granted=M outstanding=K`.
+automation_prompt_reading() {
+  automation_mode_log | grep -v -- '--predicate' | awk \
+    -v req="$AUTOMATION_PROMPT_REQUEST" -v gr="$AUTOMATION_PROMPT_GRANTED" '
+      index($0, req) { r++; lr = NR }
+      index($0, gr)  { g++; lg = NR }
+      END { print r + 0, g + 0, (lr + 0 > lg + 0) ? 1 : 0 }'
 }
-# >0 means a prompt is STANDING and no macOS test run can work. Zero or negative is healthy.
+automation_prompt_counts() {   # prints "<requests> <granted>"
+  local -a c; c=( ${=$(automation_prompt_reading)} )
+  print -r -- "${c[1]:-0} ${c[2]:-0}"
+}
+# 1 means the latest request has no grant after it: a prompt is STANDING (or an unattended UI run
+# timed out -- see the verdict below). 0 is healthy.
 automation_prompt_outstanding() {
-  local -a c
-  c=( ${=$(automation_prompt_counts)} )
-  print -r -- "$(( ${c[1]:-0} - ${c[2]:-0} ))"
+  local -a c; c=( ${=$(automation_prompt_reading)} )
+  print -r -- "${c[3]:-0}"
 }
 # AN UNMATCHED REQUEST IS NOT BY ITSELF A STANDING PROMPT, and reading it as one would have made
 # this guard worse than the disease it is for. MEASURED behaviour, corrected 2026-10-07: a cold UI
@@ -2872,6 +2913,13 @@ selftest_only_testing() {
   # shape the guard refuses; section 18 chooses each cwd it asserts about explicitly.
   local selftest_cwd="$PWD"
   cd -- "$ws" || return 1
+  # T-11701: every fake run below passes the real preflight, and the preflight asks THIS MAC'S log
+  # whether an "Enable UI Automation" prompt is standing. Once the probe stopped losing a standing
+  # prompt out of its window, 34 checks went red over a real one (exit 13) -- the selftest was
+  # answering about the host, not the script. So children read an EMPTY automation log unless a
+  # check hands them its own fixture, which every T-2070 check does.
+  : > "$ws/autom-none.log"
+  export CADENCE_AUTOMATION_LOG_FIXTURE="$ws/autom-none.log"
   # AlphaTests.swift holds two suites; SoloTests.swift holds exactly one.
   print -rl -- $'AlphaTests\tAlphaTests.swift\t3' \
                $'AlphaHelperTests\tAlphaTests.swift\t7' \
@@ -3755,6 +3803,21 @@ selftest_only_testing() {
   run_autom "$ws/autom-answered.log"
   check "CONTROL: a request that WAS granted reads HEALTHY and exits 0" \
     $( (( arc2 == 0 )) && [[ "$aout2" == *"outstanding=0"* && "$aout2" == *HEALTHY* && "$aout2" != *REFUSING* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
+  # T-11701: ORDER, not count. The measured shape of 2026-11-05 -- earlier grants, then one request
+  # nobody answered -- read requests=1 granted=7 outstanding=-6 HEALTHY under `requests - granted`.
+  local xc2="2026-11-04 18:30:48.785 Df testmanagerd[5178:8bd4c] [com.apple.dt.xctest:Default]"
+  local tm2="2026-11-05 01:56:59.366 Df testmanagerd[51557:249a4e] [com.apple.dt.automationmode:Default]"
+  print -rl -- "$xc2 Finished enabling Automation Mode" "$xc2 Finished enabling Automation Mode" \
+               "$tm2 Writer daemon requires authentication to enable automation mode." > "$ws/autom-request-after-grants.log"
+  print -rl -- "$tm Writer daemon requires authentication to enable automation mode." \
+               "$tm Writer daemon requires authentication to enable automation mode." \
+               "$xc Finished enabling Automation Mode" > "$ws/autom-old-requests-then-grant.log"
+  run_autom "$ws/autom-request-after-grants.log" "$ws/autom-sess-hanging.txt"
+  check "PIN (T-11701): a request AFTER earlier grants is still outstanding, and refuses with a hanging session" \
+    $( (( arc2 == AUTOMATION_PROMPT_EXIT )) && [[ "$aout2" == *"requests=1 granted=2 outstanding=1"* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
+  run_autom "$ws/autom-old-requests-then-grant.log" "$ws/autom-sess-hanging.txt"
+  check "CONTROL (T-11701): two requests and one LATER grant read HEALTHY, even with a hanging session" \
+    $( (( arc2 == 0 )) && [[ "$aout2" == *"requests=2 granted=1 outstanding=0"* && "$aout2" == *HEALTHY* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
   run_autom "$ws/autom-noise-only.log"
   check "PIN: /usr/bin/log's own invocation records are not counted at all (requests=0)" \
     $( (( arc2 == 0 )) && [[ "$aout2" == *"requests=0 granted=0 outstanding=0"* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
