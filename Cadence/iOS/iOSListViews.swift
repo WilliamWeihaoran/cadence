@@ -322,6 +322,7 @@ struct iOSListsView: View {
         } label: {
             Label(title, systemImage: "archivebox")
         }
+        .cadenceDestructiveMenuRow()
     }
 
     private func archiveProjectButton(_ project: Project, title: String = "Archive") -> some View {
@@ -330,6 +331,7 @@ struct iOSListsView: View {
         } label: {
             Label(title, systemImage: "archivebox")
         }
+        .cadenceDestructiveMenuRow()
     }
 
     /// Completion is offered in the **context menu only**, never on the row swipe, and the swipe

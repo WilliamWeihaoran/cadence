@@ -406,21 +406,22 @@ struct SidebarListRow: View {
 
     /// Bare tinted text rather than a filled pill: as a capsule this annotation carried
     /// more weight than the list name it annotates.
+    ///
+    /// [[T-11432]]: the flag and the date share ONE tint -- red only once the day has passed, the
+    /// iPad row's rule. The glyph was a fixed `Theme.red` beside a conditional date.
     @ViewBuilder
     private func dueDateBadge(_ key: String) -> some View {
+        let dueTint = CadenceSidebarLayout.listDueDateIsPast(key, todayKey: observedDay.todayKey) ? Theme.red : Theme.dim
         Button {
             openDueDatePicker(key)
         } label: {
             HStack(spacing: SidebarMetrics.listDueDateSpacing) {
                 Image(systemName: "flag.fill")
                     .font(.system(size: SidebarMetrics.listDueDateIconSize, weight: .semibold))
-                    .foregroundStyle(Theme.red)
+                    .foregroundStyle(dueTint)
                 Text(DateFormatters.relativeDate(from: key))
                     .font(.system(size: SidebarMetrics.listDueDateFontSize, weight: .semibold))
-                    .foregroundStyle(
-                        CadenceSidebarLayout.listDueDateIsPast(key, todayKey: observedDay.todayKey)
-                            ? Theme.red : Theme.dim
-                    )
+                    .foregroundStyle(dueTint)
                     .lineLimit(1)
             }
             .fixedSize()

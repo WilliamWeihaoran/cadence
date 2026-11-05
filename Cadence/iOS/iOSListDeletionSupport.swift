@@ -152,6 +152,7 @@ struct iOSListDeleteMenuButton: View {
         } label: {
             Label("Delete \(target.kind.noun)", systemImage: "trash")
         }
+        .cadenceDestructiveMenuRow()
     }
 }
 

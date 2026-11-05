@@ -42,6 +42,33 @@ struct CadenceSidebarObservedDayTests {
         #expect(!row.contains("DateFormatters.todayKey()"))
     }
 
+    // MARK: - The flag's glyph
+
+    /// **[[T-11432]].** The badge's `flag.fill` was a fixed `Theme.red` beside a date that is red
+    /// only once past, so a list due in a fortnight drew an overdue flag beside a grey date. Both
+    /// rows now draw glyph and text from one `dueTint`; M4 above exercised only the text's wiring.
+    @Test func theListRowFlagAndItsDateShareOneTintOnBothPlatforms() throws {
+        let rows = [
+            ("Cadence/macOS/Views/SidebarSupportViews.swift", "struct SidebarListRow: View"),
+            ("Cadence/iOS/iOSRootSidebar.swift", "struct iOSSidebarListRow: View"),
+        ]
+        for (path, declaration) in rows {
+            let source = try Self.code(path)
+            let row = try #require(CadenceSourceScan.declarationBody(declaration, in: source), "\(path)")
+            let badge = try #require(
+                CadenceSourceScan.declarationBody("private func dueDateBadge(_ key: String) -> some View", in: row),
+                "\(path) no longer declares the badge"
+            )
+            // Non-vacuity: the glyph and the date are both still drawn here.
+            #expect(badge.contains("Image(systemName:"), "\(path): the badge lost its glyph")
+            #expect(badge.contains("Text(DateFormatters.relativeDate(from: key))"), "\(path): the badge lost its date")
+            #expect(badge.contains("listDueDateIsPast(key, todayKey:"), "\(path): the tint no longer reads the rule")
+            let tinted = badge.components(separatedBy: ".foregroundStyle(dueTint)").count - 1
+            #expect(tinted == 2, "\(path): \(tinted) of the badge's two marks read the shared tint")
+            #expect(!badge.contains(".foregroundStyle(Theme.red)"), "\(path): a badge mark is fixed red again")
+        }
+    }
+
     // MARK: - iPad
 
     @Test func theIPadColumnHandsItsObservedDayToTheListRows() throws {

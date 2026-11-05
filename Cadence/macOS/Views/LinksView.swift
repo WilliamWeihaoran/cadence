@@ -336,6 +336,8 @@ private struct LinkRow: View {
             } label: {
                 Label(MacSavedLinkRowActions.deleteMenuTitle, systemImage: CadenceSavedLinkRowMenu.deleteSystemImage)
             }
+            // [[T-11752]]: the iOS menu's rule, so the two menus cannot pair the row differently.
+            .cadenceDestructiveMenuRow()
         }
         // `.contain` makes the card one element without swallowing its texts, as the task row
         // does, so the actions have a row to sit on while the hover buttons are absent.

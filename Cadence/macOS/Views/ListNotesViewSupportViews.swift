@@ -158,6 +158,7 @@ struct ListNoteFolderRow: View {
                 } label: {
                     Label(CadenceNoteRowMenuCopy.deleteTitle, systemImage: CadenceNoteRowMenuCopy.deleteSystemImage)
                 }
+                .cadenceDestructiveMenuRow()
             }
     }
 }

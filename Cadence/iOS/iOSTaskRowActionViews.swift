@@ -542,6 +542,7 @@ struct iOSTaskRowContextMenu: View {
         } label: {
             Label("Delete Task", systemImage: "trash")
         }
+        .cadenceDestructiveMenuRow()
     }
 
     // The status submenu is gone with the status chip (T-74) — it was the same four-option picker

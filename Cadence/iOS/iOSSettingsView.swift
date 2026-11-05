@@ -404,6 +404,7 @@ struct iOSSettingsView: View {
                                 } label: {
                                     Label("Archive Context", systemImage: "archivebox")
                                 }
+                                .cadenceDestructiveMenuRow()
 
                                 iOSListDeleteMenuButton(target: .context(context)) { pendingDeletion = $0 }
                             }

@@ -90,6 +90,7 @@ struct iOSNoteDeleteMenuButton: View {
         } label: {
             Label(CadenceNoteRowMenuCopy.deleteTitle, systemImage: CadenceNoteRowMenuCopy.deleteSystemImage)
         }
+        .cadenceDestructiveMenuRow()
     }
 }
 

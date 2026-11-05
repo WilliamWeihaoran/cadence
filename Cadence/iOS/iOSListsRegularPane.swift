@@ -101,6 +101,7 @@ struct iOSListsRegularPane: View {
                         } label: {
                             Label("Archive Area", systemImage: "archivebox")
                         }
+                        .cadenceDestructiveMenuRow()
 
                         iOSListDeleteMenuButton(target: .area(area), request: requestDeletion)
                     }
@@ -145,6 +146,7 @@ struct iOSListsRegularPane: View {
                         } label: {
                             Label("Archive Project", systemImage: "archivebox")
                         }
+                        .cadenceDestructiveMenuRow()
 
                         iOSListDeleteMenuButton(target: .project(project), request: requestDeletion)
                     }

@@ -1293,16 +1293,19 @@ struct iOSSidebarListRow: View {
     /// Bare tinted text rather than a filled pill: as a capsule this annotation carried more weight
     /// than the list name it annotates. Read-only here — the date is set in the list editor, which
     /// the row's own context menu opens.
+    ///
+    /// [[T-11432]]: the flag and the date share ONE tint -- red only once the day has passed. The
+    /// glyph was a fixed `Theme.red`, so a list due in a fortnight drew an overdue flag beside a
+    /// not-yet-due grey date.
     private func dueDateBadge(_ key: String) -> some View {
-        HStack(spacing: iOSSidebarMetrics.listDueDateSpacing) {
+        let dueTint = CadenceSidebarLayout.listDueDateIsPast(key, todayKey: todayKey) ? Theme.red : Theme.dim
+        return HStack(spacing: iOSSidebarMetrics.listDueDateSpacing) {
             Image(systemName: "flag.fill")
                 .font(.system(size: iOSSidebarMetrics.listDueDateIconSize, weight: .semibold))
-                .foregroundStyle(Theme.red)
+                .foregroundStyle(dueTint)
             Text(DateFormatters.relativeDate(from: key))
                 .font(.system(size: iOSSidebarMetrics.listDueDateFontSize, weight: .semibold))
-                .foregroundStyle(
-                    CadenceSidebarLayout.listDueDateIsPast(key, todayKey: todayKey) ? Theme.red : Theme.dim
-                )
+                .foregroundStyle(dueTint)
                 .lineLimit(1)
         }
         .fixedSize()

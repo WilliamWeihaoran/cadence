@@ -455,6 +455,7 @@ private struct NotepadPage: View {
                             } label: {
                                 Label(CadenceNoteRowMenuCopy.deleteTitle, systemImage: CadenceNoteRowMenuCopy.deleteSystemImage)
                             }
+                            .cadenceDestructiveMenuRow()
                         }
                     }
                 }

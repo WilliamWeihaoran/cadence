@@ -79,6 +79,7 @@ struct MacTaskRowContextMenu: View {
         Button(role: .destructive, action: requestDelete) {
             Label("Delete Task", systemImage: "trash")
         }
+        .cadenceDestructiveMenuRow()
     }
 
     /// Absent on a settled task, not disabled — the predicate the row's ▶ and iOS's entry share

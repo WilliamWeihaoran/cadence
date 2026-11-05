@@ -1015,6 +1015,8 @@ struct iOSListLinksPanel: View {
                             } label: {
                                 Label(CadenceSavedLinkRowMenu.deleteTitle, systemImage: CadenceSavedLinkRowMenu.deleteSystemImage)
                             }
+                            // [[T-11752]]: a red glyph beside the red title, not the root's blue.
+                            .cadenceDestructiveMenuRow()
                         }
                     }
                 }
