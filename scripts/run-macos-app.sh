@@ -136,6 +136,16 @@
 # templates, ai, account, about), sets CADENCE_UI_TEST_SETTINGS_CATEGORY and brings
 # CADENCE_UI_TEST_PAGE=settings + CADENCE_UI_TEST_MODE=1 with it:
 #   ./scripts/run-macos-app.sh up none <id> settings sidebar
+# REFUSED COMMITS (T-11512). CADENCE_UI_TEST_REFUSE_COMMITS=1 in the CALLER's environment rides
+# through to the app (the launch inherits it) and makes every `CadencePendingChangePersistence`
+# commit throw before it reaches the store, so a refusal notice ("Couldn't save these changes.
+# Nothing was changed.") can be sighted. The app ignores it unless CADENCE_UI_TEST_MODE=1 is also
+# set, so name a scenario or a page:
+#   CADENCE_UI_TEST_REFUSE_COMMITS=1 ./scripts/run-macos-app.sh up none <id> today
+# Never fake a refusal with a SQLite lock or trigger: the lock freezes the app, the trigger crashes
+# it. On the simulator, export SIMCTL_CHILD_CADENCE_UI_TEST_MODE=1 and
+# SIMCTL_CHILD_CADENCE_UI_TEST_REFUSE_COMMITS=1 before `simulator-claim.sh launch`; a UI test sets
+# both in `launchEnvironment`.
 # `start` refuses any bundle that is not `.../Build/Products/Debug/Cadence.app` (exit 5): never
 # the shipping configuration, never /Applications. `stop` kills the recorded pid only if `ps`
 # still names the binary `start` launched (exit 6 otherwise) -- it never matches by name.

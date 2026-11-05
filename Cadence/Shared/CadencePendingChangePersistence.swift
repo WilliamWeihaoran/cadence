@@ -35,6 +35,36 @@ import SwiftData
 /// zero baseline. Nonisolated members stay callable from every main-actor caller here unchanged.
 nonisolated enum CadencePendingChangePersistence {
 
+    // MARK: - The UI-test refusal switch (T-11512)
+
+    /// **`CADENCE_UI_TEST_REFUSE_COMMITS=1` makes every commit below refuse — in UI-test mode only.**
+    ///
+    /// Every refusal notice in the app (`editFailureNotice` and its siblings) is reached only when a
+    /// commit throws, and until this nothing outside a unit test could make one throw. The two
+    /// levers from outside the process both fail, and fail in ways that rule out anything that
+    /// touches the store: an exclusive SQLite lock makes Core Data's main-thread busy wait FREEZE
+    /// the app and then succeed, and a `RAISE(ABORT)` trigger crashes it inside
+    /// `-[NSManagedObjectContext save:]`. So the refusal is a throw at this seam, **before** the
+    /// caller's `commit:` runs: nothing reaches SQLite, and every surface then takes exactly the
+    /// undo-and-notice path a real refused save takes.
+    ///
+    /// The gate (both `CADENCE_UI_TEST_MODE=1` and the switch) is `CadenceUITestCommitRefusal`, in
+    /// `CadenceStoreSupport.swift`; this is where it is **read once** — a launch either refuses every
+    /// commit or none. It is the default of every `refusing:` parameter below; a test passes
+    /// `refusing:` instead.
+    static let refusesCommitsForUITest = CadenceUITestCommitRefusal.isArmed(in: ProcessInfo.processInfo.environment)
+
+    /// The one place a caller's `commit:` is run. Refuses before it, so a refusal never reaches the
+    /// store.
+    private static func perform(
+        _ commit: (ModelContext) throws -> Void,
+        on modelContext: ModelContext,
+        refusing: Bool
+    ) throws {
+        if refusing { throw CadenceUITestCommitRefusal.Refused() }
+        try commit(modelContext)
+    }
+
     /// Commits a pending insert. If the commit throws, the objects are removed from the context
     /// again, so no caller is left showing a row the store does not hold.
     ///
@@ -45,13 +75,17 @@ nonisolated enum CadencePendingChangePersistence {
     /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter
     ///   because a `save()` that throws cannot be provoked out of an in-memory container, and an
     ///   undo path no test can reach is an undo path no test can prove.
+    /// - Parameter refusing: Refuse with `CadenceUITestCommitRefusal.Refused` instead of running `commit`. Defaults
+    ///   to `refusesCommitsForUITest` — `false` in every launch but an armed UI-test one (T-11512).
+    ///   Every commit below takes it with the same meaning.
     static func commitInsert(
         of models: [any PersistentModel],
         in modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
+        commit: (ModelContext) throws -> Void = { try $0.save() },
+        refusing: Bool = refusesCommitsForUITest
     ) throws {
         do {
-            try commit(modelContext)
+            try perform(commit, on: modelContext, refusing: refusing)
         } catch {
             for model in models {
                 modelContext.delete(model)
@@ -64,9 +98,10 @@ nonisolated enum CadencePendingChangePersistence {
     static func commitInsert(
         of model: some PersistentModel,
         in modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
+        commit: (ModelContext) throws -> Void = { try $0.save() },
+        refusing: Bool = refusesCommitsForUITest
     ) throws {
-        try commitInsert(of: [model], in: modelContext, commit: commit)
+        try commitInsert(of: [model], in: modelContext, commit: commit, refusing: refusing)
     }
 
     /// The sentence a structural editor shows when its save is refused.
@@ -110,10 +145,11 @@ nonisolated enum CadencePendingChangePersistence {
     static func commitEdit(
         in modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() },
+        refusing: Bool = refusesCommitsForUITest,
         undo: () -> Void
     ) throws {
         do {
-            try commit(modelContext)
+            try perform(commit, on: modelContext, refusing: refusing)
         } catch {
             undo()
             throw error
@@ -143,11 +179,12 @@ nonisolated enum CadencePendingChangePersistence {
     @discardableResult
     static func commitTypedContent(
         in modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
+        commit: (ModelContext) throws -> Void = { try $0.save() },
+        refusing: Bool = refusesCommitsForUITest
     ) -> Bool {
         guard modelContext.hasChanges else { return true }
         do {
-            try commit(modelContext)
+            try perform(commit, on: modelContext, refusing: refusing)
             return true
         } catch {
             return false
@@ -163,10 +200,11 @@ nonisolated enum CadencePendingChangePersistence {
     /// - Parameter commit: See `commitInsert(of:in:commit:)`.
     static func commitDelete(
         in modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
+        commit: (ModelContext) throws -> Void = { try $0.save() },
+        refusing: Bool = refusesCommitsForUITest
     ) throws {
         do {
-            try commit(modelContext)
+            try perform(commit, on: modelContext, refusing: refusing)
         } catch {
             modelContext.rollback()
             throw error
@@ -196,6 +234,7 @@ nonisolated enum CadencePendingChangePersistence {
     static func commitDelete(
         in modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() },
+        refusing: Bool = refusesCommitsForUITest,
         building: () throws -> Void
     ) throws {
         do {
@@ -204,7 +243,7 @@ nonisolated enum CadencePendingChangePersistence {
             modelContext.rollback()
             throw error
         }
-        try commitDelete(in: modelContext, commit: commit)
+        try commitDelete(in: modelContext, commit: commit, refusing: refusing)
     }
 
     /// A delete that can fail **while it is still being built**, and then commits.
@@ -254,6 +293,7 @@ nonisolated enum CadencePendingChangePersistence {
     static func commitCascade(
         in modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() },
+        refusing: Bool = refusesCommitsForUITest,
         effects: CadenceDeferredDeleteEffects = CadenceDeferredDeleteEffects(),
         cascade: () -> Bool
     ) throws {
@@ -263,9 +303,13 @@ nonisolated enum CadencePendingChangePersistence {
                 modelContext.rollback()
                 throw CascadeIncomplete()
             }
+            // The refusal belongs to the LEAF (T-11512): `commitEdit` refuses, so the survivor undo
+            // runs and then `commitDelete` rolls back — the same order a refused save takes. A
+            // `commitDelete` that refused first would roll back with the undo never run.
             try commitDelete(
                 in: modelContext,
-                commit: { try commitEdit(in: $0, commit: commit, undo: effects.undo) }
+                commit: { try commitEdit(in: $0, commit: commit, refusing: refusing, undo: effects.undo) },
+                refusing: false
             )
         }
         effects.release()

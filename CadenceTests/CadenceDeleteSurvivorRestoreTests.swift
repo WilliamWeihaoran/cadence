@@ -584,7 +584,7 @@ struct CadenceDeleteSurvivorRestoreTests {
             "a cascade that could not finish rolls back before it puts back what it wrote on the rows it was not deleting (T-1377)"
         )
         #expect(
-            CadenceSourceScan.matchCount(#"commitEdit\(in: \$0, commit: commit, undo: effects\.undo\)"#, in: cascade) == 1,
+            CadenceSourceScan.matchCount(#"commitEdit\(in: \$0, commit: commit, refusing: refusing, undo: effects\.undo\)"#, in: cascade) == 1,
             "commitCascade commits without the deferred survivor undo, so a refused list delete leaves a surviving row reading as severed (T-1377)"
         )
         // Non-vacuity for the ordering needle, against the inversion it exists to reject.

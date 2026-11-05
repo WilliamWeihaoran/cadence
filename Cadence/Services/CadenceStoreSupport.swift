@@ -58,6 +58,37 @@ nonisolated enum CadenceMaintenancePassOutcome: String, Hashable, CaseIterable {
     var changedStore: Bool { self == .changed }
 }
 
+/// **`CADENCE_UI_TEST_REFUSE_COMMITS=1` — the switch that makes every pending-change commit refuse,
+/// in UI-test mode only ([[T-11512]]).** `CadencePendingChangePersistence` reads it once and throws
+/// `Refused` before a caller's `commit:` runs; the type there says why it must be a throw at that
+/// seam and never anything that reaches SQLite.
+///
+/// **The gate is both halves.** `CADENCE_UI_TEST_MODE=1` (what `CadenceUITestSupport.isEnabled`
+/// reads) AND this variable, each `== "1"`; either alone answers `false`, so a shipping launch —
+/// which carries neither — can never arm it.
+///
+/// It lives in this file for the build reason `CadenceMaintenancePassOutcome` gives above: the
+/// persistence spine is compiled into `CadenceWidgets` and `CadenceMCPServer` too, which do not
+/// compile `CadenceUITestSupport`. And not in `Cadence/Shared/`, because a Shared declaration
+/// spelling `CADENCE_UI_TEST_MODE` would make every app file that already reads the mode a
+/// re-typed shared constant (`CadenceSharedConstantReuseSweepTests`).
+nonisolated enum CadenceUITestCommitRefusal {
+    static let variable = "CADENCE_UI_TEST_REFUSE_COMMITS"
+
+    /// Whether `environment` arms the switch. Pure, so the gate is driven rather than launched.
+    static func isArmed(in environment: [String: String]) -> Bool {
+        environment["CADENCE_UI_TEST_MODE"] == "1" && environment[variable] == "1"
+    }
+
+    /// What an armed switch throws. Its description names the switch so a surface that shows the
+    /// error's own text cannot be mistaken for a real store failure.
+    struct Refused: LocalizedError {
+        var errorDescription: String? {
+            "UI-test mode refused this commit (\(CadenceUITestCommitRefusal.variable))."
+        }
+    }
+}
+
 nonisolated enum CadenceStoreSupport {
     nonisolated static let appContainerIdentifier = "com.haoranwei.Cadence"
     nonisolated static let appGroupIdentifier = "group.com.haoranwei.Cadence"

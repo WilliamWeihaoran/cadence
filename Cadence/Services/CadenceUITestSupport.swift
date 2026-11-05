@@ -10,6 +10,18 @@ enum CadenceUITestSupport {
         ProcessInfo.processInfo.environment["CADENCE_UI_TEST_MODE"] == "1"
     }
 
+    /// **`CADENCE_UI_TEST_REFUSE_COMMITS=1` — every pending-change commit refuses (T-11512).**
+    ///
+    /// The switch that makes a refusal notice (`CadencePendingChangePersistence.editFailureNotice`
+    /// and its siblings) sightable without a custom build. Armed only together with
+    /// `CADENCE_UI_TEST_MODE=1`; read once per launch, by `CadencePendingChangePersistence`. The gate
+    /// is `CadenceUITestCommitRefusal` in `CadenceStoreSupport.swift` rather than here because the
+    /// persistence spine is also compiled into the MCP server and the widgets, which do not compile
+    /// this file — see the spine for why it is a throw at the seam and never anything that reaches
+    /// SQLite. Commits a surface makes outside that type (a bare
+    /// `modelContext.save()`) are not refused.
+    static var refuseCommitsVariable: String { CadenceUITestCommitRefusal.variable }
+
     @MainActor
     static func prepareAppState(modelContext: ModelContext) {
         guard isEnabled else { return }

@@ -124,6 +124,10 @@ Detailed examples are in `../../docs/SHARED_AGENTS_REFERENCE.md`.
   `arefusedListEditLeavesUnrelatedPendingWorkAlone`, and independent of SwiftData's behaviour.
   A fourth `rollback()` must be a delete; `everyRollbackCallSiteInTheAppIsADeleteCommit` guards it.
   Toolchain measurements: `../../docs/SHARED_AGENTS_REFERENCE.md`, "Rollback across toolchains".
+- **Every commit in `CadencePendingChangePersistence` runs its `commit:` through `perform`**, which
+  throws `CadenceUITestCommitRefusal.Refused` first when `CADENCE_UI_TEST_MODE=1` and
+  `CADENCE_UI_TEST_REFUSE_COMMITS=1` (T-11512) — how a refusal notice is sighted. A new commit
+  there takes `refusing: Bool = refusesCommitsForUITest`; `CadenceUITestCommitRefusalTests` counts.
 
 ## Page Headers
 
