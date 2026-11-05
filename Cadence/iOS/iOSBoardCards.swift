@@ -278,6 +278,10 @@ struct iOSBoardTaskCard: View {
     /// Mac's and is forced by input rather than chosen: every token there is a picker, so an empty
     /// field still needs something under the pointer; here the card's own tap opens the inspector,
     /// so a token standing for nothing would say nothing and do nothing.
+    ///
+    /// `dateChipsArePickers: false` is the same input fact read once more ([[T-10049]] (b)): no
+    /// token here is a control, so a do date and a due date naming one day fold into the one flag
+    /// token, as the task rows do, while the Mac card keeps both because each is its field's picker.
     private var tokens: [CadenceLedgerToken] {
         CadenceLedgerCardSupport.tokens(
             startMinute: task.scheduledStartMin,
@@ -285,7 +289,8 @@ struct iOSBoardTaskCard: View {
             chips: CadenceBoardCardMetadata.chips(
                 for: task,
                 showsContainer: showsContainerChip,
-                dayAlreadyStatedBySurface: dayAlreadyStatedBySurface
+                dayAlreadyStatedBySurface: dayAlreadyStatedBySurface,
+                dateChipsArePickers: false
             ),
             tagNames: CadenceLedgerTagTokens.names(for: task)
         )

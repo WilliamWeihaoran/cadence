@@ -101,16 +101,37 @@ enum CadenceBoardCardMetadata {
     /// Both knobs are named after the condition rather than the effect, and default to the state
     /// that shows the chip — a surface that says nothing about where its cards belong passes
     /// nothing and gets the full strip.
+    ///
+    /// **A do date and a due date naming one day ([[T-10049]] option (b)).** When the date chips
+    /// are only labels (`dateChipsArePickers: false`, the touch card), the card asks
+    /// `CadenceTaskPresentationSupport.rowDatePlan` — the same plan [[T-304]]'s rows read — and a
+    /// `.oneSharedDay` task gets one chip: the flag survives and the sun folds into it, so the card
+    /// reads "Due Fri" rather than "Fri · Due Fri". The Mac `KanbanCard` keeps both, because each
+    /// of its tokens is the **picker** for its own field and folding the do token would take the
+    /// card's do-date picker with it. That is an input difference (pointer target versus inert
+    /// label), so not drift under [[T-8201]]; whether the Mac folds too is still the owner's
+    /// question on T-10049. The surface-day suppression goes into the plan as an empty do date,
+    /// exactly as the rows pass it, so a day column's card has no sun left to fold.
     static func chips(
         for task: AppTask,
         showsContainer: Bool,
         dayAlreadyStatedBySurface: String? = nil,
+        dateChipsArePickers: Bool = true,
         todayKey: String = DateFormatters.todayKey()
     ) -> [CadenceBoardCardChip] {
         var chips: [CadenceBoardCardChip] = []
 
-        if !repeatsSurfaceDay(task.scheduledDate, dayAlreadyStatedBySurface: dayAlreadyStatedBySurface),
-           let doDateChip = doDateChip(for: task, todayKey: todayKey) {
+        let statesDoDate = !repeatsSurfaceDay(
+            task.scheduledDate,
+            dayAlreadyStatedBySurface: dayAlreadyStatedBySurface
+        )
+        let datePlan = CadenceTaskPresentationSupport.rowDatePlan(
+            scheduledDate: statesDoDate ? task.scheduledDate : "",
+            dueDate: task.dueDate
+        )
+        let drawsDoDate = dateChipsArePickers ? statesDoDate : datePlan.drawsDoDateChip
+
+        if drawsDoDate, let doDateChip = doDateChip(for: task, todayKey: todayKey) {
             chips.append(doDateChip)
         }
         if let dueDateChip = dueDateChip(for: task, todayKey: todayKey) {

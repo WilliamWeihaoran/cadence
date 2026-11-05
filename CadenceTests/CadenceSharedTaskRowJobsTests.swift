@@ -916,6 +916,77 @@ struct CadenceSharedTaskRowJobsTests {
         #expect(row.contains("dayAlreadyStatedBySurface: dayAlreadyStatedBySurface"))
         #expect(row.contains("return task.scheduledDate"))
     }
+
+    // MARK: - T-10049 (b): a touch card folds a shared day, the Mac card keeps its two pickers
+
+    /// **The rule.** A card whose date chips are only labels states a day the do date and the due
+    /// date share once: the flag survives and the sun folds into it, which is `rowDatePlan`'s
+    /// `.oneSharedDay` read by the card. Two different days are still two facts, and the Mac card
+    /// — whose every token is the picker for its field — keeps both chips in either case.
+    @Test func aTouchCardStatesADaySharedByBothDatesOnce() {
+        let shared = task(doDate: "2026-08-21", dueDate: "2026-08-21")
+
+        let touch = CadenceBoardCardMetadata.chips(
+            for: shared, showsContainer: false, dateChipsArePickers: false, todayKey: "2026-08-20"
+        )
+        #expect(touch.map(\.kind) == [.dueDate])
+        #expect(touch.first?.icon == CadenceBoardCardMetadata.dueDateIcon)
+
+        let mac = CadenceBoardCardMetadata.chips(for: shared, showsContainer: false, todayKey: "2026-08-20")
+        #expect(mac.map(\.kind) == [.doDate, .dueDate])
+
+        let split = task(doDate: "2026-08-21", dueDate: "2026-08-25")
+        #expect(
+            CadenceBoardCardMetadata.chips(
+                for: split, showsContainer: true, dateChipsArePickers: false, todayKey: "2026-08-20"
+            ).map(\.kind) == [.doDate, .dueDate, .list]
+        )
+    }
+
+    /// Compared as days through the shared plan, not re-derived: a do date stored loosely
+    /// (`2026-8-21`, T-299) still folds into the deadline it names. And the urgency survives the
+    /// fold — a late shared day keeps a red flag — while a do date alone keeps its sun.
+    @Test func theTouchCardsFoldIsTheRowsPlanNotACopy() {
+        let loose = task(doDate: "2026-8-21", dueDate: "2026-08-21")
+        #expect(
+            CadenceBoardCardMetadata.chips(
+                for: loose, showsContainer: false, dateChipsArePickers: false, todayKey: "2026-08-20"
+            ).map(\.kind) == [.dueDate]
+        )
+
+        let late = CadenceBoardCardMetadata.chips(
+            for: task(doDate: "2026-08-19", dueDate: "2026-08-19"),
+            showsContainer: false,
+            dateChipsArePickers: false,
+            todayKey: "2026-08-20"
+        )
+        #expect(late.map(\.kind) == [.dueDate])
+        #expect(late.first?.emphasis == .urgent)
+
+        #expect(
+            CadenceBoardCardMetadata.chips(
+                for: task(doDate: "2026-08-21"), showsContainer: false, dateChipsArePickers: false, todayKey: "2026-08-20"
+            ).map(\.kind) == [.doDate]
+        )
+    }
+
+    /// **The call sites.** Only the touch card says its chips are not pickers; the Mac card takes
+    /// the default and so keeps its do-date picker. And the descriptor asks the rows' plan rather
+    /// than comparing the two keys itself.
+    @Test func onlyTheTouchCardFoldsASharedDay() throws {
+        try expectOccurrences(
+            of: "dateChipsArePickers: false",
+            at: [
+                "Cadence/iOS/iOSBoardCards.swift": 1,
+                "Cadence/macOS/Views/KanbanCardView.swift": 0,
+            ]
+        )
+        try expectOccurrences(of: "dateChipsArePickers", at: ["Cadence/macOS/Views/KanbanCardView.swift": 0])
+        try expectCallSites(
+            of: "CadenceTaskPresentationSupport.rowDatePlan",
+            at: ["Cadence/Shared/CadenceBoardCardMetadata.swift": 1]
+        )
+    }
 }
 
 // MARK: - Source-reading helpers
