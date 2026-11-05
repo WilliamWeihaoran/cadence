@@ -230,7 +230,9 @@ struct iOSNotesView: View {
             hostWidth = newWidth
         }
         .background(Theme.surface.ignoresSafeArea())
-        .iOSHidesCompactNavigationBar()
+        // The one compact page painted in `surface` rather than `bg`, so its status-bar strip
+        // takes the same colour ([[T-11491]]).
+        .iOSHidesCompactNavigationBar(statusBarFill: Theme.surface)
         .cadenceTracksDayChanges($observedDay)
         .onAppear {
             loadCoreNotes()

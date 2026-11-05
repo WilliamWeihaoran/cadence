@@ -85,11 +85,32 @@ struct iOSHeaderBackButton: View {
 
 private struct iOSCompactNavigationBarHidden: ViewModifier {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    let statusBarFill: Color
 
     @ViewBuilder
     func body(content: Content) -> some View {
         if horizontalSizeClass == .compact {
-            content.toolbar(.hidden, for: .navigationBar)
+            content
+                // [[T-11491]]: **the iPhone's status bar is hardware chrome drawn over the top of
+                // the screen, and the navigation bar was the only thing behind it.** The clock and
+                // battery sit in the top safe-area inset (59 pt on the owner's iPhone 15) and paint
+                // no backing of their own. A `ScrollView` whose top edge meets that inset scrolls
+                // its content up underneath it, and with the bar hidden nothing covers the strip:
+                // seen on Settings > Tags with a row's title through the clock and its archive
+                // button through the battery. The in-content header hid it only while unscrolled.
+                //
+                // A zero-height inset adds no height, so no page moves; its background is the
+                // part that matters, extended up through the status-bar strip and drawn above the
+                // scrolled content. It is the page's own colour rather than a material, because
+                // that is what the strip already shows unscrolled and on every page whose header
+                // is pinned — the scrolled page now looks like the unscrolled one.
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    Color.clear
+                        .frame(height: 0)
+                        .background(statusBarFill, ignoresSafeAreaEdges: .top)
+                        .accessibilityHidden(true)
+                }
+                .toolbar(.hidden, for: .navigationBar)
         } else {
             content
         }
@@ -105,8 +126,11 @@ extension View {
     /// that used to kill it. Regular width is left untouched on purpose: the iPad shell hosts these
     /// same views with no navigation stack around them, so there is no bar to hide and nothing to
     /// go back to.
-    func iOSHidesCompactNavigationBar() -> some View {
-        modifier(iOSCompactNavigationBarHidden())
+    ///
+    /// `statusBarFill` is what goes behind the status bar once the bar is gone ([[T-11491]]). Pass
+    /// the colour the page paints behind itself, so the strip reads as part of the page.
+    func iOSHidesCompactNavigationBar(statusBarFill: Color = Theme.bg) -> some View {
+        modifier(iOSCompactNavigationBarHidden(statusBarFill: statusBarFill))
     }
 }
 
