@@ -49,8 +49,10 @@ import SwiftData
 ///   throw from `validate(_:against:)`, which runs to completion before anything is inserted. The
 ///   store is untouched and the thrown `CadenceArchiveImportFailure` names the table, the row and
 ///   the field.
-/// - *The write itself fails.* `apply(_:mode:in:foldingLegacyNotes:)` inserts and then commits
-///   once. If that commit throws, it rolls the context back and rethrows, so the import leaves
+/// - *The write itself fails.* `apply(_:mode:in:foldingLegacyNotes:refusing:)` inserts and then
+///   commits once, through `CadencePendingChangePersistence.commitDelete`, so
+///   `CADENCE_UI_TEST_REFUSE_COMMITS` refuses it too (T-11612). If that commit throws or is
+///   refused, the context is rolled back and the error rethrown, so the import leaves
 ///   nothing pending for an unrelated later `save()` to pick up. The caller must hand this a
 ///   context it is willing to have rolled back — `importArchive(_:mode:into:)` makes a private one
 ///   for exactly that reason.
@@ -158,7 +160,8 @@ nonisolated enum CadenceArchiveImportService {
         _ archive: CadenceArchive,
         mode: CadenceArchiveImportMode = .mergeKeepingExistingRows,
         in modelContext: ModelContext,
-        foldingLegacyNotes fold: (ModelContext) throws -> Int = foldLegacyNotes(in:)
+        foldingLegacyNotes fold: (ModelContext) throws -> Int = foldLegacyNotes(in:),
+        refusing: Bool = CadencePendingChangePersistence.refusesCommitsForUITest
     ) throws -> CadenceArchiveImportOutcome {
         var destination = try DestinationIndex(in: modelContext)
         let plan = try makePlan(archive, mode: mode, against: destination)
@@ -171,12 +174,13 @@ nonisolated enum CadenceArchiveImportService {
         wire(wired, using: destination)
         reconcileFocusCounters(using: destination)
 
-        do {
-            try modelContext.save()
-        } catch {
-            modelContext.rollback()
-            throw error
-        }
+        // Through the spine (T-11612), so `CADENCE_UI_TEST_REFUSE_COMMITS` refuses an import the way
+        // it refuses every other user commit. `commitDelete`'s undo is the one this commit always
+        // had: roll the whole context back and rethrow. That is safe here and nowhere an editor
+        // sits, because `importArchive(_:mode:into:)` hands this a context of its own; an import is
+        // inserts across a dozen tables plus, in `.restoreOverwritingExistingRows`, rewritten fields
+        // on rows that already existed, and only `rollback()` undoes the second half.
+        try CadencePendingChangePersistence.commitDelete(in: modelContext, refusing: refusing)
 
         // Past this line the archive is on disk. Everything below reports, and nothing below may
         // throw, because a throw here would describe committed work as a refusal.

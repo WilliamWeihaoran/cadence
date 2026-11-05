@@ -1138,6 +1138,40 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(try observer.fetchCount(FetchDescriptor<AppTask>()) == 0)
     }
 
+    /// **The archive's commit is a spine commit, so `CADENCE_UI_TEST_REFUSE_COMMITS` reaches it
+    /// (T-11612).** Refused *at* the commit -- past validation, with every row already inserted --
+    /// the import throws the switch's own error, leaves nothing pending in its context, writes
+    /// nothing a second context can read, and never runs the fold: a refused import is the
+    /// throw-over-an-untouched-store outcome, not [[T-1111]]'s committed one. The unarmed import
+    /// of the same archive into the same container is the positive control: the refusal, not the
+    /// archive, is what kept the rows out.
+    @Test func anArmedImportIsRefusedAtTheCommitAndRolledBackWithoutFolding() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        source.insert(AppTask(title: "Buy milk"))
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+        var folds = 0
+        #expect(throws: CadenceUITestCommitRefusal.Refused.self) {
+            try CadenceArchiveImportService.apply(
+                archive,
+                in: destination,
+                foldingLegacyNotes: { _ in folds += 1; return 0 },
+                refusing: true
+            )
+        }
+        #expect(folds == 0, "a refused import ran the fold over rows that were never committed")
+        #expect(destination.hasChanges == false, "the refused import left its inserts pending")
+        #expect(try destination.fetchCount(FetchDescriptor<AppTask>()) == 0)
+        #expect(try ModelContext(container).fetchCount(FetchDescriptor<AppTask>()) == 0)
+
+        let outcome = try CadenceArchiveImportService.apply(archive, in: destination, refusing: false)
+        #expect(outcome.insertedRecordCount >= 1)
+        #expect(try ModelContext(container).fetchCount(FetchDescriptor<AppTask>()) == 1)
+    }
+
     // MARK: - T-1109: a goal cycle no surface can ever show
 
     /// **The consequence half, measured against the real rules rather than reasoned about.**

@@ -1639,15 +1639,17 @@ struct CadenceEditorSaveCommitSurfaceTests {
         // or let either rollback take the other's ending — and this goes red instead of quietly
         // staying excused.
         //
-        // **There are two, and the second is [[T-1111]]'s.** `apply` is two writes: the archive's
-        // own commit, and the legacy-note fold after it. The first rollback discards a refused
-        // import and **rethrows** — nothing was written, so a throw is the truth. The second
-        // discards a *failed fold's* pending inserts and **must not** throw, because by then the
-        // archive is committed and a throw would tell the user that data already on their disk is
-        // not. Its reach is the same as the first's and bounded for the same reason: `rollback()`
-        // discards changes made since the last `save()`, and the last `save()` is the archive's.
+        // **There were two; since T-11612 the first is the spine's.** `apply` is two writes: the
+        // archive's own commit, and the legacy-note fold after it. The first now goes through
+        // `CadencePendingChangePersistence.commitDelete`, whose rollback discards a refused import
+        // and **rethrows** — nothing was written, so a throw is the truth — and which is what lets
+        // `CADENCE_UI_TEST_REFUSE_COMMITS` refuse it. The one left here, [[T-1111]]'s, discards a
+        // *failed fold's* pending inserts and **must not** throw, because by then the archive is
+        // committed and a throw would tell the user that data already on their disk is not. Its
+        // reach is bounded for the same reason: `rollback()` discards changes made since the last
+        // `save()`, and the last `save()` is the archive's.
         #expect(
-            callSites.removeValue(forKey: "Cadence/Services/CadenceArchiveImportService.swift") == 2,
+            callSites.removeValue(forKey: "Cadence/Services/CadenceArchiveImportService.swift") == 1,
             "the importer's rollbacks moved or multiplied: \(callSites)"
         )
         let importer = try scanned("Cadence/Services/CadenceArchiveImportService.swift")
@@ -1663,12 +1665,19 @@ struct CadenceEditorSaveCommitSurfaceTests {
             "could not find apply() in the archive importer"
         )
         #expect(
-            CadenceSourceScan.matchCount(#"\.rollback\(\)"#, in: applyBody) == 2,
+            CadenceSourceScan.matchCount(#"\.rollback\(\)"#, in: applyBody) == 1,
             "an importer rollback left apply(), where its blast radius is the one that was reasoned about"
         )
         #expect(
-            CadenceSourceScan.matchCount(#"modelContext\.rollback\(\)\s+throw error"#, in: applyBody) == 1,
-            "the pre-commit rollback no longer rethrows — a refused import would report success"
+            CadenceSourceScan.matchCount(
+                #"try CadencePendingChangePersistence\.commitDelete\(in: modelContext, refusing: refusing\)"#,
+                in: applyBody
+            ) == 1,
+            "the archive's commit left the spine — a refused import would no longer roll back, or the UI-test switch would not reach it"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"\.save\(\)"#, in: applyBody) == 0,
+            "apply() commits outside the spine again"
         )
         #expect(
             CadenceSourceScan.matchCount(
