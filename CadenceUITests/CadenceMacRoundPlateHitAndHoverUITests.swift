@@ -213,14 +213,15 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         try CadenceUITestEnvironment.requireInteractiveUITests()
 
         try launchApp()
-        let window = app.windows.firstMatch
-        guard window.waitForExistence(timeout: Bounds.windowAppears) else {
-            attach("picker-no-window")
-            XCTFail("no main window after \(Bounds.windowAppears)s. \(surfaceReport())")
-            return
-        }
+        // **No second `app.windows.firstMatch.waitForExistence` here.** `launchApp()` already
+        // loops until a window draws and skips if none ever does ([[T-8928]]), and re-asking cost
+        // a run on 2026-11-05: the log reads `MACWINDOW launch 1 of 3 drew a window` and then the
+        // very next line failed with `no main window after 45.0s`, so the handle went stale
+        // between the two reads rather than the window going away. Nothing below this test needs
+        // the main window anyway -- every measurement is taken of the picker's POPOVER -- so the
+        // real readiness check is the sidebar row, which is asked for next.
         let today = app.buttons.element(identified: ID.todayDestination)
-        XCTAssertTrue(today.waitForExistence(timeout: CadenceUITestBounds.sidebarRow), surfaceReport())
+        XCTAssertTrue(today.waitForExistence(timeout: Bounds.windowAppears), surfaceReport())
         today.click()
 
         let plus = app.buttons
