@@ -394,6 +394,107 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         )
     }
 
+    /// **[[T-10803]] clause (3): the Focus overlay's close button.**
+    ///
+    /// Reached without leaving Today. `TasksPanelComponents.swift:424` draws the start-focus play
+    /// button at `.opacity(isHovered ? 1 : 0)` with `.allowsHitTesting(isHovered)`, so the row has
+    /// to be hovered before the button is there to click at all — which is itself the pointer
+    /// this entry has been waiting weeks for. The overlay it opens carries
+    /// `.cadenceControlLabel("Close focus session")` on a 30pt `Image` clipped to a `Circle()`
+    /// (`FocusChromeSupportViews.swift:29-37`), so the plate is 30pt and its circle 15pt.
+    ///
+    /// The overlay is part of the main window, not a popover, so this shoots the window and parks
+    /// the pointer the ordinary way — the two popover traps in `parkPointer(insidePopover:away:)`
+    /// do not apply.
+    func testTheFocusOverlayCloseButtonsCirclePlateOnMacOS() throws {
+        try CadenceUITestEnvironment.requireInteractiveUITests()
+
+        try launchApp()
+        let today = app.buttons.element(identified: ID.todayDestination)
+        XCTAssertTrue(today.waitForExistence(timeout: Bounds.windowAppears), surfaceReport())
+        today.click()
+        let window = app.windows.firstMatch
+
+        // The seeded row, hovered so its focus button exists.
+        let row = app.descendants(matching: .any)
+            .matching(CadenceUITestQuery.identifiers(beginningWith: ID.todayTaskRowPrefix))
+            .allElementsBoundByIndex
+            .first { $0.frame.width > 0 && $0.frame.height > 0 }
+        guard let row else {
+            attach("focus-no-row")
+            XCTFail(
+                "Today drew no '\(ID.todayTaskRowPrefix)…' row to start a focus session from. "
+                + app.descendant(identified: "").identifiers(beginningWith: ID.todayTaskRowPrefix)
+            )
+            return
+        }
+        row.hover()
+        settle(Bounds.hoverSettle)
+
+        let start = app.buttons
+            .matching(NSPredicate(format: "label == %@ OR title == %@", Fixture.startFocusLabel, Fixture.startFocusLabel))
+            .allElementsBoundByIndex
+            .first { $0.frame.width > 0 && $0.frame.height > 0 }
+        guard let start else {
+            attach("focus-no-start-button")
+            XCTFail(
+                "hovering the row \(row.frame) did not reveal a '\(Fixture.startFocusLabel)' "
+                + "button. " + surfaceReport()
+            )
+            return
+        }
+        print("FOCUS row=\(row.frame) startButton=\(start.frame)")
+        start.click()
+
+        let close = app.buttons
+            .matching(NSPredicate(format: "label == %@ OR title == %@", Fixture.closeFocusLabel, Fixture.closeFocusLabel))
+            .firstMatch
+        guard close.waitForExistence(timeout: Bounds.composerAppears) else {
+            attach("focus-no-overlay")
+            XCTFail(
+                "clicking '\(Fixture.startFocusLabel)' drew no '\(Fixture.closeFocusLabel)' "
+                + "button, so no focus overlay opened. " + surfaceReport()
+            )
+            return
+        }
+        let plate = close.frame
+        print("FOCUS close button frame=\(plate)")
+        XCTAssertEqual(
+            plate.width, plate.height, accuracy: Bounds.squareTolerance,
+            "the close button's frame \(plate) is not square"
+        )
+        let radius = min(plate.width, plate.height) / 2
+        attach("focus-overlay")
+
+        parkPointer(away: plate, in: window)
+        let cold = try XCTUnwrap(shot(of: window), "could not read the window as pixels, unhovered")
+        close.hover()
+        settle(Bounds.hoverSettle)
+        let warm = try XCTUnwrap(shot(of: window), "could not read the window as pixels, hovered")
+        let wash = changedPixels(cold: cold, warm: warm, window: window.frame, plate: plate)
+        print(
+            "FOCUS hover changed \(wash.count) px; inside=\(wash.insideCircle) "
+            + "outside=\(wash.outsideCircle) maxRadius=\(wash.maximumRadius)pt plateRadius=\(radius)pt"
+        )
+        attach("focus-close-hovered")
+        XCTAssertGreaterThan(
+            wash.count, 0,
+            "hovering the focus overlay's close button \(plate) changed nothing at all. " + surfaceReport()
+        )
+        XCTAssertEqual(
+            wash.outsideCircle, 0,
+            """
+            \(wash.outsideCircle) pixel(s) lit OUTSIDE the \(radius)pt circle (furthest \
+            \(wash.maximumRadius)pt), so the close button's wash is not its plate's shape. A \
+            rounded-rectangle corner would sit at \(radius * 1.41421356)pt. Plate \(plate).
+            """
+        )
+
+        // Leave no focus session running on the owner's machine.
+        close.click()
+        settle(Bounds.hoverSettle)
+    }
+
     /// The month grid's day buttons, found by GEOMETRY rather than by label.
     ///
     /// **Not `label CONTAINS ", 2026"`.** That was tried on 2026-11-04 and matched **nothing**:
@@ -580,6 +681,8 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         /// `CadenceSchedulePanel`'s kind selector, `identifierPrefix` + `CadenceScheduleDraftKind`'s
         /// raw value. Spelled as a literal because the UI-test target cannot import the app module.
         static let scheduleKindTask = "schedule-kind-task"
+        /// `CadenceAccessibilityIdentifiers`' Today task rows, e.g. `today.task.row.fixture-task`.
+        static let todayTaskRowPrefix = "today.task.row."
     }
 
     private enum Fixture {
@@ -598,6 +701,10 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         static let doDateLabel = "Do Date"
         /// `CadenceQuickDatePopover.quickPill`'s three labels (`CadenceDatePicker.swift:533-536`).
         static let quickPillLabels = ["Today", "Tomorrow", "This Weekend"]
+        /// `CadenceTaskControlAccessibility.startFocus`
+        /// (`CadenceTaskPresentationSupport.swift:320`) and `FocusChromeSupportViews.swift:38`.
+        static let startFocusLabel = "Start focus session"
+        static let closeFocusLabel = "Close focus session"
     }
 
     private enum Bounds {
