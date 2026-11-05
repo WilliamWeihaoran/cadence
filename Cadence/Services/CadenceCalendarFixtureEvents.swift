@@ -296,6 +296,7 @@ enum CadenceCalendarFixtureEvents {
         switch CadenceUITestScenarioSeed.scenario(in: environment) {
         case .calendarHues: return .calendarHues
         case .calendarCascade: return .calendarCascade
+        case .calendarChipStates: return .calendarChipStates
         case .todayGeometry, .todayRowCrush, .popoverAnchors, nil: return nil
         }
     }
@@ -314,7 +315,7 @@ enum CadenceCalendarFixtureEvents {
     ) -> [EKEvent]? {
         events(
             for: date,
-            specs: { $0 == .calendarCascade ? CascadeFixture.timed : Fixture.timed },
+            specs: { $0 == .calendarHues ? Fixture.timed : CascadeFixture.timed },
             calendar: calendar,
             in: environment
         )
@@ -328,7 +329,7 @@ enum CadenceCalendarFixtureEvents {
     ) -> [EKEvent]? {
         events(
             for: date,
-            specs: { $0 == .calendarCascade ? CascadeFixture.allDay : Fixture.allDay },
+            specs: { $0 == .calendarHues ? Fixture.allDay : CascadeFixture.allDay },
             calendar: calendar,
             in: environment
         )

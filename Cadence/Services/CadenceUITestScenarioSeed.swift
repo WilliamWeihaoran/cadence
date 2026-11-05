@@ -49,6 +49,11 @@ enum CadenceUITestScenarioSeed {
         /// unscheduled task in the day header, all on today. Both halves again: the tasks below,
         /// the events from `CadenceCalendarFixtureEvents.CascadeFixture`.
         case calendarCascade = "calendar-cascade"
+        /// **The chip-state and band-overflow calendar scenario** ([[T-11411]]). `calendar-cascade`
+        /// plus every iOS mini-chip glyph state and an all-day band that overflows its compact
+        /// capacity, all on today: what sighting agents used to hand-seed with `sqlite3`. Serves the
+        /// cascade fixture's events, so the frame is `calendar-cascade`'s with the band filled.
+        case calendarChipStates = "calendar-chip-states"
     }
 
     /// The alt text on the seeded picture, and the text of the paragraph under it. Both are read
@@ -191,6 +196,24 @@ enum CadenceUITestScenarioSeed {
         /// all-day `Company offsite` ([[T-3185]]'s question). No start, so it reaches the strip
         /// rather than the timed grid.
         static let stripTaskTitle = "Buy milk"
+
+        // MARK: - calendar-chip-states (T-11411)
+
+        /// The four glyph states [[T-8243]]'s tint ladder draws, one unscheduled task each on
+        /// today, so they land in the Week all-day band (the iPhone-reachable `iOSCalendarMiniChip`
+        /// host). Open with a deadline YESTERDAY (`Theme.red`), open due TODAY (`Theme.amber`),
+        /// open with NO deadline (the caller's open tier), and FINISHED with a deadline yesterday,
+        /// which must keep its settled `Theme.green` rather than turn red.
+        static let chipOverdueTitle = "Chip overdue"
+        static let chipDueTodayTitle = "Chip due today"
+        static let chipNoDeadlineTitle = "Chip no deadline"
+        static let chipSettledPastDueTitle = "Chip done past due"
+
+        /// Two more unscheduled tasks, ordered AFTER the four states. With the cascade's strip
+        /// task and its all-day `Company offsite`, the day overflows the compact band's capacity
+        /// (`CadenceCalendarAllDayBandPriority.compactCapacity`), so these two are what the
+        /// "+N more" line stands for and the four states stay drawn.
+        static let chipOverflowTitles = ["Overflow one", "Overflow two"]
     }
 
     /// The variable this enum is selected by, named once so the tests and the readers agree on the
@@ -227,6 +250,8 @@ enum CadenceUITestScenarioSeed {
             seedCalendarHues(modelContext: modelContext)
         case .calendarCascade:
             seedCalendarCascade(modelContext: modelContext)
+        case .calendarChipStates:
+            seedCalendarChipStates(modelContext: modelContext)
         }
     }
 
@@ -495,6 +520,66 @@ enum CadenceUITestScenarioSeed {
             try modelContext.save()
         } catch {
             print("[CadenceUITestScenarioSeed] the calendar-cascade seed could not be saved: \(error)")
+        }
+    }
+
+    /// **The chip-state and band-overflow fixture** ([[T-11411]]): `calendar-cascade`'s two
+    /// tasks, the four glyph states, and two overflow tasks, all on today.
+    ///
+    /// Internal rather than `private` so `CadenceCalendarFixtureEventsTests` seeds an in-memory
+    /// store through the copy a launch runs; `seedIfRequested` stays the only launch caller.
+    /// `order` is what places them: the band sorts by priority, every task here has none, so the
+    /// tie falls to `order` and the overflow tasks are the ones the "+N more" line hides.
+    @MainActor
+    static func seedCalendarChipStates(modelContext: ModelContext, now: Date = Date()) {
+        let todayKey = DateFormatters.ymd.string(from: now)
+        let yesterdayKey = DateFormatters.ymd.string(
+            from: Calendar.current.date(byAdding: .day, value: -1, to: now) ?? now
+        )
+
+        // Idempotent by the same test the stock seed and the other scenarios use.
+        let existingTasks = (try? modelContext.fetch(FetchDescriptor<AppTask>())) ?? []
+        guard existingTasks.isEmpty else { return }
+
+        let areas = (try? modelContext.fetch(FetchDescriptor<Area>())) ?? []
+        let host = areas.first { $0.name == "Alpha Area" } ?? areas.first
+
+        let timed = AppTask(title: Fixture.cascadeTaskTitle)
+        timed.scheduledDate = todayKey
+        timed.scheduledStartMin = Fixture.cascadeTaskStartMinute
+        timed.estimatedMinutes = Fixture.cascadeTaskEstimateMinutes
+        timed.order = 0
+        timed.area = host
+        timed.context = host?.context
+        modelContext.insert(timed)
+
+        // Every task below leaves `scheduledStartMin` at -1: planned for today with no start, so
+        // each one reaches the all-day band rather than the timed grid.
+        let rows: [(title: String, dueDate: String, status: TaskStatus)] = [
+            (Fixture.stripTaskTitle, "", .todo),
+            (Fixture.chipOverdueTitle, yesterdayKey, .todo),
+            (Fixture.chipDueTodayTitle, todayKey, .todo),
+            (Fixture.chipNoDeadlineTitle, "", .todo),
+            (Fixture.chipSettledPastDueTitle, yesterdayKey, .done),
+        ] + Fixture.chipOverflowTitles.map { (title: $0, dueDate: "", status: TaskStatus.todo) }
+
+        for (index, row) in rows.enumerated() {
+            let task = AppTask(title: row.title)
+            task.scheduledDate = todayKey
+            task.dueDate = row.dueDate
+            task.status = row.status
+            if row.status == .done { task.completedAt = now }
+            task.order = index + 1
+            task.area = host
+            task.context = host?.context
+            modelContext.insert(task)
+        }
+
+        // **Not `try?`**, for the reason the scenarios above state.
+        do {
+            try modelContext.save()
+        } catch {
+            print("[CadenceUITestScenarioSeed] the calendar-chip-states seed could not be saved: \(error)")
         }
     }
 

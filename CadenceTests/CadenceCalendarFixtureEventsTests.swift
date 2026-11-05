@@ -1,5 +1,7 @@
 import EventKit
 import Foundation
+import SwiftData
+import SwiftUI
 import Testing
 
 @testable import Cadence
@@ -101,7 +103,7 @@ struct CadenceCalendarFixtureEventsTests {
     @Test func aLaunchThatSeesTheFixturesCannotReachARealEventStore() {
         var checked = 0
         for modeValue in ["1", "0", ""] {
-            for scenarioValue in ["calendar-hues", "calendar-cascade", "today-geometry", "nonsense", ""] {
+            for scenarioValue in ["calendar-hues", "calendar-cascade", "calendar-chip-states", "today-geometry", "nonsense", ""] {
                 let environment = [Self.mode: modeValue, Self.scenario: scenarioValue]
                 guard CadenceCalendarFixtureEvents.isActive(in: environment) else { continue }
                 checked += 1
@@ -111,7 +113,7 @@ struct CadenceCalendarFixtureEventsTests {
                 )
             }
         }
-        #expect(checked == 2, "non-vacuity: expected exactly two active combinations, saw \(checked)")
+        #expect(checked == 3, "non-vacuity: expected exactly three active combinations, saw \(checked)")
     }
 
     // MARK: - 3. What it answers when it is open
@@ -332,6 +334,74 @@ struct CadenceCalendarFixtureEventsTests {
         #expect(AppTask(title: "probe").scheduledStartMin < 0, "the model default is unscheduled")
     }
 
+    // MARK: - 3c. The calendar-chip-states scenario (T-11411)
+
+    private static let chipStatesActive: [String: String] = [mode: "1", scenario: "calendar-chip-states"]
+
+    /// The chip-state scenario is `calendar-cascade`'s frame with the band filled, so it serves
+    /// the cascade's events: the all-day `Company offsite` is one of the rows the band overflow
+    /// below is counted against.
+    @Test func theChipStatesScenarioServesTheCascadeEvents() throws {
+        let cascade = CadenceCalendarFixtureEvents.CascadeFixture.self
+        #expect(CadenceCalendarFixtureEvents.activeScenario(in: Self.chipStatesActive) == .calendarChipStates)
+        #expect(CadenceCalendarFixtureEvents.activeScenario(in: [Self.scenario: "calendar-chip-states"]) == nil)
+        let timed = try #require(CadenceCalendarFixtureEvents.timedEvents(for: Date(), in: Self.chipStatesActive))
+        let allDay = try #require(CadenceCalendarFixtureEvents.allDayEvents(for: Date(), in: Self.chipStatesActive))
+        #expect(timed.compactMap(\.title) == cascade.timed.map(\.title))
+        #expect(allDay.compactMap(\.title) == cascade.allDay.map(\.title))
+    }
+
+    /// **[[T-11411]]: the states sighting agents hand-seeded with `sqlite3`, produced by a launch.**
+    /// Seeds an in-memory store through the copy a launch runs, then asks the band's own bucketing
+    /// and split which tasks the compact strip draws: every one of [[T-8243]]'s four glyph tints
+    /// must be among them, and the strip must overflow so a "+N more" line is drawn too.
+    @MainActor
+    @Test func theChipStatesSeedDrawsEveryGlyphStateAndOverflowsTheCompactBand() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let now = Date()
+        let todayKey = DateFormatters.ymd.string(from: now)
+
+        CadenceUITestScenarioSeed.seedCalendarChipStates(modelContext: context, now: now)
+        let tasks = try context.fetch(FetchDescriptor<AppTask>())
+        #expect(!tasks.isEmpty, "non-vacuity: the seed wrote nothing")
+
+        // Idempotent, like every scenario: a second launch finds the store it left.
+        CadenceUITestScenarioSeed.seedCalendarChipStates(modelContext: context, now: now)
+        #expect(try context.fetch(FetchDescriptor<AppTask>()).count == tasks.count)
+
+        let band = CadenceScheduleSupport.unscheduledTasksByDate(tasks)[todayKey] ?? []
+        #expect(band.count == tasks.count - 1, "every task but the cascade's timed one reaches the band")
+        let capacity = CadenceCalendarAllDayBandPriority.compactCapacity
+        let split = CadenceCalendarAllDayBandPriority.split(
+            allDayEvents: CadenceCalendarFixtureEvents.CascadeFixture.allDay.count,
+            unscheduledTasks: band.count,
+            capacity: capacity
+        )
+        #expect(split.hidden > 0, "the compact band does not overflow, so no \"+N more\" line: \(split)")
+        #expect(split.visible == capacity)
+
+        let drawn = Array(band.prefix(split.tasks))
+        let hidden = band.dropFirst(split.tasks).map(\.title)
+        #expect(Set(hidden) == Set(CadenceUITestScenarioSeed.Fixture.chipOverflowTitles), "hidden: \(hidden)")
+
+        // A fallback no `Theme` token equals, as `CadenceCalendarChipDueUrgencyTests` uses.
+        let open = Color(hex: "#5B21B6")
+        let tints = drawn.map {
+            CadenceCalendarTaskDoneStyle.chipGlyphTint(
+                for: .resolve(status: $0.status),
+                dueDateKey: $0.dueDate,
+                todayKey: todayKey,
+                open: open
+            )
+        }
+        for (name, tint) in [("overdue", Theme.red), ("due today", Theme.amber), ("settled", Theme.green), ("no deadline", open)] {
+            #expect(tints.contains(tint), "no drawn chip takes the \(name) tint")
+        }
+        // The decisive state: finished, deadline already passed, and still drawn.
+        #expect(drawn.contains { $0.isDone && !$0.dueDate.isEmpty && $0.dueDate < todayKey })
+    }
+
     // MARK: - 4. The scenario reader the gate is built on
 
     @Test func theScenarioReaderIsPureAndRefusesWhatItDoesNotKnow() {
@@ -340,6 +410,7 @@ struct CadenceCalendarFixtureEventsTests {
         #expect(CadenceUITestScenarioSeed.scenario(in: [Self.scenario: "no-such-scenario"]) == nil)
         #expect(CadenceUITestScenarioSeed.scenario(in: [Self.scenario: "calendar-hues"]) == .calendarHues)
         #expect(CadenceUITestScenarioSeed.scenario(in: [Self.scenario: "calendar-cascade"]) == .calendarCascade)
+        #expect(CadenceUITestScenarioSeed.scenario(in: [Self.scenario: "calendar-chip-states"]) == .calendarChipStates)
         // The process reader is the pure one over this process, not a second implementation.
         #expect(CadenceUITestScenarioSeed.requestedScenario
             == CadenceUITestScenarioSeed.scenario(in: ProcessInfo.processInfo.environment))
