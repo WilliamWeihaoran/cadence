@@ -207,6 +207,87 @@ struct CadenceUITestCommitRefusalTests {
         #expect(error.localizedDescription.contains("CADENCE_UI_TEST_REFUSE_COMMITS"))
     }
 
+    // MARK: - Commits outside the spine that now reach it (T-11581)
+
+    /// The in-place flush commits nothing to undo, so an armed refusal answers `false` and leaves
+    /// the edit pending — the "They're still here" sentence is then true.
+    @Test func anArmedInPlaceFlushAnswersFalseWithoutCommittingAndLeavesTheEditPending() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let task = AppTask(title: "Old")
+        modelContext.insert(task)
+        try modelContext.save()
+        task.title = "Typed"
+        let counter = CommitCounter()
+
+        #expect(!CadenceInPlaceEditFlush.flush(in: modelContext, commit: counter.commit, refusing: true))
+
+        #expect(counter.count == 0, "an armed refusal still ran the flush's commit")
+        #expect(task.title == "Typed", "the refused flush touched what the user typed")
+        #expect(modelContext.hasChanges, "the refused flush dropped the pending edit")
+        #expect(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).map(\.title) == ["Old"])
+        // And off, the same call commits.
+        #expect(CadenceInPlaceEditFlush.flush(in: modelContext, commit: counter.commit, refusing: false))
+        #expect(counter.count == 1)
+    }
+
+    @Test func anArmedAISummaryAppendRefusesBeforeCommittingAndPutsTheNoteBack() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let note = Note(kind: .permanent, title: "Notepad", content: "Notes.")
+        modelContext.insert(note)
+        try modelContext.save()
+        let updatedAtBefore = note.updatedAt
+        let counter = CommitCounter()
+
+        #expect(throws: CadenceUITestCommitRefusal.Refused.self) {
+            try CadenceAINoteSummary.append(
+                "Recap.", to: note, modelContext: modelContext, commit: counter.commit, refusing: true
+            )
+        }
+
+        #expect(counter.count == 0, "an armed refusal still ran the summary's commit")
+        #expect(note.content == "Notes.", "the refused summary is still in the note")
+        #expect(note.updatedAt == updatedAtBefore)
+    }
+
+    @Test func anArmedBankOnlyFocusLogRefusesBeforeCommittingAndUnbanksTheMinutes() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let task = AppTask(title: "Reconcile invoices")
+        modelContext.insert(task)
+        task.actualMinutes = 7
+        try modelContext.save()
+        let counter = CommitCounter()
+
+        #expect(throws: CadenceUITestCommitRefusal.Refused.self) {
+            try CadenceFocusSupport.logSession(
+                hours: 0, minutes: 25, complete: false, task: task, modelContext: modelContext,
+                reconciler: .inert, commit: counter.commit, refusingBank: true
+            )
+        }
+
+        #expect(counter.count == 0, "an armed refusal still ran the log's commit")
+        #expect(task.actualMinutes == 7, "the refused log left minutes the store does not hold")
+        #expect((task.focusSessions ?? []).isEmpty, "the refused log left a ledger row behind")
+    }
+
+    @Test func anArmedScheduledInsertRefusesAndTakesTheTaskBackOut() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        #expect(throws: CadenceUITestCommitRefusal.Refused.self) {
+            _ = try CadenceTaskMutationSupport.insertScheduledTask(
+                title: "Drafted on the timeline", allTasks: [], modelContext: modelContext,
+                scheduledDate: "2026-05-01", scheduledStartMin: 900, estimatedMinutes: 30,
+                refusing: true
+            )
+        }
+
+        #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).isEmpty, "the refused insert is still in the context")
+        #expect(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).isEmpty)
+    }
+
     // MARK: - Every commit goes through the one refusing seam
 
     /// Read from the source: a commit added later that calls its `commit:` directly would be the

@@ -19,6 +19,12 @@ import SwiftData
 /// So this is deliberately **not** a fourth `CadencePendingChangePersistence` case. It commits and
 /// answers. It never touches the caller's fields, and it never rolls the context back — the pending
 /// edit stays pending precisely because the user is still holding it.
+///
+/// **It does commit through the spine's refusing seam ([[T-11581]]).** `commitEdit` with an undo
+/// that does nothing is exactly "commit and answer": nothing is restored, nothing is rolled back.
+/// What it adds is `CADENCE_UI_TEST_REFUSE_COMMITS`, which refuses only commits that reach
+/// `CadencePendingChangePersistence`; a flush that called its `commit:` itself left
+/// `failureNotice` unsightable on every surface built on it.
 enum CadenceInPlaceEditFlush {
 
     /// Shown inline on the surface that stayed open.
@@ -37,12 +43,15 @@ enum CadenceInPlaceEditFlush {
     /// - Parameter commit: How to commit. Defaults to `ModelContext.save()`; it is a parameter
     ///   because a `save()` that throws cannot be provoked out of an in-memory container, and a
     ///   failure path no test can reach is a failure path no test can prove.
+    /// - Parameter refusing: The UI-test refusal switch (T-11512), as every spine commit takes it.
     static func flush(
         in modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
+        commit: (ModelContext) throws -> Void = { try $0.save() },
+        refusing: Bool = CadencePendingChangePersistence.refusesCommitsForUITest
     ) -> Bool {
         do {
-            try commit(modelContext)
+            // Nothing to undo: the pending edit stays pending, which is the whole point above.
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit, refusing: refusing, undo: {})
         } catch {
             return false
         }

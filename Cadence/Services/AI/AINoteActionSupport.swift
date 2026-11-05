@@ -85,19 +85,19 @@ enum CadenceAINoteSummary {
         _ summary: String,
         to note: Note,
         modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
+        commit: (ModelContext) throws -> Void = { try $0.save() },
+        refusing: Bool = CadencePendingChangePersistence.refusesCommitsForUITest
     ) throws {
         guard let content = appending(summary, to: note.content) else { return }
         let previousContent = note.content
         let previousUpdatedAt = note.updatedAt
         note.content = content
         note.updatedAt = Date()
-        do {
-            try commit(modelContext)
-        } catch {
+        // Through the spine, not `try commit(...)` here ([[T-11581]]): only a commit that reaches
+        // `CadencePendingChangePersistence` can be refused by `CADENCE_UI_TEST_REFUSE_COMMITS`.
+        try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit, refusing: refusing) {
             note.content = previousContent
             note.updatedAt = previousUpdatedAt
-            throw error
         }
     }
 }

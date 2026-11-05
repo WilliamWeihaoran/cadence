@@ -542,17 +542,18 @@ enum CadenceFocusSupport {
         task: AppTask,
         modelContext: ModelContext,
         reconciler: CadenceWindDownReconciler? = nil,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
+        commit: (ModelContext) throws -> Void = { try $0.save() },
+        refusingBank: Bool = CadencePendingChangePersistence.refusesCommitsForUITest
     ) throws {
         let totalMinutes = hours * 60 + loggedMinutes
         guard markComplete else {
             let banked = BankedMinutes(task)
             CadenceFocusLedger.bank(totalMinutes, forTaskAndItsList: task, in: modelContext)
-            do {
-                try commit(modelContext)
-            } catch {
+            // Through the spine ([[T-11581]]) so `CADENCE_UI_TEST_REFUSE_COMMITS` reaches a bank-only
+            // log too. `refusingBank` is this branch's alone: the completing branch below settles
+            // through `commitSettle`, which reads the switch for itself.
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit, refusing: refusingBank) {
                 banked.restore(in: modelContext)
-                throw error
             }
             return
         }
