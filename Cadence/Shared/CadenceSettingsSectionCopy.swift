@@ -541,6 +541,9 @@ nonisolated enum CadenceUnmanagedStoreCopy {
     ///
     /// A function of one fact, because the reset skips the recovery store **this launch is running
     /// on**, and the gate must not promise a deletion the reset will not perform.
+    ///
+    /// Both branches end with `backupsBesideThem`, which is not conditional: the backups beside an
+    /// earlier store location are taken whichever store this launch is running on.
     static func resetGateDeletesThem(runningOnRecoveryStore: Bool) -> String {
         let recovery = runningOnRecoveryStore
             ? "It does not delete the recovery store Cadence is running on right now, because it "
@@ -550,8 +553,30 @@ nonisolated enum CadenceUnmanagedStoreCopy {
                 + "one, and any location an earlier version kept the store in. A recovery store never "
                 + "syncs, so anything typed while Cadence was running on it exists nowhere else and "
                 + "is deleted for good."
-        return recovery + " Data Safety lists those under \(sectionTitle) with their full paths."
+        return recovery + " Data Safety lists those under \(sectionTitle) with their full paths. "
+            + backupsBesideThem
     }
+
+    /// The half of the gate [[T-8981]] added (owner decision 2026-11-04), and the half that makes
+    /// deleting these fair rather than merely tidy.
+    ///
+    /// [[T-1840]] took only exact-name **store** items, so a `Cadence Store Backups` folder beside
+    /// an earlier store location survived `Delete Account & Data` — and each of those is a full
+    /// copy of a Cadence store, so after asking to have their data deleted the person still had
+    /// their data on disk. The owner's call was to delete them **and say so here**; a silent
+    /// delete was refused rather than simply not chosen, because destroying someone's last
+    /// recovery copy without telling them is how a store is lost by a person who thought they
+    /// still had it. So this sentence is not decoration on the deletion — it is the condition the
+    /// deletion ships under, and the two move together or neither does.
+    ///
+    /// It says what to do about it, because a warning a reader cannot act on is not a warning.
+    /// Where to copy one to is deliberately unsaid: macOS can open Finder on the folder and iOS
+    /// has no Files route into Cadence's container, which is the same split `whatCadenceDoesNotDo`
+    /// records, and a sentence vague enough to be true on both would say nothing on either.
+    static let backupsBesideThem =
+        "It also deletes the Cadence Store Backups folders sitting beside those earlier store "
+        + "locations. Each of those is a complete copy of a Cadence store, so if you are keeping "
+        + "one as your own backup, copy it somewhere else before you continue."
 }
 
 /// Settings → Data Safety's Privacy card, on both surfaces ([[T-11199]], under [[T-8201]]).

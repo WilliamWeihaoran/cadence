@@ -1498,10 +1498,19 @@ struct StoreBackupSnapshot: Identifiable, Hashable {
 /// exists to answer "what copies of my data does Cadence keep and where", and answering it for one
 /// of four directories is worse than saying nothing, because the user reads the silence as zero.
 ///
-/// **It carries no delete.** These sit under paths the app no longer owns — one of them holds the
-/// only copies of pre-app-group state on that machine — and a "Clear backups" button that reached
-/// one would be this screen destroying data on the strength of a path it inferred. `url` is shown
-/// in full and revealed in Finder; what happens next is the user's.
+/// **The row carries no delete, and [[T-8981]] did not add one.** These sit under paths the app no
+/// longer owns — one of them holds the only copies of pre-app-group state on that machine — and a
+/// "Clear backups" button that reached one would be this screen destroying data on the strength of
+/// a path it inferred. `url` is shown in full and revealed in Finder; what happens next is the
+/// user's. [[T-1532]]'s reasoning for that is untouched.
+///
+/// **What did change is that `Delete Account & Data` takes them** (owner decision 2026-11-04,
+/// [[T-8981]]): each of these is a *full copy of the store*, so a reset that left them is the
+/// reset claiming more than it did, which is the reasoning [[T-1840]] already adopted for the
+/// earlier stores themselves. It goes through `deleteUnusedStoreFoldersForDataReset`, behind the
+/// same per-folder `mayWriteBackups` gate, and the typed-phrase gate names them first
+/// (`CadenceUnmanagedStoreCopy.resetGateDeletesThem`) — a deletion this size is fair only if the
+/// person reads it before the irreversible button, which is why a silent delete was refused.
 struct UnmanagedBackupDirectory: Identifiable, Hashable {
     var id: String { url.path }
     let url: URL
@@ -2143,9 +2152,20 @@ enum StoreBackupManager {
     ///   skipped: removing files under an open `ModelContainer` is a different and worse bug. The
     ///   live store directory itself is excluded by `unmanagedStoreDirectories`, which this reuses
     ///   rather than re-deriving, so the list the user was shown and the list deleted are one.
-    /// - **Only store files go.** The items are `storeItems(in:)`'s exact-name matches, so a
-    ///   `Cadence Store Backups` folder or anything else a person keeps beside an old store is left
-    ///   where it is. The folders themselves stay too.
+    /// - **Store files, and the backups beside them.** The store items are `storeItems(in:)`'s
+    ///   exact-name matches, so anything else a person keeps beside an old store — a stray note, a
+    ///   folder of their own — is left where it is, and the folders themselves stay. The one
+    ///   exception is a `Cadence Store Backups` folder beside an earlier store location, which
+    ///   [[T-8981]] (owner decision 2026-11-04) added: those are **full copies of the store**, so a
+    ///   reset that left them is the reset claiming more than it did, exactly as a reset that left
+    ///   the earlier store itself was. They are taken through `unmanagedBackupDirectories` — the
+    ///   same listing Data Safety shows, so again the list read and the list deleted are one — and
+    ///   only the backups it counted go; the root folder stays, and the live store's own backup
+    ///   root is excluded by that listing because `deleteAllBackupsForDataReset` already takes it.
+    ///   **The confirmation says so before the button is live** (`resetGateDeletesThem`): the owner
+    ///   refused a silent delete rather than merely not choosing it, because destroying someone's
+    ///   last recovery copy without telling them is how a store is lost by a person who thought
+    ///   they still had it. The two halves ship together.
     /// - **A test or agent launch cannot reach a real folder.** Every target passes the same gate
     ///   the backup writers do (`CadenceUITestStoreDirectory.mayWriteBackups`, [[T-3045]] (3)), per
     ///   folder: under a redirect only folders inside the process's temporary directory are
@@ -2157,7 +2177,10 @@ enum StoreBackupManager {
     /// Every folder is attempted even when one fails; the first failure is thrown once all have
     /// been tried, for the reason `removeStoredBackups` runs both of its steps.
     ///
-    /// - Returns: how many folders were emptied.
+    /// - Returns: how many folders were emptied — a store folder whose store items all went, and a
+    ///   backup root whose backups all went, each counting once. A directory that is both an
+    ///   earlier store location and the parent of a backup root is two folders here, because two
+    ///   directories were emptied.
     @discardableResult
     static func deleteUnusedStoreFoldersForDataReset() throws -> Int {
         try deleteUnusedStoreFoldersForDataReset(
@@ -2209,6 +2232,44 @@ enum StoreBackupManager {
             }
             if emptied { emptiedCount += 1 }
         }
+
+        // [[T-8981]]: the `Cadence Store Backups` folders beside the earlier store locations.
+        // Derived from `unmanagedBackupDirectories` rather than from `targets` above, because the
+        // two lists are not the same one: a backup root can sit beside a directory whose store
+        // files are already gone, which has no row in the store list at all, and the live store's
+        // own backup root is excluded here by construction (`deleteAllBackupsForDataReset` takes
+        // it). The gate is asked about the **store directory** the backups sit beside, which is
+        // the argument every other `mayWriteBackups` caller passes and the exact inverse of the
+        // `backupRootURL(for:)` the candidate was built with.
+        for directory in unmanagedBackupDirectories(
+            liveStoreDirectoryURL: liveStoreDirectoryURL,
+            legacyStoreDirectories: legacyStoreDirectories,
+            fileManager: fileManager
+        ) {
+            let storeDirectoryURL = directory.url.deletingLastPathComponent()
+            guard CadenceUITestStoreDirectory.mayWriteBackups(
+                inStoreDirectory: storeDirectoryURL,
+                environment: environment,
+                temporaryDirectory: temporaryDirectory
+            ) else {
+                firstError = firstError ?? BackupWriteRefusal(storeDirectoryPath: storeDirectoryURL.path)
+                continue
+            }
+            var emptied = true
+            // The backups the row counted and sized, and nothing else in the folder: `listBackups`
+            // is what `unmanagedBackupDirectories` built the row from, so a person's own file
+            // dropped into that folder is as safe here as a stray beside an old store is above.
+            for snapshot in listBackups(storeDirectoryURL: storeDirectoryURL, fileManager: fileManager) {
+                do {
+                    try fileManager.removeItem(at: snapshot.url)
+                } catch {
+                    emptied = false
+                    firstError = firstError ?? error
+                }
+            }
+            if emptied { emptiedCount += 1 }
+        }
+
         if let firstError { throw firstError }
         return emptiedCount
     }

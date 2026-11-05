@@ -161,13 +161,20 @@ struct SettingsDataSafetySection: View {
             // owns, and one of them holds the only copies of pre-app-group state on the machine —
             // a "Clean" or "Clear" button that reached them would make this screen delete data on
             // the strength of a path it inferred, which is a worse failure than the silence it
-            // replaces. Reveal only; the rest is Finder's and the user's.
+            // replaces. Reveal only; the rest is Finder's and the user's. [[T-8981]] made
+            // **Delete Account & Data** take them and still did not put a delete on this row:
+            // that reset is typed-phrase gated and names them first, which is the difference.
             if !unmanagedBackupDirectories.isEmpty {
                 VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
                     SettingsSectionLabel(text: "Other Backup Folders")
                     SettingsCard {
                         VStack(alignment: .leading, spacing: 0) {
-                            Text("Earlier versions of Cadence kept the store somewhere else and left these copies behind. Cadence does not add to them, thin them, or delete them — not even when you delete all Cadence data. Remove them in Finder if you want the space back.")
+                            // [[T-8981]]: this sentence used to end "not even when you delete all
+                            // Cadence data", which the owner's 2026-11-04 decision made false —
+                            // the reset takes these now, and a screen that says otherwise beside
+                            // the button that does it is worse than one that says nothing. The
+                            // row still carries no delete ([[T-1532]]); what changed is the reset.
+                            Text("Earlier versions of Cadence kept the store somewhere else and left these copies behind. Cadence does not add to them, thin them, or read them on a normal launch, and nothing on this screen removes them. Each is a complete copy of a Cadence store, so deleting all Cadence data deletes them. Remove them in Finder if you want the space back sooner.")
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)

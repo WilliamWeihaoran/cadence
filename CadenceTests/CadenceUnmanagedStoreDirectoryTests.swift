@@ -515,7 +515,28 @@ struct CadenceUnmanagedStoreDirectoryTests {
                 sentence.contains(CadenceUnmanagedStoreCopy.sectionTitle),
                 "the gate does not say where to find the folders it deletes"
             )
+            // [[T-8981]] (owner decision 2026-11-04): and the `Cadence Store Backups` folders
+            // beside those earlier locations, which the reset now takes. On both branches,
+            // because that deletion does not depend on which store this launch is running on.
+            // The deletion itself is driven over temp folders in
+            // `CadenceDataResetStoreFolderTests.theResetDeletesTheBackupsBesideAnEarlierStoreLocationAndTheGateSaysSoFirst`,
+            // which holds this sentence and that deletion in one test for the reason the owner
+            // gave: a silent delete was refused, so copy without deletion and deletion without
+            // copy are both the wrong thing.
+            #expect(
+                sentence.contains(CadenceUnmanagedStoreCopy.backupsBesideThem),
+                "the gate does not name the backups folders the reset deletes (T-8981)"
+            )
         }
+        // ...and the Mac's own list of those folders stopped promising the reset leaves them.
+        #expect(
+            !source.contains("not even when you delete all Cadence data"),
+            "the Other Backup Folders card still says the reset spares these, which T-8981 made false"
+        )
+        #expect(
+            source.contains("deleting all Cadence data deletes them"),
+            "the Other Backup Folders card does not say the reset takes them (T-8981)"
+        )
     }
 
     // MARK: - T-1841: the phone says the same thing, and now has a screen to say it on
