@@ -198,6 +198,225 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         )
     }
 
+    /// **[[T-10803]] clauses (1) and (2), on the control [[T-11322]] is actually about.**
+    ///
+    /// The floating button answers the style; this answers the `CadenceDatePicker` day cell and its
+    /// quick pill, which are the SHARED component iOS failed on twice. Reached without navigation
+    /// beyond the composer: `CreateTaskSheet.swift:103` binds Cmd+Shift+T to `showDoPicker = true`,
+    /// so one keystroke opens the picker the entry names.
+    ///
+    /// Three things are measured here and each is stated as a relation, never as a pinned size:
+    /// the day cell's hover wash is drawn in a circle that meets its plate; a CLICK on the cell's
+    /// corner, outside that circle, is or is not honoured; and the quick pill's wash is drawn in a
+    /// capsule that meets the pill.
+    func testTheDatePickersDayCellAndQuickPillPlatesOnMacOS() throws {
+        try CadenceUITestEnvironment.requireInteractiveUITests()
+
+        try launchApp()
+        let window = app.windows.firstMatch
+        guard window.waitForExistence(timeout: Bounds.windowAppears) else {
+            attach("picker-no-window")
+            XCTFail("no main window after \(Bounds.windowAppears)s. \(surfaceReport())")
+            return
+        }
+        let today = app.buttons.element(identified: ID.todayDestination)
+        XCTAssertTrue(today.waitForExistence(timeout: CadenceUITestBounds.sidebarRow), surfaceReport())
+        today.click()
+
+        let plus = app.buttons
+            .matching(NSPredicate(format: "label == %@ OR title == %@", Fixture.newTaskLabel, Fixture.newTaskLabel))
+            .allElementsBoundByIndex
+            .filter { $0.frame.width > 0 && $0.frame.height > 0 }
+        guard let button = plus.max(by: { $0.frame.minY < $1.frame.minY }) else {
+            attach("picker-no-floating-button")
+            XCTFail("Today drew no '\(Fixture.newTaskLabel)' button. " + surfaceReport())
+            return
+        }
+        button.click()
+        guard waitForComposer() else {
+            attach("picker-no-composer")
+            XCTFail("the composer did not open, so the date picker cannot be reached. " + surfaceReport())
+            return
+        }
+
+        // **The chip, not the shortcut.** `CreateTaskSheet.swift:103` does bind Cmd+Shift+T to
+        // `showDoPicker = true`, and sending it with `typeKey` drew **0** day cells on 2026-11-04
+        // — the keystroke does not reach the composer's hidden zero-sized shortcut button from
+        // here. `TaskDateChip` (`CreateTaskSheetSupportViews.swift:222`) is a real Button carrying
+        // `.cadenceControlLabel("Do Date")` whose action toggles the same popover, so it is
+        // clicked instead.
+        let chip = app.buttons
+            .matching(NSPredicate(format: "label == %@ OR title == %@", Fixture.doDateLabel, Fixture.doDateLabel))
+            .allElementsBoundByIndex
+            .first { $0.frame.width > 0 && $0.frame.height > 0 }
+        guard let chip else {
+            attach("picker-no-chip")
+            XCTFail(
+                "the composer drew no '\(Fixture.doDateLabel)' chip to open the picker with. "
+                + app.debugDescription
+            )
+            return
+        }
+        chip.click()
+        var cells: [XCUIElement] = []
+        let deadline = Date().addingTimeInterval(Bounds.composerAppears)
+        while Date() < deadline {
+            cells = dayCells()
+            if cells.count >= Bounds.minimumDayCells { break }
+            settle(0.25)
+        }
+        guard cells.count >= Bounds.minimumDayCells else {
+            attach("picker-not-open")
+            XCTFail(
+                "clicking '\(Fixture.doDateLabel)' \(chip.frame) drew \(cells.count) day cell(s); "
+                + "a month grid has at least \(Bounds.minimumDayCells). " + app.debugDescription
+            )
+            return
+        }
+        attach("picker-open")
+
+        // A cell from the middle of the grid, so every neighbour exists and the corner probe has
+        // somewhere to land wrongly if the region is a rectangle.
+        let probe = cells[cells.count / 2]
+        let cell = probe.frame
+        print("DAYCELL frame=\(cell) label='\(probe.label)' cells=\(cells.count)")
+        XCTAssertEqual(
+            cell.width, cell.height, accuracy: Bounds.squareTolerance,
+            "the day cell's frame \(cell) is not square"
+        )
+        let radius = min(cell.width, cell.height) / 2
+
+        // ── (1) THE DAY CELL'S WASH.
+        parkPointer(away: cell, in: window)
+        let cold = try XCTUnwrap(shot(of: window), "could not read the window as pixels, unhovered")
+        probe.hover()
+        settle(Bounds.hoverSettle)
+        let warm = try XCTUnwrap(shot(of: window), "could not read the window as pixels, hovered")
+        let wash = changedPixels(cold: cold, warm: warm, window: window.frame, plate: cell)
+        print(
+            "DAYCELL hover changed \(wash.count) px; inside=\(wash.insideCircle) "
+            + "outside=\(wash.outsideCircle) maxRadius=\(wash.maximumRadius)pt plateRadius=\(radius)pt"
+        )
+        attach("picker-day-hovered")
+        XCTAssertGreaterThan(wash.count, 0, "hovering the day cell \(cell) changed nothing at all")
+        XCTAssertEqual(
+            wash.outsideCircle, 0,
+            """
+            \(wash.outsideCircle) pixel(s) lit OUTSIDE the \(radius)pt circle (furthest \
+            \(wash.maximumRadius)pt), so the day cell's wash is not its plate's shape. Cell \(cell).
+            """
+        )
+
+        // ── THE HIT REGION, on the same control [[T-11322]] measured on two iOS devices.
+        let probeDX = cell.width / 2 - Bounds.cornerInset
+        let probeDY = cell.height / 2 - Bounds.cornerInset
+        let probeDistance = (probeDX * probeDX + probeDY * probeDY).squareRoot()
+        let outsideBy = probeDistance - radius
+        let selectedBefore = cells.filter(\.isSelected).map(\.label)
+        probe.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .withOffset(CGVector(dx: probeDX, dy: probeDY))
+            .click()
+        settle(Bounds.hoverSettle)
+        let selectedAfter = dayCells().filter(\.isSelected).map(\.label)
+        let cornerSelected = selectedAfter != selectedBefore
+        print(
+            "DAYCELL corner click at centre+(\(probeDX), \(probeDY)) = \(probeDistance)pt, "
+            + "\(outsideBy)pt outside the \(radius)pt circle — selectedBefore=\(selectedBefore) "
+            + "selectedAfter=\(selectedAfter) changed=\(cornerSelected)"
+        )
+        attach("picker-corner-click")
+        XCTAssertGreaterThan(
+            outsideBy, Bounds.minimumMargin,
+            "the corner probe is only \(outsideBy)pt outside the \(radius)pt circle — not decisive"
+        )
+        XCTAssertFalse(
+            cornerSelected,
+            """
+            a click \(probeDistance)pt from the day cell's centre — \(outsideBy)pt OUTSIDE its \
+            \(radius)pt drawn circle and inside its \(cell.width)pt square — changed the \
+            selection from \(selectedBefore) to \(selectedAfter). That is [[T-11322]]'s iOS \
+            signature on macOS, on the same shared control. Cell \(cell).
+            """
+        )
+
+        // ── (2) THE QUICK PILL'S WASH, measured against a CAPSULE rather than a circle.
+        let pills = quickPills()
+        guard let pill = pills.max(by: { $0.frame.width < $1.frame.width }) else {
+            XCTFail("the picker drew none of \(Fixture.quickPillLabels) to measure. " + app.debugDescription)
+            return
+        }
+        let pillFrame = pill.frame
+        print("QUICKPILL frame=\(pillFrame) label='\(pill.label)' pills=\(pills.count)")
+        XCTAssertGreaterThan(
+            pillFrame.width, pillFrame.height,
+            "the quick pill \(pillFrame) is not wider than it is tall, so it is not a capsule"
+        )
+        parkPointer(away: pillFrame, in: window)
+        let pillCold = try XCTUnwrap(shot(of: window), "could not read the window as pixels, pill unhovered")
+        pill.hover()
+        settle(Bounds.hoverSettle)
+        let pillWarm = try XCTUnwrap(shot(of: window), "could not read the window as pixels, pill hovered")
+        let pillWash = changedPixels(
+            cold: pillCold, warm: pillWarm, window: window.frame, plate: pillFrame, isCapsule: true
+        )
+        let pillRadius = pillFrame.height / 2
+        print(
+            "QUICKPILL hover changed \(pillWash.count) px; inside=\(pillWash.insideCircle) "
+            + "outside=\(pillWash.outsideCircle) maxDistanceToSpine=\(pillWash.maximumRadius)pt "
+            + "capsuleRadius=\(pillRadius)pt"
+        )
+        attach("picker-pill-hovered")
+        XCTAssertGreaterThan(pillWash.count, 0, "hovering the quick pill \(pillFrame) changed nothing at all")
+        XCTAssertEqual(
+            pillWash.outsideCircle, 0,
+            """
+            \(pillWash.outsideCircle) pixel(s) lit outside the pill's capsule (furthest \
+            \(pillWash.maximumRadius)pt from its spine against a \(pillRadius)pt radius), so the \
+            wash is not the capsule's shape. Pill \(pillFrame).
+            """
+        )
+    }
+
+    /// The month grid's day buttons, found by GEOMETRY rather than by label.
+    ///
+    /// **Not `label CONTAINS ", 2026"`.** That was tried on 2026-11-04 and matched **nothing**:
+    /// `DateFormatters.longDate` renders a day cell as `Sunday, November 1`, with no year, and the
+    /// picker's scroller holds three months at once (`September 2026`, `October 2026`,
+    /// `November 2026` were all in the tree), so no single month name identifies the grid either.
+    /// The cells are the only square ~`cellSide` buttons inside the popover, and that is what is
+    /// asked for here.
+    private func dayCells() -> [XCUIElement] {
+        guard let popover = pickerPopover() else { return [] }
+        return app.buttons.allElementsBoundByIndex
+            .filter { element in
+                let f = element.frame
+                guard f.width > 0, f.height > 0 else { return false }
+                guard abs(f.width - f.height) <= Bounds.squareTolerance else { return false }
+                guard f.width >= Bounds.dayCellMinimumSide, f.width <= Bounds.dayCellMaximumSide else { return false }
+                return popover.contains(CGPoint(x: f.midX, y: f.midY))
+            }
+            .sorted { ($0.frame.minY, $0.frame.minX) < ($1.frame.minY, $1.frame.minX) }
+    }
+
+    /// The date picker's popover frame, which bounds every element this test measures.
+    private func pickerPopover() -> CGRect? {
+        app.descendants(matching: .popover).allElementsBoundByIndex
+            .map(\.frame)
+            .filter { $0.width > 0 && $0.height > 0 }
+            .max { $0.height < $1.height }
+    }
+
+    /// The quick pills under the grid — the capsule half of [[T-10803]] clause (2). By label,
+    /// because `CadenceDatePicker.quickPill` spells all three (`:533-536`) and they are the only
+    /// controls in the popover that carry them.
+    private func quickPills() -> [XCUIElement] {
+        guard let popover = pickerPopover() else { return [] }
+        return app.buttons
+            .matching(NSPredicate(format: "label IN %@", Fixture.quickPillLabels))
+            .allElementsBoundByIndex
+            .filter { $0.frame.width > 0 && $0.frame.height > 0 && popover.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }
+    }
+
     // MARK: - The composer
 
     /// **The composer is an OVERLAY, not an `NSSheet`, and it does not host `CadenceSchedulePanel`.**
@@ -261,12 +480,14 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         cold: CadenceUITestPixel.Bitmap,
         warm: CadenceUITestPixel.Bitmap,
         window: CGRect,
-        plate: CGRect
+        plate: CGRect,
+        isCapsule: Bool = false
     ) -> Wash {
         var wash = Wash()
         guard cold.width == warm.width, cold.height == warm.height else { return wash }
         let scale = cold.scale
         let radius = min(plate.width, plate.height) / 2
+        let halfLength = isCapsule ? max(plate.width / 2 - radius, 0) : 0
         let localCentre = CGPoint(x: plate.midX - window.minX, y: plate.midY - window.minY)
         let x0 = Int(((plate.minX - window.minX) * scale).rounded(.down))
         let x1 = Int(((plate.maxX - window.minX) * scale).rounded(.up))
@@ -279,7 +500,10 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
                 wash.count += 1
                 let px = (CGFloat(x) + 0.5) / scale
                 let py = (CGFloat(y) + 0.5) / scale
-                let dx = px - localCentre.x
+                // Distance to the plate's MEDIAL SEGMENT, which is the centre point for a
+                // circle (`halfLength` 0) and the capsule's spine otherwise. One formula, so the
+                // circle and the capsule are measured by the same rule rather than by two.
+                let dx = max(abs(px - localCentre.x) - halfLength, 0)
                 let dy = py - localCentre.y
                 let r = (dx * dx + dy * dy).squareRoot()
                 wash.maximumRadius = max(wash.maximumRadius, r)
@@ -313,6 +537,15 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         /// `CreateTaskSheet`'s own strings — the title field's placeholder and the subtask row —
         /// used because the composer publishes no identifier of its own. Today draws neither.
         static let composerStrings = ["What needs doing?", "Add Subtask"]
+        /// Every day cell's `DateFormatters.longDate` label carries the year; the month name does
+        /// not have to be guessed. 2026 is this run's year and the picker opens on the current
+        /// month, so a cell can only be in it or in a neighbouring month of the same year.
+        static let yearFragment = ", 2026"
+        /// `TaskDateChip`'s `.cadenceControlLabel(label)` for the do-date row
+        /// (`CreateTaskSheet.swift:252`).
+        static let doDateLabel = "Do Date"
+        /// `CadenceDatePicker.quickPill`'s three labels (`CadenceDatePicker.swift:533-536`).
+        static let quickPillLabels = ["Today", "Tomorrow", "This Weekend"]
     }
 
     private enum Bounds {
@@ -339,6 +572,14 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         /// `strokeBorder` is drawn INSIDE the shape. One point absorbs both without being able to
         /// hide a rounded-rectangle corner, which at this radius lies 11pt out.
         static let washTolerance: CGFloat = 1
+        /// A month grid draws 28 days at the very least; anything under this means the picker did
+        /// not open rather than that it opened short.
+        static let minimumDayCells = 28
+        /// `CadenceDateSelectionMetrics.cellSide` is 34 at the default text size and is SCALED by
+        /// `cellSide(at:)`, so this is a window round it rather than the number itself — the rule
+        /// against pinning a point figure (T-1279).
+        static let dayCellMinimumSide: CGFloat = 20
+        static let dayCellMaximumSide: CGFloat = 70
     }
 
     // MARK: - Launching
