@@ -34,9 +34,10 @@ enum CadenceUITestScenarioSeed {
         case todayRowCrush = "today-row-crush"
         /// One board card carrying **every chip that opens a popover of its own** (T-1740), on a
         /// day the Calendar Board draws: a scheduled start (so the schedule top row and its
-        /// duration badge exist), a list, a tag and a deadline. Plus a block on the same day, for
-        /// `CalendarBoardBundleCard`. The point is that all five of the board's `arrowEdge:
-        /// .trailing` anchors are on screen in ONE window, so their frames are comparable.
+        /// duration badge exist), a list, a tag and a deadline. The point is that the board's
+        /// `arrowEdge: .trailing` anchors are on screen in ONE window, so their frames are
+        /// comparable. (It also seeded a block until [[T-7182]] (d): nothing draws a block card
+        /// any more, [[T-3213]].)
         case popoverAnchors = "popover-anchors"
         /// **The calendar fixture scenario** ([[T-3186]]). Both halves of one launch: the tasks
         /// below, and the events `CadenceCalendarFixtureEvents` answers the day cache with. They
@@ -120,10 +121,6 @@ enum CadenceUITestScenarioSeed {
         /// without this the tag anchor would silently not exist and the sweep would report four
         /// readings where it meant five — the exact reporting failure T-1722 was written against.
         static let boardCardTagName = "Anchor"
-
-        /// The block on the same day, which is what puts a `CalendarBoardBundleCard` in the
-        /// column beside the card.
-        static let boardBundleTitle = "Anchor Block"
 
         /// 9:00. Any scheduled start does: the Ledger run's slot token is `scheduledStartMin >= 0`.
         static let boardCardStartMinute = 9 * 60
@@ -429,14 +426,6 @@ enum CadenceUITestScenarioSeed {
         // new one, never by mutating in place.
         card.tags = [tag]
         modelContext.insert(card)
-
-        let bundle = TaskBundle(
-            title: Fixture.boardBundleTitle,
-            dateKey: todayKey,
-            startMin: Fixture.boardCardStartMinute + 240,
-            durationMinutes: 60
-        )
-        modelContext.insert(bundle)
 
         // **Not `try?`**, for the reason the two scenarios above state: a scenario that silently
         // failed to seed is a UI test that silently asserts about an empty screen.

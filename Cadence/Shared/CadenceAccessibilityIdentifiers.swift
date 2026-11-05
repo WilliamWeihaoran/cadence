@@ -114,12 +114,6 @@ nonisolated enum CadenceAccessibilityIdentifiers {
         "\(boardCard(title: title)).control.\(slug(field))"
     }
 
-    /// A **block** card on the Calendar Board, by the block's title. The card is the whole anchor
-    /// of its own detail popover, so the test reads its frame the same way it reads a task card's.
-    static func boardBundleCard(title: String) -> String {
-        "board.bundle.\(slug(title))"
-    }
-
     /// An **event** card on the Calendar Board, by the event's title — the card
     /// `CalendarBoardEventCard` draws for an `EKEvent`, and the third of the board's
     /// `.rect(.bounds)` anchors.

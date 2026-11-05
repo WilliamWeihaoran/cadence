@@ -35,7 +35,7 @@ import XCTest
 /// | `KanbanCardMetaSupportViews:150` tag picker | strip (578, 245, 57, 19) | `.trailing` | trailing → (636, 199, 266, 111) | **194pt** |
 /// | `KanbanCardView:132` duration roller | card, `.rect(.bounds)` | `.trailing` | trailing → (846, 121, 286, 286) | 0 |
 /// | `KanbanCardView:129` task inspector | card, `.rect(.bounds)` | `.trailing` | trailing → (846, 33, 362, 523) | 0 |
-/// | `CalendarBoardItemSupportViews:39` block detail | card (564, 345, 282, 70) | `.trailing` | trailing → (846, 197, 402, 367) | 0 |
+/// | `CalendarBoardItemSupportViews:39` block detail (retired, see below) | card (564, 345, 282, 70) | `.trailing` | trailing → (846, 197, 402, 367) | 0 |
 /// | `TasksPanelComponents:174` task inspector | row (754, 243, 372, 36) | `.trailing` | trailing → (1096, 33, 362, 523) | 10pt |
 ///
 /// **One defect, and it is the shape T-1722 named.** The tag strip is 57pt at the leading end of a
@@ -62,6 +62,10 @@ import XCTest
 /// ([[T-1843]]), and the timeline's draft block, which only exists during a drag-to-create
 /// ([[T-1844]]). Both are card- or canvas-spanning anchors by construction, which is an argument
 /// and not a reading — which is why they are filed rather than declared safe.
+///
+/// The block-detail row above is history: nothing in the app draws a block card any more
+/// ([[T-3213]]), so [[T-7182]] (d) retired the seeded block, its board-bundle identifier and
+/// the reading that looked for it — a reading that could only ever report the card missing.
 ///
 /// ### The container, derived from the surface
 ///
@@ -103,7 +107,6 @@ final class CadenceBoardPopoverAnchorPlacementUITests: XCTestCase {
         static let calendarDestination = "sidebar.destination.calendar"
 
         static let cardTitle = "Board Anchor Card"
-        static let bundleTitle = "Anchor Block"
 
         static func slug(_ value: String) -> String {
             value
@@ -114,7 +117,6 @@ final class CadenceBoardPopoverAnchorPlacementUITests: XCTestCase {
         }
 
         static var boardCard: String { "board.card.\(slug(cardTitle))" }
-        static var boardBundle: String { "board.bundle.\(slug(bundleTitle))" }
         static func boardControl(_ field: String) -> String { "\(boardCard).control.\(slug(field))" }
         static var todayRow: String { "today.task.row.\(slug(cardTitle))" }
     }
@@ -147,7 +149,7 @@ final class CadenceBoardPopoverAnchorPlacementUITests: XCTestCase {
         storeID = nil
     }
 
-    // MARK: - The board's five anchors
+    // MARK: - The board's four anchors
 
     func testEveryBoardCardPanelOpensClearOfTheCardItIsOpenedFrom() throws {
         launchApp()
@@ -231,22 +233,6 @@ final class CadenceBoardPopoverAnchorPlacementUITests: XCTestCase {
             dismiss(panel, named: "Card inspector")
         } else {
             report.append("Card inspector: no panel opened")
-        }
-
-        // ── THE BLOCK CARD, a fifth anchor of the same kind on the same board ──────────────────
-        let bundle = element(ID.boardBundle)
-        if bundle.waitForExistence(timeout: CadenceUITestBounds.settle) {
-            let bundleFrame = bundle.frame
-            let bundleContent = content(of: bundle, named: "block card")
-            if let panel = panel(openedBy: bundle, named: "Block") {
-                report.append(reading(named: "Block", anchor: bundleFrame, panel: panel, spans: spans(bundleFrame, bundleContent)))
-                assertPlacementIsSafe(content: bundleContent, panel: panel, anchor: bundleFrame, named: "Block")
-                dismiss(panel, named: "Block")
-            } else {
-                report.append("Block: no panel opened")
-            }
-        } else {
-            report.append("Block: the seeded block card is not on the board")
         }
 
         XCTContext.runActivity(named: "measured — " + report.joined(separator: " ;; ")) { _ in }
