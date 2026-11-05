@@ -2307,6 +2307,54 @@ struct CadenceUITestIdentifierLookupTests {
             """
         )
     }
+
+    // MARK: T-11472 -- no gate on the Application element's `isEnabled`
+
+    /// `isEnabled` read on the APPLICATION, by any of the spellings this target uses for it. An
+    /// element-level read (`app.buttons["x"].isEnabled`, `title.isEnabled`) is a real control's
+    /// state and is not matched: the receiver must be the application itself.
+    private static let applicationIsEnabledPattern =
+        #"(?<![A-Za-z0-9_.\]])(?:self\.)?(?:app|application|XCUIApplication\([^)]*\))\s*\.isEnabled\b"#
+
+    @Test func theApplicationIsEnabledDetectorTellsTheAppFromAControl() {
+        let hits = { (source: String) in CadenceSourceScan.matchLines(Self.applicationIsEnabledPattern, in: source).count }
+        #expect(hits(#"XCTAssertFalse(app.buttons["capture-save"].isEnabled)"#) == 0,
+                "the detector fires on a real control's isEnabled, which is meaningful")
+        #expect(hits("XCTAssertTrue(title.isEnabled)") == 0, "the detector fires on an element variable")
+        #expect(hits("let ok = self.app.windows.firstMatch.isEnabled") == 0,
+                "the detector fires on a window reached through the app")
+        #expect(hits("if !app.isEnabled || app.dialogs.count > 0 {") == 1,
+                "the detector cannot see the gate that cost an attended run")
+        #expect(hits("XCTAssertTrue(application.isEnabled)") == 1, "the detector misses a renamed app")
+        #expect(hits("XCTAssertTrue(self.app.isEnabled)") == 1, "the detector misses an explicit self")
+        #expect(hits("guard XCUIApplication().isEnabled else { return }") == 1,
+                "the detector misses an inline XCUIApplication()")
+    }
+
+    /// `XCUIApplication.isEnabled` is false for this app even when clicks land (measured
+    /// 2026-11-04, four macOS runs), so a gate on it aborts a usable run. `app.dialogs` is the
+    /// signal that tracks a gesture going nowhere; `CadenceUITestEnvironment` says so.
+    @Test func noUITestReadsIsEnabledOnTheApplication() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let files = try CadenceSourceScan.swiftFiles(under: "CadenceUITests")
+        #expect(files.count >= 8, "the walk reached only \(files.count) files under CadenceUITests")
+        var found: [String] = []
+        var witnessed = false
+        for path in files.sorted() {
+            let source = try read(path)
+            // The walk must reach a file that reads `isEnabled` on a control, or an empty result
+            // is a statement about the walk.
+            if source.contains(".isEnabled") { witnessed = true }
+            found += CadenceSourceScan.matchLines(Self.applicationIsEnabledPattern, in: source)
+                .map { "\(path) line \($0.line + 1): \($0.matched)" }
+        }
+        #expect(witnessed, "the sweep never read a file containing an element-level isEnabled")
+        #expect(found.isEmpty, """
+            XCUIApplication.isEnabled reads false for this app even when it takes clicks \
+            (T-11472). Gate on app.dialogs instead:
+            \(found.joined(separator: "\n"))
+            """)
+    }
 }
 
 // MARK: - T-1724: one interactive opt-in, and no private copy of it

@@ -258,17 +258,17 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
             return
         }
         chip.click()
-        var cells: [XCUIElement] = []
+        var drawnCells: [XCUIElement] = []
         let deadline = Date().addingTimeInterval(Bounds.composerAppears)
         while Date() < deadline {
-            cells = dayCells()
-            if cells.count >= Bounds.minimumDayCells { break }
+            drawnCells = dayCells()
+            if drawnCells.count >= Bounds.minimumDayCells { break }
             settle(0.25)
         }
-        guard cells.count >= Bounds.minimumDayCells else {
+        guard drawnCells.count >= Bounds.minimumDayCells else {
             attach("picker-not-open")
             XCTFail(
-                "clicking '\(Fixture.doDateLabel)' \(chip.frame) drew \(cells.count) day cell(s); "
+                "clicking '\(Fixture.doDateLabel)' \(chip.frame) drew \(drawnCells.count) day cell(s); "
                 + "a month grid has at least \(Bounds.minimumDayCells). " + app.debugDescription
             )
             return
@@ -277,9 +277,9 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
 
         // A cell from the middle of the grid, so every neighbour exists and the corner probe has
         // somewhere to land wrongly if the region is a rectangle.
-        let probe = cells[cells.count / 2]
+        let probe = drawnCells[drawnCells.count / 2]
         let cell = probe.frame
-        print("DAYCELL frame=\(cell) label='\(probe.label)' cells=\(cells.count)")
+        print("DAYCELL frame=\(cell) label='\(probe.label)' cells=\(drawnCells.count)")
         XCTAssertEqual(
             cell.width, cell.height, accuracy: Bounds.squareTolerance,
             "the day cell's frame \(cell) is not square"
@@ -312,7 +312,7 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         let probeDY = cell.height / 2 - Bounds.cornerInset
         let probeDistance = (probeDX * probeDX + probeDY * probeDY).squareRoot()
         let outsideBy = probeDistance - radius
-        let selectedBefore = cells.filter(\.isSelected).map(\.label)
+        let selectedBefore = drawnCells.filter(\.isSelected).map(\.label)
         probe.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             .withOffset(CGVector(dx: probeDX, dy: probeDY))
             .click()
@@ -407,7 +407,7 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
     }
 
     /// The quick pills under the grid — the capsule half of [[T-10803]] clause (2). By label,
-    /// because `CadenceDatePicker.quickPill` spells all three (`:533-536`) and they are the only
+    /// because `CadenceQuickDatePopover.quickPill` spells all three (`:533-536`) and they are the only
     /// controls in the popover that carry them.
     private func quickPills() -> [XCUIElement] {
         guard let popover = pickerPopover() else { return [] }
@@ -544,7 +544,7 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         /// `TaskDateChip`'s `.cadenceControlLabel(label)` for the do-date row
         /// (`CreateTaskSheet.swift:252`).
         static let doDateLabel = "Do Date"
-        /// `CadenceDatePicker.quickPill`'s three labels (`CadenceDatePicker.swift:533-536`).
+        /// `CadenceQuickDatePopover.quickPill`'s three labels (`CadenceDatePicker.swift:533-536`).
         static let quickPillLabels = ["Today", "Tomorrow", "This Weekend"]
     }
 

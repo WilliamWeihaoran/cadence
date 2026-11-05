@@ -134,6 +134,14 @@ enum CadenceUITestEnvironment {
         )
     }
 
+    // MARK: - `XCUIApplication.isEnabled` carries no information here (T-11472)
+    //
+    // Measured 2026-11-04 across four macOS runs: the Application element reports `Disabled`
+    // with nothing in front of it, including in suites whose clicks then landed. A run that gated
+    // on it aborted before its gesture. Gate on `app.dialogs` instead -- a foreign dialog was
+    // present in exactly the runs whose gesture went nowhere. Element-level `isEnabled` on a real
+    // control is fine; `CadenceUITestIdentifierLookupTests` refuses the Application-level read.
+
     // MARK: - Keeping a launched app out of the signed-in person's own state (T-1157)
 
     /// The launch-argument key the app reads its private preferences suite from. Spelled here

@@ -110,9 +110,11 @@ final class CadenceMacCalendarDragCreateUITests: XCTestCase {
             app.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
             settle(Drag.settleBeforeReadingBlocks)
         }
-        if !app.isEnabled || app.dialogs.count > 0 {
+        do {
             // A click on the page's own title text is inert — it selects nothing and navigates
-            // nowhere — so it buys the front without changing what is on screen.
+            // nowhere — so it buys the front without changing what is on screen. Unconditional:
+            // it was gated on `!app.isEnabled`, which is always true here (T-11472), so this is
+            // the behaviour every measured run already had.
             app.descendants(matching: .staticText)
                 .matching(NSPredicate(format: "value == %@", Fixture.pageTitle))
                 .firstMatch
@@ -297,11 +299,12 @@ final class CadenceMacCalendarDragCreateUITests: XCTestCase {
         return window.frame
     }
 
-    /// What is in front of the app, and whether the app can receive a click at all.
+    /// What is in front of the app. Not `isEnabled`, which reads false here even when a click
+    /// lands (T-11472); `dialogs` is the signal that tracks a gesture going nowhere.
     private func reportFront(_ stage: String) {
         let dialogs = app.dialogs.allElementsBoundByIndex.map { "\($0.frame)" }
         print(
-            "MACDRAG front[\(stage)] enabled=\(app.isEnabled) windows=\(app.windows.count) "
+            "MACDRAG front[\(stage)] windows=\(app.windows.count) "
             + "dialogs=\(app.dialogs.count) \(dialogs.joined(separator: " "))"
         )
     }

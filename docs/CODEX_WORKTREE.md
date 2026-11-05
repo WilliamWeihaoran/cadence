@@ -1711,9 +1711,9 @@ prerequisite rather than a detail.** iOS focus state lives in `iOSFocusView`'s o
 (T-242) — do **not** make it cross-platform, that would be a second timer authority with nothing
 incrementing its `elapsed`. The snapshot is a small app-group value — subject, start instant,
 running/paused, and nothing more — written by the app and read by the extension. It goes in
-`Shared/`, not `Services/`, for a mechanical reason: the `Cadence/` tree is a
-`PBXFileSystemSynchronizedRootGroup` so a new file there self-registers, while `Cadence/Services/`
-holds explicit `PBXFileReference`s and a new file there needs a project edit. `CadenceFocusHandoff`
+`Shared/`, not `Services/`, as a home for cross-target code; any new file under `Cadence/`
+self-registers in the APP target (a synchronized root group), and none reaches the widget target by
+itself ([[T-11471]] corrected an older claim here that `Services/` needed a project edit). `CadenceFocusHandoff`
 is NOT this type and must not be made into it — it is an in-memory message carrying a
 `CadenceFocusTarget` and a token, with deliberately zero macOS readers.
 
@@ -2399,10 +2399,12 @@ two-reads-one-render defect, not a tidy-up: the two reads can straddle midnight.
 
 ## Do not edit `Cadence.xcodeproj/project.pbxproj`
 
-`Cadence/` and `CadenceTests/` are `PBXFileSystemSynchronizedRootGroup`s, so a new file under either
-is picked up by the app and test targets **with no project-file edit at all**. The explicit entries
-still in that file exist only for sources that must also compile into a *second* target — the widget
-and the MCP server, which is why `Cadence/Models/*` appears there by hand.
+`Cadence/`, `CadenceTests/`, `CadenceUITests/` and `CadenceWidgets/` are all
+`PBXFileSystemSynchronizedRootGroup`s, so a new file under any of them is picked up by its own target
+**with no project-file edit at all** ([[T-11471]]: a finished UI test sat unadded five days on the
+false belief that `CadenceUITests/` needed one). The one target that is NOT synchronised is
+`CadenceMCPServer`; the explicit entries in that file exist only for sources compiled into a
+*second* target, which is why `Cadence/Models/*` and `Cadence/Services/MCPReadOnly/*` appear by hand.
 
 Nothing in the typography work needs a second target. If Codex ever believes a new file does, that
 is the moment to stop and say so, because `project.pbxproj` is the single highest-collision file in
@@ -2723,9 +2725,9 @@ Granted:
 
 **New files under `CadenceWidgets/` need no project edit** — it is a
 `PBXFileSystemSynchronizedRootGroup` and self-registers, confirmed by [[T-2078]] and
-[[T-2083]]. Do **not** add files to `Cadence/Services/` for widget use: those are explicit
-`PBXFileReference`s and would need a `project.pbxproj` edit, which [[T-117]] forbids while the
-owner's Xcode is open.
+[[T-2083]]. Do **not** expect a file under `Cadence/` to reach the widget: that folder syncs into the app
+target only, and adding it to a second target is a `project.pbxproj` edit, which [[T-117]] forbids
+while the owner's Xcode is open.
 
 **What the widget half must not repeat.** [[T-2078]] retired two widgets and the thing that would
 have survived deleting the views was the **AppIntent**, not the view — an intent is extracted into
