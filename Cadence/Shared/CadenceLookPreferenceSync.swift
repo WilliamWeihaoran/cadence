@@ -74,6 +74,13 @@ final class CadenceLookPreferenceSync {
     /// be minted empty over a value this device has not seen.
     @ObservationIgnored private(set) var hasAdopted = false
 
+    /// This device's task-presentation mirrors as they stood right after the last adopt, which is
+    /// how `publish` tells a republish of a stored mode this build cannot name from a sort the
+    /// person really changed here ([[T-9862]]; `CadenceLookPreferenceStore.publishedPairs` carries
+    /// the argument). Launch-scoped for the same reason as `hasAdopted`: publish cannot run before
+    /// the first adopt, and that adopt fills this.
+    @ObservationIgnored private(set) var adoptedMirrors: [String: String] = [:]
+
     private let defaults: UserDefaults
     private let accentDefaults: UserDefaults
     private let platform: CadenceLookPreferenceStore.Platform
@@ -110,6 +117,8 @@ final class CadenceLookPreferenceSync {
         ) {
             if write(value, forKey: key) { changed.insert(key) }
         }
+        // After the writes, so it is what this device now draws; before the accent's early return.
+        adoptedMirrors = CadenceLookPreferenceStore.currentMirrors(in: defaults, on: platform)
 
         // T-1347 — the work-hours window, which is the same two keys on all three devices.
         for (key, value) in CadenceLookPreferenceStore.mirrorWrites(
@@ -201,6 +210,7 @@ final class CadenceLookPreferenceSync {
             sidebarTabColorsRaw: defaults.string(forKey: CadencePreferenceKeys.sidebarTabColors) ?? "",
             currentMirrors: CadenceLookPreferenceStore.currentMirrors(in: defaults, on: platform),
             currentCalendarMirrors: CadenceLookPreferenceStore.currentCalendarMirrors(in: defaults),
+            adoptedMirrors: adoptedMirrors,
             resolved: record,
             on: platform
         ) else { return }

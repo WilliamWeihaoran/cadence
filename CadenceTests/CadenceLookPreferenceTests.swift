@@ -902,6 +902,89 @@ struct CadenceLookPreferenceTests {
         }
     }
 
+    // MARK: - T-9862: a mode some later build added
+
+    /// **A republish leaves a mode this build cannot name exactly where it is.** A later build's
+    /// `allTasks.mode` arrives; this device cannot draw it, so its mirror keeps what it held, and
+    /// the next look publish — here driven by an unrelated accent pick — must not write that stale
+    /// mirror over the later build's choice. Pure half first, then through the real sync, which is
+    /// where the adopted snapshot comes from.
+    @Test func aModeThisBuildCannotNameSurvivesARepublish() throws {
+        let stored = ["allTasks.mode": "someFutureMode"]
+        #expect(Store.mirrorValue(fromRecord: "someFutureMode", codec: .macOSSortField) == nil)
+        for platform in [Store.Platform.macOS, .iOS] {
+            let published = Store.publishedPairs(
+                currentMirrors: ["allTasksSortField": TaskSortField.priority.rawValue],
+                stored: stored,
+                adoptedMirrors: ["allTasksSortField": TaskSortField.priority.rawValue],
+                on: platform
+            )
+            #expect(published["allTasks.mode"] == "someFutureMode", "\(platform) flattened a later build's mode")
+        }
+
+        try withTemporaryDefaults("look-future-republish") { defaults in
+            try withTemporaryDefaults("look-future-republish-accent") { accents in
+                defaults.set(TaskSortField.priority.rawValue, forKey: CadencePreferenceKeys.allTasksSortField)
+                let container = try CadenceTestStore.container()
+                let context = ModelContext(container)
+                context.insert(LookPreference(
+                    accentPaletteID: "ember",
+                    taskPresentationRaw: "allTasks.mode=someFutureMode",
+                    updatedAt: Date(timeIntervalSince1970: 1_000)
+                ))
+                try context.save()
+                let records = try context.fetch(FetchDescriptor<LookPreference>())
+
+                let sync = CadenceLookPreferenceSync(defaults: defaults, accentDefaults: accents, platform: .macOS)
+                sync.adopt(records: records, applyAccent: false)
+                #expect(defaults.string(forKey: CadencePreferenceKeys.allTasksSortField) == TaskSortField.priority.rawValue)
+
+                accents.set("standard", forKey: CadenceAccentPaletteStore.defaultsKey)
+                sync.publish(records: records, in: context, now: Date(timeIntervalSince1970: 2_000))
+
+                let after = try ModelContext(container).fetch(FetchDescriptor<LookPreference>())
+                #expect(Store.current(from: after)?.accentPaletteID == "standard", "the unrelated change never published")
+                #expect(Store.current(from: after)?.taskPresentationRaw == "allTasks.mode=someFutureMode")
+            }
+        }
+    }
+
+    /// **And a sort the person really chose here still leaves the device**, over that same
+    /// unnameable stored mode. This is the half a bare `continue` would have broken: the mirror
+    /// moved since the last adopt, so it is an edit, and an edit is written.
+    @Test func aLocalSortChangeStillOverwritesAModeThisBuildCannotName() throws {
+        let stored = ["allTasks.mode": "someFutureMode"]
+        let moved = Store.publishedPairs(
+            currentMirrors: ["allTasksSortField": TaskSortField.dueDate.rawValue],
+            stored: stored,
+            adoptedMirrors: ["allTasksSortField": TaskSortField.priority.rawValue],
+            on: .macOS
+        )
+        #expect(moved["allTasks.mode"] == "dueDate")
+
+        try withTemporaryDefaults("look-future-edit") { defaults in
+            try withTemporaryDefaults("look-future-edit-accent") { accents in
+                defaults.set(TaskSortField.priority.rawValue, forKey: CadencePreferenceKeys.allTasksSortField)
+                let container = try CadenceTestStore.container()
+                let context = ModelContext(container)
+                context.insert(LookPreference(
+                    taskPresentationRaw: "allTasks.mode=someFutureMode",
+                    updatedAt: Date(timeIntervalSince1970: 1_000)
+                ))
+                try context.save()
+                let records = try context.fetch(FetchDescriptor<LookPreference>())
+
+                let sync = CadenceLookPreferenceSync(defaults: defaults, accentDefaults: accents, platform: .macOS)
+                sync.adopt(records: records, applyAccent: false)
+                defaults.set(TaskSortField.dueDate.rawValue, forKey: CadencePreferenceKeys.allTasksSortField)
+                sync.publish(records: records, in: context, now: Date(timeIntervalSince1970: 2_000))
+
+                let after = try ModelContext(container).fetch(FetchDescriptor<LookPreference>())
+                #expect(Store.current(from: after)?.taskPresentationRaw == "allTasks.mode=dueDate", "a real local edit was swallowed")
+            }
+        }
+    }
+
     // MARK: - T-3040's residual: what a minted row costs once it has already won
 
     /// **The clause `hasAdopted` cannot shut, and this does not claim to shut it either.**

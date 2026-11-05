@@ -413,12 +413,30 @@ enum CadenceLookPreferenceStore {
     /// `mirrorValue(fromRecord:)` would have drawn from the stored value, the stored value is kept.
     /// Without that, a Mac opening a list whose stored mode is `.dueDate` would draw `Date`,
     /// publish `doDate`, and destroy a setting it never had a control for.
+    ///
+    /// **A value this build cannot name is kept until this device actually edits it** ([[T-9862]]).
+    /// `mirrorValue(fromRecord:)` is `nil` for a mode some later build added, so the check above
+    /// can never pass for it, and without more the next publish — which runs on *every* look
+    /// change, an accent pick included — would overwrite the later build's mode with this device's
+    /// stale mirror, exactly as a pre-[[T-9742]] build flattens Due Date today. Skipping every
+    /// unnameable value would be the opposite bug: a sort the person really chose here, over a
+    /// mode this build cannot draw, would never leave the device. `adoptedMirrors` is what tells
+    /// the two apart — what this device's mirrors held the last time it read the record down. A
+    /// mirror still holding that value has not been touched since, so the stored mode is left
+    /// alone; a mirror that moved is a local edit and is written. An empty map (no adopt yet)
+    /// keeps the old write-through answer.
     static func publishedPairs(
         currentMirrors: [String: String],
         stored: [String: String],
+        adoptedMirrors: [String: String] = [:],
         on platform: Platform = .current
     ) -> [String: String] {
-        publishedPairs(currentMirrors: currentMirrors, stored: stored, mirrors: mirrors(on: platform))
+        publishedPairs(
+            currentMirrors: currentMirrors,
+            stored: stored,
+            mirrors: mirrors(on: platform),
+            adoptedMirrors: adoptedMirrors
+        )
     }
 
     /// The same, for the calendar map (T-1347).
@@ -433,14 +451,17 @@ enum CadenceLookPreferenceStore {
     static func publishedPairs(
         currentMirrors: [String: String],
         stored: [String: String],
-        mirrors: [MirroredSetting]
+        mirrors: [MirroredSetting],
+        adoptedMirrors: [String: String] = [:]
     ) -> [String: String] {
         var result = stored
         for mirror in mirrors {
             guard let local = currentMirrors[mirror.defaultsKey] else { continue }
-            if let storedValue = result[mirror.recordKey],
-               mirrorValue(fromRecord: storedValue, codec: mirror.codec) == local {
-                continue
+            if let storedValue = result[mirror.recordKey] {
+                let drawn = mirrorValue(fromRecord: storedValue, codec: mirror.codec)
+                if drawn == local { continue }
+                // T-9862 — unnameable here and untouched since the last adopt: a republish, not an edit.
+                if drawn == nil, adoptedMirrors[mirror.defaultsKey] == local { continue }
             }
             result[mirror.recordKey] = recordValue(fromMirror: local, codec: mirror.codec)
         }
@@ -460,6 +481,7 @@ enum CadenceLookPreferenceStore {
         sidebarTabColorsRaw: String,
         currentMirrors: [String: String],
         currentCalendarMirrors: [String: String] = [:],
+        adoptedMirrors: [String: String] = [:],
         record: LookPreference?,
         on platform: Platform = .current
     ) -> (
@@ -473,6 +495,7 @@ enum CadenceLookPreferenceStore {
             sidebarTabColorsRaw: sidebarTabColorsRaw,
             currentMirrors: currentMirrors,
             currentCalendarMirrors: currentCalendarMirrors,
+            adoptedMirrors: adoptedMirrors,
             resolved: record.map {
                 Resolved(
                     accentPaletteID: $0.accentPaletteID,
@@ -494,6 +517,7 @@ enum CadenceLookPreferenceStore {
         sidebarTabColorsRaw: String,
         currentMirrors: [String: String],
         currentCalendarMirrors: [String: String] = [:],
+        adoptedMirrors: [String: String] = [:],
         resolved record: Resolved?,
         on platform: Platform = .current
     ) -> (
@@ -504,7 +528,12 @@ enum CadenceLookPreferenceStore {
     )? {
         let storedPairs = pairs(fromRaw: record?.taskPresentationRaw ?? "")
         let taskPresentationRaw = raw(
-            from: publishedPairs(currentMirrors: currentMirrors, stored: storedPairs, on: platform)
+            from: publishedPairs(
+                currentMirrors: currentMirrors,
+                stored: storedPairs,
+                adoptedMirrors: adoptedMirrors,
+                on: platform
+            )
         )
         // Defaulted to `[:]` deliberately, and it is not a footgun: an empty current-mirror map is
         // "this device says nothing about the calendar", which `publishedCalendarPairs` answers by
