@@ -565,6 +565,8 @@ struct iOSSidebarListsRegion: View {
     /// in their old order by then, so the column and the sentence agree — `ContextSection`'s
     /// `reorderFailureNotice`, on this column.
     @State private var orderFailureSectionID: String?
+    /// Set only when a row's Complete / Archive has open work to settle ([[T-11753]]).
+    @State private var pendingWindDown: iOSListWindDownTarget?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -609,6 +611,8 @@ struct iOSSidebarListsRegion: View {
             ghost: .region,
             dropKey: { CadenceTaskDropSupport.newListDropKey(contextID: nil) }
         )
+        // The Lists page's one list wind-down confirmation, armed by a row's Complete / Archive.
+        .iOSListWindDown(target: $pendingWindDown)
     }
 
     /// A context's header and the rows under it — and, since T-2054, **a create-door**: a `+`
@@ -675,7 +679,8 @@ struct iOSSidebarListsRegion: View {
                     canMoveDown: CadenceSidebarListReorder.neighbourIndex(
                         of: index, by: 1, count: section.items.count
                     ) != nil,
-                    onMove: { offset in move(item, by: offset, in: section) }
+                    onMove: { offset in move(item, by: offset, in: section) },
+                    onWindDown: { action in windDown(item, action) }
                 )
                 // A row is a list, so it offers what every other list row in the app offers: a
                 // task in it. Same identity, same key, same ghost — this column joins the table
@@ -709,6 +714,20 @@ struct iOSSidebarListsRegion: View {
             in: modelContext
         ) else { return }
         orderFailureSectionID = landed ? nil : section.id
+    }
+
+    /// Complete / Archive from a row's context menu ([[T-11753]]). Owned here rather than by
+    /// either host so the iPad column and the Tasks index cannot differ: the row is resolved in
+    /// the store as `move` resolves it, and the Lists page's own decision winds it down or arms
+    /// the one confirmation.
+    private func windDown(_ item: CadenceSidebarLists.Item, _ action: iOSListWindDownAction) {
+        let target: iOSListWindDownTarget
+        switch SidebarListEntry.resolve(kind: item.kind, id: item.id, in: modelContext) {
+        case .area(let area)?: target = .area(area, action)
+        case .project(let project)?: target = .project(project, action)
+        case nil: return
+        }
+        pendingWindDown = modelContext.windDownListUnlessConfirmationIsNeeded(target)
     }
 
     /// The `list:` value a sidebar row hands a dropped `+`, in the one spelling
@@ -1204,6 +1223,9 @@ struct iOSSidebarListRow: View {
     let canMoveDown: Bool
     /// One step up (`-1`) or down (`1`) within the section.
     let onMove: (Int) -> Void
+    /// Complete or Archive this list ([[T-11753]]): the region resolves the row and asks the Lists
+    /// page's own decision, so this row only names which direction.
+    let onWindDown: (iOSListWindDownAction) -> Void
 
     private var rowShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: iOSSidebarMetrics.selectedCornerRadius, style: .continuous)
@@ -1236,6 +1258,23 @@ struct iOSSidebarListRow: View {
             } label: {
                 Label("Edit \(item.kind == .area ? "Area" : "Project")", systemImage: "square.and.pencil")
             }
+
+            // [[T-11753]]: the Lists page row menu's wind-down pair, same labels, order and roles
+            // (`iOSListsView.completeAreaButton` / `archiveAreaButton`). This column is the only
+            // list door a full-screen iPad has, so without them completion hid inside the editor's
+            // Status menu. Completion is not `.destructive`: finishing work is not destruction.
+            Button {
+                onWindDown(.complete)
+            } label: {
+                Label("Complete \(item.kind == .area ? "Area" : "Project")", systemImage: iOSListWindDownAction.complete.icon)
+            }
+
+            Button(role: .destructive) {
+                onWindDown(.archive)
+            } label: {
+                Label("Archive \(item.kind == .area ? "Area" : "Project")", systemImage: iOSListWindDownAction.archive.icon)
+            }
+            .cadenceDestructiveMenuRow()
 
             // [[T-7260]](a): list order within the section, which only the Mac's drag could
             // change. Settings' context rows' Move Up / Move Down, on the same touch idiom

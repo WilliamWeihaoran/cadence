@@ -206,6 +206,21 @@ extension ModelContext {
         }
         try? save()
     }
+
+    /// **The one conditional-confirmation decision for a list's context-menu wind-down** — the
+    /// Lists page (`iOSListsView`, which the iPad pane calls up into) and the sidebar lists region
+    /// (`iOSSidebarListsRegion`, [[T-11753]]) both ask it, so the menus cannot answer it
+    /// differently. Winds `target` down at once and returns `nil` when nothing would be settled;
+    /// otherwise returns `target` for the host to hand to `iOSListWindDown(target:)`, untouched.
+    /// The list editor keeps its own copy because its immediate path writes its field edits
+    /// first ([[T-8562]]).
+    func windDownListUnlessConfirmationIsNeeded(_ target: iOSListWindDownTarget) -> iOSListWindDownTarget? {
+        guard target.summary.requiresConfirmation else {
+            windDownList(target)
+            return nil
+        }
+        return target
+    }
 }
 
 extension View {

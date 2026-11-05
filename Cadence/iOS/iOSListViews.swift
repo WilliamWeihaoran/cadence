@@ -421,14 +421,13 @@ struct iOSListsView: View {
     /// asserts the work happened and feeds every surface that counts finished work, and it files the
     /// list somewhere else. See `iOSListWindDownTarget.windDownSubject`.
     ///
-    /// `CadenceContainerWindDownSummary.requiresConfirmation` owns the test and is asked here, once,
-    /// so no surface can answer it differently.
+    /// `CadenceContainerWindDownSummary.requiresConfirmation` owns the test and is asked in
+    /// `ModelContext.windDownListUnlessConfirmationIsNeeded`, once, so no surface can answer it
+    /// differently — the sidebar lists region asks the same function ([[T-11753]]).
     private func requestWindDown(_ target: iOSListWindDownTarget) {
-        guard target.summary.requiresConfirmation else {
-            modelContext.windDownList(target)
-            return
+        if let needsConfirmation = modelContext.windDownListUnlessConfirmationIsNeeded(target) {
+            pendingWindDown = needsConfirmation
         }
-        pendingWindDown = target
     }
 
     private func archive(_ area: Area) {

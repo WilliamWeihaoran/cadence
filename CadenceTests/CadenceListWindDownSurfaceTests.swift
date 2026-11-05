@@ -430,13 +430,16 @@ struct CadenceListWindDownSurfaceTests {
             "Cadence/iOS/iOSListEditorViews.swift": 0
         ])
 
-        // `windDownList` is declared once and called once: the immediate path in the host, and the
-        // confirmed path in the modifier.
+        // `windDownList` is declared once and called twice beside it: the immediate path in the
+        // shared menu decision, and the confirmed path in the modifier.
         // [[T-8562]]: the list editor's Status / Archive rows are the third host, and call it once
-        // on their immediate path, as the Lists page does.
+        // on their immediate path.
+        // [[T-11753]]: the Lists page and the sidebar region reach the immediate path through
+        // `windDownListUnlessConfirmationIsNeeded`, so neither calls it directly.
         try expectOccurrences(of: "windDownList(", at: [
-            "Cadence/iOS/iOSListWindDownSupport.swift": 2,
-            "Cadence/iOS/iOSListViews.swift": 1,
+            "Cadence/iOS/iOSListWindDownSupport.swift": 3,
+            "Cadence/iOS/iOSListViews.swift": 0,
+            "Cadence/iOS/iOSRootSidebar.swift": 0,
             "Cadence/iOS/iOSListEditorViews.swift": 1
         ])
 
@@ -494,16 +497,24 @@ struct CadenceListWindDownSurfaceTests {
         try expectCallSites(of: ".iOSListWindDown", at: [
             "Cadence/iOS/iOSListViews.swift": 1,
             "Cadence/iOS/iOSListsRegularPane.swift": 0,
+            "Cadence/iOS/iOSRootSidebar.swift": 1,
             "Cadence/iOS/iOSListEditorViews.swift": 1
         ])
 
-        // The conditional-confirmation test is asked once, by the host, for both directions. The
-        // iPad pane calls up into `archive(_:)` / `complete(_:)` instead of deciding for itself —
-        // a second `requiresConfirmation` in the pane is exactly how the two would drift.
+        // The conditional-confirmation test is asked once, in the shared menu decision, for both
+        // directions and for every row menu ([[T-11753]]). The iPad pane calls up into
+        // `archive(_:)` / `complete(_:)` instead of deciding for itself, and the Lists page and
+        // the sidebar region both call the one function -- a second `requiresConfirmation` in any
+        // of them is exactly how the menus would drift.
         try expectOccurrences(of: "requiresConfirmation", at: [
-            "Cadence/iOS/iOSListViews.swift": 1,
-            "Cadence/iOS/iOSListWindDownSupport.swift": 0,
+            "Cadence/iOS/iOSListViews.swift": 0,
+            "Cadence/iOS/iOSListWindDownSupport.swift": 1,
+            "Cadence/iOS/iOSRootSidebar.swift": 0,
             "Cadence/iOS/iOSListsRegularPane.swift": 0
+        ])
+        try expectCallSites(of: "windDownListUnlessConfirmationIsNeeded", at: [
+            "Cadence/iOS/iOSListViews.swift": 1,
+            "Cadence/iOS/iOSRootSidebar.swift": 1
         ])
 
         // Both surfaces actually *offer* completion, and the assertion is on the call sites rather
@@ -531,6 +542,60 @@ struct CadenceListWindDownSurfaceTests {
             #expect(code.contains("iOSListRowSwipeActions.archive"))
             #expect(!code.contains("iOSListRowSwipeActions.complete"))
         }
+    }
+
+    /// **[[T-11753]] -- the iPad sidebar row offers the Lists page's wind-down set.** A
+    /// full-screen iPad has no entrance to the Lists page, so its sidebar row menu is the list's
+    /// only menu there; it offered Edit / Move Up / Move Down, and completion sat only inside the
+    /// editor's Status menu. Both menus must name the same wind-downs, in the same order, with
+    /// the same roles: Complete plain (finishing work is not destruction), Archive destructive.
+    /// Whitespace is dropped so the shape, not the indentation, is what is read.
+    @Test func theSidebarRowMenuOffersTheListsPageWindDownSet() throws {
+        func squeezed(_ text: String) -> String { String(text.filter { !$0.isWhitespace }) }
+        func order(of needles: [(String, String)], in menu: String) -> [String] {
+            needles
+                .compactMap { needle, verb in menu.range(of: needle).map { ($0.lowerBound, verb) } }
+                .sorted { $0.0 < $1.0 }
+                .map { $0.1 }
+        }
+
+        let page = try strippingComments(sourceFile("Cadence/iOS/iOSListViews.swift"))
+        let areaRow = try #require(CadenceSourceScan.functionBody(named: "areaRow", in: page))
+        let projectRow = try #require(CadenceSourceScan.functionBody(named: "projectRow", in: page))
+        let areaMenu = try #require(CadenceSourceScan.declarationBody(".contextMenu", in: areaRow))
+        let projectMenu = try #require(CadenceSourceScan.declarationBody(".contextMenu", in: projectRow))
+        let pageArea = order(of: [("completeAreaButton(", "complete"), ("archiveAreaButton(", "archive")], in: areaMenu)
+        let pageProject = order(of: [("completeProjectButton(", "complete"), ("archiveProjectButton(", "archive")], in: projectMenu)
+
+        let sidebar = try strippingComments(sourceFile("Cadence/iOS/iOSRootSidebar.swift"))
+        let row = try #require(CadenceSourceScan.declarationBody("struct iOSSidebarListRow: View", in: sidebar))
+        let rowMenu = try #require(CadenceSourceScan.declarationBody(".contextMenu", in: row))
+        let sidebarSet = order(of: [("onWindDown(.complete)", "complete"), ("onWindDown(.archive)", "archive")], in: rowMenu)
+
+        #expect(pageArea == ["complete", "archive"], "non-vacuity: the Lists page's area menu was not read")
+        #expect(pageProject == pageArea)
+        #expect(sidebarSet == pageArea, "the sidebar row menu offers \(sidebarSet), the Lists page \(pageArea)")
+
+        // Same roles and labels as the page's builders.
+        let pageCode = squeezed(page)
+        #expect(pageCode.contains("Button{complete(area)}label:{Label(\"CompleteArea\""))
+        #expect(pageCode.contains("Button(role:.destructive){archive(area)}"))
+        let menu = squeezed(rowMenu)
+        #expect(menu.contains("Button{onWindDown(.complete)}label:{Label(\"Complete\\(item.kind==.area?\"Area\":\"Project\")\",systemImage:iOSListWindDownAction.complete.icon)"))
+        #expect(menu.contains("Button(role:.destructive){onWindDown(.archive)}label:{Label(\"Archive\\(item.kind==.area?\"Area\":\"Project\")\",systemImage:iOSListWindDownAction.archive.icon)}.cadenceDestructiveMenuRow()"))
+        // Edit first, then the wind-downs, then Move: the page's Edit-first order.
+        let edit = try #require(menu.range(of: "onEdit()"))
+        let complete = try #require(menu.range(of: "onWindDown(.complete)"))
+        let moveUp = try #require(menu.range(of: "onMove(-1)"))
+        #expect(edit.lowerBound < complete.lowerBound && complete.lowerBound < moveUp.lowerBound)
+
+        // The region, which owns the decision for both of its hosts, resolves the row and asks
+        // the page's own function -- no second `requiresConfirmation`, no hand-built settle.
+        let windDown = try #require(CadenceSourceScan.functionBody(named: "windDown", in: sidebar))
+        #expect(windDown.contains("SidebarListEntry.resolve(kind: item.kind, id: item.id, in: modelContext)"))
+        #expect(windDown.contains("pendingWindDown = modelContext.windDownListUnlessConfirmationIsNeeded(target)"))
+        #expect(sidebar.contains("onWindDown: { action in windDown(item, action) }"))
+        #expect(sidebar.contains(".iOSListWindDown(target: $pendingWindDown)"))
     }
 
     /// The other direction of the same divergence. macOS's branches are what iOS was measured

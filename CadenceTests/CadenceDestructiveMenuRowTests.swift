@@ -39,6 +39,8 @@ struct CadenceDestructiveMenuRowTests {
         // Archive rows: role `.destructive`, so the same red title and the same blue glyph.
         ("Cadence/iOS/iOSListsRegularPane.swift", 2),
         ("Cadence/iOS/iOSListViews.swift", 2),
+        // [[T-11753]]: the sidebar row's Archive, the Lists page's own row.
+        ("Cadence/iOS/iOSRootSidebar.swift", 1),
         ("Cadence/iOS/iOSSettingsView.swift", 1),
         // Mac note row menus.
         ("Cadence/macOS/Views/ListNotesViewSupportViews.swift", 1),
