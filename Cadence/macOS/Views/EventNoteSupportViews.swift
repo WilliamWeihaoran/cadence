@@ -305,7 +305,7 @@ enum MacEventNoteCommit {
     ) -> CadenceEventNoteCommitOutcome {
         CadenceEventNoteSupport.commitNote(
             syncToCalendar: syncToCalendar,
-            save: { try modelContext.save() },
+            save: { try CadenceEventNoteSupport.commitNoteLocally(in: modelContext) },
             syncToNativeEvent: {
                 syncNoteToNativeEvent(note, content: content, event: nativeEvent, calendarManager: calendarManager)
             },

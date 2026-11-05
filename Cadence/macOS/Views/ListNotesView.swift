@@ -469,7 +469,7 @@ struct ListNotesView: View {
     private func commitEventNote(_ note: Note, content: String) {
         let outcome = CadenceEventNoteSupport.commitNote(
             syncToCalendar: true,
-            save: { try modelContext.save() },
+            save: { try CadenceEventNoteSupport.commitNoteLocally(in: modelContext) },
             syncToNativeEvent: {
                 EventNoteSupport.syncNativeCalendarNotes(for: note, content: content, calendarManager: calendarManager)
             },

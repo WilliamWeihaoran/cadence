@@ -353,4 +353,83 @@ struct CadenceEventNotesMergeBaselineTests {
             #expect(body.contains("CadenceEventNotesMerge.recordBaseline(note, nativeNotes: target.notes)"))
         }
     }
+
+    // MARK: - [[T-11613]] the local commit runs through the persistence spine
+
+    /// An armed refusal reaches `.notSaved`, never runs the store commit, never mirrors, and keeps
+    /// the typed text pending rather than taking it out from under the caret.
+    @MainActor
+    @Test func aRefusedLocalCommitIsNotSavedAndNeverMirrors() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let note = Note(kind: .meeting, title: "Standup")
+        modelContext.insert(note)
+        try modelContext.save()
+        note.content = "Typed before the refusal"
+        var mirrored = false
+
+        let outcome = CadenceEventNoteSupport.commitNote(
+            syncToCalendar: true,
+            save: { try CadenceEventNoteSupport.commitNoteLocally(in: modelContext, refusing: true) },
+            syncToNativeEvent: { mirrored = true; return true }
+        )
+
+        guard case .notSaved = outcome else {
+            Issue.record("a refused commit answered \(outcome)")
+            return
+        }
+        #expect(!mirrored, "a refused local commit still reached Apple Calendar")
+        #expect(note.content == "Typed before the refusal", "the refusal took the typed text back")
+        #expect(modelContext.hasChanges, "the typed text is no longer pending")
+        let stored = try ModelContext(container).fetch(FetchDescriptor<Note>())
+        #expect(stored.first?.content != "Typed before the refusal", "the refused commit reached the store")
+    }
+
+    /// Non-vacuity for the one above: unrefused, the same commit lands and mirrors.
+    @MainActor
+    @Test func anUnrefusedLocalCommitLandsAndMirrors() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let note = Note(kind: .meeting, title: "Standup")
+        modelContext.insert(note)
+        note.content = "Landed"
+        var mirrored = false
+
+        let outcome = CadenceEventNoteSupport.commitNote(
+            syncToCalendar: true,
+            save: { try CadenceEventNoteSupport.commitNoteLocally(in: modelContext, refusing: false) },
+            syncToNativeEvent: { mirrored = true; return true }
+        )
+
+        #expect(outcome == .saved)
+        #expect(mirrored)
+        #expect(!modelContext.hasChanges)
+        #expect(try ModelContext(container).fetch(FetchDescriptor<Note>()).first?.content == "Landed")
+    }
+
+    /// All four event-note commits, on both platforms ([[T-8201]]), hand `commitNote` the spine's
+    /// commit and none of them a bare `modelContext.save()`.
+    @Test func everyEventNoteCommitSavesThroughTheSpine() throws {
+        // `EventNoteSupportViews.swift` also holds a `private func commitEventNote` wrapper that
+        // calls `MacEventNoteCommit.commitEventNote`, and `functionBody(named:)` takes the first
+        // match, so each site is read by its own declaration prefix.
+        let sites = [
+            ("Cadence/macOS/Views/NotesView.swift", "private func commitEventNote("),
+            ("Cadence/macOS/Views/ListNotesView.swift", "private func commitEventNote("),
+            ("Cadence/macOS/Views/EventNoteSupportViews.swift", "static func commitEventNote("),
+            ("Cadence/iOS/iOSEventNoteEditorSheet.swift", "static func commitEventNote(")
+        ]
+        for (path, declaration) in sites {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            let body = try #require(CadenceSourceScan.declarationBody(declaration, in: code), "\(path) has no \(declaration)")
+            #expect(body.contains("CadenceEventNoteSupport.commitNote("), "\(path) no longer commits through the helper")
+            #expect(
+                body.contains("save: { try CadenceEventNoteSupport.commitNoteLocally(in: modelContext) }"),
+                "\(path) commits its event note outside the persistence spine"
+            )
+            #expect(!body.contains("modelContext.save()"), "\(path) still saves its event note directly")
+        }
+        // The needle matches the old spelling, so the `!contains` above is not true of any text.
+        #expect("save: { try modelContext.save() },".contains("modelContext.save()"))
+    }
 }

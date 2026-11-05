@@ -255,7 +255,7 @@ enum iOSEventNoteCommit {
         note.updatedAt = Date()
         return CadenceEventNoteSupport.commitNote(
             syncToCalendar: syncToCalendar,
-            save: { try modelContext.save() },
+            save: { try CadenceEventNoteSupport.commitNoteLocally(in: modelContext) },
             syncToNativeEvent: {
                 syncNoteToNativeEvent(note, event: event, calendarManager: calendarManager)
             },

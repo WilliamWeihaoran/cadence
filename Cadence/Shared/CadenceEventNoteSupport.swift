@@ -1,6 +1,7 @@
 #if os(iOS) || os(macOS)
 import EventKit
 import Foundation
+import SwiftData
 
 /// The result of `CadenceEventNoteSupport.commitNote(syncToCalendar:save:syncToNativeEvent:)`.
 ///
@@ -364,6 +365,23 @@ enum CadenceEventNoteSupport {
     nonisolated static func startMinute(for date: Date, calendar: Calendar = .current) -> Int {
         let components = calendar.dateComponents([.hour, .minute], from: date)
         return ((components.hour ?? 0) * 60) + (components.minute ?? 0)
+    }
+
+    /// **[[T-11613]] — the `save:` every event-note editor hands `commitNote`.** The four editors
+    /// (macOS `NotesView`, `ListNotesView` and `MacEventNoteCommit`; iOS `iOSEventNoteCommit`)
+    /// passed `{ try modelContext.save() }`, a commit outside the persistence spine, so
+    /// `CADENCE_UI_TEST_REFUSE_COMMITS` could never reach `.notSaved` and no UI test could see its
+    /// notice. They commit through `CadencePendingChangePersistence.commitEdit` now.
+    ///
+    /// `undo` is empty on purpose, as in `CadenceInPlaceEditFlush.flush`: what is pending is the
+    /// text the person is still looking at in the editor, and a refusal that rolled it back would
+    /// take their writing out from under the caret. `.notSaved` says so, and the next commit
+    /// retries it.
+    static func commitNoteLocally(
+        in modelContext: ModelContext,
+        refusing: Bool = CadencePendingChangePersistence.refusesCommitsForUITest
+    ) throws {
+        try CadencePendingChangePersistence.commitEdit(in: modelContext, refusing: refusing, undo: {})
     }
 
     /// Commits an event note locally, and only then offers it to Apple Calendar.
