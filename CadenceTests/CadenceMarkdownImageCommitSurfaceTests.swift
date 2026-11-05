@@ -172,7 +172,7 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         #expect(picked.contains("CadencePendingChangePersistence.commitInsert(of: insertedAssets, in: modelContext)"))
         #expect(picked.contains("imageFailureNotice = CadencePendingChangePersistence.editFailureNotice"))
         #expect(
-            CadenceCommitSurfaceScan.reportFollowsTheCatch("applyCommandToDraft(.insertMarkdown(markdown))", in: picked),
+            CadenceCommitSurfaceScan.reportFollowsTheCatch("applyCommandToDraft(.insertBlockMarkdown(markdown))", in: picked),
             "the picker writes its markdown above the failure branch"
         )
 

@@ -1014,6 +1014,10 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     private func inlinePaddedInsertion(_ markdown: String) -> String {
         let nsText = string as NSString
         let selection = selectedRange()
+        // T-11492: on a task-embed card's line an inline reference would break the card.
+        if let block = MarkdownInsertionSupport.blockPaddedInsertionIfOnTaskEmbedLine(markdown, in: string, selection: selection) {
+            return block
+        }
         let needsLeadingSpace: Bool
         if selection.location == 0 {
             needsLeadingSpace = false

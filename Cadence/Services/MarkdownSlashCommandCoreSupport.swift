@@ -307,7 +307,7 @@ nonisolated enum MarkdownFormatCommandTitle {
         case .divider: return "Divider"
         case .noteLink: return "Note link"
         case .taskReference: return "Task reference"
-        case .insertMarkdown, .replaceMarkdown, .replaceMarkdownWithCaret:
+        case .insertMarkdown, .insertBlockMarkdown, .insertReferenceMarkdown, .replaceMarkdown, .replaceMarkdownWithCaret:
             // Never a toolbar button's own command — these insert a specific, already-composed
             // snippet (a chosen note or task reference) rather than offering a fixed action a
             // button could be labelled for.

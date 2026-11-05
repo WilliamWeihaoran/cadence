@@ -18,6 +18,14 @@ nonisolated enum MarkdownFormatCommand: Hashable {
     case noteLink
     case taskReference
     case insertMarkdown(String)
+    /// A block (an image) composed elsewhere: padded onto its own line by
+    /// `MarkdownInsertionSupport.paddedBlockInsertion`, the rule the macOS editor and the iOS
+    /// paste path already use. Raw `.insertMarkdown` here wrote a picked image onto a task-embed
+    /// card's line and the card stopped drawing (T-11492).
+    case insertBlockMarkdown(String)
+    /// An inline reference composed elsewhere (a picked note link or task reference): inserted
+    /// as is, unless the caret is on a task-embed card's line, where it gets its own line (T-11492).
+    case insertReferenceMarkdown(String)
     case replaceMarkdown(location: Int, length: Int, markdown: String)
     case replaceMarkdownWithCaret(location: Int, length: Int, markdown: String, caretOffset: Int)
 }
@@ -82,6 +90,16 @@ nonisolated enum MarkdownFormatCommandSupport {
             return insertSnippet("[[task:]]", caretOffset: 7, text: text, selection: selection)
         case .insertMarkdown(let markdown):
             return insertSnippet(markdown, caretOffset: (markdown as NSString).length, text: text, selection: selection)
+        case .insertBlockMarkdown(let markdown):
+            let padded = MarkdownInsertionSupport.paddedBlockInsertion(markdown, in: text, selection: selection)
+            return insertSnippet(padded, caretOffset: (padded as NSString).length, text: text, selection: selection)
+        case .insertReferenceMarkdown(let markdown):
+            let insertion = MarkdownInsertionSupport.blockPaddedInsertionIfOnTaskEmbedLine(
+                markdown,
+                in: text,
+                selection: selection
+            ) ?? markdown
+            return insertSnippet(insertion, caretOffset: (insertion as NSString).length, text: text, selection: selection)
         case .replaceMarkdown(let location, let length, let markdown):
             return insertSnippet(
                 markdown,

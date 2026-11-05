@@ -691,7 +691,7 @@ struct iOSMarkdownEditingSurface: View {
         let markdown = insertedAssets
             .map { MarkdownImageAssetService.markdown(for: $0) }
             .joined(separator: "\n\n")
-        applyCommandToDraft(.insertMarkdown(markdown))
+        applyCommandToDraft(.insertBlockMarkdown(markdown))
     }
 
     /// Persists a drag-resize. Same call the macOS editor makes from its mouse drag, so there is
@@ -906,7 +906,7 @@ struct iOSMarkdownEditingSurface: View {
     }
 
     private func insertReferenceMarkdown(_ markdown: String) {
-        applyCommandToDraft(.insertMarkdown(markdown))
+        applyCommandToDraft(.insertReferenceMarkdown(markdown))
     }
 
     private func applyCommandToDraft(_ command: MarkdownFormatCommand, refocusEditor: Bool = true) {
