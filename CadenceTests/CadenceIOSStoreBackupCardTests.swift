@@ -156,7 +156,7 @@ struct CadenceIOSStoreBackupCardTests {
         #expect(card.contains("ForEach(Array(retainedUnrestoredDirectories.enumerated())"), "the scan no longer reaches the list")
         #expect(card.contains("iOSRetainedUnrestoredDirectoryRow(directoryURL:directoryURL)"))
         #expect(card.contains(
-            "ifindex<retainedUnrestoredDirectories.count-1{iOSRowDivider(leadingInset:iOSSettingsMetrics.rowTextInset)}"
+            "ifindex<retainedUnrestoredDirectories.count-1{iOSSettingsRowDivider(tileGlyph:iOSRetainedUnrestoredDirectoryRow.tileGlyph)}"
         ), "one divider between rows, as the Unmanaged Store card divides its own")
         #expect(!card.contains("Text(directoryURL.path)"), "a bare path is back in the card")
 

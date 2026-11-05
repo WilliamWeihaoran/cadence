@@ -1089,7 +1089,8 @@ struct SettingsRowDividerInsetTests {
     }
 
     /// **[[T-9771]]. The iOS half.** iOS's settings cards start their hairline at
-    /// `iOSSettingsMetrics.rowTextInset`, the glyph slot plus the glyph-label spacing, and every row
+    /// `iOSSettingsMetrics.rowTextInset(after:)` of the row's tile slot plus the glyph-label
+    /// spacing ([[T-11541]] made the slot scale; `CadenceIOSSettingsRowDividerTests`), and every row
     /// over that hairline has to draw its tile in that slot. The Sidebar Rows card drew a 34pt tile
     /// (text at 46, hairline at 44), and Settings > Calendar's broken- and dormant-link cards drew a
     /// 34pt tile over a hairline typed as 24 -- which ran under the tile itself. The iOS types are
@@ -1118,15 +1119,16 @@ struct SettingsRowDividerInsetTests {
         let calendar = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarSettingsSection.swift")
         )
-        for card in ["private var dormantLinksCard: some View", "private var missingLinksCard: some View"] {
+        for (card, row) in [("private var dormantLinksCard: some View", "iOSDormantCalendarLinkRow"),
+                            ("private var missingLinksCard: some View", "iOSMissingCalendarLinkRow")] {
             let body = try #require(CadenceSourceScan.declarationBody(card, in: calendar), "\(card) moved")
-            #expect(body.contains("iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)"),
+            #expect(body.contains("iOSSettingsRowDivider(tileGlyph: \(row).tileGlyph)"),
                     "\(card) types its hairline inset instead of reading the row text inset")
         }
         let sidebar = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSidebarLayoutSettingsSection.swift")
         )
-        #expect(CadenceSourceScan.matchCount("iOSRowDivider\\(leadingInset: iOSSettingsMetrics\\.rowTextInset\\)", in: sidebar) == 1,
+        #expect(CadenceSourceScan.matchCount("iOSSettingsRowDivider\\(tileGlyph: Self\\.tileGlyph\\)", in: sidebar) == 1,
                 "the Sidebar Rows card's hairline no longer reads the row text inset")
     }
 }

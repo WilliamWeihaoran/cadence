@@ -358,6 +358,14 @@ struct iOSSettingsContextPreview: View {
     }
 }
 
+/// **[[T-11541]].** The side `iOSSettingsContextIcon` draws at this text size -- the same
+/// expression its frame evaluates -- so the Contexts cards' hairlines start at their rows' text.
+enum iOSSettingsContextIconMetrics {
+    static func side(at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        CadenceSettingsTypographyLayout.glyphFrame(iOSSettingsMetrics.glyphSlot, glyph: 15, role: .rowTitle, at: size, scaling: scaling)
+    }
+}
+
 private struct iOSSettingsContextIcon: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling

@@ -409,7 +409,7 @@ struct iOSSettingsView: View {
                             }
 
                             if context.id != activeContexts.last?.id {
-                                iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
+                                iOSSettingsRowDivider(leadingSlot: { iOSSettingsContextIconMetrics.side(at: $0, scaling: $1) })
                             }
                         }
                     }
@@ -432,7 +432,7 @@ struct iOSSettingsView: View {
                             )
 
                             if context.id != archivedContexts.last?.id {
-                                iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
+                                iOSSettingsRowDivider(leadingSlot: { iOSSettingsContextIconMetrics.side(at: $0, scaling: $1) })
                             }
                         }
                     }

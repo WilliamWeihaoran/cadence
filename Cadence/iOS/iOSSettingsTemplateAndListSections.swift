@@ -363,7 +363,7 @@ struct iOSListsLifecycleSettingsSection: View {
                     )
 
                     if index < areas.count - 1 || !projects.isEmpty {
-                        iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
+                        iOSSettingsRowDivider(tileGlyph: iOSListLifecycleSettingsRow.tileGlyph)
                     }
                 }
 
@@ -393,7 +393,7 @@ struct iOSListsLifecycleSettingsSection: View {
                     )
 
                     if index < projects.count - 1 {
-                        iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
+                        iOSSettingsRowDivider(tileGlyph: iOSListLifecycleSettingsRow.tileGlyph)
                     }
                 }
             }
@@ -687,6 +687,8 @@ private struct iOSTemplateBodyEditor: View {
 private struct iOSListLifecycleSettingsRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
+    /// The tile's glyph, read by the card's divider too ([[T-11541]]).
+    static let tileGlyph: CGFloat = 15
     let icon: String
     let title: String
     let subtitle: String
@@ -751,7 +753,7 @@ private struct iOSListLifecycleSettingsRow: View {
             systemImage: icon,
             color: color,
             size: iOSSettingsMetrics.glyphSlot,
-            iconSize: 15
+            iconSize: Self.tileGlyph
         )
     }
 

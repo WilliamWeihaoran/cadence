@@ -53,7 +53,7 @@ struct iOSUnmanagedStoreSettingsSection: View {
                             ForEach(Array(directories.enumerated()), id: \.element.id) { index, directory in
                                 iOSUnmanagedStoreDirectoryRow(directory: directory)
                                 if index < directories.count - 1 {
-                                    iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
+                                    iOSSettingsRowDivider(tileGlyph: iOSUnmanagedStoreDirectoryRow.tileGlyph)
                                 }
                             }
                         }
@@ -90,6 +90,8 @@ struct iOSUnmanagedStoreSettingsSection: View {
 /// rule [[T-1532]] and [[T-1680]] both enforce through the shape of the view rather than through a
 /// convention somebody has to remember.
 private struct iOSUnmanagedStoreDirectoryRow: View {
+    /// The tile's glyph, read by the card's divider too ([[T-11541]]).
+    static let tileGlyph: CGFloat = 13
     let directory: UnmanagedStoreDirectory
 
     var body: some View {
@@ -98,7 +100,7 @@ private struct iOSUnmanagedStoreDirectoryRow: View {
                 systemImage: "internaldrive",
                 color: Theme.dim,
                 size: iOSSettingsMetrics.glyphSlot,
-                iconSize: 13
+                iconSize: Self.tileGlyph
             )
 
             VStack(alignment: .leading, spacing: 3) {

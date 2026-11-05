@@ -130,7 +130,7 @@ struct iOSRemindersSettingsSection: View {
                         iOSRemindersListRow(row: row)
 
                         if index < listRows.count - 1 {
-                            iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
+                            iOSSettingsRowDivider(tileGlyph: iOSRemindersListRow.tileGlyph)
                         }
                     }
                 }
@@ -159,6 +159,8 @@ struct iOSRemindersSettingsSection: View {
 private struct iOSRemindersListRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
+    /// The tile's glyph, read by the card's divider too ([[T-11541]]).
+    static let tileGlyph: CGFloat = 14
     let row: RemindersListSummaryRow
 
     var body: some View {
@@ -167,7 +169,7 @@ private struct iOSRemindersListRow: View {
                 systemImage: "list.bullet",
                 color: Theme.purple,
                 size: iOSSettingsMetrics.glyphSlot,
-                iconSize: 14
+                iconSize: Self.tileGlyph
             )
 
             Text(row.displayTitle)

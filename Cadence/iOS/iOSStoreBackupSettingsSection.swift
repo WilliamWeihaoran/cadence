@@ -74,7 +74,7 @@ struct iOSStoreBackupSettingsSection: View {
                             ForEach(Array(listed.enumerated()), id: \.element.id) { index, backup in
                                 iOSStoreBackupRow(backup: backup, onRestore: { confirmingRestore = backup })
                                 if index < listed.count - 1 {
-                                    iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
+                                    iOSSettingsRowDivider(leadingSlot: { iOSStoreBackupListMetrics.leadingSlot(at: $0, scaling: $1) })
                                 }
                             }
                         }
@@ -220,7 +220,7 @@ struct iOSStoreBackupSettingsSection: View {
                     ForEach(Array(retainedUnrestoredDirectories.enumerated()), id: \.element) { index, directoryURL in
                         iOSRetainedUnrestoredDirectoryRow(directoryURL: directoryURL)
                         if index < retainedUnrestoredDirectories.count - 1 {
-                            iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
+                            iOSSettingsRowDivider(tileGlyph: iOSRetainedUnrestoredDirectoryRow.tileGlyph)
                         }
                     }
                 }
@@ -266,6 +266,8 @@ struct iOSStoreBackupSettingsSection: View {
 /// iOS has no Files route for a Reveal, and a row that cannot be handed an action cannot grow a
 /// destructive one for what may be the only copy of a store.
 private struct iOSRetainedUnrestoredDirectoryRow: View {
+    /// The tile's glyph, read by the card's divider too ([[T-11541]]).
+    static let tileGlyph: CGFloat = 13
     let directoryURL: URL
 
     var body: some View {
@@ -274,7 +276,7 @@ private struct iOSRetainedUnrestoredDirectoryRow: View {
                 systemImage: "exclamationmark.triangle",
                 color: Theme.amber,
                 size: iOSSettingsMetrics.glyphSlot,
-                iconSize: 13
+                iconSize: Self.tileGlyph
             )
 
             VStack(alignment: .leading, spacing: 3) {

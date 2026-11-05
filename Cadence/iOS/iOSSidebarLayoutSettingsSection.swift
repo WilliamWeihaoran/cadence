@@ -88,7 +88,7 @@ struct iOSSidebarLayoutSettingsSection: View {
                         row(destination, isVisible: !hidden.contains(destination), in: orderable)
 
                         if index < rows.count - 1 {
-                            iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
+                            iOSSettingsRowDivider(tileGlyph: Self.tileGlyph)
                         }
                     }
                 }
@@ -136,6 +136,9 @@ struct iOSSidebarLayoutSettingsSection: View {
         }
     }
 
+    /// The rows' tile glyph, read by the card's divider too ([[T-11541]]).
+    private static let tileGlyph: CGFloat = 14
+
     /// The row itself — icon, title, visibility toggle. Shared by both branches above so the two
     /// spellings cannot drift.
     private func rowContent(
@@ -146,10 +149,10 @@ struct iOSSidebarLayoutSettingsSection: View {
             iOSIconTile(
                 systemImage: destination.systemImage,
                 color: Color(hex: CadenceSidebarTint.hex(for: destination, overridesRaw: sidebarTabColorsRaw)),
-                // The settings-row glyph slot the card's `rowTextInset` hairline is summed from; at
-                // 34 the text sat 2pt right of where the hairline started ([[T-9771]]).
+                // The settings-row glyph slot the card's hairline inset is read from; at 34 the
+                // text sat 2pt right of where the hairline started ([[T-9771]]).
                 size: iOSSettingsMetrics.glyphSlot,
-                iconSize: 14
+                iconSize: Self.tileGlyph
             )
 
             Text(CadenceSidebarLayout.rowTitle(for: destination))

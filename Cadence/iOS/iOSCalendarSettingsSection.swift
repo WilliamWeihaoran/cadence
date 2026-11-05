@@ -83,7 +83,7 @@ struct iOSCalendarSettingsSection: View {
                     )
 
                     if index < links.count - 1 {
-                        iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
+                        iOSSettingsRowDivider(tileGlyph: iOSDormantCalendarLinkRow.tileGlyph)
                     }
                 }
             }
@@ -110,7 +110,7 @@ struct iOSCalendarSettingsSection: View {
                     )
 
                     if index < links.count - 1 {
-                        iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
+                        iOSSettingsRowDivider(tileGlyph: iOSMissingCalendarLinkRow.tileGlyph)
                     }
                 }
             }
@@ -306,6 +306,8 @@ struct iOSCalendarSettingsSection: View {
 private struct iOSMissingCalendarLinkRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
+    /// The tile's glyph, read by the card's divider too ([[T-11541]]).
+    static let tileGlyph: CGFloat = 15
     let link: CadenceMissingCalendarLink
     let calendars: [EKCalendar]
     let onRelink: (String) -> Void
@@ -316,14 +318,14 @@ private struct iOSMissingCalendarLinkRow: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
             : AnyLayout(HStackLayout(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing))
         layout {
-            // The settings-row glyph slot, so the card's hairline at `rowTextInset` starts at
-            // this row's text. A 34pt tile put the text at 46 and the hairline, typed as 24, ran
-            // under the tile itself ([[T-9771]]).
+            // The settings-row glyph slot, so the card's hairline, inset by this tile's slot,
+            // starts at this row's text. A 34pt tile put the text at 46 and the hairline, typed
+            // as 24, ran under the tile itself ([[T-9771]]).
             iOSIconTile(
                 systemImage: link.icon,
                 color: Color(hex: link.colorHex),
                 size: iOSSettingsMetrics.glyphSlot,
-                iconSize: 15
+                iconSize: Self.tileGlyph
             )
 
             VStack(alignment: .leading, spacing: 4) {
@@ -401,6 +403,8 @@ private struct iOSMissingCalendarLinkRow: View {
 private struct iOSDormantCalendarLinkRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
+    /// The tile's glyph, read by the card's divider too ([[T-11541]]).
+    static let tileGlyph: CGFloat = 15
     let link: CadenceDormantCalendarLink
     let onDisconnect: () -> Void
 
@@ -409,14 +413,14 @@ private struct iOSDormantCalendarLinkRow: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
             : AnyLayout(HStackLayout(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing))
         layout {
-            // The settings-row glyph slot, so the card's hairline at `rowTextInset` starts at
-            // this row's text. A 34pt tile put the text at 46 and the hairline, typed as 24, ran
-            // under the tile itself ([[T-9771]]).
+            // The settings-row glyph slot, so the card's hairline, inset by this tile's slot,
+            // starts at this row's text. A 34pt tile put the text at 46 and the hairline, typed
+            // as 24, ran under the tile itself ([[T-9771]]).
             iOSIconTile(
                 systemImage: link.icon,
                 color: Color(hex: link.colorHex),
                 size: iOSSettingsMetrics.glyphSlot,
-                iconSize: 15
+                iconSize: Self.tileGlyph
             )
 
             VStack(alignment: .leading, spacing: 4) {

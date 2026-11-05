@@ -130,8 +130,47 @@ enum iOSSettingsMetrics {
     static let glyphSlot: CGFloat = 32
     static let glyphLabelSpacing: CGFloat = 12
     /// Left edge of a card row's text column, so a divider drawn under it starts at the
-    /// text rather than cutting across the glyph.
-    static let rowTextInset: CGFloat = glyphSlot + glyphLabelSpacing
+    /// text rather than cutting across the glyph: what leads the row, then the gap to the text.
+    ///
+    /// **[[T-11541]]: a function of the leading slot, not a constant.** It was a fixed
+    /// `glyphSlot + glyphLabelSpacing`, but the `iOSIconTile` leading the rows scales its side
+    /// with Dynamic Type, so the two agreed only at `.large` -- the hairline started about 1pt
+    /// right of the text at Medium and fell behind it at larger sizes. `iOSSettingsRowDivider`
+    /// is the one caller.
+    static func rowTextInset(after leadingSlot: CGFloat) -> CGFloat {
+        leadingSlot + glyphLabelSpacing
+    }
+
+    /// The side of an `iOSIconTile(size: glyphSlot, iconSize: glyph)` at this text size -- the
+    /// same expression the tile evaluates, as `iOSStoreBackupListMetrics.leadingSlot` is ([[T-11431]]).
+    static func tileSlot(glyph: CGFloat, at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        iOSTaskPageTypographyMetrics.glyphFrame(glyphSlot, glyph: glyph, at: size, scaling: scaling)
+    }
+}
+
+/// **[[T-11541]].** The hairline between two settings-card rows, starting where their text does
+/// at the reader's text size.
+///
+/// Reads the environment itself so a card does not have to: the card names what leads its rows
+/// -- a tile's glyph, or a slot function for a row that is not an `iOSIconTile` -- and the inset
+/// follows the row's own leading slot instead of a constant summed from `glyphSlot`.
+struct iOSSettingsRowDivider: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
+    let leadingSlot: @MainActor (DynamicTypeSize, CadenceTypographyScaling) -> CGFloat
+
+    init(leadingSlot: @escaping @MainActor (DynamicTypeSize, CadenceTypographyScaling) -> CGFloat) {
+        self.leadingSlot = leadingSlot
+    }
+
+    /// Rows led by `iOSIconTile(size: iOSSettingsMetrics.glyphSlot, iconSize: tileGlyph)`.
+    init(tileGlyph: CGFloat) {
+        self.leadingSlot = { iOSSettingsMetrics.tileSlot(glyph: tileGlyph, at: $0, scaling: $1) }
+    }
+
+    var body: some View {
+        iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset(after: leadingSlot(dynamicTypeSize, scaling)))
+    }
 }
 
 /// `iOSRowDivider` and `iOSSettingsField` now live in `Shared/Components/CadenceFieldRows.swift`
@@ -335,7 +374,7 @@ struct iOSSettingsCategoryList: View {
                                 .accessibilityIdentifier("settings.category.\(category.rawValue)")
 
                                 if category.id != group.categories.last?.id {
-                                    iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset)
+                                    iOSSettingsRowDivider(tileGlyph: iOSSettingsCategoryRow.tileGlyph)
                                 }
                             }
                         }
@@ -349,6 +388,8 @@ struct iOSSettingsCategoryList: View {
 private struct iOSSettingsCategoryRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
+    /// The tile's glyph, read by the card's divider too ([[T-11541]]).
+    static let tileGlyph: CGFloat = 14
     let category: iOSSettingsCategory
 
     var body: some View {
@@ -357,7 +398,7 @@ private struct iOSSettingsCategoryRow: View {
                 systemImage: category.icon,
                 color: category.tint,
                 size: iOSSettingsMetrics.glyphSlot,
-                iconSize: 14
+                iconSize: Self.tileGlyph
             )
 
             Text(category.title)
