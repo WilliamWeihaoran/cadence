@@ -37,7 +37,7 @@ enum CadenceCaptureField: String, CaseIterable, Identifiable {
         switch self {
         case .doDate, .calendar: return "calendar"
         case .dueDate: return "flag"
-        case .list: return "tray.full"
+        case .list: return CadenceListKindIcon.inbox
         case .tags: return "tag"
         case .repeatRule: return "repeat"
         case .priority: return "exclamationmark"

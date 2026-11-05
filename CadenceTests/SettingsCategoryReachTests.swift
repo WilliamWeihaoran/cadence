@@ -498,7 +498,8 @@ struct CadenceR67ParityTests {
     /// a second Area picker written later is held to the same rule without anyone listing it.
     ///
     /// The schedule panel's "List" field row drew `tray.full.fill`, a spelling [[T-8553]] retired,
-    /// directly above the popover whose Inbox row draws `CadenceListKindIcon.inbox`.
+    /// directly above the popover whose Inbox row draws `CadenceListKindIcon.inbox`; the capture
+    /// card's List chip drew the unfilled `tray.full` above that same popover ([[T-11511]]).
     @Test func everyAreaPickerRowAndTheListFieldRowDrawTheCanonicalKindGlyph() throws {
         let areaPickerCall = "CadenceAreaPickerSupport.items("
         var builders: [String: Int] = [:]
@@ -532,6 +533,14 @@ struct CadenceR67ParityTests {
         let panel = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceSchedulePanel.swift"))
         #expect(panel.contains(#"CadenceFieldRow(label: "List", systemImage: CadenceListKindIcon.inbox,"#))
         #expect(!panel.contains(#""tray.full.fill""#))
+
+        // [[T-11511]]. On the iPad the inline panel's List control is the capture card's chip,
+        // which drew the UNFILLED `"tray.full"` spelling of the same retired artwork above the same
+        // Inbox row. Its value is pinned, and the card may name no full-tray literal at all.
+        #expect(CadenceCaptureField.list.symbol == CadenceListKindIcon.inbox)
+        let card = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift"))
+        #expect(card.contains("case .list: return CadenceListKindIcon.inbox"))
+        #expect(!card.contains(#""tray.full"#), "the capture card names a full-tray glyph")
     }
 
     @Test func r67CaptureRepeatControlsUseTheOccurrenceAwareSettersAndBounds() throws {
