@@ -47,8 +47,23 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// **Terminate AND WAIT.** `terminate()` is asynchronous, and five of these tests launching
+    /// back to back in one process is enough for the next `launch()` to collide with the last
+    /// app's teardown. Measured 2026-11-05: run each test alone and all five pass; run the suite
+    /// and four fail on the environment rather than on a measurement — `app did not reach the
+    /// foreground; state is 3` (still `runningBackground`), `No matches found for ... Descendants
+    /// matching type Window`, and twice `the app's first static texts: none at all` from a handle
+    /// that resolved during `launchApp()` and was stale a line later. None of those is about the
+    /// plate being measured, which is exactly why the wait belongs here and not in a bound
+    /// somewhere downstream.
     override func tearDownWithError() throws {
-        app?.terminate()
+        if let app {
+            app.terminate()
+            let stopped = app.wait(for: .notRunning, timeout: CadenceUITestBounds.settle)
+            if !stopped {
+                print("MACWINDOW teardown: app still \(app.state.rawValue) after \(CadenceUITestBounds.settle)s")
+            }
+        }
         app = nil
     }
 
@@ -580,6 +595,109 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         )
     }
 
+    /// **[[T-8553]]'s UNIFY decision, SEEN on the Mac rather than counted in source — and that
+    /// distinction is the whole point of this test.**
+    ///
+    /// The owner refused option (a) ("every chooser draws each list's own icon") on 2026-10-31 and
+    /// chose one canonical glyph per list kind in every chooser on both platforms.
+    /// [[T-10102]] found and fixed the four choosers the first pass missed, and was SEEN on an
+    /// iPad. The Mac half is pinned only by `CadenceR67ParityTests
+    /// .noChooserLabelsAListWithThatListsOwnIcon`, which is a SOURCE SWEEP: it can prove no glyph
+    /// argument reads an `Area`'s own `icon`, and it cannot prove what the window actually drew.
+    /// `CadencePlainPlateRadiusTests` passed the same way while a hit region was still a rectangle
+    /// ([[T-11322]]), which is the failure this run exists to stop repeating.
+    ///
+    /// **What makes it readable**: `ContainerPickerRow` draws `Image(systemName: icon)`
+    /// (`ContainerPickerSupportViews.swift:319`), and macOS XCUITest publishes an SF Symbol
+    /// image's name as the element's IDENTIFIER — measured in this target's own trees, e.g.
+    /// `Image, identifier: 'calendar.badge.plus'`. So "the area row draws folder.fill" is an
+    /// identifier lookup, not a judgement about a picture.
+    func testTheMacContainerPickerDrawsTheCanonicalListKindGlyphs() throws {
+        try CadenceUITestEnvironment.requireInteractiveUITests()
+
+        try launchApp()
+        let today = app.buttons.element(identified: ID.todayDestination)
+        XCTAssertTrue(today.waitForExistence(timeout: Bounds.windowAppears), surfaceReport())
+        today.click()
+
+        // The row's list chip, named once on the badge itself (T-594) so every surface that draws
+        // it answers to the same label.
+        let chipQuery = app.buttons.matching(NSPredicate(
+            format: "label == %@ OR title == %@", Fixture.listChipLabel, Fixture.listChipLabel
+        ))
+        // **A SKIP, not a failure: this is a staging gap, not a defect.** Measured 2026-11-05 on
+        // two runs that each launched cleanly and clicked Today — `MACWINDOW launch 1 of 3 drew a
+        // window AND its sidebar`, the click synthesised at t=5.00s — and then waited the full
+        // 45s with no `List` chip ever appearing. The `calendar-hues` fixture's Today row does not
+        // draw one, so there is nothing here to open the picker with. Reporting that as red would
+        // say the Mac picker is broken, which this run has no evidence for either way.
+        guard chipQuery.firstMatch.waitForExistence(timeout: Bounds.windowAppears) else {
+            attach("picker-no-list-chip")
+            throw XCTSkip(
+                """
+                NOT STAGEABLE with the `\(Fixture.scenario)` fixture: Today drew no \
+                '\(Fixture.listChipLabel)' chip, so the Mac container picker cannot be opened and \
+                [[T-8553]]'s UNIFY decision stays unsighted on this platform. The app launched and \
+                drew its sidebar, so this is the fixture, not the launch. What it needs: a scenario \
+                whose Today row carries a list chip, or a different entry point to \
+                `ContainerPickerPopoverContent` — it is also hosted from the Kanban card \
+                (`KanbanCardMetaSupportViews.swift:20`), which this test does not reach.
+                """
+            )
+        }
+        settle(Bounds.hoverSettle)
+        let chip = chipQuery.allElementsBoundByIndex.first { $0.frame.width > 0 && $0.frame.height > 0 }
+        guard let chip else {
+            XCTFail("the '\(Fixture.listChipLabel)' chip has no drawn frame. " + surfaceReport())
+            return
+        }
+        print("LISTPICKER chip=\(chip.frame) value='\(chip.value as? String ?? "")'")
+        chip.click()
+
+        guard let popover = pickerPopoverElement(), popover.frame.height > 0 else {
+            attach("picker-no-popover")
+            XCTFail("clicking the list chip opened no popover. " + app.debugDescription)
+            return
+        }
+        settle(Bounds.hoverSettle)
+        attach("list-picker-open")
+
+        // Every SF Symbol drawn inside the popover, by identifier.
+        let glyphs = app.descendants(matching: .image).allElementsBoundByIndex
+            .filter { $0.frame.width > 0 && $0.frame.height > 0 }
+            .filter { popover.frame.contains(CGPoint(x: $0.frame.midX, y: $0.frame.midY)) }
+            .map(\.identifier)
+            .filter { !$0.isEmpty }
+        print("LISTPICKER popover=\(popover.frame) glyphs=\(glyphs)")
+
+        // **Stated as the owner's rule, not as a count.** UNIFY says no chooser may label a list
+        // with that list's OWN icon, so the test is: every glyph in this popover is one of the
+        // canonical three (or the selected-state checkmark). A list wearing its own glyph — the
+        // `iphone` the iPad showed for `[Sample] iOS Polish` — fails here by not being in the set.
+        let allowed = Set(Fixture.canonicalListGlyphs + Fixture.pickerChromeGlyphs)
+        let strays = glyphs.filter { !allowed.contains($0) }
+        XCTAssertTrue(
+            strays.isEmpty,
+            """
+            the Mac list picker draws \(strays) , which \(Fixture.canonicalListGlyphs) does not \
+            contain — so a list is wearing its OWN icon in a chooser, which is exactly option (a) \
+            the owner refused in [[T-8553]]. All glyphs seen: \(glyphs). Popover \(popover.frame).
+            """
+        )
+        XCTAssertTrue(
+            glyphs.contains(Fixture.canonicalListGlyphs[0]),
+            "the picker drew no Inbox '\(Fixture.canonicalListGlyphs[0])' row at all: \(glyphs)"
+        )
+        XCTAssertTrue(
+            glyphs.contains(Fixture.canonicalListGlyphs[1]) || glyphs.contains(Fixture.canonicalListGlyphs[2]),
+            """
+            the picker drew Inbox but neither an area '\(Fixture.canonicalListGlyphs[1])' nor a \
+            project '\(Fixture.canonicalListGlyphs[2])' row, so this fixture proves nothing about \
+            the two kinds the owner's decision is actually about. Glyphs: \(glyphs).
+            """
+        )
+    }
+
     /// The month grid's day buttons, found by GEOMETRY rather than by label.
     ///
     /// **Not `label CONTAINS ", 2026"`.** That was tried on 2026-11-04 and matched **nothing**:
@@ -797,6 +915,14 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         /// reader cannot verify a colour.
         static let unselectedSwatchLabel = "Use this color"
         static let selectedSwatchLabel = "Selected color"
+        /// `CadenceTaskControlAccessibility.list` (`CadenceTaskPresentationSupport.swift:319`).
+        static let listChipLabel = "List"
+        /// `CadenceListKindIcon` (`CadenceScheduleDraftChoices.swift:6-8`), in the order
+        /// inbox, area, project. Spelled as literals: the UI-test target cannot import the module.
+        static let canonicalListGlyphs = ["tray.fill", "folder.fill", "square.stack.3d.up.fill"]
+        /// Not list-kind glyphs: the row's selected tick and the search field's magnifier, both
+        /// drawn by the picker itself rather than naming any list.
+        static let pickerChromeGlyphs = ["checkmark", "checkmark.circle.fill", "magnifyingglass", "xmark.circle.fill"]
     }
 
     private enum Bounds {
@@ -804,6 +930,11 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         /// a cold UI-test launch seeds the store before it draws ([[T-8928]]).
         static let windowAppears: TimeInterval = 45
         static let launchAttempts = 3
+        /// How long a launch gets to draw its sidebar before the attempt is written off as
+        /// [[T-8928]]. Well above the 0.04-0.52s the seed arrival was timed at
+        /// (`CadenceSeededSidebarTimingUITests`, 38 arrivals), and far below `windowAppears`, so
+        /// a relaunch is cheap when it is needed.
+        static let drawsUI: TimeInterval = 12
         /// The style animates the wash with `.easeOut(duration: 0.12)`; this is ~6x that, so a shot
         /// taken after it is of a settled wash and not of one mid-fade.
         static let hoverSettle: TimeInterval = 0.75
@@ -857,12 +988,24 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
             app.wait(for: .runningForeground, timeout: CadenceUITestBounds.foreground),
             "app did not reach the foreground; state is \(app.state.rawValue)"
         )
+        // **A window is not a drawn app, and treating it as one cost four runs on 2026-11-05.**
+        // [[T-8928]] is documented as "reaches the foreground and holds no window", and the loop
+        // below was written for that. The variant that actually strikes here is worse: the window
+        // EXISTS, so the loop returns happily, and the accessibility tree is empty — every test
+        // then fails on whichever element it asked for first, reporting `the app's first static
+        // texts: none at all`. It hit roughly half the launches in this session. So an attempt
+        // counts as good only when the app has drawn something a seeded launch always draws, and
+        // the sidebar's Today destination is that: a static row no fixture creates or omits.
         for attempt in 1...Bounds.launchAttempts {
-            if app.windows.firstMatch.waitForExistence(timeout: Bounds.windowAppears) {
-                print("MACWINDOW launch \(attempt) of \(Bounds.launchAttempts) drew a window")
+            if app.windows.firstMatch.waitForExistence(timeout: Bounds.windowAppears),
+               app.buttons.element(identified: ID.todayDestination).waitForExistence(timeout: Bounds.drawsUI) {
+                print("MACWINDOW launch \(attempt) of \(Bounds.launchAttempts) drew a window AND its sidebar")
                 return
             }
-            print("MACWINDOW launch \(attempt) of \(Bounds.launchAttempts) drew NO window in \(Bounds.windowAppears)s")
+            print(
+                "MACWINDOW launch \(attempt) of \(Bounds.launchAttempts) drew no usable UI "
+                + "(windows=\(app.windows.count) state=\(app.state.rawValue)) — [[T-8928]]"
+            )
             guard attempt < Bounds.launchAttempts else { break }
             app.terminate()
             _ = app.wait(for: .notRunning, timeout: CadenceUITestBounds.settle)
@@ -874,8 +1017,10 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
         }
         throw XCTSkip(
             """
-            The macOS app reached the foreground \(Bounds.launchAttempts) times and drew no window \
-            any of them — see [[T-8928]]. Nothing below ran.
+            The macOS app reached the foreground \(Bounds.launchAttempts) times and drew no usable \
+            UI any of them — no window, or a window with an empty accessibility tree. That is \
+            [[T-8928]], not the code under test: the same build draws immediately under \
+            scripts/run-macos-app.sh. Nothing below ran.
             """
         )
     }
