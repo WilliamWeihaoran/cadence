@@ -245,11 +245,9 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         // destination that was already reachable, not a feature routed around.
         context.coordinator.applyExternalSelectionIfNeeded(to: textView)
 
-        if isFocused, !textView.isFirstResponder {
-            textView.becomeFirstResponder()
-        } else if !isFocused, textView.isFirstResponder {
-            textView.resignFirstResponder()
-        }
+        // Never `becomeFirstResponder()` / `resignFirstResponder()` from this body -- the call is
+        // handed to the coordinator, which performs it off the graph update ([[T-11751]]).
+        context.coordinator.synchronizeFirstResponder(of: textView, focused: isFocused)
         context.coordinator.applyScrollRequestIfNeeded(to: textView)
     }
 
@@ -267,6 +265,10 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         private var styledDynamicTypeSize: DynamicTypeSize?
         private var pendingStyleWorkItem: DispatchWorkItem?
         private var consumedScrollRequestID: UUID?
+        /// Whether a first-responder change is already queued for the next main-queue turn, so
+        /// repeated `updateUIView` passes over an unconverged focus state enqueue one hop and not
+        /// one per pass. See `synchronizeFirstResponder(of:focused:)`.
+        private var isFirstResponderChangeScheduled = false
 
         // MARK: - Rendered tables (T-221)
 
@@ -332,6 +334,45 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             defer { pendingProgrammaticEdit = nil }
             textView.replace(textRange, withText: replacement)
             return true
+        }
+
+        /// Brings the text view's first-responder state in line with the host's `isFocused`, **on
+        /// the next main-queue turn rather than inside the SwiftUI graph update that asked for it**.
+        ///
+        /// **[[T-11751]] — this is a hang fix, not a tidy-up.** `updateUIView` called
+        /// `resignFirstResponder()` straight from its body from 2026-05-27 to 2026-11-05. UIKit
+        /// answers that by walking the responder chain and asking each candidate
+        /// `canBecomeFirstResponder`; on the iPad Today page's nested pane host that reaches
+        /// `_UIHostingView.canBecomeFirstResponder`, which reads
+        /// `ViewGraphRootValueUpdater.responderNode` and so **re-enters the very AttributeGraph
+        /// update that is still running**. AttributeGraph detects the cycle and spins forever
+        /// writing it out in `print_cycle`: the app pins at ~99% CPU, the sheet that dropped focus
+        /// never draws, and every later touch and keystroke is lost. Seen three times on
+        /// `Cadence-iPadPro11` from the Notes pane's "Outline" and "Unlinked Mentions", whose
+        /// actions both set `isFocused = false` and raise a sheet in one turn.
+        ///
+        /// One hop off the graph update is the whole fix: by the time the block runs the
+        /// transaction has committed, so the responder walk finds a graph it can read.
+        ///
+        /// The desired state is re-read from `parent` inside the block rather than captured: several
+        /// graph updates can run before the hop, and the host is allowed to change its mind in any
+        /// of them. Pinned by `CadenceMarkdownEditorGraphUpdateSafetyTests`.
+        func synchronizeFirstResponder(of textView: UITextView, focused: Bool) {
+            guard focused != textView.isFirstResponder else { return }
+            guard !isFirstResponderChangeScheduled else { return }
+            isFirstResponderChangeScheduled = true
+            DispatchQueue.main.async { [weak self, weak textView] in
+                guard let self else { return }
+                self.isFirstResponderChangeScheduled = false
+                guard let textView else { return }
+                let wanted = self.parent.isFocused
+                guard wanted != textView.isFirstResponder else { return }
+                if wanted {
+                    textView.becomeFirstResponder()
+                } else {
+                    textView.resignFirstResponder()
+                }
+            }
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
