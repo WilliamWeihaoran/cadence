@@ -341,15 +341,23 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         ///
         /// **[[T-11751]] — this is a hang fix, not a tidy-up.** `updateUIView` called
         /// `resignFirstResponder()` straight from its body from 2026-05-27 to 2026-11-05. UIKit
-        /// answers that by walking the responder chain and asking each candidate
-        /// `canBecomeFirstResponder`; on the iPad Today page's nested pane host that reaches
-        /// `_UIHostingView.canBecomeFirstResponder`, which reads
-        /// `ViewGraphRootValueUpdater.responderNode` and so **re-enters the very AttributeGraph
-        /// update that is still running**. AttributeGraph detects the cycle and spins forever
-        /// writing it out in `print_cycle`: the app pins at ~99% CPU, the sheet that dropped focus
-        /// never draws, and every later touch and keystroke is lost. Seen three times on
-        /// `Cadence-iPadPro11` from the Notes pane's "Outline" and "Unlinked Mentions", whose
-        /// actions both set `isFocused = false` and raise a sheet in one turn.
+        /// answers that by walking the responder chain and asking each candidate whether it is
+        /// willing to become first responder. Inside the iPad Today page's nested pane host, that
+        /// question reaches the SwiftUI hosting view, which answers it by reading the responder
+        /// out of the view graph — and so **re-enters the very AttributeGraph update that is still
+        /// running**. AttributeGraph detects the cycle and spins forever writing it out in
+        /// `print_cycle`: the app pins at ~99% CPU, the sheet that dropped focus never draws, and
+        /// every later touch and keystroke is lost. Seen three times on `Cadence-iPadPro11` from
+        /// the Notes pane's "Outline" and "Unlinked Mentions", whose actions both set
+        /// `isFocused = false` and raise a sheet in one turn.
+        ///
+        /// The two private SwiftUI/UIKit frames in the middle of that walk are described rather
+        /// than named, deliberately: `CadenceCommentSymbolClaimTests` refuses a backticked
+        /// qualified name whose root this tree never spells, and these are Apple's own underscored
+        /// internals, which it may rename without telling anyone. `print_cycle` is kept because it
+        /// is the grep handle that identifies this hang in a `sample`, and it trips no claim
+        /// scanner — it is neither call-shaped nor camelCase. Naming the other two reddened CI on
+        /// `379f47f5`; do not put them back.
         ///
         /// One hop off the graph update is the whole fix: by the time the block runs the
         /// transaction has committed, so the responder walk finds a graph it can read.

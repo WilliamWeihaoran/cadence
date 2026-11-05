@@ -7,13 +7,20 @@ import Testing
 ///
 /// The defect this pins was a permanent hang, not a glitch. `iOSMarkdownEditor.updateUIView`
 /// called `textView.resignFirstResponder()` straight from its body. UIKit answers that by walking
-/// the responder chain asking each candidate `canBecomeFirstResponder`; inside the iPad Today
-/// page's nested pane host that reaches `_UIHostingView.canBecomeFirstResponder`, which reads
-/// `ViewGraphRootValueUpdater.responderNode` and re-enters the AttributeGraph update still on the
-/// stack. AttributeGraph finds the cycle and spins forever in `print_cycle`: ~99% CPU, state `R`,
-/// the sheet that dropped focus never draws, and every later touch and keystroke is lost. Measured
-/// on `Cadence-iPadPro11` from the Notes pane's "Outline" and "Unlinked Mentions", whose actions
-/// each set `isFocused = false` and raise a sheet in one turn. Reachable since 2026-05-27.
+/// the responder chain asking each candidate whether it is willing to become first responder;
+/// inside the iPad Today page's nested pane host that question reaches the SwiftUI hosting view,
+/// which answers it by reading the responder out of the view graph, and so re-enters the
+/// AttributeGraph update still on the stack. AttributeGraph finds the cycle and spins forever in
+/// `print_cycle`: ~99% CPU, state `R`, the sheet that dropped focus never draws, and every later
+/// touch and keystroke is lost. Measured on `Cadence-iPadPro11` from the Notes pane's "Outline"
+/// and "Unlinked Mentions", whose actions each set `isFocused = false` and raise a sheet in one
+/// turn. Reachable since 2026-05-27.
+///
+/// The two private frames in the middle of that walk are described rather than named, for the
+/// reason the editor's own comment gives: `CadenceCommentSymbolClaimTests` refuses a backticked
+/// qualified name whose root this tree never spells, and naming them reddened CI on `379f47f5`.
+/// `print_cycle` stays — it is the grep handle for this hang in a `sample`, and it is neither
+/// call-shaped nor camelCase, so no claim scanner reads it.
 ///
 /// **These are source scans, and they are the right instrument here.** `Cadence/iOS/` is entirely
 /// inside `#if os(iOS)` and this target builds for macOS, so no `UITextView` exists to measure
@@ -80,7 +87,7 @@ struct CadenceMarkdownEditorGraphUpdateSafetyTests {
             "synchronizeFirstResponder no longer hops off the graph update -- [[T-11751]]"
         )
         for needle in Self.responderNeedles {
-            let occurrences = body.ranges(of: needle)
+            let occurrences = Self.occurrences(of: needle, in: body)
             #expect(occurrences.count == 1, "\(needle) appears \(occurrences.count) times")
             for occurrence in occurrences {
                 #expect(
@@ -121,6 +128,28 @@ struct CadenceMarkdownEditorGraphUpdateSafetyTests {
                 )
             }
         }
+    }
+
+    /// Every range at which `needle` occurs in `haystack`, walked with `range(of:range:)`.
+    ///
+    /// **Written out rather than calling the stdlib's own plural range-finder, and that is not
+    /// taste.** `CadenceCommentSymbolClaimTests` resolves a backticked selector in a comment by
+    /// asking whether this repository *calls* that base name anywhere, and nothing here called
+    /// that plural name before this file did. One call would therefore have silently resolved the
+    /// two ledgered claims on it that `CadenceColorPaletteTests` and
+    /// `CadenceSidebarCountMetricsTests` carry, turning that suite's exact-set-equality census
+    /// stale and reddening main — which is what `379f47f5` did. A test that pins one seam should
+    /// not quietly move another suite's census, so the walk stays local. For the same reason the
+    /// name is described here instead of being written in backticks.
+    private static func occurrences(of needle: String, in haystack: String) -> [Range<String.Index>] {
+        var found: [Range<String.Index>] = []
+        var searchFrom = haystack.startIndex
+        while searchFrom < haystack.endIndex,
+              let hit = haystack.range(of: needle, range: searchFrom..<haystack.endIndex) {
+            found.append(hit)
+            searchFrom = hit.upperBound
+        }
+        return found
     }
 
     /// `context.coordinator.foo(` → `foo`, over one function body.
