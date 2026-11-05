@@ -31,6 +31,8 @@ struct iOSStoreBackupSettingsSection: View {
     /// a change here re-reads them; without it the rows stayed drawn and Restore was refused.
     let resetGeneration: Int
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     @State private var backups: [StoreBackupSnapshot] = []
     @State private var pendingRestore: (url: URL, snapshot: StoreBackupSnapshot?)?
     @State private var retainedUnrestoredDirectories: [URL] = []
@@ -58,7 +60,8 @@ struct iOSStoreBackupSettingsSection: View {
                                 Image(systemName: "externaldrive")
                                     .cadenceFont(.controlLabel, base: 14, weight: .semibold)
                                     .foregroundStyle(Theme.dim)
-                                    .frame(width: iOSSettingsMetrics.glyphSlot)
+                                    // [[T-11431]]: the row's tile slot, not a bare `glyphSlot`.
+                                    .frame(width: iOSStoreBackupListMetrics.leadingSlot(at: dynamicTypeSize, scaling: scaling))
                                     .accessibilityHidden(true)
                                 Text(CadenceStoreBackupPresentation.noBackupsText)
                                     .cadenceFont(.controlLabel, base: 13, weight: .regular)
@@ -292,6 +295,24 @@ private struct iOSRetainedUnrestoredDirectoryRow: View {
     }
 }
 
+/// **[[T-11431]].** The one leading slot the Available Backups card's two states share.
+///
+/// A backup row leads with an `iOSIconTile`, whose side is `glyphFrame(glyphSlot, glyph: 13)` --
+/// it grows and shrinks with the reader's text size. The empty state's bare glyph sat in a FIXED
+/// `glyphSlot`, so the two agreed only at `.large`: on `Cadence-iPadPro11`, whose text size is
+/// Medium, the tile drew 31pt against the empty state's 32pt and "No backups available." led
+/// 1.0pt right of a row's title. Both now read the width from here, so the text that follows
+/// each starts at the same x at every text size.
+enum iOSStoreBackupListMetrics {
+    /// The glyph inside a row's tile, and the text base the shared slot scales with.
+    static let rowGlyphSize: CGFloat = 13
+
+    /// The tile's side -- the same expression `iOSIconTile` evaluates for `size: glyphSlot`.
+    static func leadingSlot(at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        iOSTaskPageTypographyMetrics.glyphFrame(iOSSettingsMetrics.glyphSlot, glyph: rowGlyphSize, at: size, scaling: scaling)
+    }
+}
+
 /// One backup: when, what kind, how big, and the one action a phone can take on it.
 private struct iOSStoreBackupRow: View {
     let backup: StoreBackupSnapshot
@@ -303,7 +324,7 @@ private struct iOSStoreBackupRow: View {
                 systemImage: "externaldrive.fill",
                 color: Theme.amber,
                 size: iOSSettingsMetrics.glyphSlot,
-                iconSize: 13
+                iconSize: iOSStoreBackupListMetrics.rowGlyphSize
             )
 
             VStack(alignment: .leading, spacing: 3) {

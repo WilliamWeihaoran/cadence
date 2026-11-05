@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -102,6 +103,52 @@ struct CadenceIOSStoreBackupCardTests {
         if let glyph, let text {
             #expect(glyph.upperBound < text.lowerBound, "the glyph leads the line")
         }
+    }
+
+    // MARK: - [[T-11431]]
+
+    /// The empty state's glyph slot and a row's tile slot are one width, so "No backups
+    /// available." leads where a row's title does. Measured 1.0pt apart on `Cadence-iPadPro11`
+    /// (text size Medium) when the empty state's slot was a fixed `glyphSlot` and the row's
+    /// tile scaled.
+    @Test func theEmptyStateAndARowShareOneLeadingSlot() throws {
+        let section = try phoneSection
+        let empty = section.range(of: "ifbackups.isEmpty{")
+        let populated = section.range(of: "}else{letlisted=")
+        #expect(empty != nil && populated != nil, "the scan no longer reaches the empty branch")
+        guard let empty, let populated, empty.upperBound < populated.lowerBound else { return }
+        let branch = section[empty.upperBound..<populated.lowerBound]
+        #expect(
+            branch.contains(".frame(width:iOSStoreBackupListMetrics.leadingSlot(at:dynamicTypeSize,scaling:scaling))"),
+            "the empty state's glyph no longer sits in the row's slot"
+        )
+        #expect(!branch.contains("iOSSettingsMetrics.glyphSlot"), "a fixed slot is back in the empty state")
+
+        let row = try body("private struct iOSStoreBackupRow: View", in: phonePath)
+        #expect(row.contains(
+            "iOSIconTile(systemImage:\"externaldrive.fill\",color:Theme.amber,size:iOSSettingsMetrics.glyphSlot,iconSize:iOSStoreBackupListMetrics.rowGlyphSize)"
+        ), "the row's tile no longer reads the shared slot")
+
+        let metrics = try body("enum iOSStoreBackupListMetrics", in: phonePath)
+        #expect(metrics.contains(
+            "iOSTaskPageTypographyMetrics.glyphFrame(iOSSettingsMetrics.glyphSlot,glyph:rowGlyphSize,at:size,scaling:scaling)"
+        ), "the slot no longer evaluates the tile's own expression")
+
+        // The tile this matches: its side is the same `glyphFrame(size, glyph: iconSize)`.
+        let tile = try body("struct iOSIconTile: View", in: "Cadence/iOS/iOSDesignSystem.swift")
+        #expect(tile.contains(
+            "letside=iOSTaskPageTypographyMetrics.glyphFrame(size,glyph:iconSize,at:dynamicTypeSize,scaling:scaling)"
+        ), "the tile no longer sizes itself the way the shared slot assumes")
+    }
+
+    /// Non-vacuity for the test above: a scaled slot really does leave `glyphSlot` away from
+    /// `.large`, which is why a fixed slot drifted. Asserts a relation, not a figure.
+    @Test func aScaledTileSlotLeavesTheFixedSlotAwayFromLarge() {
+        let fixed: CGFloat = 32
+        let atLarge = iOSTaskPageTypographyMetrics.glyphFrame(fixed, glyph: 13, at: .large, scaling: .enabled)
+        let atMedium = iOSTaskPageTypographyMetrics.glyphFrame(fixed, glyph: 13, at: .medium, scaling: .enabled)
+        #expect(atLarge == fixed)
+        #expect(atMedium < fixed)
     }
 
     @Test func unrestoredFoldersAreDividedRowsWithoutAnAction() throws {
