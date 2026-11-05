@@ -121,6 +121,24 @@ not in platform editor files.
 - `Cadence/Shared/CadenceCompactTab.swift` owns tab routing.
 - iPad regular width is not part of the compact-tab implementation.
 
+## Simulator Taps
+
+Limits of Claude Code's simulator `control` transport, measured on the standing devices; a control
+that "does nothing" is not evidence until these are ruled out.
+
+- **A SwiftUI `Toggle` needs `duration: 0.12`.** A zero-duration tap left the Do panel's
+  `Without time` switch unchanged four times out of four at three aim points; the first tap with
+  `duration: 0.12` flipped it. Plain `Button`s on the same panel take a zero-duration tap. Only a
+  `Toggle` was measured; send any other UIKit-backed control (a stepper) a duration too ([[T-8465]]).
+- **Paired taps** (a completion circle): two taps sent as sequential calls land ~1.5-3 s apart, so a "second tap within
+  1.2 s" check is never driven, and the second lands on whatever row slid into the slot -- it
+  completed the WRONG task twice. Sent as parallel calls they land ~100-250 ms apart, but 6 of 10
+  pairs delivered only one tap, and three or four parallel taps coalesce to at most two. Read a
+  paired-tap trial only off a capture, never off the end state ([[T-8464]]).
+- **A press-and-hold lift cannot be driven.** A `touch_path` held still 0.8 s or 1.5 s then dragged
+  scrolls the Calendar timeline instead of lifting a timed block. A third-tap-cancels check and a
+  hold-to-lift check need a human finger on an attended run.
+
 ## Reference Sections
 
 Search `../../docs/IOS_AGENTS_REFERENCE.md` for:

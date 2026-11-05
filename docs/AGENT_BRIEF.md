@@ -113,7 +113,8 @@ parameterised test, so use a non-parameterised sibling to prove the scope ran an
   coordinator into writing it into a brief. The owner's actual handset is an **iPhone 15 base
   model, 393x852**, which is the size `Cadence-iPhone15` already simulates ([[T-3147]]);
   `53EC6A90-D767-45DE-8EAC-53B8E1673B1D` is BLIND and denied. Verify iOS only through Claude Code's
-  simulator tools, never the host Simulator app.
+  simulator tools, never the host Simulator app; their tap limits (a `Toggle` needs `duration:`,
+  paired taps, press-and-hold) are in [Cadence/iOS/AGENTS.md](../Cadence/iOS/AGENTS.md#simulator-taps).
 - **Claiming a standing simulator is MANDATORY (T-225, T-8462).** An on-screen agent's first
   command is `./scripts/simulator-claim.sh status`. Before touching either device:
   `claim <id> [timeout] [iphone|ipad]`, `eval "$(./scripts/simulator-claim.sh env <id>)"`,
