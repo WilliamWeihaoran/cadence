@@ -87,7 +87,10 @@ parameterised test, so use a non-parameterised sibling to prove the scope ran an
 - **It stages WHOLE FILES.** If it refuses because a sibling staged a path, **WAIT** or use the
   `<path>=<content-file>` form — never reset a sibling's work. An outstanding declined hunk blocks
   every commit in the checkout for every agent (T-781); clear it by committing the lines.
-- Write the ledger line at commit time, rebuilt on `git show HEAD:docs/TODO.md`.
+- Write the ledger line at commit time, rebuilt on `git show HEAD:docs/TODO.md`, and commit it by
+  the `docs/TODO.md=<content-file>` form: the bare path stages a stale copy whole and silently
+  reverts a sibling's landed line, while the `=` form is refused if built on an older revision and
+  records what it leaves out as a declined hunk (PATH FORMS in `scripts/agent-commit.sh`, T-11902).
 - **Allocating an id: sweep every local AND remote ref**, not just main and not just the filesystem —
   an entry committed to a branch will not show in a file read.
 
