@@ -433,6 +433,10 @@ private struct iOSCalendarMonthCompactGrid: View {
                 rowHeight: rowHeight
             ) {
                 selectedDate = date
+                // [[T-11731]]: a greyed neighbouring-month day takes the grid to its month.
+                if let top = CadenceCalendarMonthPaging.topRowFollowingSelection(of: date, displayMonth: displayMonth, calendar: calendar) {
+                    topRowDate = top
+                }
             }
         }
         .padding(.horizontal, 6)

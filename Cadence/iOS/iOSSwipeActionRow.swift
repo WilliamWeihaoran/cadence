@@ -475,7 +475,11 @@ final class iOSRowHorizontalPanRecognizer: UIGestureRecognizer, UIGestureRecogni
 /// Bridges `iOSRowHorizontalPanRecognizer` into the row. `.gesture` is the only priority this
 /// bridge offers and it is the right one: UIKit arbitration, not SwiftUI's, is what decides
 /// between this recognizer and the row's own controls.
-private struct iOSRowHorizontalPan: UIGestureRecognizerRepresentable {
+///
+/// Not `private`: the touch month grid pages on the same recognizer ([[T-11731]]), because its
+/// rows sit in a vertical `ScrollView` exactly as a task row does, and the reason a `DragGesture`
+/// cannot share a touch with that scroll view is the same one recorded above.
+struct iOSRowHorizontalPan: UIGestureRecognizerRepresentable {
     typealias UIGestureRecognizerType = iOSRowHorizontalPanRecognizer
     typealias Coordinator = Void
 

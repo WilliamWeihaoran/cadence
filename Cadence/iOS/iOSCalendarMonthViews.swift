@@ -54,6 +54,10 @@ struct iOSCalendarMonthGrid: View {
                     onOpenEvent: { selectedEvent = iOSCalendarEventSelection(event: $0) }
                 ) {
                     selectedDate = date
+                    // [[T-11731]]: a greyed neighbouring-month day takes the grid to its month.
+                    if let top = CadenceCalendarMonthPaging.topRowFollowingSelection(of: date, displayMonth: displayMonth, calendar: calendar) {
+                        topRowDate = top
+                    }
                 }
             }
         }
@@ -138,11 +142,44 @@ struct iOSCalendarMonthScrollingGrid<Cell: View>: View {
 
     var body: some View {
         GeometryReader { viewport in
+            let contentWidth = 7 * iOSCalendarTypographyMetrics.monthColumnWidth(at: dynamicTypeSize, scaling: scaling)
             ScrollView(.horizontal) {
                 grid
-                    .frame(width: max(viewport.size.width, 7 * iOSCalendarTypographyMetrics.monthColumnWidth(at: dynamicTypeSize, scaling: scaling)))
+                    .frame(width: max(viewport.size.width, contentWidth))
             }
+            // Only a grid wider than its pane scrolls sideways; one that fits must not rubber-band
+            // under the paging swipe below.
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            // [[T-11731]]: a horizontal swipe pages one month. The task row's recognizer, not a
+            // `DragGesture` — see `iOSRowHorizontalPan` for why only a UIKit recognizer can decline
+            // a vertical drag and leave the rows' `ScrollView` scrolling.
+            .gesture(
+                iOSRowHorizontalPan(
+                    metrics: .standard,
+                    onChanged: { _ in },
+                    onEnded: { translation, velocity in
+                        page(
+                            translation: translation,
+                            velocity: velocity,
+                            contentOverflowsWidth: contentWidth > viewport.size.width
+                        )
+                    },
+                    onCancelled: {}
+                )
+            )
         }
+    }
+
+    /// Pages one month on a released swipe; what the release means is
+    /// `CadenceCalendarMonthPaging.pageDirection`. The write goes through `topRowDate`, so the grid
+    /// moves the same way the date picker moves it — `alignWindow`, animated, from `onChange`.
+    private func page(translation: CGSize, velocity: CGFloat, contentOverflowsWidth: Bool) {
+        guard let direction = CadenceCalendarMonthPaging.pageDirection(
+            translation: translation,
+            horizontalVelocity: velocity,
+            contentOverflowsWidth: contentOverflowsWidth
+        ) else { return }
+        topRowDate = CadenceCalendarMonthPaging.topRow(paging: direction, fromTopRow: topRowDate, calendar: calendar)
     }
 
     private var grid: some View {
