@@ -237,7 +237,7 @@ struct ListDetailPageTests {
             CadenceSourceScan.declarationBody("struct iOSListKanbanPanel: View", in: source),
             "non-vacuity: the iOS Kanban panel is gone"
         )
-        #expect(body.contains("ListDetailKanbanBoard.columns(tasks: tasks, sectionNames: sectionNames)"))
+        #expect(body.contains("ListDetailKanbanBoard.columns(tasks: tasks, sectionNames: sectionNames, filing: liveFiling)"))
         #expect(body.contains("if !ListDetailKanbanBoard.drawsColumns(columns)"))
         #expect(!body.contains("tasks.isEmpty"), "the board branches on its open-task count again")
         // [[T-7085]] named the noun, so both rows say "Add column", not "Add section" (T-10901).

@@ -105,6 +105,23 @@ struct CadenceColumnEditorDefaultAndDateTests {
         #endif
     }
 
+    /// **[[T-12070]]: the iOS column editor offers no Color for Default either**, the iOS twin of
+    /// `macDefaultColumnPopoverOffersNoColor`. The picker is drawn once, inside the one
+    /// `!draft.isDefaultColumn` gate, and that gate closes before the Due date row Default keeps.
+    @Test func iOSDefaultColumnRowOffersNoColor() throws {
+        let source = try CadenceSourceScan.strippedSourceReader()("Cadence/iOS/iOSListEditorViews.swift")
+        let row = try #require(CadenceSourceScan.declarationBody("private struct iOSSectionDraftRow", in: source))
+        #expect(CadenceSourceScan.matchCount("iOSSectionColorPicker\\(", in: row) == 1)
+        let gate = try #require(row.range(of: "if !draft.isDefaultColumn {"))
+        let picker = try #require(row.range(of: "iOSSectionColorPicker(selectedHex: $draft.colorHex)"))
+        let dueDate = try #require(row.range(of: "Text(\"Due date\")"))
+        #expect(gate.upperBound <= picker.lowerBound, "the Color picker is drawn above its Default gate")
+        #expect(picker.lowerBound < dueDate.lowerBound)
+        let between = String(row[gate.upperBound..<dueDate.lowerBound])
+        #expect(between.filter { $0 == "{" }.count == between.filter { $0 == "}" }.count,
+                "the Default gate does not close between the picker and Due date")
+    }
+
     /// **[[T-9803]]: a dated column is cleared in one place, the picker's own panel.** The popover
     /// drew a second red "Clear date" under the picker's trigger, beside the one the picker's panel
     /// draws under its grid (`CadenceQuickDatePopover`, gated by `CadenceDateSelectionState.drawsClear`),

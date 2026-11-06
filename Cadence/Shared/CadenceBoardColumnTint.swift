@@ -8,9 +8,11 @@ import SwiftUI
 /// board drew every configured column -- Default included -- in its stored hex, so the same list's
 /// Default column was a neutral grey dot on the Mac and a slate-blue one on an iPad. A column's
 /// colour is not a pointer, touch or width question, so there is one answer: Default is neutral,
-/// which is the Mac's reading and the one that matches the model, since `Area`/`Project` force
-/// Default's hex back to `TaskSectionDefaults.defaultColorHex` on every write -- a colour nobody
-/// chose.
+/// which is the Mac's reading. The model does not force Default's hex: `Area`/`Project`'s
+/// `normalizedSectionConfigs` refills it with `TaskSectionDefaults.defaultColorHex` only when it
+/// is EMPTY, so whatever Default stores is either that colour nobody chose or a pick that no board
+/// draws -- which is why neither column editor offers Default a colour ([[T-11222]] (c),
+/// [[T-12070]]).
 ///
 /// A value rather than a `Color` so `CadenceTests`, which builds for macOS and never compiles
 /// `Cadence/iOS/`, can pin the decision both boards read.
@@ -21,8 +23,9 @@ nonisolated enum CadenceBoardColumnTint: Equatable, Sendable {
     case neutral
     /// A configured column's own colour.
     case section(hex: String)
-    /// A column the list no longer configures -- a name that exists only on a task -- which iOS
-    /// draws and which has no colour to read, so it takes the list's.
+    /// A column the list no longer configures -- a name that exists only on a task -- which has no
+    /// colour to read, so it takes the list's. No board draws such a column since [[T-11222]] (b)
+    /// filed its cards under Default (`ListBoardCardFiling`); kept as the nil-config answer.
     case listAccent
 
     /// The column's own colour, before its lifecycle: what the Mac column's chrome and drop ring are

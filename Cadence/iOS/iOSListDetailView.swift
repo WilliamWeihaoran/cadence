@@ -117,11 +117,13 @@ struct iOSListDetailView: View {
         showArchivedKanbanColumnsListKey == rememberedPageKey
     }
 
-    /// The columns the Kanban tab draws. Off, the board it always drew (live columns, then any
-    /// section only a task names); on, the list's archived columns through the rule the Mac board
-    /// reads, `ListDetailKanbanBoard.visibleSectionConfigs` ([[T-8565]]).
+    /// The columns the Kanban tab draws. Off, the list's live columns -- and only those: a section
+    /// only a task names no longer gets a column of its own, which brought an archived column back
+    /// onto the live board; the panel files such a card under Default, as the Mac board does
+    /// ([[T-11222]] (b), `ListBoardCardFiling`). On, the list's archived columns through the rule the
+    /// Mac board reads, `ListDetailKanbanBoard.visibleSectionConfigs` ([[T-8565]]).
     private var kanbanSectionNames: [String] {
-        guard showArchivedKanbanColumns else { return sectionNames }
+        guard showArchivedKanbanColumns else { return configuredSectionNames }
         return ListDetailKanbanBoard.visibleSectionConfigs(sectionConfigs, showArchived: true).map(\.name)
     }
 

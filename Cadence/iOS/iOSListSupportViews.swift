@@ -462,8 +462,10 @@ struct iOSListKanbanPanel: View {
     /// half gets the board it always got, with no footer drawn anywhere.
     var completedTasks: [AppTask] = []
     let sectionNames: [String]
-    /// Colour/completion for the named columns. Names that only exist on a task (a section a list
-    /// no longer configures) have no config and fall back to the list's own colour.
+    /// Colour/completion for the named columns, and -- every config, archived ones included -- what
+    /// `liveFiling` reads to file a card whose column is not live ([[T-11222]] (b)). Every column
+    /// drawn is a configured one now, so the list-colour fallback for a config-less name is a
+    /// guard rather than a case the board reaches.
     let sectionConfigs: [TaskSectionConfig]
     /// The list's `hideSectionDueDateIfEmpty`. Wired for the same reason the due-date line itself
     /// is (T-331): the flag was already in the model and already editable on macOS, so an iOS board
@@ -513,14 +515,21 @@ struct iOSListKanbanPanel: View {
     /// when the list has no column at all — it used to stand in whenever there was no open task,
     /// which hid every column a fresh list had ([[T-7033]]).
     private var columns: [CadenceTaskDisplayGroup] {
-        ListDetailKanbanBoard.columns(tasks: tasks, sectionNames: sectionNames)
+        ListDetailKanbanBoard.columns(tasks: tasks, sectionNames: sectionNames, filing: liveFiling)
+    }
+
+    /// [[T-11222]] (b): on the live board a card whose section names no live column is drawn under
+    /// Default, as on the Mac, instead of in a column of its own that resurrected an archived one.
+    /// The Show Archived board matches by the task's own name.
+    private var liveFiling: ListBoardCardFiling? {
+        showsArchivedColumns ? nil : ListBoardCardFiling(configs: sectionConfigs)
     }
 
     /// Finished cards keyed by the column title `columns` produces ([[T-9837]]). One pass for the
     /// whole board rather than a filter per column: a SwiftUI computed property is recomputed at
     /// every reference, and the body reaches this once per column inside a `ForEach` (T-1501).
     private var completedByColumn: [String: [AppTask]] {
-        ListDetailKanbanBoard.completedTasksByColumn(tasks: completedTasks, sectionNames: sectionNames)
+        ListDetailKanbanBoard.completedTasksByColumn(tasks: completedTasks, sectionNames: sectionNames, filing: liveFiling)
     }
 
     var body: some View {

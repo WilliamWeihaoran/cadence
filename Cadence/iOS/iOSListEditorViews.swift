@@ -1070,7 +1070,12 @@ private struct iOSSectionDraftRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            iOSSectionColorPicker(selectedHex: $draft.colorHex)
+            // [[T-12070]]: Default has no colour to pick -- both boards draw it neutral whatever it
+            // stores (`CadenceBoardColumnTint.base`) -- so it is offered none, as the Mac column
+            // popover withholds its swatches behind `if !section.isDefault` ([[T-11222]] (c)).
+            if !draft.isDefaultColumn {
+                iOSSectionColorPicker(selectedHex: $draft.colorHex)
+            }
 
             // [[T-9804]]: the Mac column popover's one-button field, not a "Due date" switch plus a
             // picker. It reads "No due date" while empty, a pick sets the date and Clear unsets it.

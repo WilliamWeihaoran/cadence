@@ -101,7 +101,7 @@ struct iOSListBoardCompletedColumnTests {
             "the iOS list board panel is gone"
         )
         #expect(panel.contains("var completedTasks: [AppTask] = []"), "the panel takes no finished half")
-        #expect(panel.contains("ListDetailKanbanBoard.completedTasksByColumn(tasks: completedTasks, sectionNames: sectionNames)"),
+        #expect(panel.contains("ListDetailKanbanBoard.completedTasksByColumn(tasks: completedTasks, sectionNames: sectionNames, filing: liveFiling)"),
                 "the panel buckets the finished half some way other than the shared rule")
         #expect(panel.contains("completedTasks: finished[column.title] ?? []"),
                 "the panel hands its columns no finished cards")

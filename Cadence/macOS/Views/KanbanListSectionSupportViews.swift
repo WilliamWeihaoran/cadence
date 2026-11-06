@@ -65,7 +65,10 @@ struct ListSectionsKanbanView: View {
             from: tasks,
             sections: columns,
             sortField: sortField,
-            direction: sortDirection
+            direction: sortDirection,
+            // [[T-11222]] (b): the live board files a card whose column is not live under Default,
+            // as iOS does; the Show Archived board matches by the task's own name.
+            filing: showArchivedBinding.wrappedValue ? nil : ListBoardCardFiling(configs: baseSectionConfigs)
         )
         ZStack {
             Theme.bg
@@ -200,11 +203,16 @@ struct ListSectionsKanbanView: View {
     ///
     /// Columns are keyed by exact `name` rather than by `id` because two columns with one name
     /// have one bucket by definition; a column no task names is absent and reads as empty.
+    ///
+    /// `filing` is the live board's rule for a card whose section names no live column
+    /// ([[T-11222]] (b)): it is drawn under Default rather than on no column at all, where it could
+    /// not be seen. `nil` (the Show Archived board) matches every card by its own name.
     static func columnCards(
         from tasks: [AppTask],
         sections: [TaskSectionConfig],
         sortField: TaskSortField,
-        direction: TaskSortDirection
+        direction: TaskSortDirection,
+        filing: ListBoardCardFiling? = nil
     ) -> [String: [AppTask]] {
         var columnNames: [String] = []
         var seenColumnNames = Set<String>()
@@ -215,7 +223,7 @@ struct ListSectionsKanbanView: View {
         var columnsByTaskSectionName: [String: [String]] = [:]
         var buckets: [String: [AppTask]] = [:]
         for task in tasks {
-            let taskSectionName = task.resolvedSectionName
+            let taskSectionName = filing?.sectionName(for: task) ?? task.resolvedSectionName
             let matches: [String]
             if let cached = columnsByTaskSectionName[taskSectionName] {
                 matches = cached

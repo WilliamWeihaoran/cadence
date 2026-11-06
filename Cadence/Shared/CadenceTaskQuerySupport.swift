@@ -290,11 +290,15 @@ enum CadenceTaskQuerySupport {
     static func sectionGroups(
         from tasks: [AppTask],
         sectionNames: [String],
-        includingEmpty: Bool = false
+        includingEmpty: Bool = false,
+        filing: ListBoardCardFiling? = nil
     ) -> [CadenceTaskDisplayGroup] {
+        // [[T-11222]] (b): a live list board files a card whose section names no live column under
+        // Default (`ListBoardCardFiling`); every other caller matches the task's own name.
         sectionNames.compactMap { sectionName in
             let sectionTasks = tasks.filter {
-                $0.resolvedSectionName.caseInsensitiveCompare(sectionName) == .orderedSame
+                (filing?.sectionName(for: $0) ?? $0.resolvedSectionName)
+                    .caseInsensitiveCompare(sectionName) == .orderedSame
             }
             guard includingEmpty || !sectionTasks.isEmpty else { return nil }
             return CadenceTaskDisplayGroup(

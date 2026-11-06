@@ -135,6 +135,56 @@ enum ListDetailTabStripMetrics {
     }
 }
 
+/// **Which column a LIVE list board draws a card under, on both platforms** ([[T-11222]] (b)).
+///
+/// A task can name a column the list no longer draws live. Archiving a column cancels its open
+/// work, but nothing stops that work being reopened afterwards -- a reopen is `markTodo`, which
+/// leaves `sectionName` alone -- so an open task in an archived column is one tap away; a column
+/// deleted on one device while another files a task into it is the sync-borne case. The two boards
+/// disagreed about such a task: iOS appended a column for its name, so the archived column came
+/// back on the live board; the Mac matched configured live columns only, so the task sat on no
+/// column and could not be seen. One rule now (keeper decision recorded in [[T-12120]], one app
+/// on two platforms per [[T-8201]]): **it is drawn under Default.**
+///
+/// - **Display only.** Nothing is written to the task; reading this never re-files anything.
+///   Only a gesture -- a drop, an edit -- moves a task.
+/// - **A finished card of an ARCHIVED column stays with that column**, which the Show Archived
+///   board draws with its finished half. Filing it under Default would pour every archived
+///   column's wound-down work into Default's Completed count. A finished card whose column is not
+///   configured at all has nowhere else to be seen, so it joins Default like an open one.
+/// - **Live boards only.** The Show Archived board draws archived columns and no Default, so it
+///   passes no filing and matches by the task's own name, as before.
+///
+/// `nil` when the list configures no live column, which only a caller with no list can hand it
+/// (`normalizedSectionConfigs` always keeps a live Default): there is no Default to file under.
+struct ListBoardCardFiling: Equatable {
+    let liveColumnNames: [String]
+    let archivedColumnNames: [String]
+
+    init?(configs: [TaskSectionConfig]) {
+        let live = configs.filter { !$0.isArchived }.map(\.name)
+        guard !live.isEmpty else { return nil }
+        liveColumnNames = live
+        archivedColumnNames = configs.filter(\.isArchived).map(\.name)
+    }
+
+    /// The section name the live board files `task` under: its own, when a live column has that
+    /// name (case-insensitively, as every board matches); otherwise Default, except a finished
+    /// card whose name is an archived column's.
+    func sectionName(for task: AppTask) -> String {
+        let name = task.resolvedSectionName
+        if Self.contains(liveColumnNames, name) { return name }
+        if CadenceTaskQuerySupport.isFinishedTask(task), Self.contains(archivedColumnNames, name) {
+            return name
+        }
+        return TaskSectionDefaults.defaultName
+    }
+
+    private static func contains(_ names: [String], _ name: String) -> Bool {
+        names.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
+    }
+}
+
 /// The list Kanban tab's columns, decided where `CadenceTests` can see it ([[T-7033]]).
 ///
 /// The iOS board used to branch on `tasks.isEmpty`, so a list whose tasks were all done (or that
@@ -143,11 +193,18 @@ enum ListDetailTabStripMetrics {
 /// `ListSectionsKanbanView` draws every configured column whatever it holds. This is that rule:
 /// every column, filled or not, and the board is drawn whenever there is a column to draw.
 enum ListDetailKanbanBoard {
-    static func columns(tasks: [AppTask], sectionNames: [String]) -> [CadenceTaskDisplayGroup] {
+    /// `filing` is the live board's rule for a card whose section names no live column
+    /// (`ListBoardCardFiling`); `nil` matches every card by its own section name.
+    static func columns(
+        tasks: [AppTask],
+        sectionNames: [String],
+        filing: ListBoardCardFiling? = nil
+    ) -> [CadenceTaskDisplayGroup] {
         CadenceTaskQuerySupport.sectionGroups(
             from: tasks,
             sectionNames: sectionNames,
-            includingEmpty: true
+            includingEmpty: true,
+            filing: filing
         )
     }
 
@@ -172,13 +229,15 @@ enum ListDetailKanbanBoard {
     /// `KanbanBoardSupport.columnHalves` records it for the Mac's own split.
     static func completedTasksByColumn(
         tasks: [AppTask],
-        sectionNames: [String]
+        sectionNames: [String],
+        filing: ListBoardCardFiling? = nil
     ) -> [String: [AppTask]] {
         var byColumn: [String: [AppTask]] = [:]
         for group in CadenceTaskQuerySupport.sectionGroups(
             from: tasks,
             sectionNames: sectionNames,
-            includingEmpty: true
+            includingEmpty: true,
+            filing: filing
         ) where !group.tasks.isEmpty {
             byColumn[group.title] = group.tasks
         }
