@@ -142,6 +142,31 @@ enum CadenceUITestEnvironment {
     // present in exactly the runs whose gesture went nowhere. Element-level `isEnabled` on a real
     // control is fine; `CadenceUITestIdentifierLookupTests` refuses the Application-level read.
 
+    // MARK: - Four macOS transport traps that answer wrong instead of failing (T-11631)
+    //
+    // Each was measured on screen on 2026-11-05 and each returned a CONFIDENT WRONG ANSWER, not
+    // an error. Read them before writing a macOS test; the measurements live at the call sites.
+    //
+    // 1. **The synthesised drag does not drag.** `press(forDuration:thenDragTo:)` asked to move an
+    //    existing Calendar block 70pt moved it 0pt (T-3171), so "the gesture created nothing" from
+    //    this transport is void. Assert on no drag until a transport emits intermediate moves. See
+    //    the negative control in `CadenceMacCalendarDragCreateUITests`.
+    // 2. **`window.screenshot()` does not contain a popover** -- a macOS popover is its own
+    //    window, so a hover diff over it reads 0 px. Shoot the popover element and offset by ITS
+    //    origin: `pickerPopoverElement()` in `CadenceMacRoundPlateHitAndHoverUITests`.
+    // 3. **Parking the pointer outside a popover dismisses it**, so both shots are of the same dead
+    //    surface -- also 0 px. Park inside it, furthest from the plate:
+    //    `parkPointer(insidePopover:away:)` in the same suite. With 2 and 3 fixed, 0 px became 3536.
+    // 4. **`XCUIApplication.terminate()` is asynchronous.** Back-to-back launches in one process
+    //    collide with the last teardown and fail on the environment (`state is 3`, no Window, an
+    //    empty accessibility tree). Wait for `.notRunning` after every `terminate()`, as
+    //    `CadenceMacRoundPlateHitAndHoverUITests.tearDownWithError` and the drag suite's
+    //    `launchApp()` retry do.
+    //
+    // The macOS UI-automation route itself is PARKED by owner decision of 2026-11-05 (T-11631's
+    // addendum): the per-session grant, screen locks and the owner's pointer cost too much, and
+    // sightings moved to the simulator. The traps stand whatever transport comes next.
+
     // MARK: - Keeping a launched app out of the signed-in person's own state (T-1157)
 
     /// The launch-argument key the app reads its private preferences suite from. Spelled here
