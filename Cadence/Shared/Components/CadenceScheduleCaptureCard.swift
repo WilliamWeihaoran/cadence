@@ -235,6 +235,8 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
     var options: CadenceScheduleCaptureOptions
     var actions: CadenceSchedulePanelActions
     var notesField: NotesField?
+    /// See `cardLayout`. Off unless the host asks, through `CadenceSchedulePanel.pinningCaptureHeader()`.
+    var pinsHeader = false
 
     @State private var activeField: CadenceCaptureField?
     @State private var dateMonth = Date()
@@ -258,130 +260,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                CadenceScheduleKindSwitch(kind: kindBinding, isEditing: draft.subject.isEditing, identifierPrefix: "capture-kind")
-                    .frame(maxWidth: 240)
-                Spacer(minLength: 0)
-                // [[T-9662]]: the 44pt square goes INSIDE the label. The card's
-                // `.buttonStyle(.cadencePlain)` puts its `contentShape` on the button's label, so
-                // a frame applied to the Button reserves the space and takes none of the taps --
-                // the tappable area was the ~17pt glyph. The field icons below have always put
-                // their frame inside the label, which is why they alone were right.
-                Button(action: actions.cancel) { Image(systemName: "xmark").frame(width: 44, height: 44) }
-                    .accessibilityLabel(isReadOnly ? "Done" : "Cancel")
-                    .accessibilityIdentifier("capture-cancel")
-                    .help(isReadOnly ? "Done" : "Cancel")
-            }
-            if let readOnlyNotice {
-                CadenceInlineNotice(text: readOnlyNotice, tone: .informational)
-            }
-            if let eyebrow = titleStatus?.eyebrow {
-                Text(eyebrow).cadenceFont(.metadata).foregroundStyle(titleStatus?.eyebrowTint ?? Theme.dim)
-            }
-            // **Wraps onto a second and third line rather than truncating** ([[T-3237]] item 1).
-            // `CadenceSchedulePanel.titleField` has read `axis: .vertical` + `lineLimit(1...3)`
-            // since it was built; this card was the near-copy that kept the single-line form, so a
-            // long title lost its tail at the one moment the reader is still composing it. Matching
-            // the panel rather than inventing a height keeps one title treatment across the two
-            // presentations, and keeps Return on `onSubmit` the way the panel documents at its own
-            // field: a vertical-axis field still submits, and the submit is deliberately unguarded.
-            TextField(draft.kind.titlePlaceholder, text: $draft.title, axis: .vertical)
-                .textFieldStyle(.plain)
-                .cadenceFont(.composerTitle)
-                .lineLimit(1...3)
-                .focused($titleIsFocused)
-                .submitLabel(.done)
-                .onSubmit(commit)
-                .accessibilityIdentifier("capture-title")
-                .strikethrough(titleStatus?.isSettled == true)
-                .foregroundStyle(titleStatus?.isSettled == true ? Theme.dim : Theme.text)
-                .disabled(isReadOnly)
-            if !draft.subject.isEditing, let notesField { notesField }
-            if notesField == nil || !draft.subject.isEditing {
-                // **The focus jump, fixed at its cause** ([[T-3237]] item 2). The limit used to
-                // read `notesIsFocused || !draft.notes.isEmpty ? 3...6 : 1...1`, so focusing an
-                // EMPTY field moved the lower bound from one line to three and the card grew by two
-                // lines with nothing typed into it; blurring moved it back and the card dropped.
-                // The lower bound was answering "is this field focused", which is not a question
-                // about how much text there is. A single `1...6` asks only the content: empty is one
-                // line whether focused or not, and the field grows a line at a time as it fills, so
-                // there is no transition left to jump on. Deliberately NOT a fixed height — that
-                // would hide the reflow behind reserved space rather than stop it.
-                TextField("Notes", text: $draft.notes, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .cadenceFont(.bodyText)
-                    .lineLimit(1...6)
-                    .focused($notesIsFocused)
-                    .disabled(isReadOnly)
-            }
-
-            chipPlacement
-            HStack(spacing: 0) {
-                if !isReadOnly, let delete = actions.delete {
-                    // [[T-9662]]: same shape as the close button above -- the 44pt minimum is
-                    // the label's, not the Button's, so the word takes the whole row height.
-                    Button(role: .destructive) { actionError = delete() } label: {
-                        Text("Delete").frame(minHeight: 44)
-                    }
-                    .foregroundStyle(Theme.red)
-                    .accessibilityIdentifier("capture-delete")
-                }
-                Spacer(minLength: 0)
-                ForEach(fields.filter { !isSet($0) && !CadenceCaptureFieldInventory.overflow.contains($0) }) { field in
-                    Button { open(field) } label: {
-                        Image(systemName: field.symbol).frame(width: 44, height: 44)
-                    }
-                    .help(field.title)
-                    .accessibilityLabel("Set \(field.title)")
-                    .accessibilityIdentifier("capture-set-\(field.rawValue)")
-                    .disabled(isReadOnly)
-                }
-                if draft.kind == .task || fields.contains(.repeatRule) {
-                    Menu {
-                        if fields.contains(.repeatRule) {
-                            Button("Repeat", systemImage: "repeat") { open(.repeatRule) }
-                        }
-                        if draft.kind == .task {
-                            Button("Priority", systemImage: "exclamationmark") { open(.priority) }
-                            Button("Estimate", systemImage: "clock") { open(.estimate) }
-                        }
-                    } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
-                    .help("More capture options")
-                    .accessibilityLabel("More capture options")
-                    .accessibilityIdentifier("capture-more")
-                    .disabled(isReadOnly)
-                }
-                if !isReadOnly {
-                    Button(action: commit) {
-                        if draft.subject.isEditing {
-                            Text("Save").cadenceFont(.controlLabel, weight: .semibold)
-                                .frame(minWidth: 44, minHeight: 44)
-                        } else {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .cadenceFont(.editorTitle)
-                                .imageScale(.large)
-                                .frame(minWidth: 44, minHeight: 44)
-                        }
-                    }
-                    .accessibilityLabel(draft.subject.isEditing ? "Save" : "Create \(draft.kind.title.lowercased())")
-                    .accessibilityIdentifier(draft.subject.isEditing ? "capture-save" : "capture-create")
-                    .help(draft.subject.isEditing ? "Save" : "Create \(draft.kind.title.lowercased())")
-                    .disabled(!canCommit || TaskTitleSupport.normalized(draft.title).isEmpty)
-                }
-            }
-            if draft.kind == .event, let calendarUnavailableNotice {
-                CadenceInlineNotice(text: calendarUnavailableNotice, tone: .informational)
-            }
-            if let notice = actionError ?? failureNotice {
-                CadenceInlineNotice(text: notice, tone: .failure)
-            }
-            if draft.kind == .task, let notice = draft.doAfterDueNotice {
-                CadenceInlineNotice(text: notice, tone: .warning)
-            }
-            if draft.subject.isEditing, let notesField { notesField }
-        }
-        .padding(16)
+        cardLayout
         .foregroundStyle(Theme.text)
         .background(Theme.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard))
@@ -439,6 +318,173 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
         .onAppear { titleIsFocused = !draft.subject.isEditing && !isReadOnly }
         .onChange(of: activeField) { _, field in if field == nil { titleIsFocused = !draft.subject.isEditing && !isReadOnly } }
         .onChange(of: draft.title) { _, _ in actionError = nil }
+    }
+
+    // MARK: - Header and body
+
+    /// **[[T-12261]]: the header can stay on screen while the rest scrolls.** A host whose
+    /// content grows under the card -- the task inspector, where every added subtask pushes the
+    /// composer down -- scrolls the card inside its own `ScrollView`, and keyboard avoidance
+    /// scrolled the Task/Event switcher, the `x` and the title above the sheet's top edge with
+    /// nothing to bring them back. Such a host asks for `pinsHeader`, and the header becomes a
+    /// pinned section header: the same views in the same order, held at the scroll view's top
+    /// while the body passes under it. One view, so the title's focus, `commit()` and the kind
+    /// memory stay shared between the two halves, which a header drawn by the host could not do.
+    /// The body is ONE child of the lazy stack, so it is never torn down while any of it shows.
+    /// Every other host keeps the plain stack, laid out exactly as before.
+    @ViewBuilder
+    private var cardLayout: some View {
+        if pinsHeader {
+            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                Section {
+                    VStack(alignment: .leading, spacing: 12) { cardBody }
+                        .padding([.horizontal, .bottom], 16)
+                } header: {
+                    VStack(alignment: .leading, spacing: 12) { cardHeader }
+                        .padding([.horizontal, .top], 16)
+                        .padding(.bottom, 12)
+                        // Opaque, so the rows scrolling under the pinned header do not show through.
+                        .background(Theme.surfaceElevated)
+                }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 12) {
+                cardHeader
+                cardBody
+            }
+            .padding(16)
+        }
+    }
+
+    /// The kind switch and the `x`, a read-only notice, the status eyebrow and the title.
+    @ViewBuilder
+    private var cardHeader: some View {
+        HStack(spacing: 12) {
+            CadenceScheduleKindSwitch(kind: kindBinding, isEditing: draft.subject.isEditing, identifierPrefix: "capture-kind")
+                .frame(maxWidth: 240)
+            Spacer(minLength: 0)
+            // [[T-9662]]: the 44pt square goes INSIDE the label. The card's
+            // `.buttonStyle(.cadencePlain)` puts its `contentShape` on the button's label, so
+            // a frame applied to the Button reserves the space and takes none of the taps --
+            // the tappable area was the ~17pt glyph. The field icons below have always put
+            // their frame inside the label, which is why they alone were right.
+            Button(action: actions.cancel) { Image(systemName: "xmark").frame(width: 44, height: 44) }
+                .accessibilityLabel(isReadOnly ? "Done" : "Cancel")
+                .accessibilityIdentifier("capture-cancel")
+                .help(isReadOnly ? "Done" : "Cancel")
+        }
+        if let readOnlyNotice {
+            CadenceInlineNotice(text: readOnlyNotice, tone: .informational)
+        }
+        if let eyebrow = titleStatus?.eyebrow {
+            Text(eyebrow).cadenceFont(.metadata).foregroundStyle(titleStatus?.eyebrowTint ?? Theme.dim)
+        }
+        // **Wraps onto a second and third line rather than truncating** ([[T-3237]] item 1).
+        // `CadenceSchedulePanel.titleField` has read `axis: .vertical` + `lineLimit(1...3)`
+        // since it was built; this card was the near-copy that kept the single-line form, so a
+        // long title lost its tail at the one moment the reader is still composing it. Matching
+        // the panel rather than inventing a height keeps one title treatment across the two
+        // presentations, and keeps Return on `onSubmit` the way the panel documents at its own
+        // field: a vertical-axis field still submits, and the submit is deliberately unguarded.
+        TextField(draft.kind.titlePlaceholder, text: $draft.title, axis: .vertical)
+            .textFieldStyle(.plain)
+            .cadenceFont(.composerTitle)
+            .lineLimit(1...3)
+            .focused($titleIsFocused)
+            .submitLabel(.done)
+            .onSubmit(commit)
+            .accessibilityIdentifier("capture-title")
+            .strikethrough(titleStatus?.isSettled == true)
+            .foregroundStyle(titleStatus?.isSettled == true ? Theme.dim : Theme.text)
+            .disabled(isReadOnly)
+    }
+
+    /// Notes, the chips, the action row, the notices and an editing host's own sections.
+    @ViewBuilder
+    private var cardBody: some View {
+        if !draft.subject.isEditing, let notesField { notesField }
+        if notesField == nil || !draft.subject.isEditing {
+            // **The focus jump, fixed at its cause** ([[T-3237]] item 2). The limit used to
+            // read `notesIsFocused || !draft.notes.isEmpty ? 3...6 : 1...1`, so focusing an
+            // EMPTY field moved the lower bound from one line to three and the card grew by two
+            // lines with nothing typed into it; blurring moved it back and the card dropped.
+            // The lower bound was answering "is this field focused", which is not a question
+            // about how much text there is. A single `1...6` asks only the content: empty is one
+            // line whether focused or not, and the field grows a line at a time as it fills, so
+            // there is no transition left to jump on. Deliberately NOT a fixed height — that
+            // would hide the reflow behind reserved space rather than stop it.
+            TextField("Notes", text: $draft.notes, axis: .vertical)
+                .textFieldStyle(.plain)
+                .cadenceFont(.bodyText)
+                .lineLimit(1...6)
+                .focused($notesIsFocused)
+                .disabled(isReadOnly)
+        }
+
+        chipPlacement
+        HStack(spacing: 0) {
+            if !isReadOnly, let delete = actions.delete {
+                // [[T-9662]]: same shape as the close button above -- the 44pt minimum is
+                // the label's, not the Button's, so the word takes the whole row height.
+                Button(role: .destructive) { actionError = delete() } label: {
+                    Text("Delete").frame(minHeight: 44)
+                }
+                .foregroundStyle(Theme.red)
+                .accessibilityIdentifier("capture-delete")
+            }
+            Spacer(minLength: 0)
+            ForEach(fields.filter { !isSet($0) && !CadenceCaptureFieldInventory.overflow.contains($0) }) { field in
+                Button { open(field) } label: {
+                    Image(systemName: field.symbol).frame(width: 44, height: 44)
+                }
+                .help(field.title)
+                .accessibilityLabel("Set \(field.title)")
+                .accessibilityIdentifier("capture-set-\(field.rawValue)")
+                .disabled(isReadOnly)
+            }
+            if draft.kind == .task || fields.contains(.repeatRule) {
+                Menu {
+                    if fields.contains(.repeatRule) {
+                        Button("Repeat", systemImage: "repeat") { open(.repeatRule) }
+                    }
+                    if draft.kind == .task {
+                        Button("Priority", systemImage: "exclamationmark") { open(.priority) }
+                        Button("Estimate", systemImage: "clock") { open(.estimate) }
+                    }
+                } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
+                .help("More capture options")
+                .accessibilityLabel("More capture options")
+                .accessibilityIdentifier("capture-more")
+                .disabled(isReadOnly)
+            }
+            if !isReadOnly {
+                Button(action: commit) {
+                    if draft.subject.isEditing {
+                        Text("Save").cadenceFont(.controlLabel, weight: .semibold)
+                            .frame(minWidth: 44, minHeight: 44)
+                    } else {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .cadenceFont(.editorTitle)
+                            .imageScale(.large)
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                }
+                .accessibilityLabel(draft.subject.isEditing ? "Save" : "Create \(draft.kind.title.lowercased())")
+                .accessibilityIdentifier(draft.subject.isEditing ? "capture-save" : "capture-create")
+                .help(draft.subject.isEditing ? "Save" : "Create \(draft.kind.title.lowercased())")
+                .disabled(!canCommit || TaskTitleSupport.normalized(draft.title).isEmpty)
+            }
+        }
+        if draft.kind == .event, let calendarUnavailableNotice {
+            CadenceInlineNotice(text: calendarUnavailableNotice, tone: .informational)
+        }
+        if let notice = actionError ?? failureNotice {
+            CadenceInlineNotice(text: notice, tone: .failure)
+        }
+        if draft.kind == .task, let notice = draft.doAfterDueNotice {
+            CadenceInlineNotice(text: notice, tone: .warning)
+        }
+        if draft.subject.isEditing, let notesField { notesField }
     }
 
     // MARK: - Where the set fields sit

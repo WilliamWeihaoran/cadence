@@ -434,6 +434,48 @@ struct CadenceCaptureEditorTests {
         #expect(goodScan.offenders.isEmpty, "\(goodScan.offenders)")
     }
 
+    /// **[[T-12261]].** Adding subtasks in the iOS task inspector scrolled the card's whole header
+    /// -- the Task/Event switcher, the `x` and the title -- above the sheet's top edge, and nothing
+    /// brought it back. The inspector now asks the card to pin its header as a section header of
+    /// its scroll view, and the pinned half holds exactly those controls while the record sections
+    /// stay in the half that scrolls.
+    ///
+    /// A STRUCTURAL pin, not a behavioural proof: where a pinned header is drawn is layout, and no
+    /// unit seam reaches a `ScrollView`'s offset. `Cadence/iOS/` does not build on this target's
+    /// macOS leg either, so the wiring is read from source. The on-screen sighting is owed.
+    @Test func theTaskInspectorPinsTheCardHeaderWhileTheRecordScrolls() throws {
+        let task = CadenceSourceScan.codeOnly(try source("Cadence/iOS/iOSTaskDetailSheet.swift"))
+        let scroll = try #require(CadenceSourceScan.declarationBody("private var editorScrollView: some View", in: task))
+        #expect(CadenceSourceScan.matchCount(#"\.pinningCaptureHeader\(\)"#, in: scroll) == 1,
+                "the task inspector no longer pins the capture card's header")
+        #expect(scroll.contains("ScrollView {"), "the header is pinned to a scroll view that is gone")
+        // Opt-in: the hosts whose card does not grow under it keep the plain stack.
+        for host in ["iOSCalendarEventEditSheet", "iOSCreateTaskSheet", "iOSCalendarQuickCreateSheet"] {
+            let code = CadenceSourceScan.codeOnly(try source("Cadence/iOS/\(host).swift"))
+            #expect(!code.contains(".pinningCaptureHeader()"), "\(host) pins a header nobody measured")
+        }
+
+        let panel = CadenceSourceScan.codeOnly(try source("Cadence/Shared/Components/CadenceSchedulePanel.swift"))
+        let route = try #require(CadenceSourceScan.declarationBody("var body: some View", in: panel))
+        #expect(route.contains("pinsHeader: pinsCaptureHeader"), "the panel drops the pin on the way to the card")
+
+        // Comments blanked, literals kept: the controls are found by their accessibility ids.
+        let card = try source("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift")
+        let layout = try #require(CadenceSourceScan.declarationBody("private var cardLayout: some View", in: card))
+        #expect(layout.contains("if pinsHeader {"))
+        #expect(layout.contains("LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders])"))
+        #expect(layout.contains(".background(Theme.surfaceElevated)"), "rows would show through the pinned header")
+        let header = try #require(CadenceSourceScan.declarationBody("private var cardHeader: some View", in: card))
+        let body = try #require(CadenceSourceScan.declarationBody("private var cardBody: some View", in: card))
+        for control in ["\"capture-kind\"", "\"capture-cancel\"", "\"capture-title\""] {
+            #expect(header.contains(control), "\(control) is not in the pinned header")
+            #expect(!body.contains(control), "\(control) scrolls with the body")
+        }
+        // The editing host's sections -- the subtask composer among them -- scroll.
+        #expect(body.contains("if draft.subject.isEditing, let notesField { notesField }"))
+        #expect(!header.contains("notesField"))
+    }
+
     /// Every `Button` in `lines`, with the `.frame(` modifiers applied to the button itself rather
     /// than inside its label. A button's expression ends on the line where the braces its own
     /// closures opened close again; the lines after it that begin with `.` are its modifiers.

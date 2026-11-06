@@ -205,6 +205,10 @@ struct iOSTaskDetailSheet: View {
                 recordSections
             }
             .capturePresentation(CadenceScheduleCaptureOptions())
+            // [[T-12261]]: each added subtask pushes the composer down, and keyboard avoidance
+            // used to scroll the switcher, the `x` and the title off the sheet for good. They
+            // stay pinned at the scroll view's top now; the record sections scroll under them.
+            .pinningCaptureHeader()
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardHeight = $0 + 24 }
             .frame(maxWidth: 540)
             .padding(12)

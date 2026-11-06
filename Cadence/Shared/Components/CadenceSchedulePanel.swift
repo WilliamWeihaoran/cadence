@@ -131,6 +131,20 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         return panel
     }
 
+    /// See `pinningCaptureHeader()`.
+    private var pinsCaptureHeader = false
+
+    /// Keeps the capture card's header -- the kind switch, the `x` and the title -- pinned at the
+    /// top of the host's `ScrollView` while the rest of the card scrolls under it ([[T-12261]]).
+    /// For a host whose content grows below the card; read only by the capture presentation, and
+    /// a modifier rather than an option so `CadenceScheduleCaptureOptions()` stays the value every
+    /// record editor passes.
+    func pinningCaptureHeader() -> Self {
+        var panel = self
+        panel.pinsCaptureHeader = true
+        return panel
+    }
+
     /// Why this appearance is happening, which decides whether the title field takes focus on it.
     /// Defaulted to `.opened`, so every host that does not say otherwise keeps the focus it had.
     private var titleFocusAppearance: CadenceSchedulePanelTitleFocus.Appearance = .opened
@@ -263,7 +277,8 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                     offersEventRepeat: offersEventRepeat,
                     options: captureOptions,
                     actions: actions,
-                    notesField: notesField
+                    notesField: notesField,
+                    pinsHeader: pinsCaptureHeader
                 )
             } else {
                 standardPanel
