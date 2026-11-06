@@ -316,22 +316,11 @@ struct iOSSearchView: View {
             title: TaskTitleSupport.displayTitle(task.title),
             subtitle: taskSubtitle(task),
             detail: taskDetail(task),
-            icon: taskIcon(for: CadenceTaskSearchSupport.glyph(for: task)),
+            icon: CadenceTaskSearchSupport.glyph(for: task).systemImage,
             color: Theme.priorityColor(task.priority),
             score: score,
             dueLabel: taskDueLabel(task)
         )
-    }
-
-    /// This screen's symbols for the three shared glyph states. A task with a timeline slot drew a
-    /// plain `circle` here and `calendar.badge.clock` on the Mac; the two rows may keep their own
-    /// vocabulary for done-ness, but not their own idea of which states exist.
-    private func taskIcon(for glyph: CadenceTaskSearchGlyph) -> String {
-        switch glyph {
-        case .scheduled: "calendar.badge.clock"
-        case .completed: "checkmark.circle.fill"
-        case .active: "circle"
-        }
     }
 
     var body: some View {
@@ -400,7 +389,7 @@ struct iOSSearchView: View {
             }
         }
         .navigationTitle("Search")
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Tasks, lists, notes, events")
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: CadenceSearchFieldPrompt.text(offersCommands: false))
         .searchFocused($isSearchFieldFocused)
         .onAppear {
             isOnScreen = true
@@ -750,8 +739,12 @@ struct iOSSearchView: View {
     /// but its `.permanent` said "Permanent note", the retired name of the Notepad tab, and this
     /// string is scored as a search *field*, so the notepad did not match the app's own word for
     /// it. See `NoteReferencePanelSupport.noteKindDetail`.
+    ///
+    /// An event note is the exception ([[T-11195]] (c)): it sits in its own Event Notes section,
+    /// so it names the day and time Cmd+K names, joined in this screen's ` · `, not the kind again.
     private func noteSubtitle(_ note: Note) -> String {
-        NoteReferencePanelSupport.noteKindDetail(note)
+        guard note.kind == .meeting else { return NoteReferencePanelSupport.noteKindDetail(note) }
+        return CadenceSearchEventNoteSupport.subtitleFacts(for: note).joined(separator: " · ")
     }
 
     private func noteResult(_ note: Note, score: Int, taskTitles: [UUID: String]) -> iOSSearchResult {

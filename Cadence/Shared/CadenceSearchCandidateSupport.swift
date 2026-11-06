@@ -13,16 +13,62 @@ import Foundation
 
 // MARK: - Tasks
 
-/// Which glyph a task row should draw, as a **fact** rather than a symbol name. macOS and iOS
-/// disagree about the symbols (and may keep disagreeing — a desktop row also carries an
-/// "Active"/"Completed" word in its subtitle where a phone row has no room for one); what they
-/// must not disagree about is which of the three states a task is in. Before T-377 iOS had no
-/// `scheduled` case at all, so a task with a timeline slot drew a plain circle there and
-/// `calendar.badge.clock` on the Mac.
+/// Which glyph a task row should draw: the state as a fact, and the one symbol per state both
+/// search surfaces draw for it. Before T-377 iOS had no `scheduled` case at all, so a task with a
+/// timeline slot drew a plain circle there and `calendar.badge.clock` on the Mac.
+///
+/// **The symbols are one set since [[T-11195]] (a), under [[T-8201]].** Cmd+K drew
+/// `checkmark.circle` for an active task *and* a completed one, defended by the "Active" /
+/// "Completed" word at the end of its subtitle; that word is a subtitle choice ([[T-8763]]), not a
+/// hardware or input constraint, and a glyph that reads the same for open and finished work says
+/// nothing. Both rows now draw iOS's pair -- an open `circle`, a filled check -- the same pair the
+/// app's other task-state glyphs use.
 nonisolated enum CadenceTaskSearchGlyph {
     case scheduled
     case completed
     case active
+
+    var systemImage: String {
+        switch self {
+        case .scheduled: "calendar.badge.clock"
+        case .completed: "checkmark.circle.fill"
+        case .active: "circle"
+        }
+    }
+}
+
+/// The search field's placeholder on both search surfaces ([[T-11195]] (b), under [[T-8201]]).
+///
+/// One list of what the field finds. The Mac's said "Jump anywhere or run a command" and iOS's
+/// "Tasks, lists, notes, events"; only the command half answers an input difference -- Cmd+K's
+/// Commands section is the keyboard palette's, and iOS Search has none (`.commands` lists nothing
+/// there) -- so that half is the one thing the Mac adds.
+nonisolated enum CadenceSearchFieldPrompt {
+    static let searchable = "Tasks, lists, notes, events"
+
+    static func text(offersCommands: Bool) -> String {
+        offersCommands ? "\(searchable), or a command" : searchable
+    }
+}
+
+/// The facts an **Event Notes** search row's subtitle names, on both surfaces ([[T-11195]] (c),
+/// under [[T-8201]]): the event's day, then its time range when the note has one. Each surface
+/// joins them in its own separator, the shape [[T-8526]] gave list rows.
+///
+/// No kind word: both surfaces draw these rows in a section of their own titled Event Notes, so
+/// iOS's `Event / Nov 4` (from `NoteReferencePanelSupport.noteKindDetail`, which is right for the
+/// mixed note-reference picker it also serves) said the section's name again and dropped the time
+/// the Mac row showed. A note with no parseable day names its kind instead, so the line is never
+/// blank.
+nonisolated enum CadenceSearchEventNoteSupport {
+    static let undatedLabel = "Event note"
+
+    static func subtitleFacts(for note: Note, relativeTo referenceDate: Date = Date()) -> [String] {
+        guard let date = DateFormatters.date(from: note.eventDateKey) else { return [undatedLabel] }
+        let day = DateFormatters.absoluteDay(date, relativeTo: referenceDate)
+        guard note.eventStartMin >= 0, note.eventEndMin >= 0 else { return [day] }
+        return [day, TimeFormatters.timeRange(startMin: note.eventStartMin, endMin: note.eventEndMin)]
+    }
 }
 
 /// The glyph an Apple Calendar event's search row draws, on both search surfaces ([[T-10185]],

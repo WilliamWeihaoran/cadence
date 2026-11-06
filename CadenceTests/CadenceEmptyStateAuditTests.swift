@@ -1177,7 +1177,8 @@ struct CadenceEmptyStateAuditTests {
         #expect(CadenceSourceScan.matchCount(#"CadenceFocusPickItem\.filtered\(\s*tasks:\s*readyTasks,\s*query:\s*query,"#, in: ios) == 1)
         #expect(CadenceSourceScan.matchCount(#"listedPickItems:[^{]*\{\s*pickItems\(matching:\s*pickSearchText\)"#, in: ios) == 1)
         #expect(CadenceSourceScan.matchCount(#"ForEach\(listedPickItems\)"#, in: ios) == 1, "the iOS list does not draw the filtered rows")
-        #expect(CadenceSourceScan.matchCount(#"count:\s*listedPickItems\.count"#, in: ios) == 1, "the iOS header counts the unfiltered rows")
+        // [[T-11210]] (c): the shared summary line counts the listed rows; the header badge is gone.
+        #expect(CadenceSourceScan.matchCount(#"shownCount:\s*listedPickItems\.count"#, in: ios) == 1, "the iOS summary counts the unfiltered rows")
         #expect(CadenceSourceScan.matchCount(#"TextField\(CadenceFocusSupport\.pickSearchPrompt,\s*text:\s*\$searchText\)"#, in: macCard) == 1)
         #expect(CadenceSourceScan.matchCount(#"(Cadence)?FocusPickItem\.filtered\([^)]*query:\s*idleSearchText"#, in: macPage) == 1)
 

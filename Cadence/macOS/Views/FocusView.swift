@@ -191,7 +191,6 @@ struct FocusView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     FocusPickSessionCard(
                         title: CadenceFocusSupport.pickListTitle,
-                        subtitle: "Search your ready tasks, then start the cleanest next session.",
                         clockDisplay: clockDisplay,
                         searchText: $idleSearchText,
                         items: focusPickerItems,

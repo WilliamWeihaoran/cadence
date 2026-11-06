@@ -347,11 +347,12 @@ struct iOSFocusView: View {
 
     private var taskListPane: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(eyebrow: CadenceFocusSupport.pickListEyebrow, title: CadenceFocusSupport.pickListTitle, count: listedPickItems.count)
+            iOSPanelHeader(eyebrow: CadenceFocusSupport.pickListEyebrow, title: CadenceFocusSupport.pickListTitle)
             Divider().background(Theme.borderSubtle)
 
             if !pickItems.isEmpty {
                 pickSearchField
+                pickListSummary
             }
 
             if listedPickItems.isEmpty {
@@ -382,6 +383,24 @@ struct iOSFocusView: View {
             }
         }
         .background(Theme.surface)
+    }
+
+    /// How the list is counted, in the Mac card's words ([[T-11210]] (c), under [[T-8201]]):
+    /// "40 ready tasks", "3 matches", "No matches", from the one `CadenceFocusPickItem.summary`.
+    /// It replaced a bare count badge on the panel header. This list is uncapped, so `shownCount`
+    /// equals `readyCount` whenever the field is blank and the line never says "Top".
+    private var pickListSummary: some View {
+        Text(CadenceFocusPickItem.summary(
+            shownCount: listedPickItems.count,
+            readyCount: pickItems.count,
+            query: pickSearchText
+        ))
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(Theme.dim)
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
     }
 
     /// The Mac "Pick a task" card's search field, in the iOS field idiom `iOSListNotesView` uses

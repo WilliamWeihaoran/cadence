@@ -307,6 +307,23 @@ let cadenceRetiredCopy: [CadenceRetiredPhrase] = [
         retiredBy: "T-10006",
         why: retiredSingleLineEllipsisWhy
     ),
+    CadenceRetiredPhrase(
+        "Jump anywhere or run a command",
+        retiredBy: "T-11195",
+        why: """
+        The Mac's own search placeholder beside iOS's "Tasks, lists, notes, events". Both fields \
+        read CadenceSearchFieldPrompt now; only the command half, which answers the keyboard \
+        palette's Commands section, is the Mac's to add.
+        """
+    ),
+    CadenceRetiredPhrase(
+        "Search your ready tasks, then start the cleanest next session.",
+        retiredBy: "T-11210",
+        why: """
+        A subtitle under the Mac Focus page's "Pick a task" that described the page the user was \
+        on, which the AGENTS.md page-header rule forbids; iOS's header over the same list had none.
+        """
+    ),
 ]
 
 // MARK: - The sweep

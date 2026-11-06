@@ -381,7 +381,7 @@ struct CadenceGlobalSearchCapContinuationTests {
         // question on purpose, to count what the filter is holding back, and builds no rows.
         let index = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GlobalSearchIndexSupport.swift"))
         let withheldStart = try #require(index.range(of: "static func withheldCompletedTaskMatchCount("))
-        let withheldEnd = try #require(index.range(of: "static func taskIcon(", range: withheldStart.upperBound..<index.endIndex))
+        let withheldEnd = try #require(index.range(of: "static func eventResults(", range: withheldStart.upperBound..<index.endIndex))
         var rowBuilders = index
         rowBuilders.removeSubrange(withheldStart.lowerBound..<withheldEnd.lowerBound)
         #expect(CadenceSourceScan.matchCount("includingCompleted: true", in: rowBuilders) == 0)

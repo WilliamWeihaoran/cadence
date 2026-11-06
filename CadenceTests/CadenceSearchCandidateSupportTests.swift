@@ -194,7 +194,7 @@ struct CadenceSearchCandidateSupportTests {
             GlobalSearchIndexSupport.taskResults(tasks: fixture.tasks, query: "roadmap").first
         )
         #expect(result.icon == "calendar.badge.clock")
-        #expect(GlobalSearchIndexSupport.taskIcon(for: .active) == "checkmark.circle")
+        #expect(CadenceTaskSearchGlyph.active.systemImage == "circle")
     }
 
     @Test func anInboxTaskIsFindableByTypingInboxOnBothSurfaces() throws {
@@ -432,12 +432,9 @@ struct CadenceSearchCandidateSupportTests {
         #expect(stripped.contains("CadenceTaskSearchSupport.glyph(for: task)"))
         #expect(stripped.contains("CadenceSearchTagSupport.text(for: note.sortedTags)"))
 
-        // Scoped to the function, not to the file: `eventResult` drew `calendar.badge.clock`
-        // until [[T-10185]], so a file-wide `contains` for it would have passed regardless.
-        let iconBody = try #require(CadenceSourceScan.functionBody(named: "taskIcon", in: stripped))
-        #expect(iconBody.contains("case .scheduled: \"calendar.badge.clock\""))
-        #expect(iconBody.contains("case .completed: \"checkmark.circle.fill\""))
-        #expect(iconBody.contains("case .active: \"circle\""))
+        // [[T-11195]] (a): the symbols are the shared glyph's own, not a switch of this screen's.
+        #expect(stripped.contains("CadenceTaskSearchSupport.glyph(for: task).systemImage"))
+        #expect(CadenceSourceScan.functionBody(named: "taskIcon", in: stripped) == nil)
 
         // The hand-rolled halves that drifted: a tag field built from names alone, and a task
         // filter written out longhand.

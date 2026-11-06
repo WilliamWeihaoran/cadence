@@ -317,7 +317,7 @@ enum GlobalSearchIndexSupport {
             category: .tasks,
             title: TaskTitleSupport.displayTitle(task.title),
             subtitle: meta.joined(separator: " • "),
-            icon: taskIcon(for: CadenceTaskSearchSupport.glyph(for: task)),
+            icon: CadenceTaskSearchSupport.glyph(for: task).systemImage,
             tintHex: task.containerColor,
             destination: .task(task.id)
         )
@@ -336,16 +336,6 @@ enum GlobalSearchIndexSupport {
             query: query,
             includingCompleted: includingCompleted
         )
-    }
-
-    /// The desktop's symbols for the three shared glyph states. `completed` and `active` draw the
-    /// same circle here on purpose: this row already carries the word "Completed" or "Active" at
-    /// the end of its subtitle, which an iOS row has no room for.
-    static func taskIcon(for glyph: CadenceTaskSearchGlyph) -> String {
-        switch glyph {
-        case .scheduled: "calendar.badge.clock"
-        case .completed, .active: "checkmark.circle"
-        }
     }
 
     /// `events` arrives from `searchEvents`, so it is already filtered against the query and
@@ -438,16 +428,9 @@ enum GlobalSearchIndexSupport {
 
         let rows: [GlobalSearchResult] = ordered.compactMap { note in
             let title = note.displayTitle
-            let dateLabel: String
-            if let date = DateFormatters.date(from: note.eventDateKey) {
-                if note.eventStartMin >= 0, note.eventEndMin >= 0 {
-                    dateLabel = "\(DateFormatters.absoluteDay(date, relativeTo: referenceDate)) • \(TimeFormatters.timeRange(startMin: note.eventStartMin, endMin: note.eventEndMin))"
-                } else {
-                    dateLabel = DateFormatters.absoluteDay(date, relativeTo: referenceDate)
-                }
-            } else {
-                dateLabel = "Event note"
-            }
+            // [[T-11195]] (c): the facts iOS Search names under the same note, in this row's ` • `.
+            let dateLabel = CadenceSearchEventNoteSupport.subtitleFacts(for: note, relativeTo: referenceDate)
+                .joined(separator: " • ")
             let tagText = CadenceSearchTagSupport.text(for: note.sortedTags)
             let content = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
             guard matches(query: preparedQuery, fields: [title, content, dateLabel, tagText]) else { return nil }

@@ -135,11 +135,13 @@ struct FocusSidebarTaskRow: View {
 
                 Spacer(minLength: 8)
 
+                // The task's list colour, as the Focus picker's rows and iOS's draw it
+                // ([[T-11210]] (a)).
                 Image(systemName: "play.fill")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.blue)
+                    .foregroundStyle(Color(hex: task.containerColor))
                     .frame(width: 22, height: 22)
-                    .background(Theme.blue.opacity(isHovered ? 0.15 : 0.08))
+                    .background(Color(hex: task.containerColor).opacity(isHovered ? 0.15 : 0.08))
                     .clipShape(Circle())
             }
             .padding(.horizontal, 10)

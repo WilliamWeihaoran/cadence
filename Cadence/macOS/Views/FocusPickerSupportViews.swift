@@ -9,7 +9,6 @@ typealias FocusPickItem = CadenceFocusPickItem
 
 struct FocusPickSessionCard: View {
     let title: String
-    let subtitle: String
     let clockDisplay: String
     @Binding var searchText: String
     let items: [FocusPickItem]
@@ -29,11 +28,10 @@ struct FocusPickSessionCard: View {
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
                         .minimumScaleFactor(0.82)
-
-                    Text(subtitle)
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(2)
+                    // No subtitle ([[T-11210]] (b)): "Search your ready tasks, then start the
+                    // cleanest next session." described the page the user was on, under a title
+                    // and over a search field that already say it -- the AGENTS.md page-header
+                    // rule -- and iOS's header over the same list never had one.
                 }
 
                 Spacer(minLength: 12)
@@ -219,10 +217,14 @@ private struct FocusPickItemRow: View {
         }
     }
 
+    /// The task's list colour ([[T-11210]] (a), under [[T-8201]]): the colour the medallion beside
+    /// it and the session card's own play button already use, on both platforms. The plate was
+    /// `Theme.blue` here and the list colour on iOS's `iOSFocusPickRow`, and nothing about a
+    /// pointer asks for a different colour for the same "start this session" control.
     private var tint: Color {
         switch item {
-        case .task:
-            return Theme.blue
+        case .task(let task):
+            return Color(hex: task.containerColor)
         }
     }
 
