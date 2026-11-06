@@ -54,9 +54,33 @@ struct RemindersConnectionStateTests {
         // Non-vacuity: the right arm, still carrying the sentence, and the split the other arms
         // legitimately keep is still visible in the body this reads.
         #expect(arm.contains("mark them complete"))
-        #expect(body.contains("#if os(macOS)"), "non-vacuity: the .denied split is still in this body")
+        #expect(body.contains("deniedMessage(on: .current)"), "non-vacuity: the .denied arm is in this body")
         #expect(!arm.contains("#if"), "the .notDetermined offer is split by platform again")
         #expect(CadenceSourceScan.matchCount("read your active reminders\\.\"", in: source) == 0)
+    }
+
+    /// **[[T-11891]].** Connected, the Mac card said where reminders go and the iPhone card said
+    /// what was below it, behind an `#if` whose stated reason -- only iOS shows the per-list
+    /// summary -- was false: both Settings screens draw "Reminder Lists" from the same rows, and
+    /// both Inboxes carry reminders. One sentence now, with no platform split anywhere in
+    /// `accessMessage` (`.denied`'s difference lives in `deniedMessage(on:)`). The value check runs
+    /// on this host; the source check is what holds the iOS half.
+    @Test func connectedMessageSaysTheSameThingOnBothPlatforms() throws {
+        #expect(
+            RemindersConnectionState.connected.accessMessage
+                == "Open reminders appear in your Inbox, where you can complete them."
+        )
+
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceRemindersPresentationSupport.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.declarationBody("var accessMessage: String", in: source),
+            "accessMessage is gone"
+        )
+        #expect(body.contains("case .connected:"), "non-vacuity: the .connected arm is in this body")
+        #expect(!body.contains("#if"), "accessMessage is split by platform again")
+        #expect(CadenceSourceScan.matchCount("appear below\\.\"", in: source) == 0)
     }
 
     /// **[[T-9952]].** The Open Settings button names where it goes on each platform, split where

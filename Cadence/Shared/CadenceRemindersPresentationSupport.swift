@@ -149,20 +149,18 @@ enum RemindersConnectionState: Equatable {
     /// Settings on macOS, Cadence's own page in the Settings app on iOS -- which is a real
     /// difference in what the sentence has to name (`deniedMessage(on:)`, [[T-10050]]).
     ///
-    /// The `.connected` pair is **not** that any more. It used to be split because macOS read
-    /// reminders in the Inbox and iOS did not, so telling an iPhone user their reminders would
-    /// appear in an Inbox they did not have was copy that outlived the feature it described. T-163
-    /// built that Inbox surface on iOS, so both platforms now show reminders in the Inbox; the two
-    /// sentences differ only because this screen — Settings — shows a per-list summary underneath
-    /// itself on iOS and does not on macOS, which is what each is describing.
+    /// `.connected` is not split at all ([[T-11891]]). It was, behind an `#if`, on the stated
+    /// ground that Settings drew a per-list summary under the card on iOS and not on macOS -- which
+    /// was never true: Mac `SettingsRemindersSection` draws the same "Reminder Lists" section from
+    /// the same `RemindersSyncSummary.listRows`, and T-163 gave iOS the Inbox reminders section, so
+    /// each sentence was true on both platforms and the split named no hardware difference. The
+    /// Inbox sentence is the one kept: the lists below carry their own "Reminder Lists" header, and
+    /// where connected reminders turn up, and that they can be completed there, is the one fact
+    /// this screen cannot show by itself.
     var accessMessage: String {
         switch self {
         case .connected:
-            #if os(macOS)
             return "Open reminders appear in your Inbox, where you can complete them."
-            #else
-            return "Your reminder lists and how much is still open appear below."
-            #endif
         case .denied:
             return Self.deniedMessage(on: .current)
         case .restricted:
