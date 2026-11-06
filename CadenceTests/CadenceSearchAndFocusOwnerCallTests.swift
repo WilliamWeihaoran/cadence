@@ -18,6 +18,9 @@ struct CadenceSearchOwnerCallParityTests {
 
     // MARK: (a) task glyph
 
+    // `GlobalSearchIndexSupport` is a macOS type (`#if os(macOS)` file), and this bundle also
+    // compiles for iOS in CI's build-for-testing leg ([[T-12200]]).
+    #if os(macOS)
     /// An open task and a finished one draw different glyphs in Cmd+K, the pair iOS drew.
     @Test func aCmdKTaskRowDrawsTheSameGlyphPairIOSSearchDraws() {
         #expect(CadenceTaskSearchGlyph.active.systemImage == "circle")
@@ -35,6 +38,7 @@ struct CadenceSearchOwnerCallParityTests {
         #expect(rows["Ship roadmap"] == "checkmark.circle.fill")
         #expect(rows["Draft roadmap"] != rows["Ship roadmap"], "an open and a finished task read alike again")
     }
+    #endif
 
     @Test func neitherSurfaceSpellsItsOwnTaskGlyphs() throws {
         for path in [Self.iOSSearchPath, Self.macIndexPath] {
@@ -79,6 +83,7 @@ struct CadenceSearchOwnerCallParityTests {
         #expect(!timedFacts.contains { $0.hasPrefix("Event") }, "the row says its section's name again")
     }
 
+    #if os(macOS)
     /// Cmd+K joins exactly the shared facts; iOS joins the same call in its own separator.
     @Test func bothEventNoteRowsReadTheSharedFacts() throws {
         let reference = Self.localDay(2027, 10, 25)
@@ -95,6 +100,7 @@ struct CadenceSearchOwnerCallParityTests {
         // Every other kind keeps the shared detail.
         #expect(subtitle.contains("NoteReferencePanelSupport.noteKindDetail(note)"))
     }
+    #endif
 }
 
 /// **[[T-11210]]**, decided under [[T-8201]]: three Focus picker differences no hardware forced.
