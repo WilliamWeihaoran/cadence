@@ -16,6 +16,71 @@ nonisolated enum CadenceCaptureTagEntry {
     }
 }
 
+/// Which edges of a vertical scroll view have content hidden past them ([[T-12272]]).
+///
+/// Reads a scroll view's geometry along its one axis: offset, the visible height, the content's
+/// height and the content insets. The one-point tolerance keeps a settled scroll view, whose
+/// offset can land a fraction off its resting value, from fading an edge that holds nothing.
+nonisolated struct CadenceScrollEdgeOverflow: Equatable {
+    var top = false
+    var bottom = false
+
+    init(top: Bool = false, bottom: Bool = false) {
+        self.top = top
+        self.bottom = bottom
+    }
+
+    init(offset: CGFloat, visibleHeight: CGFloat, contentHeight: CGFloat,
+         topInset: CGFloat = 0, bottomInset: CGFloat = 0) {
+        top = offset > -topInset + 1
+        bottom = offset + visibleHeight < contentHeight + bottomInset - 1
+    }
+
+    /// How tall the fade is at an edge that has content past it.
+    static let fadeHeight: CGFloat = 24
+}
+
+/// **The capture card's field popover scrolls with a visible affordance** ([[T-12272]]).
+///
+/// The Do panel -- month grid, `Without time`, the time roller and the estimate -- is taller than
+/// the popover's 520pt cap, and on the 11-inch iPad taller than the room the popover is given.
+/// The plain `ScrollView` it used to sit in hid its indicator until touched and cut the content
+/// with a hard edge wherever the height ran out, so the last visible row was sliced through its
+/// glyphs and read as broken layout, though a swipe reached all of it. Here the indicator flashes
+/// as the panel opens, and an edge with content past it fades out over `fadeHeight` instead of
+/// cutting -- the same edge fade the iOS list-detail tab strip draws on its scrolling fallback.
+/// A panel that fits shows neither fade. Shared, so the Mac's popover reads the same.
+struct CadenceCapturePopoverScroll<Content: View>: View {
+    @ViewBuilder var content: Content
+    @State private var overflow = CadenceScrollEdgeOverflow()
+
+    var body: some View {
+        ScrollView { content }
+            .scrollIndicators(.visible)
+            .scrollIndicatorsFlash(onAppear: true)
+            .onScrollGeometryChange(for: CadenceScrollEdgeOverflow.self) { geometry in
+                CadenceScrollEdgeOverflow(
+                    offset: geometry.contentOffset.y,
+                    visibleHeight: geometry.containerSize.height,
+                    contentHeight: geometry.contentSize.height,
+                    topInset: geometry.contentInsets.top,
+                    bottomInset: geometry.contentInsets.bottom
+                )
+            } action: { _, newValue in
+                overflow = newValue
+            }
+            .mask {
+                VStack(spacing: 0) {
+                    LinearGradient(colors: [overflow.top ? .clear : .black, .black], startPoint: .top, endPoint: .bottom)
+                        .frame(height: CadenceScrollEdgeOverflow.fadeHeight)
+                    Rectangle()
+                    LinearGradient(colors: [.black, overflow.bottom ? .clear : .black], startPoint: .top, endPoint: .bottom)
+                        .frame(height: CadenceScrollEdgeOverflow.fadeHeight)
+                }
+            }
+    }
+}
+
 enum CadenceCaptureField: String, CaseIterable, Identifiable {
     case doDate, dueDate, list, tags, repeatRule, priority, estimate, calendar, location
 
@@ -271,7 +336,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
         .accessibilityIdentifier("capture-card")
         // The popover belongs to the card, not to an icon that disappears when its field is set.
         .popover(item: $activeField) { field in
-            ScrollView {
+            CadenceCapturePopoverScroll {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Text(field.title).cadenceFont(.controlLabel, weight: .semibold)
