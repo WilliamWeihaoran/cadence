@@ -706,9 +706,20 @@ final class CadenceMacRoundPlateHitAndHoverUITests: XCTestCase {
     /// `November 2026` were all in the tree), so no single month name identifies the grid either.
     /// The cells are the only square ~`cellSide` buttons inside the popover, and that is what is
     /// asked for here.
+    ///
+    /// **Bounded to the popover's own subtree, NOT `app.buttons`** ([[T-11943]], trap 3 of
+    /// [[T-11631]]). Indexing every button in the app re-resolves each index against a tree that
+    /// the settling Calendar page behind the popover is still changing, and the `.filter`'s
+    /// `element.frame` then throws `No matches found for Element at index N` — measured at index
+    /// 29 on 2026-11-04 and at index 103 on 2026-11-05, where it reddened the whole suite while
+    /// each test still passed alone. Descending from the popover element is the bounded form the
+    /// trap asks for: far fewer elements, and they are resolved against the popover's own
+    /// snapshot rather than the app's. `quickPills()` below was already bounded, by predicate,
+    /// and never failed this way — which is the control for that diagnosis.
     private func dayCells() -> [XCUIElement] {
-        guard let popover = pickerPopover() else { return [] }
-        return app.buttons.allElementsBoundByIndex
+        guard let popoverElement = pickerPopoverElement() else { return [] }
+        let popover = popoverElement.frame
+        return popoverElement.descendants(matching: .button).allElementsBoundByIndex
             .filter { element in
                 let f = element.frame
                 guard f.width > 0, f.height > 0 else { return false }
