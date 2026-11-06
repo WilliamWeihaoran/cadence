@@ -96,11 +96,22 @@ extension ModelContext {
     /// over-promise is worse than none, so the settle here is unconditional and always walks the
     /// array `summary` counted.
     ///
-    /// **The unqualified `try? save()` is the swallow the rule allows** — see
-    /// `ModelContext.windDownList` for the three sentences, which hold here with one addition:
-    /// `updateColumn` below is a read-modify-write of `sectionConfigs`, a JSON string on a row the
-    /// store already holds, so it changes no existence either ([[T-1301]]).
-    func windDownColumn(_ target: iOSColumnWindDownTarget) {
+    /// **Committed through the spine and reported, as the Mac's column popover is (T-632,
+    /// [[T-11614]] group (1)).** Every write here is an in-place field edit — `updateColumn` below
+    /// is a read-modify-write of `sectionConfigs`, a JSON string on a row the store already holds —
+    /// but the settle files a column away and closes every open task in it, so a swallowed refusal
+    /// was a silent revert of the whole column on the next unrelated `rollback()`. The undo is a
+    /// `CadenceListEditSnapshot` of the container and the tasks about to be settled, taken before
+    /// the first write, exactly the set `KanbanSectionColumnView.editSnapshot(settling:)` takes.
+    func windDownColumn(
+        _ target: iOSColumnWindDownTarget,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        let undo = columnEditSnapshot(
+            settling: target.config,
+            area: target.area,
+            project: target.project
+        )
         updateColumn(uuid: target.config.uuid, area: target.area, project: target.project) { config in
             switch target.action {
             case .archive: config.isArchived = true
@@ -124,7 +135,7 @@ extension ModelContext {
                 in: self
             )
         }
-        try? save()
+        try CadencePendingChangePersistence.commitEdit(in: self, commit: commit) { undo?.restore() }
     }
 
     /// The reverse of both, and deliberately not a wind-down: it settles nothing, so it asks
@@ -132,14 +143,38 @@ extension ModelContext {
     /// that comes back to the board comes back open — and is a no-op for a column that was only
     /// completed.
     ///
-    /// Two flag writes through `updateColumn` and nothing else, so its unqualified `try? save()` is
-    /// the allowed swallow for the reason `windDownColumn` above gives ([[T-1301]]).
-    func reopenColumn(_ config: TaskSectionConfig, area: Area?, project: Project?) {
+    /// Two flag writes through `updateColumn` and nothing else, committed and reported for the
+    /// reason `windDownColumn` above gives: the Mac's Unarchive says when it was refused, so this
+    /// does too. It settles no task, so the snapshot holds the container alone.
+    func reopenColumn(
+        _ config: TaskSectionConfig,
+        area: Area?,
+        project: Project?,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        let undo = columnEditSnapshot(settling: nil, area: area, project: project)
         updateColumn(uuid: config.uuid, area: area, project: project) { config in
             config.isArchived = false
             config.isCompleted = false
         }
-        try? save()
+        try CadencePendingChangePersistence.commitEdit(in: self, commit: commit) { undo?.restore() }
+    }
+
+    /// The container and, when a column is being settled, the open tasks the settle is about to
+    /// walk — `TaskContainerLifecycleService.remainingActiveTasks`, the same array, so nothing
+    /// settled is missed by the undo. `nil` for a column on neither an area nor a project, which no
+    /// editor draws; a write with no container has no container to have changed.
+    private func columnEditSnapshot(
+        settling column: TaskSectionConfig?,
+        area: Area?,
+        project: Project?
+    ) -> CadenceListEditSnapshot? {
+        let settling = column.map {
+            TaskContainerLifecycleService.remainingActiveTasks(in: $0, area: area, project: project)
+        } ?? []
+        if let area { return CadenceListEditSnapshot(area, tasks: settling) }
+        if let project { return CadenceListEditSnapshot(project, tasks: settling) }
+        return nil
     }
 
     /// Read-modify-write through `sectionConfigs`, never `sectionConfigsRaw`: the raw string is
@@ -165,7 +200,7 @@ extension View {
     /// editor's draft in step with the flag that was just written.
     func iOSColumnWindDown(
         target: Binding<iOSColumnWindDownTarget?>,
-        perform: @escaping (iOSColumnWindDownTarget) -> Void
+        perform: @escaping (iOSColumnWindDownTarget) throws -> Void
     ) -> some View {
         modifier(iOSColumnWindDownModifier(target: target, perform: perform))
     }
@@ -173,12 +208,12 @@ extension View {
 
 private struct iOSColumnWindDownModifier: ViewModifier {
     @Binding var target: iOSColumnWindDownTarget?
-    let perform: (iOSColumnWindDownTarget) -> Void
+    let perform: (iOSColumnWindDownTarget) throws -> Void
 
     func body(content: Content) -> some View {
         content.sheet(item: $target) { target in
             iOSWindDownConfirmationSheet(subject: target.windDownSubject) {
-                perform(target)
+                try perform(target)
             }
         }
     }

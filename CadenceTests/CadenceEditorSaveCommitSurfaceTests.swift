@@ -1223,7 +1223,12 @@ struct CadenceEditorSaveCommitSurfaceTests {
         /// per sheet.
         let function: String
         var occurrences: Int = 1
-        /// Spellings that may only run once the commit has landed.
+        /// How many commits the function makes, each with its own failure branch. One, except the
+        /// iOS list editor's `save()`: its Complete / Archive row commits the field edits and then
+        /// the wind-down ([[T-8562]]'s order), and since [[T-11614]] group (1) the second commit
+        /// reports and returns too instead of swallowing.
+        var failureBranches: Int = 1
+        /// Spellings that may only run once every commit has landed.
         let successSpellings: [String]
     }
 
@@ -1237,6 +1242,7 @@ struct CadenceEditorSaveCommitSurfaceTests {
             SaveSurface(
                 path: "Cadence/iOS/iOSListEditorViews.swift",
                 function: "save",
+                failureBranches: 2,
                 successSpellings: ["dismiss()"]
             ),
             SaveSurface(
@@ -1363,14 +1369,23 @@ struct CadenceEditorSaveCommitSurfaceTests {
                     "\(label) still swallows a save"
                 )
                 #expect(
-                    CadenceSourceScan.matchCount(failureBranch, in: body) == 1,
+                    CadenceSourceScan.matchCount(failureBranch, in: body) == surface.failureBranches,
                     "\(label) has no failure branch that both reports and returns"
                 )
 
-                let failure = try #require(
+                // The success spellings must follow the LAST failure branch, so a report cannot
+                // run between two commits as if the second had already landed.
+                var failure = try #require(
                     body.range(of: failureBranch, options: .regularExpression),
                     "\(label): no failure branch"
                 )
+                while let next = body.range(
+                    of: failureBranch,
+                    options: .regularExpression,
+                    range: failure.upperBound..<body.endIndex
+                ) {
+                    failure = next
+                }
                 for spelling in surface.successSpellings {
                     let success = try #require(
                         body.range(of: spelling),

@@ -593,7 +593,7 @@ struct CadenceListWindDownSurfaceTests {
         // the page's own function -- no second `requiresConfirmation`, no hand-built settle.
         let windDown = try #require(CadenceSourceScan.functionBody(named: "windDown", in: sidebar))
         #expect(windDown.contains("SidebarListEntry.resolve(kind: item.kind, id: item.id, in: modelContext)"))
-        #expect(windDown.contains("pendingWindDown = modelContext.windDownListUnlessConfirmationIsNeeded(target)"))
+        #expect(windDown.contains("pendingWindDown = try modelContext.windDownListUnlessConfirmationIsNeeded(target)"))
         #expect(sidebar.contains("onWindDown: { action in windDown(item, action) }"))
         #expect(sidebar.contains(".iOSListWindDown(target: $pendingWindDown)"))
     }

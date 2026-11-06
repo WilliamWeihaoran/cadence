@@ -1735,6 +1735,10 @@ struct CadenceTestTargetHygieneTests {
         "CadenceTests/iOSMarkdownInlineTaskPanelEffectTests.swift",
         "CadenceTests/iOSMarkdownTaskEmbedSubtaskOverflowTests.swift",
         "CadenceTests/iOSTaskRecurrenceSelectionEffectTests.swift",
+        // [[T-11614]] group (1): the list and column wind-downs are `extension ModelContext` under
+        // `Cadence/iOS/`, so their refusal is testable on the iOS leg only; the source half is
+        // `CadenceSaveCommitDisciplineTests.theWindDownSettlesCommitThroughTheSpineAndThrow`.
+        "CadenceTests/iOSWindDownRefusalTests.swift",
     ]
 
     @Test func noTestFileCompilesToNothingWhereItIsMeantToRun() throws {

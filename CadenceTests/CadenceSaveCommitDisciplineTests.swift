@@ -455,43 +455,28 @@ struct CadenceSaveCommitDisciplineTests {
         #expect(CadenceSaveCommitRule.commitReachOffenders(in: reachedForOne, changing: .init()) == ["deleteNote"])
     }
 
-    /// The three sites the widened needle now sees and **declines**, walked in the tree.
+    /// The three wind-down settles the widened needle used to see and **decline** ([[T-1301]]),
+    /// now committed through the spine ([[T-11614]] group (1)).
     ///
-    /// [[T-1301]] measured six live `try? save()` declarations inside `ModelContext` extensions and
-    /// could not say from the scan whether the three wind-down settles were inside the rule. They
-    /// are: each writes a `status` or a `TaskSectionConfig` flag on a row the store already holds,
-    /// and `CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries` is what keeps the
-    /// settle from spawning a successor — so there is no insert, no delete, and nothing after the
-    /// commit that claims it worked. This is the positive witness for that reading: the `try?` is
-    /// still there to be read, and no half names the file.
-    ///
-    /// Without it, deleting the three swallows would leave every sweep green and this ticket's
-    /// widening claiming to cover a population of zero.
-    @Test func theWindDownSettlesAreTheInPlaceSwallowTheWidenedNeedleDeclines() throws {
-        let existence = try existenceIndexOverTheApp()
-        let swallowing = try swallowingIndexOverTheApp()
-        for path in [
-            "Cadence/iOS/iOSListWindDownSupport.swift",
-            "Cadence/iOS/iOSColumnWindDownSupport.swift",
+    /// They were inside the rule — every write an in-place `status` or `TaskSectionConfig` flag,
+    /// with `settleWithoutAdvancingSeries` keeping the settle from inserting a successor — but a
+    /// swallowed refusal left a whole list or column, and every task it settled, pending for the
+    /// next unrelated `rollback()` to revert, while the confirmation had already closed and the
+    /// list had left the page. The Mac's twins (`EditListSheet`, `KanbanSectionColumnView`) report,
+    /// so the phone's silence was drift. This test was the positive witness for the swallow; it is
+    /// inverted rather than deleted so the swallow cannot quietly come back, and the behavioural
+    /// half is `iOSWindDownRefusalTests` on the iOS leg.
+    @Test func theWindDownSettlesCommitThroughTheSpineAndThrow() throws {
+        for (path, commits) in [
+            ("Cadence/iOS/iOSListWindDownSupport.swift", 1),
+            ("Cadence/iOS/iOSColumnWindDownSupport.swift", 2),
         ] {
             let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
-            #expect(source.contains("try? save()"), "\(path) no longer holds the swallow it is listed for")
             #expect(source.contains("extension ModelContext"), "\(path) is no longer a ModelContext extension")
+            #expect(!source.contains("try? save()"), "\(path) swallows a wind-down's refusal again")
             #expect(
-                CadenceSaveCommitRule.existenceOffenders(in: source, changing: existence).isEmpty,
-                "\(path) is reported by the existence half, which measured it as an in-place settle"
-            )
-            #expect(
-                CadenceSaveCommitRule.reportOffenders(in: source).isEmpty,
-                "\(path) is reported by the report half"
-            )
-            #expect(
-                CadenceSaveCommitRule.commitReachOffenders(in: source, changing: existence).isEmpty,
-                "\(path) is reported by the commit-reach half"
-            )
-            #expect(
-                CadenceSaveCommitRule.indirectReportOffenders(in: source, swallowing: swallowing).isEmpty,
-                "\(path) is reported by the one-frame-down report half"
+                source.components(separatedBy: "try CadencePendingChangePersistence.commitEdit(in: self, commit: commit").count - 1 == commits,
+                "\(path) does not commit each wind-down through the spine"
             )
         }
     }

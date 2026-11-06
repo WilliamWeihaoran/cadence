@@ -70,7 +70,14 @@ struct CadenceListVocabularyParityTests {
 
         let windDown = try Self.ios("Cadence/iOS/iOSListWindDownSupport.swift")
         #expect(windDown.contains("moves to Archived and can be unarchived from there"))
-        #expect(windDown.range(of: "restor", options: .caseInsensitive) == nil, "the archive confirmation says restore")
+        // Read over the file's string literals, i.e. its copy: since [[T-11614]] group (1) the
+        // wind-down's code calls `CadenceListEditSnapshot.restore`, which is an undo, not a word.
+        let literal = try NSRegularExpression(pattern: #""((?:[^"\\\n]|\\.)*)""#)
+        let windDownCopy = literal.matches(in: windDown, range: NSRange(windDown.startIndex..., in: windDown))
+            .compactMap { Range($0.range(at: 1), in: windDown).map { String(windDown[$0]) } }
+            .joined(separator: "\n")
+        #expect(windDownCopy.contains("moves to Archived and can be unarchived from there"), "non-vacuity: the copy reader found no copy")
+        #expect(windDownCopy.range(of: "restor", options: .caseInsensitive) == nil, "the archive confirmation says restore")
 
         for path in ["Cadence/iOS/iOSSettingsTemplateAndListSections.swift", "Cadence/macOS/Views/SettingsListManagementSections.swift"] {
             let code = try Self.ios(path)

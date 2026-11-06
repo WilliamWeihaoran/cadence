@@ -48,9 +48,15 @@ struct iOSWindDownSubject {
 /// so plainly is a better signal than making someone type a word.
 struct iOSWindDownConfirmationSheet: View {
     let subject: iOSWindDownSubject
-    let onConfirm: () -> Void
+    /// Throws when the store refused the wind-down ([[T-11614]] group (1)). The sheet used to
+    /// `dismiss()` and then `onConfirm()`, so it had left the screen before the settle began and a
+    /// refusal had nowhere to be said; `confirm()` now attempts first, as the delete confirmations
+    /// do (T-320).
+    let onConfirm: () throws -> Void
 
     @Environment(\.dismiss) private var dismiss
+
+    @State private var failureNotice: String?
 
     /// Cancelling is destructive and reads red; finishing work is not, and a red "Complete Column"
     /// would be the button lying about what it does. Derived from the outcome rather than carried
@@ -150,11 +156,15 @@ struct iOSWindDownConfirmationSheet: View {
                         size: .regular,
                         tint: isCancelling ? nil : Theme.green,
                         fullWidth: true,
-                        action: {
-                            dismiss()
-                            onConfirm()
-                        }
+                        action: confirm
                     )
+
+                    if let failureNotice {
+                        Text(failureNotice)
+                            .cadenceFont(.controlLabel, base: 13, weight: .semibold)
+                            .foregroundStyle(Theme.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
@@ -174,6 +184,19 @@ struct iOSWindDownConfirmationSheet: View {
             }
         }
         .preferredColorScheme(.dark)
+    }
+
+    /// Attempts, then decides: closes only once the store has taken the wind-down, and otherwise
+    /// stays up on the list or column that did not move and says so. The undo has already run by
+    /// the time the throw arrives, which is what makes "Nothing was changed" true.
+    private func confirm() {
+        do {
+            try onConfirm()
+            failureNotice = nil
+            dismiss()
+        } catch {
+            failureNotice = CadencePendingChangePersistence.editFailureNotice
+        }
     }
 }
 #endif

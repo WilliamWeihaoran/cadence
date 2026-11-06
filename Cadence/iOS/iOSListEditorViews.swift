@@ -701,8 +701,18 @@ struct iOSListEditorSheet: View {
     /// be stated, and it makes one gesture mean two things: flip-and-flip-back settles nothing,
     /// flip-and-save settles twelve tasks forever. The draft is then brought into step so the row
     /// reads truthfully and so the sheet's own Save cannot write the flag back off.
+    ///
+    /// [[T-11614]] group (1): the draft follows only a write the store took. A refusal is undone by
+    /// the wind-down's own snapshot, leaves the row reading the state it is still in, and names
+    /// itself under the editor's fields as a refused Save does.
     private func applyColumnWindDown(_ target: iOSColumnWindDownTarget) {
-        modelContext.windDownColumn(target)
+        do {
+            try modelContext.windDownColumn(target)
+        } catch {
+            saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        saveFailureNotice = nil
         updateDraft(target.config.uuid) { draft in
             switch target.action {
             case .archive: draft.isArchived = true
@@ -712,7 +722,13 @@ struct iOSListEditorSheet: View {
     }
 
     private func reopenColumn(_ config: TaskSectionConfig) {
-        modelContext.reopenColumn(config, area: editedArea, project: editedProject)
+        do {
+            try modelContext.reopenColumn(config, area: editedArea, project: editedProject)
+        } catch {
+            saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        saveFailureNotice = nil
         updateDraft(config.uuid) { draft in
             draft.isArchived = false
             draft.isCompleted = false
@@ -922,8 +938,16 @@ struct iOSListEditorSheet: View {
         guard refusal == nil else { return }
         // [[T-8562]]: a Complete / Archive from the Status rows settles only once the edits it
         // carries have landed -- macOS's `apply(_:)` order -- and never over a refused save.
+        // [[T-11614]] group (1): and the editor closes only once the settle has landed too. A
+        // refused wind-down is undone by its own snapshot and the editor stays open saying so,
+        // as the Mac's edit sheet does; the field edits above are already in the store.
         if case .windDown(let target)? = lifecycleStep {
-            modelContext.windDownList(target)
+            do {
+                try modelContext.windDownList(target)
+            } catch {
+                saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+                return
+            }
         }
         dismiss()
     }

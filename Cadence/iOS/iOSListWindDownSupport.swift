@@ -171,17 +171,34 @@ extension ModelContext {
     /// `settleWithoutAdvancingSeries` instead — that is the invariant T-212 and T-213 record and the
     /// one thing a new wind-down surface is most likely to get wrong.
     ///
-    /// **The `try? save()` below is the swallow the rule allows, and the sweep can see it now**
-    /// ([[T-1301]]). It is written with no qualifier because the receiver is the store, which is
-    /// the spelling `CadenceSaveCommitDisciplineTests` was blind to until T-1301 widened the
-    /// needle; the answer is that this declaration is *inside* the rule rather than exempt from it.
-    /// Every write it reaches is an in-place field edit on an object the store already holds — a
-    /// `status`, and `CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries`'s
-    /// `status`/`completedAt` pair, which is exactly what "without advancing the series" buys: no
-    /// successor is spawned, so nothing is inserted and nothing is deleted. Nothing after the
-    /// commit reports success either; the sheet that raised this closes on the tap. `reopenColumn`
-    /// and `windDownColumn` in `iOSColumnWindDownSupport` are the same three sentences.
-    func windDownList(_ target: iOSListWindDownTarget) {
+    /// **Committed through the spine and reported, as macOS's `EditAreaSheet` / `EditProjectSheet`
+    /// lifecycle rows are ([[T-11614]] group (1)).** Every write it reaches is an in-place field
+    /// edit — a `status`, and `settleWithoutAdvancingSeries`'s `status`/`completedAt` pair, so no
+    /// successor is inserted — which is why this used to be a `try? save()` the rule allowed
+    /// ([[T-1301]]). But the confirmation sheet closing and the list leaving the page *are* the
+    /// report, and a swallowed refusal left the whole settle pending for the next unrelated
+    /// `rollback()` to revert: a list the owner archived coming back with all its tasks open.
+    ///
+    /// The undo is a `CadenceListEditSnapshot` of the list and the tasks about to be settled, taken
+    /// before the first write. For an area that is `includingChildProjects: true`, the set the
+    /// settle below walks.
+    func windDownList(
+        _ target: iOSListWindDownTarget,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        let undo: CadenceListEditSnapshot
+        switch target.list {
+        case .area(let area):
+            undo = CadenceListEditSnapshot(
+                area,
+                tasks: TaskContainerLifecycleService.remainingActiveTasks(in: area, includingChildProjects: true)
+            )
+        case .project(let project):
+            undo = CadenceListEditSnapshot(
+                project,
+                tasks: TaskContainerLifecycleService.remainingActiveTasks(in: project)
+            )
+        }
         switch (target.list, target.action) {
         case (.area(let area), .archive):
             area.status = .archived
@@ -204,7 +221,7 @@ extension ModelContext {
             project.status = .done
             TaskContainerLifecycleService.completeRemainingActiveTasks(in: project, in: self)
         }
-        try? save()
+        try CadencePendingChangePersistence.commitEdit(in: self, commit: commit, undo: undo.restore)
     }
 
     /// **The one conditional-confirmation decision for a list's context-menu wind-down** — the
@@ -214,12 +231,26 @@ extension ModelContext {
     /// otherwise returns `target` for the host to hand to `iOSListWindDown(target:)`, untouched.
     /// The list editor keeps its own copy because its immediate path writes its field edits
     /// first ([[T-8562]]).
-    func windDownListUnlessConfirmationIsNeeded(_ target: iOSListWindDownTarget) -> iOSListWindDownTarget? {
+    ///
+    /// Throws when the immediate wind-down was refused; a menu has closed by then, so the host
+    /// names it with `iOSListWindDownFailureAlert`.
+    func windDownListUnlessConfirmationIsNeeded(
+        _ target: iOSListWindDownTarget,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> iOSListWindDownTarget? {
         guard target.summary.requiresConfirmation else {
-            windDownList(target)
+            try windDownList(target, commit: commit)
             return nil
         }
         return target
+    }
+}
+
+extension iOSListWindDownAction {
+    /// Title-case, because it is an alert title; `CadencePendingChangePersistence.editFailureNotice`
+    /// is the sentence under it, as on the Mac's edit sheets.
+    var failureAlertTitle: String {
+        "Couldn't \(verb) List"
     }
 }
 
@@ -235,26 +266,46 @@ extension View {
     /// editor ([[T-8562]]) hands its own, because a confirmed wind-down there also writes the
     /// editor's pending field edits first and closes the editor -- the same `perform` it runs on
     /// the immediate path, as `iOSColumnWindDown` does for a column.
+    ///
+    /// `perform` throws when the write was refused, and the confirmation then stays up and says so
+    /// rather than closing over a settle the store never took ([[T-11614]] group (1)).
     func iOSListWindDown(
         target: Binding<iOSListWindDownTarget?>,
-        perform: ((iOSListWindDownTarget) -> Void)? = nil
+        perform: ((iOSListWindDownTarget) throws -> Void)? = nil
     ) -> some View {
         modifier(iOSListWindDownModifier(target: target, perform: perform))
+    }
+
+    /// The refusal of a wind-down made **without** a confirmation — a context-menu or swipe item on
+    /// a list with nothing open. The menu has closed on the tap, so there is no surface of its own
+    /// left to say it, for the reason `iOSTaskMoveFailureAlertModifier` gives. `nil` hides it.
+    func iOSListWindDownFailureAlert(refused action: Binding<iOSListWindDownAction?>) -> some View {
+        alert(
+            action.wrappedValue?.failureAlertTitle ?? "",
+            isPresented: Binding(
+                get: { action.wrappedValue != nil },
+                set: { if !$0 { action.wrappedValue = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(CadencePendingChangePersistence.editFailureNotice)
+        }
     }
 }
 
 private struct iOSListWindDownModifier: ViewModifier {
     @Binding var target: iOSListWindDownTarget?
-    let perform: ((iOSListWindDownTarget) -> Void)?
+    let perform: ((iOSListWindDownTarget) throws -> Void)?
     @Environment(\.modelContext) private var modelContext
 
     func body(content: Content) -> some View {
         content.sheet(item: $target) { target in
             iOSWindDownConfirmationSheet(subject: target.windDownSubject) {
                 if let perform {
-                    perform(target)
+                    try perform(target)
                 } else {
-                    modelContext.windDownList(target)
+                    try modelContext.windDownList(target)
                 }
             }
             .cadenceFixedTypography()

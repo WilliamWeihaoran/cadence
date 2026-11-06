@@ -1274,15 +1274,11 @@ extension CadenceTaskMutationSupport {
     // already exists". Its last caller was the iOS Calendar Board, gone since [[T-3170]]'s eighth
     // pass; the comment claiming otherwise survived four more passes and is recorded in [[T-3209]].
 
-    static func removeTaskFromBundle(_ task: AppTask, modelContext: ModelContext) {
-        let bundleDateKey = task.bundle?.dateKey ?? task.scheduledDate
-        task.bundle?.tasks = (task.bundle?.tasks ?? []).filter { $0 !== task }
-        task.bundle = nil
-        task.bundleOrder = 0
-        task.scheduledDate = bundleDateKey
-        task.scheduledStartMin = -1
-        try? modelContext.save()
-    }
+    // `removeTaskFromBundle(_:modelContext:)` was declared here, with a `try? save()` that the
+    // T-11581 census counted as a silent user commit. Nothing in the app called it: the one
+    // remove-from-block is `SchedulingActions.removeTaskFromBundle(_:keepOnBundleDate:)`, whose
+    // same-id twin case `TaskBundleTests.removingOneOfTwoSameIDTasksFromABlockLeavesItsTwinThere`
+    // pins. [[T-11861]] deleted it with the test that was its only caller.
 
     /// Moves an unfinished task from a day that has gone by onto today, clearing the slot it used
     /// to hold — the timeline start minute, the block it sat in, and any legacy calendar link.

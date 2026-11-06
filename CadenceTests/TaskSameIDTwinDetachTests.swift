@@ -89,15 +89,8 @@ struct TaskSameIDTwinDetachTests {
         #expect(try modelContext.fetch(FetchDescriptor<TaskBundle>()).count == 1, "the block was disposed of")
     }
 
-    /// The shared "take this task out of its block", which has no caller today but is still the
-    /// spelling a new one would reach for.
-    @Test func theSharedRemoveFromBlockLeavesTheSameIDTwinThere() throws {
-        let modelContext = try makeContext()
-        let (survivor, copy, bundle) = try sameIDTwinsInABlock(modelContext)
-
-        CadenceTaskMutationSupport.removeTaskFromBundle(copy, modelContext: modelContext)
-
-        #expect(copy.bundle == nil)
-        #expect((bundle.tasks ?? []).count == 1 && bundle.tasks?.first === survivor, "the twin left the block")
-    }
+    // A third test was declared here. It drove the shared remove-from-block helper on
+    // CadenceTaskMutationSupport, which had no app caller and which [[T-11861]] deleted; the live
+    // un-block's same-id twin case is
+    // `TaskBundleTests.removingOneOfTwoSameIDTasksFromABlockLeavesItsTwinThere`.
 }

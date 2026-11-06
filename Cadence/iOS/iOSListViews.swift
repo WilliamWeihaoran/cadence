@@ -19,6 +19,9 @@ struct iOSListsView: View {
     /// Set only when `CadenceContainerWindDownSummary.requiresConfirmation` says the wind-down
     /// would settle something. See `requestWindDown`.
     @State private var pendingWindDown: iOSListWindDownTarget?
+    /// Set when a wind-down made without a confirmation was refused ([[T-11614]] group (1)). The
+    /// menu or swipe that made it has closed, so an alert is the only surface left to say it.
+    @State private var refusedWindDown: iOSListWindDownAction?
 
     private var activeAreas: [Area] {
         areas.filter(\.isActive)
@@ -84,6 +87,7 @@ struct iOSListsView: View {
         }
         .iOSListDeletion(target: $pendingDeletion)
         .iOSListWindDown(target: $pendingWindDown)
+        .iOSListWindDownFailureAlert(refused: $refusedWindDown)
         .navigationDestination(for: iOSListRoute.self) { route in
             listDetail(for: route)
         }
@@ -425,8 +429,12 @@ struct iOSListsView: View {
     /// `ModelContext.windDownListUnlessConfirmationIsNeeded`, once, so no surface can answer it
     /// differently — the sidebar lists region asks the same function ([[T-11753]]).
     private func requestWindDown(_ target: iOSListWindDownTarget) {
-        if let needsConfirmation = modelContext.windDownListUnlessConfirmationIsNeeded(target) {
-            pendingWindDown = needsConfirmation
+        do {
+            if let needsConfirmation = try modelContext.windDownListUnlessConfirmationIsNeeded(target) {
+                pendingWindDown = needsConfirmation
+            }
+        } catch {
+            refusedWindDown = target.action
         }
     }
 

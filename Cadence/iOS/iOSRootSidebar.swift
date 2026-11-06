@@ -567,6 +567,9 @@ struct iOSSidebarListsRegion: View {
     @State private var orderFailureSectionID: String?
     /// Set only when a row's Complete / Archive has open work to settle ([[T-11753]]).
     @State private var pendingWindDown: iOSListWindDownTarget?
+    /// Set when a row's Complete / Archive with nothing to confirm was refused ([[T-11614]] group
+    /// (1)); the context menu has closed, so the Lists page's alert says it.
+    @State private var refusedWindDown: iOSListWindDownAction?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -613,6 +616,7 @@ struct iOSSidebarListsRegion: View {
         )
         // The Lists page's one list wind-down confirmation, armed by a row's Complete / Archive.
         .iOSListWindDown(target: $pendingWindDown)
+        .iOSListWindDownFailureAlert(refused: $refusedWindDown)
     }
 
     /// A context's header and the rows under it — and, since T-2054, **a create-door**: a `+`
@@ -727,7 +731,11 @@ struct iOSSidebarListsRegion: View {
         case .project(let project)?: target = .project(project, action)
         case nil: return
         }
-        pendingWindDown = modelContext.windDownListUnlessConfirmationIsNeeded(target)
+        do {
+            pendingWindDown = try modelContext.windDownListUnlessConfirmationIsNeeded(target)
+        } catch {
+            refusedWindDown = action
+        }
     }
 
     /// The `list:` value a sidebar row hands a dropped `+`, in the one spelling

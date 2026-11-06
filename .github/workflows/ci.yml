@@ -637,6 +637,7 @@ jobs:
             -only-testing:CadenceTests/iOSMarkdownInlineTaskPanelEffectTests \
             -only-testing:CadenceTests/iOSMarkdownTaskEmbedSubtaskOverflowTests \
             -only-testing:CadenceTests/iOSTaskRecurrenceSelectionEffectTests \
+            -only-testing:CadenceTests/iOSWindDownRefusalTests \
             test-without-building
           echo "SIM-TEST-SECONDS=$(( SECONDS - test_start ))"
           grep -E 'Test run with [0-9]+ tests? in [0-9]+ suites?|Executed [0-9]+ tests?' "$RUNNER_TEMP/cadence-xcb-ci-ios-tests.log" || true
