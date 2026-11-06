@@ -79,11 +79,11 @@ struct CadenceTaskDateEditingSurfaceTests {
         let cases: [(name: String, edit: (AppTask, ModelContext, CadenceWindDownReconciler) -> Void, check: (Recorder.Snapshot) -> Bool)] = [
             ("setScheduledDate", { CadenceTaskDateEditing.setScheduledDate("2026-04-04", for: $0, in: $1, reconciler: $2) },
              { $0.scheduledDate == "2026-04-04" }),
-            ("scheduleToday", { CadenceTaskDateEditing.scheduleToday($0, in: $1, reconciler: $2) },
+            ("scheduleToday", { _ = CadenceTaskDateEditing.scheduleToday($0, in: $1, reconciler: $2) },
              { $0.scheduledDate == DateFormatters.todayKey() }),
-            ("scheduleTomorrow", { CadenceTaskDateEditing.scheduleTomorrow($0, in: $1, reconciler: $2) },
+            ("scheduleTomorrow", { _ = CadenceTaskDateEditing.scheduleTomorrow($0, in: $1, reconciler: $2) },
              { $0.scheduledDate != "2026-03-01" && !$0.scheduledDate.isEmpty }),
-            ("scheduleNextWeek", { CadenceTaskDateEditing.scheduleNextWeek($0, in: $1, reconciler: $2) },
+            ("scheduleNextWeek", { _ = CadenceTaskDateEditing.scheduleNextWeek($0, in: $1, reconciler: $2) },
              { $0.scheduledDate != "2026-03-01" && !$0.scheduledDate.isEmpty }),
             ("clearScheduledDate", { CadenceTaskDateEditing.clearScheduledDate($0, in: $1, reconciler: $2) },
              { $0.scheduledDate.isEmpty && $0.scheduledStartMin == -1 }),
@@ -97,13 +97,13 @@ struct CadenceTaskDateEditingSurfaceTests {
              { $0.scheduledDate == "2026-06-06" && $0.scheduledStartMin == 13 * 60 }),
             ("setDueDate", { CadenceTaskDateEditing.setDueDate("2026-07-07", for: $0, in: $1, reconciler: $2) },
              { $0.dueDate == "2026-07-07" }),
-            ("dueToday", { CadenceTaskDateEditing.dueToday($0, in: $1, reconciler: $2) },
+            ("dueToday", { _ = CadenceTaskDateEditing.dueToday($0, in: $1, reconciler: $2) },
              { $0.dueDate == DateFormatters.todayKey() }),
-            ("dueTomorrow", { CadenceTaskDateEditing.dueTomorrow($0, in: $1, reconciler: $2) },
+            ("dueTomorrow", { _ = CadenceTaskDateEditing.dueTomorrow($0, in: $1, reconciler: $2) },
              { $0.dueDate != "2026-03-02" && !$0.dueDate.isEmpty }),
-            ("dueNextWeek", { CadenceTaskDateEditing.dueNextWeek($0, in: $1, reconciler: $2) },
+            ("dueNextWeek", { _ = CadenceTaskDateEditing.dueNextWeek($0, in: $1, reconciler: $2) },
              { $0.dueDate != "2026-03-02" && !$0.dueDate.isEmpty }),
-            ("clearDueDate", { CadenceTaskDateEditing.clearDueDate($0, in: $1, reconciler: $2) },
+            ("clearDueDate", { _ = CadenceTaskDateEditing.clearDueDate($0, in: $1, reconciler: $2) },
              { $0.dueDate.isEmpty })
         ]
 
@@ -198,6 +198,74 @@ struct CadenceTaskDateEditingSurfaceTests {
             )
         )
         #expect(task.scheduledStartMin == -1, "clearing still zeroed the field even though the commit was refused")
+    }
+
+    /// **[[T-11614]] (G2).** The seven quick-date shortcuts the row menus and the iOS swipe tray
+    /// fire used to end in a swallowed `try? save()`: a refused write left the new day PENDING in
+    /// the one app-wide context, the menu had closed, and nothing said so. Each now answers
+    /// `false`, puts the old day back in memory (the field snapshot's undo, which a later `save()`
+    /// by anyone commits harmlessly), and still reconciles once (after the
+    /// restore, so the reconciler sees the day the store holds). A refusal that is swallowed again
+    /// answers `true` and leaves the new day in memory, and goes red here.
+    @Test func aRefusedQuickDateShortcutAnswersFalseAndPutsTheOldDayBack() throws {
+        typealias Commit = (ModelContext) throws -> Void
+        let cases: [(name: String, edit: (AppTask, ModelContext, CadenceWindDownReconciler, @escaping Commit) -> Bool)] = [
+            ("scheduleToday", { CadenceTaskDateEditing.scheduleToday($0, in: $1, reconciler: $2, commit: $3) }),
+            ("scheduleTomorrow", { CadenceTaskDateEditing.scheduleTomorrow($0, in: $1, reconciler: $2, commit: $3) }),
+            ("scheduleNextWeek", { CadenceTaskDateEditing.scheduleNextWeek($0, in: $1, reconciler: $2, commit: $3) }),
+            ("dueToday", { CadenceTaskDateEditing.dueToday($0, in: $1, reconciler: $2, commit: $3) }),
+            ("dueTomorrow", { CadenceTaskDateEditing.dueTomorrow($0, in: $1, reconciler: $2, commit: $3) }),
+            ("dueNextWeek", { CadenceTaskDateEditing.dueNextWeek($0, in: $1, reconciler: $2, commit: $3) }),
+            ("clearDueDate", { CadenceTaskDateEditing.clearDueDate($0, in: $1, reconciler: $2, commit: $3) }),
+        ]
+        #expect(cases.count == 7, "the shortcut table has \(cases.count) cases")
+
+        for testCase in cases {
+            let modelContext = try context()
+            let task = try seededTask(in: modelContext)
+            let recorder = Recorder()
+
+            let landed = testCase.edit(task, modelContext, recorder.reconciler(), { _ in throw CommitRefused() })
+
+            #expect(!landed, "\(testCase.name) answered true over a refused commit")
+            #expect(task.scheduledDate == "2026-03-01", "\(testCase.name) left the refused do date in memory")
+            #expect(task.dueDate == "2026-03-02", "\(testCase.name) left the refused due date in memory")
+            let stored = try #require(try ModelContext(modelContext.container).fetch(FetchDescriptor<AppTask>()).first)
+            #expect(stored.scheduledDate == "2026-03-01" && stored.dueDate == "2026-03-02", "\(testCase.name) committed the refused day")
+            #expect(recorder.seen.count == 1, "\(testCase.name) reconciled \(recorder.seen.count) times")
+            #expect(
+                recorder.seen.first == Recorder.Snapshot(scheduledDate: "2026-03-01", dueDate: "2026-03-02", scheduledStartMin: 9 * 60),
+                "\(testCase.name) reconciled against a day the store never took"
+            )
+        }
+
+        // The accepting half: the default commit lands, answers true and is committed.
+        let modelContext = try context()
+        let task = try seededTask(in: modelContext)
+        #expect(CadenceTaskDateEditing.dueToday(task, in: modelContext, reconciler: .inert))
+        let stored = try ModelContext(modelContext.container).fetch(FetchDescriptor<AppTask>())
+        #expect(stored.map(\.dueDate) == [DateFormatters.todayKey()])
+    }
+
+    /// **[[T-11614]] (G4).** Priority and Move Section, the row menus' other two quiet setters.
+    @Test func aRefusedPriorityOrSectionAnswersFalseAndPutsTheOldValueBack() throws {
+        let modelContext = try context()
+        let task = try seededTask(in: modelContext)
+        task.priority = .low
+        task.sectionName = "Now"
+        try modelContext.save()
+
+        #expect(!CadenceTaskMutationSupport.setPriority(.high, for: task, modelContext: modelContext, commit: { _ in throw CommitRefused() }))
+        #expect(task.priority == .low, "the refused priority was left in memory")
+        #expect(!CadenceTaskMutationSupport.moveToSection("Later", task: task, modelContext: modelContext, commit: { _ in throw CommitRefused() }))
+        #expect(task.sectionName == "Now", "the refused section was left in memory")
+        let refusedStore = try #require(try ModelContext(modelContext.container).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(refusedStore.priority == .low && refusedStore.sectionName == "Now", "a refused write was committed")
+
+        #expect(CadenceTaskMutationSupport.setPriority(.high, for: task, modelContext: modelContext))
+        #expect(CadenceTaskMutationSupport.moveToSection("Later", task: task, modelContext: modelContext))
+        let stored = try #require(try ModelContext(modelContext.container).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(stored.priority == .high && stored.sectionName == "Later")
     }
 
     // MARK: - Shape: the surfaces route through it

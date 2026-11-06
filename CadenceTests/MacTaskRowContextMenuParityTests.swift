@@ -197,6 +197,17 @@ struct MacTaskRowContextMenuParityTests {
         #expect(MacTaskRowMenuFailure.recurrence("x").message == "x")
         #expect(MacTaskRowMenuFailure.move.message == CadenceTaskFieldEditCommit.saveFailureNotice)
         #expect(MacTaskRowMenuFailure.duplicate.message == CadenceTaskFieldEditCommit.saveFailureNotice)
+        // [[T-11614]]: the date and priority submenus, titled as iOS's row alerts title them.
+        #expect(MacTaskRowMenuFailure.date.title == CadenceTaskMutationSupport.dateFailureAlertTitle)
+        #expect(MacTaskRowMenuFailure.priority.title == CadenceTaskMutationSupport.priorityFailureAlertTitle)
+        #expect(MacTaskRowMenuFailure.date.message == CadenceTaskFieldEditCommit.saveFailureNotice)
+        #expect(MacTaskRowMenuFailure.priority.message == CadenceTaskFieldEditCommit.saveFailureNotice)
+        #expect(Set([
+            CadenceTaskMutationSupport.dateFailureAlertTitle,
+            CadenceTaskMutationSupport.priorityFailureAlertTitle,
+            CadenceTaskMutationSupport.moveFailureAlertTitle,
+            CadenceTaskMutationSupport.recurrenceFailureAlertTitle,
+        ]).count == 4, "two refusals share a title")
     }
 
     // MARK: - [[T-8107]] The date submenus say the date

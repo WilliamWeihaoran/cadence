@@ -11,7 +11,11 @@ import SwiftUI
 /// `Do Date` submenus of `iOSTaskRowContextMenu`, which every one of these rows also has.
 enum iOSTaskRowSwipeActions {
     /// Full swipe right runs `Today`, because it is first and not destructive.
-    static func leading(task: AppTask, modelContext: ModelContext) -> [CadenceSwipeAction] {
+    ///
+    /// **[[T-11614]] (G2).** The tray springs closed on the tap and the row leaves for another day,
+    /// so a refused write that put it back said nothing. `dateFailed` is the row's flag for
+    /// `iOSTaskRowDateFailureAlertModifier`, the one the context menu's date submenus also raise.
+    static func leading(task: AppTask, modelContext: ModelContext, dateFailed: Binding<Bool>) -> [CadenceSwipeAction] {
         [
             CadenceSwipeAction(
                 id: "do-today",
@@ -19,7 +23,7 @@ enum iOSTaskRowSwipeActions {
                 systemImage: "sun.max.fill",
                 tint: Theme.amber
             ) {
-                CadenceTaskDateEditing.scheduleToday(task, in: modelContext)
+                dateFailed.wrappedValue = !CadenceTaskDateEditing.scheduleToday(task, in: modelContext)
             },
             CadenceSwipeAction(
                 id: "do-tomorrow",
@@ -27,7 +31,7 @@ enum iOSTaskRowSwipeActions {
                 systemImage: "calendar",
                 tint: Theme.blue
             ) {
-                CadenceTaskDateEditing.scheduleTomorrow(task, in: modelContext)
+                dateFailed.wrappedValue = !CadenceTaskDateEditing.scheduleTomorrow(task, in: modelContext)
             }
         ]
     }
@@ -284,7 +288,9 @@ struct iOSTaskRowDateChip: View {
     private func clearDate() {
         switch field {
         case .doDate: CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext)
-        case .dueDate: CadenceTaskDateEditing.clearDueDate(task, in: modelContext)
+        // [[T-11614]] G6 owns this picker's notice; until then its answer is dropped, as the
+        // do-date arm above drops `clearScheduledDate`'s.
+        case .dueDate: _ = CadenceTaskDateEditing.clearDueDate(task, in: modelContext)
         }
     }
 
@@ -490,6 +496,12 @@ struct iOSTaskRowContextMenu: View {
     /// discarded `iOSTaskRecurrenceSelection.select`'s answer, so a refused rule was silent here
     /// even after T-656 made the repeat *chip* report it.
     @Binding var recurrenceFailed: Bool
+    /// **[[T-11614]] (G2).** The Do Date and Due Date submenus, and the swipe tray's two dates:
+    /// each closes on the tap and moves the row to another day. See
+    /// `iOSTaskRowDateFailureAlertModifier`. A refused Move Section raises `moveFailed`.
+    @Binding var dateFailed: Bool
+    /// **[[T-11614]] (G4).** The Priority submenu. See `iOSTaskRowPriorityFailureAlertModifier`.
+    @Binding var priorityFailed: Bool
     @Binding var pendingRecurrenceRule: TaskRecurrenceRule?
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
@@ -584,7 +596,7 @@ struct iOSTaskRowContextMenu: View {
         Menu {
             ForEach(TaskPriority.allCases, id: \.self) { priority in
                 Button {
-                    CadenceTaskMutationSupport.setPriority(priority, for: task, modelContext: modelContext)
+                    priorityFailed = !CadenceTaskMutationSupport.setPriority(priority, for: task, modelContext: modelContext)
                 } label: {
                     Label(priority.label, systemImage: priority == task.priority ? "checkmark.circle.fill" : "circle")
                 }
@@ -614,26 +626,26 @@ struct iOSTaskRowContextMenu: View {
     private var doDateMenu: some View {
         Menu {
             Button {
-                CadenceTaskDateEditing.scheduleToday(task, in: modelContext)
+                dateFailed = !CadenceTaskDateEditing.scheduleToday(task, in: modelContext)
             } label: {
                 Label("Today", systemImage: CadenceTaskDateMenuLabel.glyph(.today, dateKey: task.scheduledDate, otherwise: "sun.max.fill"))
             }
 
             Button {
-                CadenceTaskDateEditing.scheduleTomorrow(task, in: modelContext)
+                dateFailed = !CadenceTaskDateEditing.scheduleTomorrow(task, in: modelContext)
             } label: {
                 Label("Tomorrow", systemImage: CadenceTaskDateMenuLabel.glyph(.tomorrow, dateKey: task.scheduledDate, otherwise: "calendar"))
             }
 
             Button {
-                CadenceTaskDateEditing.scheduleNextWeek(task, in: modelContext)
+                dateFailed = !CadenceTaskDateEditing.scheduleNextWeek(task, in: modelContext)
             } label: {
                 Label("Next Week", systemImage: CadenceTaskDateMenuLabel.glyph(.nextWeek, dateKey: task.scheduledDate, otherwise: "calendar.badge.clock"))
             }
 
             if !task.scheduledDate.isEmpty {
                 Button {
-                    CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext)
+                    dateFailed = !CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext)
                 } label: {
                     Label("Clear Do Date", systemImage: "xmark.circle")
                 }
@@ -646,26 +658,26 @@ struct iOSTaskRowContextMenu: View {
     private var dueDateMenu: some View {
         Menu {
             Button {
-                CadenceTaskDateEditing.dueToday(task, in: modelContext)
+                dateFailed = !CadenceTaskDateEditing.dueToday(task, in: modelContext)
             } label: {
                 Label("Today", systemImage: CadenceTaskDateMenuLabel.glyph(.today, dateKey: task.dueDate, otherwise: "flag.fill"))
             }
 
             Button {
-                CadenceTaskDateEditing.dueTomorrow(task, in: modelContext)
+                dateFailed = !CadenceTaskDateEditing.dueTomorrow(task, in: modelContext)
             } label: {
                 Label("Tomorrow", systemImage: CadenceTaskDateMenuLabel.glyph(.tomorrow, dateKey: task.dueDate, otherwise: "calendar"))
             }
 
             Button {
-                CadenceTaskDateEditing.dueNextWeek(task, in: modelContext)
+                dateFailed = !CadenceTaskDateEditing.dueNextWeek(task, in: modelContext)
             } label: {
                 Label("Next Week", systemImage: CadenceTaskDateMenuLabel.glyph(.nextWeek, dateKey: task.dueDate, otherwise: "calendar.badge.clock"))
             }
 
             if !task.dueDate.isEmpty {
                 Button {
-                    CadenceTaskDateEditing.clearDueDate(task, in: modelContext)
+                    dateFailed = !CadenceTaskDateEditing.clearDueDate(task, in: modelContext)
                 } label: {
                     Label("Clear Due Date", systemImage: "xmark.circle")
                 }
@@ -682,7 +694,7 @@ struct iOSTaskRowContextMenu: View {
             Menu {
                 ForEach(names, id: \.self) { section in
                     Button {
-                        Self.moveSection(section, task: task, modelContext: modelContext)
+                        moveFailed = !Self.moveSection(section, task: task, modelContext: modelContext)
                     } label: {
                         Label(section, systemImage: section.caseInsensitiveCompare(task.resolvedSectionName) == .orderedSame ? "checkmark.circle.fill" : "rectangle.split.3x1")
                     }
@@ -743,11 +755,11 @@ struct iOSTaskRowContextMenu: View {
     // parity reader in `MacTaskRowContextMenuParityTests` still sees all fifteen shared calls in
     // the menu's body, and each one keeps the exact write its call site had.
     //
-    // `commit:` is threaded where the shared helper takes one. `moveToList` is the only one of
-    // the four a test can make refuse: `CadenceTaskMutationSupport.duplicate` and `.moveToSection`
-    // take no `commit:`, and `iOSTaskRecurrenceSelection.select` is declared outside this struct,
-    // so a refused Duplicate, Move Section or Repeat has nothing to inject. The Mac half had the
-    // same hole in the same two places.
+    // `commit:` is threaded where the shared helper takes one. `moveToList` and, since
+    // [[T-11614]], `moveSection` are the ones a test can make refuse:
+    // `CadenceTaskMutationSupport.duplicate` takes no `commit:`, and
+    // `iOSTaskRecurrenceSelection.select` is declared outside this struct, so a refused Duplicate
+    // or Repeat has nothing to inject. The Mac half had the same hole in the same places.
 
     /// iOS does not report a refused duplicate — `MacTaskRowMenuFailure` carries no iOS title for
     /// it — so the swallow stays as it was. The save rule permits it because the shared helper
@@ -757,10 +769,16 @@ struct iOSTaskRowContextMenu: View {
         _ = try? CadenceTaskMutationSupport.duplicate(task, allTasks: allTasks, modelContext: modelContext)
     }
 
-    /// The shared helper's own `try? save()` is an in-place field edit the save rule permits, and
-    /// it reports nothing, so there is nothing here to refuse.
-    static func moveSection(_ section: String, task: AppTask, modelContext: ModelContext) {
-        CadenceTaskMutationSupport.moveToSection(section, task: task, modelContext: modelContext)
+    /// **[[T-11614]] (G4).** This used to say there was "nothing here to refuse", because the
+    /// shared helper swallowed its save. `false` is now a refusal the helper has already undone;
+    /// the menu has closed, so the row's move alert says it, as it does for Move to List.
+    static func moveSection(
+        _ section: String,
+        task: AppTask,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        CadenceTaskMutationSupport.moveToSection(section, task: task, modelContext: modelContext, commit: commit)
     }
 
     /// `false` is the refusal a closed menu cannot say itself; the row's alert says it. The row's
@@ -1075,7 +1093,47 @@ struct iOSTaskRowRecurrenceFailureAlertModifier: ViewModifier {
     }
 }
 
+/// A refused **date** from the row's Do Date / Due Date submenus or its swipe tray ([[T-11614]]).
+/// Both close on the tap and the row was leaving for another day, so the restore that put it back
+/// was the only thing anyone saw. Same shape, and the same sentence, as the move and repeat alerts.
+struct iOSTaskRowDateFailureAlertModifier: ViewModifier {
+    @Binding var isPresented: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .alert(CadenceTaskMutationSupport.dateFailureAlertTitle, isPresented: $isPresented) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(CadenceTaskFieldEditCommit.saveFailureNotice)
+            }
+    }
+}
+
+/// A refused **priority** from the row's Priority submenu ([[T-11614]]). See the date alert above.
+struct iOSTaskRowPriorityFailureAlertModifier: ViewModifier {
+    @Binding var isPresented: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .alert(CadenceTaskMutationSupport.priorityFailureAlertTitle, isPresented: $isPresented) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(CadenceTaskFieldEditCommit.saveFailureNotice)
+            }
+    }
+}
+
 extension View {
+    /// See `iOSTaskRowDateFailureAlertModifier`.
+    func iOSTaskRowDateFailureAlert(isPresented: Binding<Bool>) -> some View {
+        modifier(iOSTaskRowDateFailureAlertModifier(isPresented: isPresented))
+    }
+
+    /// See `iOSTaskRowPriorityFailureAlertModifier`.
+    func iOSTaskRowPriorityFailureAlert(isPresented: Binding<Bool>) -> some View {
+        modifier(iOSTaskRowPriorityFailureAlertModifier(isPresented: isPresented))
+    }
+
     /// See `iOSTaskDeleteConfirmationModifier`.
     func iOSTaskDeleteConfirmation(
         task: AppTask,

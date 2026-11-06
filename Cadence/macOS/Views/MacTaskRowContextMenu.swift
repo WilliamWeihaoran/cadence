@@ -97,7 +97,7 @@ struct MacTaskRowContextMenu: View {
         Menu {
             ForEach(TaskPriority.allCases, id: \.self) { priority in
                 Button {
-                    CadenceTaskMutationSupport.setPriority(priority, for: task, modelContext: modelContext)
+                    settle(Self.setPriority(priority, for: task, modelContext: modelContext))
                 } label: {
                     Label(priority.label, systemImage: priority == task.priority ? "checkmark.circle.fill" : "circle")
                 }
@@ -127,26 +127,26 @@ struct MacTaskRowContextMenu: View {
     private var doDateMenu: some View {
         Menu {
             Button {
-                CadenceTaskDateEditing.scheduleToday(task, in: modelContext)
+                settle(Self.dateOutcome(CadenceTaskDateEditing.scheduleToday(task, in: modelContext)))
             } label: {
                 Label("Today", systemImage: CadenceTaskDateMenuLabel.glyph(.today, dateKey: task.scheduledDate, otherwise: "sun.max.fill"))
             }
 
             Button {
-                CadenceTaskDateEditing.scheduleTomorrow(task, in: modelContext)
+                settle(Self.dateOutcome(CadenceTaskDateEditing.scheduleTomorrow(task, in: modelContext)))
             } label: {
                 Label("Tomorrow", systemImage: CadenceTaskDateMenuLabel.glyph(.tomorrow, dateKey: task.scheduledDate, otherwise: "calendar"))
             }
 
             Button {
-                CadenceTaskDateEditing.scheduleNextWeek(task, in: modelContext)
+                settle(Self.dateOutcome(CadenceTaskDateEditing.scheduleNextWeek(task, in: modelContext)))
             } label: {
                 Label("Next Week", systemImage: CadenceTaskDateMenuLabel.glyph(.nextWeek, dateKey: task.scheduledDate, otherwise: "calendar.badge.clock"))
             }
 
             if !task.scheduledDate.isEmpty {
                 Button {
-                    CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext)
+                    settle(Self.dateOutcome(CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext)))
                 } label: {
                     Label("Clear Do Date", systemImage: "xmark.circle")
                 }
@@ -159,26 +159,26 @@ struct MacTaskRowContextMenu: View {
     private var dueDateMenu: some View {
         Menu {
             Button {
-                CadenceTaskDateEditing.dueToday(task, in: modelContext)
+                settle(Self.dateOutcome(CadenceTaskDateEditing.dueToday(task, in: modelContext)))
             } label: {
                 Label("Today", systemImage: CadenceTaskDateMenuLabel.glyph(.today, dateKey: task.dueDate, otherwise: "flag.fill"))
             }
 
             Button {
-                CadenceTaskDateEditing.dueTomorrow(task, in: modelContext)
+                settle(Self.dateOutcome(CadenceTaskDateEditing.dueTomorrow(task, in: modelContext)))
             } label: {
                 Label("Tomorrow", systemImage: CadenceTaskDateMenuLabel.glyph(.tomorrow, dateKey: task.dueDate, otherwise: "calendar"))
             }
 
             Button {
-                CadenceTaskDateEditing.dueNextWeek(task, in: modelContext)
+                settle(Self.dateOutcome(CadenceTaskDateEditing.dueNextWeek(task, in: modelContext)))
             } label: {
                 Label("Next Week", systemImage: CadenceTaskDateMenuLabel.glyph(.nextWeek, dateKey: task.dueDate, otherwise: "calendar.badge.clock"))
             }
 
             if !task.dueDate.isEmpty {
                 Button {
-                    CadenceTaskDateEditing.clearDueDate(task, in: modelContext)
+                    settle(Self.dateOutcome(CadenceTaskDateEditing.clearDueDate(task, in: modelContext)))
                 } label: {
                     Label("Clear Due Date", systemImage: "xmark.circle")
                 }
@@ -271,7 +271,8 @@ struct MacTaskRowContextMenu: View {
     // presented from a unit test. They stay inside this struct so the parity reader in
     // `MacTaskRowContextMenuParityTests` still sees every shared call in the menu's body.
     // `MacTaskRowContextMenuEffectTests` holds them by effect. `commit:` is threaded wherever the
-    // shared helper takes one; `duplicate` and `moveToSection` take none.
+    // shared helper takes one; `duplicate` takes none. [[T-11614]] added `setPriority` and gave
+    // `moveSection` a `commit:`; the date submenus answer through `dateOutcome`.
 
     /// iOS swallows this one (`_ = try?`), which the save rule permits because `duplicate` commits
     /// through `commitInsert`; but a refused duplicate then looks exactly like a menu that did
@@ -347,11 +348,37 @@ struct MacTaskRowContextMenu: View {
         return landed ? .settled : .refused(.recurrence(CadencePendingChangePersistence.editFailureNotice))
     }
 
-    /// The shared helper's own `try? save()` is an in-place field edit the save rule permits, and
-    /// it reports nothing, so there is nothing here to refuse.
-    static func moveSection(_ section: String, task: AppTask, modelContext: ModelContext) -> ActionOutcome {
-        CadenceTaskMutationSupport.moveToSection(section, task: task, modelContext: modelContext)
-        return .settled
+    /// **[[T-11614]] (G4).** This used to say there was "nothing here to refuse", because the
+    /// shared helper swallowed its save. It does not any more: the row moves under another heading
+    /// and the menu has closed, so a refused move is undone by the helper and named here, as
+    /// Move to List names one.
+    static func moveSection(
+        _ section: String,
+        task: AppTask,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> ActionOutcome {
+        CadenceTaskMutationSupport.moveToSection(section, task: task, modelContext: modelContext, commit: commit)
+            ? .settled : .refused(.move)
+    }
+
+    /// **[[T-11614]] (G4).** The Priority submenu, the next item down from Repeat, which already
+    /// reported. A refusal puts the old priority back; the checkmarks read the task, so they agree.
+    static func setPriority(
+        _ priority: TaskPriority,
+        for task: AppTask,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> ActionOutcome {
+        CadenceTaskMutationSupport.setPriority(priority, for: task, modelContext: modelContext, commit: commit)
+            ? .settled : .refused(.priority)
+    }
+
+    /// **[[T-11614]] (G2).** The Do Date and Due Date submenus' answer. Each item calls
+    /// `CadenceTaskDateEditing` directly, so the parity reader still sees the same shared calls as
+    /// iOS's menu; this only turns the `Bool` into the row's alert.
+    static func dateOutcome(_ landed: Bool) -> ActionOutcome {
+        landed ? .settled : .refused(.date)
     }
 
     /// T-702's shape: the checkmarks read the task, so they self-correct on the restore; what the
@@ -425,18 +452,24 @@ enum MacTaskRowMenuFailure: Equatable {
     case move
     case recurrence(String)
     case duplicate
+    /// [[T-11614]]: a Do Date / Due Date submenu item. Titled as iOS titles it.
+    case date
+    /// [[T-11614]]: the Priority submenu. Titled as iOS titles it.
+    case priority
 
     var title: String {
         switch self {
         case .move: CadenceTaskMutationSupport.moveFailureAlertTitle
         case .recurrence: CadenceTaskMutationSupport.recurrenceFailureAlertTitle
         case .duplicate: "Couldn't Duplicate Task"
+        case .date: CadenceTaskMutationSupport.dateFailureAlertTitle
+        case .priority: CadenceTaskMutationSupport.priorityFailureAlertTitle
         }
     }
 
     var message: String {
         switch self {
-        case .move, .duplicate: CadenceTaskFieldEditCommit.saveFailureNotice
+        case .move, .duplicate, .date, .priority: CadenceTaskFieldEditCommit.saveFailureNotice
         case .recurrence(let notice): notice
         }
     }

@@ -44,7 +44,8 @@ enum RootCommandActionSupport {
             }
         case .dueDate:
             if task.dueDate == todayKey {
-                CadenceTaskDateEditing.clearDueDate(task, in: context)
+                // [[T-11614]] G6: no surface to report on yet; the answer is dropped, as the do-date arm drops its.
+                _ = CadenceTaskDateEditing.clearDueDate(task, in: context)
             } else {
                 CadenceTaskDateEditing.setDueDate(todayKey, for: task, in: context)
             }

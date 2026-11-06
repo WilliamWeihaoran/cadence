@@ -293,6 +293,84 @@ struct MacTaskRowContextMenuEffectTests {
         #expect(try #require(try f.committed(f.subject)).sectionName == "Retired")
     }
 
+    /// **[[T-11614]] (G4).** Move Section used to say there was "nothing here to refuse": the
+    /// helper swallowed its save, so a refusal left the new section pending and the closed menu
+    /// said nothing. It is undone and named now, as Move to List's is.
+    @Test func aRefusedMoveSectionIsReportedAndUndone() throws {
+        let f = try makeFixture()
+
+        let outcome = MacTaskRowContextMenu.moveSection(
+            "Now", task: f.subject, modelContext: f.context,
+            commit: { _ in throw CommitRefused() }
+        )
+
+        #expect(outcome == .refused(.move))
+        #expect(f.subject.sectionName == "Later", "the refused section was left in memory")
+        #expect(try #require(try f.committed(f.subject)).sectionName == "Later")
+    }
+
+    // MARK: - Priority
+
+    @Test func priorityCommitsOnTheRowsTask() throws {
+        let f = try makeFixture()
+
+        #expect(MacTaskRowContextMenu.setPriority(.low, for: f.subject, modelContext: f.context) == .settled)
+
+        #expect(try #require(try f.committed(f.subject)).priority == .low)
+        #expect(try #require(try f.committed(f.sibling)).priority == .none, "the sibling is untouched")
+    }
+
+    /// **[[T-11614]] (G4).** The next item down from Repeat, which already reported.
+    @Test func aRefusedPriorityIsReportedAndUndone() throws {
+        let f = try makeFixture()
+
+        let outcome = MacTaskRowContextMenu.setPriority(
+            .low, for: f.subject, modelContext: f.context,
+            commit: { _ in throw CommitRefused() }
+        )
+
+        #expect(outcome == .refused(.priority))
+        #expect(f.subject.priority == .high, "the refused priority was left in memory")
+        #expect(try #require(try f.committed(f.subject)).priority == .high)
+    }
+
+    // MARK: - Dates
+
+    /// **[[T-11614]] (G2).** The date submenus' answer becomes the row's alert. The write itself is
+    /// held by `CadenceTaskDateEditingSurfaceTests`; this is the hop from its `Bool` to the alert.
+    @Test func aRefusedDateIsReportedAndALandedOneSettles() throws {
+        let f = try makeFixture()
+
+        let refused = MacTaskRowContextMenu.dateOutcome(
+            CadenceTaskDateEditing.dueToday(f.subject, in: f.context, reconciler: .inert, commit: { _ in throw CommitRefused() })
+        )
+        #expect(refused == .refused(.date))
+        #expect(try #require(try f.committed(f.subject)).dueDate.isEmpty)
+
+        let landed = MacTaskRowContextMenu.dateOutcome(
+            CadenceTaskDateEditing.dueToday(f.subject, in: f.context, reconciler: .inert)
+        )
+        #expect(landed == .settled)
+        #expect(try #require(try f.committed(f.subject)).dueDate == DateFormatters.todayKey())
+    }
+
+    /// Every item in both date submenus hands its answer to the row, Clear Do Date included —
+    /// otherwise do date and due date would disagree inside one menu.
+    @Test func everyDateSubmenuItemHandsItsAnswerToTheRow() throws {
+        let code = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/MacTaskRowContextMenu.swift")
+        )
+        for menu in ["private var doDateMenu: some View", "private var dueDateMenu: some View"] {
+            let body = try #require(CadenceSourceScan.declarationBody(menu, in: code), "\(menu) not found")
+            let dateCalls = CadenceSourceScan.matchCount(#"CadenceTaskDateEditing\.\w+\("#, in: body)
+            let answered = CadenceSourceScan.matchCount(#"settle\(Self\.dateOutcome\(CadenceTaskDateEditing\.\w+\(task, in: modelContext\)\)\)"#, in: body)
+            #expect(dateCalls == 4, "\(menu) makes \(dateCalls) date calls")
+            #expect(answered == dateCalls, "\(menu): \(dateCalls - answered) item(s) drop their answer")
+        }
+        let priority = try #require(CadenceSourceScan.declarationBody("private var priorityMenu: some View", in: code))
+        #expect(CadenceSourceScan.matchCount(#"settle\(Self\.setPriority\(priority, for: task, modelContext: modelContext\)\)"#, in: priority) == 1)
+    }
+
     // MARK: - Repeat
 
     @Test func repeatOnAOneOffTaskCommitsTheRuleOnTheRowsTask() throws {
@@ -449,7 +527,7 @@ struct MacTaskRowContextMenuEffectTests {
         let destinations = CadenceSourceScan.captures(#"Self\.moveToList\(task, (area: \w+, project: \w+)"#, in: moveBody).map(\.text)
         #expect(destinations == ["area: nil, project: nil", "area: area, project: nil", "area: nil, project: project"])
         // And every action is handed the row's own task, not some other one in scope.
-        #expect(CadenceSourceScan.matchCount(#"settle\(Self\.\w+\((?:\w+, )?(?:task: |for: )?task[,)]"#, in: code) == 6)
+        #expect(CadenceSourceScan.matchCount(#"settle\(Self\.\w+\((?:\w+, )?(?:task: |for: )?task[,)]"#, in: code) == 7, "[[T-11614]] added Priority to the six")
     }
 }
 

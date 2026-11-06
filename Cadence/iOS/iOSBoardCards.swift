@@ -252,14 +252,17 @@ struct iOSBoardTaskCard: View {
     // most of what the inspector is *for* — so a card-owned sheet closed itself on the same writes
     // `iOSTaskRow`'s did.
     @Environment(\.iOSTaskInspector) private var taskInspector
-    /// The task action menu's four pieces of state, the row's own four (`iOSTaskRow`), because the
-    /// menu is the row's own `iOSTaskRowContextMenu` and each of them is something that menu can
-    /// only ask for and not show: the delete confirmation, and the three refusals a `Menu` closes
-    /// over before it could say them ([[T-8182]]).
+    /// The task action menu's state, the row's own (`iOSTaskRow`), because the menu is the row's
+    /// own `iOSTaskRowContextMenu` and each of them is something that menu can only ask for and not
+    /// show: the delete confirmation, and the refusals a `Menu` closes over before it could say
+    /// them ([[T-8182]]; date and priority since [[T-11614]]).
     @State private var showDeleteConfirmation = false
     @State private var deleteFailed = false
     @State private var moveFailed = false
     @State private var recurrenceFailed = false
+    /// [[T-11614]]: the menu's date and priority submenus, as on the row.
+    @State private var dateFailed = false
+    @State private var priorityFailed = false
     @State private var pendingRecurrenceRule: TaskRecurrenceRule?
 
     private var listColor: Color {
@@ -345,6 +348,8 @@ struct iOSBoardTaskCard: View {
                 showDeleteConfirmation: $showDeleteConfirmation,
                 moveFailed: $moveFailed,
                 recurrenceFailed: $recurrenceFailed,
+                dateFailed: $dateFailed,
+                priorityFailed: $priorityFailed,
                 pendingRecurrenceRule: $pendingRecurrenceRule
             )
         }
@@ -365,6 +370,8 @@ struct iOSBoardTaskCard: View {
         .iOSTaskDeleteFailureAlert(isPresented: $deleteFailed)
         .iOSTaskMoveFailureAlert(isPresented: $moveFailed)
         .iOSTaskRowRecurrenceFailureAlert(isPresented: $recurrenceFailed)
+        .iOSTaskRowDateFailureAlert(isPresented: $dateFailed)
+        .iOSTaskRowPriorityFailureAlert(isPresented: $priorityFailed)
     }
 
     private func openDetail() {

@@ -225,26 +225,63 @@ extension CadenceTaskMutationSupport {
         try? modelContext.save()
     }
 
-    static func setPriority(_ priority: TaskPriority, for task: AppTask, modelContext: ModelContext) {
-        task.priority = priority
-        try? modelContext.save()
+    /// **[[T-11614]] (G4).** The row menus' Priority submenu. It used to end in a swallowed
+    /// `try? save()`: the menu closes on the tap, so a refused write left the new priority pending
+    /// in the one app-wide context and nothing said so. Now it is a field transaction — a refusal
+    /// puts the old priority back and answers `false`, and the row's alert says it. No
+    /// `@discardableResult`: every caller must take the answer.
+    ///
+    /// `reconciler: .inert` for the reason `moveTaskToDate` passes it: a priority is not a date, so
+    /// there is no notification to put back in step on the undo.
+    static func setPriority(
+        _ priority: TaskPriority,
+        for task: AppTask,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        CadenceTaskFieldEditCommit.commit(task, in: modelContext, reconciler: .inert, commit: commit) {
+            task.priority = priority
+        }
     }
 
-    static func scheduleToday(_ task: AppTask, modelContext: ModelContext) {
-        task.scheduledDate = DateFormatters.todayKey()
-        try? modelContext.save()
+    // **[[T-11614]] (G2).** The six quick-date shortcuts below and `clearDueDate` serve the row
+    // menus and the iOS swipe tray — one-shot commands whose surface is gone by the time the store
+    // answers, and each moves the row to another day. They are `moveTaskToDate`'s shape: a field
+    // transaction that undoes itself on a refusal and answers, with `.inert` because
+    // `CadenceTaskDateEditing` reconciles after either answer. The callers report a `false`.
+
+    static func scheduleToday(
+        _ task: AppTask,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        CadenceTaskFieldEditCommit.commit(task, in: modelContext, reconciler: .inert, commit: commit) {
+            task.scheduledDate = DateFormatters.todayKey()
+        }
     }
 
-    static func scheduleTomorrow(_ task: AppTask, modelContext: ModelContext, calendar: Calendar = .current) {
+    static func scheduleTomorrow(
+        _ task: AppTask,
+        modelContext: ModelContext,
+        calendar: Calendar = .current,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: Date()) ?? Date()
-        task.scheduledDate = DateFormatters.dateKey(from: tomorrow)
-        try? modelContext.save()
+        return CadenceTaskFieldEditCommit.commit(task, in: modelContext, reconciler: .inert, commit: commit) {
+            task.scheduledDate = DateFormatters.dateKey(from: tomorrow)
+        }
     }
 
-    static func scheduleNextWeek(_ task: AppTask, modelContext: ModelContext, calendar: Calendar = .current) {
+    static func scheduleNextWeek(
+        _ task: AppTask,
+        modelContext: ModelContext,
+        calendar: Calendar = .current,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
         let nextWeek = calendar.date(byAdding: .day, value: 7, to: Date()) ?? Date()
-        task.scheduledDate = DateFormatters.dateKey(from: nextWeek)
-        try? modelContext.save()
+        return CadenceTaskFieldEditCommit.commit(task, in: modelContext, reconciler: .inert, commit: commit) {
+            task.scheduledDate = DateFormatters.dateKey(from: nextWeek)
+        }
     }
 
     /// **T-1580.** Same answer, and the same reason, as `setScheduledTime` below: an in-place field
@@ -349,31 +386,64 @@ extension CadenceTaskMutationSupport {
         try? modelContext.save()
     }
 
-    static func dueToday(_ task: AppTask, modelContext: ModelContext) {
-        task.dueDate = DateFormatters.todayKey()
-        try? modelContext.save()
+    /// [[T-11614]] (G2): see the note above `scheduleToday`.
+    static func dueToday(
+        _ task: AppTask,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        CadenceTaskFieldEditCommit.commit(task, in: modelContext, reconciler: .inert, commit: commit) {
+            task.dueDate = DateFormatters.todayKey()
+        }
     }
 
-    static func dueTomorrow(_ task: AppTask, modelContext: ModelContext, calendar: Calendar = .current) {
+    static func dueTomorrow(
+        _ task: AppTask,
+        modelContext: ModelContext,
+        calendar: Calendar = .current,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: Date()) ?? Date()
-        task.dueDate = DateFormatters.dateKey(from: tomorrow)
-        try? modelContext.save()
+        return CadenceTaskFieldEditCommit.commit(task, in: modelContext, reconciler: .inert, commit: commit) {
+            task.dueDate = DateFormatters.dateKey(from: tomorrow)
+        }
     }
 
-    static func dueNextWeek(_ task: AppTask, modelContext: ModelContext, calendar: Calendar = .current) {
+    static func dueNextWeek(
+        _ task: AppTask,
+        modelContext: ModelContext,
+        calendar: Calendar = .current,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
         let nextWeek = calendar.date(byAdding: .day, value: 7, to: Date()) ?? Date()
-        task.dueDate = DateFormatters.dateKey(from: nextWeek)
-        try? modelContext.save()
+        return CadenceTaskFieldEditCommit.commit(task, in: modelContext, reconciler: .inert, commit: commit) {
+            task.dueDate = DateFormatters.dateKey(from: nextWeek)
+        }
     }
 
-    static func clearDueDate(_ task: AppTask, modelContext: ModelContext) {
-        task.dueDate = ""
-        try? modelContext.save()
+    /// The menu shape, also taken by the date pickers' "Clear" (whose popover closes on it). The
+    /// pickers' own notice is [[T-11614]]'s G6 and is not wired yet; they drop the answer.
+    static func clearDueDate(
+        _ task: AppTask,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        CadenceTaskFieldEditCommit.commit(task, in: modelContext, reconciler: .inert, commit: commit) {
+            task.dueDate = ""
+        }
     }
 
-    static func moveToSection(_ sectionName: String, task: AppTask, modelContext: ModelContext) {
-        task.sectionName = sectionName
-        try? modelContext.save()
+    /// **[[T-11614]] (G4).** The row menus' Move Section. The row moves under another heading and
+    /// the menu is gone, so a refusal is undone and answered rather than left pending.
+    static func moveToSection(
+        _ sectionName: String,
+        task: AppTask,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        CadenceTaskFieldEditCommit.commit(task, in: modelContext, reconciler: .inert, commit: commit) {
+            task.sectionName = sectionName
+        }
     }
 
     static func sectionNames(forArea area: Area?, project: Project?) -> [String] {
@@ -708,6 +778,15 @@ extension CadenceTaskMutationSupport {
     /// answer. A `Menu` has no surface of its own to stay open and say so, same reasoning as
     /// `moveFailureAlertTitle`.
     static let recurrenceFailureAlertTitle = "Couldn't Change Repeat"
+
+    /// **[[T-11614]].** The same no-surface problem, for the menus' Do Date and Due Date submenus
+    /// and the iOS swipe tray's Today / Tomorrow: each closes on the tap and moves the row to
+    /// another day, so a refusal that put it back said nothing. A refused Move Section reuses
+    /// `moveFailureAlertTitle` — it is a move, within the list.
+    static let dateFailureAlertTitle = "Couldn't Change Date"
+
+    /// **[[T-11614]].** The Priority submenu's refusal, one submenu over from the date one.
+    static let priorityFailureAlertTitle = "Couldn't Change Priority"
 
 
 

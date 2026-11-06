@@ -54,6 +54,11 @@ struct iOSTaskRow: View {
     @State private var moveFailed = false
     /// The context menu's repeat submenu (T-761(c)). See `iOSTaskRowRecurrenceFailureAlertModifier`.
     @State private var recurrenceFailed = false
+    /// [[T-11614]]: the menu's date submenus and the swipe tray's dates. See
+    /// `iOSTaskRowDateFailureAlertModifier`.
+    @State private var dateFailed = false
+    /// [[T-11614]]: the menu's Priority submenu. See `iOSTaskRowPriorityFailureAlertModifier`.
+    @State private var priorityFailed = false
     @State private var pendingRecurrenceRule: TaskRecurrenceRule?
 
     private var isRegularWidth: Bool {
@@ -119,6 +124,8 @@ struct iOSTaskRow: View {
                     showDeleteConfirmation: $showDeleteConfirmation,
                     moveFailed: $moveFailed,
                     recurrenceFailed: $recurrenceFailed,
+                    dateFailed: $dateFailed,
+                    priorityFailed: $priorityFailed,
                     pendingRecurrenceRule: $pendingRecurrenceRule
                 )
             }
@@ -152,7 +159,7 @@ struct iOSTaskRow: View {
             // including the `List`-hosted ones, which were switched over too rather than left on
             // a second, near-identical mechanism.
             .iOSSwipeActions(
-                leading: iOSTaskRowSwipeActions.leading(task: task, modelContext: modelContext),
+                leading: iOSTaskRowSwipeActions.leading(task: task, modelContext: modelContext, dateFailed: $dateFailed),
                 trailing: iOSTaskRowSwipeActions.trailing(
                     task: task,
                     modelContext: modelContext,
@@ -201,6 +208,10 @@ struct iOSTaskRow: View {
             // The repeat submenu's equivalent: it closes on the tap exactly as the move menu
             // does, and until T-761(c) a refused rule had nowhere to be reported either.
             .iOSTaskRowRecurrenceFailureAlert(isPresented: $recurrenceFailed)
+            // [[T-11614]]: the date and priority submenus, and the swipe tray's dates, close on
+            // the tap in the same way.
+            .iOSTaskRowDateFailureAlert(isPresented: $dateFailed)
+            .iOSTaskRowPriorityFailureAlert(isPresented: $priorityFailed)
             .onAppear(perform: handlePendingDeepLink)
             .onChange(of: deepLinkManager.pendingTaskID) { _, _ in
                 handlePendingDeepLink()

@@ -168,7 +168,10 @@ struct TaskEmbedFieldEditorPopover: View {
                 isOpen: popoverOpenBinding,
                 showsClear: true,
                 onClear: {
-                    commit { CadenceTaskDateEditing.clearDueDate(task, in: modelContext) }
+                    // [[T-11614]]: this popover's own `commit` is the unit of work and the report, so the
+                    // shared clear hands it the commit (`commit: { _ in }`, the T-1580 idiom) rather
+                    // than committing, and undoing, on its own first.
+                    commit { _ = CadenceTaskDateEditing.clearDueDate(task, in: modelContext, commit: { _ in }) }
                 },
                 inlineStyle: true,
                 hasSelection: !task.dueDate.isEmpty

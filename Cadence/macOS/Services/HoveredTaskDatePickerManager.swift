@@ -90,7 +90,8 @@ final class HoveredTaskDatePickerManager {
         case .doDate:
             CadenceTaskDateEditing.clearScheduledDate(request.task, in: context)
         case .dueDate:
-            CadenceTaskDateEditing.clearDueDate(request.task, in: context)
+            // [[T-11614]] G6: no surface to report on yet; the answer is dropped, as the do-date arm drops its.
+            _ = CadenceTaskDateEditing.clearDueDate(request.task, in: context)
         }
         self.request = nil
     }

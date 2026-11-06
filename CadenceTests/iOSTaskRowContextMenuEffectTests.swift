@@ -173,7 +173,7 @@ struct iOSTaskRowContextMenuEffectTests {
     @Test func moveSectionCommitsTheRowsTaskIntoTheChosenSectionOfItsOwnListOnIOS() throws {
         let f = try makeFixture()
 
-        iOSTaskRowContextMenu.moveSection("Now", task: f.subject, modelContext: f.context)
+        #expect(iOSTaskRowContextMenu.moveSection("Now", task: f.subject, modelContext: f.context))
 
         let committed = try #require(try f.committed(f.subject))
         #expect(committed.sectionName == "Now")
@@ -192,9 +192,26 @@ struct iOSTaskRowContextMenuEffectTests {
         f.subject.sectionName = "Retired"
         try f.context.save()
 
-        iOSTaskRowContextMenu.moveSection("Retired", task: f.subject, modelContext: f.context)
+        #expect(iOSTaskRowContextMenu.moveSection("Retired", task: f.subject, modelContext: f.context))
 
         #expect(try #require(try f.committed(f.subject)).sectionName == "Retired")
+    }
+
+    /// **[[T-11614]] (G4).** Move Section used to say there was "nothing here to refuse": the
+    /// helper swallowed its save, so a refusal left the new section pending and the closed menu
+    /// said nothing. It answers `false` now, with the section put back, and the row raises its
+    /// move alert from that answer (`everyRefusableSubmenuRaisesItsOwnFlag`).
+    @Test func aRefusedMoveSectionAnswersFalseAndIsUndoneOnIOS() throws {
+        let f = try makeFixture()
+
+        let landed = iOSTaskRowContextMenu.moveSection(
+            "Now", task: f.subject, modelContext: f.context,
+            commit: { _ in throw CommitRefused() }
+        )
+
+        #expect(!landed)
+        #expect(f.subject.sectionName == "Later", "the refused section was left in memory")
+        #expect(try #require(try f.committed(f.subject)).sectionName == "Later")
     }
 
     // MARK: - Repeat
@@ -340,6 +357,43 @@ struct iOSTaskRowContextMenuRoutingTests {
         #expect(repeatWrapper.contains("Self.selectRecurrenceRule("), "the repeat submenu no longer routes through the invokable action")
         #expect(repeatWrapper.contains("recurrenceFailed = !landed"))
         #expect(!repeatWrapper.contains("moveFailed"), "the repeat wrapper writes the move flag")
+    }
+
+    /// **[[T-11614]] (G2, G4).** Every date item, the Priority item and Move Section hand their
+    /// answer to the row's flag, which the row's alert reads; the swipe tray's two dates raise the
+    /// same date flag. Counted per submenu, so one item that drops its answer goes red.
+    @Test func everyRefusableSubmenuRaisesItsOwnFlag() throws {
+        let menu = try menu()
+        func body(_ declaration: String) throws -> String {
+            try #require(CadenceSourceScan.declarationBody(declaration, in: menu), "\(declaration) not found")
+        }
+        for submenu in ["private var doDateMenu: some View", "private var dueDateMenu: some View"] {
+            let code = try body(submenu)
+            let calls = CadenceSourceScan.matchCount(#"CadenceTaskDateEditing\.\w+\("#, in: code)
+            let answered = CadenceSourceScan.matchCount(#"dateFailed = !CadenceTaskDateEditing\.\w+\(task, in: modelContext\)"#, in: code)
+            #expect(calls == 4, "\(submenu) makes \(calls) date calls")
+            #expect(answered == calls, "\(submenu): \(calls - answered) item(s) drop their answer")
+        }
+        #expect(CadenceSourceScan.matchCount(
+            #"priorityFailed = !CadenceTaskMutationSupport\.setPriority\(priority, for: task, modelContext: modelContext\)"#,
+            in: try body("private var priorityMenu: some View")
+        ) == 1)
+        #expect(CadenceSourceScan.matchCount(
+            #"moveFailed = !Self\.moveSection\("#, in: try body("private var sectionMenu: some View")
+        ) == 1)
+
+        let swipe = try #require(CadenceSourceScan.declarationBody("enum iOSTaskRowSwipeActions", in: try code()))
+        #expect(CadenceSourceScan.matchCount(#"dateFailed\.wrappedValue = !CadenceTaskDateEditing\.schedule\w+\(task, in: modelContext\)"#, in: swipe) == 2)
+
+        // And both hosts of the menu draw both alerts, and the row hands the swipe tray its flag.
+        for host in ["Cadence/iOS/iOSTaskViews.swift", "Cadence/iOS/iOSBoardCards.swift"] {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(host))
+            #expect(source.contains(".iOSTaskRowDateFailureAlert(isPresented: $dateFailed)"), "\(host)")
+            #expect(source.contains(".iOSTaskRowPriorityFailureAlert(isPresented: $priorityFailed)"), "\(host)")
+            #expect(source.contains("dateFailed: $dateFailed,") && source.contains("priorityFailed: $priorityFailed,"), "\(host)")
+        }
+        let row = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskViews.swift"))
+        #expect(row.contains("iOSTaskRowSwipeActions.leading(task: task, modelContext: modelContext, dateFailed: $dateFailed)"))
     }
 
     /// And every action is handed the ROW's own task, not another one in scope.

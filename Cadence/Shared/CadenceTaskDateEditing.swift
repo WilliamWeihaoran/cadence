@@ -71,31 +71,41 @@ enum CadenceTaskDateEditing {
         return landed
     }
 
+    /// **[[T-11614]] (G2).** The quick-date shortcuts answer whether the day landed, and forward
+    /// `commit:`, like `moveTaskToDate`. A refusal has already put the old day back by the time this
+    /// reconciles, so the reconcile runs on either answer. No `@discardableResult`: the menus and
+    /// the swipe tray close on the tap, so the caller's alert is the only report a refusal gets.
     static func scheduleToday(
         _ task: AppTask,
         in context: ModelContext,
-        reconciler: CadenceWindDownReconciler? = nil
-    ) {
-        CadenceTaskMutationSupport.scheduleToday(task, modelContext: context)
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let landed = CadenceTaskMutationSupport.scheduleToday(task, modelContext: context, commit: commit)
         reconcile(context, reconciler)
+        return landed
     }
 
     static func scheduleTomorrow(
         _ task: AppTask,
         in context: ModelContext,
-        reconciler: CadenceWindDownReconciler? = nil
-    ) {
-        CadenceTaskMutationSupport.scheduleTomorrow(task, modelContext: context)
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let landed = CadenceTaskMutationSupport.scheduleTomorrow(task, modelContext: context, commit: commit)
         reconcile(context, reconciler)
+        return landed
     }
 
     static func scheduleNextWeek(
         _ task: AppTask,
         in context: ModelContext,
-        reconciler: CadenceWindDownReconciler? = nil
-    ) {
-        CadenceTaskMutationSupport.scheduleNextWeek(task, modelContext: context)
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let landed = CadenceTaskMutationSupport.scheduleNextWeek(task, modelContext: context, commit: commit)
         reconcile(context, reconciler)
+        return landed
     }
 
     /// Clearing a do date drops the timeline slot with it — a slot on no day is not a slot. That is
@@ -191,37 +201,45 @@ enum CadenceTaskDateEditing {
     static func dueToday(
         _ task: AppTask,
         in context: ModelContext,
-        reconciler: CadenceWindDownReconciler? = nil
-    ) {
-        CadenceTaskMutationSupport.dueToday(task, modelContext: context)
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let landed = CadenceTaskMutationSupport.dueToday(task, modelContext: context, commit: commit)
         reconcile(context, reconciler)
+        return landed
     }
 
     static func dueTomorrow(
         _ task: AppTask,
         in context: ModelContext,
-        reconciler: CadenceWindDownReconciler? = nil
-    ) {
-        CadenceTaskMutationSupport.dueTomorrow(task, modelContext: context)
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let landed = CadenceTaskMutationSupport.dueTomorrow(task, modelContext: context, commit: commit)
         reconcile(context, reconciler)
+        return landed
     }
 
     static func dueNextWeek(
         _ task: AppTask,
         in context: ModelContext,
-        reconciler: CadenceWindDownReconciler? = nil
-    ) {
-        CadenceTaskMutationSupport.dueNextWeek(task, modelContext: context)
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let landed = CadenceTaskMutationSupport.dueNextWeek(task, modelContext: context, commit: commit)
         reconcile(context, reconciler)
+        return landed
     }
 
     static func clearDueDate(
         _ task: AppTask,
         in context: ModelContext,
-        reconciler: CadenceWindDownReconciler? = nil
-    ) {
-        CadenceTaskMutationSupport.clearDueDate(task, modelContext: context)
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let landed = CadenceTaskMutationSupport.clearDueDate(task, modelContext: context, commit: commit)
         reconcile(context, reconciler)
+        return landed
     }
 
     // MARK: - The one reconcile

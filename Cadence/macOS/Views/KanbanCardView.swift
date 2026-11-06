@@ -412,7 +412,8 @@ struct KanbanCard: View {
             isOpen: $showDueDatePicker,
             showsClear: true,
             onClear: {
-                CadenceTaskDateEditing.clearDueDate(task, in: modelContext)
+                // [[T-11614]] G6 owns this picker's notice; until then the answer is dropped.
+                _ = CadenceTaskDateEditing.clearDueDate(task, in: modelContext)
             },
             hasSelection: !task.dueDate.isEmpty
         )
