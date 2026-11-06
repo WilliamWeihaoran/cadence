@@ -47,6 +47,10 @@ struct iOSTodayView: View {
     /// Read through `observedDay` so this body depends on the day, and is re-run at midnight by
     /// `.cadenceTracksDayChanges` below rather than whenever something else happens to (T-3104).
     @State private var observedDay = CadenceObservedDay()
+    /// Today's folded list groups, by group id ([[T-12191]]): unpersisted, one set for the page,
+    /// as the Mac's Today keeps `TasksPanel.collapsedGroupIDs`. Here rather than in
+    /// `iOSTodayTaskSections` so the set outlives the lazy stack that section sits in.
+    @State private var collapsedGroupIDs: Set<String> = []
     private var todayKey: String { observedDay.todayKey }
 
     private var todayTasks: [AppTask] {
@@ -283,8 +287,10 @@ struct iOSTodayView: View {
             content: content,
             sortModeValue: sortMode,
             showCompletedValue: showCompleted,
+            collapsedGroupIDsValue: collapsedGroupIDs,
             sortMode: sortModeBinding,
             showCompleted: $showCompleted,
+            collapsedGroupIDs: $collapsedGroupIDs,
             onRollOver: rollOverPastDoTasks,
             onDismissRollover: dismissRolloverNotice,
             sampleDataStatus: sampleDataStatus,
@@ -297,8 +303,10 @@ struct iOSTodayView: View {
             content: content,
             sortModeValue: sortMode,
             showCompletedValue: showCompleted,
+            collapsedGroupIDsValue: collapsedGroupIDs,
             sortMode: sortModeBinding,
             showCompleted: $showCompleted,
+            collapsedGroupIDs: $collapsedGroupIDs,
             onRollOver: rollOverPastDoTasks,
             onDismissRollover: dismissRolloverNotice
         )
@@ -360,6 +368,7 @@ struct iOSTodayView: View {
             taskGroups: content.taskGroups,
             completedTasks: content.completedTasks,
             showsCompleted: $showCompleted,
+            collapsedGroupIDs: $collapsedGroupIDs,
             rolloverNotice: iOSTodayRolloverNotice(content: content, onRollOver: rollOverPastDoTasks, onDismiss: dismissRolloverNotice),
             sampleDataStatus: sampleDataStatus,
             seedSampleData: seedSampleData
@@ -370,6 +379,7 @@ struct iOSTodayView: View {
             taskGroups: content.taskGroups,
             completedTasks: content.completedTasks,
             showsCompleted: $showCompleted,
+            collapsedGroupIDs: $collapsedGroupIDs,
             rolloverNotice: iOSTodayRolloverNotice(content: content, onRollOver: rollOverPastDoTasks, onDismiss: dismissRolloverNotice)
         )
         #endif
@@ -410,8 +420,11 @@ struct iOSCompactTodayHost: View, Equatable {
     /// bindings themselves read their storage live and so always agree with each other.
     let sortModeValue: CadenceTaskSortMode
     let showCompletedValue: Bool
+    /// [[T-12191]]: the folded groups, compared for the same reason as the two values above.
+    let collapsedGroupIDsValue: Set<String>
     let sortMode: Binding<CadenceTaskSortMode>
     let showCompleted: Binding<Bool>
+    let collapsedGroupIDs: Binding<Set<String>>
     let onRollOver: () -> Void
     let onDismissRollover: () -> Void
     #if DEBUG
@@ -426,6 +439,7 @@ struct iOSCompactTodayHost: View, Equatable {
         return lhs.showsHeader == rhs.showsHeader
             && lhs.sortModeValue == rhs.sortModeValue
             && lhs.showCompletedValue == rhs.showCompletedValue
+            && lhs.collapsedGroupIDsValue == rhs.collapsedGroupIDsValue
             && lhs.content == rhs.content
     }
 
@@ -439,6 +453,7 @@ struct iOSCompactTodayHost: View, Equatable {
             summary: content.summary,
             sortMode: sortMode,
             showCompleted: showCompleted,
+            collapsedGroupIDs: collapsedGroupIDs,
             sampleDataStatus: sampleDataStatus,
             seedSampleData: seedSampleData
         )
@@ -450,7 +465,8 @@ struct iOSCompactTodayHost: View, Equatable {
             rolloverNotice: iOSTodayRolloverNotice(content: content, onRollOver: onRollOver, onDismiss: onDismissRollover),
             summary: content.summary,
             sortMode: sortMode,
-            showCompleted: showCompleted
+            showCompleted: showCompleted,
+            collapsedGroupIDs: collapsedGroupIDs
         )
         #endif
     }

@@ -710,7 +710,7 @@ struct CadenceTasksPanelMetricsTests {
             try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListDetailSupportViews.swift")
         )
         let header = try #require(
-            CadenceSourceScan.declarationBody("struct TaskListGroupHeader<LeadingContent: View>: View", in: listDetail)
+            CadenceSourceScan.declarationBody("struct TaskListGroupHeader: View", in: listDetail)
         )
         #expect(header.contains("chevron.right"), "non-vacuity: the disclosure chevron left this declaration")
         #expect(
@@ -727,17 +727,16 @@ struct CadenceTasksPanelMetricsTests {
             "TaskListGroupHeader no longer draws its title with the shared heading"
         )
         #expect(!header.contains(".font(.system(size: 14, weight: .bold))"), "the 14pt bold title is back")
-        #expect(
-            header.contains(".padding(.leading, 21)"),
-            "the header's hairline is no longer inset to the chevron's trailing edge — 21 is 34 minus the bar's 3pt and its 10pt of spacing"
-        )
+        // [[T-12193]]: the rest of the Mac-only furniture is gone too, each piece toward iOS's
+        // heading -- no overdue capsule, no By List glyph slot, no expanded-state fill, no hairline.
+        #expect(!header.contains("Capsule()"), "TaskListGroupHeader draws the overdue capsule again")
+        #expect(!header.contains("leadingContent"), "TaskListGroupHeader takes a By List glyph slot again")
+        #expect(!header.contains("Theme.surface"), "TaskListGroupHeader fills itself while expanded again")
+        #expect(!header.contains(".frame(height: 1)"), "TaskListGroupHeader draws its hairline again")
+        #expect(!listDetail.contains("extension TaskListGroupHeader"), "the generic header's convenience initialiser is back")
 
-        // The `EmptyView` convenience initialiser lives in an extension outside that declaration,
-        // and so do the two call sites in this file, so the whole file is swept as well.
-        #expect(
-            listDetail.contains("extension TaskListGroupHeader where LeadingContent == EmptyView"),
-            "self-check: the convenience initialiser moved out of this file"
-        )
+        // The two call sites in this file sit outside that declaration, so the whole file is
+        // swept as well.
         for path in [
             "Cadence/macOS/Views/ListDetailSupportViews.swift",
             "Cadence/macOS/Views/TasksListView.swift",
@@ -770,7 +769,7 @@ struct CadenceTasksPanelMetricsTests {
         let read = CadenceSourceScan.strippedSourceReader()
         let support = try read("Cadence/macOS/Views/ListDetailSupportViews.swift")
         let header = try #require(
-            CadenceSourceScan.declarationBody("struct TaskListGroupHeader<LeadingContent: View>: View", in: support)
+            CadenceSourceScan.declarationBody("struct TaskListGroupHeader: View", in: support)
         )
         #expect(header.contains("Button(action: onToggle) { headerContent }"), "the header no longer folds its group on click")
 

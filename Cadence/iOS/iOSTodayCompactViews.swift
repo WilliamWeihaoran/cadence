@@ -18,6 +18,8 @@ struct iOSCompactTodayView: View {
     let summary: CadenceTodaySummary
     @Binding var sortMode: CadenceTaskSortMode
     @Binding var showCompleted: Bool
+    /// The day's folded groups ([[T-12191]]), held by `iOSTodayView` so both widths read one set.
+    @Binding var collapsedGroupIDs: Set<String>
     #if DEBUG
     let sampleDataStatus: String?
     let seedSampleData: () -> Void
@@ -116,6 +118,7 @@ struct iOSCompactTodayView: View {
             taskGroups: todayTaskGroups,
             completedTasks: completedTodayTasks,
             showsCompleted: $showCompleted,
+            collapsedGroupIDs: $collapsedGroupIDs,
             rolloverNotice: rolloverNotice,
             sampleDataStatus: sampleDataStatus,
             seedSampleData: seedSampleData
@@ -126,6 +129,7 @@ struct iOSCompactTodayView: View {
             taskGroups: todayTaskGroups,
             completedTasks: completedTodayTasks,
             showsCompleted: $showCompleted,
+            collapsedGroupIDs: $collapsedGroupIDs,
             rolloverNotice: rolloverNotice
         )
         #endif

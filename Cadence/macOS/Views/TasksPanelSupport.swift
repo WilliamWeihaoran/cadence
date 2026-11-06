@@ -217,14 +217,6 @@ enum TasksPanelSupport {
         )
     }
 
-    /// How many of a group's rows are **late**, through `AppTask.isOverdue(todayKey:)` rather than
-    /// a re-derived comparison, so a finished task with a past due date stops inflating a group
-    /// header. `nil` — not `0` — when none are: a group with nothing late raises no flag.
-    static func overdueCount(in tasks: [AppTask], todayKey: String) -> Int? {
-        let count = tasks.filter { $0.isOverdue(todayKey: todayKey) }.count
-        return count > 0 ? count : nil
-    }
-
     /// **How many rows the group has**, which is what its capsule says: "N tasks".
     ///
     /// This was `regularCount`, and it **subtracted** `overdueCount` from the not-done total. The

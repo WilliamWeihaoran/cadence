@@ -258,11 +258,13 @@ struct CadenceTodayUnificationTests {
         let mac = try strippingComments(
             sourceFile("Cadence/macOS/Views/ListDetailSupportViews.swift")
         )
-        #expect(mac.contains("struct TaskListGroupHeader<LeadingContent: View>: View"), "non-vacuity")
+        #expect(mac.contains("struct TaskListGroupHeader: View"), "non-vacuity")
         #expect(!mac.contains("taskCount"), "macOS's group header takes a task count again")
-        // `overdueCount` is deliberately untouched: a red flag that hides itself at zero is a
-        // warning, not a tally, and the owner's request named the quantities.
-        #expect(mac.contains("let overdueCount: Int?"), "the overdue flag was removed with the count")
+        // [[T-12193]]: the overdue flag went too -- iOS's heading draws none, and T-1495 had
+        // already taken it off Today's. No capsule of any kind is left in the header.
+        #expect(!mac.contains("overdueCount"), "macOS's group header raises the overdue flag again")
+        let header = try #require(CadenceSourceScan.declarationBody("struct TaskListGroupHeader: View", in: mac))
+        #expect(!header.contains("Capsule()"), "macOS's group header draws a capsule again")
     }
 
     /// **`CadenceTaskGroupHeading` spans its container, and that is load-bearing (T-2056).**
@@ -348,7 +350,7 @@ struct CadenceTodayUnificationTests {
 
     /// **Today asks for no counts at all, and the surfaces that still show them share one pair.**
     ///
-    /// Today used to take the split from `TasksPanelSupport.overdueCount` / `.openCount`. The owner
+    /// Today used to take the split from `TasksPanelSupport`'s overdue and open counts. The owner
     /// had both capsules removed from its list-group headings (T-1495) — *"remove these pills from
     /// the section headings of lists in today's view"* — so the call sites here are gone.
     ///
@@ -362,8 +364,6 @@ struct CadenceTodayUnificationTests {
     /// because the shared pair was deleted outright, and the first is what fails if Today
     /// re-acquires a count — through the shared pair or a local copy of it.
     @Test func todaysGroupsAskForNoCountsWhileTheOthersShareTheOnePair() throws {
-        let overdue = TasksPanelSupport.overdueCount(in: [], todayKey: "2026-08-31")
-        #expect(overdue == nil, "an empty group must not claim to be zero days late")
         #expect(TasksPanelSupport.openCount(in: []) == 0)
 
         let sections = try strippingComments(
@@ -378,12 +378,14 @@ struct CadenceTodayUnificationTests {
         #expect(!sections.contains("taskCount"), "Today's list-group heading takes a count again")
         #expect(!sections.contains("overdueCount:"), "Today's list-group heading asks for the overdue flag again")
 
+        // [[T-12193]]: the overdue half of the pair is deleted with the flag it fed, on every
+        // desktop heading, so none of the three surfaces can grow it back without this failing.
         try expectCallSites(
             of: "TasksPanelSupport.overdueCount(",
             at: [
                 "Cadence/macOS/Views/TasksPanelSectionViews.swift": 0,
-                "Cadence/macOS/Views/TasksListView.swift": 1,
-                "Cadence/macOS/Views/ListDetailComponents.swift": 1,
+                "Cadence/macOS/Views/TasksListView.swift": 0,
+                "Cadence/macOS/Views/ListDetailComponents.swift": 0,
             ]
         )
         try expectCallSites(
@@ -1132,7 +1134,10 @@ struct CadenceTodayUnificationTests {
         let heading = try #require(section.range(of: "disclosure\n"))
         let fold = try #require(section.range(of: "if isExpanded {"))
         #expect(heading.lowerBound < fold.lowerBound, "the heading is behind the fold it controls")
-        #expect(section.contains("Image(systemName: isExpanded ? \"chevron.down\" : \"chevron.right\")"))
+        // The chevron is the shared disclosure's since [[T-12191]], which every task group folds from.
+        #expect(section.contains("iOSTaskGroupDisclosure("), "the Completed fold draws its own control again")
+        let disclosureControl = try declarationBody(of: "iOSTaskGroupDisclosure", in: "Cadence/iOS/iOSTaskGroupSection.swift")
+        #expect(disclosureControl.contains("Image(systemName: isExpanded ? \"chevron.down\" : \"chevron.right\")"))
         // The rows stay the shared ones, dimmed as a whole the way `iOSTaskGroupSection` dimmed
         // them: this is a local fold, not a local row vocabulary.
         #expect(section.contains("iOSTaskRow("))
@@ -1148,12 +1153,15 @@ struct CadenceTodayUnificationTests {
     /// Tasks, Today and a list's Tasks tab. It grows by an inset on every edge without moving
     /// anything, and two relations hold it: the inset reaches the 44pt floor, and it stays inside
     /// the `groupSpacing` gap above, so it cannot take taps from the last row of the group over it.
+    ///
+    /// Since [[T-12191]] the control is `iOSTaskGroupDisclosure`, which every task group folds
+    /// from, so the same two relations hold for every heading on the page.
     @Test func theTouchCompletedFoldIsAFingerTallWithoutReachingTheRowAboveIt() throws {
-        let section = try declarationBody(of: "iOSCompletedTasksSection", in: "Cadence/iOS/iOSTaskGroupSection.swift")
-        #expect(section.contains("private var disclosure: some View"), "non-vacuity: wrong declaration read")
-        let disclosureStart = try #require(section.range(of: "private var disclosure: some View"))
-        let rowsStart = try #require(section.range(of: "private var rows: some View"))
-        let disclosure = String(section[disclosureStart.upperBound..<rowsStart.lowerBound])
+        let completed = try declarationBody(of: "iOSCompletedTasksSection", in: "Cadence/iOS/iOSTaskGroupSection.swift")
+        #expect(completed.contains("iOSTaskGroupDisclosure("), "the Completed fold draws its own control again")
+        let section = try declarationBody(of: "iOSTaskGroupDisclosure", in: "Cadence/iOS/iOSTaskGroupSection.swift")
+        #expect(section.contains("@Binding var isExpanded: Bool"), "non-vacuity: wrong declaration read")
+        let disclosure = section
         let label = try #require(disclosure.range(of: "CadenceTaskGroupHeading(title: title, tint: tint)"))
         let hitArea = try #require(
             disclosure.range(of: ".iOSExpandedHitArea(Self.hitAreaInset)"),

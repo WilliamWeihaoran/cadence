@@ -557,7 +557,7 @@ struct CadenceTouchRowStackLazinessTests {
         let normalized = desktopSurfaceCollapsingWhitespace(section)
 
         #expect(
-            normalized.contains("if !tasks.isEmpty { LazyVStack(spacing: 7) { ForEach(tasks) { task in iOSTaskRow("),
+            normalized.contains("if !tasks.isEmpty && isExpanded.wrappedValue { LazyVStack(spacing: 7) { ForEach(tasks) { task in iOSTaskRow("),
             "iOSTaskGroupSection no longer builds its rows in a LazyVStack(spacing: 7)"
         )
         #expect(try occurrences(of: #"LazyVStack\("#, in: section) == 1)

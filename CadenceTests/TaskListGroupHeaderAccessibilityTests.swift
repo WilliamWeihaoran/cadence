@@ -8,19 +8,14 @@ import Testing
 
 /// **The Mac task-group header says what it is to VoiceOver (T-7008).**
 ///
-/// `TaskListGroupHeader` heads every group on Today, Inbox, All Tasks and list pages. It read as
-/// its title plus an unexplained number (the overdue capsule had no label), its disclosure stated
-/// no Expanded/Collapsed value while iOS's does, and with `isToggleEnabled: false` it was still a
-/// `Button` whose action did nothing.
+/// `TaskListGroupHeader` heads every group on Today, Inbox, All Tasks and list pages. Its
+/// disclosure stated no Expanded/Collapsed value while iOS's does, and with
+/// `isToggleEnabled: false` it was still a `Button` whose action did nothing. (The overdue capsule
+/// T-7008 labelled is gone from the header, [[T-12193]].)
 struct TaskListGroupHeaderAccessibilityTests {
     @Test func theDisclosureValueMatchesIOS() {
         #expect(TaskListGroupHeaderAccessibility.value(isCollapsed: true) == "Collapsed")
         #expect(TaskListGroupHeaderAccessibility.value(isCollapsed: false) == "Expanded")
-    }
-
-    @Test func theOverdueCapsuleIsLabelledWithItsCount() {
-        #expect(TaskListGroupHeaderAccessibility.overdueLabel(count: 1) == "1 overdue task")
-        #expect(TaskListGroupHeaderAccessibility.overdueLabel(count: 3) == "3 overdue tasks")
     }
 
     private func headerSource() throws -> String {
@@ -28,7 +23,7 @@ struct TaskListGroupHeaderAccessibilityTests {
             try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListDetailSupportViews.swift")
         )
         return try #require(
-            CadenceSourceScan.declarationBody("struct TaskListGroupHeader<LeadingContent: View>: View", in: source)
+            CadenceSourceScan.declarationBody("struct TaskListGroupHeader: View", in: source)
         )
     }
 
@@ -57,12 +52,12 @@ struct TaskListGroupHeaderAccessibilityTests {
         #expect(!body.contains("if isToggleEnabled { onToggle() }"), "the no-op Button action is back")
     }
 
-    @Test func theOverdueCapsuleCarriesItsLabelAndTooltip() throws {
+    /// [[T-12193]]: no overdue capsule is drawn, so there is nothing left to label.
+    @Test func theHeaderDrawsNoOverdueCapsule() throws {
         let header = try headerSource()
-        #expect(header.contains("flag.fill"), "non-vacuity: the overdue capsule is still drawn here")
-        #expect(header.contains(".accessibilityLabel(TaskListGroupHeaderAccessibility.overdueLabel(count: overdueCount))"))
-        #expect(header.contains(".help(TaskListGroupHeaderAccessibility.overdueLabel(count: overdueCount))"))
-        #expect(header.contains(".accessibilityElement(children: .ignore)"), "the glyph and number are read separately again")
+        #expect(header.contains("chevron.right"), "non-vacuity: still the group header")
+        #expect(!header.contains("flag.fill"), "the overdue capsule is drawn here again")
+        #expect(!header.contains("overdueCount"), "the header takes an overdue count again")
     }
 }
 

@@ -13,7 +13,7 @@ private struct TasksListSection: Identifiable {
     /// day that has already passed, so a drop there would light up and do nothing.
     let dropKey: String?
     let tasks: [AppTask]
-    /// Set only for `.byList` grouping, where the header carries the list's icon and its context's.
+    /// Set only for `.byList` grouping; the header no longer draws its glyphs ([[T-12193]]).
     let listGroup: TodayTaskGroup?
     /// The heading's colour (T-11214): the shared group's own, so a date, priority or list bucket
     /// is the colour iOS's Inbox and All Tasks head it with.
@@ -227,12 +227,12 @@ struct TasksListView: View {
     /// ([[T-8731]]). The `switch` used to be here, which is where iOS could not reach it; the
     /// phone and iPad draw the same Group control now, so the three date / priority / none arms
     /// are one shared function and this method is the macOS *wrapping* of its answer — the drop
-    /// keys its headers accept, and the `TodayTaskGroup` its By List header draws a context glyph
-    /// from.
+    /// keys its headers accept, and which sections are By List ones.
     ///
-    /// `.byList` keeps `TasksPanelSupport.listGroups` for that second reason alone: `listGroup`
-    /// carries the context icon and colour this surface draws beside a list name and the touch
-    /// surface does not. Both bucket through `CadenceTaskQuerySupport.listGroupKey` and order
+    /// `.byList` still goes through `TasksPanelSupport.listGroups`. It used to be for the context
+    /// glyph the By List header drew beside a list name, which [[T-12193]] removed because iOS
+    /// draws none; moving this arm onto `displayGroups` too is [[T-12212]], since the two spell
+    /// a group's id differently and the collapse set and drop keys are keyed on it. Both bucket through `CadenceTaskQuerySupport.listGroupKey` and order
     /// through `listGroupOrder`, so they cannot disagree about which list a task is under.
     private func sections(from tasks: [AppTask]) -> [TasksListSection] {
         switch groupingMode {
@@ -328,7 +328,6 @@ struct TasksListView: View {
                             section: section,
                             showsContainer: options.showsContainerChip,
                             isCollapsed: collapsedSectionIDs.contains(section.id),
-                            overdueCount: overdueCount(in: section.tasks),
                             todayKey: todayKey,
                             contexts: contexts,
                             areas: areas,
@@ -476,10 +475,6 @@ struct TasksListView: View {
         }
     }
 
-    private func overdueCount(in tasks: [AppTask]) -> Int? {
-        TasksPanelSupport.overdueCount(in: tasks, todayKey: todayKey)
-    }
-
     private func openCount(in tasks: [AppTask]) -> Int {
         TasksPanelSupport.openCount(in: tasks)
     }
@@ -566,7 +561,6 @@ private struct TasksListSectionView: View {
     /// by-list section's *header* already names the one it is.
     let showsContainer: Bool
     let isCollapsed: Bool
-    let overdueCount: Int?
     /// `TasksListView`'s observed day, for the rows' lateness ([[T-5012]]).
     let todayKey: String
     let contexts: [Context]
@@ -588,26 +582,8 @@ private struct TasksListSectionView: View {
                 title: section.title,
                 tint: section.tint,
                 isCollapsed: isCollapsed,
-                overdueCount: overdueCount,
                 onToggle: onToggle
-            ) {
-                if let group = section.listGroup {
-                    HStack(spacing: 8) {
-                        if let contextIcon = group.contextIcon, let contextColor = group.contextColor {
-                            Image(systemName: contextIcon)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(contextColor)
-                                .frame(width: 22, height: 22)
-                                .background(contextColor.opacity(0.15))
-                                .clipShape(Circle())
-                        }
-
-                        Image(systemName: group.listIcon)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(group.listColor)
-                    }
-                }
-            }
+            )
             .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
             .padding(.top, section.listGroup == nil ? 16 : 20)
             .padding(.bottom, 8)

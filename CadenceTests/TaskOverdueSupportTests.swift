@@ -106,12 +106,11 @@ struct TaskOverdueSupportTests {
     }
 
     #if os(macOS)
-    /// The count in a list-detail group header and the count in the same group on Today have to be
-    /// the same number. `ListDetailComponents` used to carry its own bodies for both of these, and
-    /// neither excluded completed tasks — so the same list reported two different overdue counts
-    /// depending on which screen you opened it from.
+    /// The group's open count excludes completed tasks. `ListDetailComponents` used to carry its
+    /// own body for it and did not. (Its overdue sibling on `TasksPanelSupport` is
+    /// deleted with the red flag it fed, [[T-12193]].)
     ///
-    /// **And the second figure is the group's size, not the remainder.** `openCount` was
+    /// **And the figure is the group's size, not the remainder.** `openCount` was
     /// `regularCount` and subtracted `overdueCount`, so this fixture — three tasks, one finished,
     /// one open and late, one open and on time — reported `1`. The user hit the degenerate case:
     /// a header reading `0 tasks` over three visible rows, because every open row under it was late.
@@ -122,9 +121,9 @@ struct TaskOverdueSupportTests {
         let openLater = task(due: "2026-09-01")
         let tasks = [openLate, doneLate, openLater]
 
-        #expect(TasksPanelSupport.overdueCount(in: tasks, todayKey: todayKey) == 1)
+        #expect(openLate.isOverdue(todayKey: todayKey), "non-vacuity: the fixture has a late row")
         #expect(TasksPanelSupport.openCount(in: tasks) == 2)
-        #expect(TasksPanelSupport.overdueCount(in: [doneLate], todayKey: todayKey) == nil)
+        #expect(!doneLate.isOverdue(todayKey: todayKey), "a finished task is never late")
     }
     #endif
 }

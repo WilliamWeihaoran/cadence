@@ -306,7 +306,7 @@ struct CadenceInboxRemindersSurfaceTests {
         )
 
         let macHeader = try strippingComments(sourceFile("Cadence/macOS/Views/ListDetailSupportViews.swift"))
-        #expect(macHeader.contains("struct TaskListGroupHeader<LeadingContent: View>: View"), "non-vacuity")
+        #expect(macHeader.contains("struct TaskListGroupHeader: View"), "non-vacuity")
         #expect(!macHeader.contains("taskCount"), "TaskListGroupHeader takes a task count again")
     }
 

@@ -161,6 +161,9 @@ struct iOSListDetailView: View {
 
     @AppStorage(CadencePreferenceKeys.iosListDetailSortMode) private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
     @AppStorage(CadencePreferenceKeys.iosListDetailShowCompleted) private var showCompleted = false
+    /// The Tasks tab's folded columns, by group id ([[T-12191]]): unpersisted, one set per page,
+    /// as the Mac's `ListTasksView.collapsedGroupIDs` is.
+    @State private var collapsedGroupIDs: Set<String> = []
 
     /// Read-only: the picker writes `sortModeRaw` through its own `Binding(get:set:)` below. The
     /// setter this used to carry was uncallable — a `View`'s `body` cannot mutate `self`.
@@ -449,7 +452,9 @@ struct iOSListDetailView: View {
                             container: containerSelection,
                             listName: title,
                             sectionName: group.title
-                        )
+                        ),
+                        collapsedGroupIDs: $collapsedGroupIDs,
+                        groupID: group.id
                     )
                 }
 

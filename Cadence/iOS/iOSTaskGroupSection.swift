@@ -22,14 +22,36 @@ struct iOSTaskGroupHeader: View {
     /// that resolves to nothing — means the header is not a drop target and takes no highlight.
     /// See `CadenceTaskDropSupport.dropKey(forGroup:)`.
     var dropIdentity: CadenceTaskGroupDropIdentity?
+    /// The group's fold, when it has one ([[T-12191]]). Every task group folds, on both platforms
+    /// (decided on [[T-11214]]); `nil` is left for the one heading that is not a task group's —
+    /// the Inbox's "Apple Reminders", which the Mac pins open too (`isToggleEnabled: false`).
+    var isExpanded: Binding<Bool>? = nil
 
     var body: some View {
         // `CadenceTaskGroupHeading`, in `Shared/Components/`, is the row itself now — macOS's Today
         // draws the same one. What stays here is the drop target below, which is iOS's alone.
         // The eyebrow keeps `iOSTaskSectionHeader`'s 6pt top inset, which the shared heading does
         // not carry because it is this host's spacing and not the heading's.
-        CadenceTaskGroupHeading(title: title, tint: color)
-            .padding(.top, iOSTaskSectionHeader.topPadding)
+        Group {
+            if let isExpanded {
+                iOSTaskGroupDisclosure(
+                    title: title,
+                    tint: color,
+                    accessibilityNoun: "the tasks in \(title)",
+                    isExpanded: isExpanded
+                )
+            } else {
+                // The chevron's 12pt column, held empty — the Mac's `Color.clear` in the same
+                // place — so a heading that does not fold lines up with the ones that do.
+                HStack(spacing: 8) {
+                    Color.clear
+                        .frame(width: 12, height: 1)
+                        .accessibilityHidden(true)
+                    CadenceTaskGroupHeading(title: title, tint: color)
+                }
+                .padding(.top, iOSTaskSectionHeader.topPadding)
+            }
+        }
         // The second half of drag-to-create, and the half that reaches an **empty** group. A row
         // carries its group's attribute by construction, which covers every grouping — but a group
         // with no rows has no row to point at, and that is precisely the group you most want to put
@@ -85,6 +107,27 @@ struct iOSTaskGroupSection: View {
     /// See `iOSTaskGroupHeader.dropIdentity`. It also decides whether an *empty* group renders at
     /// all — `CadenceTaskDropSupport.showsWhenEmpty(_:)`.
     var dropIdentity: CadenceTaskGroupDropIdentity?
+    /// **Every group folds from its heading ([[T-12191]]),** as every Mac group does — the fold
+    /// decided for both platforms on [[T-11214]]. The state is the **host's**: one
+    /// `@State Set<String>` per page, unpersisted, holding the ids of the folded groups, which is
+    /// the shape `TasksListView.collapsedSectionIDs` and `ListTasksView.collapsedGroupIDs` keep on
+    /// the Mac. Required rather than defaulted, so no surface can draw a group that does not fold.
+    @Binding var collapsedGroupIDs: Set<String>
+    /// The key this group folds under in `collapsedGroupIDs` — the display group's own `id`, which
+    /// is unique on its page. Defaults to the title for the single ungrouped section.
+    var groupID: String? = nil
+
+    private var foldKey: String { groupID ?? title }
+
+    /// The set, read as this one group's open/closed bit.
+    private var isExpanded: Binding<Bool> {
+        let key = foldKey
+        let collapsed = $collapsedGroupIDs
+        return Binding(
+            get: { CadenceTaskGroupFold.isExpanded(key, in: collapsed.wrappedValue) },
+            set: { CadenceTaskGroupFold.setExpanded($0, key, in: &collapsed.wrappedValue) }
+        )
+    }
 
     /// **A group you can still add to does not vanish when it empties; a group you cannot does.**
     /// The call sites used to each guard `if !tasks.isEmpty` before drawing this, which is right for
@@ -102,10 +145,11 @@ struct iOSTaskGroupSection: View {
                 iOSTaskGroupHeader(
                     title: title,
                     color: color,
-                    dropIdentity: dropIdentity
+                    dropIdentity: dropIdentity,
+                    isExpanded: isExpanded
                 )
 
-                if !tasks.isEmpty {
+                if !tasks.isEmpty && isExpanded.wrappedValue {
                     LazyVStack(spacing: 7) {
                         ForEach(tasks) { task in
                             iOSTaskRow(
@@ -116,6 +160,7 @@ struct iOSTaskGroupSection: View {
                             .opacity(opacity)
                         }
                     }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
         }
@@ -152,13 +197,12 @@ struct iOSTaskGroupSection: View {
 /// through its deep-link reveal (`iOSAllTasksView.revealCompletedIfLinked`, T-375) and its scroll
 /// (T-2088), both of which keep working untouched.
 ///
-/// **Why this is not `iOSTaskGroupSection`, which every other group on these pages is.** That
-/// component draws its heading unconditionally and owns no disclosure: a chevron row above it would
-/// print the title twice, and a chevron inside it would put one on every task group in the app.
-/// What should be shared still is — the heading is `CadenceTaskGroupHeading`, the same row the
-/// groups above and macOS draw, and the rows are `iOSTaskRow` at the same 7pt spacing in the same
-/// `LazyVStack` that T-2057 put them in. Only the fold and its chevron are local, which is the
-/// same shape `iOSCalendarBoardView`'s completed footer already uses on the day columns.
+/// **Why this is not `iOSTaskGroupSection`, which every other group on these pages is.** The fold:
+/// every group folds since [[T-12191]], but this one's open/closed bit is the host's stored
+/// `showCompleted`, while the groups above share one unpersisted per-page set, as the Mac's do. The
+/// control itself is shared — both draw `iOSTaskGroupDisclosure`, so the chevron, the 44pt hit
+/// area and the spoken state are one implementation — and the rows are `iOSTaskRow` at the same
+/// 7pt spacing in the same `LazyVStack` that T-2057 put them in.
 struct iOSCompletedTasksSection: View {
     /// The heading's words. Today passes `CadenceTodayPresentationSupport.completedSectionTitle`
     /// ("Completed Today"), which macOS's Today heads its own section with; the collection pages
@@ -179,12 +223,6 @@ struct iOSCompletedTasksSection: View {
     let accessibilityNoun: String
     @Binding var isExpanded: Bool
 
-    /// How far the disclosure's hit area reaches past its drawn label on every edge ([[T-9633]]).
-    /// Twice this plus the ~18pt label (6pt inset, one line of the 10pt eyebrow) is the 44pt
-    /// touch floor; it must stay under the 22pt `groupSpacing` above the heading, or the fold
-    /// would take taps from the last row over it.
-    static let hitAreaInset: CGFloat = 13
-
     var body: some View {
         // Nothing finished is not "a closed section with nothing in it" — it is no section. The
         // same predicate `iOSTaskGroupSection.isVisible` applied to this group before, because
@@ -201,10 +239,57 @@ struct iOSCompletedTasksSection: View {
         }
     }
 
-    /// The heading, as a control. `CadenceTaskGroupHeading` already spans its container, so the
-    /// whole row is the target rather than the glyphs — the same reason it carries that frame for
-    /// `iOSTaskGroupHeader`'s drop target.
+    /// The heading, as a control: `iOSTaskGroupDisclosure`, the same one every task group on the
+    /// page folds from since [[T-12191]].
     private var disclosure: some View {
+        iOSTaskGroupDisclosure(
+            title: title,
+            tint: tint,
+            accessibilityNoun: accessibilityNoun,
+            isExpanded: $isExpanded
+        )
+    }
+
+    /// Completed rows are dimmed as a whole rather than row by row — `iOSTaskGroupSection`'s
+    /// `opacity` knob, at the one value every caller ever passed it.
+    private var rows: some View {
+        LazyVStack(spacing: 7) {
+            ForEach(tasks) { task in
+                iOSTaskRow(
+                    task: task,
+                    showsContainer: showsContainer,
+                    dayAlreadyStatedBySurface: dayAlreadyStatedBySurface
+                )
+                .opacity(0.62)
+            }
+        }
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+}
+
+/// A task group's heading as a fold control: a chevron beside `CadenceTaskGroupHeading`
+/// ([[T-12191]]).
+///
+/// It was `iOSCompletedTasksSection`'s own `disclosure` until every task group came to fold, as
+/// every Mac group does (the fold decided for both platforms on [[T-11214]]). One control for all
+/// of them, so the Completed fold and a list's fold cannot differ in glyph, hit area, animation or
+/// what VoiceOver says. `CadenceTaskGroupHeading` already spans its container, so the whole row is
+/// the target rather than the glyphs — the same reason it carries that frame for
+/// `iOSTaskGroupHeader`'s drop target.
+struct iOSTaskGroupDisclosure: View {
+    let title: String
+    let tint: Color
+    /// What the hint calls the rows this folds: "the tasks you have finished", "the tasks in Errands".
+    let accessibilityNoun: String
+    @Binding var isExpanded: Bool
+
+    /// How far the disclosure's hit area reaches past its drawn label on every edge ([[T-9633]]).
+    /// Twice this plus the ~18pt label (6pt inset, one line of the 10pt eyebrow) is the 44pt
+    /// touch floor; it must stay under the 22pt `groupSpacing` above the heading, or the fold
+    /// would take taps from the last row over it.
+    static let hitAreaInset: CGFloat = 13
+
+    var body: some View {
         Button {
             withAnimation(.snappy(duration: 0.16)) {
                 isExpanded.toggle()
@@ -223,34 +308,19 @@ struct iOSCompletedTasksSection: View {
             .padding(.top, iOSTaskSectionHeader.topPadding)
             .contentShape(Rectangle())
             // [[T-9633]]: a finger's 44pt, not the eyebrow's ~18. The label is the 6pt inset over
-            // one line of the 10pt eyebrow, so the only control that unfolds finished work on
-            // Inbox, All Tasks, Today and a list's Tasks tab was a strip a thumb could land just
-            // above and miss. The hit area grows by 13 on each edge without moving anything:
-            // upward it stays inside the 22pt `groupSpacing` gap every host stacks this at, and
+            // one line of the 10pt eyebrow, so the Completed fold was a strip a thumb could land
+            // just above and miss. The hit area grows by 13 on each edge without moving anything:
+            // upward it stays inside the 22pt `groupSpacing` gap every host stacks groups at, and
             // downward the rows are later siblings, so the 4pt it reaches into the first row's top
-            // still goes to the row.
+            // still goes to the row. The FIRST group on a page has the options bar above it
+            // instead, 10pt of stack spacing plus the bar's own 2pt inset away, so its top 1pt can
+            // overlap a chip's bottom edge; that is owed an on-screen check ([[T-12211]]).
             .iOSExpandedHitArea(Self.hitAreaInset)
         }
         .buttonStyle(.iosPressable)
         .accessibilityLabel(title)
         .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
         .accessibilityHint(isExpanded ? "Hides \(accessibilityNoun)" : "Shows \(accessibilityNoun)")
-    }
-
-    /// Completed rows are dimmed as a whole rather than row by row — `iOSTaskGroupSection`'s
-    /// `opacity` knob, at the one value every caller ever passed it.
-    private var rows: some View {
-        LazyVStack(spacing: 7) {
-            ForEach(tasks) { task in
-                iOSTaskRow(
-                    task: task,
-                    showsContainer: showsContainer,
-                    dayAlreadyStatedBySurface: dayAlreadyStatedBySurface
-                )
-                .opacity(0.62)
-            }
-        }
-        .transition(.opacity.combined(with: .move(edge: .top)))
     }
 }
 #endif

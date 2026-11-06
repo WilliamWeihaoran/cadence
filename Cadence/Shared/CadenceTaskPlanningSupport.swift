@@ -307,6 +307,26 @@ struct CadenceTodayTaskGroup: Identifiable {
     }
 }
 
+/// **A page's folded task groups, as one set of group ids ([[T-12191]]).** Every task group folds
+/// from its heading on both platforms (decided on [[T-11214]]); the state is the host page's own
+/// `@State Set<String>`, unpersisted, the shape the Mac's `TasksListView.collapsedSectionIDs`
+/// already kept. Out here rather than in `iOSTaskGroupSection` so the reading of the set — absent
+/// means open, so a page starts with every group unfolded — is one statement a macOS-built test
+/// can exercise.
+enum CadenceTaskGroupFold {
+    static func isExpanded(_ groupID: String, in collapsed: Set<String>) -> Bool {
+        !collapsed.contains(groupID)
+    }
+
+    static func setExpanded(_ expanded: Bool, _ groupID: String, in collapsed: inout Set<String>) {
+        if expanded {
+            collapsed.remove(groupID)
+        } else {
+            collapsed.insert(groupID)
+        }
+    }
+}
+
 struct CadenceTaskDisplayGroup: Identifiable {
     let id: String
     let title: String

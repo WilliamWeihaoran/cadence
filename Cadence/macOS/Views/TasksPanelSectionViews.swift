@@ -200,16 +200,12 @@ struct TasksPanelIntentSectionView: View {
     /// after the owner asked for the same pills off iOS and iPadOS and then said to take them off
     /// the Mac too. So there is no `taskCount:` left to pass here or anywhere, and Today's
     /// *Completed* group below — the one surface the T-1495 request did not name and which
-    /// therefore kept its plain `count:` — has lost it as well. `overdueCount` survives as a
-    /// parameter, because a late-work flag is a warning rather than a tally; this header still
-    /// declines it.
+    /// therefore kept its plain `count:` — has lost it as well.
     ///
-    /// This file therefore still does not call `TasksPanelSupport.overdueCount` / `.openCount`.
-    /// `overdueCount` is **not** dead and must not be deleted — All Tasks (`TasksListView`) and
-    /// list detail (`ListDetailComponents`) still raise the red flag and still share the one
-    /// helper, which is the rule that stopped a fourth private copy of "how many of these are
-    /// late". `openCount` has no caller left; it is left in place rather than deleted here because
-    /// pruning `TasksPanelSupport` is not this change.
+    /// **[[T-12193]] finished T-1495's line on every desktop heading:** the red overdue flag All
+    /// Tasks and a list's Tasks tab still raised is gone from `TaskListGroupHeader` outright, with
+    /// `TasksPanelSupport`'s overdue counter, because iOS draws none and no input constraint separated
+    /// the two. Every late row still draws its own red due pill.
     private var header: some View {
         TaskListGroupHeader(
             title: title,

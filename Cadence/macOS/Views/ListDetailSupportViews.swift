@@ -119,7 +119,6 @@ enum TaskListDisplayMetrics {
 struct ListTasksGroupSectionView: View {
     let group: ListTasksGroup
     let isCollapsed: Bool
-    let overdueCount: Int?
     /// `ListTasksView`'s observed day, for the rows' lateness ([[T-5012]]).
     let todayKey: String
     @Binding var dragOverTaskID: UUID?
@@ -134,7 +133,6 @@ struct ListTasksGroupSectionView: View {
                 title: group.title,
                 tint: group.tint,
                 isCollapsed: isCollapsed,
-                overdueCount: overdueCount,
                 onToggle: onToggle
             )
             .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
@@ -209,8 +207,7 @@ struct ListTasksCompletedSectionView: View {
     }
 }
 
-/// macOS's task-group header: the disclosure chevron, the group's name, and — when a group is
-/// late — the red flag.
+/// macOS's task-group header: the disclosure chevron and the group's name.
 ///
 /// **The name is the shared `CadenceTaskGroupHeading` (T-11214).** It was a 14pt bold
 /// `Theme.text` title of its own, so the Mac headed every task group — Today, All Tasks, Inbox and
@@ -220,9 +217,8 @@ struct ListTasksCompletedSectionView: View {
 /// and T-605's reason for keeping Today on this header — one desktop app, one heading — still
 /// holds, because every desktop group heading moved together. What stays here is the Mac's
 /// furniture around the shared row: the chevron and the click that folds the group (every group
-/// folds, decided for both platforms on T-11214; iOS still folds only Completed until T-12191),
-/// `leadingContent`, the overdue flag and the hairline. The tint colours the heading's text, never a bar, which is the line T-2084
-/// drew.
+/// folds, decided for both platforms on T-11214; iOS's half is T-12191). The tint colours the
+/// heading's text, never a bar, which is the line T-2084 drew.
 ///
 /// **The accent bar is gone, and the space it held is reclaimed (T-2084).** Every section on this
 /// page, on All Tasks and on Inbox opened with a 3×22pt rounded rectangle in the group's colour,
@@ -230,10 +226,9 @@ struct ListTasksCompletedSectionView: View {
 /// the same sentence that took the sidebar's list bars. Nothing replaces it: not a grey bar, not a
 /// dot. Unlike the sidebar's, this bar was a real `HStack` child with 10pt of spacing after it, so
 /// its removal pulls the rest of the header **13pt leftward**, which is the reclaimed space the
-/// owner asked for. The hairline below moves the same 13pt (34 → 21) because it was anchored to
-/// the chevron's trailing edge, not to the page. The `accent` parameter went with the drawing
-/// rather than being left inert — the colour is still the list's, still chosen in the list editor
-/// and still drawn by `leadingContent`'s context glyphs on the by-list grouping.
+/// owner asked for. The `accent` parameter went with the drawing rather than being left inert —
+/// the colour is still the list's, still chosen in the list editor, and since T-11214 it tints the
+/// heading's text.
 ///
 /// **It does not say how many rows are under it any more (T-2056).** The capsule read "2 tasks",
 /// in the group's accent inside a bordered pill, and the owner asked for the per-section count
@@ -244,37 +239,26 @@ struct ListTasksCompletedSectionView: View {
 /// Today had already stopped passing a count (`TasksPanelIntentSectionView`); this is the rest of
 /// the desktop catching up with it.
 ///
-/// **`overdueCount` stays, and that is the line this change does not cross.** It is not the
-/// group's size: it is a warning that some of this work is late, drawn as a red flag rather than a
-/// neutral tally, and it hides itself at zero. The owner circled quantities, not alarms.
-struct TaskListGroupHeader<LeadingContent: View>: View {
+/// **The Mac-only furniture is gone too ([[T-12193]]).** After T-11214 shared the title, the header
+/// still drew four things iOS's does not: a red overdue flag capsule, a leading slot's list and
+/// context glyphs on All Tasks By List, a `Theme.surface` fill while expanded, and a hairline
+/// under every heading. None answers a pointer, hover, keyboard or width constraint (T-8201), so
+/// each unified -- toward iOS, because iOS is the side the owner's own words point at: T-1495 took
+/// "these pills" (the overdue flag among them) off Today's headings, T-2056 took the remaining
+/// count off every heading on every platform, and T-2084 took the colour bars, leaving a heading
+/// that is a chevron and a tinted name. Lateness is not lost: every late row still draws its own
+/// red due pill. The glyphs restated what the tinted list name already says; the fill was a second
+/// state layer the chevron already states; the hairline was a separator iOS's 22pt group gap does
+/// without. `TasksPanelSupport`'s overdue counter and the capsule's VoiceOver label went with the
+/// drawing rather than being left inert.
+struct TaskListGroupHeader: View {
     let title: String
     /// The group's colour, which `CadenceTaskGroupHeading` draws the title in. Required, so every
     /// call site says which colour its group is rather than inheriting a default.
     let tint: Color
     let isCollapsed: Bool
-    let overdueCount: Int?
     var isToggleEnabled: Bool = true
     let onToggle: () -> Void
-    @ViewBuilder let leadingContent: () -> LeadingContent
-
-    init(
-        title: String,
-        tint: Color,
-        isCollapsed: Bool,
-        overdueCount: Int? = nil,
-        isToggleEnabled: Bool = true,
-        onToggle: @escaping () -> Void,
-        @ViewBuilder leadingContent: @escaping () -> LeadingContent
-    ) {
-        self.title = title
-        self.tint = tint
-        self.isCollapsed = isCollapsed
-        self.overdueCount = overdueCount
-        self.isToggleEnabled = isToggleEnabled
-        self.onToggle = onToggle
-        self.leadingContent = leadingContent
-    }
 
     /// **What VoiceOver hears (T-7008).** A collapsible group is a button that states its own
     /// state, the value iOS's completed-section header already gives. A group that cannot collapse
@@ -304,83 +288,21 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
                 Color.clear.frame(width: 16, height: 20)
             }
 
-            leadingContent()
-
             CadenceTaskGroupHeading(title: title, tint: tint)
-
-            Spacer(minLength: 12)
-
-            if let overdueCount, overdueCount > 0 {
-                HStack(spacing: 4) {
-                    Image(systemName: "flag.fill")
-                        .font(.system(size: 9, weight: .bold))
-                    Text("\(overdueCount)")
-                        .font(.system(size: 11, weight: .bold))
-                }
-                .foregroundStyle(Theme.red)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 4)
-                .background(Theme.red.opacity(0.12))
-                .clipShape(Capsule())
-                // A flag glyph and a bare number read as "3" to VoiceOver (T-7008).
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(TaskListGroupHeaderAccessibility.overdueLabel(count: overdueCount))
-                .help(TaskListGroupHeaderAccessibility.overdueLabel(count: overdueCount))
-            }
-
         }
         .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isToggleEnabled && !isCollapsed ? Theme.surface.opacity(0.28) : Color.clear)
-        )
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Theme.borderSubtle.opacity(0.52))
-                // 34 before T-2084 took the 3pt accent bar and its 10pt of spacing out of
-                // the HStack above: this hairline is anchored to the chevron's trailing edge,
-                // so it moves exactly as far as the chevron did.
-                .frame(height: 1)
-                .padding(.leading, 21)
-        }
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
-/// The words `TaskListGroupHeader` speaks to VoiceOver (T-7008), outside the generic view so a
-/// test can read them without naming a `LeadingContent`.
+/// The words `TaskListGroupHeader` speaks to VoiceOver (T-7008), outside the view so a test can
+/// read them without building one.
 enum TaskListGroupHeaderAccessibility {
-    /// "Expanded" / "Collapsed", the same words iOS's `iOSTaskGroupSection` header states.
+    /// "Expanded" / "Collapsed", the same words iOS's `iOSTaskGroupDisclosure` states.
     static func value(isCollapsed: Bool) -> String {
         isCollapsed ? "Collapsed" : "Expanded"
-    }
-
-    /// The overdue capsule's label and tooltip: "1 overdue task", "3 overdue tasks".
-    static func overdueLabel(count: Int) -> String {
-        CadencePluralization.phrase(count, singular: "overdue task", plural: "overdue tasks")
-    }
-}
-
-extension TaskListGroupHeader where LeadingContent == EmptyView {
-    init(
-        title: String,
-        tint: Color,
-        isCollapsed: Bool,
-        overdueCount: Int? = nil,
-        isToggleEnabled: Bool = true,
-        onToggle: @escaping () -> Void
-    ) {
-        self.init(
-            title: title,
-            tint: tint,
-            isCollapsed: isCollapsed,
-            overdueCount: overdueCount,
-            isToggleEnabled: isToggleEnabled,
-            onToggle: onToggle,
-            leadingContent: { EmptyView() }
-        )
     }
 }
 

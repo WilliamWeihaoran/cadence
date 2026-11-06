@@ -71,6 +71,9 @@ struct iOSTodayTaskSections: View {
     /// disclosure. A `@Binding` rather than a `let` because the section's own heading writes it
     /// now; `iOSCompletedTasksSection` says why it is this bit and not a second `@State` beside it.
     @Binding var showsCompleted: Bool
+    /// The day's folded list groups, by group id ([[T-12191]]). The host's, unpersisted, as the
+    /// Mac's Today keeps `TasksPanel.collapsedGroupIDs`; see `iOSTaskGroupSection.collapsedGroupIDs`.
+    @Binding var collapsedGroupIDs: Set<String>
     /// `nil` when there is nothing to roll over, or the day's notice has already been dismissed.
     /// The host decides — `CadenceTodayRolloverSupport.isNoticeVisible` — because the host is what
     /// holds the `@AppStorage` day key.
@@ -221,7 +224,9 @@ struct iOSTodayTaskSections: View {
                     tasks: group.tasks,
                     showsContainer: false,
                     dayAlreadyStatedBySurface: todayKey,
-                    dropIdentity: group.dropIdentity
+                    dropIdentity: group.dropIdentity,
+                    collapsedGroupIDs: $collapsedGroupIDs,
+                    groupID: group.id
                 )
             }
 

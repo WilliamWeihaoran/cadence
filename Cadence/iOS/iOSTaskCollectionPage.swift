@@ -60,6 +60,10 @@ struct iOSTaskCollectionPage: View {
     /// day and is re-run at midnight by `.cadenceTracksDayChanges` rather than whenever something
     /// else happens to — the pattern macOS's `TasksPanel` and iOS's Calendar page both use.
     @State private var observedDay = CadenceObservedDay()
+    /// The folded task groups on this page, by group id ([[T-12191]]): unpersisted, one set per
+    /// page, as `TasksListView.collapsedSectionIDs` is on the Mac. Owned here rather than by
+    /// `iOSTaskCollectionSections`, which is one child of a `LazyVStack`.
+    @State private var collapsedGroupIDs: Set<String> = []
     // T-2088: read here as well as in `iOSTaskCollectionSections`, because the scroll is the
     // scroll *view's* to make and the sections live inside it.
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
@@ -134,6 +138,7 @@ struct iOSTaskCollectionPage: View {
                     groupingMode: groupingMode,
                     completedTasks: completedTasks,
                     showsCompleted: $showCompleted,
+                    collapsedGroupIDs: $collapsedGroupIDs,
                     metrics: metrics,
                     // The empty state and this section are alternatives, not neighbours: "Inbox is
                     // clear" over a list of open reminders says the opposite of what the screen is
@@ -260,6 +265,8 @@ struct iOSTaskCollectionSections: View {
     /// The Completed section's fold, which is the host's stored `ios.<surface>.showCompleted` bit
     /// — the one the deleted "Completed N" chip used to write. See `iOSCompletedTasksSection`.
     @Binding var showsCompleted: Bool
+    /// The page's folded groups ([[T-12191]]). See `iOSTaskGroupSection.collapsedGroupIDs`.
+    @Binding var collapsedGroupIDs: Set<String>
     let metrics: iOSTaskCollectionMetrics
     /// Set when the host is drawing something else in this collection's place — today that is the
     /// Inbox's Apple Reminders section, which is not a task group and so cannot be counted by
@@ -346,7 +353,8 @@ struct iOSTaskCollectionSections: View {
                     color: Theme.blue,
                     tasks: activeTasks,
                     showsContainer: showsContainer,
-                    dropIdentity: collection.activeGroupIdentity
+                    dropIdentity: collection.activeGroupIdentity,
+                    collapsedGroupIDs: $collapsedGroupIDs
                 )
             } else {
                 ForEach(activeGroups) { group in
@@ -354,7 +362,9 @@ struct iOSTaskCollectionSections: View {
                         title: group.title,
                         color: group.accent,
                         tasks: group.tasks,
-                        showsContainer: showsContainer
+                        showsContainer: showsContainer,
+                        collapsedGroupIDs: $collapsedGroupIDs,
+                        groupID: group.id
                     )
                 }
             }

@@ -142,7 +142,6 @@ struct ListTasksView: View {
                 ListTasksGroupSectionView(
                     group: group,
                     isCollapsed: collapsedGroupIDs.contains(group.id),
-                    overdueCount: overdueCount(in: group.tasks),
                     todayKey: todayKey,
                     dragOverTaskID: $dragOverTaskID,
                     onToggle: { toggleGroup(group.id) },
@@ -325,16 +324,6 @@ struct ListTasksView: View {
         } else {
             collapsedGroupIDs.insert(id)
         }
-    }
-
-    // Forwards to `TasksPanelSupport`, the same counts Today and All Tasks show. This file used to
-    // carry its own bodies, and they had drifted: neither excluded completed tasks, so a finished
-    // task with a past due date was counted as overdue here and not on the other two screens — the
-    // same list reporting two different numbers depending on which screen you were on. It is
-    // reachable in normal use because the hover-freeze snapshot keeps a just-completed task in its
-    // group for a moment after you tick it.
-    private func overdueCount(in tasks: [AppTask]) -> Int? {
-        TasksPanelSupport.overdueCount(in: tasks, todayKey: todayKey)
     }
 
     private func openCount(in tasks: [AppTask]) -> Int {
