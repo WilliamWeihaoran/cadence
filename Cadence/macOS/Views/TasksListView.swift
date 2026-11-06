@@ -13,8 +13,10 @@ private struct TasksListSection: Identifiable {
     /// day that has already passed, so a drop there would light up and do nothing.
     let dropKey: String?
     let tasks: [AppTask]
-    /// Set only for `.byList` grouping; the header no longer draws its glyphs ([[T-12193]]).
-    let listGroup: TodayTaskGroup?
+    /// True only under `.byList` grouping: the header then names a list, so it takes the larger
+    /// top gap and its rows drop their container chip. A flag rather than the old optional
+    /// macOS list group, whose glyphs nothing has drawn since [[T-12193]] ([[T-12212]]).
+    let isListGroup: Bool
     /// The heading's colour (T-11214): the shared group's own, so a date, priority or list bucket
     /// is the colour iOS's Inbox and All Tasks head it with.
     let tint: Color
@@ -229,41 +231,28 @@ struct TasksListView: View {
     /// are one shared function and this method is the macOS *wrapping* of its answer — the drop
     /// keys its headers accept, and which sections are By List ones.
     ///
-    /// `.byList` still goes through `TasksPanelSupport.listGroups`. It used to be for the context
-    /// glyph the By List header drew beside a list name, which [[T-12193]] removed because iOS
-    /// draws none; moving this arm onto `displayGroups` too is [[T-12212]], since the two spell
-    /// a group's id differently and the collapse set and drop keys are keyed on it. Both bucket through `CadenceTaskQuerySupport.listGroupKey` and order
-    /// through `listGroupOrder`, so they cannot disagree about which list a task is under.
+    /// `.byList` is no longer the exception ([[T-12212]]). It went through a macOS-only builder in
+    /// `TasksPanelSupport` for the context glyph its header drew, and [[T-12193]] took that glyph
+    /// away, so all four modes read one function now and that builder is deleted. A By
+    /// List group's drop key is the shared group's own `list:<containerKey>` -- the same string
+    /// the old arm handed out -- while its id is the shared `today-list-<containerKey>`. The id
+    /// only keys this view's in-memory `collapsedSectionIDs` and the `ForEach`, and the prefix
+    /// keeps it from ever colliding with a date or priority group's id in that one set.
     private func sections(from tasks: [AppTask]) -> [TasksListSection] {
-        switch groupingMode {
-        case .none, .byDate, .byPriority:
-            return CadenceTaskQuerySupport.displayGroups(
-                from: tasks,
-                mode: groupingMode,
-                todayKey: todayKey,
-                contexts: contexts
-            ).map { group in
-                TasksListSection(
-                    id: group.id,
-                    title: group.title,
-                    dropKey: group.dropKey ?? Self.dateDropKey(forGroupID: group.id),
-                    tasks: group.tasks,
-                    listGroup: nil,
-                    tint: group.accent
-                )
-            }
-        case .byList:
-            return TasksPanelSupport.listGroups(from: tasks, contexts: contexts).map { group in
-                TasksListSection(
-                    id: group.id,
-                    title: group.listName,
-                    dropKey: "list:\(group.id)",
-                    tasks: group.tasks,
-                    listGroup: group,
-                    // The list's colour, which is what the shared By List group carries as well.
-                    tint: group.listColor
-                )
-            }
+        CadenceTaskQuerySupport.displayGroups(
+            from: tasks,
+            mode: groupingMode,
+            todayKey: todayKey,
+            contexts: contexts
+        ).map { group in
+            TasksListSection(
+                id: group.id,
+                title: group.title,
+                dropKey: group.dropKey ?? Self.dateDropKey(forGroupID: group.id),
+                tasks: group.tasks,
+                isListGroup: groupingMode == .byList,
+                tint: group.accent
+            )
         }
     }
 
@@ -585,7 +574,7 @@ private struct TasksListSectionView: View {
                 onToggle: onToggle
             )
             .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
-            .padding(.top, section.listGroup == nil ? 16 : 20)
+            .padding(.top, section.isListGroup ? 20 : 16)
             .padding(.bottom, 8)
             .dropDestination(for: String.self) { items, _ in
                 guard let onDropOnSectionPayload, let payload = items.first else { return false }
@@ -599,7 +588,7 @@ private struct TasksListSectionView: View {
                         // No section-wide do-date suppression (T-7984): a By List section is a
                         // list, not a day, so the pill is the only thing telling tomorrow's task
                         // from next month's — and it is the click target for the do-date picker.
-                        showsContainer: showsContainer && section.listGroup == nil,
+                        showsContainer: showsContainer && !section.isListGroup,
                         todayKey: todayKey,
                         contexts: contexts,
                         areas: areas,

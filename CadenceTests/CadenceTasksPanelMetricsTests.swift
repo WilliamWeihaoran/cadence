@@ -775,7 +775,9 @@ struct CadenceTasksPanelMetricsTests {
 
         let list = try read("Cadence/macOS/Views/TasksListView.swift")
         #expect(list.contains("tint: group.accent"), "All Tasks' shared buckets lost their own colour")
-        #expect(list.contains("tint: group.listColor"), "a By List section lost its list's colour")
+        // A By List section reads the same `tint: group.accent` since [[T-12212]]: the shared By
+        // List group's accent is its list's own colour, so there is no second spelling to pin.
+        #expect(!list.contains("group.listColor"), "a By List section went back to the macOS-only group")
         let section = try #require(CadenceSourceScan.declarationBody("private struct TasksListSectionView: View", in: list))
         #expect(section.contains("tint: section.tint,"))
         #expect(section.contains("if !isCollapsed {"), "All Tasks' groups no longer fold")

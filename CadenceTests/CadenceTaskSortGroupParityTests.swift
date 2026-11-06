@@ -205,6 +205,24 @@ struct CadenceTaskSortGroupParityTests {
         }
     }
 
+    /// **The Mac page draws the shared groups in every mode, By List included ([[T-12212]]).**
+    /// Its `.byList` arm used to be a macOS-only builder kept for a context glyph [[T-12193]]
+    /// removed. Read rather than run: `sections(from:)` is a private method on a `View`. The By
+    /// List flag must come from the mode, and the drop key from the shared group, never its id.
+    @Test func theMacPageDrawsTheSharedGroupsInEveryMode() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksListView.swift")
+        let body = try #require(CadenceSourceScan.declarationBody(
+            "private func sections(from tasks: [AppTask]) -> [TasksListSection]",
+            in: raw
+        ))
+        #expect(body.contains("CadenceTaskQuerySupport.displayGroups("))
+        #expect(body.contains("mode: groupingMode,"))
+        #expect(!body.contains("switch"), "a mode is special-cased again")
+        #expect(body.contains("dropKey: group.dropKey ?? Self.dateDropKey(forGroupID: group.id)"))
+        #expect(body.contains("isListGroup: groupingMode == .byList"))
+        #expect(!CadenceSourceScan.codeOnly(raw).contains("TasksPanelSupport.listGroups"))
+    }
+
     /// The touch page draws the shared groups rather than its own, and keeps the ungrouped section
     /// on `activeTasks` so an emptied Inbox still offers its drop target.
     @Test func theTouchPageDrawsTheSharedGroupsAndKeepsTheUngroupedDropTarget() throws {

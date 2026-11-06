@@ -544,9 +544,10 @@ struct CadenceTaskGroupDropSupportTests {
     /// `true` unconditionally, so a header whose list is gone highlighted, took the row and left it
     /// where it was. Both surfaces route through the coordinator above now.
     ///
-    /// The key is built the way the page builds it — `"list:\(group.id)"` over
-    /// `TasksPanelSupport.listGroups` — rather than typed out here. A test that invents its own
-    /// vocabulary cannot notice the page changing its.
+    /// The key is built the way the page builds it — the By List group's own `dropKey` from
+    /// `CadenceTaskQuerySupport.displayGroups` ([[T-12212]]) — rather than typed out here. A test
+    /// that invents its own vocabulary cannot notice the page changing its. The group's `id` is
+    /// prefixed and the drop key is not; pinning both keeps the two from being swapped.
     @Test func anAllTasksListHeaderRefusesADropWhoseListIsNoLongerThere() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
@@ -556,9 +557,12 @@ struct CadenceTaskGroupDropSupportTests {
         context.insert(project)
         context.insert(task)
 
-        let group = try #require(TasksPanelSupport.listGroups(from: [task], contexts: []).first)
-        let dropKey = "list:\(group.id)"
+        let group = try #require(
+            CadenceTaskQuerySupport.displayGroups(from: [task], mode: .byList, todayKey: todayKey, contexts: []).first
+        )
+        let dropKey = try #require(group.dropKey, "a By List header must accept a drop")
         #expect(dropKey == "list:p_\(project.id.uuidString)", "the page's own key vocabulary moved")
+        #expect(group.id == "today-list-p_\(project.id.uuidString)", "the group id is not the drop key")
 
         func coordinator(projects: [Project]) -> TasksPanelDropCoordinator {
             TasksPanelDropCoordinator(

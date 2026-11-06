@@ -1844,9 +1844,9 @@ struct CadenceTodayListGroupingTests {
             : scheduledDate
     }
 
-    /// The order of the list groups is the sidebar's, and `TasksPanelSupport.listGroups` — All
-    /// Tasks' by-list mode — reads the same function, so the two by-list surfaces cannot present
-    /// their groups in different orders.
+    /// The order of the list groups is the sidebar's, and All Tasks' by-list mode reads the same
+    /// function (through `CadenceTaskQuerySupport.displayGroups` since [[T-12212]]), so the two
+    /// by-list surfaces cannot present their groups in different orders.
     @Test func listGroupOrderIsTheSidebarOrderWithInboxFirst() throws {
         let day = try seedDay()
 

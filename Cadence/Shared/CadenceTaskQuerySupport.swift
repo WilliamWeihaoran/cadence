@@ -95,8 +95,8 @@ enum CadenceTaskQuerySupport {
     /// The day's remaining work, one group per list, in the sidebar's order.
     ///
     /// **A task with no list gets the Inbox group, and the Inbox group sits first.** That is not a
-    /// new answer invented for Today: `TasksPanelSupport.listGroups`, the Kanban board's first
-    /// column, `CadenceBoardCardMetadata.inboxLabel` and the sidebar's top row all already call an
+    /// new answer invented for Today: All Tasks' By List mode, the Kanban board's first column,
+    /// `CadenceBoardCardMetadata.inboxLabel` and the sidebar's top row all already call an
     /// unfiled task's home "Inbox", with `tray.fill` and a neutral tint, and `listGroupOrder`
     /// leads with it. The alternative considered was a nameless bucket at the foot of the page —
     /// which is "Planned Today" again in everything but the label, a group defined by what it is
@@ -164,8 +164,8 @@ enum CadenceTaskQuerySupport {
     }
 
     /// Every list key in sidebar order, Inbox first — the order any by-list grouping presents its
-    /// groups in. `TasksPanelSupport.listGroups` reads this one too, so All Tasks' by-list mode and
-    /// Today's groups cannot come out in different orders.
+    /// groups in. All Tasks' by-list mode and Today's groups both reach it through `todayListGroups`
+    /// (the Mac's via `displayGroups` since [[T-12212]]), so they cannot come out in different orders.
     static func listGroupOrder(contexts: [Context]) -> [String] {
         var order: [String] = [CadenceTaskDropSupport.containerKey(for: .inbox)]
         for context in contexts.sorted(by: { $0.order < $1.order }) {
@@ -368,12 +368,13 @@ enum CadenceTaskQuerySupport {
     /// it. With the owner's decision to draw Sort + Order + Group on the phone and iPad too, that
     /// `switch` would have been written a second time — which is the shape this repository has
     /// paid for before. macOS still wraps the answer in its own `TasksListSection` (its headers
-    /// are drop targets and its By List header draws a context glyph), but *which groups exist,
-    /// what they are called and in what order* is this function's answer on both platforms.
+    /// are drop targets), but *which groups exist, what they are called and in what order* is this
+    /// function's answer on both platforms.
     ///
-    /// `.byList` reads `todayListGroups`, which is the same `listGroupKey` / `listGroupOrder` pair
-    /// `TasksPanelSupport.listGroups` reads, so the Mac's By List and the phone's cannot bucket a
-    /// task differently or order the lists differently.
+    /// `.byList` reads `todayListGroups`, and since [[T-12212]] the Mac's By List reads this arm too
+    /// rather than a macOS-only builder over the same `listGroupKey` / `listGroupOrder` pair, so the
+    /// Mac's By List and the phone's are one answer. Its `dropKey` is `list:<listKey>`, the bare
+    /// container key, never the prefixed group `id` -- `TasksPanelSupport.assignTask` parses it.
     ///
     /// Empty groups are dropped by each builder, and `.none` answers an empty array for no tasks
     /// rather than a heading over nothing — the macOS `.filter { !$0.tasks.isEmpty }` this

@@ -85,9 +85,14 @@ nonisolated enum CadenceEmptyStateCopy {
     /// archived. It used to read "No kanban cards" whenever the list had no open tasks, which hid
     /// the configured columns (and their `+` drop targets) exactly when a fresh list needed them
     /// ([[T-7033]]); columns are drawn now whenever there are any, as macOS always did. The
-    /// subtitle names the control under it, `CadenceSectionCreationRow`.
+    /// subtitle names the control under it, `CadenceSectionCreationRow`, in that row's own noun:
+    /// it said "section" over a "+ Column" button until [[T-11882]], since a board says "column"
+    /// ([[T-7085]]). Read from `CadenceSectionCreationNoun.column` so the two cannot drift again.
+    /// The non-archived arm that draws this is unreachable today (a list's Default column can never
+    /// be archived); it is kept correct rather than left wrong.
     static let listKanbanTitle = "No columns"
-    static let listKanbanSubtitle = "Add a section below to start this board."
+    static let listKanbanSubtitle =
+        "Add a \(CadenceSectionCreationNoun.column.buttonTitle.lowercased()) below to start this board."
     /// The same board under "Show Archived" when the list has no archived column ([[T-8565]]).
     /// The add-column control is not drawn there -- a new column is never archived -- so the
     /// subtitle above, which points at it, would name something that is not on screen.

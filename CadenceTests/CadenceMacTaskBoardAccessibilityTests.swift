@@ -85,6 +85,16 @@ struct CadenceMacTaskBoardAccessibilityTests {
         #expect(!board.contains("CadenceSectionCreationRow(area: area, project: project)"))
     }
 
+    /// [[T-11882]]: the board's no-columns subtitle sits over the `.column` add row, so it names
+    /// a column, read from the same noun rather than spelled again.
+    @Test func theNoColumnsSubtitleNamesTheRowUnderIt() throws {
+        #expect(CadenceEmptyStateCopy.listKanbanSubtitle == "Add a column below to start this board.")
+        #expect(!CadenceEmptyStateCopy.listKanbanSubtitle.localizedCaseInsensitiveContains("section"))
+        let copy = CadenceSourceScan.strippingComments(try source("Cadence/Shared/CadenceEmptyStateCopy.swift"))
+        #expect(copy.contains("CadenceSectionCreationNoun.column.buttonTitle"),
+                "the subtitle spells the board's noun itself again")
+    }
+
     @Test func theRailNamesANewColumnNewColumn() {
         #expect(KanbanBoardSupport.nextSectionName(from: [TaskSectionConfig(name: TaskSectionDefaults.defaultName)]) == "New Column")
         // An older rail's "New Section" is the user's column now; it does not reserve the new name.

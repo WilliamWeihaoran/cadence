@@ -951,7 +951,7 @@ struct CadenceSharedTaskRowJobsTests {
         // Non-vacuity: the By List row is still the interactive row, and the row's do date still
         // goes through the one suppression it has.
         let page = try strippingComments(sourceFile("Cadence/macOS/Views/TasksListView.swift"))
-        #expect(page.contains("showsContainer: showsContainer && section.listGroup == nil"))
+        #expect(page.contains("showsContainer: showsContainer && !section.isListGroup"))
         let row = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
         #expect(row.contains("dayAlreadyStatedBySurface: dayAlreadyStatedBySurface"))
         #expect(row.contains("return task.scheduledDate"))

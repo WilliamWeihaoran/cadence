@@ -140,82 +140,12 @@ private enum TasksPanelResolvedAssignment {
 }
 
 enum TasksPanelSupport {
-    /// `CadenceTaskQuerySupport.listGroupOrder`, not a second copy of it. Today groups by list too
-    /// now (T-305), and two by-list surfaces that ordered their groups differently is exactly the
-    /// drift moving the rule out of here prevents.
-    static func sidebarListOrder(contexts: [Context]) -> [String] {
-        CadenceTaskQuerySupport.listGroupOrder(contexts: contexts)
-    }
-
-    static func listGroups(
-        from tasks: [AppTask],
-        contexts: [Context],
-        taskOrder: ([AppTask]) -> [AppTask] = { $0 }
-    ) -> [TodayTaskGroup] {
-        var groups: [String: TodayTaskGroup] = [:]
-
-        for task in tasks {
-            let key = listGroupKey(for: task)
-            if groups[key] == nil {
-                groups[key] = listGroupShell(for: task, key: key)
-            }
-            groups[key]?.tasks.append(task)
-        }
-
-        let orderedKeys = sidebarListOrder(contexts: contexts).filter { groups[$0] != nil }
-        let unorderedKeys = groups.keys
-            .filter { !orderedKeys.contains($0) }
-            .sorted()
-
-        return (orderedKeys + unorderedKeys).compactMap { key in
-            guard var group = groups[key] else { return nil }
-            group.tasks = taskOrder(group.tasks)
-            return group
-        }
-    }
-
-    /// `CadenceTaskQuerySupport.listGroupKey`, for the same reason `sidebarListOrder` above is the
-    /// shared one. Note that the shared rule reads **project before area**, which this one did not:
-    /// see that function for why the more specific container wins on a row repaired into holding
-    /// both. `listGroupShell` below now agrees with it, so a group's key and the list its header
-    /// draws cannot name different containers.
-    private static func listGroupKey(for task: AppTask) -> String {
-        CadenceTaskQuerySupport.listGroupKey(for: task)
-    }
-
-    private static func listGroupShell(for task: AppTask, key: String) -> TodayTaskGroup {
-        if let project = task.project {
-            return TodayTaskGroup(
-                id: key,
-                contextIcon: project.context?.icon,
-                contextColor: project.context.map { Color(hex: $0.colorHex) },
-                listIcon: project.icon,
-                listName: project.name,
-                listColor: Color(hex: project.colorHex),
-                tasks: []
-            )
-        }
-        if let area = task.area {
-            return TodayTaskGroup(
-                id: key,
-                contextIcon: area.context?.icon,
-                contextColor: area.context.map { Color(hex: $0.colorHex) },
-                listIcon: area.icon,
-                listName: area.name,
-                listColor: Color(hex: area.colorHex),
-                tasks: []
-            )
-        }
-        return TodayTaskGroup(
-            id: "inbox",
-            contextIcon: nil,
-            contextColor: nil,
-            listIcon: "tray.fill",
-            listName: "Inbox",
-            listColor: Theme.dim,
-            tasks: []
-        )
-    }
+    // sidebarListOrder, listGroups and their two private helpers were here: All Tasks' By List
+    // arm, built into a macOS-only TodayTaskGroup for the context glyph its header drew.
+    // [[T-12193]] removed the glyph and [[T-12212]] moved that arm onto
+    // `CadenceTaskQuerySupport.displayGroups`, which buckets and orders through the same
+    // `CadenceTaskQuerySupport.listGroupKey` / `CadenceTaskQuerySupport.listGroupOrder` pair, so
+    // all four went with their last reader.
 
     /// **How many rows the group has**, which is what its capsule says: "N tasks".
     ///

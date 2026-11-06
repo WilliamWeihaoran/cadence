@@ -1,20 +1,9 @@
 #if os(macOS)
 import SwiftUI
 
-/// A single list-level task group (one area / project / Inbox).
-///
-/// `contextIcon` / `contextColor` are **not** used by Today, which groups by list
-/// only. They exist for `TasksListView`, which still shows a small context glyph beside the list
-/// icon. `TasksPanel`'s `.byDoDate` list grouping was the other reader and is gone (T-487).
-struct TodayTaskGroup: Identifiable {
-    let id: String
-    let contextIcon: String?
-    let contextColor: Color?
-    let listIcon: String
-    let listName: String
-    let listColor: Color
-    var tasks: [AppTask]
-}
+// TodayTaskGroup was here: the one list-level group TasksPanelSupport's By List builder made, kept
+// for the context glyph `TasksListView`'s By List header drew. Both went with [[T-12212]]; the
+// shared `CadenceTodayTaskGroup` / `CadenceTaskDisplayGroup` carry a list group on both platforms.
 
 // `FrozenTodayTaskGroup`, `FrozenFlatTaskSection`, `TasksPanelGroupSectionView` and
 // `TasksPanelFlatSectionView` were here — the list-grouped and flat section rows, and the two
