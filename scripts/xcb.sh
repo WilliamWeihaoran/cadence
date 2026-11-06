@@ -2070,7 +2070,86 @@ ios_leg_args() {
         [[ "${a[i]}" =~ '^[A-Z_][A-Z0-9_]*=' ]] && print -r -- "${a[i]}" ;;
     esac
   done
-  print -r -- -destination; print -r -- "$IOS_LEG_DESTINATION"; print -r -- build
+  print -r -- -destination; print -r -- "$IOS_LEG_DESTINATION"
+  # T-12201: when the test bundle is in scope, the leg builds what CI's "Build iOS surface" step
+  # builds -- `build-for-testing` with that step's signing overrides, verbatim but for the
+  # entitlements path, which is made absolute because this script is not run from the repository.
+  if [[ -n "$IOS_LEG_TESTS" ]]; then
+    print -r -- 'CODE_SIGN_IDENTITY=-'; print -r -- 'CODE_SIGN_STYLE=Manual'
+    print -r -- 'DEVELOPMENT_TEAM='; print -r -- 'PROVISIONING_PROFILE_SPECIFIER='
+    print -r -- "CODE_SIGN_ENTITLEMENTS=$ROOT_DIR/.github/ci.entitlements"
+    print -r -- build-for-testing
+  else
+    print -r -- build
+  fi
+}
+
+# --- does the iOS leg compile the TEST bundle? (T-12201) ----------------------
+# The leg above builds the APP. CI's `ios-build` job runs `build-for-testing` (T-3423), which also
+# compiles `CadenceTests` for iOS -- so a shared test naming a macOS-only type passed every local
+# check and redded CI: `c9a79c71` honestly reported "generic iOS leg COMPILED, 1384 app-target Swift
+# compile tasks" and CI failed with 4 errors in `CadenceSearchAndFocusOwnerCallTests.swift`
+# (T-12200), the fourth time that shape shipped (T-5200, T-6061, `9aebf575`). `build-for-testing`
+# costs ~247 s cold against ~96 s (T-3423's measurement), so it is NOT paid on every run: only when
+# the tree being built carries a change under `CadenceTests/` -- uncommitted (staged, unstaged or
+# untracked), or committed on HEAD since its merge-base with `origin/main` (an unpushed landing).
+#
+# IT FAILS CLOSED. A tree whose diff cannot be read -- no git, or a `git archive` export nested
+# under some other repository -- compiles the bundle: that is the tree a landing is checked in.
+# `CADENCE_IOS_LEG_TESTS=1` asks for it on any tree. And a leg that does NOT compile the bundle
+# says so in the result block, every time, so "ios leg: COMPILED" is never read as covering tests.
+#
+# CADENCE_IOS_LEG_DIFF_DIR is the testing seam: `selftest` points it at throwaway repositories, so
+# its checks do not depend on what the shared checkout happens to have dirty.
+# Sets IOS_LEG_TESTS (a token, empty when the bundle is NOT compiled) and IOS_LEG_TESTS_WHY.
+IOS_LEG_TESTS=""; IOS_LEG_TESTS_WHY=""
+IOS_LEG_TESTS_TASK_PATTERN="(in target 'CadenceTests' from project"
+ios_leg_tests_decide() {
+  local dir="${CADENCE_IOS_LEG_DIFF_DIR:-$ROOT_DIR}" top changed base
+  IOS_LEG_TESTS=""; IOS_LEG_TESTS_WHY=""
+  if [[ "${CADENCE_IOS_LEG_TESTS:-}" == "1" ]]; then
+    IOS_LEG_TESTS=ASKED; IOS_LEG_TESTS_WHY="CADENCE_IOS_LEG_TESTS=1 is set"; return 0
+  fi
+  top=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null </dev/null)
+  if [[ -z "$top" || "${top:A}" != "${dir:A}" ]]; then
+    IOS_LEG_TESTS=NO-DIFF
+    IOS_LEG_TESTS_WHY="this tree's diff cannot be read (not its own git work tree), so the bundle is compiled rather than assumed clean"
+    return 0
+  fi
+  changed=$(git -C "$dir" status --porcelain --untracked-files=all -- CadenceTests 2>/dev/null </dev/null | head -1)
+  if [[ -n "$changed" ]]; then
+    IOS_LEG_TESTS=TESTS-DIRTY
+    IOS_LEG_TESTS_WHY="the working tree changes CadenceTests/ ('${changed[4,-1]}')"
+    return 0
+  fi
+  base=$(git -C "$dir" merge-base origin/main HEAD 2>/dev/null </dev/null)
+  if [[ -n "$base" ]]; then
+    changed=$(git -C "$dir" diff --name-only "$base" HEAD -- CadenceTests 2>/dev/null </dev/null | head -1)
+    if [[ -n "$changed" ]]; then
+      IOS_LEG_TESTS=TESTS-UNPUSHED
+      IOS_LEG_TESTS_WHY="HEAD changes CadenceTests/ since origin/main ('$changed')"
+      return 0
+    fi
+  fi
+  IOS_LEG_TESTS_WHY="nothing under CadenceTests/ differs from ${base:+origin/main}${base:-HEAD} in this tree"
+  return 0
+}
+
+# The result block's line for the test bundle, said on every leg that ran -- defined here, above the
+# selftest, so the names it prints are production code the selftest pins.
+# $1 = the leg's xcodebuild exit, $2 = its CadenceTests compile-task count.
+ios_leg_tests_report() {
+  local leg_status=$1 test_tasks=$2
+  if [[ -n "$IOS_LEG_TESTS" ]] && (( leg_status == 0 )); then
+    say "  IOS-LEG-TEST-BUNDLE-COMPILED: build-for-testing, as CI's \"Build iOS surface\" runs it --"
+    say "     $test_tasks CadenceTests Swift compile task(s) for iOS, exit 0 (T-12201)."
+  elif [[ -n "$IOS_LEG_TESTS" ]]; then
+    say "  ios leg: the test bundle WAS in this build-for-testing, which exited $leg_status -- see above (T-12201)."
+  else
+    say "  IOS-LEG-TEST-BUNDLE-NOT-COMPILED: this leg built the APP only; CadenceTests was NOT compiled"
+    say "     for iOS -- $IOS_LEG_TESTS_WHY. CI's build-for-testing compiles it, so a test naming a"
+    say "     macOS-only type is not caught here (T-12201). CADENCE_IOS_LEG_TESTS=1 compiles it."
+  fi
 }
 
 # --- does this selection launch an app? (T-1933) -----------------------------
@@ -4352,12 +4431,32 @@ selftest_only_testing() {
   print -rl -- \
     "SwiftCompile normal arm64 /repo/Cadence/Services/CadenceWidgetIntents.swift (in target 'CadenceWidgets' from project 'Cadence')" \
     "** BUILD SUCCEEDED **" > "$ws/leg/ios-widgets.log"
-  local lcalls lsecond leg_skip=""
+  # T-12201: the trees whose diff decides whether the leg compiles the test bundle. Throwaway
+  # repositories, so no check here reads what the shared checkout happens to have dirty.
+  local lgit=(git -c user.name=selftest -c user.email=selftest@invalid -c core.hooksPath=/dev/null)
+  local tdir
+  for tdir in clean dirty untracked unpushed elsewhere; do
+    mkdir -p "$ws/leg/trees/$tdir/CadenceTests" "$ws/leg/trees/$tdir/Cadence"
+    "${lgit[@]}" -C "$ws/leg/trees/$tdir" init -q 2>/dev/null
+    print -r -- "// one" > "$ws/leg/trees/$tdir/CadenceTests/ProbeTests.swift"
+    print -r -- "// one" > "$ws/leg/trees/$tdir/Cadence/Probe.swift"
+    "${lgit[@]}" -C "$ws/leg/trees/$tdir" add -A 2>/dev/null
+    "${lgit[@]}" -C "$ws/leg/trees/$tdir" commit -qm base 2>/dev/null
+    "${lgit[@]}" -C "$ws/leg/trees/$tdir" update-ref refs/remotes/origin/main HEAD 2>/dev/null
+  done
+  print -r -- "// two" >> "$ws/leg/trees/dirty/CadenceTests/ProbeTests.swift"
+  print -r -- "// new" > "$ws/leg/trees/untracked/CadenceTests/NewTests.swift"
+  print -r -- "// two" >> "$ws/leg/trees/unpushed/CadenceTests/ProbeTests.swift"
+  "${lgit[@]}" -C "$ws/leg/trees/unpushed" commit -qam landed 2>/dev/null
+  print -r -- "// two" >> "$ws/leg/trees/elsewhere/Cadence/Probe.swift"
+  mkdir -p "$ws/leg/trees/nogit/CadenceTests"
+  local lcalls lsecond leg_skip="" leg_tree="$ws/leg/trees/clean" leg_tests=""
   run_leg() {  # $1 = primary log, $2 = iOS log, $3 = iOS exit, $4... = xcb.sh arguments after the id
     : > "$ws/leg/calls"
     lout=$(XCODEBUILD="$ws/leg/xcodebuild" FAKE_XCB_CALLS="$ws/leg/calls" FAKE_XCB_PRIMARY_LOG="$1" \
       FAKE_XCB_IOS_LOG="$2" FAKE_XCB_IOS_EXIT="$3" TMPDIR="$ws/leg/tmp/" CADENCE_STALL_POLL=1 \
       CADENCE_SKIP_IOS_LEG="$leg_skip" CADENCE_ALLOW_WARNINGS= \
+      CADENCE_IOS_LEG_DIFF_DIR="$leg_tree" CADENCE_IOS_LEG_TESTS="$leg_tests" \
       zsh "$here" selftest-ios-leg "${@:4}" 2>&1); lrc=$?
     lcalls=$(grep -c . "$ws/leg/calls" | tr -d ' ')
     lsecond=$(sed -n 2p "$ws/leg/calls")
@@ -4409,6 +4508,62 @@ selftest_only_testing() {
     $( [[ "$lout" == *IOS-LEG-VACUOUS* && "$lout" != *"ios leg: COMPILED"* ]] && print 1 || print 0 ) "$lout"
   check "...and, like the macOS vacuous count, it does not gate" \
     $( (( lrc == 0 )) && print 1 || print 0 ) "exit $lrc"
+
+  say ""
+  say " 11b. the iOS leg compiles the TEST bundle when the tree changes CadenceTests/ (T-12201)"
+  # The control first: the clean tree every run above used builds the APP only, and SAYS so in the
+  # result block -- the half a reader is likeliest to call noise.
+  run_leg "$ws/leg/mac.log" "$ws/leg/ios-ok.log" 0 "${mac_args[@]}"
+  check "CONTROL: a tree with no CadenceTests/ change builds the app only (build, not build-for-testing)" \
+    $( [[ $lrc == 0 && $lcalls == 2 && "$lsecond" == *" build" && "$lsecond" != *build-for-testing* ]] && print 1 || print 0 ) "exit $lrc, argv: $lsecond"
+  check "...and the result block says plainly the test bundle was NOT compiled for iOS" \
+    $( [[ "${lout#*== xcb ios leg}" == *IOS-LEG-TEST-BUNDLE-NOT-COMPILED* && "$lout" != *IOS-LEG-TEST-BUNDLE-COMPILED* ]] && print 1 || print 0 ) "$lout"
+  print -rl -- \
+    "SwiftCompile normal arm64 /repo/Cadence/iOS/iOSProbe.swift (in target 'Cadence' from project 'Cadence')" \
+    "SwiftCompile normal arm64 /repo/CadenceTests/ProbeTests.swift (in target 'CadenceTests' from project 'Cadence')" \
+    "SwiftCompile normal x86_64 /repo/CadenceTests/ProbeTests.swift (in target 'CadenceTests' from project 'Cadence')" \
+    "** TEST BUILD SUCCEEDED **" > "$ws/leg/ios-tests-ok.log"
+  # T-12200's real error, the shape this section exists for.
+  print -rl -- \
+    "SwiftCompile normal arm64 /repo/CadenceTests/CadenceSearchAndFocusOwnerCallTests.swift (in target 'CadenceTests' from project 'Cadence')" \
+    "/repo/CadenceTests/CadenceSearchAndFocusOwnerCallTests.swift:41:20: error: cannot find 'GlobalSearchIndexSupport' in scope" \
+    "** TEST BUILD FAILED **" > "$ws/leg/ios-tests-fail.log"
+  local leg_case
+  for leg_case in dirty untracked unpushed nogit; do
+    leg_tree="$ws/leg/trees/$leg_case"
+    run_leg "$ws/leg/mac.log" "$ws/leg/ios-tests-ok.log" 0 "${mac_args[@]}"
+    check "RUN ($leg_case): a tree whose diff touches CadenceTests/ (or cannot be read) runs build-for-testing" \
+      $( [[ $lrc == 0 && $lcalls == 2 && "$lsecond" == *" build-for-testing" && "$lsecond" == *"-destination generic/platform=iOS Simulator"* ]] && print 1 || print 0 ) "exit $lrc, argv: $lsecond"
+  done
+  leg_tree="$ws/leg/trees/dirty"
+  run_leg "$ws/leg/mac.log" "$ws/leg/ios-tests-ok.log" 0 "${mac_args[@]}"
+  check "...with CI's signing overrides (style, team, profile, entitlements)" \
+    $( [[ "$lsecond" == *"CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= CODE_SIGN_ENTITLEMENTS=$ROOT_DIR/.github/ci.entitlements build-for-testing" ]] && print 1 || print 0 ) "argv: $lsecond"
+  check "...and the result block reports the CadenceTests-for-iOS compile count" \
+    $( [[ "$lout" == *"test-bundle ('CadenceTests') compile tasks: 2"* && "$lout" == *"IOS-LEG-TEST-BUNDLE-COMPILED"* && "$lout" == *"2 CadenceTests Swift compile task(s)"* && "$lout" != *IOS-LEG-TEST-BUNDLE-NOT-COMPILED* ]] && print 1 || print 0 ) "$lout"
+  run_leg "$ws/leg/mac.log" "$ws/leg/ios-tests-fail.log" 65 "${mac_args[@]}"
+  check "GATE: a CadenceTests file naming a macOS-only type reds the leg (exit $IOS_LEG_EXIT) and is quoted (T-12200)" \
+    $( [[ $lrc == $IOS_LEG_EXIT && "$lout" == *IOS-LEG-FAILED* && "$lout" == *"cannot find 'GlobalSearchIndexSupport'"* && "$lout" != *IOS-LEG-TEST-BUNDLE-COMPILED* ]] && print 1 || print 0 ) "exit $lrc: $lout"
+  leg_tree="$ws/leg/trees/elsewhere"
+  run_leg "$ws/leg/mac.log" "$ws/leg/ios-ok.log" 0 "${mac_args[@]}"
+  check "CONTROL: a change OUTSIDE CadenceTests/ does not pay for build-for-testing" \
+    $( [[ $lrc == 0 && "$lsecond" == *" build" && "$lout" == *IOS-LEG-TEST-BUNDLE-NOT-COMPILED* ]] && print 1 || print 0 ) "exit $lrc, argv: $lsecond"
+  leg_tree="$ws/leg/trees/clean"; leg_tests=1
+  run_leg "$ws/leg/mac.log" "$ws/leg/ios-tests-ok.log" 0 "${mac_args[@]}"
+  leg_tests=""
+  check "ASKED: CADENCE_IOS_LEG_TESTS=1 compiles the bundle on a clean tree" \
+    $( [[ $lrc == 0 && "$lsecond" == *" build-for-testing" && "$lout" == *IOS-LEG-TEST-BUNDLE-COMPILED* ]] && print 1 || print 0 ) "exit $lrc, argv: $lsecond"
+  # The overrides are CI's, so CI's step is read: every one this leg passes must still be there.
+  if [[ -f "$ROOT_DIR/.github/workflows/ci.yml" ]]; then
+    local ovstep ov ovmissing=""
+    ovstep=$(awk '/^  ios-build:/{on=1; next} /^  [a-z][a-z0-9-]*:$/{on=0} on' "$ROOT_DIR/.github/workflows/ci.yml")
+    for ov in 'CODE_SIGN_IDENTITY="-"' 'CODE_SIGN_STYLE=Manual' 'DEVELOPMENT_TEAM=""' \
+              'PROVISIONING_PROFILE_SPECIFIER=""' 'CODE_SIGN_ENTITLEMENTS=.github/ci.entitlements' build-for-testing; do
+      [[ "$ovstep" == *"$ov"* ]] || ovmissing+=" $ov"
+    done
+    check "CI: ios-build still passes every override this leg copies from it" \
+      $( [[ -z "$ovmissing" ]] && print 1 || print 0 ) "missing from ci.yml's ios-build:$ovmissing"
+  fi
 
   # The carve-out is only honest where something else builds iOS. CI is that place, so the
   # workflow is read: `macos-tests` must set it and `ios-build` must be the iOS build.
@@ -6044,10 +6199,14 @@ else
   give_back_test_host_lease; (( LOCK_HELD )) || trap - EXIT INT TERM
   IOS_LOG="${TMP_BASE}cadence-xcb-$ID-ios.$(date +%Y%m%d-%H%M%S)-$$.log"
   ln -sf "${IOS_LOG:t}" "${TMP_BASE}cadence-xcb-$ID-ios.log" 2>/dev/null
+  ios_leg_tests_decide
   ios_args=("${(@f)$(ios_leg_args "${args[@]}")}")
   say ""
-  say "== xcb ios leg ($ID): -destination '$IOS_LEG_DESTINATION' build (T-1956) =="
+  say "== xcb ios leg ($ID): -destination '$IOS_LEG_DESTINATION' ${ios_args[-1]} (T-1956) =="
   say "  log:             $IOS_LOG"
+  if [[ -n "$IOS_LEG_TESTS" ]]; then
+    say "  test bundle:     compiled for iOS ($IOS_LEG_TESTS) -- $IOS_LEG_TESTS_WHY (T-12201)"
+  fi
   "$XCODEBUILD" -project "$ROOT_DIR/Cadence.xcodeproj" "${ios_args[@]}" > "$IOS_LOG" 2>&1 &
   IOS_PID=$!
   watchdog "$IOS_PID" "$IOS_LOG" &
@@ -6059,6 +6218,12 @@ else
   IOS_APP_TASKS=$(grep -E "$SWIFT_COMPILE_TASK_PATTERN" "$IOS_LOG" 2>/dev/null \
     | grep -cF "$IOS_LEG_APP_TASK_PATTERN" | tr -d ' ')
   say "  app-target ('Cadence') compile tasks: $IOS_APP_TASKS"
+  IOS_TEST_TASKS=0
+  if [[ -n "$IOS_LEG_TESTS" ]]; then
+    IOS_TEST_TASKS=$(grep -E "$SWIFT_COMPILE_TASK_PATTERN" "$IOS_LOG" 2>/dev/null \
+      | grep -cF "$IOS_LEG_TESTS_TASK_PATTERN" | tr -d ' ')
+    say "  test-bundle ('CadenceTests') compile tasks: $IOS_TEST_TASKS"
+  fi
   if (( IOS_STATUS != 0 )); then
     say ""
     say "!! IOS-LEG-FAILED: the primary run was green and the iOS build of the SAME tree exited"
@@ -6068,13 +6233,15 @@ else
     (( STATUS == 0 )) && STATUS=$IOS_LEG_EXIT
   elif (( IOS_GATE != 0 )); then
     (( STATUS == 0 )) && STATUS=$IOS_GATE
-  elif (( IOS_APP_TASKS == 0 )); then
+  elif (( IOS_APP_TASKS == 0 && IOS_TEST_TASKS == 0 )); then
     say "  !! IOS-LEG-VACUOUS: the iOS leg compiled no file of the app target 'Cadence' ($DIAG_COMPILED"
     say "     compile task(s) in all), so it certifies NOTHING about the iOS surface -- an incremental"
     say "     leg reuses object files. Not gated (T-1147); it is not evidence your change builds on iOS."
   else
     say "  ios leg: COMPILED -- $IOS_APP_TASKS app-target Swift compile task(s), 0 warnings."
   fi
+  # T-12201: the test bundle's half of the reading, on every leg that ran, red or green.
+  ios_leg_tests_report "$IOS_STATUS" "$IOS_TEST_TASKS"
 fi
 if [[ "$(shared_cadence_entries)" != "$before_entries" ]]; then
   say ""

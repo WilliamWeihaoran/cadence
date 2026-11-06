@@ -832,6 +832,13 @@ struct CadenceGuardScriptSelftestTests {
         // 8d2 induces the name over a fixture log, keeps before/after/widget/exit-0 CONTROLS
         // silent, and checks the postflight still makes the call.
         "HOST-PURGED",
+        // T-12201: the iOS leg compiles the TEST bundle (`build-for-testing`, CI's step) only when
+        // the tree changes `CadenceTests/`, and says so either way. NOT-COMPILED is the half a
+        // reader calls noise: it is what stops "ios leg: COMPILED" being read as covering tests,
+        // which is how `c9a79c71` shipped T-12200's red. Section 11b induces both readings over
+        // throwaway trees (dirty, untracked, unpushed, no git, a change elsewhere as CONTROL).
+        "IOS-LEG-TEST-BUNDLE-COMPILED",
+        "IOS-LEG-TEST-BUNDLE-NOT-COMPILED",
         // T-2071 / T-1920: the seven verdicts of `xcb.sh run-state`, and they are pinned as a SET
         // because the instrument's whole value is that they are distinguishable. Deleting any one
         // of them does not break the others -- it quietly collapses two states into one, which is
