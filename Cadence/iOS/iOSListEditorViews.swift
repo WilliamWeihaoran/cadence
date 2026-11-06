@@ -168,10 +168,6 @@ struct iOSListEditorSheet: View {
         return CadenceListEditorFieldSet.statusLabel(AreaStatus.active)
     }
 
-    private var editedIsDone: Bool {
-        editedArea?.isDone ?? editedProject?.isDone ?? false
-    }
-
     private var editedIsArchived: Bool {
         editedArea?.isArchived ?? editedProject?.isArchived ?? false
     }
@@ -195,6 +191,21 @@ struct iOSListEditorSheet: View {
 
     private var trimmedName: String {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// [[T-11871]]: the Save button's test, and the Status and Archive rows' -- they write the name
+    /// too. One shared rule, read by the Mac sheets as well.
+    private var acceptsName: Bool {
+        CadenceListEditorFieldSet.acceptsName(name)
+    }
+
+    /// [[T-11872]]: the choice the stored status already is, mapped exactly as the Mac's Status
+    /// popover maps it -- `nil` for a paused or cancelled project, so neither row is ticked and
+    /// Active stays offered.
+    private var currentLifecycleChoice: ListEditorLifecycleChoice? {
+        if let editedArea { return ListEditorLifecycleChoice(editedArea.status) }
+        if let editedProject { return ListEditorLifecycleChoice(editedProject.status) }
+        return nil
     }
 
     private var currentDraft: CadenceListEditorDraftSnapshot {
@@ -424,7 +435,7 @@ struct iOSListEditorSheet: View {
                     Button(isEditing ? "Save" : CadenceListVocabularyCopy.createActionTitle) {
                         save()
                     }
-                    .disabled(trimmedName.isEmpty)
+                    .disabled(!acceptsName)
                 }
             }
             .onAppear(perform: load)
@@ -527,15 +538,18 @@ struct iOSListEditorSheet: View {
                     Button {
                         reopenList()
                     } label: {
-                        Label("Active", systemImage: editedIsDone || editedIsArchived ? "circle" : "checkmark")
+                        Label("Active", systemImage: currentLifecycleChoice == .active ? "checkmark" : "circle")
                     }
-                    .disabled(!(editedIsDone || editedIsArchived))
+                    .disabled(currentLifecycleChoice == .active || !acceptsName)
                     Button {
                         requestListWindDown(.complete)
                     } label: {
-                        Label("Completed", systemImage: editedIsDone ? "checkmark" : iOSListWindDownAction.complete.icon)
+                        Label(
+                            "Completed",
+                            systemImage: currentLifecycleChoice == .completed ? "checkmark" : iOSListWindDownAction.complete.icon
+                        )
                     }
-                    .disabled(editedIsDone)
+                    .disabled(currentLifecycleChoice == .completed || !acceptsName)
                 } label: {
                     Text(statusLabel)
                         .foregroundStyle(Theme.text)
@@ -554,7 +568,8 @@ struct iOSListEditorSheet: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Theme.text)
+                .foregroundStyle(acceptsName ? Theme.text : Theme.dim)
+                .disabled(!acceptsName)
             }
 
             if fields.contains(.delete), let target = deletionTarget {
@@ -794,13 +809,17 @@ struct iOSListEditorSheet: View {
     /// Return in the name field: the Save button's own `save()`, refused on the same blank name
     /// that disables the button.
     private func submitName() {
-        guard !trimmedName.isEmpty else { return }
+        guard acceptsName else { return }
         save()
     }
 
     private func save() {
         // [[T-8562]]: a lifecycle row's step lives for this one call, whichever way it ends.
         defer { lifecycleStep = nil }
+        // [[T-11871]]: every way in -- Save, Return, a Status or Archive row, a confirmed wind-down
+        // -- is refused on a blank name here, behind the disabled controls, so no path the Save
+        // button refuses can write a nameless list.
+        guard acceptsName else { return }
         // **A column whose name the user cleared is a refused rename, not a delete (T-1053).**
         // `CadenceSectionEditingSupport.configs(from:)` used to drop such a draft, which read as
         // "this caller removed the column" — so the column left the blob, its colour and due date

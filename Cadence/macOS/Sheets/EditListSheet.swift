@@ -57,7 +57,7 @@ struct EditAreaSheet: View {
         ListEditorSheetShell(
             title: "Edit Area",
             confirmTitle: "Save",
-            isConfirmDisabled: CadenceTitleNormalization.isBlank(name),
+            isConfirmDisabled: !CadenceListEditorFieldSet.acceptsName(name),
             onConfirm: saveEdits
         ) {
             ListEditorIdentityHeader(
@@ -97,6 +97,8 @@ struct EditAreaSheet: View {
                     noun: "Area",
                     statusLabel: statusLabel,
                     currentChoice: ListEditorLifecycleChoice(area.status),
+                    // [[T-11871]]: the row writes the name as Save does, so it is refused on the same test.
+                    isDisabled: !CadenceListEditorFieldSet.acceptsName(name),
                     onSelect: apply
                 )
             }
@@ -109,7 +111,11 @@ struct EditAreaSheet: View {
                 CadenceInlineFailureNotice(text: saveFailureNotice)
             }
         } footerLeading: {
-            ListEditorArchiveButton(isArchived: area.isArchived, noun: "Area") {
+            ListEditorArchiveButton(
+                isArchived: area.isArchived,
+                noun: "Area",
+                isDisabled: !CadenceListEditorFieldSet.acceptsName(name)
+            ) {
                 apply(area.isArchived ? .active : .archived)
             }
             ListEditorDeleteButton(title: "Delete") { showDeleteConfirmation = true }
@@ -173,6 +179,7 @@ struct EditAreaSheet: View {
     /// *changed* context re-points (T-559); on every other save `contextChangeTargets` is empty,
     /// because `applyEdits()` then writes the area's own fields and nothing else.
     private func saveEdits() {
+        guard CadenceListEditorFieldSet.acceptsName(name) else { return }
         let undo = CadenceListEditSnapshot(area, tasks: contextChangeTargets)
         applyEdits()
         do {
@@ -188,6 +195,8 @@ struct EditAreaSheet: View {
     /// A lifecycle change still closes the sheet, so the pending field edits are written first
     /// rather than thrown away by the dismissal.
     private func apply(_ choice: ListEditorLifecycleChoice) {
+        // [[T-11871]]: behind the disabled row and button, as `saveEdits()` is behind Save.
+        guard CadenceListEditorFieldSet.acceptsName(name) else { return }
         // The settle below writes every task still open in the area, so the snapshot is handed the
         // same set the service is about to walk rather than guessing at it.
         let undo = CadenceListEditSnapshot(
@@ -325,7 +334,7 @@ struct EditProjectSheet: View {
         ListEditorSheetShell(
             title: "Edit Project",
             confirmTitle: "Save",
-            isConfirmDisabled: CadenceTitleNormalization.isBlank(name),
+            isConfirmDisabled: !CadenceListEditorFieldSet.acceptsName(name),
             onConfirm: saveEdits
         ) {
             ListEditorIdentityHeader(
@@ -371,6 +380,8 @@ struct EditProjectSheet: View {
                     noun: "Project",
                     statusLabel: statusLabel,
                     currentChoice: ListEditorLifecycleChoice(project.status),
+                    // [[T-11871]]: the row writes the name as Save does, so it is refused on the same test.
+                    isDisabled: !CadenceListEditorFieldSet.acceptsName(name),
                     onSelect: apply
                 )
             }
@@ -383,7 +394,11 @@ struct EditProjectSheet: View {
                 CadenceInlineFailureNotice(text: saveFailureNotice)
             }
         } footerLeading: {
-            ListEditorArchiveButton(isArchived: project.isArchived, noun: "Project") {
+            ListEditorArchiveButton(
+                isArchived: project.isArchived,
+                noun: "Project",
+                isDisabled: !CadenceListEditorFieldSet.acceptsName(name)
+            ) {
                 apply(project.isArchived ? .active : .archived)
             }
             ListEditorDeleteButton(title: "Delete") { showDeleteConfirmation = true }
@@ -429,6 +444,7 @@ struct EditProjectSheet: View {
     /// fields `applyEdits()` writes, and the snapshot holds it for the same reason it holds the
     /// rest.
     private func saveEdits() {
+        guard CadenceListEditorFieldSet.acceptsName(name) else { return }
         let undo = CadenceListEditSnapshot(project, tasks: contextChangeTargets)
         applyEdits()
         do {
@@ -442,6 +458,8 @@ struct EditProjectSheet: View {
     }
 
     private func apply(_ choice: ListEditorLifecycleChoice) {
+        // [[T-11871]]: behind the disabled row and button, as `saveEdits()` is behind Save.
+        guard CadenceListEditorFieldSet.acceptsName(name) else { return }
         // Same set the settle walks, for the same reason as `EditAreaSheet.apply(_:)`.
         let undo = CadenceListEditSnapshot(
             project,

@@ -608,50 +608,8 @@ struct ListEditorCalendarRow: View {
 
 // MARK: - Lifecycle
 
-enum ListEditorLifecycleChoice: CaseIterable {
-    case active, completed, archived
-
-    /// What this choice does to the work still open in the list, as a value rather than as a branch
-    /// inside a sheet's `apply(_:)`.
-    ///
-    /// Both edit sheets used to switch on the choice and call
-    /// `completeRemainingActiveTasks` / `cancelRemainingActiveTasks` by hand. Swapping those two
-    /// calls — so that archiving a list marked its leftovers *done* and completing one cancelled
-    /// them — kept every test green, because the only assertion counted both names over the whole
-    /// file and both counts were unchanged (`docs/TODO.md` T-161). The mapping is here, and
-    /// `CadenceListWindDownSurfaceTests` states it as an equality.
-    ///
-    /// `nil` for `.active`: reopening a list settles nothing. That is deliberately not
-    /// `.done`-with-an-empty-set, because "there is no wind-down" and "wind down zero tasks" are
-    /// different sentences and only the first one is true here.
-    var windDownOutcome: CadenceWindDownOutcome? {
-        switch self {
-        case .active: return nil
-        case .completed: return .done
-        case .archived: return .cancelled
-        }
-    }
-
-    /// [[T-9947]]: the choice a stored status already is, so the Status popover can tick it.
-    init(_ status: AreaStatus) {
-        switch status {
-        case .active: self = .active
-        case .done: self = .completed
-        case .archived: self = .archived
-        }
-    }
-
-    /// `nil` for a project that is paused or cancelled -- states no choice sets -- so no row is
-    /// ticked rather than the nearest one.
-    init?(_ status: ProjectStatus) {
-        switch status {
-        case .active: self = .active
-        case .done: self = .completed
-        case .archived: self = .archived
-        case .paused, .cancelled: return nil
-        }
-    }
-}
+// `ListEditorLifecycleChoice` lives in `Cadence/Shared/CadenceListEditorFieldSet.swift`: the iOS
+// editor's Status menu ticks from it too ([[T-11872]]).
 
 /// Status as one field row plus a picker.
 ///
@@ -667,6 +625,9 @@ struct ListEditorStatusRow: View {
     /// [[T-9947]]: the row the popover ticks, as every other Mac choice popover marks its current
     /// value. `nil` -- or `.archived`, which the popover does not offer -- ticks nothing.
     let currentChoice: ListEditorLifecycleChoice?
+    /// [[T-11871]]: refused, as the sheet's Save is, while the draft name is blank -- a choice
+    /// writes the pending edits, the name among them. Dimmed as `CadenceActionButton` dims.
+    var isDisabled = false
     let onSelect: (ListEditorLifecycleChoice) -> Void
 
     @State private var showPicker = false
@@ -680,6 +641,8 @@ struct ListEditorStatusRow: View {
         ) {
             showPicker.toggle()
         }
+        .disabled(isDisabled)
+        .opacity(isDisabled ? 0.52 : 1)
         .popover(isPresented: $showPicker, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 2) {
                 choiceRow(
@@ -742,6 +705,8 @@ struct ListEditorArchiveButton: View {
     let isArchived: Bool
     /// "Area" or "Project", used for the help text only.
     let noun: String
+    /// [[T-11871]]: as `ListEditorStatusRow.isDisabled` -- archiving writes the pending name too.
+    var isDisabled = false
     let action: () -> Void
 
     var body: some View {
@@ -753,6 +718,7 @@ struct ListEditorArchiveButton: View {
             role: .secondary,
             size: .compact,
             tint: Theme.muted,
+            isDisabled: isDisabled,
             action: action
         )
         .accessibilityLabel(isArchived ? "Unarchive" : "Archive")

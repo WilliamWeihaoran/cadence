@@ -66,6 +66,17 @@ struct CadenceListEditorFieldSetTests {
         #expect(FieldSet.statusLabel(ProjectStatus.done) == "Completed")
     }
 
+    /// **[[T-11871]]: one blank-name rule for Save and for every lifecycle row.** Whitespace and
+    /// newlines are blank, as `CadenceTitleNormalization.isBlank` says; anything else is a name.
+    @Test func aBlankDraftNameIsRefusedAndAnyOtherIsAccepted() {
+        for blank in ["", " ", "\n", " \t\n "] {
+            #expect(!FieldSet.acceptsName(blank), "\(blank.debugDescription) was accepted")
+        }
+        for name in ["A", " Alpha Area ", "\nx"] {
+            #expect(FieldSet.acceptsName(name), "\(name.debugDescription) was refused")
+        }
+    }
+
     // MARK: - Both editors read it
 
     private static let iOSEditorPath = "Cadence/iOS/iOSListEditorViews.swift"
@@ -146,6 +157,66 @@ struct CadenceListEditorFieldSetTests {
 
         let request = try Self.body(of: "private func requestListWindDown(_ action: iOSListWindDownAction) {", in: code, length: 300)
         #expect(request.contains("guard target.summary.requiresConfirmation else {"))
+    }
+
+    /// **[[T-11871]] on iOS.** `save()` is the one door every row goes through -- Save, Return,
+    /// Status, Archive / Unarchive, a confirmed wind-down -- so its guard is what refuses a blank
+    /// name; the rows are also disabled on the same rule so the sheet does not offer what it
+    /// refuses. Delete writes no name and stays live.
+    @Test func theIOSEditorsLifecycleRowsRefuseABlankName() throws {
+        let code = try Self.code(Self.iOSEditorPath)
+        #expect(code.contains("CadenceListEditorFieldSet.acceptsName(name)"))
+        let save = try #require(CadenceSourceScan.functionBody(named: "save", in: code))
+        let guardRange = try #require(save.range(of: "guard acceptsName else { return }"), "save() writes a blank name")
+        let firstWrite = try #require(save.range(of: "switch resolvedMode {"))
+        #expect(guardRange.lowerBound < firstWrite.lowerBound, "the guard runs after the write")
+        let section = try Self.body(of: "private var lifecycleSection: some View {", in: code, length: 3400)
+        #expect(section.contains(".disabled(currentLifecycleChoice == .active || !acceptsName)"))
+        #expect(section.contains(".disabled(currentLifecycleChoice == .completed || !acceptsName)"))
+        #expect(section.contains(".disabled(!acceptsName)"), "the Archive row is offered on a blank name")
+        let delete = try #require(section.range(of: "iOSListDeleteMenuButton("))
+        let archive = try #require(section.range(of: ".disabled(!acceptsName)"))
+        #expect(archive.lowerBound < delete.lowerBound, "the blank-name gate reached the Delete row")
+    }
+
+    /// **[[T-11871]] on the Mac.** Both sheets' Save and lifecycle doors are guarded and their
+    /// Status row and Archive button disabled on the shared rule.
+    @Test func theMacSheetsLifecycleRowsRefuseABlankName() throws {
+        let code = try Self.code(Self.macEditPath)
+        let rule = "CadenceListEditorFieldSet.acceptsName(name)"
+        #expect(CadenceSourceScan.matchCount("isConfirmDisabled: !CadenceListEditorFieldSet\\.acceptsName\\(name\\)", in: code) == 2)
+        #expect(CadenceSourceScan.matchCount("isDisabled: !CadenceListEditorFieldSet\\.acceptsName\\(name\\)", in: code) == 4,
+                "a Status row or Archive button is offered on a blank name")
+        for declaration in ["private func apply(_ choice: ListEditorLifecycleChoice) {", "private func saveEdits() {"] {
+            var searched = Substring(code)
+            var guards = 0
+            while let range = searched.range(of: declaration) {
+                let body = String(searched[range.upperBound...].prefix(400))
+                if body.contains("guard \(rule) else { return }") { guards += 1 }
+                searched = searched[range.upperBound...]
+            }
+            #expect(guards == 2, "\(declaration) is unguarded in \(2 - guards) sheet(s)")
+        }
+        let support = try Self.code("Cadence/macOS/Sheets/ListEditorSupportViews.swift")
+        #expect(support.contains(".disabled(isDisabled)\n        .opacity(isDisabled ? 0.52 : 1)\n        .popover("))
+        #expect(support.contains("isDisabled: isDisabled,\n            action: action"))
+    }
+
+    /// **[[T-11872]]: the iOS Status menu ticks what the Mac popover ticks.** It reads the shared
+    /// `ListEditorLifecycleChoice` mapping, so a paused or cancelled project ticks neither row and
+    /// leaves Active offered, rather than ticking Active and refusing it.
+    @Test func theIOSStatusMenuTicksFromTheSharedLifecycleChoice() throws {
+        let code = try Self.code(Self.iOSEditorPath)
+        #expect(code.contains("if let editedArea { return ListEditorLifecycleChoice(editedArea.status) }"))
+        #expect(code.contains("if let editedProject { return ListEditorLifecycleChoice(editedProject.status) }"))
+        let section = try Self.body(of: "private var lifecycleSection: some View {", in: code, length: 3400)
+        #expect(section.contains(#"Label("Active", systemImage: currentLifecycleChoice == .active ? "checkmark" : "circle")"#))
+        #expect(section.contains(#"systemImage: currentLifecycleChoice == .completed ? "checkmark" : iOSListWindDownAction.complete.icon"#))
+        #expect(!section.contains("editedIsDone"), "the menu ticks from its own Bool again")
+        // The mapping is compiled for both platforms now, from the Shared folder.
+        let shared = try Self.code("Cadence/Shared/CadenceListEditorFieldSet.swift")
+        #expect(shared.contains("enum ListEditorLifecycleChoice: CaseIterable {"))
+        #expect(shared.contains("case .paused, .cancelled: return nil"))
     }
 
     /// `onDeleted` runs after the cascade committed, never before it.

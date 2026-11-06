@@ -95,8 +95,9 @@ struct CadenceIOSFormReturnKeyTests {
         #expect(sheet.contains(".submitLabel(.done).onSubmit(submitName)"))
         #expect(Self.count(".onSubmit(", in: sheet) == 1)
         let submit = try Self.compactBody("private func submitName()", in: Self.listEditorPath)
-        #expect(submit.contains("guard!trimmedName.isEmptyelse{return}save()"))
-        #expect(sheet.contains(".disabled(trimmedName.isEmpty)"), "Save is gated on the same blank name")
+        // [[T-11871]]: the list editor's blank test is the shared `acceptsName` rule.
+        #expect(submit.contains("guardacceptsNameelse{return}save()"))
+        #expect(sheet.contains(".disabled(!acceptsName)"), "Save is gated on the same blank name")
     }
 
     /// The list editor's column row is "the board's own column header in miniature"; it drew an

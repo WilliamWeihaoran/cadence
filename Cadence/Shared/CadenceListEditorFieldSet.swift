@@ -62,6 +62,20 @@ nonisolated enum CadenceListEditorFieldSet {
         return fields
     }
 
+    /// **[[T-11871]]: whether the editor may write `draftName` at all** -- the one test the Save
+    /// button, Return in the name field, and every lifecycle row (Status, Archive / Unarchive) read,
+    /// on both platforms.
+    ///
+    /// The lifecycle rows write the pending field edits before they move the list, so they commit
+    /// the name exactly as Save does. They used to have no guard, and a cleared name field plus
+    /// Status -> Completed stored a nameless list from a sheet whose Save button was refusing it.
+    /// A blank draft now refuses them the way it refuses Save (disabled, and guarded behind the
+    /// button) rather than keeping the stored name: silently writing every other edit while
+    /// dropping one would be a second rule, and the user would see a name they had just cleared.
+    static func acceptsName(_ draftName: String) -> Bool {
+        !CadenceTitleNormalization.isBlank(draftName)
+    }
+
     /// The Status row's value for an area. Shared so the two editors cannot word one state twice.
     static func statusLabel(_ status: AreaStatus) -> String {
         switch status {
@@ -80,6 +94,55 @@ nonisolated enum CadenceListEditorFieldSet {
         case .archived: return "Archived"
         case .paused: return "Paused"
         case .cancelled: return "Canceled"
+        }
+    }
+}
+
+// MARK: - Lifecycle
+
+/// Moved here from `ListEditorSupportViews.swift` (macOS) so the iOS editor's Status menu ticks
+/// from the same mapping the Mac popover does ([[T-11872]], [[T-8201]]).
+enum ListEditorLifecycleChoice: CaseIterable {
+    case active, completed, archived
+
+    /// What this choice does to the work still open in the list, as a value rather than as a branch
+    /// inside a sheet's `apply(_:)`.
+    ///
+    /// Both edit sheets used to switch on the choice and call
+    /// `completeRemainingActiveTasks` / `cancelRemainingActiveTasks` by hand. Swapping those two
+    /// calls — so that archiving a list marked its leftovers *done* and completing one cancelled
+    /// them — kept every test green, because the only assertion counted both names over the whole
+    /// file and both counts were unchanged (`docs/TODO.md` T-161). The mapping is here, and
+    /// `CadenceListWindDownSurfaceTests` states it as an equality.
+    ///
+    /// `nil` for `.active`: reopening a list settles nothing. That is deliberately not
+    /// `.done`-with-an-empty-set, because "there is no wind-down" and "wind down zero tasks" are
+    /// different sentences and only the first one is true here.
+    var windDownOutcome: CadenceWindDownOutcome? {
+        switch self {
+        case .active: return nil
+        case .completed: return .done
+        case .archived: return .cancelled
+        }
+    }
+
+    /// [[T-9947]]: the choice a stored status already is, so the Status popover can tick it.
+    init(_ status: AreaStatus) {
+        switch status {
+        case .active: self = .active
+        case .done: self = .completed
+        case .archived: self = .archived
+        }
+    }
+
+    /// `nil` for a project that is paused or cancelled -- states no choice sets -- so no row is
+    /// ticked rather than the nearest one.
+    init?(_ status: ProjectStatus) {
+        switch status {
+        case .active: self = .active
+        case .done: self = .completed
+        case .archived: self = .archived
+        case .paused, .cancelled: return nil
         }
     }
 }
