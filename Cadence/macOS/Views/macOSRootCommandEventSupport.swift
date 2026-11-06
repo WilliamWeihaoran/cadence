@@ -29,6 +29,14 @@ nonisolated enum RootModalKeyDisposition: Equatable {
     case noModal
 }
 
+/// [[T-10054]]: what the root monitor does with a key while the global search palette is up.
+nonisolated enum RootPresentedSearchKeyDisposition: Equatable {
+    /// Escape or a second Cmd+K: close the palette and consume the key.
+    case dismiss
+    /// Anything else belongs to the palette's field and list.
+    case passToPalette
+}
+
 /// T-5800. **Which Cmd-key shortcuts stand down while the user is typing.**
 ///
 /// The root key monitor is an app-wide local monitor, so it sees a key before the first responder
@@ -115,16 +123,35 @@ enum RootCommandEventSupport {
         return disposition
     }
 
+    /// **[[T-10054]] — what a key does while the search palette is up.**
+    ///
+    /// Escape closes it, and so does a second Cmd+K: the doc comment on `handleCommandKeyEvent`
+    /// groups Cmd+K with Cmd+\ and Cmd+O as the root's three global overlay keys, and the other two
+    /// already toggle their overlays (the Today Timeline pane, the sidebar). The arm used to swallow
+    /// Cmd+K and do nothing, which left the one key that opens the palette inert against it --
+    /// keeper decided, the consistent option. Every other key, a bare `k` included, goes on to the
+    /// palette's own text field.
+    ///
+    /// Pure and `NSEvent`-free, the `modalKeyDisposition` shape, so the whole space is testable.
+    static func presentedGlobalSearchKeyDisposition(keyCode: UInt16, hasCommand: Bool) -> RootPresentedSearchKeyDisposition {
+        switch keyCode {
+        case 53: return .dismiss
+        case 40 where hasCommand: return .dismiss
+        default: return .passToPalette
+        }
+    }
+
     static func handlePresentedGlobalSearch(_ event: NSEvent, context: RootCommandContext) -> NSEvent? {
-        switch event.keyCode {
-        case 53:
+        let disposition = presentedGlobalSearchKeyDisposition(
+            keyCode: event.keyCode,
+            hasCommand: event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command)
+        )
+        switch disposition {
+        case .dismiss:
+            // Consumed either way, so Cmd+K never also reaches View > Search's key equivalent.
             context.globalSearchManager.dismiss()
             return nil
-        default:
-            if event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command),
-               event.keyCode == 40 {
-                return nil
-            }
+        case .passToPalette:
             return event
         }
     }

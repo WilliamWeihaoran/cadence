@@ -30,19 +30,42 @@ enum CalendarChipDueMarkerSupport {
         return "\(symbols[dueMonth - 1]) \(dueDay)"
     }
 
-    /// **Whether a chip at this width draws the marker at all** ([[T-10821]], owner call (a)
-    /// decided under [[T-8201]]).
+    /// **Whether a chip's HOST may draw the marker at all** ([[T-10821]], owner call (a) decided
+    /// under [[T-8201]]).
     ///
-    /// The marker takes layout priority OVER the title, so it costs the title its width. Every Mac
-    /// chip and every regular-width iOS chip -- the iPad month cell (~115pt) and the iPad week
-    /// header's all-day band -- has the width to pay that. A compact-width chip does not: the
-    /// iPhone's month and week columns leave the title a few characters, and a marker that wins
-    /// the contest would leave none, so there the urgency TINT
-    /// (`CadenceCalendarTaskDoneStyle.chipGlyphTint`) is the deadline channel alone. That is the
-    /// one hardware reason, screen width, stated as the size class that carries it rather than as
-    /// a device check.
+    /// The marker takes layout priority OVER the title, so it costs the title its width. A
+    /// compact-width chip cannot pay that: the iPhone's month and week columns leave the title a
+    /// few characters, and a marker that wins the contest would leave none, so there the urgency
+    /// TINT (`CadenceCalendarTaskDoneStyle.chipGlyphTint`) is the deadline channel alone. That is
+    /// the one hardware reason, screen width, stated as the size class that carries it rather than
+    /// as a device check.
+    ///
+    /// **A regular size class is necessary, not sufficient** ([[T-11302]]): every iPad layout is
+    /// regular, yet its month cell is 120.5pt with the sidebar collapsed, 86.5pt with the sidebar
+    /// and agenda pane open, and 70.5pt in portrait with the agenda pane. The chip itself applies
+    /// `drawsMarker(chipWidth:)` on top of this.
     static func drawsMarker(isCompactWidth: Bool) -> Bool {
         !isCompactWidth
+    }
+
+    /// **The narrowest chip plate that draws the marker** ([[T-11302]], keeper decided:
+    /// [[T-8243]]'s rule -- the marker must never leave a chip with no title -- applied to the iPad).
+    ///
+    /// The marker is `.fixedSize()` and measured 26.0pt in every iPad layout, so everything a cell
+    /// loses comes off the TITLE. Measured on `Cadence-iPadPro11` (plate = cell - 12.5pt): a
+    /// 108.5pt plate leaves the title a 61.5pt slot (13 characters painted); 95pt reads fine
+    /// ([[T-11021]]); 74.5pt leaves 23.0pt, an ellipsis and two characters; 58.5pt leaves nothing.
+    /// Glyph, marker, spacing and padding take about 51pt of plate, so 90pt leaves the title about
+    /// 39pt -- nine or ten characters at ~3.7pt each -- which is under the 95pt case that reads
+    /// fine and well clear of the 74.5pt case that does not. In cells that is ~102.5pt: the
+    /// sidebar-collapsed iPad layout keeps the marker and the two narrower ones fall back to the
+    /// tint alone, as the iPhone does.
+    static let minimumMarkerChipWidth: CGFloat = 90
+
+    /// `true` when a chip plate this wide leaves its title a readable share beside the marker.
+    /// An unmeasured chip (width 0) draws none, so a first pass can never paint a titleless chip.
+    static func drawsMarker(chipWidth: CGFloat) -> Bool {
+        chipWidth >= minimumMarkerChipWidth
     }
 
     static func ordinal(_ day: Int) -> String {

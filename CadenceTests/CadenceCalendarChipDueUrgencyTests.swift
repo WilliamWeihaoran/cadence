@@ -185,6 +185,26 @@ struct CadenceCalendarChipDueUrgencyTests {
         #expect(!CalendarChipDueMarkerSupport.drawsMarker(isCompactWidth: true), "the iPhone's column now loses its title")
     }
 
+    /// **[[T-11302]], keeper decided: the iPad gate is the chip's measured width, not the size class.**
+    ///
+    /// Every iPad layout is regular, but its month cell measured 120.5pt, 86.5pt and 70.5pt in the
+    /// three common layouts; at the two narrow ones the `.fixedSize()` 26pt marker left the title
+    /// two characters and then none, [[T-8243]]'s failure. The plates (cell - 12.5pt) are pinned on
+    /// both sides of the line, plus the 95pt plate [[T-11021]] read as fine.
+    @Test func theDueMarkerNeedsAPlateWideEnoughToKeepTheTitle() {
+        let threshold = CalendarChipDueMarkerSupport.minimumMarkerChipWidth
+        #expect(CalendarChipDueMarkerSupport.drawsMarker(chipWidth: 108.5), "the sidebar-collapsed iPad cell lost the marker")
+        #expect(CalendarChipDueMarkerSupport.drawsMarker(chipWidth: 95), "the plate T-11021 read as fine lost the marker")
+        #expect(!CalendarChipDueMarkerSupport.drawsMarker(chipWidth: 74.5), "the sidebar-and-agenda iPad cell keeps two title characters")
+        #expect(!CalendarChipDueMarkerSupport.drawsMarker(chipWidth: 58.5), "the portrait iPad cell keeps no title at all")
+        #expect(!CalendarChipDueMarkerSupport.drawsMarker(chipWidth: 0), "an unmeasured chip paints a marker before its width is known")
+        // The boundary is inclusive, so the constant is the first width that draws.
+        #expect(CalendarChipDueMarkerSupport.drawsMarker(chipWidth: threshold))
+        #expect(!CalendarChipDueMarkerSupport.drawsMarker(chipWidth: threshold - 0.5))
+        // A RELATION, not a pinned figure: the line sits between the measured bad and good plates.
+        #expect(threshold > 74.5 && threshold <= 95, "the threshold left the measured window")
+    }
+
     /// The marker and its wording are declared once, in `Shared/`, and the Mac no longer holds a
     /// copy -- the shape the tint rule took ([[T-8243]]).
     @Test func theDueMarkerIsDeclaredOnceInShared() throws {
@@ -209,7 +229,10 @@ struct CadenceCalendarChipDueUrgencyTests {
             CadenceSourceScan.declarationBody("struct iOSCalendarMiniChip: View", in: month),
             "iOSCalendarMiniChip is gone"
         )
-        #expect(chip.contains("if let dueMarkerDayKey, let completion {"))
+        #expect(chip.contains("if let dueMarkerDayKey, let completion, CalendarChipDueMarkerSupport.drawsMarker(chipWidth: plateWidth) {"),
+                "the chip draws the marker without asking its own width ([[T-11302]])")
+        #expect(chip.contains(".onGeometryChange(for: CGFloat.self) { $0.size.width } action: { plateWidth = $0 }"),
+                "the chip never measures the plate width the marker is gated on")
         #expect(chip.contains("CalendarChipDueMarker("))
         #expect(chip.contains("isDone: completion == .done"), "the marker reads a different done than the Mac's task.isDone")
 

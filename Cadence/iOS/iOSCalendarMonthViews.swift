@@ -617,7 +617,8 @@ private struct iOSCalendarMonthDayCell: View {
                     // chip, so every chip in the grid turns over at the midnight the badges do.
                     dueDateKey: task.dueDate,
                     todayKey: todayKey,
-                    // [[T-10821]]: the iPad's regular-width cell has the room the Mac's does.
+                    // [[T-10821]]: a regular-width cell may draw the marker; the chip then
+                    // checks its own plate width ([[T-11302]]), since an iPad cell runs 70-121pt.
                     dueMarkerDayKey: dueMarkerDayKey
                 )
                 .modifier(iOSCalendarMonthChipOpen(onOpen: opens ? { taskInspector(task) } : nil))
@@ -789,7 +790,8 @@ struct iOSCalendarMiniChip: View {
     /// accepts, and it is why a compact-width chip carries the tint alone -- which costs no width
     /// whatever. A regular-width chip (the iPad month cell, the iPad week band) has the width, so
     /// it draws the marker the Mac draws; the host decides through
-    /// `CalendarChipDueMarkerSupport.drawsMarker(isCompactWidth:)` and says so with `dueMarkerDayKey`.
+    /// `CalendarChipDueMarkerSupport.drawsMarker(isCompactWidth:)` and says so with `dueMarkerDayKey`,
+    /// and the chip then requires its own plate to be wide enough ([[T-11302]]).
     var dueDateKey: String = ""
     /// The surface's observed day ([[T-5010]]), so a chip left on screen past midnight re-tints
     /// with the grid around it instead of holding yesterday's red.
@@ -798,6 +800,11 @@ struct iOSCalendarMiniChip: View {
     /// ([[T-10821]]); `nil` -- the default, and every compact-width host's -- draws no marker. The
     /// marker needs the day because it names the deadline only when the chip is NOT on it.
     var dueMarkerDayKey: String? = nil
+    /// The plate's own measured width, which `CalendarChipDueMarkerSupport.drawsMarker(chipWidth:)`
+    /// reads ([[T-11302]]): the host's size class cannot tell a 120.5pt iPad cell from a 70.5pt
+    /// one. The plate is `maxWidth: .infinity`, so the marker cannot change the width it is gated
+    /// on. Zero until measured, which draws no marker.
+    @State private var plateWidth: CGFloat = 0
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
@@ -895,6 +902,7 @@ struct iOSCalendarMiniChip: View {
         }
         .padding(.horizontal, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { plateWidth = $0 }
         .frame(height: iOSCalendarTypographyMetrics.chipHeight(hasTime: timeLabel != nil, at: dynamicTypeSize, scaling: scaling))
         .background { shape.fill(plate) }
         .clipShape(shape)
@@ -913,7 +921,7 @@ struct iOSCalendarMiniChip: View {
                 .cadenceFont(.metadata, base: 10, weight: .medium)
                 .foregroundStyle(titleInk)
                 .lineLimit(1)
-            if let dueMarkerDayKey, let completion {
+            if let dueMarkerDayKey, let completion, CalendarChipDueMarkerSupport.drawsMarker(chipWidth: plateWidth) {
                 // An event has no completion and no deadline, so it never reaches here. `isDone`
                 // is the Mac's `task.isDone` -- done, not cancelled -- read off the same state.
                 CalendarChipDueMarker(
