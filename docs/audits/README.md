@@ -109,6 +109,15 @@ test, a script, an OPEN/PARTIAL entry, or an inline answer still standing in
 | [`recent-fix-claims.md`](2026-09-25/recent-fix-claims.md) | R61 — re-checking recent fix claims | Three focused coverage/oracle recommendations; **no new demonstrated destructive regression** | **LIVE** | `docs/CODEX_REQUESTS.md:4041` — no ledger entry of its own |
 | [`queue-inventory.json`](2026-09-25/queue-inventory.json), [`queue_inventory.rb`](2026-09-25/queue_inventory.rb) | 1.2 MB generated dataset and its reader | Lexical history differences, repeated-id candidates, native-view declarations, font and spacing counts | SPENT | only `queue-reconciliation.md` |
 
+## 2026-11-05 — save-site census and its silent-swallow verdicts (trees `1fff0a49`, `887cd21f`)
+
+Added by `savegroups2137`. The 2026-10-20 folder is not indexed here yet either.
+
+| Report | Subject | Headline finding | State | Cited by |
+| --- | --- | --- | --- | --- |
+| [`save-census-T-11581.md`](2026-11-05/save-census-T-11581.md) | Every `ModelContext.save()` outside the commit spine, classed by whether `CADENCE_UI_TEST_REFUSE_COMMITS` can refuse it | 180 sites in 84 files; 35 are silent `try?` user commits | **LIVE** | `T-11614` (**OPEN**); `T-11611`..`T-11613` (all CLOSED) |
+| [`save-groups-T-11614.md`](2026-11-05/save-groups-T-11614.md) | Per-group verdict on those 35: notice or quiet | 28 should report through the spine (iOS wind-downs first), 6 stay quiet, 1 is a dead helper; call sites and spine API named per group; nothing run | **LIVE** | `T-11614` (**OPEN**), `T-11861` |
+
 ## Reading one without opening it
 
 - A report's own front matter block gives the pinned tree sha, the dirty-file count and what was
