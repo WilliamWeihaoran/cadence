@@ -476,6 +476,40 @@ struct CadenceCaptureEditorTests {
         #expect(!header.contains("notesField"))
     }
 
+    /// [[T-12272]]: the Do panel overflows its popover on the iPad. An edge with content past it
+    /// fades; an edge with nothing past it, and every edge of a panel that fits, does not.
+    @Test func theFieldPopoverFadesOnlyTheEdgesWithContentPastThem() {
+        // Fits: 400pt of content in a 520pt popover.
+        #expect(CadenceScrollEdgeOverflow(offset: 0, visibleHeight: 520, contentHeight: 400) == .init())
+        // Exactly fits, and a settled offset a fraction off zero, still fade nothing.
+        #expect(CadenceScrollEdgeOverflow(offset: 0.4, visibleHeight: 520, contentHeight: 520.5) == .init())
+        // Overflows, at rest: only the bottom has content past it.
+        #expect(CadenceScrollEdgeOverflow(offset: 0, visibleHeight: 520, contentHeight: 700) == .init(top: false, bottom: true))
+        // Scrolled part way: both edges.
+        #expect(CadenceScrollEdgeOverflow(offset: 90, visibleHeight: 520, contentHeight: 700) == .init(top: true, bottom: true))
+        // Scrolled to the end: only the top.
+        #expect(CadenceScrollEdgeOverflow(offset: 180, visibleHeight: 520, contentHeight: 700) == .init(top: true, bottom: false))
+        // Insets move the resting offsets, not the answer.
+        #expect(CadenceScrollEdgeOverflow(offset: -12, visibleHeight: 520, contentHeight: 700, topInset: 12, bottomInset: 12)
+                == .init(top: false, bottom: true))
+        #expect(CadenceScrollEdgeOverflow(offset: 192, visibleHeight: 520, contentHeight: 700, topInset: 12, bottomInset: 12)
+                == .init(top: true, bottom: false))
+    }
+
+    /// [[T-12272]]: the card's one field popover -- Do among its panels -- sits in the scroll view
+    /// that flashes its indicator and fades a cut edge, not in a bare `ScrollView`.
+    @Test func theFieldPopoverScrollsWithAVisibleAffordance() throws {
+        let card = CadenceSourceScan.codeOnly(try source("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift"))
+        let popover = try #require(card.range(of: ".popover(item: $activeField) { field in"))
+        let opening = card[popover.upperBound...].prefix(200)
+        #expect(opening.contains("CadenceCapturePopoverScroll {"), "the field popover is back in a bare scroll view")
+        let wrapper = try #require(CadenceSourceScan.declarationBody("struct CadenceCapturePopoverScroll<Content: View>: View", in: card))
+        #expect(wrapper.contains(".scrollIndicatorsFlash(onAppear: true)"), "the indicator no longer shows as the panel opens")
+        #expect(wrapper.contains(".scrollIndicators(.visible)"))
+        #expect(CadenceSourceScan.matchCount(#"overflow\.(top|bottom) \? \.clear : \.black"#, in: wrapper) == 2,
+                "an overflowing edge is cut instead of faded")
+    }
+
     /// Every `Button` in `lines`, with the `.frame(` modifiers applied to the button itself rather
     /// than inside its label. A button's expression ends on the line where the braces its own
     /// closures opened close again; the lines after it that begin with `.` are its modifiers.
