@@ -210,4 +210,108 @@ struct CalendarScrollAnchorTests {
             )
         }
     }
+
+    // MARK: - The timed grid's opening hour (T-12271)
+
+    /// The iPad Week grid opened at a hard 0 because the placement latched on the *request*: one
+    /// `scrollTo(y:)` from inside the first layout pass, and `didPlaceInitialScroll = true` beside
+    /// it whether or not the offset ever moved. A request that comes back still reading the top is
+    /// a dropped request, and it is asked for again.
+    @Test
+    func aDroppedOpeningScrollIsAskedForAgainNotLatched() {
+        let step = CadenceTimelineOpeningScroll.step(
+            target: 600,
+            contentHeight: 1_308,
+            timelineHeight: 1_308,
+            containerHeight: 640,
+            maximumOffset: 768,
+            reportedOffset: 0,
+            assertions: 1
+        )
+        #expect(step == .place)
+    }
+
+    @Test
+    func theFirstLaidOutCanvasIsPlaced() {
+        #expect(
+            CadenceTimelineOpeningScroll.step(
+                target: 600, contentHeight: 1_308, timelineHeight: 1_308,
+                containerHeight: 640, maximumOffset: 768, reportedOffset: 0, assertions: 0
+            ) == .place
+        )
+    }
+
+    /// A content height alone is not layout: a scroll view with no viewport clamps any offset to 0.
+    @Test
+    func nothingIsPlacedBeforeThereIsAViewportAndTheWholeCanvas() {
+        #expect(
+            CadenceTimelineOpeningScroll.step(
+                target: 600, contentHeight: 1_308, timelineHeight: 1_308,
+                containerHeight: 0, maximumOffset: 1_308, reportedOffset: 0, assertions: 0
+            ) == .wait
+        )
+        #expect(
+            CadenceTimelineOpeningScroll.step(
+                target: 600, contentHeight: 0, timelineHeight: 1_308,
+                containerHeight: 640, maximumOffset: 0, reportedOffset: 0, assertions: 0
+            ) == .wait
+        )
+    }
+
+    /// Done is the offset arriving — at the target, or at the foot of the content when the target
+    /// is past it (a first item at 23:00).
+    @Test
+    func theOpeningIsDoneWhenTheOffsetArrives() {
+        #expect(
+            CadenceTimelineOpeningScroll.step(
+                target: 600, contentHeight: 1_308, timelineHeight: 1_308,
+                containerHeight: 640, maximumOffset: 768, reportedOffset: 600, assertions: 1
+            ) == .done
+        )
+        #expect(
+            CadenceTimelineOpeningScroll.step(
+                target: 1_200, contentHeight: 1_308, timelineHeight: 1_308,
+                containerHeight: 640, maximumOffset: 768, reportedOffset: 768, assertions: 1
+            ) == .done
+        )
+        // Hour 0 is already where the canvas starts: nothing to ask for.
+        #expect(
+            CadenceTimelineOpeningScroll.step(
+                target: 0, contentHeight: 1_308, timelineHeight: 1_308,
+                containerHeight: 640, maximumOffset: 768, reportedOffset: 0, assertions: 0
+            ) == .done
+        )
+    }
+
+    /// An offset that is neither the top nor the target is a finger, and the canvas is the user's.
+    /// A placement that never lands stops after `maximumAssertions` rather than looping.
+    @Test
+    func aFingerOrAnExhaustedRetryEndsThePlacement() {
+        #expect(
+            CadenceTimelineOpeningScroll.step(
+                target: 600, contentHeight: 1_308, timelineHeight: 1_308,
+                containerHeight: 640, maximumOffset: 768, reportedOffset: 240, assertions: 1
+            ) == .done
+        )
+        #expect(
+            CadenceTimelineOpeningScroll.step(
+                target: 600, contentHeight: 1_308, timelineHeight: 1_308,
+                containerHeight: 640, maximumOffset: 768, reportedOffset: 0,
+                assertions: CadenceTimelineOpeningScroll.maximumAssertions
+            ) == .done
+        )
+    }
+
+    /// The iOS grid routes its opening offset through the rule above, and its latch is set only by
+    /// the `.done` the rule returns. iOS is behind `#if os(iOS)`, so this is read from source.
+    @Test
+    func theIOSGridLatchesOnlyOnAnArrivedOpening() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
+        let body = try #require(CadenceSourceScan.functionBody(named: "placeInitialScroll", in: source))
+        #expect(body.contains("CadenceTimelineOpeningScroll.step("))
+        let latch = try #require(body.range(of: "didPlaceInitialScroll = true"))
+        let done = try #require(body.range(of: "case .done:"))
+        #expect(done.upperBound <= latch.lowerBound)
+        #expect(body.components(separatedBy: "didPlaceInitialScroll = true").count == 2)
+    }
 }

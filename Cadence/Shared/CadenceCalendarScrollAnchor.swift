@@ -130,3 +130,64 @@ private struct CadenceLazyScrollAnchorModifier<ID: Hashable>: ViewModifier {
         }
     }
 }
+
+/// **Opening the timed grid at its hour, and knowing that it got there** ([[T-12271]]).
+///
+/// `CadenceLazyScrollAnchor`'s two halves, applied to the iOS day canvas's *vertical* offset — the
+/// one axis of that grid that had the assertion and neither of the other two parts. The canvas used
+/// to assert `scrollTo(y:)` once, from the first content-height report, and set
+/// `didPlaceInitialScroll` in the same breath: the latch recorded that a scroll had been *asked
+/// for*, never that one had *landed*. The canvas is a fixed-height frame nested inside the grid's
+/// horizontal scroller, which is being placed in that same first layout pass, so an assertion made
+/// there had nothing behind it if the pass dropped it — and nothing ever asked again. That is the
+/// iPad Week grid sitting at a hard 0 on every visit while `initialTimelineHour` computed 11 AM.
+///
+/// What it decides, given the scroll view's own latest geometry:
+/// - **`.wait`** until there is something to scroll: the full canvas *and* a viewport. A zero-height
+///   container is a scroll view that has not been laid out, and a `scrollTo(y:)` into it clamps to 0.
+/// - **`.place`** the first time, and again only while the offset still reads the top the dropped
+///   assertion left behind — bounded by `maximumAssertions`, so a placement that can never land
+///   costs three requests, not a loop.
+/// - **`.done`** once the reported offset is where the assertion was aimed (clamped to the content
+///   the scroll view can actually show), or once it is anywhere *else*: an offset that is neither
+///   the top nor the target is a finger, and after that the canvas is the user's.
+///
+/// The figures are passed in rather than read off `ScrollGeometry` here so the decision is a pure
+/// function the macOS test target can pin; the writes it asks for are view machinery.
+enum CadenceTimelineOpeningScroll {
+    enum Step: Equatable {
+        case wait
+        case place
+        case done
+    }
+
+    /// How many times the opening offset is asked for before the canvas is left where it is.
+    static let maximumAssertions = 3
+    /// Points. Offsets are reported as floats and a block's top edge is not a pixel-exact target.
+    static let tolerance: CGFloat = 1
+
+    /// The offset an assertion of `target` can actually land on.
+    static func landingOffset(target: CGFloat, maximumOffset: CGFloat) -> CGFloat {
+        min(max(target, 0), max(maximumOffset, 0))
+    }
+
+    static func step(
+        target: CGFloat,
+        contentHeight: CGFloat,
+        timelineHeight: CGFloat,
+        containerHeight: CGFloat,
+        maximumOffset: CGFloat,
+        reportedOffset: CGFloat,
+        assertions: Int
+    ) -> Step {
+        guard timelineHeight > 0, contentHeight >= timelineHeight, containerHeight > 0 else {
+            return .wait
+        }
+        let landing = landingOffset(target: target, maximumOffset: maximumOffset)
+        if abs(reportedOffset - landing) <= tolerance { return .done }
+        if assertions == 0 { return .place }
+        // Not at the target and not at the top: something other than this placement moved it.
+        guard reportedOffset <= tolerance else { return .done }
+        return assertions < maximumAssertions ? .place : .done
+    }
+}

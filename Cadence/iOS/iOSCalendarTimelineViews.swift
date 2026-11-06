@@ -16,6 +16,24 @@ final class iOSCalendarTimelineScrollState {
     var verticalOffset: CGFloat = 0
 }
 
+/// The four figures `CadenceTimelineOpeningScroll` reads off the hour canvas's scroll view
+/// ([[T-12271]]). One `Equatable` value rather than the bare content height the placement used to
+/// watch, so a viewport arriving or an offset coming back each re-run the decision; the content
+/// height alone is a fixed frame and reports once.
+struct iOSTimelineOpeningScrollGeometry: Equatable {
+    var contentHeight: CGFloat
+    var containerHeight: CGFloat
+    var maximumOffset: CGFloat
+    var offset: CGFloat
+
+    init(_ geometry: ScrollGeometry) {
+        contentHeight = geometry.contentSize.height
+        containerHeight = geometry.containerSize.height
+        maximumOffset = geometry.contentSize.height + geometry.contentInsets.bottom - geometry.containerSize.height
+        offset = geometry.contentOffset.y
+    }
+}
+
 /// What `iOSCalendarTimelineGrid` draws across its horizontal axis.
 ///
 /// **This is the whole of the difference between the app's two timed iOS surfaces**, and it is
@@ -139,10 +157,16 @@ struct iOSCalendarTimelineGrid: View {
     private var workHoursStartMinute = CalendarWorkHoursPreferences.defaultStartMinute
     @AppStorage(CalendarWorkHoursPreferences.endMinuteKey)
     private var workHoursEndMinute = CalendarWorkHoursPreferences.defaultEndMinute
-    /// Vertical placement of the day canvas. See `placeInitialScroll(contentHeight:)`.
+    /// Vertical placement of the day canvas. See `placeInitialScroll()`.
     @State private var verticalScrollPosition = ScrollPosition(edge: .top)
     @State private var horizontalScrollPosition = ScrollPosition(edge: .leading)
     @State private var didPlaceInitialScroll = false
+    /// How many times the opening offset has been asked for, and the vertical scroll view's latest
+    /// geometry while it is still owed ([[T-12271]]). Neither is written once `didPlaceInitialScroll`
+    /// is set, so a scroll after the opening costs this view no state writes at all.
+    @State private var initialScrollAssertions = 0
+    @State private var openingScrollGeometry: iOSTimelineOpeningScrollGeometry?
+    @State private var isOpeningScrollInFlight = false
     @State private var didPlaceInitialColumn = false
     /// Set by the first report that agrees with the placement — see `adoptLeadingColumn`. Separate
     /// from `didPlaceInitialColumn`, which says the scroll was *requested*: that one gates the
@@ -524,10 +548,10 @@ struct iOSCalendarTimelineGrid: View {
             } action: { _, offset in
                 scrollState.verticalOffset = offset
             }
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                geometry.contentSize.height
-            } action: { _, contentHeight in
-                placeInitialScroll(contentHeight: contentHeight)
+            .onScrollGeometryChange(for: iOSTimelineOpeningScrollGeometry.self) { geometry in
+                iOSTimelineOpeningScrollGeometry(geometry)
+            } action: { _, geometry in
+                adoptOpeningScrollGeometry(geometry)
             }
         }
     }
@@ -610,10 +634,10 @@ struct iOSCalendarTimelineGrid: View {
                 } action: { _, offset in
                     scrollState.verticalOffset = offset
                 }
-                .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                    geometry.contentSize.height
-                } action: { _, contentHeight in
-                    placeInitialScroll(contentHeight: contentHeight)
+                .onScrollGeometryChange(for: iOSTimelineOpeningScrollGeometry.self) { geometry in
+                    iOSTimelineOpeningScrollGeometry(geometry)
+                } action: { _, geometry in
+                    adoptOpeningScrollGeometry(geometry)
                 }
             }
         }
@@ -858,17 +882,67 @@ struct iOSCalendarTimelineGrid: View {
     /// hour has said where they want to be; nothing here overrules that until they leave and come
     /// back.
     ///
-    /// It runs off the scroll view's own reported content height rather than `onAppear` because
+    /// It runs off the scroll view's own reported geometry rather than `onAppear` because
     /// `onAppear` can fire before the canvas has a content size, and a `scrollTo(y:)` against a
     /// zero-height content silently clamps back to the top — which is exactly the placement this
     /// removes. Nothing here is written anywhere: the hour is recomputed on every open, so a bad
     /// placement can only ever be one screen, never a saved anchor that compounds.
     ///
+    /// **"Placed" means the offset came back, not that it was asked for** ([[T-12271]]). This used
+    /// to assert once, from inside the first content-height report, and latch
+    /// `didPlaceInitialScroll` in the same line — so an assertion the first layout pass dropped was
+    /// final, and the iPad Week grid opened at a hard 0 on every visit while the rule computed
+    /// 11 AM. The canvas is a fixed `timelineHeight` frame, so that report carries the right height
+    /// from the very first pass, in the same pass that places the outer horizontal scroller.
+    /// `CadenceTimelineOpeningScroll` now decides from the scroll view's own geometry: wait for a
+    /// viewport, ask outside the layout pass, latch only on an offset that arrived, and ask again —
+    /// a bounded number of times — while the offset still reads the top a dropped request leaves.
+    ///
     /// The header no longer scrolls past, so there is no `topInset` to skip either.
-    private func placeInitialScroll(contentHeight: CGFloat) {
-        guard !didPlaceInitialScroll, contentHeight >= timelineHeight else { return }
-        didPlaceInitialScroll = true
+    private func placeInitialScroll() {
+        guard !didPlaceInitialScroll, let geometry = openingScrollGeometry else { return }
+        let target = initialScrollTarget
+        switch CadenceTimelineOpeningScroll.step(
+            target: target,
+            contentHeight: geometry.contentHeight,
+            timelineHeight: timelineHeight,
+            containerHeight: geometry.containerHeight,
+            maximumOffset: geometry.maximumOffset,
+            reportedOffset: geometry.offset,
+            assertions: initialScrollAssertions
+        ) {
+        case .wait:
+            return
+        case .done:
+            didPlaceInitialScroll = true
+            openingScrollGeometry = nil
+        case .place:
+            // One request in flight at a time: the reports that arrive before it lands still read
+            // the top, and taking each for a dropped request would spend every retry on one frame.
+            guard !isOpeningScrollInFlight else { return }
+            initialScrollAssertions += 1
+            isOpeningScrollInFlight = true
+            Task { @MainActor in
+                // Out of the layout pass that reported the geometry, which is the pass that drops it.
+                verticalScrollPosition.scrollTo(y: target)
+                // A request that is dropped changes nothing, so nothing reports it: the follow-up
+                // check has to be asked for. An arrival reports first and settles it before this.
+                try? await Task.sleep(for: .milliseconds(150))
+                isOpeningScrollInFlight = false
+                placeInitialScroll()
+            }
+        }
+    }
 
+    /// The vertical scroll view's latest geometry, kept only while the opening offset is owed.
+    private func adoptOpeningScrollGeometry(_ geometry: iOSTimelineOpeningScrollGeometry) {
+        guard !didPlaceInitialScroll else { return }
+        openingScrollGeometry = geometry
+        placeInitialScroll()
+    }
+
+    /// The offset `initialTimelineHour` asks for on the columns on screen.
+    private var initialScrollTarget: CGFloat {
         let visibleDates = CadenceCalendarTimelineWindow.visibleDates(
             leadingDate: leadingDate,
             visibleDayCount: visibleDayCount,
@@ -882,9 +956,7 @@ struct iOSCalendarTimelineGrid: View {
             workHoursStartMinute: workHoursStartMinute,
             calendar: calendar
         )
-        verticalScrollPosition.scrollTo(
-            y: CadenceScheduleSupport.timelineScrollOffset(forHour: hour, hourHeight: hourHeight)
-        )
+        return CadenceScheduleSupport.timelineScrollOffset(forHour: hour, hourHeight: hourHeight)
     }
 
     /// Start minutes of everything `iOSCalendarTimelineDayColumn` draws as a block on `dates`.
