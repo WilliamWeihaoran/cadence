@@ -459,6 +459,13 @@ nonisolated enum CadenceDataResetCopy {
     static let deletionsReachOtherDevices =
         "Cadence syncs through your private iCloud database, so these deletions reach your other devices."
 
+    /// What the reset leaves in Apple Calendar, as both typed-phrase gates say it ([[T-11883]]).
+    /// The last clause of these gates still hand-typed at each site, two ways: the phone's added
+    /// "are managed by Calendar and", which restates "in Calendar". The Mac's shorter spelling is
+    /// the one kept -- the claim the reader needs is "not deleted", and it is unchanged.
+    static let calendarEventsKept =
+        "Apple Calendar events that already exist in Calendar are not deleted."
+
     /// What the reset deletes, as both typed-phrase gates say it ([[T-7209]] (b), owner decision
     /// 2026-11-02). The two gates each enumerated store kinds and each went stale differently —
     /// the Mac's named documents and not focus history, the phone's the reverse, and neither

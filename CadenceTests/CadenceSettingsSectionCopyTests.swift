@@ -1548,6 +1548,36 @@ struct CadenceSettingsSectionCopyTests {
         }
     }
 
+    /// **[[T-11883]]: both delete-everything gates say what stays in Apple Calendar in one shared
+    /// sentence.** The phone's hand-typed "are managed by Calendar and are not deleted" where the
+    /// Mac's said "are not deleted", beside the shared sync sentence on each.
+    @Test func bothDataResetGatesReadOneSentenceForTheCalendarEventsTheyKeep() throws {
+        #expect(
+            CadenceDataResetCopy.calendarEventsKept
+                == "Apple Calendar events that already exist in Calendar are not deleted."
+        )
+        let gates: [(path: String, declaration: String)] = [
+            ("Cadence/macOS/Views/SettingsDataSafetySection.swift", "private struct SettingsDataResetConfirmationSheet: View"),
+            ("Cadence/iOS/iOSDataResetSettingsSection.swift", "struct iOSDataResetConfirmationSheet: View"),
+        ]
+        for gate in gates {
+            let code = try Self.strippedSource(at: gate.path)
+            let body = try #require(
+                CadenceSourceScan.declarationBody(gate.declaration, in: code),
+                "non-vacuity: \(gate.declaration) was not found in \(gate.path)"
+            )
+            #expect(body.contains("Delete Everything"), "non-vacuity: \(gate.path)'s body is not the gate")
+            #expect(
+                body.contains("CadenceDataResetCopy.calendarEventsKept"),
+                "\(gate.path)'s gate does not read the shared Calendar sentence"
+            )
+            #expect(
+                code.contains("already exist in Calendar") == false,
+                "\(gate.path) types the Calendar sentence beside the constant that holds it"
+            )
+        }
+    }
+
     /// **[[T-7209]] (b): both delete-everything gates say what the reset deletes in one shared
     /// sentence, and it does not enumerate store kinds.** The Mac's gate named documents and not
     /// focus history, the phone's the reverse, and neither named habits, goals or images, though

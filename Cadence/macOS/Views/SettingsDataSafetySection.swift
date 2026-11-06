@@ -602,7 +602,7 @@ private struct SettingsDataResetConfirmationSheet: View {
                                 // button is live, and not the one this launch is running on.
                                 // [[T-7209]] (b): what it deletes is the shared sentence the
                                 // phone's gate reads, account profile included since [[T-8736]].
-                                Text("\(CadenceDataResetCopy.gateDeletesEverything) \(CadenceDataResetCopy.deletionsReachOtherDevices) Apple Calendar events that already exist in Calendar are not deleted. \(CadenceUnmanagedStoreCopy.resetGateDeletesThem(runningOnRecoveryStore: PersistenceController.startupIssue?.kind == .recoveryStore))")
+                                Text("\(CadenceDataResetCopy.gateDeletesEverything) \(CadenceDataResetCopy.deletionsReachOtherDevices) \(CadenceDataResetCopy.calendarEventsKept) \(CadenceUnmanagedStoreCopy.resetGateDeletesThem(runningOnRecoveryStore: PersistenceController.startupIssue?.kind == .recoveryStore))")
                                     .font(.system(size: 12))
                                     .foregroundStyle(Theme.dim)
                                     .fixedSize(horizontal: false, vertical: true)

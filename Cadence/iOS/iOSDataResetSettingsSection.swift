@@ -163,7 +163,7 @@ private struct iOSDataResetConfirmationSheet: View {
 
                             iOSRowDivider()
 
-                            Text("\(CadenceDataResetCopy.deletionsReachOtherDevices) Apple Calendar events that already exist in Calendar are managed by Calendar and are not deleted.")
+                            Text("\(CadenceDataResetCopy.deletionsReachOtherDevices) \(CadenceDataResetCopy.calendarEventsKept)")
                                 .cadenceFont(.metadata, base: 12, weight: .regular)
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)
