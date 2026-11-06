@@ -45,6 +45,8 @@ struct InboxAppleRemindersSectionView: View {
         VStack(alignment: .leading, spacing: 0) {
             TaskListGroupHeader(
                 title: "Apple Reminders",
+                // The purple `iOSInboxRemindersSection` heads the same group with (T-11214).
+                tint: Theme.purple,
                 isCollapsed: false,
                 // **T-264 is answered rather than gated now (T-2056).** This used to pass `nil`,
                 // not `0`, whenever Cadence had not been allowed to look — the same

@@ -718,6 +718,15 @@ struct CadenceTasksPanelMetricsTests {
             "TaskListGroupHeader draws the 3x22pt accent bar again"
         )
         #expect(!header.contains("accent"), "TaskListGroupHeader takes an accent again")
+        // T-11214: the colour comes back as the shared heading's *text* tint, never as a bar. The
+        // parameter is `tint`, and it must be drawn — handed to `CadenceTaskGroupHeading` — rather
+        // than accepted and left inert, which is the shape T-2084 deleted.
+        #expect(header.contains("let tint: Color"), "TaskListGroupHeader no longer takes its group's tint")
+        #expect(
+            header.contains("CadenceTaskGroupHeading(title: title, tint: tint)"),
+            "TaskListGroupHeader no longer draws its title with the shared heading"
+        )
+        #expect(!header.contains(".font(.system(size: 14, weight: .bold))"), "the 14pt bold title is back")
         #expect(
             header.contains(".padding(.leading, 21)"),
             "the header's hairline is no longer inset to the chevron's trailing edge — 21 is 34 minus the bar's 3pt and its 10pt of spacing"
@@ -739,8 +748,69 @@ struct CadenceTasksPanelMetricsTests {
             let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
             #expect(source.contains("TaskListGroupHeader") || source.contains("TasksPanelIntentSectionView"),
                     "non-vacuity: \(path) no longer takes part in drawing the task-group header")
-            #expect(!source.contains("accent"), "\(path) threads an accent to the group header again")
+            // `accent:` rather than `accent` since T-11214: a call site now reads a group's own
+            // `accent` to hand it down as `tint:`, which is the shared groups' member name; what
+            // must not come back is an `accent:` parameter or argument feeding a bar.
+            #expect(!source.contains("accent:"), "\(path) threads an accent to the group header again")
         }
+    }
+
+    /// **[[T-11214]] — every desktop task group is headed in the colour iOS heads it with, and
+    /// every one of them folds.**
+    ///
+    /// The tints are iOS's, call site by call site: Today's groups and All Tasks' buckets take the
+    /// shared group's own colour, a By List section its list's, "Apple Reminders" purple and every
+    /// Completed green. The fold is T-11214's decision for both platforms — the Mac already folded
+    /// every group and keeps doing so, because a heading you can click shut is the one thing a long
+    /// list has for getting a group out of the way, and no input or screen constraint argues for
+    /// taking it away (iOS's half is T-12191). So each host is pinned twice: it hands its header a
+    /// toggle, and it draws its rows only while open. Source pins, because the hosts are `private`
+    /// SwiftUI views this target cannot render.
+    @Test func everyDesktopTaskGroupHeadingTakesIOSsTintAndFolds() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let support = try read("Cadence/macOS/Views/ListDetailSupportViews.swift")
+        let header = try #require(
+            CadenceSourceScan.declarationBody("struct TaskListGroupHeader<LeadingContent: View>: View", in: support)
+        )
+        #expect(header.contains("Button(action: onToggle) { headerContent }"), "the header no longer folds its group on click")
+
+        let list = try read("Cadence/macOS/Views/TasksListView.swift")
+        #expect(list.contains("tint: group.accent"), "All Tasks' shared buckets lost their own colour")
+        #expect(list.contains("tint: group.listColor"), "a By List section lost its list's colour")
+        let section = try #require(CadenceSourceScan.declarationBody("private struct TasksListSectionView: View", in: list))
+        #expect(section.contains("tint: section.tint,"))
+        #expect(section.contains("if !isCollapsed {"), "All Tasks' groups no longer fold")
+        let listCompleted = try #require(CadenceSourceScan.declarationBody("private struct TasksListCompletedSectionView: View", in: list))
+        #expect(listCompleted.contains("tint: Theme.green,"))
+        #expect(listCompleted.contains("if !isCollapsed {"))
+        #expect(list.contains("isCollapsed: collapsedSectionIDs.contains(section.id),"))
+        #expect(list.contains("onToggle: { toggleSection(section.id) },"))
+
+        let inbox = try read("Cadence/macOS/Views/InboxSupportViews.swift")
+        #expect(inbox.contains("tint: Theme.purple,"), "Apple Reminders lost the purple iOS heads it with")
+
+        let today = try read("Cadence/macOS/Views/TasksPanelSectionViews.swift")
+        let intent = try #require(CadenceSourceScan.declarationBody("struct TasksPanelIntentSectionView: View", in: today))
+        #expect(intent.contains("tint: tint,"))
+        #expect(intent.contains("if !isCollapsed {"), "Today's list groups no longer fold")
+        let todayCompleted = try #require(CadenceSourceScan.declarationBody("struct TasksPanelCompletedSectionView: View", in: today))
+        #expect(todayCompleted.contains("tint: CadenceTodayPresentationSupport.completedSectionAccent,"))
+        #expect(todayCompleted.contains("if !isCollapsed {"))
+        let panel = try read("Cadence/macOS/Views/TasksPanel.swift")
+        #expect(panel.contains("tint: group.accent,"))
+        #expect(panel.contains("isCollapsed: collapsedGroupIDs.contains(group.id),"))
+
+        let listGroup = try #require(CadenceSourceScan.declarationBody("struct ListTasksGroupSectionView: View", in: support))
+        #expect(listGroup.contains("if !isCollapsed {"), "a list's Tasks tab groups no longer fold")
+        let listGroupCompleted = try #require(CadenceSourceScan.declarationBody("struct ListTasksCompletedSectionView: View", in: support))
+        #expect(listGroupCompleted.contains("if !isCollapsed {"))
+
+        // iOS's tints, so a change to either side fails here rather than drifting silently.
+        #expect(try read("Cadence/iOS/iOSInboxRemindersSection.swift").contains("color: Theme.purple"))
+        let collection = try read("Cadence/iOS/iOSTaskCollectionPage.swift")
+        #expect(collection.contains("color: group.accent,"))
+        #expect(collection.contains("tint: Theme.green,"))
+        #expect(try read("Cadence/iOS/iOSTodayTaskSections.swift").contains("tint: CadenceTodayPresentationSupport.completedSectionAccent,"))
     }
 }
 

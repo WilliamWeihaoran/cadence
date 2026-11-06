@@ -2,7 +2,8 @@ import SwiftUI
 
 /// A task group's heading: what the group is, in the group's own colour.
 ///
-/// **The heading iOS's task surfaces share — Today, Inbox and All Tasks all draw this one row.**
+/// **The heading every task surface shares, on both platforms — Today, Inbox, All Tasks and a
+/// list's Tasks tab all draw this one row,** macOS through `TaskListGroupHeader` since T-11214.
 /// It began as the settlement between `iOSTaskGroupHeader` and macOS's Today section header, which
 /// were two spellings of one row disagreeing about more than measurements: iOS said what a group
 /// *is* by tinting the label with the group's accent, macOS said it in neutral `Theme.dim`. The
@@ -22,12 +23,12 @@ import SwiftUI
 /// cannot state a quantity nobody measured, on either platform, so the two headings have one
 /// answer instead of one shared rule.
 ///
-/// **macOS's Today is not one of its callers, and that is a decision (T-605).** Desktop draws
-/// `TaskListGroupHeader` — 14pt bold sentence case, and a 3×22pt accent bar until T-2084 removed
-/// it — because All Tasks, Inbox and list detail beside it already did, and one desktop app with
-/// two group headings was the sharper
-/// inconsistency. So the two platforms' headings still differ on purpose; **do not re-file that as
-/// drift.** The reasoning is on `TasksPanelIntentSectionView`.
+/// **macOS draws it inside `TaskListGroupHeader` (T-11214).** From T-605 to T-11214 the desktop
+/// headed its groups with a 14pt bold sentence-case title of its own, so that Today matched All
+/// Tasks, Inbox and list detail beside it. Under T-8201 that was a platform difference with no
+/// constraint behind it, so every desktop group heading moved onto this row together: the Mac
+/// keeps its chevron, its fold and its overdue flag around it, and the title is this. The history
+/// is on `TasksPanelIntentSectionView`.
 struct CadenceTaskGroupHeading: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling

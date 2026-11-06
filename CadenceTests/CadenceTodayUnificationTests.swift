@@ -86,21 +86,19 @@ struct CadenceTodayUnificationTests {
     /// group** now — a list group is its list's colour — so what has to be pinned is that neither
     /// host decides the tint for itself.
     ///
-    /// **Only one host still has a tint to decide, and the zero is the assertion (T-2084).** macOS's
-    /// Today drew its group's colour as the 3×22pt bar at the head of `TaskListGroupHeader`; the
-    /// owner had every one of those bars removed — *"these colors are make the page very
-    /// distracting"* — so `TasksPanel` has nothing left to tint and reads `group.accent` zero times.
-    /// It is pinned at zero rather than dropped because the defect this test exists for is a host
-    /// deciding a tint **for itself**, and a host that re-grew a local colour for its headings would
-    /// show up here as a 1 just as surely as it used to show up as a 2. iOS's one is untouched: it
-    /// hands the group's colour to `CadenceTaskGroupHeading`, which tints the eyebrow's *text* and
-    /// never drew a bar, and it is what stops the macOS zero from passing because the member was
-    /// deleted outright.
+    /// **One read per host again, and it is the text's tint, never a bar (T-11214).** From T-2084 to
+    /// T-11214 macOS read `group.accent` zero times: its Today drew the colour only as the 3×22pt bar
+    /// at the head of `TaskListGroupHeader`, and the owner had every one of those bars removed —
+    /// *"these colors are make the page very distracting"*. T-11214 moved that header's title onto
+    /// `CadenceTaskGroupHeading`, which tints the eyebrow's *text* as iOS's always has, so macOS
+    /// hands the group's own colour down once, exactly as iOS does. The defect this test exists for
+    /// is still a host deciding a tint **for itself**: a second read, or a local colour, shows up
+    /// here as a count other than one.
     @Test func bothPlatformsTintTheirTodayGroupsFromTheGroupItself() throws {
         try expectCallSites(
             of: "group.accent",
             at: [
-                "Cadence/macOS/Views/TasksPanel.swift": 0,
+                "Cadence/macOS/Views/TasksPanel.swift": 1,
                 "Cadence/iOS/iOSTodayTaskSections.swift": 1,
             ]
         )
@@ -143,16 +141,12 @@ struct CadenceTodayUnificationTests {
     /// predicate that only ever held tasks completed *today*, which described a logbook it was not
     /// showing.
     ///
-    /// **It is no longer *tinted* the same, and the zero below is the assertion rather than an
-    /// exemption (T-2084).** This test used to pin one `completedSectionAccent` call site per
-    /// platform, because both headings drew the green somewhere: iOS tints the eyebrow's text with
-    /// it and macOS filled a 3×22pt bar with it. The owner had every one of those bars removed —
-    /// *"these colors are make the page very distracting"* — so macOS's Completed header has
-    /// nothing left to tint, and a constant it no longer reads is exactly the dead plumbing that
-    /// change was removing. iOS's half is untouched and still pinned at one, which is what stops
-    /// the macOS zero from passing because the shared constant was deleted outright; that it is
-    /// still `Theme.green` is `CadenceAccentPaletteTests`'. The *title* stays one per platform —
-    /// the words are the convergence, the hue was decoration on only one of them.
+    /// **It is tinted the same again, one read per platform (T-11214).** T-2084 took macOS's read
+    /// to zero, because the Mac drew the green only as a 3×22pt bar and the owner had every bar
+    /// removed. T-11214 put the shared `CadenceTaskGroupHeading` inside `TaskListGroupHeader`, and
+    /// that heading tints the eyebrow's text with the constant as iOS's does — a hue on text, not
+    /// the bar the owner asked to go. That it is still `Theme.green` is
+    /// `CadenceAccentPaletteTests`'. Title and tint are both one per platform.
     @Test func bothPlatformsHeadTheirCompletedGroupWithTheSharedTitle() throws {
         #expect(CadenceTodayPresentationSupport.completedSectionTitle == "Completed Today")
 
@@ -166,7 +160,7 @@ struct CadenceTodayUnificationTests {
         try expectCallSites(
             of: "CadenceTodayPresentationSupport.completedSectionAccent",
             at: [
-                "Cadence/macOS/Views/TasksPanelSectionViews.swift": 0,
+                "Cadence/macOS/Views/TasksPanelSectionViews.swift": 1,
                 "Cadence/iOS/iOSTodayTaskSections.swift": 1,
             ]
         )
@@ -299,22 +293,17 @@ struct CadenceTodayUnificationTests {
         #expect(CadencePageHeaderMetrics.countFillOpacity == 0.12)
     }
 
-    /// **This pin was T-161's and it is stale — the decision it encoded has been reversed (T-605).**
+    /// **Both platforms head their task groups with `CadenceTaskGroupHeading` (T-11214).**
     ///
-    /// It asserted that macOS Today and iOS Today both drew `CadenceTaskGroupHeading`, one call
-    /// site each. That was the right answer to the question T-161 asked (*do the two Todays look
-    /// the same?*) and the wrong answer to the question that turned out to matter more: **macOS
-    /// Today was the only task surface on its own platform drawing that heading.** All Tasks, Inbox
-    /// and list detail draw `TaskListGroupHeader` — a 3×22pt accent bar until T-2084, 14pt bold sentence case,
-    /// split overdue/regular counts — so cross-platform agreement was being bought with a
-    /// three-against-one split inside the desktop app. The user's decision moves Today, and the
-    /// number below is not bumped: the call site is **gone**, and the assertion now says which
-    /// header each platform draws rather than that they draw the same one.
-    ///
-    /// **The resulting divergence is deliberate. Do not re-file it as drift** — the reasoning is on
-    /// `TasksPanelIntentSectionView` and on `CadenceTaskGroupHeading` itself, and this test is the
-    /// third place it is written down so that a future convergence sweep meets an argument rather
-    /// than a bare inconsistency.
+    /// T-161 pinned one call site on each Today. T-605 reversed that for macOS: Today was the only
+    /// desktop surface drawing the shared heading, while All Tasks, Inbox and list detail drew
+    /// `TaskListGroupHeader`'s 14pt bold title, so Today moved onto the desktop header and this test
+    /// said each platform drew its own. Under T-8201 that split had no hardware or input reason, so
+    /// T-11214 moved the desktop header's **title** onto the shared heading. All four desktop
+    /// surfaces moved together, which keeps T-605's one-heading-per-desktop rule. The counts below
+    /// say both things at once: the Mac reaches the shared heading through exactly one place
+    /// (`TaskListGroupHeader`), and every desktop surface still reaches it through that header,
+    /// not with its own call. The test keeps its T-605 name so the sweep manifest still lists it.
     @Test func eachPlatformsTodayDrawsItsOwnPlatformsGroupHeading() throws {
         // iOS keeps the shared eyebrow, and is the only caller of it that this pins. **Two since
         // T-2090**, both in this file and both deliberate: `iOSTaskGroupHeader` heads an ordinary
@@ -325,6 +314,9 @@ struct CadenceTodayUnificationTests {
         try expectCallSites(
             of: "CadenceTaskGroupHeading",
             at: [
+                // T-11214: the desktop's one caller is the header every desktop group draws, so
+                // Today, All Tasks, Inbox and list detail cannot draw two vocabularies again.
+                "Cadence/macOS/Views/ListDetailSupportViews.swift": 1,
                 "Cadence/macOS/Views/TasksPanelSectionViews.swift": 0,
                 "Cadence/iOS/iOSTaskGroupSection.swift": 2,
             ]

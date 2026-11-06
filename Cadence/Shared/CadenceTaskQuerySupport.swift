@@ -346,6 +346,21 @@ enum CadenceTaskQuerySupport {
         }
     }
 
+    /// The tint a list's Tasks tab heads one of its sections with, on **both** platforms
+    /// ([[T-11214]]): the section's own colour, green once the section is marked completed, and
+    /// `Theme.dim` for a name no config carries. It was `iOSListDetailView.sectionColor(for:)`, the
+    /// only reader while the Mac's headings drew no tint; the Mac's `TaskListGroupHeader` draws the
+    /// shared `CadenceTaskGroupHeading` now, so the rule moved here rather than being copied.
+    /// `sectionGroups` leaves every group's `accent` at `Theme.blue` because it has no configs.
+    static func sectionAccent(named name: String, configs: [TaskSectionConfig]) -> Color {
+        guard let config = configs.first(where: {
+            $0.name.caseInsensitiveCompare(name) == .orderedSame
+        }) else {
+            return Theme.dim
+        }
+        return config.isCompleted ? Theme.green : Color(hex: config.colorHex)
+    }
+
     /// **The one place a `TaskGroupingMode` becomes sections** ([[T-8731]]).
     ///
     /// The three builders below were already shared; what was not was the `switch` over them,

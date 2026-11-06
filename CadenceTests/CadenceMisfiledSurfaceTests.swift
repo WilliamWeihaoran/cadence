@@ -177,7 +177,8 @@ struct TodayAndInboxNamingTests {
         // an index of rows rather than a three-segment switcher, so `iOSTasksTabView` builds
         // neither view directly: the Today row pushes `iOSTodayView()` through the shell's one
         // destination switch, and the Tasks and Inbox rows both push `iOSTasksPageView`, which is
-        // where `iOSInboxView(showsCompactHeader: false)` is drawn on both shells. The claim this
+        // where `iOSInboxView()` is drawn on both shells (its `showsCompactHeader: false` went with
+        // the header it gated, T-11214). The claim this
         // test exists for is unchanged and is still checked at compact width — it just has one
         // fewer caller and one more hop.
         let callers = [
@@ -189,7 +190,7 @@ struct TodayAndInboxNamingTests {
             // Search pushes through the shell's destination view since T-5308, so it reaches
             // both through the iOSCompactTabShell.swift needles above rather than its own copy.
             "Cadence/iOS/iOSSearchView.swift": ["iOSCompactFeatureDestinationView(destination: destination)"],
-            "Cadence/iOS/iOSTasksPageView.swift": ["iOSInboxView(showsCompactHeader: false)"]
+            "Cadence/iOS/iOSTasksPageView.swift": ["iOSInboxView()"]
         ]
         for (path, needles) in callers {
             let code = CadenceSourceScan.strippingComments(try misfiledSourceFile(path))

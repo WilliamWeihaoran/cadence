@@ -481,8 +481,8 @@ private struct SectionPickerRow: View {
 // until T-605 — the chevron-plus-`CadenceTaskGroupHeading` row Today drew — and it went the same
 // way, into its one surviving sibling. **There is now exactly one macOS group header:**
 // `TaskListGroupHeader` (`ListDetailSupportViews`), drawn by Today, All Tasks, Inbox and list
-// detail. Anything new that heads a group of tasks on this platform is that, or it is a fifth
-// spelling of it.
+// detail, whose title is the shared `CadenceTaskGroupHeading` since T-11214. Anything new that
+// heads a group of tasks on this platform is that, or it is a fifth spelling of it.
 
 // `CompletedSectionHeader` was here — the neutral "Completed" heading the `.byDoDate` logbook
 // drew instead of Today's "Completed Today". It had one call site, inside the `else` of

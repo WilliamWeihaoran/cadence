@@ -374,6 +374,8 @@ struct CadenceTagChipScaleTests {
                 [
                     "Cadence/iOS/iOSTaskGroupSection.swift",
                     "Cadence/iOS/iOSTodayTaskSections.swift",
+                    // T-11214: the desktop's group header draws the shared heading.
+                    "Cadence/macOS/Views/ListDetailSupportViews.swift",
                     "Cadence/macOS/Views/TasksPanel.swift",
                 ], []
             ),
@@ -390,8 +392,8 @@ struct CadenceTagChipScaleTests {
                     "Cadence/iOS/iOSTodayCompactViews.swift",
                     "Cadence/iOS/iPadTodaySupportViews.swift",
                 ], [
+                    // T-11214 took `iOSTaskCollectionPage` off: its header was unreachable and is gone.
                     "Cadence/iOS/iOSListDetailView.swift",
-                    "Cadence/iOS/iOSTaskCollectionPage.swift",
                     "Cadence/iOS/iOSTasksPageView.swift",
                     "Cadence/iOS/iOSTasksTabView.swift",
                 ]

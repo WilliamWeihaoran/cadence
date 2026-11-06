@@ -249,24 +249,21 @@ struct iOSTaskCollectionMetricsTests {
         }
     }
 
-    /// Every string the header and the empty state need, present and distinct — the empty state's
-    /// *words* included. They spent a while in a private `#if os(iOS)` extension, because
+    /// Every string the title and the empty state need, present and distinct — the empty state's
+    /// *words* included. (The page header's `eyebrow` and identity-tile glyph went with the
+    /// unreachable header they fed, T-11214.) They spent a while in a private `#if os(iOS)` extension, because
     /// `CadenceEmptyStateCopy` had been missed by the `nonisolated` pass and could not be read from
     /// this deliberately-`nonisolated` file; that enum is `nonisolated` now, so the words sit on the
     /// collection with the rest of what tells the two pages apart, and the test target can see them.
     @Test func eachCollectionNamesItselfCompletelyAndDistinctly() {
         for collection in CadenceTaskCollection.allCases {
-            #expect(!collection.eyebrow.isEmpty, "\(collection)")
             #expect(!collection.title.isEmpty, "\(collection)")
-            #expect(!collection.systemImage.isEmpty, "\(collection)")
             #expect(!collection.emptyIcon.isEmpty, "\(collection)")
             #expect(!collection.emptyTitle.isEmpty, "\(collection)")
             #expect(!collection.emptySubtitle.isEmpty, "\(collection)")
         }
 
         #expect(CadenceTaskCollection.allTasks.title != CadenceTaskCollection.inbox.title)
-        #expect(CadenceTaskCollection.allTasks.eyebrow != CadenceTaskCollection.inbox.eyebrow)
-        #expect(CadenceTaskCollection.allTasks.systemImage != CadenceTaskCollection.inbox.systemImage)
         #expect(CadenceTaskCollection.allTasks.emptyTitle != CadenceTaskCollection.inbox.emptyTitle)
         #expect(
             CadenceTaskCollection.allTasks.emptySubtitle != CadenceTaskCollection.inbox.emptySubtitle

@@ -53,10 +53,10 @@ struct iOSTasksPageView: View {
         }
     }
 
-    /// Header **row**, switcher at its trailing end. The two children draw with
-    /// `showsCompactHeader: false` so the page heads itself once — the alternative, letting each
-    /// keep its own header beside the segment, would put the words "All Tasks" next to a segment
-    /// already reading "All".
+    /// Header **row**, switcher at its trailing end. The two children draw no header of their own
+    /// (they had one behind a `showsCompactHeader` flag this page always turned off, deleted in
+    /// T-11214), so the page heads itself once — a child header beside the segment would put the
+    /// words "All Tasks" next to a segment already reading "All".
     ///
     /// **It used to be header *over* switcher**, which is the shape the phone's Tasks tab still
     /// uses. One row is what the owner chose for both this page and the Calendar's, and the reason
@@ -105,9 +105,9 @@ struct iOSTasksPageView: View {
     private var content: some View {
         switch scope {
         case .all:
-            iOSAllTasksView(showsCompactHeader: false)
+            iOSAllTasksView()
         case .inbox:
-            iOSInboxView(showsCompactHeader: false)
+            iOSInboxView()
         }
     }
 }

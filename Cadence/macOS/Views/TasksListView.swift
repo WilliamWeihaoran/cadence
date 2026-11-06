@@ -15,6 +15,9 @@ private struct TasksListSection: Identifiable {
     let tasks: [AppTask]
     /// Set only for `.byList` grouping, where the header carries the list's icon and its context's.
     let listGroup: TodayTaskGroup?
+    /// The heading's colour (T-11214): the shared group's own, so a date, priority or list bucket
+    /// is the colour iOS's Inbox and All Tasks head it with.
+    let tint: Color
 }
 
 /// **The** macOS task-collection list. All Tasks and Inbox, one implementation, one `scope`.
@@ -245,7 +248,8 @@ struct TasksListView: View {
                     title: group.title,
                     dropKey: group.dropKey ?? Self.dateDropKey(forGroupID: group.id),
                     tasks: group.tasks,
-                    listGroup: nil
+                    listGroup: nil,
+                    tint: group.accent
                 )
             }
         case .byList:
@@ -255,7 +259,9 @@ struct TasksListView: View {
                     title: group.listName,
                     dropKey: "list:\(group.id)",
                     tasks: group.tasks,
-                    listGroup: group
+                    listGroup: group,
+                    // The list's colour, which is what the shared By List group carries as well.
+                    tint: group.listColor
                 )
             }
         }
@@ -580,6 +586,7 @@ private struct TasksListSectionView: View {
         LazyVStack(alignment: .leading, spacing: 0) {
             TaskListGroupHeader(
                 title: section.title,
+                tint: section.tint,
                 isCollapsed: isCollapsed,
                 overdueCount: overdueCount,
                 onToggle: onToggle
@@ -647,6 +654,8 @@ private struct TasksListCompletedSectionView: View {
         LazyVStack(alignment: .leading, spacing: 0) {
             TaskListGroupHeader(
                 title: "Completed",
+                // The green iOS's Inbox and All Tasks head their Completed section with.
+                tint: Theme.green,
                 isCollapsed: isCollapsed,
                 onToggle: onToggle
             )

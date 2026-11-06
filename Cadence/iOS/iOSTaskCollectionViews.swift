@@ -9,10 +9,10 @@ import SwiftUI
 /// `iOSCompactAllTasksView` and a `List`-based `allTasksPanel` defined below it — one screen with
 /// two scroll containers, two separator treatments and two sets of row insets. Both are gone; see
 /// `iOSTaskCollectionPage` for which container won and what the `List` was providing.
+///
+/// No header of its own and no flag for one (T-11214) — see `iOSInboxView`, which has the same
+/// single host.
 struct iOSAllTasksView: View {
-    /// Off when the Tasks tab hosts this as its All segment — see `iOSTodayView.showsCompactHeader`
-    /// for the reasoning. Still on when All Tasks is reached as a pushed screen.
-    var showsCompactHeader = true
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     /// **The Mac's three keys, not a second set** ([[T-8731]]) — see `iOSInboxView`, which carries
     /// the argument and the migration. The defaults are macOS All Tasks': date-first, ascending,
@@ -47,7 +47,6 @@ struct iOSAllTasksView: View {
     var body: some View {
         iOSTaskCollectionPage(
             collection: .allTasks,
-            showsHeader: showsCompactHeader,
             activeTasks: activeTasks,
             completedTasks: completedTasks,
             sortField: $sortField,

@@ -36,8 +36,6 @@ import SwiftUI
 /// `if !activeTasks.isEmpty`, Inbox guarded nothing.
 struct iOSTaskCollectionPage: View {
     let collection: CadenceTaskCollection
-    /// Off when the Tasks tab hosts this as one of its segments — see `iOSTodayView.showsCompactHeader`.
-    var showsHeader = true
     let activeTasks: [AppTask]
     let completedTasks: [AppTask]
     /// **The Mac's three controls, on the phone and iPad too** ([[T-8731]]). This was one
@@ -50,7 +48,9 @@ struct iOSTaskCollectionPage: View {
     @Binding var sortDirection: TaskSortDirection
     @Binding var groupingMode: TaskGroupingMode
     @Binding var showCompleted: Bool
-    // No `@Environment(\.dismiss)` (T-3155) — see `header` and `iOSCompactBackActionReader`.
+    // No `@Environment(\.dismiss)` (T-3155): this page has no back control of its own since
+    // T-11214 deleted its unreachable header; `iOSTasksPageView`'s header reads the action through
+    // `iOSCompactBackActionReader`.
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(RemindersManager.self) private var remindersManager
     /// Read for `TaskGroupingMode.byList`, whose group order is the sidebar's
@@ -120,10 +120,6 @@ struct iOSTaskCollectionPage: View {
     private func scrollBody(proxy: ScrollViewProxy) -> some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: metrics.stackSpacing) {
-                if showsHeader {
-                    header
-                }
-
                 optionsBar
 
                 iOSTaskCollectionSections(
@@ -206,33 +202,12 @@ struct iOSTaskCollectionPage: View {
         }
     }
 
-    /// **The header scrolls with the content, at both widths.** The `List` hosts pinned it — header,
-    /// divider, options bar, then a scrolling list — and that is what a header does when it is the
-    /// top of one *column* beside a sibling pane, which is why Today's two-pane task column keeps
-    /// its own. Neither of these is that: `iOSInboxView` documents itself as "one full-width
-    /// column", the whole page, exactly the page the phone draws. So the divider under it goes with
-    /// the pinning; there is nothing left for it to separate.
-    ///
-    /// No subtitle. A line under "All Tasks" saying it is where you review active work describes the
-    /// page you are already looking at. The count rides in the header at both widths, which is where
-    /// the metric strip it replaced used to put it.
-    ///
-    /// `onBack` **only** at compact width, following `iOSCompactTodayView`: the iPad shell hosts
-    /// this page with no `NavigationStack` around it, so `dismiss()` would have nothing to dismiss
-    /// and the chevron would be a control that looks wired and does nothing. The action is read by
-    /// `iOSCompactBackActionReader` rather than here, so a sheet presented over this page re-runs
-    /// the header row alone and not the page (T-3155).
-    private var header: some View {
-        iOSCompactBackActionReader { onBack in
-            iOSCompactPageHeader(
-                eyebrow: collection.eyebrow,
-                title: collection.title,
-                color: Theme.blue,
-                count: activeTasks.count,
-                onBack: onBack
-            )
-        }
-    }
+    // `header` was here: an `iOSCompactPageHeader` reading "CAPTURE / Inbox" or "TASKS / All Tasks"
+    // over `activeTasks.count`, behind `showsHeader`. `iOSTasksPageView` is the only host of
+    // `iOSInboxView` and `iOSAllTasksView`, and it heads the page itself with the scope switcher
+    // and `CadenceTaskQuerySupport.tasksPageHeaderCount`, so the branch was unreachable and its count — open rows only —
+    // disagreed with the header that is drawn. Deleted with the collection's `eyebrow` and
+    // the `showsHeader` flag (T-11214).
 
     /// Gated on `CadenceTaskSurfaceOptions`, which the compact views consulted and the two panels
     /// did not — the same one-sided gate Today closed. That file exists so an exception is written

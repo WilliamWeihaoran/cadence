@@ -20,22 +20,25 @@ import Testing
 struct CadenceIOSTaskPageDismissReadTests {
     private static let dismissRead = #"@Environment\(\\\.dismiss\)"#
 
+    /// How many back actions each page takes from the reader. `iOSTaskCollectionPage`'s is **0**
+    /// since T-11214 deleted its header, which was unreachable: `iOSTasksPageView` is its only host
+    /// and always turned it off, so the page's one back control is the host's.
     private static let pages = [
-        "Cadence/iOS/iOSTasksPageView.swift",
-        "Cadence/iOS/iOSTaskCollectionPage.swift",
+        "Cadence/iOS/iOSTasksPageView.swift": 1,
+        "Cadence/iOS/iOSTaskCollectionPage.swift": 0,
     ]
 
     @Test func neitherAllTasksPageReadsTheDismissActionInItsOwnBody() throws {
-        for path in Self.pages {
+        for (path, readers) in Self.pages {
             let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
             #expect(
                 CadenceSourceScan.matchCount(Self.dismissRead, in: source) == 0,
                 "\(path) reads \\.dismiss itself, so every sheet presented over it re-runs its body (T-3155)"
             )
-            // Non-vacuity: the page still has a back action, and it comes from the reader.
+            // Non-vacuity on the host: the page still has a back action, and it comes from the reader.
             #expect(
-                CadenceSourceScan.matchCount(#"iOSCompactBackActionReader\s*\{\s*onBack\s+in"#, in: source) == 1,
-                "\(path) no longer takes its compact back action from iOSCompactBackActionReader"
+                CadenceSourceScan.matchCount(#"iOSCompactBackActionReader\s*\{\s*onBack\s+in"#, in: source) == readers,
+                "\(path) takes its compact back action from iOSCompactBackActionReader a number of times other than \(readers)"
             )
         }
     }

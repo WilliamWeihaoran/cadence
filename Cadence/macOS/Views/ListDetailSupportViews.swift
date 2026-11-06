@@ -6,6 +6,11 @@ struct ListTasksGroup: Identifiable {
     let id: String
     let title: String
     let tasks: [AppTask]
+    /// The heading's colour, handed to `CadenceTaskGroupHeading` ([[T-11214]]). `ListTasksView`
+    /// passes it for every group it draws; `Theme.dim` is the answer for a group nobody coloured,
+    /// the same fallback `CadenceTaskQuerySupport.sectionAccent(named:configs:)` gives a name no
+    /// section config carries.
+    var tint: Color = Theme.dim
 }
 
 /// **[[T-5358]] — a row dropped into ANOTHER group on a list's Tasks tab joins that group.**
@@ -127,6 +132,7 @@ struct ListTasksGroupSectionView: View {
         Group {
             TaskListGroupHeader(
                 title: group.title,
+                tint: group.tint,
                 isCollapsed: isCollapsed,
                 overdueCount: overdueCount,
                 onToggle: onToggle
@@ -178,6 +184,8 @@ struct ListTasksCompletedSectionView: View {
         Group {
             TaskListGroupHeader(
                 title: "Completed",
+                // iOS's list Tasks tab heads the same section in the same green.
+                tint: Theme.green,
                 isCollapsed: isCollapsed,
                 onToggle: onToggle
             )
@@ -204,6 +212,18 @@ struct ListTasksCompletedSectionView: View {
 /// macOS's task-group header: the disclosure chevron, the group's name, and — when a group is
 /// late — the red flag.
 ///
+/// **The name is the shared `CadenceTaskGroupHeading` (T-11214).** It was a 14pt bold
+/// `Theme.text` title of its own, so the Mac headed every task group — Today, All Tasks, Inbox and
+/// a list's Tasks tab — in a different vocabulary from the iOS pages beside it, which draw the
+/// shared eyebrow tinted per group: "Tasks" blue, "Apple Reminders" purple, "Completed" green, a
+/// list or section in its own colour. No input or screen constraint separated the two (T-8201),
+/// and T-605's reason for keeping Today on this header — one desktop app, one heading — still
+/// holds, because every desktop group heading moved together. What stays here is the Mac's
+/// furniture around the shared row: the chevron and the click that folds the group (every group
+/// folds, decided for both platforms on T-11214; iOS still folds only Completed until T-12191),
+/// `leadingContent`, the overdue flag and the hairline. The tint colours the heading's text, never a bar, which is the line T-2084
+/// drew.
+///
 /// **The accent bar is gone, and the space it held is reclaimed (T-2084).** Every section on this
 /// page, on All Tasks and on Inbox opened with a 3×22pt rounded rectangle in the group's colour,
 /// and the owner's reading of the page was that *"these colors make the page very distracting"* —
@@ -229,6 +249,9 @@ struct ListTasksCompletedSectionView: View {
 /// neutral tally, and it hides itself at zero. The owner circled quantities, not alarms.
 struct TaskListGroupHeader<LeadingContent: View>: View {
     let title: String
+    /// The group's colour, which `CadenceTaskGroupHeading` draws the title in. Required, so every
+    /// call site says which colour its group is rather than inheriting a default.
+    let tint: Color
     let isCollapsed: Bool
     let overdueCount: Int?
     var isToggleEnabled: Bool = true
@@ -237,6 +260,7 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
 
     init(
         title: String,
+        tint: Color,
         isCollapsed: Bool,
         overdueCount: Int? = nil,
         isToggleEnabled: Bool = true,
@@ -244,6 +268,7 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
         @ViewBuilder leadingContent: @escaping () -> LeadingContent
     ) {
         self.title = title
+        self.tint = tint
         self.isCollapsed = isCollapsed
         self.overdueCount = overdueCount
         self.isToggleEnabled = isToggleEnabled
@@ -281,10 +306,7 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
 
             leadingContent()
 
-            Text(title)
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
+            CadenceTaskGroupHeading(title: title, tint: tint)
 
             Spacer(minLength: 12)
 
@@ -344,6 +366,7 @@ enum TaskListGroupHeaderAccessibility {
 extension TaskListGroupHeader where LeadingContent == EmptyView {
     init(
         title: String,
+        tint: Color,
         isCollapsed: Bool,
         overdueCount: Int? = nil,
         isToggleEnabled: Bool = true,
@@ -351,6 +374,7 @@ extension TaskListGroupHeader where LeadingContent == EmptyView {
     ) {
         self.init(
             title: title,
+            tint: tint,
             isCollapsed: isCollapsed,
             overdueCount: overdueCount,
             isToggleEnabled: isToggleEnabled,

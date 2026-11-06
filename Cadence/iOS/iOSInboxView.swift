@@ -15,10 +15,11 @@ import SwiftUI
 /// The type was called `iPadInboxView` for one release after that, and its own doc comment said the
 /// name was wrong. T-283 renamed it and its file: a name that claims a device is the thing that
 /// makes the next reader write a second copy for the other one.
+///
+/// **It draws no header of its own (T-11214).** Its one host is `iOSTasksPageView`, which heads
+/// the page with the `All | Inbox` switcher; the `showsCompactHeader` flag that host always turned
+/// off went with the header it gated.
 struct iOSInboxView: View {
-    /// Off when the Tasks tab hosts this as its Inbox segment — see
-    /// `iOSTodayView.showsCompactHeader`. Still on when Inbox is reached as a pushed screen.
-    var showsCompactHeader = true
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     /// **The Mac's three keys, not a second set** ([[T-8731]]). This was one
     /// `ios.inbox.sortMode`; the owner's 2026-10-31 decision under [[T-8201]] brought the Mac's
@@ -53,7 +54,6 @@ struct iOSInboxView: View {
     var body: some View {
         iOSTaskCollectionPage(
             collection: .inbox,
-            showsHeader: showsCompactHeader,
             activeTasks: inboxTasks,
             completedTasks: completedInboxTasks,
             sortField: $sortField,
@@ -65,8 +65,8 @@ struct iOSInboxView: View {
         // No seed: the Inbox is where a task goes when it has no list yet, so seeding one would
         // contradict the surface it was captured from.
         .iOSFloatingCreateTaskButton()
-        // The page heads itself with "CAPTURE / Inbox", so a nav title repeated the word one row
-        // higher. See `iOSHidesCompactNavigationBar()`.
+        // `iOSTasksPageView` heads the page with "TASKS / Inbox" and the scope switcher, so a nav
+        // title would repeat the word one row higher. See `iOSHidesCompactNavigationBar()`.
         .iOSHidesCompactNavigationBar()
     }
 }

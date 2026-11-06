@@ -30,13 +30,6 @@ nonisolated enum CadenceTaskCollection: String, CaseIterable, Sendable {
         }
     }
 
-    var eyebrow: String {
-        switch self {
-        case .allTasks: return "Tasks"
-        case .inbox: return "Capture"
-        }
-    }
-
     var title: String {
         switch self {
         case .allTasks: return "All Tasks"
@@ -44,16 +37,11 @@ nonisolated enum CadenceTaskCollection: String, CaseIterable, Sendable {
         }
     }
 
-    /// The header's identity tile.
-    var systemImage: String {
-        switch self {
-        case .allTasks: return "checklist"
-        case .inbox: return "tray.fill"
-        }
-    }
+    // `eyebrow` and `systemImage` were here: the page header's "Capture" / "Tasks" and its
+    // identity tile. Neither had an on-screen reader: the tile was already gone from the header, and
+    // the eyebrow's one reader was `iOSTaskCollectionPage`'s unreachable header (T-11214).
 
-    /// The empty state's glyph, which is the hollow twin of the header's — a page with nothing on
-    /// it should not draw the filled tray the header does.
+    /// The empty state's glyph: the hollow tray, not a filled one, on a page with nothing on it.
     var emptyIcon: String {
         switch self {
         case .allTasks: return "checklist"

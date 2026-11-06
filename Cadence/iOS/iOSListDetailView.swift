@@ -388,13 +388,9 @@ struct iOSListDetailView: View {
         )
     }
 
+    /// The shared rule, which the Mac's list Tasks tab reads too ([[T-11214]]).
     private func sectionColor(for name: String) -> Color {
-        guard let config = sectionConfigs.first(where: {
-            $0.name.caseInsensitiveCompare(name) == .orderedSame
-        }) else {
-            return Theme.dim
-        }
-        return config.isCompleted ? Theme.green : Color(hex: config.colorHex)
+        CadenceTaskQuerySupport.sectionAccent(named: name, configs: sectionConfigs)
     }
 
     /// **Finished work counts as content whether or not it is unfolded (T-2090).** This read

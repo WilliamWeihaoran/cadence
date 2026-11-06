@@ -51,38 +51,56 @@ struct ListTasksView: View {
 
     private var groupedActiveTasks: [ListTasksGroup] {
         if let frozenGroupedTasks = resolveFrozenTaskGroups(frozenGroupedTasks, from: tasks) {
+            // **The freeze holds rows, not colours (T-2084 took the snapshot's copy), so a frozen
+            // group takes its live group's tint (T-11214).** Read only while the pointer holds the
+            // freeze; `Theme.dim` for a group whose live twin emptied under it, the same answer
+            // `sectionAccent` gives a name nothing colours.
+            let liveTints = Dictionary(liveGroups.map { ($0.id, $0.tint) }, uniquingKeysWith: { first, _ in first })
             let frozen = frozenGroupedTasks.map { group in
-                ListTasksGroup(id: group.id, title: group.title, tasks: group.tasks)
+                ListTasksGroup(id: group.id, title: group.title, tasks: group.tasks, tint: liveTints[group.id] ?? Theme.dim)
             }
             guard groupingMode == .byList else { return frozen }
             return ListTasksSectionGroups.keepingEmptySections(frozen, live: liveSectionGroups)
         }
+        return liveGroups
+    }
 
+    /// The groups as the store has them now, each with the tint iOS heads the same group with
+    /// ([[T-11214]]): "Tasks" blue, the shared date and priority buckets' own accents, and a
+    /// section's configured colour.
+    private var liveGroups: [ListTasksGroup] {
         switch groupingMode {
         case .none:
             return [
-                ListTasksGroup(id: "all", title: "Tasks", tasks: activeTasks)
+                ListTasksGroup(id: "all", title: "Tasks", tasks: activeTasks, tint: Theme.blue)
             ]
         case .byDate:
             return CadenceTaskQuerySupport.dateDisplayGroups(from: activeTasks, todayKey: todayKey)
-                .map { ListTasksGroup(id: $0.id, title: $0.title, tasks: $0.tasks) }
+                .map { ListTasksGroup(id: $0.id, title: $0.title, tasks: $0.tasks, tint: $0.accent) }
         case .byList:
             return liveSectionGroups
         case .byPriority:
             return CadenceTaskQuerySupport.priorityDisplayGroups(from: activeTasks)
-                .map { ListTasksGroup(id: $0.id, title: $0.title, tasks: $0.tasks) }
+                .map { ListTasksGroup(id: $0.id, title: $0.title, tasks: $0.tasks, tint: $0.accent) }
         }
     }
 
     /// The By List groups as the store has them now ([[T-5832]]). An open task whose section
-    /// names no live column is drawn under Default, as on the list board ([[T-12121]]).
+    /// names no live column is drawn under Default, as on the list board ([[T-12121]]). Each takes
+    /// its section's colour from the rule iOS's Tasks tab reads ([[T-11214]]).
     private var liveSectionGroups: [ListTasksGroup] {
-        ListTasksSectionGroups.groups(
+        let configs = area?.sectionConfigs ?? project?.sectionConfigs ?? []
+        return ListTasksSectionGroups.groups(
             from: activeTasks,
             sectionNames: sectionNames,
             pageIsEmpty: activeTasks.isEmpty && doneTasks.isEmpty,
             filing: ListBoardCardFiling(configs: area?.sectionConfigs ?? project?.sectionConfigs ?? [])
         )
+        .map { group in
+            var tinted = group
+            tinted.tint = CadenceTaskQuerySupport.sectionAccent(named: group.title, configs: configs)
+            return tinted
+        }
     }
 
     var body: some View {

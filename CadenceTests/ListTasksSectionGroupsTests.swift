@@ -2,6 +2,7 @@
 #if os(macOS)
 import Foundation
 import SwiftData
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -141,8 +142,12 @@ struct ListTasksSectionGroupsTests {
     @Test func listTasksViewDrawsByListFromTheHelperOnBothPaths() throws {
         let source = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/Views/ListDetailComponents.swift")
         let grouped = try #require(CadenceSourceScan.declarationBody("private var groupedActiveTasks: [ListTasksGroup]", in: source))
-        #expect(grouped.contains("case .byList:\n            return liveSectionGroups"))
         #expect(grouped.contains("return ListTasksSectionGroups.keepingEmptySections(frozen, live: liveSectionGroups)"))
+        // T-11214 moved the live `switch` into `liveGroups` so the frozen path can read the live
+        // groups' tints; the live path is still the one return below it.
+        #expect(grouped.contains("return liveGroups"))
+        let liveGrouped = try #require(CadenceSourceScan.declarationBody("private var liveGroups: [ListTasksGroup]", in: source))
+        #expect(liveGrouped.contains("case .byList:\n            return liveSectionGroups"))
         let live = try #require(CadenceSourceScan.declarationBody("private var liveSectionGroups: [ListTasksGroup]", in: source))
         #expect(live.contains("pageIsEmpty: activeTasks.isEmpty && doneTasks.isEmpty"))
         // [[T-6201]]: the helper is the shared rule iOS reads, not a Mac-only copy of it.
@@ -175,6 +180,50 @@ struct ListTasksSectionGroupsTests {
         )
         // Not vacuous: the scan really is reading this view's body.
         #expect(body.contains("ListTasksGroupSectionView("))
+    }
+
+    /// **[[T-11214]] — a section's heading is the section's colour, on both platforms.** The rule
+    /// was `iOSListDetailView.sectionColor(for:)` alone while the Mac's headings drew no tint; the
+    /// Mac's list Tasks tab draws the shared `CadenceTaskGroupHeading` now and reads the same
+    /// function. Run here rather than pinned: it is a plain function of the configs.
+    @Test func aSectionHeadingIsItsSectionsColourGreenOnceCompletedAndDimWhenUnknown() {
+        let configs = [
+            TaskSectionConfig(name: "Documents", colorHex: "#FF3366"),
+            TaskSectionConfig(name: "Shipped", colorHex: "#3366FF", isCompleted: true),
+        ]
+        #expect(CadenceTaskQuerySupport.sectionAccent(named: "Documents", configs: configs) == Color(hex: "#FF3366"))
+        // The match is case-insensitive, as every board matches a section name.
+        #expect(CadenceTaskQuerySupport.sectionAccent(named: "documents", configs: configs) == Color(hex: "#FF3366"))
+        #expect(CadenceTaskQuerySupport.sectionAccent(named: "Shipped", configs: configs) == Theme.green)
+        #expect(CadenceTaskQuerySupport.sectionAccent(named: "Nowhere", configs: configs) == Theme.dim)
+        // Non-vacuity: the three answers really are three colours.
+        #expect(Color(hex: "#FF3366") != Theme.green)
+        #expect(Color(hex: "#FF3366") != Theme.dim)
+    }
+
+    /// The Mac's list Tasks tab hands every group the colour iOS heads it with ([[T-11214]]): "Tasks"
+    /// blue, the shared date and priority buckets' own accents, a section's configured colour, and
+    /// green for Completed. A source pin: `liveGroups` is a `private` member of a SwiftUI view.
+    @Test func theListTasksTabTintsEveryGroupAsIOSDoes() throws {
+        let source = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/Views/ListDetailComponents.swift")
+        let live = try #require(CadenceSourceScan.declarationBody("private var liveGroups: [ListTasksGroup]", in: source))
+        #expect(live.contains(#"ListTasksGroup(id: "all", title: "Tasks", tasks: activeTasks, tint: Theme.blue)"#))
+        #expect(CadenceSourceScan.matchCount(#"tint: \$0\.accent\)"#, in: live) == 2, "the date and priority buckets")
+        let sections = try #require(CadenceSourceScan.declarationBody("private var liveSectionGroups: [ListTasksGroup]", in: source))
+        #expect(sections.contains("CadenceTaskQuerySupport.sectionAccent(named: group.title, configs: configs)"))
+        let grouped = try #require(CadenceSourceScan.declarationBody("private var groupedActiveTasks: [ListTasksGroup]", in: source))
+        #expect(grouped.contains("tint: liveTints[group.id] ?? Theme.dim"), "a frozen group keeps its live group's tint")
+
+        let support = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/Views/ListDetailSupportViews.swift")
+        let section = try #require(CadenceSourceScan.declarationBody("struct ListTasksGroupSectionView: View", in: support))
+        #expect(section.contains("tint: group.tint,"))
+        let completed = try #require(CadenceSourceScan.declarationBody("struct ListTasksCompletedSectionView: View", in: support))
+        #expect(completed.contains("tint: Theme.green,"))
+
+        // iOS's half, so the two cannot drift apart again: the same rule, the same green.
+        let page = try CadenceSourceScan.strippedSourceReader()("Cadence/iOS/iOSListDetailView.swift")
+        #expect(page.contains("CadenceTaskQuerySupport.sectionAccent(named: name, configs: sectionConfigs)"))
+        #expect(page.contains(#"title: "Completed",\#n                    tint: Theme.green,"#))
     }
 }
 
