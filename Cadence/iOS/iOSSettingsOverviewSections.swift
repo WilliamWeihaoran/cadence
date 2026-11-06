@@ -243,9 +243,9 @@ struct iOSNavigationSettingsSection: View {
     var body: some View {
         iOSEditorSection(title: "Defaults") {
             calendarViewRow
-            iOSEditorDivider()
+            rowDivider
             timelineDensityRow
-            iOSEditorDivider()
+            rowDivider
             // Last, not first: the two above are one run about the calendar, and this one is
             // about lists. Splitting it into its own group — macOS files it under "List Opening" —
             // would put a one-row card under a heading on a screen where "Defaults" already says
@@ -261,6 +261,18 @@ struct iOSNavigationSettingsSection: View {
                 listDetailDefaultPage = selectedPage.rawValue
             }
         }
+    }
+
+    /// **[[T-12262]]: the settings hairline, starting under the row's label.** This card was the
+    /// one still dividing with `iOSEditorDivider()`, the task editor's full-width line, so its
+    /// hairlines ran ~32pt left of the titles, across the glyph column. Its rows are led by
+    /// `CadenceInlineFieldLabel`'s bare glyph rather than an `iOSIconTile`, so the divider reads
+    /// that label's own slot and gap, which scale with the text size exactly as the label does.
+    private var rowDivider: some View {
+        iOSSettingsRowDivider(
+            leadingSlot: { CadenceInlineFieldLabel.glyphFrame(at: $0, scaling: $1) },
+            labelSpacing: CadenceInlineFieldLabel.glyphLabelSpacing
+        )
     }
 
     /// One row for the Calendar page's one three-way choice ([[T-7074]]). It was two -- "Calendar

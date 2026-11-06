@@ -108,12 +108,17 @@ struct CadenceIOSSettingsRowDividerTests {
         let components = "Cadence/iOS/iOSSettingsComponents.swift"
         let divider = try body("struct iOSSettingsRowDivider: View", in: components)
         #expect(divider.contains(
-            "iOSRowDivider(leadingInset:iOSSettingsMetrics.rowTextInset(after:leadingSlot(dynamicTypeSize,scaling)))"
+            "iOSRowDivider(leadingInset:iOSSettingsMetrics.rowTextInset(after:leadingSlot(dynamicTypeSize,scaling),spacing:labelSpacing))"
         ))
         #expect(divider.contains("iOSSettingsMetrics.tileSlot(glyph:tileGlyph,at:$0,scaling:$1)"))
+        // A tile row's gap is the tile spacing, whichever initializer built the divider.
+        #expect(divider.contains("labelSpacing:CGFloat=iOSSettingsMetrics.glyphLabelSpacing"))
+        #expect(divider.contains("self.labelSpacing=iOSSettingsMetrics.glyphLabelSpacing"))
 
         let metrics = try body("enum iOSSettingsMetrics", in: components)
-        #expect(metrics.contains("staticfuncrowTextInset(afterleadingSlot:CGFloat)->CGFloat{leadingSlot+glyphLabelSpacing}"))
+        #expect(metrics.contains(
+            "staticfuncrowTextInset(afterleadingSlot:CGFloat,spacing:CGFloat=glyphLabelSpacing)->CGFloat{leadingSlot+spacing}"
+        ))
         #expect(metrics.contains(
             "iOSTaskPageTypographyMetrics.glyphFrame(glyphSlot,glyph:glyph,at:size,scaling:scaling)"
         ), "the tile slot no longer evaluates the tile's own expression")
@@ -128,6 +133,40 @@ struct CadenceIOSSettingsRowDividerTests {
         let frame = "CadenceSettingsTypographyLayout.glyphFrame(iOSSettingsMetrics.glyphSlot,glyph:15,role:.rowTitle,"
         #expect(side.contains(frame + "at:size,scaling:scaling)"))
         #expect(icon.contains(frame + "at:dynamicTypeSize,scaling:scaling)"), "the context icon is framed differently")
+    }
+
+    /// **[[T-12262]].** Settings > Navigation's Defaults card divided its rows with
+    /// `iOSEditorDivider()` -- the task editor's full-width line -- so its hairlines ran ~32pt left
+    /// of the titles while every other card's started at them. Its rows are led by
+    /// `CadenceInlineFieldLabel`'s bare glyph, not a tile, so the divider reads THAT label's slot
+    /// and gap through the label's own exposed metrics, which the label's body draws with.
+    @Test func theNavigationDefaultsCardStartsItsHairlinesAtItsFieldLabels() throws {
+        let path = "Cadence/iOS/iOSSettingsOverviewSections.swift"
+        let card = try body("struct iOSNavigationSettingsSection: View", in: path)
+        let defaults = try #require(card.range(of: "iOSEditorSection(title:\"Defaults\"){"),
+                                    "the Defaults card is not where the scan looks")
+        let cardBody = String(card[defaults.upperBound...].prefix(400))
+        #expect(!cardBody.contains("iOSEditorDivider()"), "the Defaults card divides with the editor's full-width line")
+        #expect(CadenceSourceScan.matchCount("rowDivider", in: String(cardBody.prefix(while: { $0 != "}" }))) == 2,
+                "the Defaults card's two hairlines are not the settings divider")
+        #expect(card.contains(
+            "privatevarrowDivider:someView{iOSSettingsRowDivider(leadingSlot:{CadenceInlineFieldLabel.glyphFrame(at:$0,scaling:$1)},labelSpacing:CadenceInlineFieldLabel.glyphLabelSpacing)}"
+        ), "the Defaults divider does not read the field label's own slot and gap")
+        // The rows it divides are led by that label.
+        #expect(CadenceSourceScan.matchCount("iOSEditorFieldRow\\(label:", in: card) >= 3)
+
+        // The label draws with the same two figures it exposes.
+        let label = try body("struct CadenceInlineFieldLabel: View", in: "Cadence/Shared/Components/CadenceFieldRows.swift")
+        #expect(label.contains("HStack(spacing:Self.glyphLabelSpacing)"))
+        #expect(label.contains("width:Self.glyphFrame(at:dynamicTypeSize,scaling:scaling)"))
+
+        // Non-vacuity: the label's slot is a function of the text size, so no constant inset
+        // could follow it.
+        let slot = { (size: DynamicTypeSize) in CadenceInlineFieldLabel.glyphFrame(at: size, scaling: .enabled) }
+        #expect(slot(.large) == CadenceSettingsRowMetrics.glyphSlot)
+        #expect(slot(.xxLarge) > slot(.large))
+        #expect(CadenceInlineFieldLabel.glyphFrame(at: .xxLarge, scaling: .fixed) == CadenceSettingsRowMetrics.glyphSlot)
+        #expect(CadenceInlineFieldLabel.glyphLabelSpacing == CadenceSettingsRowMetrics.glyphLabelSpacing)
     }
 
     /// Non-vacuity: away from `.large` a scaled slot leaves the fixed `glyphSlot` for every glyph

@@ -352,13 +352,24 @@ struct CadenceInlineFieldLabel: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
 
+    /// The width of the glyph's leading slot at this text size, and the gap from it to the label.
+    /// **[[T-12262]]: exposed so a hairline under these rows can start where the label does**
+    /// (`iOSSettingsRowDivider(leadingSlot:labelSpacing:)`) rather than at a constant, which would
+    /// re-break [[T-11541]] at every text size but one. `body` reads the same two, so what a
+    /// divider assumes and what is drawn cannot drift apart.
+    static func glyphFrame(at dynamicTypeSize: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        CadenceSettingsRowMetrics.glyphSlot(at: dynamicTypeSize, scaling: scaling)
+    }
+
+    static var glyphLabelSpacing: CGFloat { CadenceSettingsRowMetrics.glyphLabelSpacing }
+
     var body: some View {
-        HStack(spacing: CadenceSettingsRowMetrics.glyphLabelSpacing) {
+        HStack(spacing: Self.glyphLabelSpacing) {
             Image(systemName: systemImage)
                 .cadenceFont(.fieldLabel)
                 .foregroundStyle(color)
                 .frame(
-                    width: CadenceSettingsRowMetrics.glyphSlot(at: dynamicTypeSize, scaling: scaling),
+                    width: Self.glyphFrame(at: dynamicTypeSize, scaling: scaling),
                     alignment: .leading
                 )
 

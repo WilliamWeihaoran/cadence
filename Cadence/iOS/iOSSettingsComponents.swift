@@ -137,8 +137,11 @@ enum iOSSettingsMetrics {
     /// with Dynamic Type, so the two agreed only at `.large` -- the hairline started about 1pt
     /// right of the text at Medium and fell behind it at larger sizes. `iOSSettingsRowDivider`
     /// is the one caller.
-    static func rowTextInset(after leadingSlot: CGFloat) -> CGFloat {
-        leadingSlot + glyphLabelSpacing
+    ///
+    /// `spacing` is the row's own gap from that slot to its text: `glyphLabelSpacing` for the tile
+    /// rows, the bare-glyph field label's narrower one for the Navigation Defaults card ([[T-12262]]).
+    static func rowTextInset(after leadingSlot: CGFloat, spacing: CGFloat = glyphLabelSpacing) -> CGFloat {
+        leadingSlot + spacing
     }
 
     /// The side of an `iOSIconTile(size: glyphSlot, iconSize: glyph)` at this text size -- the
@@ -158,18 +161,29 @@ struct iOSSettingsRowDivider: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
     let leadingSlot: @MainActor (DynamicTypeSize, CadenceTypographyScaling) -> CGFloat
+    /// The row's gap from its leading slot to its text. A tile row's by default; rows led by
+    /// `CadenceInlineFieldLabel` pass that label's own ([[T-12262]]).
+    let labelSpacing: CGFloat
 
-    init(leadingSlot: @escaping @MainActor (DynamicTypeSize, CadenceTypographyScaling) -> CGFloat) {
+    init(
+        leadingSlot: @escaping @MainActor (DynamicTypeSize, CadenceTypographyScaling) -> CGFloat,
+        labelSpacing: CGFloat = iOSSettingsMetrics.glyphLabelSpacing
+    ) {
         self.leadingSlot = leadingSlot
+        self.labelSpacing = labelSpacing
     }
 
     /// Rows led by `iOSIconTile(size: iOSSettingsMetrics.glyphSlot, iconSize: tileGlyph)`.
     init(tileGlyph: CGFloat) {
         self.leadingSlot = { iOSSettingsMetrics.tileSlot(glyph: tileGlyph, at: $0, scaling: $1) }
+        self.labelSpacing = iOSSettingsMetrics.glyphLabelSpacing
     }
 
     var body: some View {
-        iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset(after: leadingSlot(dynamicTypeSize, scaling)))
+        iOSRowDivider(leadingInset: iOSSettingsMetrics.rowTextInset(
+            after: leadingSlot(dynamicTypeSize, scaling),
+            spacing: labelSpacing
+        ))
     }
 }
 
