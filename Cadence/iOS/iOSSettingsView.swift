@@ -305,6 +305,9 @@ struct iOSSettingsView: View {
             // back from one; both belong above the control that ends it.
             iOSDataExportSettingsSection()
             iOSArchiveImportSettingsSection()
+            // [[T-6481]]: in the Mac's order — after the import that most often makes a duplicate,
+            // above the reset.
+            iOSDuplicateMergeSettingsSection()
             iOSDataResetSettingsSection(onDidReset: { dataResetGeneration &+= 1 })
 
             // Local store backups and the staged restore (T-1477). Below the archive, as on the

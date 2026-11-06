@@ -84,6 +84,16 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
     }
 }
 
+extension DataIntegrityRepairReport {
+    /// [[T-6481]]: every duplicate this repair folded or removed, the one number the
+    /// user-invoked merge reports. The `moved*` counters are not in it — they count rows re-filed
+    /// *because* a container merged, not duplicates — and nor are the two field-edit passes.
+    nonisolated var duplicatesMerged: Int {
+        duplicateContextsMerged + duplicateAreasMerged + duplicateProjectsMerged + duplicateNotesMerged +
+            duplicateTasksMerged + duplicateHabitCompletionsRemoved + duplicateRecurrenceOccurrencesRemoved
+    }
+}
+
 /// **In an extension, so the memberwise initializer survives.** An `init` in the struct body would
 /// suppress it, and both `repairIfNeeded` and `DataIntegrityRepairServiceTests` build the report
 /// memberwise from its head fields and then assign counters.
@@ -246,6 +256,13 @@ nonisolated enum DataIntegrityRepairDeletionPolicy: Equatable {
     /// Run only the passes that edit fields on rows the store already holds, and leave every
     /// duplicate exactly where it is. Strictly less repair, never more.
     case deferDuplicateMerges
+    /// [[T-6481]]: everything `.mergeDuplicates` does, **and** fold a same-id `AppTask` pair that no
+    /// rule tells apart. Reached only from `DataIntegrityRepairService.mergeDuplicatesOnRequest`,
+    /// the Settings > Data Safety action a person invokes on one device: the automatic passes skip
+    /// a full tie because two devices guessing would each delete the copy the other kept, and a
+    /// person pressing the button on one device is the one decider that cannot disagree with
+    /// itself. The deletion syncs to every other device as an ordinary delete.
+    case mergeDuplicatesDecidingTies
 }
 
 nonisolated enum DataIntegrityRepairService {
@@ -405,6 +422,67 @@ nonisolated enum DataIntegrityRepairService {
         }
     }
 
+    /// **[[T-6481]]: the merge a person asks for, from Settings > Data Safety on either platform.**
+    ///
+    /// The owner's shape (2026-10-26): a user-invoked data action where one device decides, and no
+    /// schema change. It runs every pass the launch runs, under `.mergeDuplicatesDecidingTies`, so
+    /// it also folds the same-id task pairs equal in every field that the automatic passes leave
+    /// alone, and it does the merges a mirroring launch deferred ([[T-6482]]) without waiting for
+    /// the next import.
+    ///
+    /// **It commits through `CadencePendingChangePersistence.commitDelete`, not `repairIfNeeded`'s
+    /// raw `save()`**, because a person is told the result: a refused commit rolls the context back
+    /// so nothing on screen claims a merge the store did not take, and the error reaches the card.
+    /// A run that found nothing takes **no** commit at all, so unrelated pending edits stay pending
+    /// — the same rule `PersistenceController.runDeferredDuplicateMerges` keeps.
+    ///
+    /// `lastReport()` is written only after the commit, so a refused merge is recorded as a
+    /// failure rather than as the success the pending changes described.
+    ///
+    /// **Whether it may run at all on a mirroring store is the caller's question**
+    /// (`CadenceDuplicateMergePresentation.readiness`): a store whose first import of this launch
+    /// has not finished could still be bringing a child of the copy, which would arrive unparented.
+    @discardableResult
+    static func mergeDuplicatesOnRequest(
+        in context: ModelContext,
+        removingForkedOccurrences remove: CadenceForkedOccurrenceRemoval? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() },
+        refusing: Bool = CadencePendingChangePersistence.refusesCommitsForUITest
+    ) throws -> DataIntegrityRepairReport {
+        var report = DataIntegrityRepairReport(
+            source: "user-merge-duplicates",
+            startedAt: Date(),
+            finishedAt: Date(),
+            success: false
+        )
+        do {
+            // `building:` rolls back a repair that throws part-way; the commit rolls back a refused
+            // save. An armed UI-test refusal refuses even an empty run, as it refuses every commit.
+            try CadencePendingChangePersistence.commitDelete(
+                in: context,
+                commit: { modelContext in
+                    // Nothing found, nothing committed: see the doc comment.
+                    guard report.changed else { return }
+                    try commit(modelContext)
+                },
+                refusing: refusing
+            ) {
+                try repair(in: context, remove: remove, deleting: .mergeDuplicatesDecidingTies, report: &report)
+            }
+        } catch {
+            report.finishedAt = Date()
+            report.errorMessage = error.localizedDescription
+            record(report)
+            logger.error("User-requested duplicate merge failed: \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
+        report.finishedAt = Date()
+        report.success = true
+        record(report)
+        log(report)
+        return report
+    }
+
     static func lastReport() -> DataIntegrityRepairReport? {
         guard let data = CadenceDefaults.store.data(forKey: lastReportKey) else { return nil }
         return try? JSONDecoder().decode(DataIntegrityRepairReport.self, from: data)
@@ -441,7 +519,7 @@ nonisolated enum DataIntegrityRepairService {
         switch policy {
         case .deferDuplicateMerges:
             report.duplicateMergesDeferred = true
-        case .mergeDuplicates:
+        case .mergeDuplicates, .mergeDuplicatesDecidingTies:
             let activeContexts = store.contexts.filter { !$0.isArchived && !normalizedName($0).isEmpty }
             let duplicateContextGroups = Dictionary(grouping: activeContexts) { normalizedName($0) }
                 .values
@@ -469,7 +547,11 @@ nonisolated enum DataIntegrityRepairService {
             // it now lives; before the forked-occurrence collapse, which groups by series slot and
             // would otherwise see a same-id pair as a fork and cancel the survivor's reminders by
             // its id.
-            try repairDuplicateTasks(modelContext: context, report: &report)
+            try repairDuplicateTasks(
+                modelContext: context,
+                decidingTies: policy == .mergeDuplicatesDecidingTies,
+                report: &report
+            )
             try repairDuplicateNotes(in: store, modelContext: context, state: &state, report: &report)
             try repairDuplicateRecurrenceOccurrences(
                 modelContext: context,
@@ -730,8 +812,14 @@ nonisolated enum DataIntegrityRepairService {
     /// the id alone and `taskIdentitiesScanned` counts it, apart from `taskRowsFetched`.
     ///
     /// Deferred commit: `repairIfNeeded` saves once, after every pass, when anything changed.
+    ///
+    /// `decidingTies` is [[T-6481]]'s user-invoked action and nothing else: there, rule 4 keeps
+    /// whichever row ranks first instead of leaving the group, because the rows are equal in every
+    /// scalar (so no field is lost by the choice) and every child of the copy is re-pointed to the
+    /// survivor (so no subtask or focus session is either).
     private static func repairDuplicateTasks(
         modelContext: ModelContext,
+        decidingTies: Bool,
         report: inout DataIntegrityRepairReport
     ) throws {
         var descriptor = FetchDescriptor<AppTask>()
@@ -741,7 +829,7 @@ nonisolated enum DataIntegrityRepairService {
 
         let groups = Dictionary(grouping: scanned, by: \.id).values.filter { $0.count > 1 }
         for group in groups {
-            guard let survivor = preferredDuplicateTask(among: group) else {
+            guard let survivor = preferredDuplicateTask(among: group, decidingTies: decidingTies) else {
                 logger.info("Left \(group.count, privacy: .public) same-id tasks unmerged: no field tells them apart")
                 continue
             }
@@ -752,12 +840,13 @@ nonisolated enum DataIntegrityRepairService {
         }
     }
 
-    /// The row a same-id group keeps, or `nil` when no rule separates the best two. See
-    /// `repairDuplicateTasks` for why the order is what it is.
-    private static func preferredDuplicateTask(among group: [AppTask]) -> AppTask? {
+    /// The row a same-id group keeps, or `nil` when no rule separates the best two — unless the
+    /// person asked for the merge on this device ([[T-6481]]), when the first-ranked row is kept.
+    /// See `repairDuplicateTasks` for why the order is what it is.
+    private static func preferredDuplicateTask(among group: [AppTask], decidingTies: Bool) -> AppTask? {
         let ranked = group.sorted(by: taskRanksAbove)
         guard let best = ranked.first else { return nil }
-        if ranked.count > 1, !taskRanksAbove(best, ranked[1]) { return nil }
+        if !decidingTies, ranked.count > 1, !taskRanksAbove(best, ranked[1]) { return nil }
         return best
     }
 

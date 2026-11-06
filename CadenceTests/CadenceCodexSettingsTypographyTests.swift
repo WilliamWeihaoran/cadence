@@ -5,8 +5,9 @@ import Testing
 struct CadenceCodexSettingsTypographyTests {
     @Test func settingsTextUsesRolesAcrossEveryCategory() throws {
         let files = try CadenceSourceScan.swiftFiles(under: "Cadence/iOS").filter { $0.contains("Settings") }
-        // 17 since [[T-8736]] added `iOSAccountSettingsSection.swift`.
-        #expect(files.count == 17)
+        // 18 since [[T-6481]] added `iOSDuplicateMergeSettingsSection.swift` (17 since [[T-8736]]
+        // added `iOSAccountSettingsSection.swift`).
+        #expect(files.count == 18)
         let instrument = try CadenceScanInstrument(
             "settings numeric fonts",
             fires: "Text(title).font(.system(size: 12))",

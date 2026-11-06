@@ -58,6 +58,9 @@ struct SettingsDataSafetySection: View {
             // deliberately: those copies live inside the container and die with the app, so the
             // archive is the route that answers "I lost the device", and it reads first.
             SettingsArchiveImportCard()
+            // [[T-6481]]: directly after the import, the likeliest producer of a duplicate (the
+            // same archive read in on two devices), and above the reset, which ends everything.
+            SettingsDuplicateMergeCard()
             SettingsDataResetCard(
                 statusMessage: statusMessage,
                 onDeleteData: { isConfirmingDataDelete = true }

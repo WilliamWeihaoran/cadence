@@ -479,6 +479,9 @@ struct CadenceTagChipScaleTests {
             "Cadence/iOS/iOSCalendarChromeViews.swift",
             "Cadence/iOS/iOSCalendarSettingsSection.swift",
             "Cadence/iOS/iOSDataExportSettingsSection.swift",
+            // [[T-6481]]: Merge Duplicates on Settings → Data Safety draws an `iOSIconTile` and a
+            // compact `iOSActionButton`. This section inherits the declared Settings workflow scope.
+            "Cadence/iOS/iOSDuplicateMergeSettingsSection.swift",
             "Cadence/iOS/iOSFeatureComponents.swift",
             // [[T-8732]]: the iOS Log Session form's Discard and Log are the compact
             // `iOSActionButton` pair macOS's popover footer draws. The sheet declares no scope of
