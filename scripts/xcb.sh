@@ -1694,9 +1694,18 @@ automation_prompt_refusal() {
   say "   While it stands NO macOS test run works, the UNIT suite included: testmanagerd sits in one"
   say "   synchronous LAContext.evaluatePolicy and every run behind it dies on a fixed 445s timer."
   say "   T-2067 measured 3h11m of host and seven dead runs from exactly one of these."
-  say "   ONLY THE OWNER CAN CLEAR IT, at the keyboard: answer the Touch ID / password prompt (it may"
-  say "   be behind other windows, or already dismissed -- then re-run an ATTENDED UI run to raise it"
-  say "   again). The grant is PER-SESSION, so this can recur on the next cold UI run."
+  if [[ -n "$live_pid" ]]; then
+    say "   ONLY THE OWNER CAN CLEAR IT. FIRST ask the owner to restart testmanagerd (pid $live_pid) or"
+    say "   reboot -- the OWNER's call, never an agent's. T-11941 measured this exact reading with NO"
+    say "   prompt on screen at all (a dismissed prompt logs no grant), so there may be nothing to"
+    say "   answer; the owner's reboot is what cleared it."
+    say "   SECOND, if a prompt IS showing, answer the Touch ID / password prompt (it may be behind other"
+    say "   windows). The grant is PER-SESSION, so this can recur on the next cold UI run."
+  else
+    say "   ONLY THE OWNER CAN CLEAR IT, at the keyboard: answer the Touch ID / password prompt (it may"
+    say "   be behind other windows, or already dismissed -- then re-run an ATTENDED UI run to raise it"
+    say "   again). The grant is PER-SESSION, so this can recur on the next cold UI run."
+  fi
   say "   Do NOT run \`sudo DevToolsSecurity -enable\`, kill testmanagerd/coreautha, or touch the"
   say "   authorization database -- T-1742 and T-2049 are what that cost."
   say "   CADENCE_ALLOW_AUTOMATION_PROMPT=1 exists to TEST this guard, not to get a run past it."
@@ -3887,6 +3896,8 @@ selftest_only_testing() {
   run_autom_live "4100 51557" "$ws/autom-request-after-grants.log"
   check "PIN (T-11701): an unmatched request from the STILL-LIVE testmanagerd refuses with NO hanging session" \
     $( (( arc2 == AUTOMATION_PROMPT_EXIT )) && [[ "$aout2" == *"AUTOMATION-PROMPT-OUTSTANDING (T-2070)"* && "$aout2" == *"pid 51557, STILL LIVE"* && "$aout2" == *"hanging test sessions: 0"* && "$aout2" == *"is STILL the live daemon"* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
+  check "PIN (T-11941): that refusal asks for a testmanagerd restart BEFORE it asks for a prompt to be answered" \
+    $( [[ "${aout2%%answer the Touch ID*}" == *"FIRST ask the owner to restart testmanagerd (pid 51557)"* && "$aout2" == *"answer the Touch ID"* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
   run_autom_live "60001" "$ws/autom-request-after-grants.log"
   check "CONTROL (T-11701): the SAME request after its daemon has gone (another one is live) only NOTES it (exit 0)" \
     $( (( arc2 == 0 )) && [[ "$aout2" == *"AUTOMATION-PROMPT-UNMATCHED (T-2070)"* && "$aout2" == *"no longer running"* && "$aout2" != *REFUSING* ]] && print 1 || print 0 ) "exit $arc2: $aout2"
