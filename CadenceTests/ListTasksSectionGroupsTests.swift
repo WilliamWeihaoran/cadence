@@ -42,7 +42,8 @@ struct ListTasksSectionGroupsTests {
         let groups = ListTasksSectionGroups.groups(
             from: tasks,
             sectionNames: project.sectionNames,
-            pageIsEmpty: false
+            pageIsEmpty: false,
+            filing: nil
         )
         #expect(groups.map(\.title) == project.sectionNames)
         let later = try #require(groups.first { $0.title == "Later" })
@@ -60,7 +61,8 @@ struct ListTasksSectionGroupsTests {
         let groups = ListTasksSectionGroups.groups(
             from: [],
             sectionNames: [TaskSectionDefaults.defaultName, "Documents", "Later"],
-            pageIsEmpty: true
+            pageIsEmpty: true,
+            filing: nil
         )
         #expect(groups.map(\.title) == ["Documents", "Later"])
         #expect(groups.allSatisfy { $0.tasks.isEmpty })
@@ -69,7 +71,8 @@ struct ListTasksSectionGroupsTests {
         let fresh = ListTasksSectionGroups.groups(
             from: [],
             sectionNames: [TaskSectionDefaults.defaultName],
-            pageIsEmpty: true
+            pageIsEmpty: true,
+            filing: nil
         )
         #expect(fresh.isEmpty)
 
@@ -80,13 +83,15 @@ struct ListTasksSectionGroupsTests {
         let populated = ListTasksSectionGroups.groups(
             from: [spec],
             sectionNames: ["default", "Documents", "Later"],
-            pageIsEmpty: false
+            pageIsEmpty: false,
+            filing: nil
         )
         #expect(populated.map(\.title) == ["default", "Documents", "Later"])
         let emptyDefault = CadenceTaskQuerySupport.listSectionGroups(
             from: [],
             sectionNames: ["DEFAULT", "Later"],
-            pageIsEmpty: true
+            pageIsEmpty: true,
+            filing: nil
         )
         #expect(emptyDefault.map(\.title) == ["Later"])
     }

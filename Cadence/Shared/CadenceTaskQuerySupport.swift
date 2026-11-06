@@ -321,12 +321,25 @@ enum CadenceTaskQuerySupport {
     /// brand-new list still shows its empty state and nothing else, and the headings that do
     /// appear under it are the ones the user created. On a page with any task Default is drawn
     /// as before — it is where a task with no section lands.
+    ///
+    /// **`filing` is the live boards' orphan rule, read here too ([[T-12121]]).** `sectionNames` is
+    /// the list's LIVE columns, so a task whose section names none of them — an archived column's
+    /// reopened card, or a column deleted on another device — matched no heading: invisible on the
+    /// Mac, while iOS appended a heading for it and brought the archived column back. Both pass
+    /// `ListBoardCardFiling(configs:)` and the task is drawn under Default, as on both boards
+    /// ([[T-11222]] (b)). Required, so a new caller decides rather than silently dropping the task.
     static func listSectionGroups(
         from activeTasks: [AppTask],
         sectionNames: [String],
-        pageIsEmpty: Bool
+        pageIsEmpty: Bool,
+        filing: ListBoardCardFiling?
     ) -> [CadenceTaskDisplayGroup] {
-        let groups = sectionGroups(from: activeTasks, sectionNames: sectionNames, includingEmpty: true)
+        let groups = sectionGroups(
+            from: activeTasks,
+            sectionNames: sectionNames,
+            includingEmpty: true,
+            filing: filing
+        )
         guard pageIsEmpty else { return groups }
         return groups.filter {
             $0.title.caseInsensitiveCompare(TaskSectionDefaults.defaultName) != .orderedSame

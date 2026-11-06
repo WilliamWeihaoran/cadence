@@ -99,6 +99,99 @@ struct CadenceListBoardOrphanCardTests {
         #expect(byColumn.values.flatMap { $0 }.contains { $0.id == woundDown.id } == false)
     }
 
+    // MARK: - The list's Tasks tab (By List) files the same way ([[T-12121]])
+
+    /// The shared rule both Tasks tabs read: live headings only, the orphan under Default, and
+    /// nothing written to it.
+    @Test func theTasksTabDrawsNoOrphanHeadingAndFilesTheTaskUnderDefault() throws {
+        let configs = configs()
+        let live = ListDetailKanbanBoard.visibleSectionConfigs(configs, showArchived: false).map(\.name)
+        let orphan = task(Self.doing)
+        let gone = task(Self.gone)
+        let next = task("Next")
+
+        let groups = CadenceTaskQuerySupport.listSectionGroups(
+            from: [orphan, gone, next],
+            sectionNames: live,
+            pageIsEmpty: false,
+            filing: ListBoardCardFiling(configs: configs)
+        )
+        #expect(groups.map(\.title) == [TaskSectionDefaults.defaultName, "Next"])
+        #expect(groups[0].tasks.map(\.id) == [orphan.id, gone.id])
+        #expect(groups[1].tasks.map(\.id) == [next.id])
+        #expect(groups.reduce(0) { $0 + $1.tasks.count } == 3, "every open task is drawn exactly once")
+        #expect(orphan.sectionName == Self.doing)
+        #expect(gone.sectionName == Self.gone)
+
+        // Failing-first: without the filing the orphans sit under no heading.
+        let unfiled = CadenceTaskQuerySupport.listSectionGroups(
+            from: [orphan, gone, next], sectionNames: live, pageIsEmpty: false, filing: nil
+        )
+        #expect(unfiled.reduce(0) { $0 + $1.tasks.count } == 1)
+    }
+
+    #if os(macOS)
+    /// End to end on an in-memory store, through the Mac tab's own helper: archive a column with
+    /// open work, reopen its card, and the Tasks tab draws it under Default.
+    @Test func aTaskReopenedInAnArchivedColumnIsDrawnUnderDefaultOnTheMacTasksTab() throws {
+        let context = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let project = Project(name: "Site")
+        project.sectionNames = [TaskSectionDefaults.defaultName, "Next", Self.doing]
+        let card = AppTask(title: "Card")
+        card.project = project
+        card.sectionName = Self.doing
+        context.insert(project)
+        context.insert(card)
+        try context.save()
+
+        let doingConfig = try #require(project.sectionConfigs.first { $0.name == Self.doing })
+        project.sectionConfigs = project.sectionConfigs.map { config in
+            var config = config
+            if config.uuid == doingConfig.uuid { config.isArchived = true }
+            return config
+        }
+        TaskContainerLifecycleService.cancelRemainingActiveTasks(in: doingConfig, area: nil, project: project, in: context)
+        try context.save()
+        try CadenceTaskMutationSupport.toggleCompletion(
+            card,
+            modelContext: context,
+            widgetEffects: CadenceTaskReopenWidgetEffects { _ in }
+        )
+        #expect(card.status == .todo)
+        #expect(card.sectionName == Self.doing)
+        #expect(!project.sectionNames.contains(Self.doing))
+
+        let groups = ListTasksSectionGroups.groups(
+            from: [card],
+            sectionNames: project.sectionNames,
+            pageIsEmpty: false,
+            filing: ListBoardCardFiling(configs: project.sectionConfigs)
+        )
+        #expect(groups.map(\.title) == [TaskSectionDefaults.defaultName, "Next"])
+        #expect(groups.first?.tasks.map(\.id) == [card.id])
+        #expect(card.sectionName == Self.doing, "drawing it under Default writes nothing")
+    }
+
+    /// Both Tasks tabs pass the filing, and iOS no longer appends a heading for a name only a task
+    /// carries. Source pins: the call sites are `private` members of SwiftUI views.
+    @Test func bothTasksTabsFileOrphansUnderDefault() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let mac = try read("Cadence/macOS/Views/ListDetailComponents.swift")
+        let macLive = try #require(CadenceSourceScan.declarationBody("private var liveSectionGroups: [ListTasksGroup]", in: mac))
+        #expect(macLive.contains(
+            "filing: ListBoardCardFiling(configs: area?.sectionConfigs ?? project?.sectionConfigs ?? [])"
+        ))
+        let helper = try #require(CadenceSourceScan.declarationBody("enum ListTasksSectionGroups", in: mac))
+        #expect(helper.contains("filing: filing"))
+
+        let page = try read("Cadence/iOS/iOSListDetailView.swift")
+        let groups = try #require(CadenceSourceScan.declarationBody("private var sectionGroups: [CadenceTaskDisplayGroup]", in: page))
+        #expect(groups.contains("sectionNames: configuredSectionNames,"))
+        #expect(groups.contains("filing: ListBoardCardFiling(configs: sectionConfigs)"))
+        #expect(!page.contains("private var sectionNames: [String]"), "the appended-heading list is gone")
+    }
+    #endif
+
     // MARK: - Reachable from the UI, and both boards draw it
 
     #if os(macOS)

@@ -91,7 +91,10 @@ struct iOSListBoardCompletedColumnTests {
             page.range(of: "completedTasks: completedTasks,", range: active.upperBound..<page.endIndex),
             "the board is still handed the open half only, which is the [[T-9837]] defect"
         )
-        let sections = try #require(page.range(of: "sectionNames: sectionNames,", range: call.upperBound..<page.endIndex))
+        // The board's own argument. This read `sectionNames: sectionNames,`, which the board call
+        // has not carried since its columns became `kanbanSectionNames` -- so it matched the Tasks
+        // tab's call further down, until [[T-12121]] removed that one too.
+        let sections = try #require(page.range(of: "sectionNames: kanbanSectionNames,", range: call.upperBound..<page.endIndex))
         #expect(finished.upperBound <= sections.lowerBound,
                 "the finished half is passed somewhere other than inside the board's own call")
 

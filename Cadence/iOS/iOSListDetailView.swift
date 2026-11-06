@@ -188,17 +188,6 @@ struct iOSListDetailView: View {
         area?.sectionNames ?? project?.sectionNames ?? [TaskSectionDefaults.defaultName]
     }
 
-    private var sectionNames: [String] {
-        var names = configuredSectionNames
-        for task in activeTasks {
-            let name = task.resolvedSectionName
-            if !names.contains(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) {
-                names.append(name)
-            }
-        }
-        return names
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             iOSListDetailHeader(
@@ -423,11 +412,16 @@ struct iOSListDetailView: View {
     /// could never fire on this page: the column was gone before `iOSTaskGroupSection` got to
     /// decide. Since [[T-6201]] that holds on a page with no tasks as well — the shared rule the
     /// Mac's list Tasks tab reads too, which leaves only Default out of an empty page.
+    ///
+    /// The headings are the live columns only: a task whose section names none of them is drawn
+    /// under Default, not under a heading appended for its name, which brought an archived column
+    /// back onto this tab while the Mac's showed the task nowhere ([[T-12121]]).
     private var sectionGroups: [CadenceTaskDisplayGroup] {
         CadenceTaskQuerySupport.listSectionGroups(
             from: activeTasks,
-            sectionNames: sectionNames,
-            pageIsEmpty: isTaskColumnEmpty
+            sectionNames: configuredSectionNames,
+            pageIsEmpty: isTaskColumnEmpty,
+            filing: ListBoardCardFiling(configs: sectionConfigs)
         )
     }
 

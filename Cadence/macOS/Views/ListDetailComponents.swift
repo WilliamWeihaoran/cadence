@@ -74,12 +74,14 @@ struct ListTasksView: View {
         }
     }
 
-    /// The By List groups as the store has them now ([[T-5832]]).
+    /// The By List groups as the store has them now ([[T-5832]]). An open task whose section
+    /// names no live column is drawn under Default, as on the list board ([[T-12121]]).
     private var liveSectionGroups: [ListTasksGroup] {
         ListTasksSectionGroups.groups(
             from: activeTasks,
             sectionNames: sectionNames,
-            pageIsEmpty: activeTasks.isEmpty && doneTasks.isEmpty
+            pageIsEmpty: activeTasks.isEmpty && doneTasks.isEmpty,
+            filing: ListBoardCardFiling(configs: area?.sectionConfigs ?? project?.sectionConfigs ?? [])
         )
     }
 
@@ -330,11 +332,17 @@ struct ListTasksView: View {
 /// and the rule is the shared one both platforms read: the empty state stays, the user's own
 /// sections are drawn under it, and Default is left out so a new list still reads as empty.
 enum ListTasksSectionGroups {
-    static func groups(from activeTasks: [AppTask], sectionNames: [String], pageIsEmpty: Bool) -> [ListTasksGroup] {
+    static func groups(
+        from activeTasks: [AppTask],
+        sectionNames: [String],
+        pageIsEmpty: Bool,
+        filing: ListBoardCardFiling?
+    ) -> [ListTasksGroup] {
         CadenceTaskQuerySupport.listSectionGroups(
             from: activeTasks,
             sectionNames: sectionNames,
-            pageIsEmpty: pageIsEmpty
+            pageIsEmpty: pageIsEmpty,
+            filing: filing
         )
         .map { ListTasksGroup(id: $0.id, title: $0.title, tasks: $0.tasks) }
     }
