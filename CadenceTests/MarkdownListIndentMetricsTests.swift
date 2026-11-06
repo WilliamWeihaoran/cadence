@@ -90,11 +90,16 @@ struct MarkdownListIndentMetricsTests {
                 "\(line) should carry a paragraph style"
             )
 
-            #expect(style.firstLineHeadIndent == MarkdownListIndentMetrics.markerIndent(level: info.visualLevel))
-            #expect(style.headIndent == MarkdownListIndentMetrics.contentIndent(
-                level: info.visualLevel,
-                markerWidth: info.markerWidth
+            // [[T-12263]]: a visible marker hangs its wrapped lines at the measured width of its
+            // styled prefix, not the per-character `contentIndent` estimate.
+            let markerIndent = MarkdownListIndentMetrics.markerIndent(level: info.visualLevel)
+            let prefix = storage.attributedSubstring(from: NSRange(location: location, length: info.contentStart))
+            #expect(style.firstLineHeadIndent == markerIndent)
+            #expect(style.headIndent == MarkdownListIndentMetrics.hangingIndent(
+                firstLineHeadIndent: markerIndent,
+                prefix: prefix
             ))
+            #expect(style.headIndent > markerIndent)
 
             location += (line as NSString).length + 1
         }

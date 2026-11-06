@@ -69,18 +69,6 @@ extension iOSMarkdownStyler {
         lineStart: Int,
         list: iOSMarkdownListMatch
     ) {
-        let paragraph = listParagraphStyle(
-            for: list.visualLevel,
-            markerWidth: list.markerWidth,
-            // A checkbox has no visible marker glyph to sit in the first line's indent — the whole
-            // `- [x] ` prefix is hidden and the box is painted into the gutter beside it — so the
-            // first line has to start at the same column its wrapped lines do. Left at the normal
-            // list indent, the hidden prefix put the text 19pt to the left of where the box lands
-            // and the two overlapped.
-            indentsFirstLineToContent: list.kind.isDrawnCheckbox
-        )
-        storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
-
         let markerRange = list.markerRange.shifted(by: lineStart)
         switch list.kind {
         case let .ordered(marker):
@@ -116,6 +104,14 @@ extension iOSMarkdownStyler {
                 applyCompletedListText(storage, lineRange: lineRange, contentStart: list.contentStart)
             }
         }
+
+        // Last, not first: a visible marker's hanging indent is measured from the marker as styled
+        // just above ([[T-12263]]).
+        storage.addAttribute(
+            .paragraphStyle,
+            value: listParagraphStyle(for: list, in: storage, lineRange: lineRange),
+            range: lineRange
+        )
     }
 
     static func headingMatch(in line: String) -> (level: Int, markerRange: NSRange)? {
@@ -155,18 +151,42 @@ extension iOSMarkdownStyler {
     }
 
     private static func listParagraphStyle(
-        for level: Int,
-        markerWidth: Int,
-        indentsFirstLineToContent: Bool = false
+        for list: iOSMarkdownListMatch,
+        in storage: NSAttributedString,
+        lineRange: NSRange
     ) -> NSParagraphStyle {
         // Shared with `MarkdownStylist` on macOS via `MarkdownListIndentMetrics` (Shared/). The
         // four constants used to be re-declared here, so list indentation could drift on one
         // platform only — invisible in a diff and nearly invisible on screen.
-        let markerIndent = MarkdownListIndentMetrics.markerIndent(level: level)
-        let contentIndent = MarkdownListIndentMetrics.contentIndent(level: level, markerWidth: markerWidth)
         let paragraph = NSMutableParagraphStyle()
-        paragraph.firstLineHeadIndent = indentsFirstLineToContent ? contentIndent : markerIndent
-        paragraph.headIndent = contentIndent
+        if list.kind.isDrawnCheckbox {
+            // A checkbox has no visible marker glyph to sit in the first line's indent — the whole
+            // `- [x] ` prefix is hidden and the box is painted into the gutter beside it — so the
+            // first line has to start at the same column its wrapped lines do. Left at the normal
+            // list indent, the hidden prefix put the text 19pt to the left of where the box lands
+            // and the two overlapped.
+            let contentIndent = MarkdownListIndentMetrics.contentIndent(
+                level: list.visualLevel,
+                markerWidth: list.markerWidth
+            )
+            paragraph.firstLineHeadIndent = contentIndent
+            paragraph.headIndent = contentIndent
+        } else {
+            // A visible marker — bullet, number, legacy `○`/`✓` (what the format row's checklist
+            // button writes) — pushes the first line's text across by its own typeset width, so
+            // the wrapped lines hang at that measured column. The old per-character estimate put
+            // a wrapped `○ ` item's continuation 6pt left of its text ([[T-12263]]).
+            let markerIndent = MarkdownListIndentMetrics.markerIndent(level: list.visualLevel)
+            let contentOffset = min(max(0, list.contentStart), lineRange.length)
+            let prefix = storage.attributedSubstring(
+                from: NSRange(location: lineRange.location, length: contentOffset)
+            )
+            paragraph.firstLineHeadIndent = markerIndent
+            paragraph.headIndent = MarkdownListIndentMetrics.hangingIndent(
+                firstLineHeadIndent: markerIndent,
+                prefix: prefix
+            )
+        }
         paragraph.lineSpacing = 4
         paragraph.paragraphSpacing = 2
         return paragraph

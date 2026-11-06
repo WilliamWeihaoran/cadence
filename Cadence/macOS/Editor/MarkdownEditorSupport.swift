@@ -624,6 +624,16 @@ enum MarkdownStylist {
         case .bullet, .dash, .plus:
             applyBulletListLine(storage: storage, lineRange: lineRange, lineStart: lineStart, list: list)
         }
+
+        // A visible marker — bullet, number, legacy `○`/`✓` — hangs its wrapped lines at the width
+        // it was just styled to, so the paragraph style goes on last. The GitHub checkbox set its
+        // own style above: its prefix is hidden, so it has no width to measure ([[T-12263]]).
+        guard list.checklistSyntax != .github else { return }
+        storage.addAttribute(
+            .paragraphStyle,
+            value: hangingListStyle(for: list, in: storage, lineRange: lineRange, lineStart: lineStart),
+            range: lineRange
+        )
     }
 
     private static func applyOrderedListLine(
@@ -632,8 +642,6 @@ enum MarkdownStylist {
         lineStart: Int,
         list: MarkdownListLineInfo
     ) {
-        let ps = listStyle(for: list.visualLevel, markerWidth: list.markerWidth)
-        storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
         let markerRange = absoluteRange(list.markerRange, lineStart: lineStart, lineRange: lineRange)
         guard markerRange.length > 0 else { return }
         storage.addAttribute(.foregroundColor, value: textColor, range: markerRange)
@@ -647,8 +655,6 @@ enum MarkdownStylist {
         lineStart: Int,
         list: MarkdownListLineInfo
     ) {
-        let ps = listStyle(for: list.visualLevel, markerWidth: list.markerWidth)
-        storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
         let markerRange = absoluteRange(list.markerRange, lineStart: lineStart, lineRange: lineRange)
         guard markerRange.length > 0 else { return }
         storage.addAttribute(.foregroundColor, value: textColor, range: markerRange)
@@ -666,8 +672,6 @@ enum MarkdownStylist {
         lineStart: Int,
         list: MarkdownListLineInfo
     ) {
-        let ps = listStyle(for: list.visualLevel, markerWidth: list.markerWidth)
-        storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
         let markerRange = absoluteRange(list.markerRange, lineStart: lineStart, lineRange: lineRange)
         guard markerRange.length > 0 else { return }
 
@@ -1195,10 +1199,21 @@ enum MarkdownStylist {
         return ps
     }()
 
-    private static func listStyle(for level: Int, markerWidth: Int) -> NSParagraphStyle {
+    /// A visible-marker list line: the marker starts at the level's marker indent, and wrapped
+    /// lines hang at the first line's text column, measured from the styled prefix. The old
+    /// per-character estimate wrapped a legacy `○ ` item 5pt left of its own text ([[T-12263]]).
+    private static func hangingListStyle(
+        for list: MarkdownListLineInfo,
+        in storage: NSTextStorage,
+        lineRange: NSRange,
+        lineStart: Int
+    ) -> NSParagraphStyle {
+        let markerIndent = listMarkerIndent(for: list.visualLevel)
+        let contentOffset = min(max(0, list.contentStart), max(0, NSMaxRange(lineRange) - lineStart))
+        let prefix = storage.attributedSubstring(from: NSRange(location: lineStart, length: contentOffset))
         let ps = NSMutableParagraphStyle()
-        ps.firstLineHeadIndent = listMarkerIndent(for: level)
-        ps.headIndent = listContentIndent(for: level, markerWidth: markerWidth)
+        ps.firstLineHeadIndent = markerIndent
+        ps.headIndent = MarkdownListIndentMetrics.hangingIndent(firstLineHeadIndent: markerIndent, prefix: prefix)
         ps.lineSpacing = 4
         return ps
     }
