@@ -26,9 +26,11 @@ import UIKit
 extension ModelContext {
     /// Deletes one note and reclaims the images only it referenced.
     ///
-    /// Deliberately does **not** save. macOS's two call sites rely on autosave and iOS's modifier
-    /// saves explicitly, exactly as `iOSListDeletionModifier` does around the list cascades — so
-    /// putting a save in here would change macOS's behaviour to buy nothing.
+    /// Deliberately does **not** save. Both callers commit through
+    /// `CadencePendingChangePersistence.commitDelete`, whose rollback undoes the note *and* the
+    /// assets on a refusal: iOS's modifier, and since [[T-11881]] the Mac's
+    /// `DeleteConfirmationManager.presentNoteDelete`, whose two pages used to leave the delete to
+    /// autosave and so could neither guarantee nor report it.
     ///
     /// Nothing detaches `tags`, `area` or `project` by hand: `Tag.notes` declares
     /// `@Relationship(inverse: \Note.tags)` and `Area`/`Project` own the note, so SwiftData
@@ -85,6 +87,13 @@ struct CadenceNoteDeletionSummary: Equatable, Sendable {
     /// (T-320). Its second sentence is the one the user needs: the rollback put the note back, so
     /// nothing has been lost while they decide whether to try again.
     static let deleteFailureNotice = "Couldn't delete this note. Nothing was removed."
+
+    /// The Mac confirmation's title ([[T-11881]]). iOS's sheet titles itself "Delete Note" in its
+    /// navigation bar instead; a window-modal dialog asks the question.
+    static let confirmationTitle = "Delete Note?"
+
+    /// The empty case's sentence, said by both confirmations ([[T-11881]]); see `isEmpty`.
+    static let emptyNoteLine = "Nothing has been written in this note yet."
 
     /// Shown **before** the delete, when a store read behind the counts failed (T-298).
     ///
@@ -188,14 +197,28 @@ struct CadenceNoteDeletionSummary: Equatable, Sendable {
             : "\(tags) tags stay — deleting a note never deletes a tag."
     }
 
-    /// What this delete breaks elsewhere. macOS's dialog cannot say this; it is the one respect in
-    /// which the mobile confirmation is deliberately more informative, the same way the list
-    /// confirmation's counts are.
+    /// What this delete breaks elsewhere. Said by both confirmations since [[T-11881]]: the Mac's
+    /// dialog used to be one sentence naming the note, which is drift with no hardware reason
+    /// ([[T-8201]]) -- its message is `confirmationMessage(noteTitle:)` now.
     var brokenLinkLine: String? {
         guard backlinks > 0 else { return nil }
         return backlinks == 1
             ? "1 other note links to this one. That link will stop resolving."
             : "\(backlinks) other notes link to this one. Those links will stop resolving."
+    }
+
+    /// The Mac confirmation's message: the same lines the iOS card draws, as one block of text
+    /// ([[T-11881]]). The note named first, then what goes with it (or the empty-note sentence),
+    /// then the doubt about the counts, then what it leaves alone -- the iOS card's order.
+    func confirmationMessage(noteTitle: String) -> String {
+        var lines = ["This will permanently delete \"\(noteTitle)\"."]
+        if isEmpty {
+            lines.append(Self.emptyNoteLine)
+        } else if !lostItemLines.isEmpty {
+            lines.append("It takes \(lostItemLines.joined(separator: " and ")) with it.")
+        }
+        lines += [unknownImpactLine, retainedLine, brokenLinkLine].compactMap { $0 }
+        return lines.joined(separator: "\n")
     }
 
     private static func line(_ count: Int, _ singular: String, _ plural: String) -> String? {

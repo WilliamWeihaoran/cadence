@@ -159,6 +159,48 @@ final class DeleteConfirmationManager {
 }
 
 extension DeleteConfirmationManager {
+    /// The one macOS way to confirm deleting a note ([[T-11881]]).
+    ///
+    /// The Notepad page and a list's Notes column both went through `present(…)`, which answers
+    /// `.deleted` unconditionally, around a bare `deleteNote` that only *marks* the note and its
+    /// orphaned images deleted. Nothing committed it, so the row went while the store had not been
+    /// told -- a quit before the next unrelated save brought the note back -- and a refused save
+    /// was never said. This commits through `commitDelete`, as iOS's `iOSNoteDeletionModifier`
+    /// does, and a refusal (rolled back: the note and its images are both still there) holds the
+    /// overlay open with the shared `deleteFailureNotice`.
+    ///
+    /// The message is `CadenceNoteDeletionSummary.confirmationMessage`, the iOS card's lines, so
+    /// the Mac says what the delete takes and what it leaves ([[T-8201]]).
+    ///
+    /// - Parameter resolve: the note as the page holds it at the moment of confirming, or `nil`
+    ///   when it has gone since (deleted elsewhere) -- the overlay then just closes.
+    /// - Parameter didDelete: page-local follow-up, such as moving the selection. Runs only after
+    ///   the delete committed, so a refusal leaves the page where it was.
+    /// - Parameter commit: forwarded to `commitDelete`, so a test can watch a refusal arrive here.
+    func presentNoteDelete(
+        _ note: Note,
+        in modelContext: ModelContext,
+        resolve: @escaping () -> Note?,
+        didDelete: @escaping () -> Void = {},
+        commit: @escaping (ModelContext) throws -> Void = { try $0.save() }
+    ) {
+        let summary = CadenceNoteDeletionSummary.forNote(note, in: modelContext)
+        presentRefusable(
+            title: CadenceNoteDeletionSummary.confirmationTitle,
+            message: summary.confirmationMessage(noteTitle: note.displayTitle)
+        ) {
+            guard let current = resolve() else { return .deleted }
+            modelContext.deleteNote(current)
+            do {
+                try CadencePendingChangePersistence.commitDelete(in: modelContext, commit: commit)
+            } catch {
+                return .refused(notice: CadenceNoteDeletionSummary.deleteFailureNotice)
+            }
+            didDelete()
+            return .deleted
+        }
+    }
+
     /// The one macOS way to confirm deleting a single task.
     ///
     /// **Why it lives here (T-376).** Five surfaces — the task row, a kanban card, the inspector's

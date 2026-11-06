@@ -388,22 +388,21 @@ struct ListNotesView: View {
         }
     }
 
+    /// The shared delete: the note *and* the images it was the last reader of (T-226, see
+    /// `CadenceNoteActionSupport`), committed and refusable since [[T-11881]] through
+    /// `DeleteConfirmationManager.presentNoteDelete`, which `NotesView`'s Notepad page shares.
     private func deleteNote(_ note: Note) {
         let noteID = note.id
-        let title = note.displayTitle
-        deleteConfirmationManager.present(
-            title: "Delete Note?",
-            message: "This will permanently delete \"\(title)\"."
-        ) {
-            guard let currentNote = listNotes.first(where: { $0.id == noteID }) else { return }
-            if selection == .list(noteID) {
-                selection = replacementSelectionAfterDeletingListNote(noteID)
+        deleteConfirmationManager.presentNoteDelete(
+            note,
+            in: modelContext,
+            resolve: { listNotes.first(where: { $0.id == noteID }) },
+            didDelete: {
+                if selection == .list(noteID) {
+                    selection = replacementSelectionAfterDeletingListNote(noteID)
+                }
             }
-            // The shared delete: the note *and* the images it was the last reader of. Both this
-            // site and `NotesView`'s spelled those two steps out separately until T-226 needed a
-            // third caller on iOS — see `CadenceNoteActionSupport`.
-            modelContext.deleteNote(currentNote)
-        }
+        )
     }
 
     private func applyFolderRequest(_ request: NoteFolderSheetRequest, folderPath: String) {

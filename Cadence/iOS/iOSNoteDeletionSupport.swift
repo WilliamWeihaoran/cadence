@@ -294,7 +294,7 @@ struct iOSNoteDeleteConfirmationSheet: View {
     @ViewBuilder
     private var lostLines: some View {
         if summary.isEmpty {
-            Text("Nothing has been written in this note yet.")
+            Text(CadenceNoteDeletionSummary.emptyNoteLine)
                 .cadenceFont(.metadata, base: 12, weight: .regular)
                 .foregroundStyle(Theme.subdued)
                 .fixedSize(horizontal: false, vertical: true)

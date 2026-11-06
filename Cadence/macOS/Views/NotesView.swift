@@ -525,20 +525,20 @@ private struct NotepadPage: View {
         selectedNoteID = note.id
     }
 
+    /// [[T-11881]]: committed and refusable, through the manager's one note delete -- see
+    /// `DeleteConfirmationManager.presentNoteDelete`.
     private func deleteNote(_ note: Note) {
         let noteID = note.id
-        let title = note.displayTitle
-        deleteConfirmationManager.present(
-            title: "Delete Note?",
-            message: "This will permanently delete \"\(title)\"."
-        ) {
-            guard let current = notes.first(where: { $0.id == noteID }) else { return }
-            if selectedNoteID == noteID {
-                selectedNoteID = notes.first { $0.id != noteID }?.id
+        deleteConfirmationManager.presentNoteDelete(
+            note,
+            in: modelContext,
+            resolve: { notes.first(where: { $0.id == noteID }) },
+            didDelete: {
+                if selectedNoteID == noteID {
+                    selectedNoteID = notes.first { $0.id != noteID }?.id
+                }
             }
-            // The shared delete — see `ListNotesView.deleteNote` and `CadenceNoteActionSupport`.
-            modelContext.deleteNote(current)
-        }
+        )
     }
 
     private func normalizeSelection() {

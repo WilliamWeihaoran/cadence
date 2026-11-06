@@ -367,14 +367,21 @@ struct CadenceNoteDeletionSurfaceTests {
 
     // MARK: - Both platforms delete through the one helper
 
-    /// The delete is `ModelContext.deleteNote` and nothing else, from exactly three places: the two
-    /// macOS pages that already had it, and the one iOS modifier.
+    /// The delete is `ModelContext.deleteNote` and nothing else, from exactly two places: the one
+    /// iOS modifier, and since [[T-11881]] the one Mac confirmation both Mac note pages reach --
+    /// `DeleteConfirmationManager.presentNoteDelete`, which commits where the pages left it to
+    /// autosave.
     ///
     /// Exact counts rather than "at least one", because the whole risk is a second delete path: a
-    /// fourth call site means some surface has grown its own delete beside the confirmed one.
+    /// third call site means some surface has grown its own delete beside the confirmed one.
     @Test func bothPlatformsDeleteThroughTheOneSharedHelper() throws {
         try expectCallSites(of: "modelContext.deleteNote", at: [
             "Cadence/iOS/iOSNoteDeletionSupport.swift": 1,
+            "Cadence/macOS/Services/DeleteConfirmationManager.swift": 1,
+            "Cadence/macOS/Views/ListNotesView.swift": 0,
+            "Cadence/macOS/Views/NotesView.swift": 0
+        ])
+        try expectCallSites(of: "deleteConfirmationManager.presentNoteDelete", at: [
             "Cadence/macOS/Views/ListNotesView.swift": 1,
             "Cadence/macOS/Views/NotesView.swift": 1
         ])
