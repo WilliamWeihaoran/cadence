@@ -84,15 +84,22 @@ import Testing
             CadenceSourceScan.functionBody(named: "resultSection", in: code),
             "could not read iOSSearchView.resultSection"
         )
-        #expect(body.contains("CadenceSearchResultCap.visibleCount("))
-        #expect(body.contains("CadenceSearchResultCap.hiddenCount("))
+        // [[T-11196]]: the two cap calls moved into `visibleSlice`, which the drawing and the
+        // keyboard walk both read, and `resultSection` draws from it.
+        let slice = try #require(
+            CadenceSourceScan.functionBody(named: "visibleSlice", in: code),
+            "could not read iOSSearchView.visibleSlice"
+        )
+        #expect(body.contains("visibleSlice(title, results: results)"))
+        #expect(slice.contains("CadenceSearchResultCap.visibleCount("))
+        #expect(slice.contains("CadenceSearchResultCap.hiddenCount("))
         #expect(body.contains("CadenceSearchResultCap.continuationLabel("))
         #expect(body.contains("iOSSearchResultContinuation("))
         // The cap is read once, from the surface's own property, rather than retyped beside each
         // of the two calls that must agree about it.
-        #expect(CadenceSourceScan.matchCount(#"cap: sectionResultCap"#, in: body) == 2)
+        #expect(CadenceSourceScan.matchCount(#"cap: sectionResultCap"#, in: slice) == 2)
         // The old silent truncation.
-        #expect(CadenceSourceScan.matchCount(#"prefix\(isSearching \? 24 : 8\)"#, in: body) == 0)
+        #expect(CadenceSourceScan.matchCount(#"prefix\(isSearching \? 24 : 8\)"#, in: slice + body) == 0)
     }
 
     /// The caps themselves are unchanged. T-3089 was not asked to unify or retune them, and a

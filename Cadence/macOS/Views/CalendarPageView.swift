@@ -184,6 +184,9 @@ struct CalendarPageView: View {
         // save/delete all failed in silence here while `SchedulePanel` reported the same failures.
         // Applied at the page root so it covers all three presentations, not just the timeline.
         .calendarWriteFailureAlert()
+        // [[T-11196]] (1): this page's event blocks and chips open the editor Cmd+K asked for.
+        // Only here -- the same blocks draw in Today's pane and the timeline overlay.
+        .environment(\.honoursCalendarEventEditorRequests, true)
         .onAppear {
             // A remembered Board opens on the remembered day, the way switching to it does,
             // rather than on the `@State` default of today ([[T-8737]]).

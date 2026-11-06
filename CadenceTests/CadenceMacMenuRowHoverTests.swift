@@ -243,7 +243,8 @@ import Testing
         for row in ["struct GlobalSearchResultRow: View", "struct GlobalSearchMoreResultsRow: View"] {
             let body = try #require(CadenceSourceScan.declarationBody(row, in: source), "\(row) moved")
             // Non-vacuity: the highlight is still drawn on the label and a hover still reaches it.
-            #expect(body.contains("isHighlighted ?"), "\(row) no longer draws its highlight")
+            // [[T-11196]]: the branch lives in the plate both platforms share; the row hands it its flag.
+            #expect(body.contains(".cadenceSearchHighlightPlate(isHighlighted: isHighlighted"), "\(row) no longer draws its highlight")
             #expect(body.contains("onHover()"), "\(row) no longer hands its hover to the highlight")
             #expect(CadenceSourceScan.matchCount("\\.buttonStyle\\(", in: body) == 1, "\(row) has more or fewer than one button style")
             #expect(body.contains(".buttonStyle(.plain)"), "\(row) lights a button-style hover wash beside its highlight")

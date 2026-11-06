@@ -29,32 +29,27 @@ enum GlobalSearchOverlayStateSupport {
         }
     }
 
+    /// The walk itself is `CadenceSearchKeyboardHighlight`'s, shared with iOS Search
+    /// ([[T-11196]] (2)); this maps AppKit's move command onto it.
     static func moveHighlight(
         direction: MoveCommandDirection,
         currentID: String?,
         rows: [GlobalSearchKeyboardRow]
     ) -> String? {
-        guard !rows.isEmpty else { return nil }
-        let currentIndex = rows.firstIndex(where: { $0.id == currentID }) ?? 0
+        let step: CadenceSearchKeyboardHighlight.Step
         switch direction {
-        case .down:
-            return rows[min(currentIndex + 1, rows.count - 1)].id
-        case .up:
-            return rows[max(currentIndex - 1, 0)].id
-        default:
-            return currentID
+        case .down: step = .down
+        case .up: step = .up
+        default: return rows.isEmpty ? nil : currentID
         }
+        return CadenceSearchKeyboardHighlight.moved(step, currentID: currentID, ids: rows.map(\.id))
     }
 
     /// Keeps the highlight on a row that still exists, else the first row. Read over the keyboard
     /// rows rather than the results (T-4320), so a highlight resting on a continuation row is not
     /// thrown back to the top by a re-sync.
     static func syncedHighlightID(current: String?, rows: [GlobalSearchKeyboardRow]) -> String? {
-        guard !rows.isEmpty else { return nil }
-        if let current, rows.contains(where: { $0.id == current }) {
-            return current
-        }
-        return rows.first?.id
+        CadenceSearchKeyboardHighlight.synced(current: current, ids: rows.map(\.id))
     }
 
     /// **Where the highlight lands after a reveal: the first newly revealed result** (T-4320) —
@@ -129,7 +124,7 @@ enum GlobalSearchKeyboardRow: Identifiable, Equatable {
     case moreResults(sectionID: String)
 
     static func continuationID(forSection sectionID: String) -> String {
-        "continuation-\(sectionID)"
+        CadenceSearchKeyboardHighlight.continuationID(forSection: sectionID)
     }
 
     var id: String {

@@ -84,7 +84,11 @@ struct CadenceCodexTaskRowTypographyTests {
 
     @Test func codexSearchDeclaresItsPageWithoutOptingItsDestinationsIn() throws {
         let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchView.swift"))
-        let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: source))
+        // [[T-11196]]: `body` wraps the list in a `ScrollViewReader` for the keyboard highlight;
+        // the page itself, and everything this test reads, is `searchList`.
+        let outer = try #require(CadenceSourceScan.declarationBody("var body: some View", in: source))
+        #expect(outer.contains("searchList"))
+        let body = try #require(CadenceSourceScan.declarationBody("private var searchList: some View", in: source))
         #expect(body.contains("iOSSearchScopePicker("))
         #expect(body.contains("iOSEmptyPanel("))
         #expect(body.components(separatedBy: ".cadenceScaledTypography()").count - 1 == 1)

@@ -417,13 +417,9 @@ struct GlobalSearchMoreResultsRow: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isHighlighted ? Theme.dim.opacity(0.09) : Color.clear)
-            .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(isHighlighted ? Theme.dim.opacity(0.18) : Color.clear, lineWidth: 1)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .contentShape(RoundedRectangle(cornerRadius: 12))
+            // The shared search highlight, the plate iOS Search draws too ([[T-11196]]).
+            .cadenceSearchHighlightPlate(isHighlighted: isHighlighted, tint: Theme.dim)
+            .contentShape(RoundedRectangle(cornerRadius: CadenceSearchHighlightPlate.cornerRadius))
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 6)
@@ -615,13 +611,9 @@ struct GlobalSearchResultRow: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isHighlighted ? result.tint.opacity(0.09) : Color.clear)
-            .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(isHighlighted ? result.tint.opacity(0.18) : Color.clear, lineWidth: 1)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .contentShape(RoundedRectangle(cornerRadius: 12))
+            // The shared search highlight, the plate iOS Search draws too ([[T-11196]]).
+            .cadenceSearchHighlightPlate(isHighlighted: isHighlighted, tint: result.tint)
+            .contentShape(RoundedRectangle(cornerRadius: CadenceSearchHighlightPlate.cornerRadius))
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 6)

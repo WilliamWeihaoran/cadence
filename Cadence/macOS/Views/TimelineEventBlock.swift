@@ -82,6 +82,11 @@ struct TimelineEventBlock: View {
             .onTapGesture {
                 handleBlockTap()
             }
+            // [[T-11196]] (1): Cmd+K picked this event, so open its popover as a click would.
+            .honoursCalendarEventEditorRequest(eventID: item.id) {
+                selectedTaskID = nil
+                selectedEventID = item.id
+            }
             // [[T-8721]]: the block was pointer-only -- VoiceOver got its loose time, title and
             // calendar texts and nothing to press. iOS's `iOSCalendarEventBlock` shape ([[T-5356]]):
             // one element, the shared "title, time range" words, a button, and the click's own

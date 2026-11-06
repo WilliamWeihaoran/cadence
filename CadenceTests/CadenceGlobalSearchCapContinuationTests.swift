@@ -290,7 +290,11 @@ struct CadenceGlobalSearchCapContinuationTests {
             "could not read GlobalSearchMoreResultsRow"
         )
         #expect(row.contains("let isHighlighted: Bool"))
-        #expect(CadenceSourceScan.matchCount("isHighlighted \\?", in: row) == 2)
+        // [[T-11196]]: the branch moved into the plate both platforms share; the row hands it its flag.
+        #expect(row.contains(".cadenceSearchHighlightPlate(isHighlighted: isHighlighted, tint: Theme.dim)"))
+        let plate = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceSearchKeyboardHighlight.swift"))
+        let plateBody = try #require(CadenceSourceScan.declarationBody("struct CadenceSearchHighlightPlate", in: plate))
+        #expect(CadenceSourceScan.matchCount("isHighlighted \\?", in: plateBody) == 2)
         #expect(row.contains("if hovering { onHover() }"))
     }
 

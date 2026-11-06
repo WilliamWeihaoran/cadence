@@ -54,6 +54,11 @@ struct iOSSearchView: View {
     /// section was withholding are a fact about *this* query, and a section left expanded would
     /// hand the next search an uncapped list that nobody asked for.
     @State private var expandedSections: Set<String> = []
+    /// **The hardware keyboard's highlight** ([[T-11196]] (2)): the row Up/Down rest on and Return
+    /// opens, as Cmd+K's arrows do on the Mac. `nil` until an arrow key is pressed -- a touch screen
+    /// has no highlight to show, so nothing is drawn for a reader who never reaches for the keys
+    /// -- and cleared with the result set it pointed into.
+    @State private var highlightedResultID: String?
 
     private var trimmedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -324,6 +329,15 @@ struct iOSSearchView: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
+            searchList
+                .onChange(of: highlightedResultID) { _, id in
+                    scrollToHighlighted(id, proxy: proxy)
+                }
+        }
+    }
+
+    private var searchList: some View {
         List {
             // No page header. The navigation title and the search field already say
             // "Search", and the standfirst under it ("Find tasks, lists, notes, calendar
@@ -411,6 +425,21 @@ struct iOSSearchView: View {
         }
         .onChange(of: resultSetIdentity) { _, _ in
             expandedSections.removeAll()
+            highlightedResultID = nil
+        }
+        // [[T-11196]] (2): Up/Down/Return from an iPad's hardware keyboard, Cmd+K's keys. On the
+        // view that carries `.searchable`, so the field keeps every key it types with -- these
+        // three are the only ones taken, and a single-line search field has no use for Up/Down.
+        // `onKeyPress` hears hardware keys only, so a touch keyboard's Search key is not one.
+        .onKeyPress(keys: [.upArrow, .downArrow, .return]) { press in
+            handleKeyboardPress(press.key)
+        }
+        // Return in the field reaches `.searchable`'s submit rather than a key press. It opens a
+        // row only once the arrows have highlighted one: the touch keyboard's Search key submits
+        // here too, and on a phone it has only ever meant "done typing".
+        .onSubmit(of: .search) {
+            guard highlightedResultID != nil else { return }
+            submitHighlightedResult()
         }
         // `item:` rather than `for:`. Besides being what the button rows above need, this keeps
         // Search from registering a *second* destination for either type in the iPhone stack,
@@ -587,29 +616,40 @@ struct iOSSearchView: View {
         isSearching ? 24 : 8
     }
 
+    /// The rows a section draws and how many it is holding back. One answer for the drawing and
+    /// the keyboard walk, so the arrows cannot reach a row the list is not showing ([[T-11196]]).
+    private func visibleSlice(_ title: String, results: [iOSSearchResult]) -> (visible: [iOSSearchResult], hidden: Int?) {
+        let isExpanded = expandedSections.contains(title)
+        let visible = Array(results.prefix(CadenceSearchResultCap.visibleCount(
+            total: results.count,
+            cap: sectionResultCap,
+            isExpanded: isExpanded
+        )))
+        // Both numbers come off the same uncapped array, so the rows and the sentence under
+        // them cannot describe different searches.
+        let hidden = CadenceSearchResultCap.hiddenCount(
+            total: results.count,
+            cap: sectionResultCap,
+            isExpanded: isExpanded
+        )
+        return (visible, hidden)
+    }
+
     @ViewBuilder
     private func resultSection(_ title: String, results: [iOSSearchResult]) -> some View {
         if !results.isEmpty {
-            let isExpanded = expandedSections.contains(title)
-            let visible = Array(results.prefix(CadenceSearchResultCap.visibleCount(
-                total: results.count,
-                cap: sectionResultCap,
-                isExpanded: isExpanded
-            )))
-            // Both numbers come off the same uncapped array, so the rows and the sentence under
-            // them cannot describe different searches.
-            let hidden = CadenceSearchResultCap.hiddenCount(
-                total: results.count,
-                cap: sectionResultCap,
-                isExpanded: isExpanded
-            )
+            let (visible, hidden) = visibleSlice(title, results: results)
+            let continuationID = CadenceSearchKeyboardHighlight.continuationID(forSection: title)
             Section {
                 iOSSearchResultGroup(
                     title: title,
                     count: visible.count,
                     continuation: hidden.flatMap { hidden in
                         CadenceSearchResultCap.continuationLabel(hidden: hidden).map { label in
-                            iOSSearchResultContinuation(label: label) {
+                            iOSSearchResultContinuation(
+                                label: label,
+                                isHighlighted: highlightedResultID == continuationID
+                            ) {
                                 expandedSections.insert(title)
                             }
                         }
@@ -617,6 +657,7 @@ struct iOSSearchView: View {
                 ) { index in
                     searchResultRow(visible[index])
                 }
+                .id(Self.sectionScrollID(title))
             }
             .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
             .listRowSeparator(.hidden)
@@ -631,9 +672,88 @@ struct iOSSearchView: View {
         Button {
             open(result.destination)
         } label: {
-            iOSSearchResultRow(result: result)
+            iOSSearchResultRow(result: result, isHighlighted: highlightedResultID == result.id)
         }
         .buttonStyle(.iosPressable)
+    }
+
+    // MARK: Hardware keyboard ([[T-11196]] (2))
+
+    /// One stop on the arrow-key path, in draw order: a result, or a capped section's
+    /// "N more results" row, exactly as Cmd+K's `GlobalSearchKeyboardRow` walks it.
+    private struct KeyboardStop {
+        let id: String
+        let sectionTitle: String
+        /// `nil` for a continuation row, which reveals its section rather than opening anything.
+        let result: iOSSearchResult?
+    }
+
+    private var keyboardStops: [KeyboardStop] {
+        visibleSections.flatMap { section -> [KeyboardStop] in
+            let all = results(for: section)
+            guard !all.isEmpty else { return [] }
+            let (visible, hidden) = visibleSlice(section.title, results: all)
+            let rows = visible.map { KeyboardStop(id: $0.id, sectionTitle: section.title, result: $0) }
+            guard let hidden, CadenceSearchResultCap.continuationLabel(hidden: hidden) != nil else { return rows }
+            return rows + [KeyboardStop(
+                id: CadenceSearchKeyboardHighlight.continuationID(forSection: section.title),
+                sectionTitle: section.title,
+                result: nil
+            )]
+        }
+    }
+
+    private func handleKeyboardPress(_ key: KeyEquivalent) -> KeyPress.Result {
+        switch key {
+        case .upArrow, .downArrow:
+            let ids = keyboardStops.map(\.id)
+            guard !ids.isEmpty else { return .ignored }
+            highlightedResultID = CadenceSearchKeyboardHighlight.engagedMove(
+                key == .upArrow ? .up : .down,
+                currentID: highlightedResultID,
+                ids: ids
+            )
+            return .handled
+        case .return:
+            return submitHighlightedResult() ? .handled : .ignored
+        default:
+            return .ignored
+        }
+    }
+
+    /// Return on the highlighted row, or on the first when none is highlighted yet: a result opens
+    /// as a tap would, a continuation row reveals its section in place and moves the highlight to
+    /// the first row it revealed -- Cmd+K's Return ([[T-4320]]).
+    @discardableResult
+    private func submitHighlightedResult() -> Bool {
+        let stops = keyboardStops
+        guard let targetID = CadenceSearchKeyboardHighlight.submitTarget(
+            highlightedID: highlightedResultID,
+            ids: stops.map(\.id)
+        ), let stop = stops.first(where: { $0.id == targetID }) else { return false }
+        if let result = stop.result {
+            open(result.destination)
+        } else {
+            let revealedFrom = stops.filter { $0.sectionTitle == stop.sectionTitle && $0.result != nil }.count
+            expandedSections.insert(stop.sectionTitle)
+            let section = visibleSections.first { $0.title == stop.sectionTitle }
+            let revealed = section.map { results(for: $0) } ?? []
+            highlightedResultID = revealed.indices.contains(revealedFrom) ? revealed[revealedFrom].id : nil
+        }
+        return true
+    }
+
+    private static func sectionScrollID(_ title: String) -> String {
+        "search-section-\(title)"
+    }
+
+    /// Brings the highlighted row's group on screen. A whole group is one `List` row (see
+    /// `iOSSearchResultGroup`), and `scrollTo` reaches rows, not views inside one.
+    private func scrollToHighlighted(_ id: String?, proxy: ScrollViewProxy) {
+        guard let id, let stop = keyboardStops.first(where: { $0.id == id }) else { return }
+        withAnimation(.easeInOut(duration: 0.15)) {
+            proxy.scrollTo(Self.sectionScrollID(stop.sectionTitle))
+        }
     }
 
     private func open(_ destination: iOSSearchResult.Destination) {

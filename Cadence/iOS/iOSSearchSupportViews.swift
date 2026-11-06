@@ -331,6 +331,8 @@ struct iOSSearchResultContinuation {
     /// label too: a second copy of the count here is a second place for the row and the
     /// announcement to disagree about how many results are waiting.
     let label: String
+    /// Whether the hardware keyboard's highlight rests here ([[T-11196]] (2)).
+    var isHighlighted: Bool = false
     /// Reveals the rest **in place**. There is no screen to push; see `CadenceSearchResultCap`.
     let reveal: () -> Void
 }
@@ -367,6 +369,7 @@ private struct iOSSearchMoreResultsRow: View {
             }
             .padding(.vertical, 10)
             .frame(minHeight: 44)
+            .searchKeyboardHighlight(continuation.isHighlighted, tint: Theme.blue)
             .contentShape(Rectangle())
         }
         .buttonStyle(.iosPressable)
@@ -379,6 +382,9 @@ struct iOSSearchResultRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
     let result: iOSSearchResult
+    /// Whether the hardware keyboard's highlight rests on this row ([[T-11196]] (2)). Only an
+    /// arrow key sets it, so a touch-only reader never sees one.
+    var isHighlighted: Bool = false
 
     var body: some View {
         let wraps = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
@@ -429,7 +435,18 @@ struct iOSSearchResultRow: View {
         }
         .padding(.vertical, 10)
         .frame(minHeight: 44)
+        .searchKeyboardHighlight(isHighlighted, tint: result.color)
         .contentShape(Rectangle())
+    }
+}
+
+private extension View {
+    /// Cmd+K's highlight plate ([[T-11196]] (2)), widened into the card's 12pt gutter so the plate
+    /// has room around the icon tile, and narrowed back so the row's layout is unchanged.
+    func searchKeyboardHighlight(_ isHighlighted: Bool, tint: Color) -> some View {
+        padding(.horizontal, 6)
+            .cadenceSearchHighlightPlate(isHighlighted: isHighlighted, tint: tint)
+            .padding(.horizontal, -6)
     }
 }
 #endif

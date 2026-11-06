@@ -158,10 +158,12 @@ enum RootCommandActionSupport {
                 from: context.calendarManager.windowEvents(),
                 identifier: eventID
             )
-            if let startDate = event?.startDate {
-                context.calendarNavigationManager.open(date: startDate)
-            }
-            context.setSelection(.calendar)
+            handleEventSelection(
+                eventID,
+                startDate: event?.startDate,
+                calendarNavigationManager: context.calendarNavigationManager,
+                setSelection: context.setSelection
+            )
         case .eventNote(let noteID):
             context.notesNavigationManager.openMeetingNote(id: noteID)
             context.setSelection(.notes)
@@ -179,6 +181,30 @@ enum RootCommandActionSupport {
         }
 
         context.globalSearchManager.dismiss()
+    }
+
+    /// **[[T-11196]] (1) — picking an event in Cmd+K opens that event's editor**, as iOS Search
+    /// opens `iOSCalendarEventEditSheet`. It used to jump the calendar to the day and stop, so the
+    /// reader still had to find the block and click it. The editor is the block's own popover, and
+    /// the block is drawn only once the day is, so the jump carries an editor request the block
+    /// takes when it appears (`CalendarNavigationManager.eventEditorRequest`).
+    ///
+    /// `eventID` is the result's `CalendarEventItem.id` -- `GlobalSearchIndexSupport` builds the
+    /// row from that item -- so it is the id the block answers to. With no resolvable start there
+    /// is no day to draw and no block to ask, and the page opens where it was, as before.
+    ///
+    /// Split out with its dependencies named so a test can drive it: the context carries a
+    /// `CalendarManager`, which owns a real `EKEventStore`.
+    static func handleEventSelection(
+        _ eventID: String,
+        startDate: Date?,
+        calendarNavigationManager: CalendarNavigationManager,
+        setSelection: (SidebarItem) -> Void
+    ) {
+        if let startDate {
+            calendarNavigationManager.open(date: startDate, editingEventID: eventID)
+        }
+        setSelection(.calendar)
     }
 
     /// **[[T-7232]] — a menu item running a Cmd+K command**, as `CadenceMenuCommandRoute` hands it

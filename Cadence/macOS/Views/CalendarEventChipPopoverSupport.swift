@@ -85,6 +85,9 @@ extension View {
             .popover(isPresented: isPresented, arrowEdge: .bottom) {
                 CalendarEventChipEditPopover(item: item(), isPresented: isPresented)
             }
+            // [[T-11196]] (1): an all-day event Cmd+K picked opens here, as a timed one opens on
+            // its timeline block.
+            .honoursCalendarEventEditorRequest(eventID: item().id) { isPresented.wrappedValue = true }
     }
 
     /// `.draggable` only when the event can take the write the drop would ask for ([[T-5241]]):
