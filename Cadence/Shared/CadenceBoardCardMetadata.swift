@@ -198,10 +198,26 @@ enum CadenceBoardCardMetadata {
         CadenceBoardCardChip(
             kind: .list,
             icon: task.project?.icon ?? task.area?.icon ?? inboxIcon,
-            text: task.containerName.isEmpty ? inboxLabel : task.containerName,
+            text: listTitle(for: task),
             listColorHex: task.containerColor,
             emphasis: .neutral
         )
+    }
+
+    /// What a task's list chip says: the list's display name, "Inbox" only when the task is in no
+    /// list at all ([[T-11892]]).
+    ///
+    /// It used to read the raw `AppTask.containerName` and treat empty as Inbox, so a task in a
+    /// blank-named area or project was labelled "Inbox" -- beside that list's own glyph, over a
+    /// picker whose checked row said "Untitled Area" -- and a whitespace-only name drew a blank
+    /// chip. The picker rule (`CadencePickerSupport.title(for:)`) is the one the Mac task row's
+    /// `ContainerPickerBadge`, the sidebar and Cmd+K already read ([[T-7202]], [[T-8102]]). Area
+    /// before project, the precedence `containerName` itself uses. The iOS task row's chip reads
+    /// this too, so the two chips cannot drift again.
+    static func listTitle(for task: AppTask) -> String {
+        if let area = task.area { return CadenceAreaPickerSupport.title(for: area) }
+        if let project = task.project { return CadenceProjectPickerSupport.title(for: project) }
+        return inboxLabel
     }
 
     /// Over-do outranks do-today, and a finished task is neither. This is macOS's rule stated once:

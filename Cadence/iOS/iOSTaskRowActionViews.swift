@@ -101,7 +101,7 @@ struct iOSTaskRowContainerChip: View {
 
     var body: some View {
         iOSTaskAttributeChip(
-            title: task.containerName.isEmpty ? CadenceTaskInspectorSupport.inboxSegmentTitle : task.containerName,
+            title: CadenceBoardCardMetadata.listTitle(for: task),
             field: CadenceTaskControlAccessibility.list,
             systemImage: task.project?.icon ?? task.area?.icon ?? "tray.fill",
             isSet: true,

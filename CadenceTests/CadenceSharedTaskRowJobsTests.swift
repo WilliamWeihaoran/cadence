@@ -122,6 +122,46 @@ struct CadenceSharedTaskRowJobsTests {
         #expect(chip.icon == CadenceBoardCardMetadata.inboxIcon)
     }
 
+    /// **[[T-11892]].** A task in a blank-named list is still in that list, so its chip names the
+    /// list the way the Mac task row, the sidebar and the pickers do -- "Untitled Area" /
+    /// "Untitled Project" -- and says "Inbox" only for a task in no list. The old rule read the raw
+    /// name and treated empty as Inbox, and a whitespace-only name drew a blank chip.
+    @Test func aBlankNamedListIsNamedLikeEveryOtherSurfaceNamesIt() {
+        func chipText(area: String? = nil, project: String? = nil) -> String {
+            let task = task()
+            task.area = area.map { Area(name: $0) }
+            task.project = project.map { Project(name: $0) }
+            return CadenceBoardCardMetadata.listChip(for: task).text
+        }
+
+        #expect(chipText(area: "") == CadenceTitleNormalization.defaultAreaName)
+        #expect(chipText(area: "   \n") == CadenceTitleNormalization.defaultAreaName)
+        #expect(chipText(project: "") == CadenceTitleNormalization.defaultProjectName)
+        #expect(chipText(project: " \t ") == CadenceTitleNormalization.defaultProjectName)
+        #expect(chipText(area: "  Work ") == "Work")
+        #expect(chipText(project: "Launch") == "Launch")
+        // Area before project, the precedence `AppTask.containerName` uses.
+        #expect(chipText(area: "", project: "Launch") == CadenceTitleNormalization.defaultAreaName)
+        #expect(chipText() == CadenceBoardCardMetadata.inboxLabel)
+    }
+
+    /// The iOS task row's list chip is not a board card, but it is the surface the blank-name
+    /// defect was seen on ([[T-11892]]'s sighting), and `Cadence/iOS/` is never compiled on this
+    /// host -- so its title is held by source: it reads the one rule above, and no longer the raw
+    /// `containerName`.
+    @Test func theIOSTaskRowListChipTitlesThroughTheSameRule() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskRowActionViews.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.declarationBody("struct iOSTaskRowContainerChip", in: source),
+            "iOSTaskRowContainerChip is gone"
+        )
+        #expect(body.contains("iOSTaskAttributeChip("), "non-vacuity: the chip's own body")
+        #expect(body.contains("title: CadenceBoardCardMetadata.listTitle(for: task)"))
+        #expect(!body.contains("containerName"), "the iOS row chip reads the raw list name again")
+    }
+
     /// Identity and emphasis are two colours, not one pre-blended one, because the two cards apply
     /// them differently on purpose: macOS keeps the red flag red on an unhurried due date and tints
     /// only the label, and iOS's inert chip tints both because a tinted glyph beside grey text read
