@@ -820,7 +820,9 @@ struct SidebarListCountTraversalTests {
 /// **The one grouping pass draws exactly the cards the per-column filter drew, in the same order.**
 ///
 /// The census above proves the section board's pass is no longer per column; this proves it did
-/// not change a card. The oracle is the retired per-column filter, verbatim, run once per column
+/// not change a card. The oracle is the retired per-column filter, verbatim except that it no
+/// longer drops cancelled work ([[T-11222]] (a): cancelled cards reach their column's Completed
+/// half, as on iOS, per [[T-147]]), run once per column
 /// — so every column of every fixture below is compared by **identity and order** against what the
 /// board used to draw, across all three sort fields and both directions. The fixture is built to
 /// hold the cases the grouping could plausibly get wrong: case-only name differences in both
@@ -830,7 +832,8 @@ struct SidebarListCountTraversalTests {
 @Suite @MainActor
 struct ListSectionBoardColumnCardsParityTests {
 
-    /// The retired `sortedTasksForSection` of `ListSectionsKanbanView`, transcribed verbatim.
+    /// The retired `sortedTasksForSection` of `ListSectionsKanbanView`, transcribed verbatim but
+    /// for its `!$0.isCancelled`, which [[T-11222]] (a) removed from the board.
     private func retiredColumn(
         _ section: TaskSectionConfig,
         of tasks: [AppTask],
@@ -838,7 +841,7 @@ struct ListSectionBoardColumnCardsParityTests {
         direction: TaskSortDirection
     ) -> [AppTask] {
         let source = tasks.filter {
-            !$0.isCancelled && $0.resolvedSectionName.caseInsensitiveCompare(section.name) == .orderedSame
+            $0.resolvedSectionName.caseInsensitiveCompare(section.name) == .orderedSame
         }
         return source.taskSorted(by: sortField, direction: direction)
     }
@@ -919,19 +922,58 @@ struct ListSectionBoardColumnCardsParityTests {
     }
 
     /// The cases parity alone would pass vacuously if the oracle drew nothing for them.
-    @Test func caseOnlyColumnsShareTheirCardsAndCancelledWorkReachesNoColumn() {
+    @Test func caseOnlyColumnsShareTheirCardsAndCancelledWorkReachesItsOwnColumn() {
         let grouped = ListSectionsKanbanView.columnCards(
             from: tasks, sections: sections, sortField: .custom, direction: .ascending
         )
         let doing = Set((grouped["Doing"] ?? []).map(\.title))
-        #expect(doing == ["doing upper", "doing padded", "doing tie", "doing early", "doing done"])
+        #expect(doing == ["doing upper", "doing padded", "doing tie", "doing early", "doing done", "doing cancelled"])
         #expect(Set((grouped["doing"] ?? []).map(\.title)) == doing)
         #expect((grouped["Empty"] ?? []).isEmpty)
         #expect(grouped["Nowhere"] == nil, "a task naming no column grew a bucket")
-        let everyCard = grouped.values.flatMap { $0 }
-        #expect(!everyCard.contains { $0.isCancelled }, "a cancelled card reached a column")
+        // [[T-11222]] (a): the cancelled card naming a column is on it; the one naming none is not.
+        let everyCancelledCard = grouped.values.flatMap { $0 }.filter(\.isCancelled)
+        #expect(Set(everyCancelledCard.map(\.title)) == ["doing cancelled"])
         #expect(Set((grouped[TaskSectionDefaults.defaultName] ?? []).map(\.title))
                 == ["default by empty name", "default by name"])
+    }
+
+    /// **[[T-11222]] (a): a cancelled card is in its column's Completed half, as on iOS ([[T-147]]).**
+    ///
+    /// The board grouped cancelled work away before any column saw it, so the Mac's "Completed N"
+    /// counted done cards only while the iPad's same column listed cancelled ones too. This runs
+    /// the board's grouping and then the column's own split, the path a render takes, and checks
+    /// the Completed half is the iOS board's finished half (`CadenceTaskQuerySupport.completedTasks`)
+    /// as a set. The open half must still hold no cancelled card: a drop's off-screen notice ranks
+    /// open cards ahead of finished ones (`KanbanBoardSupport.cardSortKeyOrder`), and that rank
+    /// must call the cancelled card finished too.
+    @Test func aCancelledCardIsInItsColumnsCompletedHalfAsOnIOS() {
+        // The cancelled card sorts FIRST by `order`, so only the finished rank can put "open" ahead.
+        let open = card("open", in: "Doing", order: 2)
+        let done = card("done", in: "Doing", status: .done, order: 1)
+        let cancelled = card("cancelled", in: "Doing", status: .cancelled, order: 0)
+        let elsewhere = card("elsewhere cancelled", in: "Later", status: .cancelled)
+        let columns = [TaskSectionConfig(name: TaskSectionDefaults.defaultName), TaskSectionConfig(name: "Doing")]
+
+        let grouped = ListSectionsKanbanView.columnCards(
+            from: [open, done, cancelled, elsewhere], sections: columns, sortField: .custom, direction: .ascending
+        )
+        let doing = grouped["Doing"] ?? []
+        let halves = KanbanBoardSupport.columnHalves(from: doing)
+
+        #expect(halves.active.map(\.title) == ["open"])
+        #expect(Set(halves.completed.map(\.title)) == ["done", "cancelled"])
+        #expect(halves.completed.count == 2, "the column's Completed count")
+        #expect(
+            Set(halves.completed.map(\.id))
+                == Set(CadenceTaskQuerySupport.completedTasks(from: [open, done, cancelled]).map(\.id)),
+            "the Mac column's Completed half is not the iOS board's finished half"
+        )
+        #expect(grouped[TaskSectionDefaults.defaultName] == nil, "a card naming no configured column was drawn")
+        #expect(
+            KanbanBoardSupport.cardSortKeyOrder(open, cancelled, field: .custom, direction: .ascending) == .before,
+            "a cancelled card ranks among the open ones for the drop notice"
+        )
     }
 
     /// Two columns with one name are one bucket, and a card is drawn once in it, not twice.

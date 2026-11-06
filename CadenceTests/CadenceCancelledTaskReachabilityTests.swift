@@ -1091,16 +1091,21 @@ struct CadenceCancelledTaskReachabilityTests {
         )
     }
 
-    /// T-381's reading, pinned. The section board's sole caller still drops cancelled work upstream
-    /// and the All Tasks board is still fed `openTasks`, so the fix above moved nothing on screen.
-    /// If either of these goes, cancelled cards reach a column for real, and whoever changes it
-    /// should have to say so.
-    @Test func theKanbanBoardsStillKeepCancelledWorkOffTheColumnsUpstream() throws {
-        // T-3020: the per-column filter became one grouping pass, and it drops cancelled work as
-        // the first thing it does; `caseOnlyColumnsShareTheirCardsAndCancelledWorkReachesNoColumn` in
+    /// T-381's reading, pinned, and [[T-11222]] (a)'s change to it said. The section board used to
+    /// drop cancelled work upstream, so the column's split above moved nothing on screen; it no
+    /// longer does, and a cancelled card now reaches its column's Completed half as on iOS
+    /// ([[T-147]]). The All Tasks board is still fed `openTasks` — one undivided open stack, with
+    /// no Completed half to hold a cancelled card — and whoever changes that should have to say so.
+    @Test func theSectionBoardBucketsCancelledWorkAndTheAllTasksBoardStillKeepsItOff() throws {
+        // T-3020's one grouping pass no longer filters on status at all;
+        // `aCancelledCardIsInItsColumnsCompletedHalfAsOnIOS` in
         // `ListSectionBoardColumnCardsParityTests` is the behavioural half.
         try expectOccurrences(
             of: "for task in tasks where !task.isCancelled",
+            at: ["Cadence/macOS/Views/KanbanListSectionSupportViews.swift": 0]
+        )
+        try expectOccurrences(
+            of: "for task in tasks {",
             at: ["Cadence/macOS/Views/KanbanListSectionSupportViews.swift": 1]
         )
         try expectOccurrences(

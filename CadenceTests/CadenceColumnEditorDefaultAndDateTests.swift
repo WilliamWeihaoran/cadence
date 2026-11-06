@@ -79,6 +79,32 @@ struct CadenceColumnEditorDefaultAndDateTests {
         #endif
     }
 
+    /// **[[T-11222]] (c): the Mac popover offers no Color for Default.** Both boards draw Default
+    /// neutral whatever hex it stores (`CadenceBoardColumnTint.base` answers `.neutral`, [[T-11221]]),
+    /// so a swatch picked there changed nothing on screen. The heading and every swatch sit inside
+    /// the one `!section.isDefault` gate, and a non-Default column still reaches them.
+    @Test func macDefaultColumnPopoverOffersNoColor() throws {
+        #if os(macOS)
+        let source = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/Views/KanbanColumnSupportViews.swift")
+        let popover = try #require(CadenceSourceScan.declarationBody("struct KanbanSectionEditorPopover", in: source))
+        #expect(CadenceSourceScan.matchCount("Text\\(\"Color\"\\)", in: popover) == 1)
+        #expect(CadenceSourceScan.matchCount("ForEach\\(editorColorOptions", in: popover) == 1)
+        let gate = try #require(popover.range(of: "if !section.isDefault {"))
+        let heading = try #require(popover.range(of: "Text(\"Color\")"))
+        let swatches = try #require(popover.range(of: "ForEach(editorColorOptions"))
+        let dueDate = try #require(popover.range(of: "Text(\"Due Date\")"))
+        #expect(gate.upperBound <= heading.lowerBound, "the Color heading is drawn above its Default gate")
+        #expect(heading.lowerBound < swatches.lowerBound)
+        // The gate closes before Due Date, which Default keeps. Between the gate's `{` and the Due
+        // Date heading the braces balance only if the gate's `}` is there to pay for the Due Date
+        // block's own opening `{`.
+        let between = String(popover[gate.upperBound..<dueDate.lowerBound])
+        #expect(between.filter { $0 == "{" }.count == between.filter { $0 == "}" }.count,
+                "the Default gate does not close between the swatches and Due Date")
+        #expect(CadenceBoardColumnTint.base(for: TaskSectionConfig(name: TaskSectionDefaults.defaultName, colorHex: "#ff0000")) == .neutral)
+        #endif
+    }
+
     /// **[[T-9803]]: a dated column is cleared in one place, the picker's own panel.** The popover
     /// drew a second red "Clear date" under the picker's trigger, beside the one the picker's panel
     /// draws under its grid (`CadenceQuickDatePopover`, gated by `CadenceDateSelectionState.drawsClear`),

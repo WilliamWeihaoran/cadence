@@ -535,28 +535,33 @@ struct KanbanSectionEditorPopover: View {
                     }
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Color")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                HStack(spacing: 8) {
-                    ForEach(editorColorOptions, id: \.self) { hex in
-                        Button {
-                            editorColorHex = hex
-                            onColorSelected()
-                        } label: {
-                            Circle()
-                                .fill(Color(hex: hex))
-                                .frame(width: 18, height: 18)
-                                .overlay {
-                                    Circle()
-                                        .strokeBorder(
-                                            CadenceColorPalette.matches(hex, editorColorHex) ? Theme.text : .clear,
-                                            lineWidth: 1.5
-                                        )
-                                }
+            // [[T-11222]] (c): both boards draw Default neutral whatever hex it stores
+            // (`CadenceBoardColumnTint.base`, [[T-11221]]), so a swatch picked here changed nothing
+            // on screen. Default offers no Color, as it offers no rename.
+            if !section.isDefault {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Color")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                    HStack(spacing: 8) {
+                        ForEach(editorColorOptions, id: \.self) { hex in
+                            Button {
+                                editorColorHex = hex
+                                onColorSelected()
+                            } label: {
+                                Circle()
+                                    .fill(Color(hex: hex))
+                                    .frame(width: 18, height: 18)
+                                    .overlay {
+                                        Circle()
+                                            .strokeBorder(
+                                                CadenceColorPalette.matches(hex, editorColorHex) ? Theme.text : .clear,
+                                                lineWidth: 1.5
+                                            )
+                                    }
+                            }
+                            .buttonStyle(.cadencePlain(.circle))
                         }
-                        .buttonStyle(.cadencePlain(.circle))
                     }
                 }
             }

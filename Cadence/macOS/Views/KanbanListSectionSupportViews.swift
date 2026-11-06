@@ -176,17 +176,24 @@ struct ListSectionsKanbanView: View {
     /// **Every column's cards in one pass over `tasks` (T-3020), keyed by the column's exact
     /// `name`.**
     ///
-    /// The value for a section is exactly what the retired per-column filter produced:
+    /// The value for a section is exactly what this per-column filter produces:
     ///
     ///     tasks.filter {
-    ///         !$0.isCancelled && $0.resolvedSectionName.caseInsensitiveCompare(section.name) == .orderedSame
+    ///         $0.resolvedSectionName.caseInsensitiveCompare(section.name) == .orderedSame
     ///     }.taskSorted(by: sortField, direction: direction)
     ///
     /// and it is that by construction rather than by an equivalence argument. The membership test
     /// is still `caseInsensitiveCompare` — never a folded dictionary key, whose agreement with
     /// `NSString`'s comparison (`ß`/`SS`, canonical equivalence) would be a claim to prove — but it
     /// is asked once per *distinct* task section name rather than once per task, and the answer is
-    /// cached. Cancelled work is dropped before anything else, so no column ever sees it (T-381).
+    /// cached.
+    ///
+    /// **Cancelled work is bucketed like any other ([[T-11222]] (a)).** This pass dropped it first
+    /// (T-381), so a column's Completed half counted done work only while the iOS board's listed
+    /// cancelled cards too — against [[T-147]]'s ruling that cancelled work is shown in Completed,
+    /// struck. The column's own split, `KanbanBoardSupport.columnHalves`, already reads the shared
+    /// `CadenceTaskQuerySupport.isFinishedTask` (done OR cancelled), so a cancelled card lands in
+    /// the Completed half and never among the open cards a drop's off-screen notice ranks.
     /// A task joins every column its name matches, so two columns whose names differ only by case
     /// each draw it, as they did before. Each bucket is filled in `tasks` order and then sorted
     /// once, so the sort sees the same input in the same order and ties land where they did.
@@ -207,7 +214,7 @@ struct ListSectionsKanbanView: View {
 
         var columnsByTaskSectionName: [String: [String]] = [:]
         var buckets: [String: [AppTask]] = [:]
-        for task in tasks where !task.isCancelled {
+        for task in tasks {
             let taskSectionName = task.resolvedSectionName
             let matches: [String]
             if let cached = columnsByTaskSectionName[taskSectionName] {
