@@ -141,6 +141,18 @@ struct iOSListWindDownTarget: Identifiable {
         list.summary(outcome: action.outcome)
     }
 
+    /// The tasks the settle writes, and so the set a snapshot taken before it must hold: every
+    /// task still open in the list, and for an area those of its child projects too
+    /// (`includingChildProjects: true`, the walk `settleListWindDown` makes).
+    var settledTasks: [AppTask] {
+        switch list {
+        case .area(let area):
+            TaskContainerLifecycleService.remainingActiveTasks(in: area, includingChildProjects: true)
+        case .project(let project):
+            TaskContainerLifecycleService.remainingActiveTasks(in: project)
+        }
+    }
+
     static func area(_ area: Area, _ action: iOSListWindDownAction) -> Self {
         Self(list: .area(area), action: action)
     }
@@ -179,9 +191,9 @@ extension ModelContext {
     /// report, and a swallowed refusal left the whole settle pending for the next unrelated
     /// `rollback()` to revert: a list the owner archived coming back with all its tasks open.
     ///
-    /// The undo is a `CadenceListEditSnapshot` of the list and the tasks about to be settled, taken
-    /// before the first write. For an area that is `includingChildProjects: true`, the set the
-    /// settle below walks.
+    /// The undo is a `CadenceListEditSnapshot` of the list and the tasks about to be settled
+    /// (`iOSListWindDownTarget.settledTasks`), taken before the first write. For an area that is
+    /// `includingChildProjects: true`, the set the settle walks.
     func windDownList(
         _ target: iOSListWindDownTarget,
         commit: (ModelContext) throws -> Void = { try $0.save() }
@@ -189,16 +201,30 @@ extension ModelContext {
         let undo: CadenceListEditSnapshot
         switch target.list {
         case .area(let area):
-            undo = CadenceListEditSnapshot(
-                area,
-                tasks: TaskContainerLifecycleService.remainingActiveTasks(in: area, includingChildProjects: true)
-            )
+            undo = CadenceListEditSnapshot(area, tasks: target.settledTasks)
         case .project(let project):
-            undo = CadenceListEditSnapshot(
-                project,
-                tasks: TaskContainerLifecycleService.remainingActiveTasks(in: project)
-            )
+            undo = CadenceListEditSnapshot(project, tasks: target.settledTasks)
         }
+        settleListWindDown(target)
+        try CadencePendingChangePersistence.commitEdit(in: self, commit: commit, undo: undo.restore)
+    }
+
+    /// The settle's writes alone -- the list's `status` and its remaining open tasks -- for a
+    /// caller that commits them inside a commit of its own.
+    ///
+    /// **[[T-12020]]: the list editor's Complete / Archive rows.** Its `save()` used to commit the
+    /// field edits and only then call `windDownList`, so a refused wind-down reported
+    /// `CadencePendingChangePersistence.editFailureNotice` -- "Nothing was changed" -- over a
+    /// rename that was already in the store. macOS's `EditAreaSheet` / `EditProjectSheet`
+    /// `apply(_:)` writes the edits and the settle under one snapshot and one commit (no hardware
+    /// reason for the difference, T-8201), so the editor now does the same: it hands
+    /// `settledTasks` to its own snapshot, calls this before its commit, and a refusal undoes the
+    /// edits and the settle together, which is what the sentence says.
+    ///
+    /// Not a door around the rule above: every write is still made here, and the caller's commit
+    /// must go through `CadencePendingChangePersistence.commitEdit` with a snapshot that holds
+    /// `settledTasks`.
+    func settleListWindDown(_ target: iOSListWindDownTarget) {
         switch (target.list, target.action) {
         case (.area(let area), .archive):
             area.status = .archived
@@ -221,7 +247,6 @@ extension ModelContext {
             project.status = .done
             TaskContainerLifecycleService.completeRemainingActiveTasks(in: project, in: self)
         }
-        try CadencePendingChangePersistence.commitEdit(in: self, commit: commit, undo: undo.restore)
     }
 
     /// **The one conditional-confirmation decision for a list's context-menu wind-down** — the
@@ -229,8 +254,8 @@ extension ModelContext {
     /// (`iOSSidebarListsRegion`, [[T-11753]]) both ask it, so the menus cannot answer it
     /// differently. Winds `target` down at once and returns `nil` when nothing would be settled;
     /// otherwise returns `target` for the host to hand to `iOSListWindDown(target:)`, untouched.
-    /// The list editor keeps its own copy because its immediate path writes its field edits
-    /// first ([[T-8562]]).
+    /// The list editor keeps its own copy because its immediate path settles inside its field
+    /// edits' commit ([[T-8562]], [[T-12020]]).
     ///
     /// Throws when the immediate wind-down was refused; a menu has closed by then, so the host
     /// names it with `iOSListWindDownFailureAlert`.

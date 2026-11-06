@@ -432,15 +432,22 @@ struct CadenceListWindDownSurfaceTests {
 
         // `windDownList` is declared once and called twice beside it: the immediate path in the
         // shared menu decision, and the confirmed path in the modifier.
-        // [[T-8562]]: the list editor's Status / Archive rows are the third host, and call it once
-        // on their immediate path.
         // [[T-11753]]: the Lists page and the sidebar region reach the immediate path through
         // `windDownListUnlessConfirmationIsNeeded`, so neither calls it directly.
+        // [[T-12020]]: the list editor's Status / Archive rows ([[T-8562]]'s third host) no longer
+        // call it -- they settle inside their own edit commit through `settleListWindDown`, once
+        // per edit branch, which `windDownList` is the only other caller of.
         try expectOccurrences(of: "windDownList(", at: [
             "Cadence/iOS/iOSListWindDownSupport.swift": 3,
             "Cadence/iOS/iOSListViews.swift": 0,
             "Cadence/iOS/iOSRootSidebar.swift": 0,
-            "Cadence/iOS/iOSListEditorViews.swift": 1
+            "Cadence/iOS/iOSListEditorViews.swift": 0
+        ])
+        try expectOccurrences(of: "settleListWindDown(", at: [
+            "Cadence/iOS/iOSListWindDownSupport.swift": 2,
+            "Cadence/iOS/iOSListViews.swift": 0,
+            "Cadence/iOS/iOSRootSidebar.swift": 0,
+            "Cadence/iOS/iOSListEditorViews.swift": 2
         ])
 
         // And nothing reroutes a bulk settle through the single-task transitions, which would

@@ -1223,10 +1223,10 @@ struct CadenceEditorSaveCommitSurfaceTests {
         /// per sheet.
         let function: String
         var occurrences: Int = 1
-        /// How many commits the function makes, each with its own failure branch. One, except the
-        /// iOS list editor's `save()`: its Complete / Archive row commits the field edits and then
-        /// the wind-down ([[T-8562]]'s order), and since [[T-11614]] group (1) the second commit
-        /// reports and returns too instead of swallowing.
+        /// How many commits the function makes, each with its own failure branch. One everywhere
+        /// today: the iOS list editor's `save()` carried two (the field edits, then the wind-down)
+        /// until [[T-12020]] folded the settle into the edit's own commit, as macOS's `apply(_:)`
+        /// does.
         var failureBranches: Int = 1
         /// Spellings that may only run once every commit has landed.
         let successSpellings: [String]
@@ -1242,7 +1242,6 @@ struct CadenceEditorSaveCommitSurfaceTests {
             SaveSurface(
                 path: "Cadence/iOS/iOSListEditorViews.swift",
                 function: "save",
-                failureBranches: 2,
                 successSpellings: ["dismiss()"]
             ),
             SaveSurface(
@@ -1419,10 +1418,11 @@ struct CadenceEditorSaveCommitSurfaceTests {
         // `list.tasks ?? []`. For an area those differ: the cascade also writes the tasks of every
         // child project with no context of its own, and a snapshot that omits them restores the
         // area while leaving those tasks in the context the refused save did not land (T-685).
-        // Neither branch reaches for a rollback.
+        // Neither branch reaches for a rollback. [[T-12020]]: each also holds the tasks a
+        // Complete / Archive row settles inside the same commit, as the Mac's `apply(_:)` does.
         #expect(
             CadenceSourceScan.matchCount(
-                #"CadenceListEditSnapshot\(\s*(area|project),\s*tasks: CadenceTaskMutationSupport\.inheritedContextTargets\(\1: \1\)\s*\)"#,
+                #"CadenceListEditSnapshot\(\s*(area|project),\s*tasks: CadenceTaskMutationSupport\.inheritedContextTargets\(\1: \1\)\s*\+ \(windDown\?\.settledTasks \?\? \[\]\)\s*\)"#,
                 in: listSave
             ) == 2
         )

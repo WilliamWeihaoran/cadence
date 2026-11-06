@@ -132,7 +132,14 @@ struct CadenceListEditorFieldSetTests {
     }
 
     /// Status, Archive and Delete go through the Lists page's own wind-down and cascade, and a
-    /// lifecycle move writes the pending edits before it settles anything.
+    /// lifecycle move settles inside the commit that writes the pending edits.
+    ///
+    /// **[[T-12020]] overturned [[T-8562]]'s order pin.** That pin required the settle to run
+    /// *after* the edit's commit, which made two commits of one gesture: a refused wind-down then
+    /// reported "Nothing was changed" over a rename already in the store. The Mac's `apply(_:)`
+    /// writes both under one snapshot and one commit, and there is no hardware reason for the
+    /// phone to differ (T-8201), so the pin is now the Mac's shape: each edit branch hands the
+    /// settled tasks to its snapshot and settles before its one commit.
     @Test func theIOSEditorsLifecycleRowsReuseTheListPagesMachinery() throws {
         let code = try Self.code(Self.iOSEditorPath)
         #expect(code.contains("if fields.contains(.status) {"))
@@ -146,13 +153,26 @@ struct CadenceListEditorFieldSetTests {
         let perform = try Self.body(of: "private func performListWindDown(_ target: iOSListWindDownTarget) {", in: code, length: 120)
         #expect(perform.contains("lifecycleStep = .windDown(target)\n        save()"))
         #expect(!perform.contains("windDownList"), "the wind-down runs outside the edit's commit")
-        // ... and Save settles it only after its commit landed and no column name was refused.
+        // ... and Save settles it inside its one commit, never over a refused column name.
         let save = try #require(CadenceSourceScan.functionBody(named: "save", in: code))
-        let commit = try #require(save.range(of: "try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: undo.restore)", options: .backwards))
-        let refused = try #require(save.range(of: "guard refusal == nil else { return }"))
-        let settle = try #require(save.range(of: "modelContext.windDownList(target)"))
-        #expect(commit.lowerBound < settle.lowerBound, "a wind-down settles before the pending edits are written")
-        #expect(refused.lowerBound < settle.lowerBound, "a wind-down settles over a refused column name")
+        #expect(!save.contains("windDownList("), "the wind-down commits apart from the edits again")
+        let decided = try #require(save.range(of: "let windDown = refusal == nil ? lifecycleStep?.windDownTarget : nil"))
+        let snapshotTasks = "+ (windDown?.settledTasks ?? [])"
+        let settle = "if let windDown { modelContext.settleListWindDown(windDown) }"
+        let commit = "try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: undo.restore)"
+        #expect(CadenceSourceScan.matchCount(NSRegularExpression.escapedPattern(for: snapshotTasks), in: save) == 2)
+        #expect(CadenceSourceScan.matchCount(NSRegularExpression.escapedPattern(for: settle), in: save) == 2)
+        #expect(CadenceSourceScan.matchCount(NSRegularExpression.escapedPattern(for: commit), in: save) == 2)
+        // Per edit branch: snapshot holds the settled tasks, then the settle, then the commit.
+        var cursor = decided.upperBound
+        for _ in 0..<2 {
+            let held = try #require(save.range(of: snapshotTasks, range: cursor..<save.endIndex))
+            let settled = try #require(save.range(of: settle, range: held.upperBound..<save.endIndex))
+            let committed = try #require(save.range(of: commit, range: settled.upperBound..<save.endIndex))
+            let nextHeld = save.range(of: snapshotTasks, range: held.upperBound..<save.endIndex)
+            #expect(nextHeld.map { settled.upperBound < $0.lowerBound } ?? true, "a branch settles outside its own commit")
+            cursor = committed.upperBound
+        }
         #expect(save.contains("defer { lifecycleStep = nil }"))
 
         let request = try Self.body(of: "private func requestListWindDown(_ action: iOSListWindDownAction) {", in: code, length: 300)

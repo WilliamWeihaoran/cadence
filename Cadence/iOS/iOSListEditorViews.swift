@@ -605,9 +605,10 @@ struct iOSListEditorSheet: View {
         pendingListWindDown = target
     }
 
-    /// As macOS's `apply(_:)` does, the pending field edits are written first -- a lifecycle move
-    /// closes the editor, and the dismissal must not throw them away. So the move is handed to
-    /// `save()`, which settles it after its own commit and not at all when that commit is refused.
+    /// As macOS's `apply(_:)` does, the pending field edits are written with the move -- a
+    /// lifecycle move closes the editor, and the dismissal must not throw them away. So the move
+    /// is handed to `save()`, which settles it inside its own commit ([[T-12020]]): both land, or
+    /// neither does.
     private func performListWindDown(_ target: iOSListWindDownTarget) {
         lifecycleStep = .windDown(target)
         save()
@@ -845,6 +846,11 @@ struct iOSListEditorSheet: View {
         let refusal: KanbanColumnRenameRefusal? =
             CadenceSectionEditingSupport.clearedColumnNames(in: sectionDrafts).isEmpty ? nil : .emptyName
         nameRefusalNotice = refusal?.notice
+        // [[T-12020]]: a Complete / Archive from the Status rows settles inside the edit's own
+        // commit, as macOS's `apply(_:)` does -- one snapshot, one commit -- so a refusal undoes
+        // the edits and the settle together and "Nothing was changed" is true. Not over a refused
+        // column name ([[T-8562]]): the sheet stays open to say so, and a wind-down would close it.
+        let windDown = refusal == nil ? lifecycleStep?.windDownTarget : nil
         do {
             switch resolvedMode {
             case .newArea:
@@ -882,6 +888,7 @@ struct iOSListEditorSheet: View {
                 let undo = CadenceListEditSnapshot(
                     area,
                     tasks: CadenceTaskMutationSupport.inheritedContextTargets(area: area)
+                        + (windDown?.settledTasks ?? [])
                 )
                 area.name = trimmedName
                 area.desc = details
@@ -901,6 +908,7 @@ struct iOSListEditorSheet: View {
                 CadenceCalendarLinkObservations.recordPick(selectedCalendarID, replacing: area.linkedCalendarID)
                 area.linkedCalendarID = selectedCalendarID
                 if case .reopen? = lifecycleStep { area.status = .active }
+                if let windDown { modelContext.settleListWindDown(windDown) }
                 try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: undo.restore)
             case .editProject(let project):
                 // Nothing inherits from a project, so this is `project.tasks` — asked for by the
@@ -909,6 +917,7 @@ struct iOSListEditorSheet: View {
                 let undo = CadenceListEditSnapshot(
                     project,
                     tasks: CadenceTaskMutationSupport.inheritedContextTargets(project: project)
+                        + (windDown?.settledTasks ?? [])
                 )
                 project.name = trimmedName
                 project.desc = details
@@ -924,6 +933,7 @@ struct iOSListEditorSheet: View {
                 CadenceCalendarLinkObservations.recordPick(selectedCalendarID, replacing: project.linkedCalendarID)
                 project.linkedCalendarID = selectedCalendarID
                 if case .reopen? = lifecycleStep { project.status = .active }
+                if let windDown { modelContext.settleListWindDown(windDown) }
                 try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: undo.restore)
             }
         } catch {
@@ -936,19 +946,8 @@ struct iOSListEditorSheet: View {
         // save has already landed and been committed, exactly as the macOS column popover leaves
         // a refused rename's colour and date in the store with the popover still up (T-914).
         guard refusal == nil else { return }
-        // [[T-8562]]: a Complete / Archive from the Status rows settles only once the edits it
-        // carries have landed -- macOS's `apply(_:)` order -- and never over a refused save.
-        // [[T-11614]] group (1): and the editor closes only once the settle has landed too. A
-        // refused wind-down is undone by its own snapshot and the editor stays open saying so,
-        // as the Mac's edit sheet does; the field edits above are already in the store.
-        if case .windDown(let target)? = lifecycleStep {
-            do {
-                try modelContext.windDownList(target)
-            } catch {
-                saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
-                return
-            }
-        }
+        // [[T-11614]] group (1): the editor closes only once a wind-down has landed too -- it was
+        // inside the commit above, so a refused one already returned with the notice.
         dismiss()
     }
 
@@ -1328,7 +1327,13 @@ private extension View {
 enum iOSListEditorLifecycleStep {
     /// Back to Active, inside the edit's own commit.
     case reopen
-    /// Complete or Archive, through `ModelContext.windDownList` once the edit has landed.
+    /// Complete or Archive, through `ModelContext.settleListWindDown` inside the edit's commit
+    /// ([[T-12020]]).
     case windDown(iOSListWindDownTarget)
+
+    var windDownTarget: iOSListWindDownTarget? {
+        if case .windDown(let target) = self { return target }
+        return nil
+    }
 }
 #endif

@@ -673,7 +673,9 @@ struct CadenceContextlessListSurfaceTests {
         #expect(save.contains("case .editArea(let area):"), "the editor no longer has an area branch")
 
         let namesTheCascade = CadenceSourceScan.matchCount(
-            #"CadenceListEditSnapshot\(\s*area,\s*tasks: CadenceTaskMutationSupport\.inheritedContextTargets\(area: area\)\s*\)"#,
+            // [[T-12020]]: the snapshot also holds the tasks a Complete / Archive row settles in the
+            // same commit; that suffix is empty for a plain edit, which is the case run below.
+            #"CadenceListEditSnapshot\(\s*area,\s*tasks: CadenceTaskMutationSupport\.inheritedContextTargets\(area: area\)\s*(\+ \(windDown\?\.settledTasks \?\? \[\]\)\s*)?\)"#,
             in: save
         ) == 1
         let namesTheDirectTasksOnly = CadenceSourceScan.matchCount(

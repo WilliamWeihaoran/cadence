@@ -97,6 +97,67 @@ struct iOSWindDownRefusalTests {
         #expect(open.status == .cancelled)
     }
 
+    // MARK: - The list editor's one commit ([[T-12020]])
+
+    /// `settledTasks` is the set `settleListWindDown` writes -- for an area, its child projects'
+    /// open tasks too -- so a snapshot handed it puts every settled task back.
+    @Test func anAreasSettledTasksReachItsChildProjects() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = container.mainContext
+        let direct = task("direct")
+        let area = try board([direct], in: context)
+        let child = Project(name: "Child")
+        context.insert(child)
+        child.area = area
+        let nested = task("nested")
+        nested.project = child
+        context.insert(nested)
+        try context.save()
+
+        let settled = iOSListWindDownTarget.area(area, .archive).settledTasks
+        #expect(Set(settled.map(\.id)) == Set([direct.id, nested.id]))
+
+        #expect(throws: Refused.self) {
+            try context.windDownList(.area(area, .archive), commit: refuse)
+        }
+        #expect(nested.status == .todo, "a refused archive left the child project's task \(nested.status)")
+    }
+
+    /// The editor's shape: a rename and the settle under one snapshot and one commit. Refused,
+    /// both are undone -- so `editFailureNotice`'s "Nothing was changed" is true; accepted, both
+    /// land in that one commit.
+    @Test(arguments: [iOSListWindDownAction.archive, .complete])
+    func aRenameAndItsWindDownLandOrAreUndoneTogether(_ action: iOSListWindDownAction) throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = container.mainContext
+        let open = task("open")
+        let area = try board([open], in: context)
+        let target = iOSListWindDownTarget.area(area, action)
+
+        func renameAndSettle(commit: (ModelContext) throws -> Void) throws {
+            let undo = CadenceListEditSnapshot(
+                area,
+                tasks: CadenceTaskMutationSupport.inheritedContextTargets(area: area) + target.settledTasks
+            )
+            area.name = "Renamed"
+            context.settleListWindDown(target)
+            try CadencePendingChangePersistence.commitEdit(in: context, commit: commit, undo: undo.restore)
+        }
+
+        #expect(throws: Refused.self) { try renameAndSettle(commit: refuse) }
+        #expect(area.name == "Board", "the rename survived a refused \(action)")
+        #expect(area.status == .active)
+        #expect(open.status == .todo)
+
+        var commits = 0
+        try renameAndSettle(commit: { commits += 1; try $0.save() })
+        #expect(commits == 1)
+        #expect(!context.hasChanges)
+        #expect(area.name == "Renamed")
+        #expect(area.status == (action == .archive ? .archived : .done))
+        #expect(open.status == (action == .archive ? .cancelled : .done))
+    }
+
     // MARK: - The column
 
     @Test(arguments: [iOSColumnWindDownAction.archive, .complete])
