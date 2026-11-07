@@ -186,6 +186,48 @@ struct MarkdownRenderedBlockDeletionSupportTests {
         #expect((markdown as NSString).substring(with: block.storageRange) == "[[task:\(taskID)|Ship iOS notes]]")
     }
 
+    /// A selection that reaches PAST a rendered block covers the block *and* everything else it
+    /// touches.
+    ///
+    /// Seen on `Cadence-iPhone15` on 2026-11-06: Select All in a note holding a fenced code block,
+    /// then Delete, removed only the fence and left `alpha` and `omega` standing, although the
+    /// selection drawn on screen ran from the first character to the last. The caller
+    /// (`iOSMarkdownEditor`'s `expandRenderedBlockDeletionIfNeeded`) performs the returned range as
+    /// the WHOLE deletion and suppresses UIKit's, so returning the block alone silently spared the
+    /// rest of the selection. The same note with no fenced block cleared correctly, which is what
+    /// named the block as the trigger.
+    @Test func selectionReachingPastARenderedBlockCoversTheSelectionAndTheBlock() throws {
+        let markdown = """
+        alpha
+        ```swift
+        let x = 1
+        ```
+        omega
+        """
+        let whole = NSRange(location: 0, length: (markdown as NSString).length)
+
+        let range = try #require(MarkdownRenderedBlockDeletionSupport.expandedDeletionRange(
+            in: markdown,
+            selection: whole
+        ))
+
+        // Covers the selection, not merely the fence: `alpha` and `omega` are both inside it.
+        #expect(NSIntersectionRange(range, whole) == whole)
+
+        // A selection that starts in the prose and stops PART-WAY through the fence still reaches
+        // the fence's end, so no half-fence is left behind.
+        let partial = NSRange(location: 0, length: (markdown as NSString).range(of: "let x").location + 2)
+        let expanded = try #require(MarkdownRenderedBlockDeletionSupport.expandedDeletionRange(
+            in: markdown,
+            selection: partial
+        ))
+        let fence = try #require(
+            MarkdownRenderedBlockDeletionSupport.renderedBlockRanges(in: markdown).first { $0.kind == .code }
+        )
+        #expect(expanded.location == 0)
+        #expect(NSMaxRange(expanded) >= NSMaxRange(fence.storageRange))
+    }
+
     /// The macOS editor finds its blocks from `NSTextStorage` attributes rather than from the
     /// markdown source, so it cannot use `expandedDeletionRange(in:selection:)` — but it shares
     /// this expansion rule instead of carrying a second copy of it.
