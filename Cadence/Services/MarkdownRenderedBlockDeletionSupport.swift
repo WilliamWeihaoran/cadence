@@ -27,7 +27,18 @@ nonisolated enum MarkdownRenderedBlockDeletionSupport {
             .filter { !isSourceRevealed($0, sourceRevealedRanges) }
 
         if safeSelection.length > 0 {
-            return candidates.first { NSIntersectionRange($0.storageRange, safeSelection).length > 0 }?.deletionRange
+            // The UNION of the selection and every block it touches, never one block on its own.
+            // Returning the first intersecting block's range alone discarded the rest of the
+            // selection, and the iOS caller treats a returned range as the whole deletion: Select
+            // All in a note holding a fenced code block deleted ONLY the fence and left every
+            // other line standing, while the selection on screen covered the whole document.
+            // Seen on `Cadence-iPhone15`, 2026-11-06. A selection lying wholly inside one block
+            // still expands to that block, which is what the length-1 probes below and the cases
+            // in `MarkdownRenderedBlockDeletionSupportTests` ask for -- the union of a subset and
+            // its superset is the superset.
+            let touched = candidates.filter { NSIntersectionRange($0.storageRange, safeSelection).length > 0 }
+            guard !touched.isEmpty else { return nil }
+            return touched.reduce(safeSelection) { NSUnionRange($0, $1.deletionRange) }
         }
 
         let probeLocations = [safeSelection.location, safeSelection.location - 1, safeSelection.location + 1]
