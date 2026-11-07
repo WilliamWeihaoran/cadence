@@ -215,10 +215,12 @@ enum GlobalSearchIndexSupport {
             return CadenceSearchIdleSuggestions.lists(areas: searchable, projects: []).areas.map { areaResult(for: $0) }
         }
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
-        return rankedResults(searchable.compactMap { area in
-            guard matches(query: preparedQuery, fields: CadenceListSearchSupport.searchFields(for: area)) else { return nil }
-            return areaResult(for: area)
-        }, query: query, preparedQuery: preparedQuery)
+        return rankedByScore(searchable.compactMap { area in
+            guard let score = CadenceSearchMatcher.matchScore(
+                query: preparedQuery, fields: CadenceListSearchSupport.searchFields(for: area)
+            ) else { return nil }
+            return (areaResult(for: area), score)
+        })
     }
 
     static func areaResult(for area: Area) -> GlobalSearchResult {
@@ -241,10 +243,12 @@ enum GlobalSearchIndexSupport {
             return CadenceSearchIdleSuggestions.lists(areas: [], projects: searchable).projects.map { projectResult(for: $0) }
         }
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
-        return rankedResults(searchable.compactMap { project in
-            guard matches(query: preparedQuery, fields: CadenceListSearchSupport.searchFields(for: project)) else { return nil }
-            return projectResult(for: project)
-        }, query: query, preparedQuery: preparedQuery)
+        return rankedByScore(searchable.compactMap { project in
+            guard let score = CadenceSearchMatcher.matchScore(
+                query: preparedQuery, fields: CadenceListSearchSupport.searchFields(for: project)
+            ) else { return nil }
+            return (projectResult(for: project), score)
+        })
     }
 
     static func projectResult(for project: Project) -> GlobalSearchResult {
@@ -293,10 +297,12 @@ enum GlobalSearchIndexSupport {
         }
 
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
-        return rankedResults(base.compactMap { task in
-            guard matches(query: preparedQuery, fields: CadenceTaskSearchSupport.searchFields(for: task)) else { return nil }
-            return taskResult(for: task)
-        }, query: query, preparedQuery: preparedQuery)
+        return rankedByScore(base.compactMap { task in
+            guard let score = CadenceSearchMatcher.matchScore(
+                query: preparedQuery, fields: CadenceTaskSearchSupport.searchFields(for: task)
+            ) else { return nil }
+            return (taskResult(for: task), score)
+        })
     }
 
     /// One palette task row.
@@ -426,15 +432,17 @@ enum GlobalSearchIndexSupport {
         let meetingNotes = notes.filter { $0.kind == .meeting }
         let ordered = isSearching ? meetingNotes : CadenceSearchIdleSuggestions.notes(meetingNotes)
 
-        let rows: [GlobalSearchResult] = ordered.compactMap { note in
+        let rows: [(result: GlobalSearchResult, score: Int)] = ordered.compactMap { note in
             let title = note.displayTitle
             // [[T-11195]] (c): the facts iOS Search names under the same note, in this row's ` • `.
             let dateLabel = CadenceSearchEventNoteSupport.subtitleFacts(for: note, relativeTo: referenceDate)
                 .joined(separator: " • ")
             let tagText = CadenceSearchTagSupport.text(for: note.sortedTags)
             let content = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
-            guard matches(query: preparedQuery, fields: [title, content, dateLabel, tagText]) else { return nil }
-            return GlobalSearchResult(
+            guard let score = CadenceSearchMatcher.matchScore(
+                query: preparedQuery, fields: [title, content, dateLabel, tagText]
+            ) else { return nil }
+            let row = GlobalSearchResult(
                 id: CadenceSearchIdentity.eventNote(note.id),
                 category: .meetingNotes,
                 title: title,
@@ -446,9 +454,10 @@ enum GlobalSearchIndexSupport {
                 // the one shared rule the Notes rows below already read ([[T-8763]]).
                 detail: CadenceSearchNoteExcerpt.text(for: note, taskTitles: taskTitles)
             )
+            return (row, score)
         }
-        guard isSearching else { return rows }
-        return rankedResults(rows, query: query, preparedQuery: preparedQuery)
+        guard isSearching else { return rows.map(\.result) }
+        return rankedByScore(rows)
     }
 
     /// **Every note kind the Notes page or a list's Documents tab can open** (T-3084).
@@ -470,15 +479,15 @@ enum GlobalSearchIndexSupport {
                 }
         }
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
-        return rankedResults(notes.compactMap { note -> GlobalSearchResult? in
+        return rankedByScore(notes.compactMap { note -> (result: GlobalSearchResult, score: Int)? in
             guard let subtitle = noteSubtitle(for: note) else { return nil }
             let title = NoteReferencePanelSupport.searchTitle(note)
             let content = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
             let tags = CadenceSearchTagSupport.text(for: note.sortedTags)
             let fields = [title, content, subtitle, tags] + NoteReferencePanelSupport.searchKeyFields(note)
-            guard matches(query: preparedQuery, fields: fields) else { return nil }
-            return noteResult(note, subtitle: subtitle, taskTitles: taskTitles)
-        }, query: query, preparedQuery: preparedQuery)
+            guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: fields) else { return nil }
+            return (noteResult(note, subtitle: subtitle, taskTitles: taskTitles), score)
+        })
     }
 
     /// One Notes row; `subtitle` is `noteSubtitle(for:)`'s, which is also the gate. `detail` is
@@ -552,6 +561,25 @@ enum GlobalSearchIndexSupport {
             fields: { [$0.title, $0.subtitle] },
             identity: { $0.id }
         )
+    }
+
+    /// **[[T-12801]]: a matched row ranks on the fields it MATCHED on**, not on the two lines it
+    /// draws. Areas, projects, tasks, notes and event notes were gated on their shared field lists
+    /// (`CadenceTaskSearchSupport.searchFields`, `CadenceListSearchSupport.searchFields`, a note's
+    /// body and tags) and then re-scored by `rankedResults` on `[title, subtitle]` alone -- so a
+    /// row found through its notes, body, tags or aliases scored no match at all, sank to
+    /// `Int.min` with every other such row, and those rows read A to Z. iOS Search ranks the same
+    /// rows by the score of the same fields (`iOSSearchIndexSupport.rankedResults`), so one query
+    /// listed one store's results in two orders ([[T-8201]]: nothing about a pointer or a screen
+    /// width makes relevance differ). The score is the gate's own, computed once.
+    static func rankedByScore(_ scored: [(result: GlobalSearchResult, score: Int)]) -> [GlobalSearchResult] {
+        CadenceSearchMatcher.rank(
+            scored,
+            score: { $0.score },
+            title: { $0.result.title },
+            identity: { $0.result.id }
+        )
+        .map(\.result)
     }
 
     /// The two fixed catalogs, Commands and Pages: in declared order while nothing is typed,
