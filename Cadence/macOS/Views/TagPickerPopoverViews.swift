@@ -31,29 +31,17 @@ struct TagPickerPopover: View {
         TagSupport.pickerChoices(from: allTags)
     }
 
-    private var filteredTags: [Tag] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return activeTags }
-        return activeTags.filter {
-            $0.name.localizedCaseInsensitiveContains(trimmed) ||
-                $0.slug.localizedCaseInsensitiveContains(TagSupport.slug(for: trimmed))
-        }
+    /// [[T-12744]]: the query's rows, Create row and Unarchive row, read from the one decision the
+    /// iOS popover asks too.
+    private var queryDecision: TagPickerQuery {
+        TagSupport.pickerQuery(query, in: allTags)
     }
 
-    private var canCreate: Bool {
-        let name = TagSupport.displayName(for: query)
-        guard !name.isEmpty,
-              name.rangeOfCharacter(from: .alphanumerics) != nil else { return false }
-        let slug = TagSupport.slug(for: name)
-        return !allTags.contains { $0.slug == slug }
-    }
+    private var filteredTags: [Tag] { queryDecision.matches }
 
-    private var archivedQueryMatch: Tag? {
-        let name = TagSupport.displayName(for: query)
-        guard !name.isEmpty else { return nil }
-        let slug = TagSupport.slug(for: name)
-        return allTags.first { $0.isArchived && $0.slug == slug }
-    }
+    private var canCreate: Bool { queryDecision.canCreate }
+
+    private var archivedQueryMatch: Tag? { queryDecision.archivedMatch }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

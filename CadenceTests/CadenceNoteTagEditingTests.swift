@@ -38,7 +38,7 @@ struct CadenceNoteTagEditingTests {
 
     /// Both popovers a note's tag control presents — macOS's `TagPickerPopover` and the iOS
     /// `iOSTaskTagPickerPopover` the new note control reuses — list from `pickerChoices`, so one
-    /// note offers the same tags on both platforms.
+    /// note offers the same tags on both platforms, and since [[T-12744]] narrows them by one query.
     @Test func bothNoteTagPopoversListFromTheOneSharedChoiceFunction() throws {
         let mac = CadenceSourceScan.codeOnly(
             try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TagPickerPopoverViews.swift")
@@ -49,10 +49,23 @@ struct CadenceNoteTagEditingTests {
         #expect(mac.contains("struct TagPickerPopover: View"), "non-vacuity: wrong macOS file read")
         #expect(iOS.contains("struct iOSTaskTagPickerPopover: View"), "non-vacuity: wrong iOS file read")
 
+        // [[T-12744]]: each popover lists through `pickerQuery`, which narrows `pickerChoices` by the
+        // field's text, so the one choice list is reached through the one query decision.
+        let shared = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTagPickerQuery.swift")
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"pickerChoices\(from: allTags\)"#, in: shared) == 1,
+            "the shared query no longer lists from TagSupport.pickerChoices"
+        )
         for (name, source) in [("macOS", mac), ("iOS", iOS)] {
             #expect(
-                CadenceSourceScan.matchCount(#"TagSupport\.pickerChoices\(from: allTags\)"#, in: source) == 1,
-                "\(name)'s tag popover should list from TagSupport.pickerChoices"
+                CadenceSourceScan.matchCount(#"TagSupport\.pickerQuery\("#, in: source) == 1,
+                "\(name)'s tag popover should list through TagSupport.pickerQuery"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"localizedCaseInsensitiveContains"#, in: source) == 0,
+                "\(name)'s tag popover filters the query itself again"
             )
             #expect(
                 CadenceSourceScan.matchCount(#"uniqueBySlug\(allTags\.filter"#, in: source) == 0,

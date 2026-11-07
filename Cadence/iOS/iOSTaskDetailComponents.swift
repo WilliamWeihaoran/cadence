@@ -332,9 +332,11 @@ struct iOSTaskTagPickerPopover: View {
     /// Set when the store refused the tag the field just tried to create. See `addTag()`.
     @State private var tagFailureNotice: String?
 
-    /// [[T-8761]]: the one choice list, shared with macOS's `TagPickerPopover`.
-    private var availableTags: [Tag] {
-        TagSupport.pickerChoices(from: allTags)
+    /// [[T-12744]]: the field narrows the list, offers Create only when no tag carries the slug,
+    /// and names an archived match — one decision, shared with macOS's `TagPickerPopover`, whose
+    /// choices are `TagSupport.pickerChoices` ([[T-8761]]).
+    private var queryDecision: TagPickerQuery {
+        TagSupport.pickerQuery(newTagName, in: allTags)
     }
 
     private var trimmedNewTagName: String {
@@ -345,7 +347,28 @@ struct iOSTaskTagPickerPopover: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
-                    if availableTags.isEmpty {
+                    let decision = queryDecision
+                    ForEach(decision.matches) { tag in
+                        tagRow(tag)
+                    }
+
+                    if let archivedMatch = decision.archivedMatch {
+                        queryActionRow(
+                            systemImage: "arrow.uturn.backward.circle.fill",
+                            title: CadenceListVocabularyCopy.unarchiveRowTitle(name: archivedMatch.name)
+                        ) {
+                            unarchive(archivedMatch)
+                        }
+                    } else if let createName = decision.createName {
+                        queryActionRow(systemImage: "plus.circle.fill", title: "Create \"\(createName)\"") {
+                            addTag()
+                        }
+                    }
+
+                    switch decision.placeholder {
+                    case .none:
+                        EmptyView()
+                    case .offerDefaultTags:
                         Button {
                             addDefaultTags()
                         } label: {
@@ -363,10 +386,18 @@ struct iOSTaskTagPickerPopover: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.iosPressable)
-                    } else {
-                        ForEach(availableTags) { tag in
-                            tagRow(tag)
-                        }
+                    case .noMatches:
+                        Text("No matching tags")
+                            .cadenceFont(.rowTitle)
+                            .foregroundStyle(Theme.dim)
+                            .frame(
+                                maxWidth: .infinity,
+                                minHeight: CadenceTagPickerMetrics.rowMinHeight(
+                                    at: dynamicTypeSize, scaling: .enabled
+                                ),
+                                alignment: .leading
+                            )
+                            .padding(.horizontal, 12)
                     }
                 }
                 .padding(CadenceTagPickerMetrics.listPadding)
@@ -383,7 +414,7 @@ struct iOSTaskTagPickerPopover: View {
             }
 
             HStack(spacing: CadenceTagPickerMetrics.rowContentSpacing) {
-                TextField("New tag", text: $newTagName)
+                TextField("Find or create tag", text: $newTagName)
                     .textFieldStyle(.plain)
                     .cadenceFont(.fieldLabel)
                     .foregroundStyle(Theme.text)
@@ -496,6 +527,30 @@ struct iOSTaskTagPickerPopover: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
+    /// The Create and Unarchive rows the query offers, in the tag rows' own touch metrics.
+    private func queryActionRow(systemImage: String, title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: CadenceTagPickerMetrics.rowContentSpacing) {
+                Image(systemName: systemImage)
+                    .cadenceFont(CadenceTagChipStyle.labelRole, weight: .semibold)
+                    .foregroundStyle(Theme.blue)
+                Text(title)
+                    .cadenceFont(.rowTitle)
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                Spacer(minLength: CadenceTagPickerMetrics.rowContentSpacing)
+            }
+            .padding(.horizontal, CadenceTagPickerMetrics.rowHorizontalPadding)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: CadenceTagPickerMetrics.rowMinHeight(at: dynamicTypeSize, scaling: .enabled),
+                alignment: .leading
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.iosPressable)
+    }
+
     private func isSelected(_ tag: Tag) -> Bool {
         selectedTags.contains { $0.id == tag.id }
     }
@@ -544,6 +599,36 @@ struct iOSTaskTagPickerPopover: View {
         // **T-1110.** Not `editFailureNotice`. The mint above already committed, so "Nothing was
         // changed" is false here by two lines — and the tag it denies is drawn in the list right
         // above this sentence. Only the attachment failed, and only that is claimed.
+        guard onCommit(previous) else {
+            tagFailureNotice = TagSupport.attachmentFailureNotice
+            return
+        }
+        tagFailureNotice = nil
+        newTagName = ""
+    }
+
+    /// **[[T-12744]].** The Unarchive row: the Mac picker's `restore`, on touch. The un-archive is
+    /// committed first and undone by the same two-field snapshot on a refusal; only then is the tag
+    /// selected and the selection committed, so neither the chip nor the cleared field outruns the
+    /// store ([[T-652]], T-1070).
+    private func unarchive(_ tag: Tag) {
+        let previousIsArchived = tag.isArchived
+        let previousUpdatedAt = tag.updatedAt
+        tag.isArchived = false
+        tag.updatedAt = Date()
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext) {
+                tag.isArchived = previousIsArchived
+                tag.updatedAt = previousUpdatedAt
+            }
+        } catch {
+            tagFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        let previous = selectedTags
+        if !isSelected(tag) {
+            selectedTags = TagSupport.sorted(selectedTags + [tag])
+        }
         guard onCommit(previous) else {
             tagFailureNotice = TagSupport.attachmentFailureNotice
             return
