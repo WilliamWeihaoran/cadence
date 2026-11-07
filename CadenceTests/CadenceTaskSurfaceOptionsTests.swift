@@ -70,6 +70,62 @@ struct CadenceTaskSurfaceOptionsTests {
         }
     }
 
+    // MARK: - The list chip under a By List heading (T-12331)
+
+    /// **Seen on an 11" iPad.** All Tasks, Group = By List: the heading read "[SAMPLE] IOS POLISH"
+    /// and every row beneath it carried a chip reading "[Sample] iOS Polish". The group title *is*
+    /// the list's name — `CadenceTaskQuerySupport.displayGroups` builds `.byList` out of
+    /// `todayListGroups`, whose `title` is the container's own — so the chip restated the heading
+    /// once per row. macOS's All Tasks already suppressed it, and so do both Todays.
+    @Test func aByListHeadingIsNotRestatedOnEveryRowBeneathIt() {
+        #expect(
+            CadenceTaskSurfaceOptions.showsContainerChip(on: .allTasks, groupedBy: .byList) == false
+        )
+        #expect(
+            CadenceTaskSurfaceOptions.showsContainerChip(on: .today, groupedBy: .byList) == false
+        )
+    }
+
+    /// And only `.byList`. A date or priority heading says when or how urgent, never where, so the
+    /// chip is the only thing on the row that answers "which list" — the reason Today's deleted
+    /// Overdue group was the one that had to keep it.
+    @Test func aDateOrPriorityHeadingLeavesTheListChipAlone() {
+        for mode in [TaskGroupingMode.none, .byDate, .byPriority] {
+            #expect(
+                CadenceTaskSurfaceOptions.showsContainerChip(on: .allTasks, groupedBy: mode),
+                "All Tasks dropped the list chip under a \(mode.rawValue) heading"
+            )
+        }
+    }
+
+    /// A surface that never names its list does not start naming it because it is grouped: the
+    /// grouped answer is the surface's answer narrowed, never widened.
+    @Test func groupingNeverAddsAChipTheSurfaceWithheld() {
+        for surface in CadenceTaskSurface.allCases {
+            for mode in TaskGroupingMode.allCases {
+                let grouped = CadenceTaskSurfaceOptions.showsContainerChip(on: surface, groupedBy: mode)
+                #expect(
+                    !grouped || CadenceTaskSurfaceOptions.showsContainerChip(on: surface),
+                    "\(surface.rawValue) gained a list chip from \(mode.rawValue) grouping"
+                )
+            }
+        }
+    }
+
+    /// `Cadence/iOS/` is invisible to this macOS-built target, so the one thing that can be pinned
+    /// about the call site is the call itself: the grouped arm of `iOSTaskCollectionPage.groupStack`
+    /// must ask the grouped question, not the bare one. Without this the predicate above can be
+    /// right while the page still draws the chip.
+    @Test func theIOSCollectionPageAsksTheGroupedQuestion() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskCollectionPage.swift")
+        )
+        #expect(
+            source.contains("groupedBy: groupingMode"),
+            "iOSTaskCollectionPage no longer narrows the list chip by grouping mode"
+        )
+    }
+
     // MARK: - The completed list, uncapped on both tiers (T-2057)
 
     /// **The phone lists every finished task now (T-2057).** The owner's answer to "what should

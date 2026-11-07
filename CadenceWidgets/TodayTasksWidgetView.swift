@@ -269,7 +269,9 @@ struct TodayTasksWidgetView: View {
                     badgeRow
                 }
                 Spacer(minLength: 10)
-                Text("\(entry.snapshot.totalCount)")
+                // [[T-12332]]: the snapshot's own string, so the unavailable tile shows an em dash
+                // rather than asserting "0" beside its own `unavailable` chip.
+                Text(entry.snapshot.headerCountLabel)
                     .font(
                         .system(
                             size: usesInlineHeaderBadges ? scale.titleSize : scale.countSize,

@@ -96,6 +96,29 @@ enum CadenceTaskSurfaceOptions {
         }
     }
 
+    /// The same question, asked of a surface that is **grouped**: a By List heading already prints
+    /// the list's name, so a chip under it restates the heading on every row.
+    ///
+    /// **[[T-12331]]: iOS All Tasks was the one surface that did not ask it.** Three of the four
+    /// places this is decided already answered "no" here and said why — macOS's All Tasks inline as
+    /// `showsContainer && !section.isListGroup` (`TasksListView.TasksListSectionView`), and both
+    /// Todays flatly, because every group a Today draws *is* a list
+    /// (`TasksPanel.todayGroupSections`, `iOSTodayTaskSections`). iOS's All Tasks passed the bare
+    /// surface answer into `iOSTaskGroupSection` whatever the grouping was, so switching Group to
+    /// By List drew "[Sample] iOS Polish" on every row under the heading "[SAMPLE] IOS POLISH".
+    /// Seen on an 11" iPad in landscape; the chip is `CadenceBoardCardMetadata`'s, whose own doc
+    /// states the rule this restores ("the information is already stated by the surface").
+    ///
+    /// Only `.byList` suppresses. A date or priority bucket is a reading of the rows and says
+    /// nothing about where the work lives, so the chip is the only thing that does — which is the
+    /// argument `TasksPanel` makes for its deleted Overdue group, in reverse.
+    static func showsContainerChip(
+        on surface: CadenceTaskSurface,
+        groupedBy groupingMode: TaskGroupingMode
+    ) -> Bool {
+        showsContainerChip(on: surface) && groupingMode != .byList
+    }
+
     /// How many completed rows a surface lists on a given tier, or `nil` for "all of them".
     ///
     /// **`.desktop` is uncapped, and that is a decision rather than an oversight (T-290).** The
