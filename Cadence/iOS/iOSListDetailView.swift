@@ -553,9 +553,11 @@ private struct iOSListDetailHeader: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: projectDueDate))
                 }
+                // [[T-12602]]: the Mac's control -- the shared pencil, in the list's own colour.
                 iOSIconButton(
-                    systemImage: "slider.horizontal.3",
+                    systemImage: ListDetailHeaderAccessibility.editGlyph,
                     accessibilityLabel: ListDetailHeaderAccessibility.editLabel(listName: title),
+                    tint: Color(hex: colorHex),
                     action: onEdit
                 )
             }

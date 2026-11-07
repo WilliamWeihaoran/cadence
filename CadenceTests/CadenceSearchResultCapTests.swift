@@ -160,4 +160,31 @@ import Testing
         // A tap target, not a caption.
         #expect(rowBody.contains("minHeight: 44"))
     }
+
+    /// **[[T-12601]]: the "N more results" row is one neutral colour on both platforms.** iOS drew
+    /// its chevron, label and keyboard plate in `Theme.blue`, the Mac in `Theme.dim`, which
+    /// [[T-4320]] argued: the row is not a result and must not read as one. Both read one constant.
+    @Test func bothContinuationRowsReadOneNeutralTint() throws {
+        #expect(CadenceSearchResultCap.continuationTint == Theme.dim)
+        #expect(CadenceSearchResultCap.continuationTint != Theme.blue)
+        let rows: [(path: String, declaration: String)] = [
+            ("Cadence/iOS/iOSSearchSupportViews.swift", "private struct iOSSearchMoreResultsRow"),
+            ("Cadence/macOS/Views/GlobalSearchSupportViews.swift", "struct GlobalSearchMoreResultsRow"),
+        ]
+        for row in rows {
+            let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(row.path))
+            let body = try #require(
+                CadenceSourceScan.declarationBody(row.declaration, in: code),
+                "non-vacuity: \(row.declaration) was not found in \(row.path)"
+            )
+            #expect(body.contains("Button(action: continuation.reveal)"), "non-vacuity: \(row.path)'s body is not the row")
+            // The chevron, the label and the highlight plate.
+            #expect(
+                CadenceSourceScan.matchCount("CadenceSearchResultCap\\.continuationTint", in: body) == 3,
+                "\(row.path)'s continuation row does not read the shared tint for chevron, label and plate"
+            )
+            #expect(body.contains("Theme.blue") == false, "\(row.path)'s continuation row paints itself blue")
+            #expect(body.contains("Theme.dim") == false, "\(row.path)'s continuation row hand-types its tint")
+        }
+    }
 }

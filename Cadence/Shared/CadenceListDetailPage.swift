@@ -313,6 +313,12 @@ enum ListDetailHeaderAccessibility {
     static func editLabel(listName: String) -> String {
         "Edit \(TaskTitleSupport.displayTitle(listName, fallback: TaskTitleSupport.defaultCompactDisplayTitle))"
     }
+
+    /// The header's edit control's glyph, drawn by both headers in the list's own colour
+    /// ([[T-12602]], under [[T-8201]]). iOS drew `slider.horizontal.3` in plain text colour, a
+    /// glyph that reads as "view options" elsewhere; the pencil is both platforms' edit glyph
+    /// (Settings > Tags' per-row edit), and the Mac's header already drew it.
+    static let editGlyph = "pencil"
 }
 
 /// The list surfaces' small words, one spelling on both platforms ([[T-8563]]).

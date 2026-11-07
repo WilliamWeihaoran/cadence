@@ -79,6 +79,16 @@ struct CadenceSearchHighlightPlate: ViewModifier {
     }
 }
 
+extension CadenceSearchResultCap {
+    /// **The "N more results" row's tint, read by both search surfaces** ([[T-12601]], under
+    /// [[T-8201]]): its chevron, its label and its keyboard highlight plate. Neutral, because the
+    /// row is not a result and must not read as one ([[T-4320]], the Mac's argued reading). iOS
+    /// drew it in `Theme.blue` with no reason given; an iPad's hardware-keyboard highlight is the
+    /// exact case the neutral plate was argued for, and touch changes how the row is reached, not
+    /// what it is.
+    static let continuationTint: Color = Theme.dim
+}
+
 extension View {
     func cadenceSearchHighlightPlate(isHighlighted: Bool, tint: Color) -> some View {
         modifier(CadenceSearchHighlightPlate(isHighlighted: isHighlighted, tint: tint))

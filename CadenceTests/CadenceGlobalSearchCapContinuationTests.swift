@@ -291,7 +291,7 @@ struct CadenceGlobalSearchCapContinuationTests {
         )
         #expect(row.contains("let isHighlighted: Bool"))
         // [[T-11196]]: the branch moved into the plate both platforms share; the row hands it its flag.
-        #expect(row.contains(".cadenceSearchHighlightPlate(isHighlighted: isHighlighted, tint: Theme.dim)"))
+        #expect(row.contains(".cadenceSearchHighlightPlate(isHighlighted: isHighlighted, tint: CadenceSearchResultCap.continuationTint)"))
         let plate = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceSearchKeyboardHighlight.swift"))
         let plateBody = try #require(CadenceSourceScan.declarationBody("struct CadenceSearchHighlightPlate", in: plate))
         #expect(CadenceSourceScan.matchCount("isHighlighted \\?", in: plateBody) == 2)

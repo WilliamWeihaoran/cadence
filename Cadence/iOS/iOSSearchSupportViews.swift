@@ -342,6 +342,9 @@ struct iOSSearchResultContinuation {
 /// It is drawn inside the same card as the rows it is talking about rather than under it: the
 /// thing the user is deciding about is this list, and a control floating beside the card would
 /// read as a page-level action.
+///
+/// [[T-12601]]: neutral, in `CadenceSearchResultCap.continuationTint` as Cmd+K's row is -- it is not
+/// a result and must not read as one. It drew in `Theme.blue` until then, for no stated reason.
 private struct iOSSearchMoreResultsRow: View {
     let continuation: iOSSearchResultContinuation
 
@@ -355,21 +358,21 @@ private struct iOSSearchMoreResultsRow: View {
                     // stays the 13 it already drew — a role owns a curve and a default base, not
                     // the only base — so this is a no-op at `DynamicTypeSize.large`.
                     .cadenceFont(.rowTitle, base: 13, weight: .semibold)
-                    .foregroundStyle(Theme.blue)
+                    .foregroundStyle(CadenceSearchResultCap.continuationTint)
                     // The icon tile's width, so the label starts on the same vertical as every
                     // result title above it.
                     .frame(width: 34)
 
                 Text(continuation.label)
                     .cadenceFont(.rowTitle, base: 15, weight: .semibold)
-                    .foregroundStyle(Theme.blue)
+                    .foregroundStyle(CadenceSearchResultCap.continuationTint)
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
             }
             .padding(.vertical, 10)
             .frame(minHeight: 44)
-            .searchKeyboardHighlight(continuation.isHighlighted, tint: Theme.blue)
+            .searchKeyboardHighlight(continuation.isHighlighted, tint: CadenceSearchResultCap.continuationTint)
             .contentShape(Rectangle())
         }
         .buttonStyle(.iosPressable)

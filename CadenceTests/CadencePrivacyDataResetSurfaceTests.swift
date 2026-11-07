@@ -725,13 +725,15 @@ struct CadencePrivacyDataResetSurfaceTests {
     /// ("Delete Cadence Data") while iOS had no account; it clears the account profile now, so it
     /// carries the Mac's name for the same deletion, and neither platform types the other's.
     @Test func bothResetScreensNameTheAccountTheyDelete() throws {
+        #expect(CadenceDataResetCopy.title.contains("Account"), "the reset's shared name drops the account")
         for path in [
             "Cadence/iOS/iOSDataResetSettingsSection.swift",
             "Cadence/macOS/Views/SettingsDataSafetySection.swift",
         ] {
             let code = try strippingComments(sourceFile(path))
             #expect(code.contains("PrivacyDataResetService"), "non-vacuity: \(path) is not a caller of the reset")
-            #expect(code.contains("Delete Account & Data"), "\(path) does not name the account it deletes")
+            // [[T-12600]]: through the reset's one shared name, which says the account.
+            #expect(code.contains("CadenceDataResetCopy.title"), "\(path) does not name the account it deletes")
             #expect(!code.contains("Delete Cadence Data"), "\(path) still names the data-only deletion")
         }
     }

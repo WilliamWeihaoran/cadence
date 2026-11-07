@@ -390,7 +390,8 @@ struct GlobalSearchHeader: View {
 /// **It is keyboard-reachable** (T-4320): `GlobalSearchOverlayStateSupport.keyboardRows` puts it on
 /// the arrow-key path after its section's last result, it draws the highlight when it holds it,
 /// and Return on it reveals rather than selects. The highlight is neutral (`Theme.dim`) for the
-/// same reason the row takes no tint.
+/// same reason the row takes no tint. [[T-12601]]: that colour is
+/// `CadenceSearchResultCap.continuationTint`, which iOS Search's row reads too.
 ///
 /// **`.plain`, as `GlobalSearchResultRow` is ([[T-9621]]).** The highlight is this list's hover
 /// layer -- a hover moves it -- so `.cadencePlain`'s blue wash would be a second one.
@@ -404,12 +405,12 @@ struct GlobalSearchMoreResultsRow: View {
             HStack(spacing: 12) {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
+                    .foregroundStyle(CadenceSearchResultCap.continuationTint)
                     .frame(width: 34, height: 34)
 
                 Text(continuation.label)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
+                    .foregroundStyle(CadenceSearchResultCap.continuationTint)
                     .lineLimit(1)
 
                 Spacer()
@@ -418,7 +419,7 @@ struct GlobalSearchMoreResultsRow: View {
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             // The shared search highlight, the plate iOS Search draws too ([[T-11196]]).
-            .cadenceSearchHighlightPlate(isHighlighted: isHighlighted, tint: Theme.dim)
+            .cadenceSearchHighlightPlate(isHighlighted: isHighlighted, tint: CadenceSearchResultCap.continuationTint)
             .contentShape(RoundedRectangle(cornerRadius: CadenceSearchHighlightPlate.cornerRadius))
         }
         .buttonStyle(.plain)

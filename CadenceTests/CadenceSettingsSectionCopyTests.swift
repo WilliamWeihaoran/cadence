@@ -1657,6 +1657,38 @@ struct CadenceSettingsSectionCopyTests {
         }
     }
 
+    /// **[[T-12600]]: the reset has one name, read everywhere it is said.** The Mac's card was
+    /// titled "Account & Data Controls" over a "Delete Account & Data" button, while the phone's
+    /// said the latter throughout; every site typed its own copy. Both cards draw the shared title,
+    /// and neither file types the name at all ([[T-8201]]).
+    @Test func bothDataResetCardsReadOneTitle() throws {
+        #expect(CadenceDataResetCopy.title == "Delete Account & Data")
+        let cards: [(path: String, declaration: String, readers: Int)] = [
+            // Card title, card button, gate eyebrow.
+            ("Cadence/macOS/Views/SettingsDataSafetySection.swift", "private struct SettingsDataResetCard: View", 3),
+            // Section label, card title, card button, gate navigation title.
+            ("Cadence/iOS/iOSDataResetSettingsSection.swift", "struct iOSDataResetSettingsSection: View", 4),
+        ]
+        for card in cards {
+            let code = try Self.strippedSource(at: card.path)
+            let body = try #require(
+                CadenceSourceScan.declarationBody(card.declaration, in: code),
+                "non-vacuity: \(card.declaration) was not found in \(card.path)"
+            )
+            #expect(body.contains("CadenceUnmanagedStoreCopy.resetDeletesThem"), "non-vacuity: \(card.path)'s body is not the card")
+            #expect(
+                CadenceSourceScan.matchCount("Text\\(CadenceDataResetCopy\\.title\\)", in: body) == 1,
+                "\(card.path)'s card does not draw the shared title exactly once"
+            )
+            #expect(
+                CadenceSourceScan.matchCount("CadenceDataResetCopy\\.title\\b", in: code) == card.readers,
+                "\(card.path) does not read the reset's shared name at every site that says it"
+            )
+            #expect(code.contains("Account & Data Controls") == false, "\(card.path) types the Mac's old card title")
+            #expect(code.contains("\"Delete Account & Data\"") == false, "\(card.path) types the reset's name instead of reading it")
+        }
+    }
+
     /// **[[T-7208]]: the Mac's Privacy card names what an AI action sends.** It said "selected
     /// note content", the clause [[T-1322]] removed from the AI pane's disclosure because the
     /// request carries the note's title, its whole text and its list's name.

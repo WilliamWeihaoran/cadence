@@ -456,6 +456,14 @@ nonisolated enum CadenceListLifecycleSectionCopy {
 /// the account profile), and its last screen before an irreversible button left out the one
 /// consequence that reaches past the machine in front of the reader. One sentence, read by both.
 nonisolated enum CadenceDataResetCopy {
+    /// The reset's one name ([[T-12600]], under [[T-8201]]): both Data Safety cards' title and
+    /// button, the iOS section label over the card, and both typed-phrase gates' heading. The
+    /// Mac's card was titled "Account & Data Controls" over a button saying this, while the
+    /// phone's said this throughout, with no hardware reason between them; the phone's is kept --
+    /// a verb phrase like every sibling card's shared title. Every site typed its own copy until
+    /// then, which is how the Mac's card title drifted.
+    static let title = "Delete Account & Data"
+
     static let deletionsReachOtherDevices =
         "Cadence syncs through your private iCloud database, so these deletions reach your other devices."
 

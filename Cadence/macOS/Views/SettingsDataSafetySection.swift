@@ -520,7 +520,7 @@ private struct SettingsDataResetCard: View {
                     }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Account & Data Controls")
+                    Text(CadenceDataResetCopy.title)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.text)
                     // **T-1680 — the second clause is the one that was missing.** The sentence
@@ -544,7 +544,7 @@ private struct SettingsDataResetCard: View {
                 Spacer()
 
                 SettingsActionButton(tone: .tinted(Theme.red), action: onDeleteData) {
-                    Label("Delete Account & Data", systemImage: "trash.fill")
+                    Label(CadenceDataResetCopy.title, systemImage: "trash.fill")
                 }
             }
         }
@@ -573,7 +573,7 @@ private struct SettingsDataResetConfirmationSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SectionEyebrowLabel(text: "Delete Account & Data")
+            SectionEyebrowLabel(text: CadenceDataResetCopy.title)
                 .padding(.horizontal, 24)
                 .padding(.top, 18)
                 .padding(.bottom, 10)

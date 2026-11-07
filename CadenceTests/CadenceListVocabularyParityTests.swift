@@ -41,6 +41,23 @@ struct CadenceListVocabularyParityTests {
         #expect(!mac.contains("accessibilityLabel: \"Edit \\("), "the Mac header spells its own edit label")
     }
 
+    /// **[[T-12602]]: both list headers draw one edit glyph in the list's own colour.** iOS drew
+    /// `slider.horizontal.3` in plain text colour; the Mac a pencil in `colorHex` ([[T-8201]]).
+    @Test func bothListHeadersDrawTheSharedEditGlyphInTheListColour() throws {
+        #expect(ListDetailHeaderAccessibility.editGlyph == "pencil")
+        let phone = try Self.ios("Cadence/iOS/iOSListDetailView.swift")
+        let header = try #require(CadenceSourceScan.declarationBody("private struct iOSListDetailHeader: View", in: phone))
+        let mac = try Self.ios("Cadence/macOS/Views/ListDetailView.swift")
+        let call = "systemImage: ListDetailHeaderAccessibility\\.editGlyph,\\s*"
+            + "accessibilityLabel: ListDetailHeaderAccessibility\\.editLabel\\(listName: \\w+\\),\\s*"
+            + "tint: Color\\(hex: colorHex\\)"
+        #expect(CadenceSourceScan.matchCount(call, in: header) == 1, "the iOS header's edit control is not the shared pencil in the list colour")
+        #expect(CadenceSourceScan.matchCount(call, in: mac) == 1, "the Mac header's edit control is not the shared pencil in the list colour")
+        #expect(!header.contains("slider.horizontal.3"), "the iOS header draws the view-options glyph for edit again")
+        #expect(!header.contains("systemImage: \"pencil\""), "the iOS header hand-types its edit glyph")
+        #expect(!mac.contains("systemImage: \"pencil\",\n                    accessibilityLabel: ListDetailHeaderAccessibility"), "the Mac header hand-types its edit glyph")
+    }
+
     /// (a): the phone's New List and New Context sheets confirm with "Create"; their edit modes
     /// keep "Save".
     @Test func thePhoneCreationSheetsConfirmWithCreate() throws {

@@ -30,7 +30,7 @@ struct CadenceCodexFunctionalParityTests {
         #expect(ListDetailHeaderAccessibility.deadlineLabel(dueDate: "2026-10-14") == "Deadline \(DateFormatters.shortDateString(from: "2026-10-14"))")
         #expect(header.contains(".accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: projectDueDate))"))
         // [[T-8563]] (e): named for the list, as the Mac's is, rather than a bare "Edit list".
-        #expect(header.contains("accessibilityLabel: ListDetailHeaderAccessibility.editLabel(listName: title),\n                    action: onEdit"))
+        #expect(header.contains("accessibilityLabel: ListDetailHeaderAccessibility.editLabel(listName: title),\n                    tint: Color(hex: colorHex),\n                    action: onEdit"))
         #expect(!header.contains("relativeDate"))
         #expect(!header.contains("fullShortDate"))
         let mac = try read("Cadence/macOS/Views/ListDetailView.swift")

@@ -489,7 +489,9 @@ struct AppStoreReviewReadinessTests {
         // [[T-8736]]: the title is shared copy, read by the Mac's card and the iOS section alike.
         #expect(CadenceAccountSettingsCopy.deleteAccountTitle == "Delete Account…")
         #expect(accountSettings.contains("CadenceAccountSettingsCopy.deleteAccountTitle"))
-        #expect(dataSafetySettings.contains("Delete Account & Data"))
+        // [[T-12600]]: the reset's name is shared copy, read by the Mac's card, button and gate.
+        #expect(CadenceDataResetCopy.title == "Delete Account & Data")
+        #expect(dataSafetySettings.contains("CadenceDataResetCopy.title"))
         #expect(deletionBody.contains("PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts"))
         #expect(resetService.contains("StoreBackupManager.deleteAllBackups"))
         #expect(resetService.contains("CadenceWidgetRefreshCenter.clearStoredState"))

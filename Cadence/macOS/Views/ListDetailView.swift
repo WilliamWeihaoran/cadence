@@ -324,7 +324,7 @@ private struct ListDetailChromeView: View {
                 }
 
                 CadenceIconButton(
-                    systemImage: "pencil",
+                    systemImage: ListDetailHeaderAccessibility.editGlyph,
                     accessibilityLabel: ListDetailHeaderAccessibility.editLabel(listName: name),
                     tint: Color(hex: colorHex),
                     action: { showEdit = true }

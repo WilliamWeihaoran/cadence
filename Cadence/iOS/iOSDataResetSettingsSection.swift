@@ -33,7 +33,7 @@ struct iOSDataResetSettingsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // The Mac's label: both platforms clear an account profile since [[T-8736]].
-            CadenceSettingsSectionLabel(text: "Delete Account & Data")
+            CadenceSettingsSectionLabel(text: CadenceDataResetCopy.title)
 
             iOSSettingsCard {
                 VStack(alignment: .leading, spacing: 12) {
@@ -46,7 +46,7 @@ struct iOSDataResetSettingsSection: View {
                         )
 
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Delete Account & Data")
+                            Text(CadenceDataResetCopy.title)
                                 .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                                 .foregroundStyle(Theme.text)
 
@@ -77,7 +77,7 @@ struct iOSDataResetSettingsSection: View {
                     // the destructive control lives only there — the same shape macOS's pane has
                     // since T-575. See `PrivacyDataResetConfirmation`.
                     iOSActionButton(
-                        title: "Delete Account & Data",
+                        title: CadenceDataResetCopy.title,
                         systemImage: "trash.fill",
                         role: .destructive,
                         size: .compact,
@@ -199,7 +199,7 @@ private struct iOSDataResetConfirmationSheet: View {
             .scrollIndicators(.hidden)
             .cadenceScaledTypography()
             .background(Theme.bg.ignoresSafeArea())
-            .navigationTitle("Delete Account & Data")
+            .navigationTitle(CadenceDataResetCopy.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
