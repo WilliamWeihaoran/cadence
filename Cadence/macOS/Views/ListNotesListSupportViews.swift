@@ -34,6 +34,10 @@ struct NoteFolderSheetRequest: Identifiable {
 
 struct NoteFolderSheet: View {
     let request: NoteFolderSheetRequest
+    /// The folders this list's notes are already filed in, offered as rows under the field as iOS's
+    /// sheet offers them ([[T-12751]]): without them, a new note bound for an existing folder needed
+    /// its name retyped exactly, and a typo made a second folder.
+    var existingFolders: [String] = []
     let onSave: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var folderPath = ""
@@ -54,10 +58,10 @@ struct NoteFolderSheet: View {
                 .foregroundStyle(Theme.text)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("Folder")
+                Text(NoteFolderSheetCopy.fieldLabel)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.dim)
-                TextField("Planning/Research", text: $folderPath)
+                TextField(NoteFolderSheetCopy.placeholder, text: $folderPath)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.text)
@@ -65,6 +69,14 @@ struct NoteFolderSheet: View {
                     .padding(.vertical, 8)
                     .background(Theme.surfaceElevated)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
+                // [[T-12751]]: the sentence iOS's sheet has always shown under this field.
+                Text(NoteFolderSheetCopy.nestingHint)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.dim)
+            }
+
+            if !existingFolders.isEmpty {
+                existingFolderList
             }
 
             // T-7268: Escape cancels and Return confirms; Return is gated by the same `isDisabled`
@@ -94,6 +106,38 @@ struct NoteFolderSheet: View {
         .padding(18)
         .frame(width: 320)
         .background(Theme.surface)
+    }
+
+    /// iOS's "Existing" rows ([[T-12751]]), in the shared row label at pointer height. A click
+    /// fills the field, as a tap does there; the commit stays the button below. Scrolls past a
+    /// handful so a list with many folders cannot push the buttons off the sheet.
+    private var existingFolderList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(NoteFolderSheetCopy.existingHeading)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(existingFolders, id: \.self) { folder in
+                        Button {
+                            folderPath = folder
+                        } label: {
+                            NoteFolderExistingRowLabel(
+                                folder: folder,
+                                isSelected: normalizedFolderPath == folder,
+                                fontSize: 13,
+                                minHeight: 28
+                            )
+                        }
+                        .buttonStyle(.cadencePlain)
+                    }
+                }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            // A sheet sizes to its content and a ScrollView has none of its own to offer, so the
+            // height is stated: every row up to six, then scroll.
+            .frame(height: CGFloat(min(existingFolders.count, 6)) * 30)
+        }
     }
 }
 

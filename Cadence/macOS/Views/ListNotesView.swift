@@ -239,7 +239,7 @@ struct ListNotesView: View {
             selectedTagFilterSlugs.formIntersection(Set(slugs))
         }
         .sheet(item: $folderSheetRequest) { request in
-            NoteFolderSheet(request: request) { folderPath in
+            NoteFolderSheet(request: request, existingFolders: listNoteFolderNames) { folderPath in
                 applyFolderRequest(request, folderPath: folderPath)
             }
         }

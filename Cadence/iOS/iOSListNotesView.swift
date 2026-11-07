@@ -679,8 +679,8 @@ struct iOSNoteFolderSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     VStack(alignment: .leading, spacing: 8) {
-                        SectionEyebrowLabel(text: "Folder")
-                        TextField("Planning/Research", text: $folderPath)
+                        SectionEyebrowLabel(text: NoteFolderSheetCopy.fieldLabel)
+                        TextField(NoteFolderSheetCopy.placeholder, text: $folderPath)
                             .textFieldStyle(.plain)
                             .font(.system(size: 16))
                             .foregroundStyle(Theme.text)
@@ -694,41 +694,24 @@ struct iOSNoteFolderSheet: View {
                                 RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                                     .fill(Theme.surfaceElevated)
                             )
-                        Text("Use / to nest, like Planning/Research.")
+                        Text(NoteFolderSheetCopy.nestingHint)
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.dim)
                     }
 
                     if !existingFolders.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
-                            SectionEyebrowLabel(text: "Existing")
+                            SectionEyebrowLabel(text: NoteFolderSheetCopy.existingHeading)
                             ForEach(existingFolders, id: \.self) { folder in
                                 Button {
                                     folderPath = folder
                                 } label: {
-                                    HStack(spacing: 10) {
-                                        Image(systemName: "folder")
-                                            .font(.system(size: 13))
-                                            .foregroundStyle(Theme.dim)
-                                        Text(folder)
-                                            .font(.system(size: 15))
-                                            .foregroundStyle(normalized == folder ? Theme.text : Theme.muted)
-                                            .lineLimit(1)
-                                        Spacer(minLength: 0)
-                                        if normalized == folder {
-                                            Image(systemName: "checkmark")
-                                                .font(.system(size: 12, weight: .semibold))
-                                                .foregroundStyle(Theme.blue)
-                                        }
-                                    }
-                                    .padding(.horizontal, 12)
-                                    .frame(minHeight: 44)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                                            .fill(normalized == folder ? Theme.blue.opacity(0.16) : .clear)
+                                    NoteFolderExistingRowLabel(
+                                        folder: folder,
+                                        isSelected: normalized == folder,
+                                        fontSize: 15,
+                                        minHeight: 44
                                     )
-                                    .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.iosPressable)
                             }

@@ -319,3 +319,58 @@ struct NoteFolderMoveMenu: View {
         }
     }
 }
+
+// MARK: - Folder sheet
+
+/// The words the New Folder Note / Move to Folder sheet says, once for both platforms
+/// ([[T-12751]], under [[T-8201]]).
+///
+/// The Mac sheet (`NoteFolderSheet`) was a bare field: no line saying a `/` nests, and no list of
+/// the folders that already exist, so filing a new note into one meant retyping its exact name.
+/// iOS's `iOSNoteFolderSheet` had both. Pointer against touch explains the sheet's container and
+/// its row heights; it does not explain one platform being told how folders work and the other
+/// not, so the copy and the row live here and both sheets read them.
+enum NoteFolderSheetCopy {
+    static let fieldLabel = "Folder"
+    static let placeholder = "Planning/Research"
+    static let nestingHint = "Use / to nest, like Planning/Research."
+    static let existingHeading = "Existing"
+}
+
+/// One existing folder offered in the folder sheet: the folder glyph, the whole path, and a
+/// checkmark plus a blue fill when the field already names it. The host wraps it in its own
+/// platform button (`.cadencePlain` on macOS, whose hover plate is drawn at this same
+/// `Theme.radiusControl`; `.iosPressable` on iOS) and passes its own text size and row height —
+/// a 44pt touch row on iOS, a pointer row on the Mac.
+struct NoteFolderExistingRowLabel: View {
+    let folder: String
+    let isSelected: Bool
+    var fontSize: CGFloat
+    var minHeight: CGFloat
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: NoteFolderMoveMenu.systemImage)
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.dim)
+            Text(folder)
+                .font(.system(size: fontSize))
+                .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(minHeight: minHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                .fill(isSelected ? Theme.blue.opacity(0.16) : .clear)
+        )
+        .contentShape(Rectangle())
+    }
+}

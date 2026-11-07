@@ -382,6 +382,39 @@ struct CadenceNoteFolderSurfaceTests {
         ].sorted())
     }
 
+    /// [[T-12751]], under [[T-8201]]: the New Folder Note / Move to Folder sheet tells both platforms
+    /// that `/` nests and offers the folders that already exist. The Mac sheet was a bare field, so
+    /// a new note bound for an existing folder needed its name retyped exactly; iOS had the hint and
+    /// the rows. Pointer against touch accounts for the container and the row height, not for one
+    /// platform being told how folders work. The words and the row are shared, each sheet reads
+    /// them once, and the Mac host hands its sheet the list's folder names.
+    @Test func bothFolderSheetsOfferTheNestingHintAndTheExistingFolders() throws {
+        let sheets = [
+            "Cadence/macOS/Views/ListNotesListSupportViews.swift",
+            "Cadence/iOS/iOSListNotesView.swift"
+        ]
+        for path in sheets {
+            let code = try folderStrippingComments(folderSource(path))
+            #expect(code.folderMatchCount(ofPattern: #"Text\(NoteFolderSheetCopy\.nestingHint\)"#) == 1, "\(path)")
+            #expect(code.folderMatchCount(ofPattern: #"NoteFolderSheetCopy\.existingHeading"#) == 1, "\(path)")
+            #expect(code.folderMatchCount(ofPattern: #"NoteFolderExistingRowLabel\("#) == 1, "\(path)")
+            #expect(code.folderMatchCount(ofPattern: #"ForEach\(existingFolders"#) == 1, "\(path)")
+            #expect(code.folderMatchCount(ofPattern: #""Use / to nest"#) == 0, "\(path) spells the hint itself")
+        }
+
+        let macHost = try folderStrippingComments(folderSource("Cadence/macOS/Views/ListNotesView.swift"))
+        #expect(macHost.folderMatchCount(
+            ofPattern: #"NoteFolderSheet\(request: request, existingFolders: listNoteFolderNames\)"#
+        ) == 1)
+        let iOSHost = try folderStrippingComments(folderSource("Cadence/iOS/iOSListNotesView.swift"))
+        #expect(iOSHost.folderMatchCount(
+            ofPattern: #"iOSNoteFolderSheet\(request: request, existingFolders: folderNames\)"#
+        ) == 1)
+
+        #expect(NoteFolderSheetCopy.nestingHint == "Use / to nest, like Planning/Research.")
+        #expect(NoteFolderSheetCopy.nestingHint.contains(NoteFolderSheetCopy.placeholder))
+    }
+
     /// The assignment needle, against literals that must and must not match.
     ///
     /// Required by `Cadence/Shared/AGENTS.md`: a regex needle without a self-check can have a typo
