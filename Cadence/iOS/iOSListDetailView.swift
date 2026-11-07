@@ -379,7 +379,7 @@ struct iOSListDetailView: View {
     /// rather than reading as a column of blank headings.
     private var listEmptyPanel: some View {
         iOSEmptyPanel(
-            systemImage: "checklist",
+            systemImage: CadenceEmptyStateCopy.listDetailSystemImage,
             title: CadenceEmptyStateCopy.listDetailTitle,
             subtitle: CadenceEmptyStateCopy.listDetailSubtitle
         )

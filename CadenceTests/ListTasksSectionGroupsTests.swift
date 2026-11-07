@@ -225,6 +225,28 @@ struct ListTasksSectionGroupsTests {
         #expect(page.contains("CadenceTaskQuerySupport.sectionAccent(named: name, configs: sectionConfigs)"))
         #expect(page.contains(#"title: "Completed",\#n                    tint: Theme.green,"#))
     }
+
+    /// **[[T-12541]]: the empty list page draws one glyph at both widths.** The Mac drew
+    /// `checkmark.circle` ("all done") where iOS drew `checklist`, over the same shared title and
+    /// subtitle. Both read `CadenceEmptyStateCopy.listDetailSystemImage` now; a source pin, since
+    /// both empty states are `private` members of SwiftUI views.
+    @Test func theEmptyListPageDrawsTheSharedGlyphOnBothPlatforms() throws {
+        #expect(CadenceEmptyStateCopy.listDetailSystemImage == "checklist")
+        let read = CadenceSourceScan.strippedSourceReader()
+
+        let mac = try read("Cadence/macOS/Views/ListDetailComponents.swift")
+        #expect(CadenceSourceScan.matchCount(
+            #"message:\s*CadenceEmptyStateCopy\.listDetailTitle,\s*subtitle:\s*CadenceEmptyStateCopy\.listDetailSubtitle,\s*icon:\s*CadenceEmptyStateCopy\.listDetailSystemImage\s*\)"#,
+            in: mac
+        ) == 1, "the Mac list page no longer draws the shared empty glyph (T-12541)")
+        #expect(!mac.contains(#""checkmark.circle""#), "the Mac list page spells its own empty glyph again (T-12541)")
+
+        let iOS = try read("Cadence/iOS/iOSListDetailView.swift")
+        let panel = try #require(CadenceSourceScan.declarationBody("private var listEmptyPanel: some View", in: iOS))
+        #expect(panel.contains("systemImage: CadenceEmptyStateCopy.listDetailSystemImage,"),
+                "the iOS list page no longer draws the shared empty glyph (T-12541)")
+        #expect(!panel.contains(#""checklist""#), "the iOS list page spells its own empty glyph again (T-12541)")
+    }
 }
 
 #endif

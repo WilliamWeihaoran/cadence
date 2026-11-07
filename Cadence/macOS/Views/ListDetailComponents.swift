@@ -132,7 +132,7 @@ struct ListTasksView: View {
                 EmptyStateView(
                     message: CadenceEmptyStateCopy.listDetailTitle,
                     subtitle: CadenceEmptyStateCopy.listDetailSubtitle,
-                    icon: "checkmark.circle"
+                    icon: CadenceEmptyStateCopy.listDetailSystemImage
                 )
                 .padding(.top, 40)
                 .listRowBackground(Color.clear)

@@ -59,6 +59,12 @@ nonisolated enum CadenceEmptyStateCopy {
     /// phone said "Add a task above" beside a page with no field above it. Same failure, and the
     /// same one `CadenceTodayPresentationSupport.emptySubtitle` already records.
     static let listDetailSubtitle = "Add a task with +, or move one here from Inbox."
+    /// **The glyph over `listDetailTitle`, on both platforms** ([[T-12541]], under [[T-8201]]).
+    /// iOS drew `checklist`; the Mac drew `checkmark.circle`, the "all done" mark, over a state
+    /// that also covers a brand-new list and whose subtitle asks for a task to be added -- the
+    /// same misreading [[T-11209]] took off the Mac Focus pick card. `checklist` is also the
+    /// All Tasks collection's empty glyph, so a page of tasks with none in it draws one picture.
+    static let listDetailSystemImage = "checklist"
 
     /// The same page when the list it was showing is not there any more — the Mac's
     /// `MissingListDetailView` and the phone's `iOSMissingListView`, which are one situation

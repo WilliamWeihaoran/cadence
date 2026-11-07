@@ -146,16 +146,14 @@ struct iOSCalendarBoardEventCard: View {
                         title: subtitle,
                         systemImage: item.isAllDay ? "sun.max" : "clock",
                         tint: item.color,
-                        cardCornerRadius: cornerRadius,
-                        fillsWidth: true
+                        cardCornerRadius: cornerRadius
                     )
                     if item.isRecurring {
                         CadenceBoardMetadataChip(
                             title: "Repeats",
                             systemImage: "repeat",
                             tint: item.color,
-                            cardCornerRadius: cornerRadius,
-                            fillsWidth: true
+                            cardCornerRadius: cornerRadius
                         )
                     }
                 }

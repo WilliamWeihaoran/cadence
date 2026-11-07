@@ -131,6 +131,16 @@ struct CalendarBoardEventCard: View {
                         )
                     }
                 }
+
+                // [[T-12531]]: the calendar's name, as `iOSCalendarBoardEventCard` draws it and as
+                // this app's timeline blocks do. The card's tint alone cannot tell two calendars of
+                // one colour apart, so the name is kept on both boards rather than dropped from iOS.
+                if !item.calendarTitle.isEmpty {
+                    Text(item.calendarTitle)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.subdued)
+                        .lineLimit(1)
+                }
             }
         }
         .padding(.leading, 14)

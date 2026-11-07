@@ -73,13 +73,10 @@ struct CadenceBoardMetadataChip: View {
     /// The corner radius of the card this chip is drawn inside. The chip derives its own from it —
     /// see `CadenceBoardMetadataChipMetrics.cornerRadius(inCardOfRadius:)`.
     let cardCornerRadius: CGFloat
-    /// Whether the chip stretches to its container's width.
-    ///
-    /// A genuine per-surface difference rather than a token one, and it is not a platform switch:
-    /// iOS lays its task chips out in a two-column `LazyVGrid`, where a cell that does not fill
-    /// leaves a ragged right edge, and macOS lays its two event chips in an intrinsic-width
-    /// `HStack`, where filling would stretch "Repeats" across half a 306pt column.
-    var fillsWidth: Bool = false
+    // Always its own width. A `fillsWidth` option stretched it to its container for the iOS task
+    // chips' two-column `LazyVGrid`; [[T-8181]] replaced that grid with Ledger tokens, which left
+    // the iOS board event card's two chips in an `HStack` as its only callers -- each stretched
+    // across half the card where the Mac's drew two pills ([[T-12531]], under [[T-8201]]).
 
     private var wraps: Bool {
         scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize)
@@ -96,15 +93,10 @@ struct CadenceBoardMetadataChip: View {
                 .lineLimit(wraps ? nil : 1)
                 .minimumScaleFactor(wraps ? 1 : CadenceBoardMetadataChipMetrics.minimumScale)
                 .fixedSize(horizontal: false, vertical: wraps)
-
-            if fillsWidth {
-                Spacer(minLength: 0)
-            }
         }
         .foregroundStyle(tint)
         .padding(.horizontal, CadenceBoardMetadataChipMetrics.horizontalPadding)
         .padding(.vertical, CadenceBoardMetadataChipMetrics.verticalPadding)
-        .frame(maxWidth: fillsWidth ? .infinity : nil, alignment: .leading)
         .background(tint.opacity(CadenceCalendarEventStyle.chipTintOpacity()))
         .clipShape(
             RoundedRectangle(

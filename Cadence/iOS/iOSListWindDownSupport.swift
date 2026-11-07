@@ -278,7 +278,7 @@ extension iOSListWindDownTarget {
     /// **[[T-12532]]: it names the kind.** It was `"Couldn't \(verb) List"` on the action alone,
     /// under a control that read "Archive Project" or "Complete Area" and a confirmation titled
     /// "Archive \(noun)" -- and "list" is not a thing the app calls anything, which is why
-    /// `CadenceListDeletionSummary.failureNotice` already names the kind. So a refusal keeps the
+    /// `CadenceListDeletionKind.deleteFailureNotice` already names the kind. So a refusal keeps the
     /// whole target, not just its action.
     var failureAlertTitle: String {
         "Couldn't \(action.verb) \(list.noun)"

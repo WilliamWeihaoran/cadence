@@ -263,6 +263,41 @@ struct CadenceSharedBoardChromeTests {
                 "a Mac event card chip does not read the shared radius (T-9836)")
     }
 
+    /// **[[T-12531]]: the two boards' event cards draw the same chips and the same calendar line.**
+    /// iOS stretched its time and "Repeats" chips across the card (`fillsWidth: true`, the
+    /// parameter's last callers) and drew the calendar's name under them; the Mac drew two pills
+    /// and no name. Both draw intrinsic-width chips and the name now, and the chip has no
+    /// stretching option left to pass.
+    @Test func bothBoardEventCardsDrawIntrinsicChipsAndTheCalendarName() throws {
+        let chip = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceBoardMetadataChip.swift"))
+        #expect(chip.contains("struct CadenceBoardMetadataChip: View"), "non-vacuity: the shared chip is gone")
+        #expect(!chip.contains("fillsWidth"), "the board chip can stretch to its container again (T-12531)")
+
+        let iOSFile = try strippingComments(sourceFile("Cadence/iOS/iOSBoardCards.swift"))
+        guard let iOSStart = iOSFile.range(of: "struct iOSCalendarBoardEventCard: View {"),
+              let iOSEnd = iOSFile.range(of: "let iOSBoardColumnWidth", range: iOSStart.upperBound..<iOSFile.endIndex)
+        else {
+            Issue.record("non-vacuity: iOSCalendarBoardEventCard not found")
+            return
+        }
+        let iOSCard = String(iOSFile[iOSStart.upperBound..<iOSEnd.lowerBound])
+        let macFile = try strippingComments(sourceFile("Cadence/macOS/Views/CalendarBoardItemSupportViews.swift"))
+        guard let macStart = macFile.range(of: "struct CalendarBoardEventCard: View {") else {
+            Issue.record("non-vacuity: CalendarBoardEventCard not found")
+            return
+        }
+        let macCard = String(macFile[macStart.upperBound...])
+
+        for (name, card) in [("iOS", iOSCard), ("Mac", macCard)] {
+            #expect(card.components(separatedBy: "CadenceBoardMetadataChip(").count - 1 == 2,
+                    "non-vacuity: the \(name) event card does not draw its two chips")
+            #expect(!card.contains("fillsWidth"), "the \(name) event card stretches its chips again (T-12531)")
+            #expect(CadenceSourceScan.matchCount(
+                #"if !item\.calendarTitle\.isEmpty \{\s*Text\(item\.calendarTitle\)"#, in: card
+            ) == 1, "the \(name) event card does not draw the calendar's name (T-12531)")
+        }
+    }
+
     /// **[[T-9833]]: the iOS Board's Completed disclosure states Expanded/Collapsed**, as macOS's
     /// `KanbanCompletedTasksToggle` has since [[T-7081]] and `iOSTaskGroupSection`'s heading does.
     @Test func theIOSBoardCompletedDisclosureStatesItsState() throws {
