@@ -21,7 +21,7 @@ struct iOSListsView: View {
     @State private var pendingWindDown: iOSListWindDownTarget?
     /// Set when a wind-down made without a confirmation was refused ([[T-11614]] group (1)). The
     /// menu or swipe that made it has closed, so an alert is the only surface left to say it.
-    @State private var refusedWindDown: iOSListWindDownAction?
+    @State private var refusedWindDown: iOSListWindDownTarget?
 
     private var activeAreas: [Area] {
         areas.filter(\.isActive)
@@ -439,7 +439,7 @@ struct iOSListsView: View {
                 pendingWindDown = needsConfirmation
             }
         } catch {
-            refusedWindDown = target.action
+            refusedWindDown = target
         }
     }
 

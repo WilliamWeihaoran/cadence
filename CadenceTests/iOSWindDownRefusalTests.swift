@@ -85,6 +85,17 @@ struct iOSWindDownRefusalTests {
         #expect(project.status == .active)
     }
 
+    /// [[T-12532]]: the refusal alert names the kind the control named -- "Archive Project" is
+    /// refused as "Couldn't Archive Project", never "Couldn't Archive List".
+    @Test func aRefusedListWindDownIsTitledWithTheListsOwnNoun() {
+        let area = Area(name: "Home")
+        let project = Project(name: "Empty")
+        #expect(iOSListWindDownTarget.area(area, .archive).failureAlertTitle == "Couldn't Archive Area")
+        #expect(iOSListWindDownTarget.area(area, .complete).failureAlertTitle == "Couldn't Complete Area")
+        #expect(iOSListWindDownTarget.project(project, .archive).failureAlertTitle == "Couldn't Archive Project")
+        #expect(iOSListWindDownTarget.project(project, .complete).failureAlertTitle == "Couldn't Complete Project")
+    }
+
     @Test func anAcceptedListWindDownSettlesAndCommits() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = container.mainContext

@@ -571,7 +571,7 @@ struct iOSSidebarListsRegion: View {
     @State private var pendingWindDown: iOSListWindDownTarget?
     /// Set when a row's Complete / Archive with nothing to confirm was refused ([[T-11614]] group
     /// (1)); the context menu has closed, so the Lists page's alert says it.
-    @State private var refusedWindDown: iOSListWindDownAction?
+    @State private var refusedWindDown: iOSListWindDownTarget?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -736,7 +736,7 @@ struct iOSSidebarListsRegion: View {
         do {
             pendingWindDown = try modelContext.windDownListUnlessConfirmationIsNeeded(target)
         } catch {
-            refusedWindDown = action
+            refusedWindDown = target
         }
     }
 

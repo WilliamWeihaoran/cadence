@@ -551,6 +551,24 @@ struct CadenceListWindDownSurfaceTests {
         }
     }
 
+    /// **[[T-12532]] -- a refused menu wind-down keeps the target, so its alert names the kind.**
+    /// Both hosts stored only the `iOSListWindDownAction`, so the title could say nothing but
+    /// "Couldn't Archive List" under a control that read "Archive Project". The title is built from
+    /// the target's own `list.noun`, and neither host can drop back to storing the bare action.
+    @Test func aRefusedMenuWindDownIsTitledWithTheTargetsNoun() throws {
+        func squeezed(_ text: String) -> String { String(text.filter { !$0.isWhitespace }) }
+        let support = squeezed(try strippingComments(sourceFile("Cadence/iOS/iOSListWindDownSupport.swift")))
+        #expect(support.contains(#"extensioniOSListWindDownTarget{varfailureAlertTitle:String{"Couldn't\(action.verb)\(list.noun)""#))
+        #expect(support.contains("funciOSListWindDownFailureAlert(refusedtarget:Binding<iOSListWindDownTarget?>)"))
+        #expect(!support.contains("List\"}"), "an alert title still ends in the generic word List")
+        for path in ["Cadence/iOS/iOSListViews.swift", "Cadence/iOS/iOSRootSidebar.swift"] {
+            let code = squeezed(try strippingComments(sourceFile(path)))
+            #expect(code.contains("@StateprivatevarrefusedWindDown:iOSListWindDownTarget?"), "\(path) stores less than the refused target")
+            #expect(code.contains("refusedWindDown=target}"), "\(path) does not record the refused target")
+            #expect(code.contains(".iOSListWindDownFailureAlert(refused:$refusedWindDown)"))
+        }
+    }
+
     /// **[[T-11753]] -- the iPad sidebar row offers the Lists page's wind-down set.** A
     /// full-screen iPad has no entrance to the Lists page, so its sidebar row menu is the list's
     /// only menu there; it offered Edit / Move Up / Move Down, and completion sat only inside the

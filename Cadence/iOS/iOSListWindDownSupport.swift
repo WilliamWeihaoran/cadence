@@ -271,11 +271,17 @@ extension ModelContext {
     }
 }
 
-extension iOSListWindDownAction {
+extension iOSListWindDownTarget {
     /// Title-case, because it is an alert title; `CadencePendingChangePersistence.editFailureNotice`
     /// is the sentence under it, as on the Mac's edit sheets.
+    ///
+    /// **[[T-12532]]: it names the kind.** It was `"Couldn't \(verb) List"` on the action alone,
+    /// under a control that read "Archive Project" or "Complete Area" and a confirmation titled
+    /// "Archive \(noun)" -- and "list" is not a thing the app calls anything, which is why
+    /// `CadenceListDeletionSummary.failureNotice` already names the kind. So a refusal keeps the
+    /// whole target, not just its action.
     var failureAlertTitle: String {
-        "Couldn't \(verb) List"
+        "Couldn't \(action.verb) \(list.noun)"
     }
 }
 
@@ -304,12 +310,12 @@ extension View {
     /// The refusal of a wind-down made **without** a confirmation — a context-menu or swipe item on
     /// a list with nothing open. The menu has closed on the tap, so there is no surface of its own
     /// left to say it, for the reason `iOSTaskMoveFailureAlertModifier` gives. `nil` hides it.
-    func iOSListWindDownFailureAlert(refused action: Binding<iOSListWindDownAction?>) -> some View {
+    func iOSListWindDownFailureAlert(refused target: Binding<iOSListWindDownTarget?>) -> some View {
         alert(
-            action.wrappedValue?.failureAlertTitle ?? "",
+            target.wrappedValue?.failureAlertTitle ?? "",
             isPresented: Binding(
-                get: { action.wrappedValue != nil },
-                set: { if !$0 { action.wrappedValue = nil } }
+                get: { target.wrappedValue != nil },
+                set: { if !$0 { target.wrappedValue = nil } }
             )
         ) {
             Button("OK", role: .cancel) {}
