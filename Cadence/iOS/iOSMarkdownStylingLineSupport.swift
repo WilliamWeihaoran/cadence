@@ -15,12 +15,12 @@ extension iOSMarkdownStyler {
         lineStart: Int,
         quote: iOSMarkdownQuoteMatch
     ) {
-        let levelInset = CGFloat(max(quote.depth - 1, 0)) * 12
+        let indent = MarkdownQuoteSupport.paragraphIndent(depth: quote.depth)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 4
         paragraph.minimumLineHeight = baseFont.lineHeight
-        paragraph.firstLineHeadIndent = 18 + levelInset
-        paragraph.headIndent = 18 + levelInset
+        paragraph.firstLineHeadIndent = indent
+        paragraph.headIndent = indent
         paragraph.paragraphSpacingBefore = 4
         paragraph.paragraphSpacing = 4
 
@@ -67,7 +67,8 @@ extension iOSMarkdownStyler {
         _ storage: NSMutableAttributedString,
         lineRange: NSRange,
         lineStart: Int,
-        list: iOSMarkdownListMatch
+        list: iOSMarkdownListMatch,
+        quoteDepth: Int? = nil
     ) {
         let markerRange = list.markerRange.shifted(by: lineStart)
         switch list.kind {
@@ -109,7 +110,7 @@ extension iOSMarkdownStyler {
         // just above ([[T-12263]]).
         storage.addAttribute(
             .paragraphStyle,
-            value: listParagraphStyle(for: list, in: storage, lineRange: lineRange),
+            value: listParagraphStyle(for: list, in: storage, lineRange: lineRange, quoteDepth: quoteDepth),
             range: lineRange
         )
     }
@@ -126,6 +127,17 @@ extension iOSMarkdownStyler {
 
     static func listMatch(in line: String) -> iOSMarkdownListMatch? {
         guard let info = MarkdownListSupport.lineInfo(in: line) else { return nil }
+        return listMatch(from: info)
+    }
+
+    /// The list item after a quote's `> ` prefix, ranges in the whole line's coordinates
+    /// ([[T-12282]]). Read through `MarkdownQuoteSupport.listLineInfo`, the helper macOS reads too.
+    static func quotedListMatch(in line: String) -> iOSMarkdownListMatch? {
+        guard let quoted = MarkdownQuoteSupport.listLineInfo(in: line) else { return nil }
+        return listMatch(from: quoted.list)
+    }
+
+    private static func listMatch(from info: MarkdownListLineInfo) -> iOSMarkdownListMatch {
         let kind: iOSMarkdownListMatch.Kind
         switch info.kind {
         // Which spelling a checklist uses comes from `checklistSyntax`, not from testing `marker`
@@ -153,7 +165,8 @@ extension iOSMarkdownStyler {
     private static func listParagraphStyle(
         for list: iOSMarkdownListMatch,
         in storage: NSAttributedString,
-        lineRange: NSRange
+        lineRange: NSRange,
+        quoteDepth: Int? = nil
     ) -> NSParagraphStyle {
         // Shared with `MarkdownStylist` on macOS via `MarkdownListIndentMetrics` (Shared/). The
         // four constants used to be re-declared here, so list indentation could drift on one
@@ -189,6 +202,17 @@ extension iOSMarkdownStyler {
         }
         paragraph.lineSpacing = 4
         paragraph.paragraphSpacing = 2
+        if let quoteDepth {
+            // Inside a quote the whole item moves right by the quote's own indent, so the marker
+            // and box sit inside the rail rather than over it ([[T-12282]]); the quote's spacing
+            // is kept so a quoted list reads as part of the one block around it.
+            let inset = MarkdownQuoteSupport.paragraphIndent(depth: quoteDepth)
+            paragraph.firstLineHeadIndent += inset
+            paragraph.headIndent += inset
+            paragraph.minimumLineHeight = baseFont.lineHeight
+            paragraph.paragraphSpacingBefore = 4
+            paragraph.paragraphSpacing = 4
+        }
         return paragraph
     }
 

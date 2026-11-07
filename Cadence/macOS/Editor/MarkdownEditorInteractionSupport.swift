@@ -865,7 +865,9 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         let lineRange = nsString.lineRange(for: NSRange(location: characterIndex, length: 0))
         let line = nsString.substring(with: NSRange(location: lineRange.location, length: min(lineRange.length, nsString.length - lineRange.location)))
             .trimmingCharacters(in: .newlines)
-        guard let checklist = MarkdownChecklistSupport.lineInfo(in: line),
+        // `quotable`: a quoted task line (`> - [ ] x`) is styled with a drawn box ([[T-12282]]), so
+        // its prefix range — and the state character it flips — sit after the quote prefix.
+        guard let checklist = MarkdownChecklistSupport.quotableLineInfo(in: line),
               let toggle = MarkdownChecklistSupport.toggledState(in: line) else {
             return nil
         }

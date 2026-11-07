@@ -1231,7 +1231,10 @@ struct iOSMarkdownEditor: UIViewRepresentable {
 
             let lineRange = NSRange(location: lineStart, length: contentsEnd - lineStart)
             let line = nsText.substring(with: lineRange)
-            guard let markerRange = MarkdownChecklistSupport.lineInfo(in: line)?.markerRange else { return nil }
+            // `quotable`: a quoted task line (`> - [ ] x`) draws a box too, so it must be hittable
+            // at the marker after the quote prefix, the same character the box is drawn over
+            // ([[T-12282]]).
+            guard let markerRange = MarkdownChecklistSupport.quotableLineInfo(in: line)?.markerRange else { return nil }
             let absoluteMarkerRange = NSRange(location: lineStart + markerRange.location, length: markerRange.length)
             let lineIndex = nsText.substring(to: lineStart).filter { $0 == "\n" }.count
 

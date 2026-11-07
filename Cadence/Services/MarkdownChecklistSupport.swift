@@ -53,6 +53,32 @@ nonisolated enum MarkdownChecklistSupport {
         githubLineInfo(in: line) ?? legacyLineInfo(in: line)
     }
 
+    /// `lineInfo(in:)`, or — when the line is a blockquote — the checklist after its `> ` prefix,
+    /// with every range in the whole line's coordinates.
+    ///
+    /// This is the read the checkbox TAP and TOGGLE take, on both platforms: a quoted task line
+    /// (`> - [ ] todo`) is styled with a drawn box ([[T-12282]]), so the box has to be hittable and
+    /// flip the right character. `lineInfo(in:)` itself stays unquoted because
+    /// `MarkdownListSupport.lineInfo` builds on it, and a list read must not swallow the quote.
+    static func quotableLineInfo(in line: String) -> MarkdownChecklistLine? {
+        if let info = lineInfo(in: line) { return info }
+        guard let quote = MarkdownQuoteSupport.lineInfo(in: line) else { return nil }
+        let nsLine = line as NSString
+        let offset = NSMaxRange(quote.prefixRange)
+        guard offset < nsLine.length,
+              let inner = lineInfo(in: nsLine.substring(from: offset)) else {
+            return nil
+        }
+        return MarkdownChecklistLine(
+            syntax: inner.syntax,
+            markerRange: inner.markerRange.shifted(by: offset),
+            stateRange: inner.stateRange.shifted(by: offset),
+            contentRange: inner.contentRange.shifted(by: offset),
+            isDone: inner.isDone,
+            content: inner.content
+        )
+    }
+
     /// The one-character edit that flips a checklist line, as a range into `line` plus its
     /// replacement.
     ///
@@ -60,7 +86,7 @@ nonisolated enum MarkdownChecklistSupport {
     /// single character into an `NSTextStorage` — it needs the range, not a rebuilt line, and
     /// used to derive the replacement itself by comparing a raw UTF-16 code point.
     static func toggledState(in line: String) -> MarkdownChecklistToggle? {
-        guard let info = lineInfo(in: line) else { return nil }
+        guard let info = quotableLineInfo(in: line) else { return nil }
         let replacement = info.isDone ? uncheckedMarker(for: line, info: info) : checkedMarker(for: line, info: info)
         return MarkdownChecklistToggle(stateRange: info.stateRange, replacement: replacement)
     }

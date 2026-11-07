@@ -207,6 +207,18 @@ enum iOSMarkdownStyler {
                 lineStart: range.location,
                 quote: quote
             )
+            // A quote line can also be a list item (`> - [ ] todo`). Returning here alone left the
+            // marker as literal muted text while Return-continuation treated the line as a task
+            // ([[T-12282]]); the list is read past the prefix by the same shared helper macOS uses.
+            if let list = quotedListMatch(in: line) {
+                applyListLine(
+                    storage,
+                    lineRange: range,
+                    lineStart: range.location,
+                    list: list,
+                    quoteDepth: quote.depth
+                )
+            }
             return
         }
 

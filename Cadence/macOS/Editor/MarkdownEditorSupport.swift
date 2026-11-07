@@ -560,10 +560,10 @@ enum MarkdownStylist {
             heading(storage, line, lineRange, lineStart, level: 1)
         } else if let quote = blockquoteMatch(in: line) {
             let paragraph = NSMutableParagraphStyle()
-            let levelInset = CGFloat(max(quote.depth - 1, 0)) * 12
+            let indent = MarkdownQuoteSupport.paragraphIndent(depth: quote.depth)
             paragraph.lineSpacing = 4
-            paragraph.firstLineHeadIndent = 18 + levelInset
-            paragraph.headIndent = 18 + levelInset
+            paragraph.firstLineHeadIndent = indent
+            paragraph.headIndent = indent
             paragraph.paragraphSpacingBefore = 4
             paragraph.paragraphSpacing = 4
 
@@ -586,6 +586,19 @@ enum MarkdownStylist {
                 let existing = storage.attribute(.font, at: rest.location, effectiveRange: nil) as? NSFont ?? baseFont
                 let italic = NSFontManager.shared.convert(existing, toHaveTrait: .italicFontMask)
                 storage.addAttribute(.font, value: italic, range: rest)
+            }
+            // A quote line can also be a list item (`> - [ ] todo`). This branch used to end here,
+            // so the `else if` below never saw it and the marker stayed literal muted text while
+            // Return-continuation treated the line as a task ([[T-12282]]). Same shared read iOS
+            // takes; ranges come back in whole-line coordinates, after the hidden quote prefix.
+            if let quoted = MarkdownQuoteSupport.listLineInfo(in: line) {
+                applyListLine(
+                    storage: storage,
+                    lineRange: lineRange,
+                    lineStart: lineStart,
+                    list: quoted.list,
+                    quoteDepth: quote.depth
+                )
             }
         } else if let list = MarkdownListSupport.lineInfo(in: line) {
             applyListLine(storage: storage, lineRange: lineRange, lineStart: lineStart, list: list)
@@ -610,8 +623,14 @@ enum MarkdownStylist {
         storage: NSTextStorage,
         lineRange: NSRange,
         lineStart: Int,
-        list: MarkdownListLineInfo
+        list: MarkdownListLineInfo,
+        quoteDepth: Int? = nil
     ) {
+        defer {
+            if let quoteDepth {
+                insetListParagraphForQuote(storage: storage, lineRange: lineRange, depth: quoteDepth)
+            }
+        }
         switch list.kind {
         case .ordered:
             applyOrderedListLine(storage: storage, lineRange: lineRange, lineStart: lineStart, list: list)
@@ -1221,6 +1240,21 @@ enum MarkdownStylist {
     /// A GitHub-syntax checklist line hides its whole prefix, so — unlike a marker that is a real
     /// visible glyph — the first line has nothing to push its text across and must start at the
     /// same indent its wrapped lines do. The box is drawn back into the gutter that leaves.
+    /// Moves a quoted list line's paragraph right by the quote's indent and gives it the quote's
+    /// spacing, so the marker or drawn box sits inside the rail rather than on it ([[T-12282]]).
+    /// Runs after `applyListLine` has set the list's own style, whichever kind it was.
+    private static func insetListParagraphForQuote(storage: NSTextStorage, lineRange: NSRange, depth: Int) {
+        guard lineRange.length > 0 else { return }
+        let current = storage.attribute(.paragraphStyle, at: lineRange.location, effectiveRange: nil) as? NSParagraphStyle
+        let ps = (current?.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+        let inset = MarkdownQuoteSupport.paragraphIndent(depth: depth)
+        ps.firstLineHeadIndent += inset
+        ps.headIndent += inset
+        ps.paragraphSpacingBefore = 4
+        ps.paragraphSpacing = 4
+        storage.addAttribute(.paragraphStyle, value: ps, range: lineRange)
+    }
+
     private static func checkboxListStyle(for level: Int) -> NSParagraphStyle {
         let indent = listContentIndent(for: level, markerWidth: 2)
         let ps = NSMutableParagraphStyle()

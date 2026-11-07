@@ -36,6 +36,23 @@ nonisolated struct MarkdownListLineInfo: Equatable {
     var contentStart: Int {
         contentRange.location
     }
+
+    /// The same item with every range moved `offset` characters right — for a list read out of the
+    /// tail of a longer line, such as the content after a blockquote's `> ` prefix
+    /// (`MarkdownQuoteSupport.listLineInfo`, [[T-12282]]).
+    func shifted(by offset: Int) -> MarkdownListLineInfo {
+        MarkdownListLineInfo(
+            kind: kind,
+            indentation: indentation,
+            marker: marker,
+            markerRange: markerRange.shifted(by: offset),
+            contentRange: contentRange.shifted(by: offset),
+            prefixRange: prefixRange.shifted(by: offset),
+            visualLevel: visualLevel,
+            markerWidth: markerWidth,
+            checklistSyntax: checklistSyntax
+        )
+    }
 }
 
 nonisolated struct MarkdownListNormalizationResult: Equatable {
