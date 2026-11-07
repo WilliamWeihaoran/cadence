@@ -362,7 +362,10 @@ struct iOSTaskCollectionSections: View {
                         title: group.title,
                         color: group.accent,
                         tasks: group.tasks,
-                        showsContainer: showsContainer,
+                        showsContainer: CadenceTaskSurfaceOptions.showsContainerChip(
+                            on: collection.surface,
+                            groupedBy: groupingMode
+                        ),
                         collapsedGroupIDs: $collapsedGroupIDs,
                         groupID: group.id
                     )

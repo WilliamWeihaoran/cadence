@@ -120,6 +120,23 @@ nonisolated struct CadenceTodayWidgetSnapshot: Hashable {
     var isUnavailable: Bool {
         state == .unavailable
     }
+
+    /// The bold figure beside "Today" in the widget header — **an em dash when the store could not
+    /// be read**, never a number.
+    ///
+    /// **[[T-12332]].** `unavailableSnapshot()` zeroes every count, because there is nothing to
+    /// count; the header printed `totalCount` flatly, so a freshly placed tile read "Today 0"
+    /// directly above its own `unavailable` chip and "Widget needs Cadence". Zero is a fact about
+    /// someone's day, and it was being asserted on the Home Screen at the one moment the extension
+    /// has just said it cannot see their day — the same defect [[T-4980]] fixed in
+    /// `tasksInViewLabel`, and fixed the same way: the string is the snapshot's, so one place
+    /// decides it and a test can read it without a view.
+    ///
+    /// `tasksInViewLabel` needs no such guard — the large widget draws its footer only in the
+    /// `.ready` arm, while all four families draw this header before they branch.
+    var headerCountLabel: String {
+        isUnavailable ? "—" : "\(totalCount)"
+    }
 }
 
 /// The words both widgets name their two task counts with, at every family ([[T-10002]]).

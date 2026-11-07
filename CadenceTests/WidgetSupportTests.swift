@@ -238,6 +238,27 @@ struct WidgetSupportTests {
         #expect(reloadDate == referenceDate.addingTimeInterval(5 * 60))
     }
 
+    /// **[[T-12332]], seen on an 11" iPad home screen.** A freshly placed Today Tasks tile read
+    /// "Today **0**" with an `unavailable` chip and "Widget needs Cadence" underneath it: the
+    /// header printed `unavailableSnapshot()`'s zeroed `totalCount`, so the widget asserted that
+    /// the day was empty in the same breath as saying it could not read the day. An em dash is the
+    /// truthful figure for "not known"; the count itself is unchanged, only how it is spelled.
+    @Test func anUnavailableTileDoesNotClaimTheDayIsEmpty() {
+        let unavailable = CadenceTodayWidgetSupport.unavailableSnapshot(todayKey: "2026-05-11")
+
+        #expect(unavailable.totalCount == 0)
+        #expect(unavailable.headerCountLabel == "—")
+    }
+
+    /// And a readable store still prints its number, including a genuine zero — "0 today" is a
+    /// true and useful thing for the tile to say once the extension can actually see the store,
+    /// which is the distinction the dash exists to keep.
+    @Test func aReadableTilePrintsItsCountIncludingAGenuineZero() {
+        let empty = CadenceTodayWidgetSupport.snapshot(from: [], todayKey: "2026-05-11")
+        #expect(empty.state == .empty)
+        #expect(empty.headerCountLabel == "0")
+    }
+
     @Test func completeTaskIntentMarksActiveTasksDoneAndLeavesOthersUntouched() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
