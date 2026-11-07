@@ -139,7 +139,17 @@ struct CadenceTaskSheetUnsavedWorkTests {
         let strip = try #require(CadenceSourceScan.declarationBody("struct iOSTaskTagStrip: View", in: file))
         #expect(!strip.contains("newTagName = \"\""), "the strip clears the typed tag (option (b), declined)")
         let add = try #require(CadenceSourceScan.functionBody(named: "addTag", in: popover))
-        #expect(add.contains("guard !name.isEmpty else { return }"))
+        // [[T-12772]]: blank input still returns early, now through the list's own decision, and
+        // an archived match takes the Unarchive row's path rather than `committedTag`.
+        #expect(add.contains("switch TagSupport.pickerFieldCommit(newTagName, in: allTags) {"))
+        #expect(add.range(of: #"case \.nothing:\s*return"#, options: .regularExpression) != nil)
+        // The call, not the `case let .unarchive(archived):` pattern, which spells the same text.
+        let unarchived = try #require(
+            add.range(of: #"case let \.unarchive\(archived\):\s*unarchive\(archived\)\s*return"#, options: .regularExpression),
+            "an archived match no longer goes through unarchive(_:)"
+        )
+        let resolved = try #require(add.range(of: "TagSupport.committedTag(named: name, in: modelContext)"))
+        #expect(unarchived.lowerBound < resolved.lowerBound, "an archived match reaches committedTag")
     }
 
     // MARK: - T-6471: a refusal on the dismiss path is named by the strip, which is still on screen

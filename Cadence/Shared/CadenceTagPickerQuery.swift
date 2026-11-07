@@ -67,3 +67,34 @@ extension TagSupport {
         )
     }
 }
+
+/// **[[T-12772]] — what the iOS popover's field commits on `+`, Return and dismiss.**
+///
+/// `iOSTaskTagPickerPopover.addTag()` used to hand every non-blank name to
+/// `TagSupport.committedTag`, whose slug index holds archived rows too — so typing an archived
+/// tag's name attached a chip for a tag every picker hides, still archived, while the list right
+/// above offered `Unarchive "<name>"` for the same text. The field now asks the same
+/// `pickerQuery` the list does: an archived match is un-archived (keeper decision, [[T-12780]]),
+/// not dropped as the Mac's Return drops it, because the dismiss-add ([[T-5175]]) would otherwise
+/// throw away what was typed without a word.
+nonisolated enum TagPickerFieldCommit {
+    /// Blank, or nothing left after `displayName(for:)`: the field does nothing.
+    case nothing
+    /// The archived tag the Unarchive row names; the popover's `unarchive(_:)` path.
+    case unarchive(Tag)
+    /// Resolve (pick or mint) this display name through `TagSupport.committedTag`.
+    case resolve(name: String)
+}
+
+extension TagSupport {
+    /// The field's commit for `query`, decided by `pickerQuery` so the field and the list above it
+    /// cannot disagree. `allTags` is every tag in the store, archived and active.
+    static func pickerFieldCommit(_ query: String, in allTags: [Tag]) -> TagPickerFieldCommit {
+        let name = displayName(for: query)
+        guard !name.isEmpty else { return .nothing }
+        if let archived = pickerQuery(query, in: allTags).archivedMatch {
+            return .unarchive(archived)
+        }
+        return .resolve(name: name)
+    }
+}

@@ -585,9 +585,23 @@ struct iOSTaskTagPickerPopover: View {
     /// cleared and the chip appeared whether or not the store took the attachment. Both the mint
     /// and the selection are guarded now, in that order, and either refusal leaves the typed name
     /// in the field.
+    ///
+    /// **[[T-12772]].** The name is read through `pickerFieldCommit`, the list's own decision: an
+    /// archived match goes through `unarchive(_:)` — the row directly above offers exactly that for
+    /// the same text — rather than `committedTag`, which matched it too and attached it still
+    /// archived. Un-archive rather than the Mac's no-op is the keeper's call ([[T-12780]]), because
+    /// on the dismiss path ([[T-5175]]) a no-op would drop what was typed without a word.
     private func addTag() {
-        let name = trimmedNewTagName
-        guard !name.isEmpty else { return }
+        let name: String
+        switch TagSupport.pickerFieldCommit(newTagName, in: allTags) {
+        case .nothing:
+            return
+        case let .unarchive(archived):
+            unarchive(archived)
+            return
+        case let .resolve(resolved):
+            name = resolved
+        }
         guard let tag = TagSupport.committedTag(named: name, in: modelContext) else {
             tagFailureNotice = CadencePendingChangePersistence.editFailureNotice
             return

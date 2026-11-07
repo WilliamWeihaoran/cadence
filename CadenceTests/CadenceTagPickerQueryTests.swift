@@ -74,6 +74,34 @@ struct CadenceTagPickerQueryTests {
         #expect(decision.placeholder == .none, "the Unarchive row is the picker's row, not No matching tags")
     }
 
+    /// [[T-12772]]: the popover's `+`, Return and dismiss-add read this. An archived name is
+    /// un-archived (keeper decision, [[T-12780]]) rather than resolved through `committedTag`,
+    /// which would attach it still archived; any other usable name is resolved as before.
+    @Test func theFieldUnarchivesAnArchivedNameRatherThanResolvingIt() throws {
+        let (_, tags) = try makeTags()
+        for query in ["old project", "  #Old Project ", "OLD-PROJECT"] {
+            guard case let .unarchive(tag) = TagSupport.pickerFieldCommit(query, in: tags) else {
+                Issue.record("\(query) resolved an archived tag instead of un-archiving it")
+                continue
+            }
+            #expect(tag.slug == "old-project")
+            #expect(tag.isArchived, "the decision itself writes nothing")
+        }
+        guard case let .resolve(existing) = TagSupport.pickerFieldCommit(" deep work ", in: tags) else {
+            Issue.record("an active name must resolve"); return
+        }
+        #expect(existing == "deep work")
+        guard case let .resolve(fresh) = TagSupport.pickerFieldCommit("Garden", in: tags) else {
+            Issue.record("a new name must resolve"); return
+        }
+        #expect(fresh == "Garden")
+        for blank in ["", "   ", "#"] {
+            guard case .nothing = TagSupport.pickerFieldCommit(blank, in: tags) else {
+                Issue.record("\(blank) must do nothing"); continue
+            }
+        }
+    }
+
     @Test func aQueryThatReachesNothingSaysNoMatchesAndAnEmptyCatalogueOffersTheDefaults() throws {
         let (_, tags) = try makeTags()
         #expect(TagSupport.pickerQuery("#", in: tags).placeholder == .noMatches)
