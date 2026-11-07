@@ -49,8 +49,8 @@ struct CreateListSheet: View {
 
         var description: String {
             switch self {
-            case .area:    return "Ongoing responsibility, no end date"
-            case .project: return "Finite effort with a clear outcome"
+            case .area:    return CadenceListVocabularyCopy.areaTypeDescription
+            case .project: return CadenceListVocabularyCopy.projectTypeDescription
             }
         }
         var defaultIcon: String {

@@ -233,11 +233,20 @@ struct iOSListEditorSheet: View {
             Form {
                 if !isEditing {
                     Section {
-                        iOSSegmentedChoice(
-                            options: [(false, "Area"), (true, "Project")],
-                            selection: $createsProject
-                        )
-                        .accessibilityLabel("List type")
+                        VStack(alignment: .leading, spacing: 8) {
+                            iOSSegmentedChoice(
+                                options: [(false, "Area"), (true, "Project")],
+                                selection: $createsProject
+                            )
+                            .accessibilityLabel("List type")
+
+                            // [[T-12711]]: what the chosen type is for, the line the Mac's type
+                            // cards carry under each name, from the same shared spelling.
+                            Text(CadenceListVocabularyCopy.listTypeDescription(isProject: createsProject))
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.dim)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     .iOSListEditorSectionChrome()
                 }

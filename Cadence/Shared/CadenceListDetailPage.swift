@@ -354,4 +354,15 @@ nonisolated enum CadenceListVocabularyCopy {
     /// ([[T-10006]]).
     static let areaNamePlaceholder = "Area name"
     static let projectNamePlaceholder = "Project name"
+
+    /// What each list type is for, under the New List type choice ([[T-12711]], under [[T-8201]]).
+    /// The Mac's type cards always carried these two lines; the phone's Area/Project segment drew
+    /// the two bare words, so a new user picked a type with nothing saying what either meant. No
+    /// hardware constraint was behind the gap: the line fits under the segment on an iPhone.
+    static let areaTypeDescription = "Ongoing responsibility, no end date"
+    static let projectTypeDescription = "Finite effort with a clear outcome"
+
+    static func listTypeDescription(isProject: Bool) -> String {
+        isProject ? projectTypeDescription : areaTypeDescription
+    }
 }

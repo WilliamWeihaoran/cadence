@@ -172,4 +172,35 @@ struct CadenceListVocabularyParityTests {
             #expect(!code.contains("\"Restore"), "\(site.path) brings an archived thing back through Restore again")
         }
     }
+
+    /// **[[T-12711]]: the phone's New List says what each type is for, as the Mac's does.** The
+    /// Mac's type cards carried a line under Area and Project; the phone's segment drew the bare
+    /// words ([[T-8201]]). Both now read one shared line, and the phone's follows the selection.
+    @Test func theListTypeDescriptionFollowsTheChosenType() {
+        #expect(CadenceListVocabularyCopy.listTypeDescription(isProject: false) == CadenceListVocabularyCopy.areaTypeDescription)
+        #expect(CadenceListVocabularyCopy.listTypeDescription(isProject: true) == CadenceListVocabularyCopy.projectTypeDescription)
+        #expect(CadenceListVocabularyCopy.areaTypeDescription == "Ongoing responsibility, no end date")
+        #expect(CadenceListVocabularyCopy.projectTypeDescription == "Finite effort with a clear outcome")
+        #if os(macOS)
+        #expect(CreateListSheet.ListType.area.description == CadenceListVocabularyCopy.areaTypeDescription)
+        #expect(CreateListSheet.ListType.project.description == CadenceListVocabularyCopy.projectTypeDescription)
+        #endif
+    }
+
+    @Test func bothNewListTypeChoicesDrawTheSharedDescription() throws {
+        let phone = try Self.ios("Cadence/iOS/iOSListEditorViews.swift")
+        let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: phone))
+        let chooser = try #require(CadenceSourceScan.declarationBody("if !isEditing", in: body))
+        #expect(chooser.contains("iOSSegmentedChoice("), "non-vacuity: the chooser block is not the type segment")
+        #expect(
+            chooser.contains("Text(CadenceListVocabularyCopy.listTypeDescription(isProject: createsProject))"),
+            "the phone's New List type segment draws no description of the chosen type"
+        )
+
+        let mac = try Self.ios("Cadence/macOS/Sheets/CreateListSheet.swift")
+        #expect(mac.contains("case .area:    return CadenceListVocabularyCopy.areaTypeDescription"))
+        #expect(mac.contains("case .project: return CadenceListVocabularyCopy.projectTypeDescription"))
+        #expect(!mac.contains("\"Ongoing responsibility"), "the Mac type card spells its own description again")
+        #expect(mac.contains("Text(type.description)"), "the Mac type card no longer draws its description")
+    }
 }
