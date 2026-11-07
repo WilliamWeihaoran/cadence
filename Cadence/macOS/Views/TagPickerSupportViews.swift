@@ -63,11 +63,11 @@ private struct AdaptiveSelectedTagStrip: View {
     let onRemove: (Tag) -> Void
 
     var body: some View {
+        // [[T-12292]]: the same fold the iOS note header draws, from one rule.
         ViewThatFits(in: .horizontal) {
-            selectedTagRow(limit: min(3, tags.count))
-            selectedTagRow(limit: min(2, tags.count))
-            selectedTagRow(limit: min(1, tags.count))
-            selectedTagRow(limit: 0)
+            ForEach(CadenceTagStripCollapse.candidateLimits(tagCount: tags.count), id: \.self) { limit in
+                selectedTagRow(limit: limit)
+            }
         }
     }
 

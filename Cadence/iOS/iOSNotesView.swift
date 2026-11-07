@@ -335,6 +335,11 @@ struct iOSNotesView: View {
             // compact width they ride in the editor's format row instead.
             if showsHeaderTemplateMenu, let note = selectedNote {
                 iOSNoteTagControl(note: note, isEditorFocused: $isEditorFocused) { tagFailureNotice = $0 }
+                    // [[T-12292]]: the chips are the one flexible thing in this trailing group, and
+                    // at the default priority the header's `Spacer` would split the slack with them
+                    // — folding a chip into `+N` while the row still had room. Priority 1 is the
+                    // title's and the tab strip's: the chips take what is left before the spacer.
+                    .layoutPriority(1)
             }
             // AI note actions, gated on the same rule and for the same reason: this row already
             // holds a back control, a date title and four tabs at 390pt. In the *compact*
@@ -1226,6 +1231,14 @@ private struct iOSNotesHeader<Title: View, Trailing: View>: View {
         .padding(.horizontal, isRegularWidth ? 14 : 12)
         .padding(.top, 10)
         .padding(.bottom, 4)
+        // [[T-12292]]: the header takes the width it is offered and never reports more. Its title,
+        // tabs and buttons are fixed-size, so a row over budget used to report its own ideal width
+        // — and the page's `VStack` centred everything on it: on a portrait iPad three tag chips
+        // pushed the two-column shell ~24pt off each edge. `minWidth: 0` is what makes this a
+        // clamp — with `maxWidth` alone a flexible frame still reports a wider child's width. The
+        // tag chips fold first (`iOSNoteTagControl`); if the row is still over, the overflow is
+        // confined to the header's trailing edge instead of moving the page.
+        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
     }
 }
 

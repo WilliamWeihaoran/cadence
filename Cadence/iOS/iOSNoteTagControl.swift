@@ -35,8 +35,8 @@ struct iOSNoteTagControl: View {
     let note: Note
     @Binding var isEditorFocused: Bool
     var placement: Placement = .header
-    /// Where a refusal is said — always the host's, never this control's own (T-9542). The row
-    /// below is `.fixedSize()` so a chip never truncates, and a fixed-size container proposes no
+    /// Where a refusal is said — always the host's, never this control's own (T-9542). Each chip
+    /// row below is `.fixedSize()` so a chip never truncates, and a fixed-size container proposes no
     /// width: a sentence drawn inside it took its one-line ideal width, about 300pt, and in an iPad
     /// header that block shoved the date title aside. Every host draws the sentence on a full-width
     /// line under the strip that holds this control, where it wraps: the format row's surface
@@ -58,39 +58,56 @@ struct iOSNoteTagControl: View {
         TagSupport.sorted(note.tags ?? [])
     }
 
-    /// The chips this row draws before it folds the rest into `+N`. The popover lists every tag
-    /// with a tick, so a folded tag is still one tap from being removed.
-    private var chipLimit: Int {
-        placement == .header ? 2 : 3
+    private var stripSpacing: CGFloat {
+        CadenceTagChipStyle.editableStripSpacing(for: .regular, at: dynamicTypeSize, scaling: typographyScaling)
     }
 
+    /// **[[T-12292]]: the chips fold to fit the width they are offered; they never widen the host.**
+    /// Until this the whole control was `.fixedSize()` with a fixed chip limit, so it reported one
+    /// width whatever it was offered — on a portrait iPad three tags made the Notes header wider
+    /// than the window and the two-column shell was centred on the overflow. Now only each
+    /// *candidate* row is fixed-size (a chip still never truncates), and `ViewThatFits` picks the
+    /// widest count in `CadenceTagStripCollapse.candidateLimits` that fits — down to the `+N` badge
+    /// alone. The same rule macOS's `AdaptiveSelectedTagStrip` draws from. The popover lists every
+    /// tag with a tick, so a folded tag is still one tap from being removed.
     var body: some View {
-        HStack(spacing: CadenceTagChipStyle.editableStripSpacing(
-            for: .regular, at: dynamicTypeSize, scaling: typographyScaling
-        )) {
+        HStack(spacing: stripSpacing) {
             if placement == .formatRow { trigger }
             chips
             if placement == .header { trigger }
         }
-        .fixedSize()
+        .fixedSize(horizontal: false, vertical: true)
         .onChange(of: note.id) { _, _ in report(nil) }
     }
 
     @ViewBuilder
     private var chips: some View {
         let tags = selectedTags
-        ForEach(tags.prefix(chipLimit)) { tag in
-            CadenceTagChip(tag: tag) {
-                remove(tag)
+        if !tags.isEmpty {
+            ViewThatFits(in: .horizontal) {
+                ForEach(CadenceTagStripCollapse.candidateLimits(tagCount: tags.count), id: \.self) { limit in
+                    chipRow(tags, limit: limit)
+                }
             }
         }
-        if tags.count > chipLimit {
-            CadenceTagOverflowBadge(count: tags.count - chipLimit)
-                .accessibilityLabel(
-                    tags.dropFirst(chipLimit).map { CadenceTagChipStyle.accessibilityLabel(for: $0) }
-                        .joined(separator: ", ")
-                )
+    }
+
+    private func chipRow(_ tags: [Tag], limit: Int) -> some View {
+        HStack(spacing: stripSpacing) {
+            ForEach(tags.prefix(limit)) { tag in
+                CadenceTagChip(tag: tag) {
+                    remove(tag)
+                }
+            }
+            if tags.count > limit {
+                CadenceTagOverflowBadge(count: tags.count - limit)
+                    .accessibilityLabel(
+                        tags.dropFirst(limit).map { CadenceTagChipStyle.accessibilityLabel(for: $0) }
+                            .joined(separator: ", ")
+                    )
+            }
         }
+        .fixedSize()
     }
 
     private var trigger: some View {

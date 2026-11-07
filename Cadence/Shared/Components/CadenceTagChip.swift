@@ -637,6 +637,33 @@ struct CompactTagStrip: View {
     }
 }
 
+// MARK: - Collapse
+
+/// **[[T-12292]] — how an editable tag strip folds chips into `+N`, as one rule for both platforms.**
+///
+/// An editable strip draws up to `editableStripCap` chips and collapses the rest into a `+N` badge,
+/// one chip at a time, as the width it is offered shrinks: `ViewThatFits` tries each count in
+/// `candidateLimits` in order and draws the first row that fits, and the last candidate is always
+/// `0` — the badge alone — so a narrow host gets `+3` rather than a row wider than itself.
+///
+/// The cap is the same on both platforms because nothing about the hardware asks for a different
+/// one: the question is width, and width is what `ViewThatFits` measures. The iOS header used to
+/// pin a fixed limit of 2 inside a `.fixedSize()` container, which could never shrink — on a
+/// portrait iPad (834pt) three tags made the Notes header wider than the window and the whole
+/// two-column shell was centred on the overflow, losing ~24pt at each edge.
+nonisolated enum CadenceTagStripCollapse {
+    /// The most chips an editable strip draws before folding, at any width.
+    static let editableStripCap = 3
+
+    /// The chip counts a strip tries, widest first: `min(cap, tagCount)` down to `0`, each once.
+    /// Never empty, never negative, strictly descending, and always ending in `0` — the row a host
+    /// of any width can take.
+    static func candidateLimits(tagCount: Int, cap: Int = editableStripCap) -> [Int] {
+        let top = max(0, min(cap, tagCount))
+        return Array(stride(from: top, through: 0, by: -1))
+    }
+}
+
 // MARK: - Overflow
 
 /// The `+N` that stands in for tag chips a strip could not fit. Shared for the same reason the chip

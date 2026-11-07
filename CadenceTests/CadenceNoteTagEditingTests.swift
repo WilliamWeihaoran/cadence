@@ -203,7 +203,12 @@ struct CadenceNoteTagEditingTests {
         #expect(CadenceSourceScan.matchCount(#"@State private var failureNotice"#, in: controlBody) == 0)
         #expect(CadenceSourceScan.matchCount(#"let onFailure: \(String\?\) -> Void\n"#, in: controlBody) == 1,
                 "onFailure must be required, so no host can fall back to an in-control notice")
-        #expect(CadenceSourceScan.matchCount(#"\.fixedSize\("#, in: controlBody) == 1)
+        // [[T-12292]]: two, each named -- the body is fixed only VERTICALLY so the chips can fold to
+        // the width they are offered, and each candidate chip row is fixed so a chip never
+        // truncates. Neither is a container a notice could sit in at its one-line width.
+        #expect(CadenceSourceScan.matchCount(#"\.fixedSize\("#, in: controlBody) == 2)
+        #expect(CadenceSourceScan.matchCount(#"\.fixedSize\(horizontal: false, vertical: true\)"#, in: controlBody) == 1)
+        #expect(CadenceSourceScan.matchCount(#"\.fixedSize\(\)"#, in: controlBody) == 1)
         let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: controlBody))
         #expect(CadenceSourceScan.matchCount(#"(?m)^\s*HStack\(spacing:"#, in: body) == 1,
                 "the fixed-size chip row is the body's root")
