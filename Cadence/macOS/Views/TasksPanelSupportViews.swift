@@ -139,8 +139,12 @@ struct SubtaskRow: View {
             Spacer(minLength: 0)
 
             if showDelete, let onDelete {
+                // [[T-12643]]: a saved subtask's delete raises the permanent "Delete Subtask?"
+                // confirmation ([[T-10038]]), so it draws `trash` and says "Delete subtask" as
+                // iOS's `iOSSubtaskRow` does. The capture card's draft-row `xmark` "Remove" stays:
+                // that removes an unsaved draft.
                 Button(action: onDelete) {
-                    Image(systemName: "xmark")
+                    Image(systemName: "trash")
                         .font(.system(size: 9))
                         .foregroundStyle(Theme.dim.opacity(0.5))
                         // [[T-9501]]: the bare 9pt glyph was the whole hit area and hover wash.
@@ -148,7 +152,7 @@ struct SubtaskRow: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.cadencePlain)
-                .accessibilityLabel("Remove")
+                .accessibilityLabel("Delete subtask")
                 .accessibilityValue(displayTitle)
             }
         }

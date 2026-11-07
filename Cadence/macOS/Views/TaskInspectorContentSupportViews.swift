@@ -429,7 +429,9 @@ struct TaskDetailSubtasksSection: View {
                 }
 
                 HStack(spacing: 8) {
-                    Image(systemName: "plus.circle")
+                    // [[T-12643]]: `plus`, as iOS's add-subtask row and the Mac capture card's
+                    // "Add Subtask" draw it; this was the only `plus.circle` subtask composer.
+                    Image(systemName: "plus")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim.opacity(0.6))
                     TextField("Add subtask", text: $newSubtaskTitle)

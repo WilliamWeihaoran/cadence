@@ -428,16 +428,19 @@ struct iOSTaskRow: View {
 
     /// Row metadata. **Colour is reserved for the exceptional**: every item is `Theme.dim`, icon
     /// and text alike, so a red thing in a row means something is actually wrong. Only two
-    /// things earn a hue — an overdue deadline and a do date already in the past. (A third, a task
-    /// actively In Progress, went with the status itself in [[T-5015]] (b).) Everything else (the
-    /// list, the goal, the repeat marker, a do date that is merely *today*) is ordinary and reads
-    /// as chrome, and that stays true now the chips are controls: a plate says "tappable", not
-    /// "urgent".
+    /// things earn red — an overdue deadline and a do date already in the past. (A third, a task
+    /// actively In Progress, went with the status itself in [[T-5015]] (b).) **The do date is the
+    /// one exception to all-dim** ([[T-12642]]): it reads the board card's emphasis as `MacTaskRow`
+    /// does — an amber sun, and an amber label on a today do date — because a row and a card of
+    /// the same task must agree. Everything else (the list, the goal, the repeat marker) is
+    /// ordinary and reads as chrome, and that stays true now the chips are controls: a plate says
+    /// "tappable", not "urgent".
     ///
     /// Before this, a task with four attributes rendered four tinted icons — amber sun, purple
     /// repeat, green checklist, the goal's own colour — and a genuinely late deadline had to
-    /// compete with a recurrence glyph. On the Today screen every row carried the amber sun, which
-    /// is the definition of a colour that says nothing.
+    /// compete with a recurrence glyph. (The amber sun's old objection, that on the Today screen
+    /// every row carried it, no longer holds: that page suppresses the do-date chip on rows whose
+    /// do date it already names.)
     ///
     /// Priority is deliberately absent: it is the completion circle's job here exactly as it is on
     /// macOS, and a chip repeating it was a second affordance for one field.
@@ -471,13 +474,29 @@ struct iOSTaskRow: View {
         // `CadenceTaskPresentationSupport.scheduledDayLabel(for:)` — and note the cost, which was
         // accepted deliberately: on a phone there is no timeline beside the list, so the day's plan
         // now reads only on the Today timeline pane and in the task inspector.
+        //
+        // [[T-12642]]: the chip reads the board card's emphasis, as `MacTaskRow`'s pill does — an
+        // always-amber sun (identity), and a label that is amber today and red once past.
         if datePlan.drawsDoDateChip {
             iOSTaskRowDateChip(
                 task: task,
                 field: .doDate,
                 title: CadenceTaskPresentationSupport.scheduledDayLabel(for: task),
-                tint: isOverdo ? Theme.red : Theme.dim
+                tint: CadenceTaskRowDoDateEmphasis.labelColor(for: doDateEmphasis),
+                glyphTint: CadenceTaskRowDoDateEmphasis.glyphColor
             )
+        }
+
+        if task.isCancelled {
+            // [[T-12640]]: the status word `MacTaskRow` draws beside its title, so a cancelled row
+            // in a Completed section does not read as a finished one with a different glyph. One
+            // view, two metrics; first in the strip, straight after the indicator glyphs.
+            CadenceTaskCancelledChip(metrics: .init(
+                fontSize: iOSTaskAttributeChipSize.row.fontSize,
+                horizontalPadding: CadenceTaskChipPadding.iOSRowHorizontal,
+                verticalPadding: 0,
+                minHeight: iOSTaskAttributeChipSize.row.height(at: dynamicTypeSize, scaling: scaling)
+            ))
         }
 
         // [[T-3196]] moved the DUE DATE chip out of this strip and onto the title line, into the
@@ -512,17 +531,12 @@ struct iOSTaskRow: View {
         showsContainer
     }
 
-    /// Same semantics as `KanbanCardComputedSupport.isOverdo`, which macOS's row and card both
-    /// read: a finished task is never late, and the comparison goes through
-    /// `DateFormatters.dayOffset` rather than a string compare so both platforms answer alike.
-    /// That helper is behind `#if os(macOS)`; the two should be folded into one shared classifier.
-    ///
-    /// There is no `isDoToday` companion any more. "Do today" was drawn amber, but on the Today
-    /// screen that is every row — a colour that fires on the common case cannot mark an
-    /// exceptional one.
-    private var isOverdo: Bool {
-        guard !task.scheduledDate.isEmpty, !task.isDone else { return false }
-        return (DateFormatters.dayOffset(from: task.scheduledDate) ?? 0) < 0
+    /// [[T-12642]]: the do-date chip's emphasis, the one `MacTaskRow` and the board cards read. It
+    /// replaced an `isOverdo` of this row's own and the D-02 rule that a do date of *today* stays
+    /// grey: the keeper's call on [[T-12650]] took the card's direction for both rows, because a
+    /// row and a card of the same task should agree and no input constraint split the platforms.
+    private var doDateEmphasis: CadenceBoardCardChip.Emphasis {
+        CadenceTaskRowDoDateEmphasis.emphasis(for: task, todayKey: DateFormatters.todayKey())
     }
 
     /// The note / checklist / tag glyphs this row draws after its title — the shared answer, asked

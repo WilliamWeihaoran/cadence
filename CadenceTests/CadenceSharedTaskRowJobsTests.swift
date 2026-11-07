@@ -214,6 +214,102 @@ struct CadenceSharedTaskRowJobsTests {
         }
     }
 
+    // MARK: - [[T-12642]]: one do-date emphasis on both task rows
+
+    /// **The rule, by value.** A row's do-date label is the board card's: neutral grey, amber on a
+    /// today do date, red once past, and quiet on finished work; the sun is amber whatever the date.
+    @Test func theRowDoDateEmphasisIsTheBoardCardsEmphasis() {
+        let today = "2026-08-20"
+        #expect(CadenceTaskRowDoDateEmphasis.emphasis(for: task(doDate: "2026-08-19"), todayKey: today) == .urgent)
+        #expect(CadenceTaskRowDoDateEmphasis.emphasis(for: task(doDate: today), todayKey: today) == .attention)
+        #expect(CadenceTaskRowDoDateEmphasis.emphasis(for: task(doDate: "2026-08-21"), todayKey: today) == .neutral)
+        #expect(CadenceTaskRowDoDateEmphasis.emphasis(for: task(doDate: "2026-08-19", isDone: true), todayKey: today) == .neutral)
+
+        #expect(CadenceTaskRowDoDateEmphasis.glyphColor == Theme.amber)
+        #expect(CadenceTaskRowDoDateEmphasis.labelColor(for: .neutral) == Theme.dim)
+        #expect(CadenceTaskRowDoDateEmphasis.labelColor(for: .attention) == Theme.amber)
+        #expect(CadenceTaskRowDoDateEmphasis.labelColor(for: .urgent) == Theme.red)
+
+        // And the card's do chip says the same thing, from the same switch.
+        let cardChip = CadenceBoardCardMetadata.doDateChip(for: task(doDate: today), todayKey: today)
+        #expect(cardChip?.identityColor == CadenceTaskRowDoDateEmphasis.glyphColor)
+        #expect(cardChip?.labelColor == CadenceTaskRowDoDateEmphasis.labelColor(for: .attention))
+    }
+
+    /// **The call sites.** Both rows ask the shared emphasis for the do date's label and its sun,
+    /// and neither keeps the private over-do / do-today pair it used to decide by. iOS's D-02 tint
+    /// (`isOverdo ? Theme.red : Theme.dim`, a grey today) is the drift this closed.
+    @Test func bothTaskRowsReadTheSharedDoDateEmphasis() throws {
+        try expectCallSites(
+            of: "CadenceTaskRowDoDateEmphasis.emphasis",
+            at: [
+                "Cadence/macOS/Views/TasksPanelComponents.swift": 1,
+                "Cadence/iOS/iOSTaskViews.swift": 1,
+            ]
+        )
+        try expectCallSites(
+            of: "CadenceTaskRowDoDateEmphasis.labelColor",
+            at: [
+                "Cadence/macOS/Views/TasksPanelComponents.swift": 1,
+                "Cadence/iOS/iOSTaskViews.swift": 1,
+            ]
+        )
+        try expectOccurrences(
+            of: "CadenceTaskRowDoDateEmphasis.glyphColor",
+            at: [
+                "Cadence/macOS/Views/TasksPanelComponents.swift": 1,
+                "Cadence/iOS/iOSTaskViews.swift": 1,
+            ]
+        )
+
+        let iOSRow = try strippingComments(sourceFile("Cadence/iOS/iOSTaskViews.swift"))
+        #expect(iOSRow.contains("field: .doDate,"), "non-vacuity: wrong file read")
+        #expect(!iOSRow.contains("isOverdo"), "the iOS row decides its do-date colour itself again")
+        let macRow = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
+        #expect(macRow.contains("private var doDatePill"), "non-vacuity: wrong file read")
+        #expect(!macRow.contains("isDoToday"), "the Mac row decides its do-date colour itself again")
+        #expect(!macRow.contains("Theme.amber"), "the Mac row spells the do date's amber itself again")
+    }
+
+    // MARK: - [[T-12640]]: a cancelled row says so on both platforms
+
+    /// `MacTaskRow` drew a grey "Canceled" capsule and `iOSTaskRow` drew nothing, so on iPhone a
+    /// cancelled task in a Completed section read as a finished one. One view, both rows.
+    @Test func bothTaskRowsDrawTheSharedCancelledChip() throws {
+        #expect(CadenceTaskCancelledChip.label == TaskStatus.cancelled.label)
+        #expect(CadenceTaskCancelledChip.label == "Canceled")
+
+        try expectCallSites(
+            of: "CadenceTaskCancelledChip",
+            at: [
+                "Cadence/macOS/Views/TasksPanelComponents.swift": 1,
+                "Cadence/iOS/iOSTaskViews.swift": 1,
+            ]
+        )
+        // Behind the cancelled guard on both, and at each row's own chip metrics.
+        let iOSRow = try strippingComments(sourceFile("Cadence/iOS/iOSTaskViews.swift"))
+        let iOSChip = try #require(iOSRow.range(of: "CadenceTaskCancelledChip("))
+        // The stripper blanks comments to spaces, so the guard is read with whitespace dropped: the
+        // chip is the first statement inside `if task.isCancelled {`.
+        func guardedByCancelled(_ lead: Substring) -> Bool {
+            String(lead.suffix(2000)).filter { !$0.isWhitespace }.hasSuffix("iftask.isCancelled{")
+        }
+        #expect(guardedByCancelled(iOSRow[..<iOSChip.lowerBound]))
+        let iOSArgs = String(iOSRow[iOSChip.lowerBound...].prefix(400))
+        #expect(iOSArgs.contains("fontSize: iOSTaskAttributeChipSize.row.fontSize,"))
+        #expect(iOSArgs.contains("horizontalPadding: CadenceTaskChipPadding.iOSRowHorizontal,"))
+        #expect(iOSArgs.contains("minHeight: iOSTaskAttributeChipSize.row.height(at: dynamicTypeSize, scaling: scaling)"))
+
+        let macRow = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
+        let macChip = try #require(macRow.range(of: "CadenceTaskCancelledChip(metrics: .desktop)"))
+        #expect(guardedByCancelled(macRow[..<macChip.lowerBound]))
+
+        // Neither row spells the word or the capsule itself.
+        for path in ["Cadence/macOS/Views/TasksPanelComponents.swift", "Cadence/iOS/iOSTaskViews.swift"] {
+            #expect(!(try strippingComments(sourceFile(path))).contains(#""Canceled""#), "\(path) spells the word itself")
+        }
+    }
+
     // MARK: - T-174: a chip that would repeat the surface's own day
 
     /// **The rule, and it is an equality — not "day columns hide the do date".** A board column that
@@ -612,8 +708,10 @@ struct CadenceSharedTaskRowJobsTests {
             // stopped reading. Six since [[T-1467]]: the notes excerpt and the subtask list's
             // "+N more" line both read it — new readers, not copies of a chip's figure. Seven
             // since [[T-5015]] (b): the repeat picker's label, a chip arriving rather than one
-            // leaving, and it reads the tier instead of bringing the iOS chip's own figure.
-            ("metrics.secondaryFontSize", 7),
+            // leaving, and it reads the tier instead of bringing the iOS chip's own figure. Six
+            // since [[T-12640]]: the Cancelled chip is the shared `CadenceTaskCancelledChip`, whose
+            // `.desktop` metrics read `CadenceTaskRowMetrics.desktop.secondaryFontSize` there.
+            ("metrics.secondaryFontSize", 6),
             // [[T-1467]]: the notes/subtask tier. One read each, so a second inline spelling of
             // any of them (or the row dropping back to abstaining) fails here.
             ("metrics.summarySpacing", 1),

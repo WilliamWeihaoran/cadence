@@ -178,17 +178,23 @@ struct CadenceTasksPanelMetricsTests {
 
         // Non-vacuity: the right file, past the comment stripper, still drawing the chip.
         #expect(row.contains("struct MacTaskRow: View"))
-        let chip = try #require(row.range(of: #"Text("Canceled")"#))
-        let window = String(row[chip.lowerBound...].prefix(400))
-
-        #expect(window.contains("size: metrics.secondaryFontSize"))
+        // [[T-12640]]: the capsule is the shared `CadenceTaskCancelledChip`, which `iOSTaskRow`
+        // draws too; this row hands it `.desktop`, and `.desktop` reads the row's own figures.
         // T-617 hoisted the plate into `CadenceTaskChipPadding`; the chip still draws 4/2, and that
-        // it still *reads the same name as the four beside it* is what this line is about.
-        #expect(window.contains(".padding(.horizontal, CadenceTaskChipPadding.desktopHorizontal)"))
-        #expect(window.contains(".padding(.vertical, CadenceTaskChipPadding.desktopVertical)"))
-        #expect(!window.contains("size: 10"))
-        #expect(!window.contains(".padding(.horizontal, 6)"))
-        #expect(!window.contains(".padding(.vertical, 3)"))
+        // it still *reads the same name as the chips beside it* is what these lines are about.
+        #expect(CadenceSourceScan.matchCount(#"CadenceTaskCancelledChip\(metrics: \.desktop\)"#, in: row) == 1)
+        #expect(!row.contains(#"Text("Canceled")"#), "the row spells the capsule itself again")
+        let desktop = CadenceTaskCancelledChip.Metrics.desktop
+        #expect(desktop.fontSize == CadenceTaskRowMetrics.desktop.secondaryFontSize)
+        #expect(desktop.horizontalPadding == CadenceTaskChipPadding.desktopHorizontal)
+        #expect(desktop.verticalPadding == CadenceTaskChipPadding.desktopVertical)
+        #expect(desktop.minHeight == nil)
+        let shared = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceTaskCancelledChip.swift")
+        )
+        #expect(shared.contains("fontSize: CadenceTaskRowMetrics.desktop.secondaryFontSize,"))
+        #expect(shared.contains("horizontalPadding: CadenceTaskChipPadding.desktopHorizontal,"))
+        #expect(shared.contains("verticalPadding: CadenceTaskChipPadding.desktopVertical"))
 
         // Counted rather than only present: three chips read the secondary size now (the do-date
         // pill spells it twice, once on the hidden `Text` that reserves its width), and a further
@@ -205,8 +211,11 @@ struct CadenceTasksPanelMetricsTests {
         // than leaving: the Mac row's repeat picker, the macOS twin of `iOSTaskRowRepeatChip`.
         // Its label reads the tier like every other chip on the row, which is the whole point of
         // this count -- the parity work had to adopt the row's figures, not bring iOS's.
+        //
+        // **Five since [[T-12640]]**: the cancelled capsule reads the tier through the shared
+        // `CadenceTaskCancelledChip.Metrics.desktop`, pinned above, not in this file.
         #expect(
-            CadenceSourceScan.matchCount("size: metrics\\.secondaryFontSize", in: row) == 6
+            CadenceSourceScan.matchCount("size: metrics\\.secondaryFontSize", in: row) == 5
         )
         #expect(CadenceSourceScan.matchCount("size: 10", in: row) == 0)
     }
@@ -251,11 +260,13 @@ struct CadenceTasksPanelMetricsTests {
         // **Three, not four, since [[T-3196]] took the estimate chip off this row; four again
         // since [[T-5015]] (b) added the repeat picker.** The count is re-pointed rather than
         // loosened each time, and the anchors below are the plates the row actually draws.
+        //
+        // **Three since [[T-12640]]**: the cancelled capsule's plate is read in the shared chip.
         #expect(
-            CadenceSourceScan.matchCount(#"CadenceTaskChipPadding\.desktopHorizontal"#, in: row) == 4
+            CadenceSourceScan.matchCount(#"CadenceTaskChipPadding\.desktopHorizontal"#, in: row) == 3
         )
         #expect(
-            CadenceSourceScan.matchCount(#"CadenceTaskChipPadding\.desktopVertical"#, in: row) == 4
+            CadenceSourceScan.matchCount(#"CadenceTaskChipPadding\.desktopVertical"#, in: row) == 3
         )
         #expect(CadenceSourceScan.matchCount(#"\.padding\(\.horizontal, 4\)"#, in: row) == 0)
         #expect(CadenceSourceScan.matchCount(#"\.padding\(\.vertical, 2\)"#, in: row) == 0)
@@ -268,7 +279,6 @@ struct CadenceTasksPanelMetricsTests {
         // pill rather than beside `metadataStrip`, so that file order and strip order agree --
         // which is what this walk requires, and what the two date pills above already do.
         let chips = [
-            #"Text("Canceled")"#,
             "private var doDatePill",
             "private var dueDateBadgeList",
             "private var repeatChip",

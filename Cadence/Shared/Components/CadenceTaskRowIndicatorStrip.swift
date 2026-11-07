@@ -23,8 +23,9 @@ import SwiftUI
 ///
 /// **Colour is reserved for the exceptional.** Everything here is `Theme.dim`, which is the
 /// standing row rule and is also what the owner's reference shot shows — the only coloured things
-/// on a row are an overdue deadline and a do date already past. (A task actively In Progress was
-/// the third until [[T-5015]] (b) retired that status.)
+/// on a row are an overdue deadline and a do date already past, plus the do date's own amber sun
+/// and today tint ([[T-12642]]). (A task actively In Progress was the third until [[T-5015]] (b)
+/// retired that status.)
 ///
 /// **Fixed point size, deliberately.** The row surfaces do not declare
 /// `.cadenceScaledTypography()` — `CadenceTagChipScaleTests` pins `iOSTaskDetailComponents` as the

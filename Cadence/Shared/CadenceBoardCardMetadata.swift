@@ -241,7 +241,7 @@ extension CadenceBoardCardChip {
     /// `Color(hex:)` call sites already fall back to; the date kinds never carry a hex.
     var identityColor: Color {
         switch kind {
-        case .doDate: return Theme.amber
+        case .doDate: return CadenceTaskRowDoDateEmphasis.glyphColor
         case .dueDate: return Theme.red
         case .list: return Color(hex: listColorHex ?? Theme.blueHex)
         }
@@ -257,10 +257,44 @@ extension CadenceBoardCardChip {
     /// chip and an inert one, not between two platforms, and it is why the two colours are
     /// separate here rather than pre-blended.
     var labelColor: Color {
-        switch emphasis {
+        emphasis.labelColor(identity: identityColor)
+    }
+}
+
+extension CadenceBoardCardChip.Emphasis {
+    /// The label colour at this emphasis for a chip whose identity colour is `identity`: neutral is
+    /// `Theme.dim`, attention takes the identity, urgent is red. One switch, read by the board
+    /// card's chips and — since [[T-12642]] — by both task rows' do-date chips.
+    func labelColor(identity: Color) -> Color {
+        switch self {
         case .neutral: return Theme.dim
-        case .attention: return identityColor
+        case .attention: return identity
         case .urgent: return Theme.red
         }
+    }
+}
+
+/// **A task row's do-date chip, on both platforms, reads the board card's emphasis** ([[T-12642]],
+/// direction decided by keeper `keeper1007` on [[T-12650]]).
+///
+/// `MacTaskRow` drew an always-amber sun and an amber date on a today do date; `iOSTaskRow` drew
+/// both grey unless the date was past, under an iOS-only "colour is reserved for the exceptional"
+/// rule (D-02, `ec1912f8`) that predates [[T-8201]] and names no input constraint. The board cards,
+/// decided once for both platforms, already sided with the Mac — so a row and a card of the same
+/// task disagreed on iPhone. Both rows now ask this one place: the sun is the do date's identity
+/// (amber, never varying with urgency), and the label is `CadenceBoardCardMetadata.doDateEmphasis`
+/// read through `CadenceBoardCardChip.Emphasis.labelColor(identity:)` — amber today, red past,
+/// neutral otherwise, and never loud on finished work.
+enum CadenceTaskRowDoDateEmphasis {
+    /// The sun's colour: the do date's identity, whatever the date. A `static var`, not a `let`:
+    /// accents are computed and a stored copy would freeze the palette (Shared guide).
+    static var glyphColor: Color { Theme.amber }
+
+    static func emphasis(for task: AppTask, todayKey: String) -> CadenceBoardCardChip.Emphasis {
+        CadenceBoardCardMetadata.doDateEmphasis(for: task, todayKey: todayKey)
+    }
+
+    static func labelColor(for emphasis: CadenceBoardCardChip.Emphasis) -> Color {
+        emphasis.labelColor(identity: glyphColor)
     }
 }

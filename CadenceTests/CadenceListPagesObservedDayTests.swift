@@ -70,7 +70,10 @@ struct CadenceListPagesObservedDayTests {
         let row = try #require(CadenceSourceScan.declarationBody("struct MacTaskRow: View", in: source))
         #expect(row.contains("let todayKey: String"))
         #expect(!row.contains("DateFormatters.todayKey()"))
-        #expect(CadenceSourceScan.matchCount(#"KanbanCardComputedSupport\.is\w+\(task: task, todayKey: todayKey\)"#, in: row) == 3)
+        // One, not three, since [[T-12642]]: the do-date pill's over-do / do-today pair became the
+        // shared row emphasis, which takes the same observed day.
+        #expect(CadenceSourceScan.matchCount(#"KanbanCardComputedSupport\.is\w+\(task: task, todayKey: todayKey\)"#, in: row) == 1)
+        #expect(CadenceSourceScan.matchCount(#"CadenceTaskRowDoDateEmphasis\.emphasis\(for: task, todayKey: todayKey\)"#, in: row) == 1)
 
         let wrappers = try Self.code("Cadence/macOS/Views/ListDetailSupportViews.swift")
         for name in ["struct TaskListDisplayRow: View", "struct TaskListInteractiveRow: View"] {

@@ -929,9 +929,11 @@ struct CadenceCancelledTaskReachabilityTests {
             of: "task.isDone || task.isCancelled",
             at: ["Cadence/iOS/iOSTaskDetailComponents.swift": 0, "Cadence/iOS/iOSTaskDetailSheet.swift": 0]
         )
+        // One, not two, since [[T-12642]]: the do-date chip's own `isOverdo` (whose `!task.isDone`
+        // guard was the second) became the shared row emphasis, which keeps that guard itself.
         try expectOccurrences(
             of: "task.isDone",
-            at: ["Cadence/iOS/iOSTaskViews.swift": 2]
+            at: ["Cadence/iOS/iOSTaskViews.swift": 1]
         )
     }
 

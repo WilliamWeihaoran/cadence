@@ -82,7 +82,10 @@ struct CadenceRowSubjectAccessibilityTests {
         let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.tasksPanelSupportPath))
         let body = try #require(CadenceSourceScan.declarationBody("struct SubtaskRow: View", in: source))
 
-        #expect(body.contains(#".accessibilityLabel("Remove")"#))
+        // [[T-12643]]: "Delete subtask", the name iOS's `iOSSubtaskRow` gives the same permanent
+        // delete. A wording change, not a removal: the label and its value both stay.
+        #expect(body.contains(#".accessibilityLabel("Delete subtask")"#))
+        #expect(!body.contains(#".accessibilityLabel("Remove")"#))
         // Shared with the visible title text and the completion circle below, so all three read
         // the same normalised string rather than three independent copies of the same expression.
         #expect(body.contains("private var displayTitle: String {"))
@@ -135,6 +138,38 @@ struct CadenceRowSubjectAccessibilityTests {
             #expect(!body.contains(#""Complete subtask""#), "\(site.declaration) spells the label itself")
             #expect(!body.contains(#""Mark subtask todo""#), "\(site.declaration) spells the label itself")
         }
+    }
+
+    /// **The inspector's subtask glyphs, one set on both platforms** ([[T-12643]]). The Mac's
+    /// composer led with `plus.circle` and each saved subtask's delete was a 9pt `xmark`, while
+    /// iOS draws `plus` and `trash` for the same two controls. Both deletes raise the same
+    /// permanent "Delete Subtask?" confirmation ([[T-10038]]), so the Mac's `xmark` undersold it.
+    /// The capture card's draft-row `xmark` is not this control: it drops an unsaved draft.
+    @Test func theInspectorSubtaskGlyphsMatchTheIOSSheet() throws {
+        let row = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.tasksPanelSupportPath))
+        let rowBody = try #require(CadenceSourceScan.declarationBody("struct SubtaskRow: View", in: row))
+        #expect(rowBody.contains(#"Image(systemName: "trash")"#))
+        #expect(!rowBody.contains(#"Image(systemName: "xmark")"#))
+
+        let inspector = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift")
+        )
+        let composer = try #require(CadenceSourceScan.declarationBody("struct TaskDetailSubtasksSection: View", in: inspector))
+        #expect(composer.contains(#"TextField("Add subtask""#), "non-vacuity: wrong body read")
+        #expect(composer.contains(#"Image(systemName: "plus")"#))
+        #expect(!composer.contains(#""plus.circle""#))
+
+        // The iOS side these match, read rather than assumed.
+        let iOSRow = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.iOSTaskDetailComponentsPath))
+        let iOSRowBody = try #require(CadenceSourceScan.declarationBody("struct iOSSubtaskRow: View", in: iOSRow))
+        #expect(iOSRowBody.contains(#"Image(systemName: "trash")"#))
+
+        // The draft row keeps its `xmark`: removing a draft is not deleting a subtask.
+        let sheet = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.createTaskSheetPath))
+        let draftRow = try #require(
+            CadenceSourceScan.declarationBody("private func subtaskRow(_ draft: Binding<CreateTaskSubtaskDraft>) -> some View", in: sheet)
+        )
+        #expect(draftRow.contains(#""xmark""#))
     }
 
     // MARK: - The iOS twin of sites 6 and 7: the task sheet's subtask row ([[T-7011]])

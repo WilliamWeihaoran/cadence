@@ -228,9 +228,14 @@ struct iOSTaskRowDateChip: View {
     let task: AppTask
     let field: iOSTaskRowDateField
     let title: String
-    /// Only ever non-neutral for the two exceptional cases: a deadline gone past, a do date gone
-    /// past. A do date of *today* is the common case on the Today screen and stays `Theme.dim`.
+    /// The label's colour. The due date passes `Theme.dim` or, past, red. The do date passes
+    /// `CadenceTaskRowDoDateEmphasis`'s label colour ([[T-12642]]): amber on a today do date, red
+    /// past, as the board card and `MacTaskRow` draw it. (A today do date on the Today page has no
+    /// chip at all: the surface-day suppression.)
     var tint: Color = Theme.dim
+    /// The glyph's colour, when it is the field's identity rather than its urgency — the do date's
+    /// always-amber sun ([[T-12642]]). `nil` draws the glyph in `tint`, as the due-date flag does.
+    var glyphTint: Color? = nil
     @Environment(\.modelContext) private var modelContext
     @State private var isOpen = false
     @State private var viewMonth = Date()
@@ -250,7 +255,7 @@ struct iOSTaskRowDateChip: View {
             field: field.accessibilityLabel,
             systemImage: field.systemImage,
             isSet: true,
-            tint: tint,
+            tint: glyphTint ?? tint,
             size: .row,
             // The chip's *text* takes the exceptional colour too, not just its glyph: an item is
             // either ordinary and entirely dim, or exceptional and entirely the colour that says so.

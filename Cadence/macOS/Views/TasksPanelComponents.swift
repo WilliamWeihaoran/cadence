@@ -230,13 +230,10 @@ struct MacTaskRow: View {
                 // exists to stop (T-597). The plate was four inline `4/2` pairs until T-617. Two of
                 // those four readers have since gone: the block badge with the Block feature
                 // ([[T-3170]]), and the estimate chip with [[T-3196]].
-                Text("Canceled")
-                    .font(.system(size: metrics.secondaryFontSize, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, CadenceTaskChipPadding.desktopHorizontal)
-                    .padding(.vertical, CadenceTaskChipPadding.desktopVertical)
-                    .background(Theme.dim.opacity(0.14))
-                    .clipShape(Capsule())
+                //
+                // [[T-12640]]: the capsule is `CadenceTaskCancelledChip` now, which `iOSTaskRow`
+                // draws too; only the metrics are this row's.
+                CadenceTaskCancelledChip(metrics: .desktop)
                     .padding(.leading, metrics.badgeSpacing)
             }
 
@@ -447,9 +444,11 @@ struct MacTaskRow: View {
             openDoDatePicker()
         } label: {
             HStack(spacing: 4) {
+                // [[T-12642]]: the sun and the date read `CadenceTaskRowDoDateEmphasis`, the board
+                // card's emphasis, which `iOSTaskRow` reads too.
                 Image(systemName: "sun.max.fill")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.amber)
+                    .foregroundStyle(CadenceTaskRowDoDateEmphasis.glyphColor)
                     .frame(width: 10, alignment: .leading)
 
                 ZStack {
@@ -459,10 +458,11 @@ struct MacTaskRow: View {
 
                     Text(DateFormatters.relativeDate(from: task.scheduledDate))
                         .font(.system(size: metrics.secondaryFontSize, weight: .medium))
+                        // The neutral date keeps this row's quieter `0.68` weight, the one the
+                        // due-date pill beside it draws; the hue is the shared emphasis.
                         .foregroundStyle(
-                            isOverdo
-                                ? Theme.red
-                                : (isDoToday ? Theme.amber.opacity(0.75) : Theme.dim.opacity(0.68))
+                            CadenceTaskRowDoDateEmphasis.labelColor(for: doDateEmphasis)
+                                .opacity(doDateEmphasis == .neutral ? 0.68 : 1)
                         )
                         .frame(maxWidth: .infinity, alignment: .center)
                 }
@@ -701,18 +701,16 @@ struct MacTaskRow: View {
         return task.scheduledDate
     }
 
-    // These three were byte-identical re-implementations of the kanban card's copies, which is how
-    // the row and the card were free to answer "is this overdue" differently. One definition each.
+    // These were byte-identical re-implementations of the kanban card's copies, which is how the
+    // row and the card were free to answer "is this overdue" differently. One definition each.
     private var isOverdue: Bool {
         KanbanCardComputedSupport.isOverdue(task: task, todayKey: todayKey)
     }
 
-    private var isOverdo: Bool {
-        KanbanCardComputedSupport.isOverdo(task: task, todayKey: todayKey)
-    }
-
-    private var isDoToday: Bool {
-        KanbanCardComputedSupport.isDoToday(task: task, todayKey: todayKey)
+    /// [[T-12642]]: the do-date pill's over-do / do-today choice is the shared row emphasis now,
+    /// which `iOSTaskRow` reads too; it replaced this row's own `isOverdo` / `isDoToday` pair.
+    private var doDateEmphasis: CadenceBoardCardChip.Emphasis {
+        CadenceTaskRowDoDateEmphasis.emphasis(for: task, todayKey: todayKey)
     }
 
     /// **The surface decides, and the row does not (T-290).** This read
