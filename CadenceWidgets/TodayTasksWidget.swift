@@ -8,8 +8,14 @@ struct TodayTasksWidgetEntry: TimelineEntry {
     let snapshot: CadenceTodayWidgetSnapshot
 }
 
-struct TodayTasksWidgetProvider: AppIntentTimelineProvider {
-    typealias Intent = CadenceTodayWidgetConfigurationIntent
+/// **A `TimelineProvider`, not an `AppIntentTimelineProvider` ([[T-12334]]).** The widget shipped
+/// as an `AppIntentConfiguration` over a `WidgetConfigurationIntent` that declared no `@Parameter`
+/// -- the template's shape, never used for anything -- so iOS offered `Edit Widget` on every placed
+/// tile and opened an editor with nothing in it. There is no setting this widget has a use for
+/// (it is "today", by definition, and the Calendar widget beside it is static for the same
+/// reason), so the configuration goes rather than inventing one. The `kind` string is unchanged,
+/// which is what WidgetKit keys a placed tile on.
+struct TodayTasksWidgetProvider: TimelineProvider {
     typealias Entry = TodayTasksWidgetEntry
 
     func placeholder(in context: TimelineProviderContext) -> TodayTasksWidgetEntry {
@@ -19,34 +25,34 @@ struct TodayTasksWidgetProvider: AppIntentTimelineProvider {
         )
     }
 
-    func snapshot(
-        for configuration: CadenceTodayWidgetConfigurationIntent,
-        in context: TimelineProviderContext
-    ) async -> TodayTasksWidgetEntry {
+    func getSnapshot(
+        in context: TimelineProviderContext,
+        completion: @escaping (TodayTasksWidgetEntry) -> Void
+    ) {
         // The widget gallery asks for a snapshot with `isPreview` set, and `placeholder(in:)` is
         // only the redacted loading frame. Answering the gallery from the live store meant a new
         // install advertised this widget as empty and the sample content below was shown to no
         // one (T-7125); the gallery gets the sample, the home screen still gets the store.
-        TodayTasksWidgetEntry(
+        completion(TodayTasksWidgetEntry(
             date: Date(),
             snapshot: context.isPreview
                 ? placeholderSnapshot(for: context.family)
                 : currentSnapshot(for: context.family)
-        )
+        ))
     }
 
-    func timeline(
-        for configuration: CadenceTodayWidgetConfigurationIntent,
-        in context: TimelineProviderContext
-    ) async -> Timeline<TodayTasksWidgetEntry> {
+    func getTimeline(
+        in context: TimelineProviderContext,
+        completion: @escaping (Timeline<TodayTasksWidgetEntry>) -> Void
+    ) {
         let entry = TodayTasksWidgetEntry(
             date: Date(),
             snapshot: currentSnapshot(for: context.family)
         )
-        return Timeline(
+        completion(Timeline(
             entries: [entry],
             policy: .after(CadenceTodayWidgetSupport.recommendedReloadDate(for: entry.snapshot))
-        )
+        ))
     }
 
     private func placeholderSnapshot(for family: WidgetFamily) -> CadenceTodayWidgetSnapshot {
@@ -159,7 +165,11 @@ struct TodayTasksWidgetProvider: AppIntentTimelineProvider {
             return snapshot
         } catch {
             probe.recordRefusal(error)
-            return CadenceTodayWidgetSupport.unavailableSnapshot()
+            // [[T-12335]]: the family decides the sentence, because `systemSmall` has one line
+            // for it and the full one stopped mid-word there.
+            return CadenceTodayWidgetSupport.unavailableSnapshot(
+                message: CadenceTodayWidgetSupport.unavailableMessage(for: family.cadenceLayout)
+            )
         }
     }
 
@@ -170,9 +180,8 @@ struct TodayTasksWidgetProvider: AppIntentTimelineProvider {
 
 struct CadenceTodayTasksWidget: Widget {
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(
+        StaticConfiguration(
             kind: CadenceWidgetRefreshCenter.todayWidgetKind,
-            intent: CadenceTodayWidgetConfigurationIntent.self,
             provider: TodayTasksWidgetProvider()
         ) { entry in
             TodayTasksWidgetView(entry: entry)

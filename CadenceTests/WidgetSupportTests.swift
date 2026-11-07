@@ -250,6 +250,22 @@ struct WidgetSupportTests {
         #expect(unavailable.headerCountLabel == "—")
     }
 
+    /// **[[T-12335]], seen on an 11" iPad home screen.** The `systemSmall` tile has one line for
+    /// the unavailable message and drew `Open Cadence once to fini...`. Small gets the short
+    /// sentence; every larger family keeps the full one, which is also the snapshot's default.
+    /// 25 characters is the line the sighting measured at 10pt, not a layout figure.
+    @Test func theSmallUnavailableTileGetsASentenceThatFitsItsOneLine() {
+        let small = CadenceTodayWidgetSupport.unavailableMessage(for: .small)
+        #expect(small.count <= 25)
+        #expect(small.hasSuffix("."))
+        #expect(small != CadenceTodayWidgetSupport.fullUnavailableMessage)
+
+        for layout in CadenceWidgetFamilyLayout.allCases where layout != .small {
+            #expect(CadenceTodayWidgetSupport.unavailableMessage(for: layout) == CadenceTodayWidgetSupport.fullUnavailableMessage)
+        }
+        #expect(CadenceTodayWidgetSupport.unavailableSnapshot(todayKey: "2026-05-11").statusMessage == CadenceTodayWidgetSupport.fullUnavailableMessage)
+    }
+
     /// And a readable store still prints its number, including a genuine zero — "0 today" is a
     /// true and useful thing for the tile to say once the extension can actually see the store,
     /// which is the distinction the dash exists to keep.

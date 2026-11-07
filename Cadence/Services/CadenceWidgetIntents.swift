@@ -59,10 +59,10 @@ nonisolated enum CadenceWidgetIntentWriteSupport {
     }
 }
 
-struct CadenceTodayWidgetConfigurationIntent: WidgetConfigurationIntent {
-    static var title: LocalizedStringResource { "Today Tasks" }
-    static var description: IntentDescription { IntentDescription("See and complete today's Cadence tasks.") }
-}
+// [[T-12334]]: `CadenceTodayWidgetConfigurationIntent` lived here -- a `WidgetConfigurationIntent`
+// with no `@Parameter`, which is what made iOS offer an empty `Edit Widget` sheet. The Today Tasks
+// widget is a `StaticConfiguration` now; `CadenceWidgetConfigurationIntentTests` keeps a
+// parameterless one from coming back.
 
 struct CompleteTaskIntent: AppIntent {
     static var title: LocalizedStringResource { "Complete Task" }

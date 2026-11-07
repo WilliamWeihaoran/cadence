@@ -255,9 +255,26 @@ nonisolated enum CadenceTodayWidgetSupport {
         )
     }
 
+    nonisolated static let fullUnavailableMessage = "Open Cadence once to finish setting up your shared widget data."
+
+    /// The `systemSmall` sentence. **[[T-12335]], seen on an 11" iPad home screen:** below the
+    /// two-line `Widget needs Cadence` title and above the `Open Cadence` link, the small tile has
+    /// one ~25-character line of 10pt text for the message, and the full sentence drew
+    /// `Open Cadence once to fini...`. The link directly beneath already names the app, so the
+    /// short form keeps the meaning (open it once, and that sets it up) in a line that fits.
+    nonisolated static let compactUnavailableMessage = "Open once to set up."
+
+    /// Which of the two sentences a family's unavailable tile says.
+    nonisolated static func unavailableMessage(for layout: CadenceWidgetFamilyLayout) -> String {
+        switch layout {
+        case .small: compactUnavailableMessage
+        case .medium, .large, .extraLarge: fullUnavailableMessage
+        }
+    }
+
     nonisolated static func unavailableSnapshot(
         todayKey: String = currentTodayKey(),
-        message: String = "Open Cadence once to finish setting up your shared widget data."
+        message: String = fullUnavailableMessage
     ) -> CadenceTodayWidgetSnapshot {
         CadenceTodayWidgetSnapshot(
             date: Date(),
