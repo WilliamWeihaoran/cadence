@@ -130,7 +130,50 @@ struct CadenceSwipeEdgeArbitrationTests {
         )
         #expect(delete.isDestructive)
         #expect(CadenceSwipeActionSupport.fullSwipeIndex(isDestructive: [delete.isDestructive]) == nil)
+        #expect(delete.refusesFullSwipe, "a destructive action refuses the full swipe unless it says otherwise")
+        #expect(done.refusesFullSwipe == false)
     }
+
+    /// **[[T-12452]] -- the full-swipe refusal is its own flag.** A list's Archive is recoverable,
+    /// so it is not destructive, but it must still take the deliberate tap rather than a flick. The
+    /// row feeds `refusesFullSwipe` to `fullSwipeIndex`, so an action can refuse without claiming
+    /// to destroy anything -- and a destructive one can never be talked into a full swipe by
+    /// default.
+    @Test func anActionCanRefuseTheFullSwipeWithoutBeingDestructive() {
+        let archive = CadenceSwipeAction(
+            id: "archive",
+            title: "Archive",
+            systemImage: "archivebox",
+            tint: Theme.muted,
+            refusesFullSwipe: true,
+            perform: {}
+        )
+        #expect(archive.isDestructive == false)
+        #expect(archive.refusesFullSwipe)
+        #expect(CadenceSwipeActionSupport.fullSwipeIndex(isDestructive: [archive.refusesFullSwipe]) == nil)
+    }
+
+    #if os(macOS)
+    /// **[[T-12452]] -- the shared list swipe's Archive is not red and still refuses a flick.** The
+    /// tray type is iOS-only, so this reads the source: the archive action takes `Theme.muted` (the
+    /// Mac `ListEditorArchiveButton`'s tint), drops `isDestructive`, and says `refusesFullSwipe:
+    /// true`; and the row reads that flag, not `isDestructive`, everywhere it decides a full swipe.
+    @Test func theListArchiveSwipeIsMutedAndStillRefusesTheFullSwipe() throws {
+        let support = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListSupportViews.swift"))
+        let tray = try #require(CadenceSourceScan.declarationBody("enum iOSListRowSwipeActions", in: support))
+        let squeezed = String(tray.filter { !$0.isWhitespace })
+        #expect(squeezed.contains("id:\"archive-list\""), "non-vacuity: the list archive action was not read")
+        #expect(squeezed.contains("tint:Theme.muted,"))
+        #expect(squeezed.contains("refusesFullSwipe:true,"))
+        #expect(!squeezed.contains("Theme.red"))
+        #expect(!squeezed.contains("isDestructive:true"))
+
+        let row = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSwipeActionRow.swift"))
+        let reads = row.components(separatedBy: ".map(\\.refusesFullSwipe)").count - 1
+        #expect(reads == 5, "the row reads the refusal at \(reads) sites, expected 5 (one helper, two arming, two release)")
+        #expect(!row.contains("\\.isDestructive"), "the row decides a full swipe from the destructive flag again")
+    }
+    #endif
 
     // MARK: - Helpers
 

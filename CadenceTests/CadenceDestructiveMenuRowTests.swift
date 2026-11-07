@@ -43,8 +43,10 @@ struct CadenceDestructiveMenuRowTests {
         ("Cadence/iOS/iOSListsRegularPane.swift", 0),
         ("Cadence/iOS/iOSListViews.swift", 0),
         ("Cadence/iOS/iOSRootSidebar.swift", 0),
-        // Settings' context Archive keeps role `.destructive` for now.
-        ("Cadence/iOS/iOSSettingsView.swift", 1),
+        // [[T-12451]]: Settings' context Archive is not destructive either (the [[T-12322]]
+        // ruling), so that file's only row menu wears the shared red on none of its rows -- its
+        // Delete is the shared `iOSListDeleteMenuButton`, counted under iOSListDeletionSupport.
+        ("Cadence/iOS/iOSSettingsView.swift", 0),
         // Mac note row menus.
         ("Cadence/macOS/Views/ListNotesViewSupportViews.swift", 1),
         ("Cadence/macOS/Views/NotesView.swift", 1),
@@ -53,6 +55,19 @@ struct CadenceDestructiveMenuRowTests {
         let source = try Self.code(path)
         let applied = source.components(separatedBy: ".cadenceDestructiveMenuRow()").count - 1
         #expect(applied == expected, "\(path): \(applied) destructive menu rows wear the shared tint, expected \(expected)")
+    }
+
+    /// **[[T-12451]] -- Settings' context Archive is plain.** Recoverable from the Archived section,
+    /// so it takes neither the destructive role (the red title) nor the shared red glyph; Delete,
+    /// beside it, still does. Whitespace is dropped so the shape, not the indentation, is read.
+    @Test func theSettingsContextArchiveRowIsPlainBesideARedDelete() throws {
+        let settings = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSettingsView.swift"))
+        let source = String(settings.filter { !$0.isWhitespace })
+        #expect(source.contains("Button{archive(context)}label:{Label(\"ArchiveContext\",systemImage:\"archivebox\")}"),
+                "non-vacuity: the context row's Archive was not found as a plain Button")
+        #expect(!source.contains("Button(role:.destructive){archive(context)}"))
+        #expect(source.contains("iOSListDeleteMenuButton(target:.context(context))"),
+                "the context row's Delete moved; this test reads the two side by side")
     }
 
     /// The saved-link menu's Delete specifically -- the row the owner saw -- and not the swipe's,

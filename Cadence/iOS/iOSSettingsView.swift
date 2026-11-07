@@ -402,12 +402,17 @@ struct iOSSettingsView: View {
                                     .disabled(!canMoveContext(context, by: 1))
                                 }
 
-                                Button(role: .destructive) {
+                                // [[T-12451]]: Archive is recoverable (one tap from the Archived
+                                // section below), so it does not wear Delete's red -- the
+                                // [[T-12322]] ruling for a list's Archive, under [[T-8201]]. The
+                                // Mac's `ContextSettingsRow` draws this glyph amber, but an iOS
+                                // menu row has no shared helper that carries a non-red tint, so it
+                                // draws plain like the list menus' Archive rather than invent one.
+                                Button {
                                     archive(context)
                                 } label: {
                                     Label("Archive Context", systemImage: "archivebox")
                                 }
-                                .cadenceDestructiveMenuRow()
 
                                 iOSListDeleteMenuButton(target: .context(context)) { pendingDeletion = $0 }
                             }

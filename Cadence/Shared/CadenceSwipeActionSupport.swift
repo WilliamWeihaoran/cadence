@@ -52,10 +52,14 @@ struct CadenceSwipeAction: Identifiable {
     let title: String
     let systemImage: String
     let tint: Color
-    /// A destructive action is never the one a full swipe commits — see `fullSwipeIndex`. It also
-    /// must not perform the destruction itself; `perform` should raise the row's existing
-    /// confirmation.
+    /// A destructive action must not perform the destruction itself; `perform` should raise the
+    /// row's existing confirmation. It also refuses the full swipe unless it says otherwise.
     let isDestructive: Bool
+    /// Never the one a full swipe commits — see `fullSwipeIndex`, which the row feeds these flags.
+    /// Defaults to `isDestructive`; [[T-12452]] split the two so a recoverable action that still
+    /// should take a deliberate tap (a list's Archive) can refuse the flick without claiming to
+    /// destroy anything.
+    let refusesFullSwipe: Bool
     let perform: () -> Void
 
     init(
@@ -64,6 +68,7 @@ struct CadenceSwipeAction: Identifiable {
         systemImage: String,
         tint: Color,
         isDestructive: Bool = false,
+        refusesFullSwipe: Bool? = nil,
         perform: @escaping () -> Void
     ) {
         self.id = id
@@ -71,6 +76,7 @@ struct CadenceSwipeAction: Identifiable {
         self.systemImage = systemImage
         self.tint = tint
         self.isDestructive = isDestructive
+        self.refusesFullSwipe = refusesFullSwipe ?? isDestructive
         self.perform = perform
     }
 }
@@ -239,6 +245,8 @@ nonisolated enum CadenceSwipeActionSupport {
     }
 
     /// Which action a full swipe runs: always the edge's **first**, and never a destructive one.
+    /// The flags are each action's `refusesFullSwipe` ([[T-12452]]), which is `isDestructive`
+    /// unless the action says otherwise; the label keeps its old name for the callers' sake.
     /// Trailing is `[Done, Delete]`, so a full swipe left toggles completion and cannot delete;
     /// an edge whose first action is destructive simply has no full swipe rather than a
     /// surprising one.

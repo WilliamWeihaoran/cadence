@@ -149,8 +149,10 @@ struct iOSSwipeActionsModifier: ViewModifier {
         edge == .leading ? leadingActions : trailingActions
     }
 
-    private func destructiveFlags(for edge: CadenceSwipeEdge) -> [Bool] {
-        actions(for: edge).map(\.isDestructive)
+    /// [[T-12452]]: the full-swipe refusal, not the destructive flag -- they agree except where an
+    /// action (a list's Archive) refuses the flick without destroying anything.
+    private func fullSwipeRefusals(for edge: CadenceSwipeEdge) -> [Bool] {
+        actions(for: edge).map(\.refusesFullSwipe)
     }
 
     @ViewBuilder
@@ -161,7 +163,7 @@ struct iOSSwipeActionsModifier: ViewModifier {
                 revealedWidth: abs(offset),
                 actionCount: edgeActions.count,
                 fullSwipeIndex: isFullSwipeArmed
-                    ? CadenceSwipeActionSupport.fullSwipeIndex(isDestructive: destructiveFlags(for: visibleEdge))
+                    ? CadenceSwipeActionSupport.fullSwipeIndex(isDestructive: fullSwipeRefusals(for: visibleEdge))
                     : nil
             )
             // The first-declared action sits *on* the swiped-from edge, which is also the one a
@@ -230,8 +232,8 @@ struct iOSSwipeActionsModifier: ViewModifier {
             rowWidth: rowWidth,
             leadingActionCount: leadingActions.count,
             trailingActionCount: trailingActions.count,
-            leadingIsDestructive: leadingActions.map(\.isDestructive),
-            trailingIsDestructive: trailingActions.map(\.isDestructive),
+            leadingIsDestructive: leadingActions.map(\.refusesFullSwipe),
+            trailingIsDestructive: trailingActions.map(\.refusesFullSwipe),
             metrics: metrics
         )
     }
@@ -243,8 +245,8 @@ struct iOSSwipeActionsModifier: ViewModifier {
             rowWidth: rowWidth,
             leadingActionCount: leadingActions.count,
             trailingActionCount: trailingActions.count,
-            leadingIsDestructive: leadingActions.map(\.isDestructive),
-            trailingIsDestructive: trailingActions.map(\.isDestructive),
+            leadingIsDestructive: leadingActions.map(\.refusesFullSwipe),
+            trailingIsDestructive: trailingActions.map(\.refusesFullSwipe),
             metrics: metrics
         )
 
@@ -299,7 +301,7 @@ struct iOSSwipeActionsModifier: ViewModifier {
     private func commitFullSwipe(_ edge: CadenceSwipeEdge) {
         let edgeActions = actions(for: edge)
         guard
-            let index = CadenceSwipeActionSupport.fullSwipeIndex(isDestructive: destructiveFlags(for: edge)),
+            let index = CadenceSwipeActionSupport.fullSwipeIndex(isDestructive: fullSwipeRefusals(for: edge)),
             index < edgeActions.count
         else {
             close()

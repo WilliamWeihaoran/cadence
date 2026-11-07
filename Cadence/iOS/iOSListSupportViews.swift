@@ -54,18 +54,21 @@ extension View {
 /// `ScrollView`, where SwiftUI discards it without a word. That is the same defect, and the same
 /// fix, the task rows already went through — see the note above `iOSTaskRow`'s `.iOSSwipeActions`.
 enum iOSListRowSwipeActions {
-    /// `isDestructive` is not a claim that archiving destroys anything — an archived list is one
-    /// tap from Restore in the Archived section. It is what withholds the action from a *full*
-    /// swipe, which is what `allowsFullSwipe: false` did on the compact rows: filing a list away
-    /// should take the deliberate tap, not a flick.
+    /// **Not destructive, and still no full swipe ([[T-12452]]).** Archiving destroys nothing -- an
+    /// archived list is one tap from Restore in the Archived section -- so it neither wears Delete's
+    /// red nor claims `isDestructive`; it takes `Theme.muted`, the tint macOS's
+    /// `ListEditorArchiveButton` gives the same action, and the long-press menu's Archive is plain
+    /// ([[T-12322]]). `refusesFullSwipe` is what withholds it from a *full* swipe, which is what
+    /// `allowsFullSwipe: false` did on the compact rows: filing a list away should take the
+    /// deliberate tap, not a flick.
     static func archive(_ perform: @escaping () -> Void) -> [CadenceSwipeAction] {
         [
             CadenceSwipeAction(
                 id: "archive-list",
                 title: "Archive",
                 systemImage: "archivebox",
-                tint: Theme.red,
-                isDestructive: true,
+                tint: Theme.muted,
+                refusesFullSwipe: true,
                 perform: perform
             )
         ]
