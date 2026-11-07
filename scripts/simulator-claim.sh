@@ -80,7 +80,7 @@
 #     them two hours.
 #
 #   ./scripts/simulator-claim.sh                       # status; changes nothing
-#   ./scripts/simulator-claim.sh claim  <id> [timeout]  # blocks; prints UDID=...
+#   ./scripts/simulator-claim.sh claim  <id> [timeout] [iphone|ipad|<udid>]  # blocks; prints UDID=...
 #   ./scripts/simulator-claim.sh env    <id>            # eval-able exports
 #   ./scripts/simulator-claim.sh boot   [iphone|ipad] [--apply]   # bare = one stock iPhone
 #   ./scripts/simulator-claim.sh install <id> <app.app> [--apply]
@@ -534,6 +534,18 @@ case "$CMD" in
 
   claim)
     ID="${POS[1]:-agent-$PPID}"; TIMEOUT="${POS[2]:-1800}"; waited=0
+    # T-12351: the timeout is POSITIONAL and comes before the device. `claim <id> <udid>` put the
+    # UDID here, the `while (( waited <= TIMEOUT ))` arithmetic below failed, and the loop fell
+    # straight through to "TIMED OUT ... did NOT claim" -- a busy fleet reported for a free one.
+    # A non-integer is a usage error, named as one, before a ticket is filed or a device looked at.
+    if [[ "$TIMEOUT" != <-> ]]; then
+      print -r -- "simulator-claim: usage: $SELF claim <id> <timeout-seconds> [iphone|ipad|<udid>] -- '$TIMEOUT' is not a timeout." >&2
+      case "$TIMEOUT" in
+        iphone|ipad|[0-9A-Fa-f]*-*-*-*-*)
+          print -r -- "  It looks like a device: the device is the THIRD argument. Did you mean: $SELF claim $ID 1800 $TIMEOUT" >&2 ;;
+      esac
+      exit 2
+    fi
     # Optional third argument: which device to ask for (T-1780). `iphone` / `ipad`
     # resolve through the standing pair; a bare UDID is taken as-is. Omitted, the
     # allocator behaves as it always did and takes the first free device -- minus
@@ -968,6 +980,29 @@ FAKESIMCTL
       fi
     }
 
+    # 2e. A DEVICE IN THE TIMEOUT SLOT IS A USAGE ERROR, NOT A TIMEOUT (T-12351). `claim <id> <udid>`
+    #     used to fail the wait loop's arithmetic and print "TIMED OUT ... did NOT claim" with the
+    #     whole fake fleet free, which is exactly what this fixture has: nothing here is held.
+    trial_badtimeout() {
+      local bt_out bt_rc bt_pad_rc bt_junk_rc bt_ok_rc
+      bt_out=$("$SELF" claim selftest-badto "$FAKE_SECOND_UDID" 2>&1); bt_rc=$?
+      "$SELF" claim selftest-badto ipad >/dev/null 2>&1; bt_pad_rc=$?
+      "$SELF" claim selftest-badto 5x >/dev/null 2>&1; bt_junk_rc=$?
+      bt_held="$(claim_field "$FAKE_SECOND_UDID" id)$(claim_field "$FAKE_UDID" id)"
+      bt_queue=$(queue_names | wc -l | tr -d ' ')
+      # CONTROL: the real signature, same id, same device, takes it -- so the refusals above are about
+      # the argument and not a fixture that could never have claimed.
+      bt_got=$("$SELF" claim selftest-badto 5 "$FAKE_SECOND_UDID" 2>/dev/null | sed -n 's/^UDID=//p'); bt_ok_rc=$?
+      "$SELF" release selftest-badto >/dev/null 2>&1
+      if (( bt_rc == 2 && bt_pad_rc == 2 && bt_junk_rc == 2 )) && [[ "$bt_out" == *"is not a timeout"* \
+           && "$bt_out" == *"claim selftest-badto 1800 $FAKE_SECOND_UDID"* && "$bt_out" != *"TIMED OUT"* \
+           && -z "$bt_held" && "$bt_queue" == 0 && "$bt_got" == "$FAKE_SECOND_UDID" ]]; then
+        print -r -- "PASS bad-timeout-is-usage: a UDID, 'ipad' and '5x' in the timeout slot each exit 2 with the real signature, claim nothing and leave no ticket; the real form then claims $bt_got"
+      else
+        print -r -- "FAIL bad-timeout-is-usage: rc udid=$bt_rc ipad=$bt_pad_rc junk=$bt_junk_rc (wanted 2 2 2); held='${bt_held}' queue=$bt_queue (wanted '' 0); real form got '${bt_got:-<nothing>}'; said: $bt_out"; (( fails++ ))
+      fi
+    }
+
     # 3. A `ps` THAT CANNOT ANSWER MUST NOT EMPTY THE QUEUE (T-1382). Property 2 above proves the
     #    queue drops a ticket whose waiter is genuinely gone. This is the case underneath it, and
     #    the opposite polarity: a `ps` that RUNS and answers nothing -- which is what a setuid
@@ -1194,7 +1229,7 @@ exit 0' > "$root/panelmovingpgrep"
     started=$EPOCHREALTIME
     # `trial`, never `t`: trial_keepsqueue loops `for t in "$QUEUE"/*`, and in this subshell the
     # name it clobbered was the one the count file is written under.
-    for trial in ordering killedwaiter denylist bootipad keepsqueue keepsclaim keepsobserver keepsobserverrace; do
+    for trial in ordering killedwaiter denylist bootipad badtimeout keepsqueue keepsclaim keepsobserver keepsobserverrace; do
       ( troot="$root/trial-$trial"
         trial_env "$troot" || { print -r -- "selftest: could not set up trial $trial"; exit 2 }
         fails=0; kids=()

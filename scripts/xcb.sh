@@ -2258,6 +2258,29 @@ dd_live_users() {
   return 0
 }
 
+# Why `release-dd` will NOT delete $1, printed, or nothing (T-12360). Two conditions, both of the
+# PATH, so the run's closing hint can ask the same question the delete asks and the two cannot
+# disagree: the basename is `cadence-dd-*`, and the resolved path sits under the temp dir --
+# `$TMP_BASE`, plus `/private/tmp` (the other root the DerivedData guard tells callers to use;
+# CADENCE_RELEASE_DD_EXTRA_ROOT overrides it, empty for none, so the selftest can stand a fixture
+# outside every allowed root). `:A` resolves `..` and symlinked parents first, so
+# `$TMPDIR/../../Users/x/cadence-dd-y` and a symlink out of the temp dir are both refused.
+release_dd_path_refusal() {
+  local p=$1 r root
+  local -a roots
+  if [[ "${p:t}" != cadence-dd-* ]]; then
+    print -r -- "'$p' is not a cadence-dd-* DerivedData; release-dd deletes nothing else."; return 0
+  fi
+  r="${p:A}"
+  for root in "${TMP_BASE%/}" "${CADENCE_RELEASE_DD_EXTRA_ROOT-/private/tmp}"; do
+    [[ -n "$root" ]] || continue
+    root="${root:A}"; roots+=("$root")
+    [[ "$r" == "$root"/* ]] && return 1
+  done
+  print -r -- "'$p' (resolved: $r) is not under the temp dir (${(j:, :)roots}); release-dd deletes nothing else."
+  return 0
+}
+
 # Prints the refusal and returns 0 when $1 is in use; returns 1 when it is provably free.
 # $2 = where in the run this is asked. An unreadable process list is NOT a refusal here: refusing
 # every run on a host whose `ps` is denied would be the T-986 shape. It is said, and the run goes on.
@@ -4629,8 +4652,12 @@ selftest_only_testing() {
     $( [[ $lgrc == 0 && $lgcalls == 1 ]] && print 1 || print 0 ) "exit $lgrc, $lgcalls call(s): $lgout"
   check "GREEN full unscoped CadenceTests run records HEAD as the last green" \
     $( [[ "$lgout" == *"last-green: recorded $lgsha (tree clean)"* && "$(sed -n 's/^sha=//p' "$ws/lg/state"/cadence-xcb-last-green.* 2>/dev/null)" == "$lgsha" ]] && print 1 || print 0 ) "$lgout"
-  check "...and the result block points at release-dd, not at a bare delete" \
-    $( [[ "$lgout" == *"./scripts/xcb.sh release-dd $lgdd"* && "$lgout" != *"delete $lgdd when you are done"* ]] && print 1 || print 0 ) "$lgout"
+  # This run's TMPDIR is $ws/leg/tmp/ and $lgdd is not under it, so release-dd would refuse it
+  # (T-12360) and the block must not advertise it; the hint that IS printed for a DerivedData under
+  # the temp dir is run verbatim further down this section.
+  check "...and the result block never points at a bare delete, nor at a release-dd that would refuse" \
+    $( [[ "$lgout" == *"release-dd will not delete this DerivedData"* && "$lgout" != *"when you are done: ./scripts/xcb.sh release-dd $lgdd"* \
+         && "$lgout" != *"delete $lgdd when you are done"* ]] && print 1 || print 0 ) "$lgout"
   check "WIRING (T-2041): the real run hands its arguments to the lock report -- unit-only gets the note" \
     $( [[ "$lgout" == *"SCREEN-LOCKED (unit-only"* && "$lgout" != *SCREEN-LOCKED-MID-RUN* ]] && print 1 || print 0 ) "$lgout"
   lgps=""
@@ -4716,6 +4743,59 @@ selftest_only_testing() {
   lgout=$(CADENCE_PS_FIXTURE="$ws/lg/ps-other.txt" zsh "$here" release-dd "$lgdd" 2>&1); lgrc=$?
   check "release-dd deletes a DerivedData no live xcodebuild names" \
     $( [[ $lgrc == 0 && ! -e "$lgdd" ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
+
+  # T-12360: only a cadence-dd-* tree UNDER THE TEMP DIR. `$ws/lg/rddtmp/` stands in for $TMPDIR
+  # and the extra root is emptied, so `$ws/lg/outside/cadence-dd-out` is outside every allowed root
+  # while still being a throwaway under $ws -- no real DerivedData is ever a target here.
+  mkdir -p "$ws/lg/rddtmp/cadence-dd-in" "$ws/lg/outside/cadence-dd-out"
+  lgout=$(TMPDIR="$ws/lg/rddtmp/" CADENCE_RELEASE_DD_EXTRA_ROOT= CADENCE_PS_FIXTURE="$ws/lg/ps-other.txt" \
+    zsh "$here" release-dd "$ws/lg/outside/cadence-dd-out" 2>&1); lgrc=$?
+  check "release-dd REFUSES a cadence-dd-* directory outside the temp dir (exit 2), deleting nothing" \
+    $( [[ $lgrc == 2 && "$lgout" == *"not under the temp dir"* && -d "$ws/lg/outside/cadence-dd-out" ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
+  lgout=$(TMPDIR="$ws/lg/rddtmp/" CADENCE_RELEASE_DD_EXTRA_ROOT= CADENCE_PS_FIXTURE="$ws/lg/ps-other.txt" \
+    zsh "$here" release-dd "$ws/lg/rddtmp/../outside/cadence-dd-out" 2>&1); lgrc=$?
+  check "...and a path that climbs out of it with .. (exit 2), deleting nothing" \
+    $( [[ $lgrc == 2 && -d "$ws/lg/outside/cadence-dd-out" ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
+  ln -s "$ws/lg/outside" "$ws/lg/rddtmp/escape"
+  lgout=$(TMPDIR="$ws/lg/rddtmp/" CADENCE_RELEASE_DD_EXTRA_ROOT= CADENCE_PS_FIXTURE="$ws/lg/ps-other.txt" \
+    zsh "$here" release-dd "$ws/lg/rddtmp/escape/cadence-dd-out" 2>&1); lgrc=$?
+  check "...and one reached through a symlink out of it (exit 2), deleting nothing" \
+    $( [[ $lgrc == 2 && -d "$ws/lg/outside/cadence-dd-out" ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
+  lgout=$(TMPDIR="$ws/lg/rddtmp/" CADENCE_RELEASE_DD_EXTRA_ROOT= CADENCE_PS_FIXTURE="$ws/lg/ps-other.txt" \
+    zsh "$here" release-dd in 2>&1); lgrc=$?
+  check "CONTROL: the same temp dir's own cadence-dd-<id>, named by id, IS deleted" \
+    $( [[ $lgrc == 0 && ! -e "$ws/lg/rddtmp/cadence-dd-in" ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
+
+  # T-12360: the <id> form of a subcommand. `xcb.sh probe release-dd <path>` used to print the
+  # preflight banner and then `unknown action` -- read by a coordinator as 1.7 GB released.
+  lgout=$(CADENCE_PS_FIXTURE="$ws/lg/ps-other.txt" zsh "$here" probe release-dd "$ws/lg/outside/cadence-dd-out" 2>&1); lgrc=$?
+  check "'<id> release-dd <path>' is a usage error (exit 2) naming the real form, before any preflight" \
+    $( [[ $lgrc == 2 && "$lgout" == *"takes no <id>. Run: ./scripts/xcb.sh release-dd $ws/lg/outside/cadence-dd-out"* \
+         && "$lgout" != *"xcb preflight"* && -d "$ws/lg/outside/cadence-dd-out" ]] && print 1 || print 0 ) "exit $lgrc: $lgout"
+
+  # T-12360: THE HINT'S OWN TEXT, RUN. The result block's closing line is the only place an agent
+  # learns the delete command, and it once named a form the dispatch could not take; asserting the
+  # substring (above) never ran it. A full run with no -derivedDataPath, so the DerivedData is the
+  # run's own default under its TMPDIR; the hint is cut out of the output, its first word checked,
+  # and the rest handed to this script verbatim.
+  local -a lghint
+  local lghintdd="$ws/leg/tmp/cadence-dd-selftest-lg"
+  lgps="$ws/lg/ps-other.txt"
+  mkdir -p "$ws/lg/state3"
+  run_lg "$ws/lg/state3" "$ws/lg/green.log" -scheme Cadence -destination 'platform=macOS' -only-testing:CadenceTests test
+  lgps=""
+  lghint=(${(z)"$(print -r -- "$lgout" | sed -n 's/^.*(when you are done: \(.*\) -- it refuses while a live.*$/\1/p' | head -1)"})
+  mkdir -p "$lghintdd"
+  lgout=$(cd "$ws" && TMPDIR="$ws/leg/tmp/" CADENCE_PS_FIXTURE="$ws/lg/ps-other.txt" zsh "$here" "${lghint[@]:1}" 2>&1); lgrc=$?
+  check "the result block's release-dd hint, run as printed, deletes that run's DerivedData" \
+    $( [[ "${lghint[1]}" == ./scripts/xcb.sh && "${lghint[2]}" == release-dd && "${lghint[3]}" == "$lghintdd" \
+         && $lgrc == 0 && ! -e "$lghintdd" ]] && print 1 || print 0 ) "hint '${lghint[*]}', exit $lgrc: $lgout"
+  export CADENCE_RELEASE_DD_EXTRA_ROOT=   # $ws may itself sit under /private/tmp when TMPDIR is unset
+  run_lg "$ws/lg/state3" "$ws/lg/green.log" -scheme Cadence -destination 'platform=macOS' \
+    -only-testing:CadenceTests -derivedDataPath "$ws/lg/outside/cadence-dd-out" test
+  unset CADENCE_RELEASE_DD_EXTRA_ROOT
+  check "...and a run into a DerivedData release-dd would refuse is NOT told to run it" \
+    $( [[ "$lgout" != *"when you are done: ./scripts/xcb.sh release-dd"* && "$lgout" == *"release-dd will not delete this DerivedData"* ]] && print 1 || print 0 ) "$lgout"
 
 
   say ""
@@ -5649,8 +5729,8 @@ if [[ "${1:-}" == "release-dd" ]]; then
   fi
   RDD="$2"
   [[ "$RDD" == */* ]] || RDD="${TMP_BASE}cadence-dd-$RDD"
-  if [[ "${RDD:t}" != cadence-dd-* ]]; then
-    say "REFUSING: '$RDD' is not a cadence-dd-* DerivedData; release-dd deletes nothing else."; exit 2
+  if RDD_WHY="$(release_dd_path_refusal "$RDD")"; then
+    say "REFUSING: $RDD_WHY"; exit 2
   fi
   RDD_USERS="$(dd_live_users "$RDD")"; RDD_RC=$?
   if (( RDD_RC != 0 )); then
@@ -5719,6 +5799,15 @@ ID="${1:-}"; ACTION="${2:-}"
 if [[ -z "$ID" || -z "$ACTION" ]]; then
   say "usage: ./scripts/xcb.sh <id> build|test|raw [args...]   |   ./scripts/xcb.sh audit"; exit 2
 fi
+# A SUBCOMMAND given an id (T-12360). `./scripts/xcb.sh probe release-dd <path>` reached the
+# preflight banner and then `unknown action`, at the bottom of output nobody reads -- and was
+# reported as 1.7 GB released. Every subcommand above takes no id; say so before any preflight.
+case "$ACTION" in
+  release-dd|audit|selftest|last-green|run-state|export-archive|resolve-xcodebuild|check-*)
+    say "'$ACTION' is a subcommand, not an action: it takes no <id>. Run: ./scripts/xcb.sh $ACTION ${(j: :)${(q-)@[3,-1]}}"
+    say "  (the <id> form takes only build|test|raw; nothing was run or deleted)"
+    exit 2 ;;
+esac
 shift 2
 # Before anything is paid for, and before the DerivedData default is derived from `$ID`: a build of
 # the wrong tree is wrong however well every later guard passes (T-7500).
@@ -6319,6 +6408,11 @@ fi
 DD_USERS="$(dd_live_users "$DD")"
 if [[ -n "$DD_USERS" ]]; then
   say "  !! do NOT delete $DD: live xcodebuild pid(s) ${(j:, :)${(f)DD_USERS}} use it (T-2042)."
+elif DD_WHY="$(release_dd_path_refusal "$DD")"; then
+  # Never advertise a delete the subcommand would refuse (T-12360): the hint and `release-dd` ask
+  # the same predicate, and the selftest runs the hint's own text.
+  say "  (release-dd will not delete this DerivedData: $DD_WHY"
+  say "   Remove it yourself once no live xcodebuild names it: pgrep -f 'derivedDataPath $DD' is empty.)"
 else
   say "  (when you are done: ./scripts/xcb.sh release-dd $DD -- it refuses while a live"
   say "   xcodebuild uses that path, which a bare rm does not; a full one is ~1.7 GB)"
