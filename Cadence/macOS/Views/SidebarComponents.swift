@@ -176,6 +176,12 @@ struct ContextSection: View {
     /// Set when the store refused a project due date picked from the row's flag ([[T-4970]]). The
     /// project already holds its old date again by then, so the badge and this sentence agree.
     @State private var dueDateFailureNotice: String? = nil
+    /// The row menu's Complete / Archive waiting on its confirmation ([[T-12621]]); set only when
+    /// the wind-down would settle open work.
+    @State private var pendingWindDown: SidebarListWindDown? = nil
+    /// Set when the store refused a row-menu wind-down. The list and its tasks are back as they
+    /// were by then (the commit's undo), so the row and this sentence agree.
+    @State private var windDownFailureNotice: String? = nil
 
     private var hasLists: Bool { !entries.isEmpty }
 
@@ -219,6 +225,11 @@ struct ContextSection: View {
                     .padding(.horizontal, SidebarMetrics.listRowHorizontalPadding)
             }
 
+            if let windDownFailureNotice {
+                CadenceInlineFailureNotice(text: windDownFailureNotice)
+                    .padding(.horizontal, SidebarMetrics.listRowHorizontalPadding)
+            }
+
             if hasLists {
                 VStack(alignment: .leading, spacing: SidebarMetrics.listRowSpacing) {
                     // Top drop zone — lets the user drag any item to the first position. It is
@@ -255,6 +266,43 @@ struct ContextSection: View {
         .sheet(item: $projectForEdit) { project in
             EditProjectSheet(project: project)
         }
+        .confirmationDialog(
+            pendingWindDown?.confirmationTitle ?? "",
+            isPresented: Binding(
+                get: { pendingWindDown != nil },
+                set: { if !$0 { pendingWindDown = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingWindDown
+        ) { target in
+            Button(target.actionTitle) { commitWindDown(target) }
+            Button("Cancel", role: .cancel) { pendingWindDown = nil }
+        } message: { target in
+            Text(target.summary.settledLine ?? "")
+        }
+    }
+
+    /// The row menu's Complete / Archive ([[T-12621]]). Asks first only when something would be
+    /// settled -- `CadenceContainerWindDownSummary.requiresConfirmation`, the rule the iPad's same
+    /// menu follows -- and otherwise winds the list down at once.
+    private func requestWindDown(_ target: SidebarListWindDown?) {
+        guard let target else { return }
+        if target.summary.requiresConfirmation {
+            pendingWindDown = target
+        } else {
+            commitWindDown(target)
+        }
+    }
+
+    private func commitWindDown(_ target: SidebarListWindDown) {
+        pendingWindDown = nil
+        do {
+            try SidebarListWindDown.windDown(target, in: modelContext)
+        } catch {
+            windDownFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        windDownFailureNotice = nil
     }
 
     /// Drag a list to a new place in the sidebar.
@@ -370,7 +418,8 @@ struct ContextSection: View {
             dueDateKey: nil,
             onSetDueDate: nil,
             selection: $selection,
-            onEdit: { areaForEdit = area }
+            onEdit: { areaForEdit = area },
+            onWindDown: { requestWindDown(SidebarListWindDown(.area(area), choice: $0)) }
         )
         .overlay { dropIndicator(for: target) }
         .animation(.easeInOut(duration: 0.15), value: dragOverListItem)
@@ -398,7 +447,8 @@ struct ContextSection: View {
                 setDueDate(newKey, on: project)
             },
             selection: $selection,
-            onEdit: { projectForEdit = project }
+            onEdit: { projectForEdit = project },
+            onWindDown: { requestWindDown(SidebarListWindDown(.project(project), choice: $0)) }
         )
         .overlay { dropIndicator(for: target) }
         .animation(.easeInOut(duration: 0.15), value: dragOverListItem)
@@ -411,6 +461,98 @@ struct ContextSection: View {
             dragOverItem: $dragOverListItem,
             onDrop: reorderList
         ))
+    }
+}
+
+// MARK: - Row menu wind-down
+
+/// One list the sidebar row's menu is completing or archiving ([[T-12621]]).
+///
+/// The same writes the Edit sheet's `apply(_:)` makes for that choice -- the list's `status`, then
+/// `TaskContainerLifecycleService.settleRemainingActiveTasks` in the direction
+/// `ListEditorLifecycleChoice.windDownOutcome` names -- under one snapshot and one commit, without
+/// the sheet's pending field edits, because the row has none. The sheet keeps its own copy for the
+/// reason `iOSListWindDownSupport`'s editor does: its settle rides its field edits' commit.
+struct SidebarListWindDown: Identifiable {
+    enum Subject {
+        case area(Area)
+        case project(Project)
+    }
+
+    let subject: Subject
+    let choice: ListEditorLifecycleChoice
+    let outcome: CadenceWindDownOutcome
+
+    /// `nil` for `.active`: reopening a list settles nothing, so it is no wind-down.
+    init?(_ subject: Subject, choice: ListEditorLifecycleChoice) {
+        guard let outcome = choice.windDownOutcome else { return nil }
+        self.subject = subject
+        self.choice = choice
+        self.outcome = outcome
+    }
+
+    var id: String {
+        switch subject {
+        case .area(let area): return "area-\(area.id)"
+        case .project(let project): return "project-\(project.id)"
+        }
+    }
+
+    private var noun: String {
+        switch subject {
+        case .area: return "Area"
+        case .project: return "Project"
+        }
+    }
+
+    /// The menu item's own words, so the confirmation's button says what was clicked.
+    var actionTitle: String {
+        "\(outcome == .done ? "Complete" : "Archive") \(noun)"
+    }
+
+    var confirmationTitle: String { "\(actionTitle)?" }
+
+    /// The settle's own array, counted before the fact -- the iPad's confirmation counts the same.
+    var summary: CadenceContainerWindDownSummary {
+        switch subject {
+        case .area(let area): return .forArea(area, outcome: outcome)
+        case .project(let project): return .forProject(project, outcome: outcome)
+        }
+    }
+
+    /// Writes the wind-down and commits it; a refusal puts the list and every settled task back.
+    static func windDown(
+        _ target: SidebarListWindDown,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        let undo: CadenceListEditSnapshot
+        switch target.subject {
+        case .area(let area):
+            undo = CadenceListEditSnapshot(
+                area,
+                tasks: TaskContainerLifecycleService.remainingActiveTasks(in: area, includingChildProjects: true)
+            )
+            area.status = target.choice == .completed ? .done : .archived
+            TaskContainerLifecycleService.settleRemainingActiveTasks(
+                in: area,
+                includingChildProjects: true,
+                outcome: target.outcome,
+                in: modelContext
+            )
+        case .project(let project):
+            undo = CadenceListEditSnapshot(
+                project,
+                tasks: TaskContainerLifecycleService.remainingActiveTasks(in: project)
+            )
+            project.status = target.choice == .completed ? .done : .archived
+            TaskContainerLifecycleService.settleRemainingActiveTasks(
+                in: project,
+                outcome: target.outcome,
+                in: modelContext
+            )
+        }
+        try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit, undo: undo.restore)
     }
 }
 

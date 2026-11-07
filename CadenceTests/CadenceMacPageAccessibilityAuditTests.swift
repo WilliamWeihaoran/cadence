@@ -952,7 +952,8 @@ struct CadenceMacPageAccessibilityAuditTests {
                 dueDateKey: dueDateKey,
                 onSetDueDate: dueDateKey == nil ? nil : { _ in },
                 selection: .constant(nil),
-                onEdit: {}
+                onEdit: {},
+                onWindDown: { _ in }
             ).environment(HoveredEditableManager.shared).frame(width: 260), size: NSSize(width: 300, height: 60))
         }
 

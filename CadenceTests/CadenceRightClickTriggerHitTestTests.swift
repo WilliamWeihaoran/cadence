@@ -133,7 +133,12 @@ struct CadenceRightClickTriggerHitTestTests {
         )
         #expect(!source.contains("SidebarRightClickEditTrigger"))
         #expect(!source.contains("RightClickEditView"))
-        #expect(source.contains("RightClickActionTrigger(action: onEdit)"))
+        // [[T-12621]]: the sidebar list row now answers a right-click with a SwiftUI `.contextMenu`
+        // (Edit, Complete, Archive) rather than this overlay running Edit -- so it hosts neither
+        // copy. `CadenceListWindDownSurfaceTests.theMacSidebarRowMenuOffersTheIPadRowsSet` pins
+        // the menu.
+        #expect(!source.contains("RightClickActionTrigger("))
+        #expect(source.contains(".contextMenu {"))
     }
 }
 #endif

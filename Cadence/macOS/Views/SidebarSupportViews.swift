@@ -306,6 +306,10 @@ struct SidebarListRow: View {
     let onSetDueDate: ((String) -> Void)?
     @Binding var selection: SidebarItem?
     let onEdit: () -> Void
+    /// Complete (`.completed`) or Archive (`.archived`) this list from the row's menu
+    /// ([[T-12621]]). The host resolves the row and asks first when the wind-down would settle open
+    /// work -- `SidebarListWindDown` -- so this row only names which direction.
+    let onWindDown: (ListEditorLifecycleChoice) -> Void
 
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @State private var isHovered = false
@@ -363,10 +367,29 @@ struct SidebarListRow: View {
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())
-        .overlay {
-            // Was a private, byte-identical copy of this type (T-1096); one overlay now, one
-            // hit-test rule, one place to get it wrong.
-            RightClickActionTrigger(action: onEdit)
+        // [[T-12621]]: a right-click opens the row's menu, as long-pressing the same row in the
+        // iPad sidebar does (`iOSSidebarListRow`), under [[T-1479]]'s ruling that a right-click
+        // offers actions rather than opening the edit surface. It was a `RightClickActionTrigger`
+        // overlay running `onEdit` -- the last host that type had. Edit is first, so the old
+        // one-step edit costs one more click and nothing else; Complete and Archive are the iPad
+        // menu's wind-down pair, same labels, glyphs and order, and neither is `.destructive`
+        // ([[T-12322]]). Not here, on purpose: Move Up / Move Down, because the pointer reorders
+        // this column by drag, which is why the iPad grew them ([[T-7260]](a)); and Delete, which
+        // the iPad row menu does not offer either -- it stays in the Edit sheet on both.
+        .contextMenu {
+            Button(action: onEdit) {
+                Label(kind.editActionName, systemImage: "square.and.pencil")
+            }
+            Button {
+                onWindDown(.completed)
+            } label: {
+                Label("Complete \(kind.label)", systemImage: "checkmark.circle")
+            }
+            Button {
+                onWindDown(.archived)
+            } label: {
+                Label("Archive \(kind.label)", systemImage: "archivebox")
+            }
         }
         // [[T-8643]]: the count is `accessibilityHidden`, so the label is the only place it can be
         // heard. The name and count only -- not `listRowAccessibilityLabel`'s due date: SwiftUI
@@ -375,7 +398,8 @@ struct SidebarListRow: View {
         .accessibilityLabel(CadenceSidebarLayout.rowAccessibilityLabel(Self.displayLabel(label), count: count))
         .accessibilityIdentifier("sidebar.list.\(kind.accessibilityFragment).\(accessibilitySlug(label))")
         // [[T-7202]]: the edit sheet was reachable only by a right-click or by Cmd+E over a hovered
-        // row, neither of which VoiceOver can perform. Named for the sheet it opens.
+        // row, neither of which VoiceOver can perform. Named for the sheet it opens. Kept beside
+        // the [[T-12621]] menu: it is still the one-step edit for VoiceOver.
         .accessibilityAction(named: kind.editActionName, onEdit)
         .onHover { hovering in
             isHovered = hovering

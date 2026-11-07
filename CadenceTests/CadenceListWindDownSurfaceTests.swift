@@ -632,6 +632,96 @@ struct CadenceListWindDownSurfaceTests {
         #expect(sidebar.contains(".iOSListWindDown(target: $pendingWindDown)"))
     }
 
+    /// **[[T-12621]] -- the Mac sidebar row's right-click offers the iPad row's set.** It opened
+    /// the Edit sheet directly (a `RightClickActionTrigger` running `onEdit`) while the iPad's
+    /// long-press on the same row opened Edit / Complete / Archive / Move Up / Move Down. The Mac
+    /// menu is Edit, then Complete, then Archive -- the iPad's order and glyphs -- with no
+    /// `.destructive` role; Move Up / Move Down are left to the Mac's drag reorder, and Delete is
+    /// in neither row menu.
+    @Test func theMacSidebarRowMenuOffersTheIPadRowsSet() throws {
+        func squeezed(_ text: String) -> String { String(text.filter { !$0.isWhitespace }) }
+
+        let macFile = try strippingComments(sourceFile("Cadence/macOS/Views/SidebarSupportViews.swift"))
+        let macRow = try #require(CadenceSourceScan.declarationBody("struct SidebarListRow: View", in: macFile))
+        let macMenu = squeezed(try #require(CadenceSourceScan.declarationBody(".contextMenu", in: macRow)))
+        #expect(!macRow.contains("RightClickActionTrigger"), "the row went back to right-click-to-edit")
+
+        let edit = try #require(macMenu.range(of: "Button(action:onEdit){Label(kind.editActionName,systemImage:\"square.and.pencil\")}"))
+        let complete = try #require(macMenu.range(of: "Button{onWindDown(.completed)}label:{Label(\"Complete\\(kind.label)\",systemImage:\"checkmark.circle\")}"))
+        let archive = try #require(macMenu.range(of: "Button{onWindDown(.archived)}label:{Label(\"Archive\\(kind.label)\",systemImage:\"archivebox\")}"))
+        #expect(edit.lowerBound < complete.lowerBound && complete.lowerBound < archive.lowerBound)
+        #expect(!macMenu.contains("role:.destructive"), "Archive is recoverable ([[T-12322]])")
+        #expect(!macMenu.contains("onMove"), "the Mac reorders by drag")
+
+        // The iPad row's glyphs are the ones the Mac menu spells out.
+        let ipad = try strippingComments(sourceFile("Cadence/iOS/iOSRootSidebar.swift"))
+        let ipadRow = try #require(CadenceSourceScan.declarationBody("struct iOSSidebarListRow: View", in: ipad))
+        let ipadMenu = try #require(CadenceSourceScan.declarationBody(".contextMenu", in: ipadRow))
+        #expect(ipadMenu.contains("systemImage: \"square.and.pencil\""))
+        let support = try strippingComments(sourceFile("Cadence/iOS/iOSListWindDownSupport.swift"))
+        #expect(squeezed(support).contains("case.archive:return\"archivebox\"case.complete:return\"checkmark.circle\""))
+
+        // Both hosts route the menu through the one wind-down target.
+        let host = try strippingComments(sourceFile("Cadence/macOS/Views/SidebarComponents.swift"))
+        #expect(host.contains("onWindDown: { requestWindDown(SidebarListWindDown(.area(area), choice: $0)) }"))
+        #expect(host.contains("onWindDown: { requestWindDown(SidebarListWindDown(.project(project), choice: $0)) }"))
+    }
+
+    /// The Mac row menu's wind-down settles what the Edit sheet's `apply(_:)` settles, in the
+    /// direction the choice names, asks only when there is something to settle, and puts the list
+    /// and every settled task back when the store refuses ([[T-12621]]).
+    @Test func theMacSidebarRowMenuWindDownSettlesInTheChoicesDirection() throws {
+        let modelContext = ModelContext(try container())
+        let area = Area(name: "Home")
+        let child = Project(name: "Kitchen", area: area)
+        let open = task("open")
+        open.area = area
+        let openInChild = task("open in child")
+        openInChild.project = child
+        let project = Project(name: "Ship")
+        let shipOpen = task("ship open", status: .inProgress)
+        shipOpen.project = project
+        for model in [open, openInChild, shipOpen] { modelContext.insert(model) }
+        modelContext.insert(area)
+        modelContext.insert(child)
+        modelContext.insert(project)
+        area.tasks = [open]
+        area.projects = [child]
+        child.tasks = [openInChild]
+        project.tasks = [shipOpen]
+        try modelContext.save()
+
+        #expect(SidebarListWindDown(.area(area), choice: .active) == nil, "reopening settles nothing")
+
+        // A refused commit puts everything back.
+        let refused = try #require(SidebarListWindDown(.area(area), choice: .completed))
+        #expect(refused.summary.openTasks == 2)
+        #expect(refused.summary.requiresConfirmation)
+        #expect(refused.confirmationTitle == "Complete Area?")
+        struct Refusal: Error {}
+        #expect(throws: Refusal.self) {
+            try SidebarListWindDown.windDown(refused, in: modelContext, commit: { _ in throw Refusal() })
+        }
+        #expect(area.status == .active)
+        #expect([open.status, openInChild.status] == [.todo, .todo])
+
+        // Complete marks the area's work done, child project included.
+        try SidebarListWindDown.windDown(refused, in: modelContext)
+        #expect(area.status == .done)
+        #expect([open.status, openInChild.status] == [.done, .done])
+
+        // Archive cancels the project's work.
+        let archive = try #require(SidebarListWindDown(.project(project), choice: .archived))
+        #expect(archive.actionTitle == "Archive Project")
+        try SidebarListWindDown.windDown(archive, in: modelContext)
+        #expect(project.status == .archived)
+        #expect(shipOpen.status == .cancelled)
+        #expect(shipOpen.completedAt != nil)
+
+        // Nothing left open: no confirmation.
+        #expect(SidebarListWindDown(.project(project), choice: .completed)?.summary.requiresConfirmation == false)
+    }
+
     /// **[[T-12511]].** The list editor's kanban COLUMN row drew Archive with `role: .destructive`
     /// -- Delete's red -- although the same row offers Unarchive the moment it is archived, and the
     /// Mac's column popover draws "Archive Column" dim. [[T-12322]]'s ruling covers it: only Delete

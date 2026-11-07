@@ -1263,9 +1263,12 @@ struct iOSSidebarListRow: View {
         // and its scaled trailing count painted past the sidebar's divider. Naming the preview's
         // shape -- the same `rowShape` the selection fill and the hit region use -- is
         // `iOSBoardTaskCard`'s [[T-9614]] fix; the resting row is unchanged. iOS only: the
-        // Mac's row menu is an `NSMenu`, which lifts no preview.
+        // Mac row's SwiftUI `.contextMenu` ([[T-12621]]) opens as a pointer menu and lifts no
+        // preview.
         .contentShape(.contextMenuPreview, rowShape)
-        // The touch equivalent of macOS's right-click-to-edit on the same row. Not `.swipeActions`:
+        // The touch equivalent of the Mac row's right-click menu (`SidebarListRow`, [[T-12621]]),
+        // which carries Edit, Complete and Archive and leaves Move Up / Move Down to its drag
+        // reorder. Not `.swipeActions`:
         // that modifier does nothing outside a `List`, and this region is a `ScrollView`.
         // [[T-10058]]: `square.and.pencil`, the glyph the Lists page's own "Edit Area" / "Edit
         // Project" item draws on the same iPad -- one action, one glyph. It was the bare `pencil`.

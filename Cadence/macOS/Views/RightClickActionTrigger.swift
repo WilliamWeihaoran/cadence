@@ -24,7 +24,8 @@ import AppKit
 ///
 /// Sidebar list rows used to carry a byte-identical private copy of this type
 /// (`SidebarRightClickEditTrigger`, with its own `RightClickEditView`) and therefore a byte-identical
-/// copy of the defect. It is gone; that call site uses this one.
+/// copy of the defect. It is gone, and since [[T-12621]] that row opens a `.contextMenu` instead, so
+/// this type has no host left.
 struct RightClickActionTrigger: NSViewRepresentable {
     typealias NSViewType = RightClickActionView
 
