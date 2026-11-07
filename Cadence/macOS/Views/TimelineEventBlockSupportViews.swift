@@ -341,63 +341,22 @@ struct CalendarEventEditPopover: View {
         return actions
     }
 
-    /// **T-467.** The event's calendar link, as the panel's Calendar row reads it.
+    /// **T-467.** The panel's Calendar row: the writable calendars plus the one the event is
+    /// already on, each worded by the event's calendar link.
     ///
     /// This card used to hand the picker `writableCalendars` alone and let it title whatever it
     /// could find. The timeline's events come from `availableCalendars`, which filters by
     /// visibility and not by writability, so an event on an **active read-only** subscribed
     /// calendar reached this editor, printed its calendar's name in the header strip (today
     /// `CadenceEventEditorHeaderStrip`), and had "No calendar" underneath — the [[T-441]]
-    /// collapse, on a second surface.
-    ///
-    /// The universe here is `availableCalendars`, not `allCalendars`: it is exactly what the
-    /// timeline can show, so `availableCalendars` minus `writableCalendars` is exactly the active
-    /// read-only calendars and `.readOnly` is always the true word for anything this offer adds
-    /// back. Hidden calendars never reach this editor at all — the fetch dropped them first — so
-    /// `.hidden` is not a state this editor can be in.
-    private var calendarLink: CadenceCalendarLink {
-        CadenceCalendarLink(
-            linkedCalendarID: draft.calendarID,
-            allCalendars: calendarManager.availableCalendars,
-            visibleCalendars: calendarManager.writableCalendars,
-            exclusion: .readOnly
-        )
-    }
-
+    /// collapse, on a second surface. [[T-12753]] moved the builder to Shared so the iOS sheet
+    /// words the row the same way.
     private var calendarChoices: [CadenceSchedulePanelChoice] {
-        Self.calendarChoices(
-            calendars: calendarLink.pickableCalendars(from: calendarManager.availableCalendars),
-            link: calendarLink,
-            selectedID: draft.calendarID
+        CadenceEventEditorCalendarChoices.choices(
+            selectedID: draft.calendarID,
+            availableCalendars: calendarManager.availableCalendars,
+            writableCalendars: calendarManager.writableCalendars
         )
-    }
-
-    /// The panel's calendar rows: the writable offer plus the calendar the event is already on,
-    /// each worded by the link — so a read-only one reads "Holidays (Read-only)" in the row and the
-    /// menu alike. When the event's calendar is in neither (an event with no calendar, or one the
-    /// fetch no longer lists) the row still names what the link calls it rather than falling back
-    /// to the panel's "Choose Calendar", which would read as a choice still to make.
-    static func calendarChoices(
-        calendars: [EKCalendar],
-        link: CadenceCalendarLink,
-        selectedID: String
-    ) -> [CadenceSchedulePanelChoice] {
-        var choices = calendars.map {
-            CadenceSchedulePanelChoice(
-                id: $0.calendarIdentifier,
-                name: link.pickerLabel(title: $0.title, calendarID: $0.calendarIdentifier),
-                // `cgColor` is implicitly unwrapped and nil on a calendar EventKit has not
-                // coloured yet; read as the orphan row's dim rather than trapping.
-                color: $0.cgColor.map { Color(cgColor: $0) } ?? Theme.dim,
-                systemImage: "calendar"
-            )
-        }
-        if !choices.contains(where: { $0.id == selectedID }) {
-            choices.append(
-                CadenceSchedulePanelChoice(id: selectedID, name: link.rowState.valueText, color: Theme.dim)
-            )
-        }
-        return choices
     }
 
     private var calendarUnavailableNotice: String? {

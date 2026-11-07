@@ -307,27 +307,15 @@ struct iOSCalendarEventEditSheet: View {
         return actions
     }
 
-    /// The writable calendars, or — on a read-only event — the event's real calendar alone, stated
-    /// plainly. A picker there could only offer calendars this event cannot move to, and the panel
-    /// draws it inert.
+    /// The writable calendars plus the event's own, worded by its calendar link — so a read-only
+    /// event's row reads "Holidays (Read-only)", as the Mac editor's does ([[T-12753]]). The panel
+    /// draws a read-only event inert, so there only the row's label is read.
     private var calendarChoices: [CadenceSchedulePanelChoice] {
-        guard isEditable else {
-            return [
-                CadenceSchedulePanelChoice(
-                    id: draft.calendarID,
-                    name: CadenceTitleNormalization.display(eventCalendarName, fallback: CadenceAppleCalendarNaming.unnamedCalendarTitle),
-                    color: Theme.dim
-                )
-            ]
-        }
-        return calendarManager.writableCalendars.map {
-            CadenceSchedulePanelChoice(
-                id: $0.calendarIdentifier,
-                name: $0.title,
-                color: iOSCalendarEventSupport.color(for: $0),
-                systemImage: "calendar"
-            )
-        }
+        CadenceEventEditorCalendarChoices.choices(
+            selectedID: draft.calendarID,
+            availableCalendars: calendarManager.availableCalendars,
+            writableCalendars: calendarManager.writableCalendars
+        )
     }
 
     private var calendarUnavailableNotice: String? {

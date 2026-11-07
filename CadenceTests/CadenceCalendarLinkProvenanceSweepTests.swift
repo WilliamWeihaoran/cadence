@@ -67,9 +67,11 @@ struct CadenceCalendarLinkProvenanceSweepTests {
     /// the default is the true answer there and passing `.synced` would gate a real deletion into
     /// silence — `theTimelineEventEditorDoesNotClaimASyncedIdentifier`, in
     /// `CadenceCalendarLinkRowStateTests`, pins that half. What this ledger adds is that it is the
-    /// **only** such site.
+    /// **only** such site. [[T-12753]] moved its link into `CadenceEventEditorCalendarChoices`,
+    /// which the iOS event sheet now calls too -- an identifier off an `EKEvent` that device just
+    /// fetched, so the default is the true answer for both editors.
     static let defaultedProvenanceSites = [
-        "Cadence/macOS/Views/TimelineEventBlockSupportViews.swift": 1
+        "Cadence/Shared/CadenceEventEditorCalendarChoices.swift": 1
     ]
 
     /// Declarations that write a `linkedCalendarID` and deliberately record no observation, because

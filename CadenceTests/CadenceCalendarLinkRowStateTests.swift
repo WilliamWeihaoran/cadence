@@ -514,14 +514,22 @@ struct CadenceCalendarPickerReadOnlyOfferTests {
         #expect(source.count == raw.count, "the stripper changed the length")
         #expect(source.contains("struct CalendarEventEditPopover: View"), "the editor moved")
 
-        #expect(source.contains("CadenceCalendarLink("),
-                "the editor still decides its own offer instead of asking the shared link")
-        #expect(source.contains("exclusion: .readOnly"),
-                "the editor does not say why its offer excludes a calendar, so the picker cannot word it")
-        #expect(source.contains("calendars: calendarLink.pickableCalendars(from: calendarManager.availableCalendars)"),
-                "the picker is not handed the offer plus the calendar the event is already on")
+        // [[T-12753]]: the editor's offer moved to `CadenceEventEditorCalendarChoices`, which the
+        // iOS sheet calls too; the link and its `.readOnly` word are read there.
+        #expect(source.contains("CadenceEventEditorCalendarChoices.choices("),
+                "the editor still decides its own offer instead of asking the shared builder")
+        #expect(source.contains("availableCalendars: calendarManager.availableCalendars"),
+                "the builder is not handed the calendars the timeline can show")
         #expect(CadenceSourceScan.matchCount(#"calendars: calendarManager\.writableCalendars"#, in: source) == 0,
                 "the picker is handed the writable subset again, which is the T-467 bug")
+        let shared = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceEventEditorCalendarChoices.swift"))
+        #expect(shared.contains("CadenceCalendarLink("),
+                "the shared builder no longer asks the shared link")
+        #expect(shared.contains("exclusion: .readOnly"),
+                "the shared builder does not say why its offer excludes a calendar, so the row cannot word it")
+        #expect(shared.contains("link.pickableCalendars.map"),
+                "the rows are not the offer plus the calendar the event is already on")
     }
 
     /// The button's label is the same question the menu row asks, asked once. It used to look
@@ -695,10 +703,12 @@ struct CadenceCalendarLinkUnverifiedStateTests {
     /// And the event editor deliberately does **not** pass one: its identifier is device-local, so
     /// the default is the true answer there and gating it would hide real deletions.
     @Test func theTimelineEventEditorDoesNotClaimASyncedIdentifier() throws {
-        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineEventBlockSupportViews.swift")
+        // [[T-12753]]: the event editors' link is built in the shared builder both now call.
+        let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceEventEditorCalendarChoices.swift")
         let source = CadenceSourceScan.strippingComments(raw)
         #expect(source != raw, "the comment stripper removed nothing")
-        #expect(source.contains("struct CalendarEventEditPopover: View"), "the editor moved")
+        #expect(source.contains("enum CadenceEventEditorCalendarChoices"), "the builder moved")
+        #expect(source.contains("CadenceCalendarLink("), "the builder no longer makes the link")
         #expect(CadenceSourceScan.matchCount(#"evidence: \.synced"#, in: source) == 0,
                 "the event editor gates a device-local identifier, so a deleted calendar goes unreported")
     }

@@ -378,11 +378,16 @@ private struct SettingsTagRow: View {
                 .onSubmit(requestSave)
             }
 
+            // [[T-12743]]: the same warning-icon notice row this screen's Create Tag card and the
+            // phone's tag cards draw, not bare red text.
             if hasDuplicateSlug {
-                Text("A tag with this name already exists.")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.red)
-                    .padding(.leading, 24)
+                TagNoticeRow(
+                    icon: "exclamationmark.triangle.fill",
+                    text: "A tag with this name already exists.",
+                    actionTitle: nil,
+                    action: {}
+                )
+                .padding(.leading, 24)
             }
 
             if let saveFailureNotice {

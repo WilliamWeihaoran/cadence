@@ -138,37 +138,8 @@ struct CadenceMacEventEditorPanelAdoptionTests {
 
     // MARK: The Calendar row
 
-    /// The row names the calendar the link names: the offer as the link words it, and — when the
-    /// event's own calendar is not in the offer — one extra row with the link's word for it rather
-    /// than the panel's "Choose Calendar".
-    @Test("The Calendar row always names the event's calendar")
-    func theCalendarRowNamesTheEventsCalendar() throws {
-        let store = EKEventStore()
-        let work = EKCalendar(for: .event, eventStore: store)
-        work.title = "Work"
-        let workLink = CadenceCalendarLink(
-            linkedCalendarID: work.calendarIdentifier,
-            allCalendars: [work],
-            visibleCalendars: [work],
-            exclusion: .readOnly
-        )
-        let offered = CalendarEventEditPopover.calendarChoices(
-            calendars: [work], link: workLink, selectedID: work.calendarIdentifier
-        )
-        #expect(offered.map(\.id) == [work.calendarIdentifier])
-        #expect(offered.map(\.name) == ["Work"])
-
-        let orphanLink = CadenceCalendarLink(
-            linkedCalendarID: "gone",
-            allCalendars: [work],
-            visibleCalendars: [work],
-            exclusion: .readOnly
-        )
-        let orphaned = CalendarEventEditPopover.calendarChoices(calendars: [work], link: orphanLink, selectedID: "gone")
-        #expect(orphaned.count == 2)
-        #expect(orphaned.last?.id == "gone")
-        #expect(orphaned.last?.name == orphanLink.rowState.valueText)
-    }
+    // [[T-12753]]: the row's builder moved to `CadenceEventEditorCalendarChoices`, shared with the
+    // iOS sheet; `CadenceEventEditorCalendarChoicesTests` pins it on both platforms.
 
     /// An event with no calendar is read-only here: EventKit has nowhere to write it.
     @Test("An event with no calendar opens read-only")
