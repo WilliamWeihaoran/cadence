@@ -113,7 +113,7 @@ struct CadenceTaskSurfaceOptionsTests {
     }
 
     /// `Cadence/iOS/` is invisible to this macOS-built target, so the one thing that can be pinned
-    /// about the call site is the call itself: the grouped arm of `iOSTaskCollectionPage.groupStack`
+    /// about the call site is the call itself: the grouped arm of `iOSTaskCollectionSections.groupStack`
     /// must ask the grouped question, not the bare one. Without this the predicate above can be
     /// right while the page still draws the chip.
     @Test func theIOSCollectionPageAsksTheGroupedQuestion() throws {
