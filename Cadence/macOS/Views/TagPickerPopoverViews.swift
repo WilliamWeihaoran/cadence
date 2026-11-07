@@ -411,8 +411,17 @@ private struct TagEditSheet: View {
 
             HStack {
                 // T-7268: Escape cancels and Return saves (gated by the same `.disabled` as the
-                // click, and drawn as the default button). Archive is destructive and takes neither.
-                CadenceActionButton(title: "Archive", role: .destructive, size: .compact, action: onArchive)
+                // click, and drawn as the default button). Archive takes neither.
+                // [[T-12561]]: archiving is recoverable from Settings > Tags, so it is drawn as the
+                // Mac's list Archive (`ListEditorArchiveButton`) is -- muted, never Delete's red.
+                CadenceActionButton(
+                    title: "Archive",
+                    systemImage: "archivebox",
+                    role: .secondary,
+                    size: .compact,
+                    tint: Theme.muted,
+                    action: onArchive
+                )
                 Spacer()
                 CadenceActionButton(title: "Cancel", role: .ghost, size: .compact, shortcut: .cancelAction, action: onCancel)
                 CadenceActionButton(

@@ -78,10 +78,13 @@ struct CadenceListEditorSheetKeyboardTests {
             compact.contains("isDisabled:!canSave,shortcut:.defaultAction,action:onSave)"),
             "Return must save the Mac tag edit sheet, gated by the same isDisabled as the click"
         )
+        // [[T-12561]]: Archive takes neither key, and -- being recoverable from Settings > Tags -- is
+        // the Mac's muted secondary button, never Delete's red.
         #expect(
-            compact.contains(#"CadenceActionButton(title:"Archive",role:.destructive,size:.compact,action:onArchive)Spacer()"#),
-            "Archive is destructive and must take neither Return nor Escape"
+            compact.contains(#"CadenceActionButton(title:"Archive",systemImage:"archivebox",role:.secondary,size:.compact,tint:Theme.muted,action:onArchive)Spacer()"#),
+            "Archive must be the muted secondary button and take neither Return nor Escape"
         )
+        #expect(!compact.contains("role:.destructive"), "the tag sheet's Archive is recoverable -- never Delete's red ([[T-12561]])")
         #expect(
             (compact.components(separatedBy: ".keyboardShortcut(").count - 1)
                 + (compact.components(separatedBy: "shortcut:.").count - 1) == 2
