@@ -142,6 +142,43 @@ struct CadenceTagChipStyleTests {
         #expect(CadenceTagChipStyle.displayName(name: "  Deep Work  ", slug: "deep-work") == "Deep Work")
     }
 
+    /// **[[T-12283]].** The label carries no `#` sigil whatever the name's shape: a `#` promises
+    /// what you type, and the editor's completion types the SLUG, so `#deep work` (a name with a
+    /// space) would print a string nobody can enter. A name that is already slug-shaped reads the
+    /// same either way, which is why the defect only showed on a spaced name.
+    @Test func theLabelIsTheBareNameWithNoSigil() {
+        let spaced = CadenceTagChipStyle.displayName(name: "deep work", slug: "deep-work")
+        #expect(spaced == "deep work")
+        #expect(!spaced.hasPrefix("#"))
+        let slugShaped = CadenceTagChipStyle.displayName(name: "deep-work", slug: "deep-work")
+        #expect(slugShaped == "deep-work")
+        #expect(!slugShaped.hasPrefix("#"))
+    }
+
+    /// **[[T-12283]], the call sites.** iOS Settings > Tags drew `Text("#\(tag.name)")` and macOS a
+    /// bare `Text(tag.name)`; every other tag surface (the shared chip on note, task and list
+    /// strips, both tag pickers, the capture-sheet `#` strip, the slash and `#` completion rows)
+    /// draws the bare name. Both Settings rows now read the chip's own label helper. A view cannot
+    /// be rendered here, so this reads the source. One non-parameterised test per platform, so
+    /// `mutate.sh` can baseline each (T-3212).
+    private static func settingsTagTitle(_ file: String) throws -> String {
+        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(file))
+        return try #require(CadenceSourceScan.declarationBody("private var tagTitle", in: source),
+                            "\(file) no longer declares tagTitle")
+    }
+
+    @Test func theIOSSettingsTagRowDrawsTheSharedLabel() throws {
+        let title = try Self.settingsTagTitle("Cadence/iOS/iOSSettingsTagsSection.swift")
+        #expect(title.contains("Text(CadenceTagChipStyle.displayName(name: tag.name, slug: tag.slug))"))
+        #expect(!title.contains("\"#"), "the iOS Settings tag row prints a # sigil before the tag's label")
+    }
+
+    @Test func theMacSettingsTagRowDrawsTheSharedLabel() throws {
+        let title = try Self.settingsTagTitle("Cadence/macOS/Views/SettingsTagsSection.swift")
+        #expect(title.contains("Text(CadenceTagChipStyle.displayName(name: tag.name, slug: tag.slug))"))
+        #expect(!title.contains("\"#"), "the Mac Settings tag row prints a # sigil before the tag's label")
+    }
+
     /// Dimming is invisible to VoiceOver, so archived has to be spoken as well as drawn.
     @Test func archivedIsSpokenNotOnlyDrawn() {
         #expect(CadenceTagChipStyle.accessibilityLabel(name: "bug", slug: "bug", isArchived: false) == "bug")

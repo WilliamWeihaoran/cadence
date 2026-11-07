@@ -338,8 +338,11 @@ private struct SettingsTagRow: View {
     }
 
     /// The tag's CURRENT title, never the draft: while editing it names the tag the form changes.
+    /// [[T-12283]]: the same label every tag chip, picker row and suggestion draws -- the bare name,
+    /// slug as fallback -- on both platforms. A `#` sigil is only ever followed by the SLUG (what the
+    /// editor's completion inserts), so `#deep work` was a string nobody can type.
     private var tagTitle: some View {
-        Text(tag.name)
+        Text(CadenceTagChipStyle.displayName(name: tag.name, slug: tag.slug))
             .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(Theme.text)
             .lineLimit(1)
