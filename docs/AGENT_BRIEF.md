@@ -80,7 +80,9 @@ parameterised test, so use a non-parameterised sibling to prove the scope ran an
 
 `./scripts/agent-commit.sh <your-id> -F <msg-file> --removes <n> <path>…`, naming paths explicitly.
 
-- The message file must carry your agent name as a **whole path component**.
+- The message file must carry your agent name as a whole component of its **basename** --
+  `scratchpad/<you>/msg-<you>-T-NNNN.txt`, not `scratchpad/<you>/msg.txt`. The id being a
+  component of the *path* is not enough, and reading it that way costs a refused commit.
 - The message must **end** with the `Co-Authored-By:` trailer, nothing after it.
 - `--removes` only after actually reading `git diff HEAD -- <path>`.
 - **Never `--commits-stale`.** Never repair a "stale base".
