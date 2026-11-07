@@ -150,7 +150,8 @@ struct CadenceCodexTaskListVirtualizationTests {
 
     /// **The probe is the row's own accessibility identifier, not an AppKit overlay ([[T-3201]]).**
     ///
-    /// It used to count `RightClickActionTrigger.RightClickActionView`, which `MacTaskRow` carried
+    /// It used to count the AppKit view of the `RightClickActionTrigger` overlay (retired by
+    /// [[T-12632]]), which `MacTaskRow` carried
     /// for one reason: to turn a right-click into the same "open the inspector" the row's tap
     /// already did. [[T-1479]] replaced that overlay with a real `.contextMenu`, so the class left
     /// the row and this probe read **0** — a positive-control failure over a lazy-mount bound that

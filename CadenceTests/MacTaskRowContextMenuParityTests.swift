@@ -191,6 +191,23 @@ struct MacTaskRowContextMenuParityTests {
         }
     }
 
+    /// **The sidebar list row, the last overlay host.** `SidebarSupportViews.swift` once held a
+    /// private `SidebarRightClickEditTrigger` / `RightClickEditView` pair, a byte-identical copy of
+    /// the shared `RightClickActionTrigger` overlay, carrying the same "is the current event a
+    /// right-click" hit-test defect (T-1096). [[T-12621]] moved the row to a SwiftUI `.contextMenu`
+    /// (Edit, Complete, Archive), and [[T-12632]] retired the shared overlay with no host left, so a
+    /// hand-rolled copy reappearing here is the one way that defect comes back.
+    /// `CadenceListWindDownSurfaceTests.theMacSidebarRowMenuOffersTheIPadRowsSet` pins the menu itself.
+    /// Moved here from `CadenceRightClickTriggerHitTestTests` when that suite went with the type.
+    @Test func theSidebarNoLongerCarriesItsOwnCopyOfThisView() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SidebarSupportViews.swift")
+        #expect(source.contains("struct SidebarListRow: View"), "non-vacuity: wrong file read")
+        #expect(!source.contains("SidebarRightClickEditTrigger"))
+        #expect(!source.contains("RightClickEditView"))
+        #expect(!source.contains("RightClickActionTrigger("))
+        #expect(source.contains(".contextMenu {"))
+    }
+
     @Test func aRefusedMenuWriteIsTitledLikeIOSTitlesIt() {
         #expect(MacTaskRowMenuFailure.move.title == CadenceTaskMutationSupport.moveFailureAlertTitle)
         #expect(MacTaskRowMenuFailure.recurrence("x").title == CadenceTaskMutationSupport.recurrenceFailureAlertTitle)

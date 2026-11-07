@@ -274,7 +274,8 @@ struct CadenceCodexKanbanRenderingTests {
 
     /// **The probe is the card's own accessibility identifier, not an AppKit overlay ([[T-8062]]).**
     ///
-    /// It counted `RightClickActionTrigger.RightClickActionView`, which `KanbanCard` carried only to
+    /// It counted the AppKit view of the `RightClickActionTrigger` overlay (retired by [[T-12632]]),
+    /// which `KanbanCard` carried only to
     /// turn a right-click into the click's "open the inspector". [[T-8062]] replaced that overlay
     /// with the task `.contextMenu`, exactly as [[T-1479]] did on `MacTaskRow`, and
     /// `CadenceCodexTaskListVirtualizationTests` moved its row probe the same way for [[T-3201]].
