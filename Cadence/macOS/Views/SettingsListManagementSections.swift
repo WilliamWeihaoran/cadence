@@ -684,20 +684,16 @@ struct SettingsContextsSection: View {
                             }
                         }
 
-                        Button(action: onCreateContext) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "plus.circle")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(Theme.blue)
-                                Text("New Context")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundStyle(Theme.blue)
-                                Spacer()
+                        // Settings > Tags' create idiom (T-12623): a filled blue button with the
+                        // bare `plus`, as "Create Tag" draws here and "New Context" draws on iOS.
+                        HStack {
+                            SettingsActionButton(tone: .filled(Theme.blue), action: onCreateContext) {
+                                Label("New Context", systemImage: "plus")
                             }
-                            .padding(.vertical, 10)
-                            .padding(.horizontal, 2)
+                            Spacer()
                         }
-                        .buttonStyle(.cadencePlain)
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 2)
                     }
                 }
             }

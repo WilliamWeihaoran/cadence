@@ -115,7 +115,8 @@ import Testing
                 }
             }
         }
-        #expect(scanned > 80, "non-vacuity: only \(scanned) .cadencePlain buttons scanned")
+        // A floor, not a census: it was `> 80` until T-12623 moved New Context to SettingsActionButton.
+        #expect(scanned >= 70, "non-vacuity: only \(scanned) .cadencePlain buttons scanned")
         #expect(offenders.isEmpty, "a second hover layer under the style's wash: \(offenders)")
     }
 
@@ -172,7 +173,8 @@ import Testing
                 }
             }
         }
-        #expect(scanned > 80, "non-vacuity: only \(scanned) .cadencePlain buttons scanned")
+        // A floor, not a census: it was `> 80` until T-12623 moved New Context to SettingsActionButton.
+        #expect(scanned >= 70, "non-vacuity: only \(scanned) .cadencePlain buttons scanned")
         #expect(plated >= 30, "non-vacuity: only \(plated) plated .cadencePlain buttons found")
         #expect(offenders.isEmpty, "a hover wash at a radius its plate does not have: \(offenders)")
     }

@@ -3,7 +3,8 @@ import Testing
 @testable import Cadence
 
 /// [[T-11199]]: a Mac/iOS parity pass on Settings under [[T-8201]]. Four small differences with no
-/// hardware or input sentence, each now one shared value both platforms read.
+/// hardware or input sentence, each now one shared value both platforms read. [[T-12622]] and
+/// [[T-12623]] add two button-emphasis pins from a later drift hunt.
 ///
 /// Read as source where the view is the claim: the iOS files never compile in this target and the
 /// Mac rows are private views, so what is asserted is that each surface reads the shared constant
@@ -59,6 +60,38 @@ struct CadenceSettingsSurfaceParityTests {
             #expect(!source.contains(#"Text("Check iCloud Status")"#), "\(path) draws a bare Check iCloud Status again")
             #expect(!source.contains("\"arrow.clockwise\""), "\(path) spells the glyph of its own")
         }
+    }
+
+    // MARK: - Check iCloud Status's emphasis
+
+    /// [[T-12622]]: iOS drew Check iCloud Status as a filled `.primary` plate while the Mac draws it
+    /// tinted. A status probe is not the card's main act, and iOS `.primary` is the Mac's `.filled`
+    /// ([[T-10020]]), so iOS takes `.secondary` -- the role its own Reminders Refresh already wears.
+    @Test func checkICloudStatusIsTintedOnBothPlatforms() throws {
+        let mac = try Self.code("Cadence/macOS/Views/SettingsSyncSection.swift")
+        #expect(mac.contains("SettingsActionButton(tone: .tinted(Theme.blue), action: probe.refresh)"))
+        let iOS = try Self.code("Cadence/iOS/iOSSettingsOverviewSections.swift")
+        let button = try #require(iOS.range(of: "title: \"Check iCloud Status\","), "iOS Check iCloud Status is gone")
+        let call = iOS[button.lowerBound...].prefix(240)
+        #expect(call.contains("role: .secondary,"), "iOS Check iCloud Status is not the secondary role")
+        #expect(!call.contains("role: .primary"), "iOS Check iCloud Status is a filled plate again")
+    }
+
+    // MARK: - New Context on the Mac
+
+    /// [[T-12623]]: the Mac's New Context was a quiet `plus.circle` text row while iOS draws a filled
+    /// blue `plus` button and Settings > Tags' Create Tag draws the same on both. The Mac adopts
+    /// the Tags idiom and stays at the foot of the active-contexts card ([[T-12630]]).
+    @Test func macNewContextWearsTheTagsCreateIdiom() throws {
+        let path = "Cadence/macOS/Views/SettingsListManagementSections.swift"
+        let source = try Self.code(path)
+        #expect(source.contains("SettingsActionButton(tone: .filled(Theme.blue), action: onCreateContext) {\n                                Label(\"New Context\", systemImage: \"plus\")"))
+        #expect(!source.contains("\"plus.circle\""), "\(path) draws the old plus.circle row again")
+        #expect(!source.contains("Text(\"New Context\")"), "\(path) draws a bare New Context text row again")
+        #expect(CadenceSourceScan.matchCount("onCreateContext\\)", in: source) == 1, "New Context is wired other than once")
+
+        let tags = try Self.code("Cadence/macOS/Views/SettingsTagsSection.swift")
+        #expect(tags.contains("SettingsActionButton(tone: .filled(Theme.blue), action: createTag) {\n                                    Label(\"Create Tag\", systemImage: \"plus\")"), "non-vacuity: the Tags idiom moved")
     }
 
     // MARK: - Allow Access on the Mac

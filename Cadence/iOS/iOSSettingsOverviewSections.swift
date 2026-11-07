@@ -77,7 +77,7 @@ struct iOSSyncSettingsSection: View {
                         iOSActionButton(
                             title: "Check iCloud Status",
                             systemImage: CadenceSettingsActionGlyph.refresh,
-                            role: .primary,
+                            role: .secondary,
                             size: .compact,
                             isDisabled: probe.isChecking,
                             action: probe.refresh
