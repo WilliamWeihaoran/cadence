@@ -103,7 +103,16 @@ struct CalendarSnapshotWidgetProvider: TimelineProvider {
             return snapshot
         } catch {
             probe.recordRefusal(error)
-            return CadenceCalendarWidgetSupport.unavailableSnapshot()
+            // [[T-12381]]: the family decides the sentence, as the Today widget's catch does
+            // ([[T-12335]]). Below the `Calendar` header and the two-line state title, the
+            // `systemSmall` tile has about two ~23-character lines of 10pt text on an iPhone 15,
+            // and the 58-character full sentence needs three.
+            return CadenceCalendarWidgetSupport.unavailableSnapshot(
+                message: CadenceTodayWidgetSupport.unavailableMessage(
+                    for: family.cadenceLayout,
+                    full: CadenceCalendarWidgetSupport.fullUnavailableMessage
+                )
+            )
         }
     }
 }

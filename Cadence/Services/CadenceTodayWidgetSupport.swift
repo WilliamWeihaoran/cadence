@@ -264,11 +264,16 @@ nonisolated enum CadenceTodayWidgetSupport {
     /// short form keeps the meaning (open it once, and that sets it up) in a line that fits.
     nonisolated static let compactUnavailableMessage = "Open once to set up."
 
-    /// Which of the two sentences a family's unavailable tile says.
-    nonisolated static func unavailableMessage(for layout: CadenceWidgetFamilyLayout) -> String {
+    /// Which of the two sentences a family's unavailable tile says. `full` is the caller's own
+    /// larger-family sentence: [[T-12381]] the Calendar widget draws the same
+    /// `CadenceWidgetStateCard` and shares this choice, but keeps its own wording above `.small`.
+    nonisolated static func unavailableMessage(
+        for layout: CadenceWidgetFamilyLayout,
+        full: String = fullUnavailableMessage
+    ) -> String {
         switch layout {
         case .small: compactUnavailableMessage
-        case .medium, .large, .extraLarge: fullUnavailableMessage
+        case .medium, .large, .extraLarge: full
         }
     }
 

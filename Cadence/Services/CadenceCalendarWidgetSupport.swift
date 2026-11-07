@@ -154,9 +154,11 @@ nonisolated enum CadenceCalendarWidgetSupport {
         )
     }
 
+    nonisolated static let fullUnavailableMessage = "Open Cadence once to finish setting up shared widget data."
+
     nonisolated static func unavailableSnapshot(
         today: Date = Calendar.current.startOfDay(for: Date()),
-        message: String = "Open Cadence once to finish setting up shared widget data."
+        message: String = fullUnavailableMessage
     ) -> CadenceCalendarWidgetSnapshot {
         CadenceCalendarWidgetSnapshot(
             date: today,

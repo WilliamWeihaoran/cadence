@@ -266,6 +266,33 @@ struct WidgetSupportTests {
         #expect(CadenceTodayWidgetSupport.unavailableSnapshot(todayKey: "2026-05-11").statusMessage == CadenceTodayWidgetSupport.fullUnavailableMessage)
     }
 
+    /// **[[T-12381]], from layout arithmetic, not seen on screen.** The Calendar widget draws its
+    /// unavailable state through the same `CadenceWidgetStateCard`, and its `systemSmall` tile has
+    /// about two ~23-character lines for a 58-character sentence on an iPhone 15. Small takes the
+    /// Today widget's short sentence; the larger families keep the Calendar's own wording.
+    @Test func theSmallCalendarUnavailableTileGetsTheShortSentenceToo() {
+        let full = CadenceCalendarWidgetSupport.fullUnavailableMessage
+        let small = CadenceTodayWidgetSupport.unavailableMessage(for: .small, full: full)
+        #expect(small == CadenceTodayWidgetSupport.compactUnavailableMessage)
+        #expect(small.count <= 25)
+        #expect(full.count > 25)
+
+        for layout in CadenceWidgetFamilyLayout.allCases where layout != .small {
+            #expect(CadenceTodayWidgetSupport.unavailableMessage(for: layout, full: full) == full)
+        }
+        #expect(CadenceCalendarWidgetSupport.unavailableSnapshot().statusMessage == full)
+    }
+
+    /// The choice is made in the Calendar provider's catch, which the test target cannot link, so
+    /// this pins the call: a bare `unavailableSnapshot()` there puts the full sentence back on the
+    /// `systemSmall` tile.
+    @Test func theCalendarUnavailableTileAsksItsFamilyForItsSentence() throws {
+        let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("CadenceWidgets/CalendarSnapshotWidget.swift"))
+        let call = #"CadenceCalendarWidgetSupport\.unavailableSnapshot\(\s*message:\s*CadenceTodayWidgetSupport\.unavailableMessage\(\s*for:\s*family\.cadenceLayout,\s*full:\s*CadenceCalendarWidgetSupport\.fullUnavailableMessage\s*\)"#
+        #expect(CadenceSourceScan.matchCount(call, in: code) == 1)
+        #expect(CadenceSourceScan.matchCount(#"unavailableSnapshot\(\s*\)"#, in: code) == 0)
+    }
+
     /// And a readable store still prints its number, including a genuine zero — "0 today" is a
     /// true and useful thing for the tile to say once the extension can actually see the store,
     /// which is the distinction the dash exists to keep.
