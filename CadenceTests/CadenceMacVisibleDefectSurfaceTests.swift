@@ -5,41 +5,15 @@ import SwiftUI
 import Testing
 @testable import Cadence
 
-/// **[[T-6995]] — a list's Completed tab on the Mac.** Every row drew a green tick, cancelled
-/// tasks included; a title of spaces drew a struck-through blank line; and the line under the
-/// title was the raw due-date key, `2026-10-19`, with nothing to say it was the deadline.
+/// **[[T-6995]] — a list's Completed tab on the Mac**, and **[[T-12791]]**, which made its rows the
+/// shared task row. T-6995 found a hand-rolled row drawing a green tick for every task (canceled
+/// ones included), a blank title as a struck-through blank line and the due date as its raw key;
+/// it fixed each through shared helpers. The row was still inert -- no click opened the task, the
+/// circle reopened nothing, no right-click menu -- where iOS's Completed tab draws the full row.
+/// It is `TaskListDisplayRow` now, which answers the glyph, the title fallback and the due chip
+/// the way every other Mac task surface does.
 @MainActor
 struct CadenceMacListLogRowPresentationTests {
-
-    @Test func aCancelledRowDrawsTheCancelledGlyphNotTheTick() {
-        let done = AppTask(title: "Ship it")
-        done.status = .done
-        let cancelled = AppTask(title: "Drop it")
-        cancelled.status = .cancelled
-
-        #expect(ListLogRowPresentation.glyph(for: done).symbolName == "checkmark.circle.fill")
-        #expect(ListLogRowPresentation.glyph(for: cancelled).symbolName == "xmark.circle.fill")
-        #expect(ListLogRowPresentation.glyph(for: cancelled) == CadenceTaskCompletionGlyph.resolve(task: cancelled),
-                "the tab must settle on the task row's own glyph")
-    }
-
-    @Test func aBlankTitleReadsAsUntitled() {
-        let blank = AppTask(title: "   ")
-        blank.status = .done
-        #expect(ListLogRowPresentation.title(for: blank) == TaskTitleSupport.defaultDisplayTitle)
-        #expect(ListLogRowPresentation.title(for: AppTask(title: "  Buy milk ")) == "Buy milk")
-    }
-
-    @Test func theDueLineIsLabelledAndSpelledNotTheRawKey() throws {
-        let task = AppTask(title: "Report")
-        task.status = .done
-        #expect(ListLogRowPresentation.dueLine(for: task) == nil)
-
-        task.dueDate = "2026-03-14"
-        let line = try #require(ListLogRowPresentation.dueLine(for: task))
-        #expect(line == "Due \(DateFormatters.relativeDate(from: "2026-03-14"))")
-        #expect(!line.contains("2026-03-14"), "the raw key is back")
-    }
 
     @Test func theCountNamesCancelledTasksApart() {
         func task(_ status: TaskStatus) -> AppTask {
@@ -53,18 +27,19 @@ struct CadenceMacListLogRowPresentationTests {
                 == "2 completed, 1 canceled")
     }
 
-    /// The view has to read the presentation, or every assertion above is about dead code.
-    @Test func theCompletedTabReadsThePresentation() throws {
+    /// [[T-12791]]: the tab draws the shared row, so a finished task opens, reopens and offers its
+    /// menu here as it does in the Tasks tab's folded Completed section and on iOS's Completed tab.
+    @Test func theCompletedTabDrawsTheSharedTaskRow() throws {
         let source = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListDetailSupportViews.swift")
         )
         let view = try #require(CadenceSourceScan.declarationBody("struct ListLogView: View", in: source))
-        for call in ["ListLogRowPresentation.countLabel(for:", "ListLogRowPresentation.glyph(for:",
-                     "ListLogRowPresentation.title(for:", "ListLogRowPresentation.dueLine(for:"] {
-            #expect(view.contains(call), "ListLogView no longer reads \(call)")
-        }
-        #expect(!view.contains("Text(task.title)"), "the raw title is drawn again")
-        #expect(!view.contains("Text(task.dueDate)"), "the raw due-date key is drawn again")
+        #expect(view.contains("ListLogRowPresentation.countLabel(for:"), "non-vacuity: the tab's eyebrow")
+        #expect(CadenceSourceScan.matchCount(#"ForEach\(doneTasks\) \{ task in\s+TaskListDisplayRow\("#, in: view) == 1,
+                "the Completed tab's rows are not the shared task row")
+        #expect(view.contains("todayKey: todayKey,"), "the row is handed the tab's observed day")
+        #expect(!view.contains("CadenceTaskCompletionCircle("), "the inert hand-rolled glyph is back")
+        #expect(!view.contains(".strikethrough("), "the inert hand-rolled title is back")
     }
 }
 

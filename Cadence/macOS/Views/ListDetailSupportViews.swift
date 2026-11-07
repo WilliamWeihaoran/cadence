@@ -411,36 +411,13 @@ struct TaskListInteractiveRow: View {
     }
 }
 
-/// **[[T-6995]] — what one row of a list's Completed tab says.**
+/// **[[T-6995]] — the eyebrow over a list's Completed tab.**
 ///
-/// The tab used to hand-roll its row: a green `checkmark.circle.fill` for every task in it,
-/// cancelled ones included; `task.title` raw, so a title of spaces drew a struck-through blank
-/// line; and `task.dueDate` raw, so the line under the title read `2026-10-19` with nothing to
-/// say it was the deadline. Every other Mac task surface already answers each of those through
-/// the shared helpers, so this reads them too rather than spelling a fourth answer.
+/// The tab used to hand-roll its row, and this enum answered that row's title, glyph, VoiceOver
+/// status and due line. Since [[T-12791]] the row is `TaskListDisplayRow`, which answers all four
+/// itself (`TaskTitleSupport`, `CadenceTaskCompletionGlyph`, the completion control's label, the
+/// due chip), so only the count is left here.
 enum ListLogRowPresentation {
-    static func title(for task: AppTask) -> String {
-        TaskTitleSupport.displayTitle(task.title)
-    }
-
-    /// The same symbol and tint the task row's completion control settles on.
-    static func glyph(for task: AppTask) -> CadenceTaskCompletionGlyph {
-        CadenceTaskCompletionGlyph.resolve(task: task)
-    }
-
-    /// What the glyph says to VoiceOver ([[T-7084]]): the eyebrow's own two words. The green tick
-    /// and the grey cross were the only thing telling a finished task from a canceled one, and
-    /// VoiceOver read neither.
-    static func statusLabel(for task: AppTask) -> String {
-        task.isCancelled ? "Canceled" : "Completed"
-    }
-
-    /// `"Due Tomorrow"`, `"Due Oct 19"` — the spelling Cmd+K and Focus already use — or nil.
-    static func dueLine(for task: AppTask) -> String? {
-        guard !task.dueDate.isEmpty else { return nil }
-        return "Due \(CadenceTaskPresentationSupport.dueDateLabel(for: task))"
-    }
-
     /// The eyebrow over the rows. It counted cancelled tasks as "completed"; it now names both
     /// when both are there.
     static func countLabel(for tasks: [AppTask]) -> String {
@@ -454,8 +431,22 @@ enum ListLogRowPresentation {
     }
 }
 
+/// A list's Completed tab.
+///
+/// **[[T-12791]]: its rows are the task row every other Mac task surface draws.** They were a
+/// hand-rolled circle, struck title and due line with no action of any kind: no click opened the
+/// task, the circle reopened nothing, and a right-click offered no menu. iOS's Completed tab
+/// (`iOSListCompletedPanel`) draws `iOSTaskListRow`, the full row -- tap opens the task, the circle
+/// reopens it, long-press brings the row's menu -- and so do the Mac's own folded Completed
+/// sections one tab over (`ListTasksCompletedSectionView`) and on All Tasks. No pointer or screen
+/// reason separated the tab from those (T-8201), so it reads `TaskListDisplayRow` too.
 struct ListLogView: View {
     let tasks: [AppTask]
+    /// The rows' lateness day ([[T-5012]]): `MacTaskRow` takes it with no default, and this tab's
+    /// host hands it none.
+    @State private var observedDay = CadenceObservedDay()
+
+    private var todayKey: String { observedDay.todayKey }
 
     private var doneTasks: [AppTask] {
         tasks.filter { $0.isDone || $0.isCancelled }.taskCompletionSorted()
@@ -473,41 +464,23 @@ struct ListLogView: View {
                 )
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        // Over the rows' completion circles: the row's own leading inset plus the
+                        // row's own content padding.
                         SectionEyebrowLabel(text: ListLogRowPresentation.countLabel(for: doneTasks))
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, ListLogMetrics.rowInset + CadenceTaskRowMetrics.desktop.horizontalPadding)
                             .padding(.top, 16)
                             .padding(.bottom, 8)
 
                         ForEach(doneTasks) { task in
-                            let glyph = ListLogRowPresentation.glyph(for: task)
-                            HStack(spacing: 10) {
-                                // [[T-8411]]: the drawn circle every completion control uses,
-                                // not an SF Symbol stamp of the same state.
-                                CadenceTaskCompletionCircle(glyph: glyph, diameter: 14)
-                                    .accessibilityLabel(ListLogRowPresentation.statusLabel(for: task))
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(ListLogRowPresentation.title(for: task))
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(Theme.dim)
-                                        .strikethrough(true, color: Theme.dim)
-                                        .lineLimit(2)
-                                    if let dueLine = ListLogRowPresentation.dueLine(for: task) {
-                                        Text(dueLine)
-                                            .font(.system(size: 10))
-                                            .foregroundStyle(Theme.dim.opacity(0.6))
-                                            .lineLimit(1)
-                                    }
-                                }
-                                Spacer()
-                            }
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 8)
-                            .accessibilityElement(children: .combine)
-                            .overlay(alignment: .bottom) {
-                                Rectangle().fill(Theme.borderSubtle.opacity(0.4)).frame(height: 0.5)
-                            }
+                            TaskListDisplayRow(
+                                task: task,
+                                // A list's own tab: every row would name the page you are on.
+                                showsContainer: CadenceTaskSurfaceOptions.showsContainerChip(on: .listDetail),
+                                todayKey: todayKey,
+                                leadingInset: ListLogMetrics.rowInset,
+                                trailingInset: ListLogMetrics.rowInset
+                            )
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -523,7 +496,15 @@ struct ListLogView: View {
                     clearAppEditingFocus()
                 }
         )
+        .cadenceTracksDayChanges($observedDay)
     }
+}
+
+/// The Completed tab's row inset. `TaskListDisplayMetrics.taskLeadingInset`'s 52 clears a group
+/// header's disclosure chevron; this tab has no group and no chevron, so its rows take the
+/// trailing inset on both sides.
+enum ListLogMetrics {
+    static let rowInset: CGFloat = TaskListDisplayMetrics.taskTrailingInset
 }
 
 #endif

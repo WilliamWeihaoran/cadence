@@ -177,18 +177,17 @@ struct CadenceMacTaskBoardAccessibilityTests {
 
     // MARK: T-7084
 
+    /// [[T-12791]] took the tab's hand-rolled row, and the status label T-7084 hung on its glyph,
+    /// away: the row is `TaskListDisplayRow` now. A canceled task still says so to VoiceOver, by
+    /// the row's own "Canceled" chip, and the circle names what it does to a finished task.
     @Test func aCompletedTabRowSaysWhetherItWasFinishedOrCanceled() throws {
-        let done = AppTask(title: "Ship it")
-        done.status = .done
-        let cancelled = AppTask(title: "Drop it")
-        cancelled.status = .cancelled
-        #expect(ListLogRowPresentation.statusLabel(for: done) == "Completed")
-        #expect(ListLogRowPresentation.statusLabel(for: cancelled) == "Canceled")
+        #expect(CadenceTaskCompletionState.done.accessibilityActionLabel == "Reopen task")
+        #expect(CadenceTaskCompletionState.cancelled.accessibilityActionLabel == "Reopen task")
 
+        let rows = try source("Cadence/macOS/Views/TasksPanelComponents.swift")
+        #expect(rows.contains("CadenceTaskCancelledChip(metrics: .desktop)"), "the row's Canceled chip is gone")
         let file = try source("Cadence/macOS/Views/ListDetailSupportViews.swift")
-        #expect(file.contains("CadenceTaskCompletionCircle(glyph: glyph, diameter: 14)"), "non-vacuity: the Completed tab row glyph")
-        #expect(file.contains(".accessibilityLabel(ListLogRowPresentation.statusLabel(for: task))"),
-                "the Completed tab's glyph reads as nothing again")
+        #expect(file.contains("TaskListDisplayRow("), "non-vacuity: the Completed tab's row")
     }
 }
 

@@ -37,6 +37,9 @@ struct CadenceDayChangeAdoptionTests {
         // Goals was one of them until [[T-5002]] deleted the page.
         ("Cadence/macOS/Views/ListDetailComponents.swift", "struct ListTasksView: View"),
         ("Cadence/macOS/Views/TasksListView.swift", "struct TasksListView: View"),
+        // [[T-12791]]: a list's Completed tab draws `MacTaskRow`, which takes the day with no
+        // default, and its host `ListDetailView` holds none.
+        ("Cadence/macOS/Views/ListDetailSupportViews.swift", "struct ListLogView: View"),
         ("Cadence/macOS/Views/KanbanSupportViews.swift", "struct TaskListsKanbanView: View"),
         ("Cadence/macOS/Views/KanbanListSectionSupportViews.swift", "struct ListSectionsKanbanView: View"),
         ("Cadence/macOS/Views/ListNotesView.swift", "struct ListNotesView: View"),

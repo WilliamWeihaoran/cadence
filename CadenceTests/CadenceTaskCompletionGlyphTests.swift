@@ -320,7 +320,8 @@ struct CadenceTaskCompletionGlyphTests {
             "Cadence/macOS/Views/KanbanCardSupportViews.swift",
             "Cadence/macOS/Views/KanbanColumnSupportViews.swift",
             "Cadence/macOS/Views/TimelineTaskBlockSupportViews.swift",
-            "Cadence/macOS/Views/ListDetailSupportViews.swift",
+            // `ListDetailSupportViews.swift` left with [[T-12791]]: a list's Completed tab draws
+            // `TaskListDisplayRow`, whose circle is `MacTaskRow`'s (first entry above).
             "Cadence/iOS/iOSFeatureComponents.swift",
         ]
         for path in hosts {
