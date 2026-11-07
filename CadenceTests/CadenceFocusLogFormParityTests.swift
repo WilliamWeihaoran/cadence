@@ -254,6 +254,44 @@ struct CadenceFocusLogFormParityTests {
         #expect(macView.contains("foreground: focusManager.elapsed > 0 ? Theme.green : Theme.muted"))
     }
 
+    /// **[[T-12321]]: the rule above has to be drawn on a tick, or it never fires.**
+    ///
+    /// Seen on `Cadence-iPhone15`: at `02:20` elapsed the hint under the clock read "Logs 2m when
+    /// you finish" while the control beside it was still `Theme.muted` — measured `#a1a1aa` — and
+    /// it only went `Theme.green` (`#4ecb71`) on the re-render that *pausing* forced. Both cues
+    /// read one value; `elapsedSeconds` is derived from `timerState.startedAt` and `Date()` and
+    /// publishes nothing when it crosses zero, so the one drawn outside a tick was evaluated once,
+    /// at the instant the session started, where it is still 0.
+    ///
+    /// The test above cannot see this: it asserts the *text* of the rule, which was correct all
+    /// along. This asserts where the rule is read from, which is the half that was wrong.
+    @Test func theIOSLogControlTintIsDrawnOnATickSoItCanLeaveTheMutedState() throws {
+        let view = try Self.code(Self.iosViewPath)
+        let controls = try #require(CadenceSourceScan.declarationBody("private func focusControls(", in: view))
+
+        let tint = try #require(
+            controls.range(of: "foreground: elapsedSeconds > 0 ? Theme.green : Theme.muted"),
+            "non-vacuity: the muted-at-zero rule is in this declaration"
+        )
+        let tick = try #require(
+            controls.range(of: "TimelineView(.periodic(from: .now, by: 1))"),
+            "the tint is time-derived and read outside any tick, so it is evaluated once at the instant the session starts — where elapsed is still 0 — and never again while the clock runs"
+        )
+        #expect(tick.lowerBound < tint.lowerBound, "the tick has to wrap the tint, not sit after it")
+
+        // The schedule is the clock's own, so the hint under the clock and this tint cannot
+        // disagree about the one value they both read.
+        let clock = try #require(CadenceSourceScan.declarationBody("private func sessionClock(", in: view))
+        #expect(clock.contains("TimelineView(.periodic(from: .now, by: 1))"))
+
+        // macOS needs no such wrapper and must not grow one: `FocusView` drives a single
+        // `@State displayTick` from a 1s publisher, which invalidates the whole body — controls
+        // included — so its copy of the rule is already redrawn every second.
+        let macView = try Self.code(Self.macViewPath)
+        #expect(macView.contains("@State private var displayTick"))
+        #expect(macView.contains("Timer.publish(every: 1, on: .main, in: .common).autoconnect()"))
+    }
+
     /// **[[T-9976]]: the "Mark task as complete" switch is blue like every other iOS switch.** It
     /// was the one green track in the app; a switch says on/off, and completion's green belongs to
     /// actions. The sheet sets no tint of its own, so the root palette's blue reaches it.

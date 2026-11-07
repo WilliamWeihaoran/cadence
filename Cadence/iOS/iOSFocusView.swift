@@ -615,25 +615,38 @@ struct iOSFocusView: View {
 
             playButton(accent: Color(hex: task.containerColor))
 
-            iOSFocusControlButton(
-                systemImage: "checkmark",
-                accessibilityLabel: CadenceFocusSupport.logFormControlLabel,
-                // **The Mac's muted-at-zero rule** ([[T-8732]]). It used to be green always, on
-                // the reading that the control worked at zero elapsed because it completed the
-                // task; it no longer completes anything on its own -- it opens the log form, as
-                // the Mac's does -- so the Mac's cue is the true one: nothing to bank yet. The
-                // control is still not disabled on either platform, because the form can still
-                // correct the figure or finish the task.
-                foreground: elapsedSeconds > 0 ? Theme.green : Theme.muted,
-                background: Theme.surfaceElevated,
-                diameter: 48
-            ) {
-                // Pausing before the form opens is the Mac's act too (`FocusView.timerControls`
-                // sets `focusManager.isRunning = false`): the sheet seeds its fields from the
-                // clock, and a clock still running behind it makes the seeded figure wrong the
-                // moment it is read.
-                if timerState.isRunning { timerState.toggle() }
-                loggingTask = task
+            // **The tint is time-derived, so it has to be drawn on a tick** ([[T-12321]]).
+            // `elapsedSeconds` is computed from `timerState.startedAt` and `Date()`: nothing
+            // publishes when it crosses zero, so a tint read in the outer body is evaluated once,
+            // at the instant the session starts — where it is still 0 — and then never again
+            // while the clock runs. The rule below is right and simply never fired: the control
+            // stayed `Theme.muted` for the whole session and only corrected on the re-render a
+            // *pause* forced, which is after the moment the cue was for. macOS has no such gap —
+            // `FocusView` drives one `@State displayTick` that invalidates the whole body, its
+            // controls included — so this is the one place iOS's narrower `TimelineView` (it
+            // wraps only `sessionClock`) left a reader outside the tick. Same schedule as the
+            // clock's, so the hint under it and this tint cannot disagree about one value.
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                iOSFocusControlButton(
+                    systemImage: "checkmark",
+                    accessibilityLabel: CadenceFocusSupport.logFormControlLabel,
+                    // **The Mac's muted-at-zero rule** ([[T-8732]]). It used to be green always, on
+                    // the reading that the control worked at zero elapsed because it completed the
+                    // task; it no longer completes anything on its own -- it opens the log form, as
+                    // the Mac's does -- so the Mac's cue is the true one: nothing to bank yet. The
+                    // control is still not disabled on either platform, because the form can still
+                    // correct the figure or finish the task.
+                    foreground: elapsedSeconds > 0 ? Theme.green : Theme.muted,
+                    background: Theme.surfaceElevated,
+                    diameter: 48
+                ) {
+                    // Pausing before the form opens is the Mac's act too (`FocusView.timerControls`
+                    // sets `focusManager.isRunning = false`): the sheet seeds its fields from the
+                    // clock, and a clock still running behind it makes the seeded figure wrong the
+                    // moment it is read.
+                    if timerState.isRunning { timerState.toggle() }
+                    loggingTask = task
+                }
             }
         }
     }
