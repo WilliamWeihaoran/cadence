@@ -3545,8 +3545,8 @@ selftest_only_testing() {
   # one wraps -- the phrase this keys on is present in full.
   print -rl -- \
     "Test Suite 'CadenceUITests' started at 2026-09-30 15:55:16.000" \
-    "/repo/CadenceUITests/CadenceUITests.swift:30: CadenceUITests.testRightClickingSidebarListOpensEditPanel : Test skipped - Interactive UI tests are opt-in: they take over the pointer and the keyboard of whatever Mac they run on." \
-    "Test Case '-[CadenceUITests testRightClickingSidebarListOpensEditPanel]' skipped (0.002 seconds)." \
+    "/repo/CadenceUITests/CadenceUITests.swift:30: CadenceUITests.testSidebarListMenuEditOpensEditPanel : Test skipped - Interactive UI tests are opt-in: they take over the pointer and the keyboard of whatever Mac they run on." \
+    "Test Case '-[CadenceUITests testSidebarListMenuEditOpensEditPanel]' skipped (0.002 seconds)." \
     "Test Case '-[CadenceUITests testLaunchesToTodayWithSeededSidebarLists]' passed (7.331 seconds)." \
     "** TEST SUCCEEDED **" \
     > "$ws/interactive-skip.log"
@@ -3559,7 +3559,7 @@ selftest_only_testing() {
   # The control that matters most: a run in which everything executed must say NOTHING, or the
   # banner becomes a line every reader learns to scroll past.
   print -rl -- \
-    "Test Case '-[CadenceUITests testRightClickingSidebarListOpensEditPanel]' passed (9.100 seconds)." \
+    "Test Case '-[CadenceUITests testSidebarListMenuEditOpensEditPanel]' passed (9.100 seconds)." \
     "** TEST SUCCEEDED **" \
     > "$ws/all-ran.log"
   local iout irc
@@ -3571,7 +3571,7 @@ selftest_only_testing() {
   check "…counts it, and counts only it (the passing test beside it is not a skip)" \
     $( [[ "$iout" == *"1 test(s) in this run SKIPPED"* ]] && print 1 || print 0 ) "$iout"
   check "…names the test, so the report is checkable rather than a number" \
-    $( [[ "$iout" == *"CadenceUITests testRightClickingSidebarListOpensEditPanel"* ]] && print 1 || print 0 ) "$iout"
+    $( [[ "$iout" == *"CadenceUITests testSidebarListMenuEditOpensEditPanel"* ]] && print 1 || print 0 ) "$iout"
   check "…and names the touch that turns them on" \
     $( [[ "$iout" == *"touch "*cadence-run-interactive-ui-tests* ]] && print 1 || print 0 ) "$iout"
   check "…and never gates: it exits 0 whatever it found" \

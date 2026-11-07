@@ -219,20 +219,32 @@ final class CadenceBoardPopoverAnchorPlacementUITests: XCTestCase {
             XCTFail("the card's duration badge is not addressable. On the card: \(identifiers(beginningWith: ID.boardCard))")
         }
 
-        // The card's own inspector, opened by **right-clicking** it.
+        // The card's own inspector, opened from its **right-click menu's Edit item**.
         //
         // Not a left click at a derived point inside the card: measured 2026-09-30, a click 8% in
         // and 92% down a card carrying a schedule row, a title, a tag strip and a chip row landed
         // on the **list chip**, and the run reported the list picker's frame a second time under
         // the inspector's name. A card of this size has almost no surface that is not a control.
-        // `KanbanCard` carries a `RightClickActionTrigger` overlay across its whole box that sets
-        // `showTaskInspector`, so a right click opens exactly this popover from anywhere on it.
-        if let panel = panel(openedBy: card, named: "Card inspector", rightClick: true) {
-            report.append(reading(named: "Card inspector", anchor: cardFrame, panel: panel, spans: spans(cardFrame, cardContent)))
-            assertPlacementIsSafe(content: cardContent, panel: panel, anchor: cardFrame, named: "Card inspector")
-            dismiss(panel, named: "Card inspector")
+        // A right-click lands on the card from anywhere on it. Since [[T-8062]] it opens
+        // `KanbanCard`'s `.contextMenu { MacTaskRowContextMenu(…) }` rather than the inspector, and
+        // that menu's first item, *Edit*, is `openDetail: openTaskInspector` -- the path that sets
+        // `showTaskInspector` and presents exactly this popover ([[T-12665]]).
+        card.rightClick()
+        let edit = app.menuItems["Edit"]
+        if edit.waitForExistence(timeout: CadenceUITestBounds.settle) {
+            edit.click()
+            if let panel = settledPanel(named: "Card inspector") {
+                report.append(reading(named: "Card inspector", anchor: cardFrame, panel: panel, spans: spans(cardFrame, cardContent)))
+                assertPlacementIsSafe(content: cardContent, panel: panel, anchor: cardFrame, named: "Card inspector")
+                dismiss(panel, named: "Card inspector")
+            } else {
+                report.append("Card inspector: no panel opened")
+            }
         } else {
-            report.append("Card inspector: no panel opened")
+            let titles = app.menuItems.allElementsBoundByIndex.prefix(40).map(\.title).filter { !$0.isEmpty }
+            app.typeKey(XCUIKeyboardKey.escape, modifierFlags: [])
+            XCTFail("the card's right-click opened no menu with an Edit item. Items seen: \(titles.joined(separator: " | "))")
+            report.append("Card inspector: no Edit item in the card's menu")
         }
 
         XCTContext.runActivity(named: "measured — " + report.joined(separator: " ;; ")) { _ in }
@@ -358,12 +370,8 @@ final class CadenceBoardPopoverAnchorPlacementUITests: XCTestCase {
     ///
     /// `nil` rather than a throw: the caller is sweeping several anchors and a throw would end the
     /// run at the first one, which is the reporting failure this method exists to avoid.
-    private func panel(openedBy control: XCUIElement, named name: String, rightClick: Bool = false) -> Panel? {
-        if rightClick {
-            control.rightClick()
-        } else {
-            control.click()
-        }
+    private func panel(openedBy control: XCUIElement, named name: String) -> Panel? {
+        control.click()
         return settledPanel(named: name)
     }
 

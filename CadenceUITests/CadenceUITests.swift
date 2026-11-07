@@ -86,7 +86,13 @@ final class CadenceUITests: XCTestCase {
     /// that was not there before the click, carrying the list editor's identity header. The
     /// before-reading is half the evidence — a sheet counted only afterwards could have been on
     /// screen since launch.
-    func testRightClickingSidebarListOpensEditPanel() throws {
+    ///
+    /// **Renamed, and one click longer ([[T-12665]]).** Its old name said a right-click opens the
+    /// edit panel, which stopped being true. Since [[T-12621]] a right-click on a sidebar
+    /// list opens `SidebarListRow`'s `.contextMenu` — *Edit Area*, *Complete Area*, *Archive Area*
+    /// — instead of the edit sheet, so the test now reads that menu and picks *Edit Area* from it.
+    /// The history above is about the sheet, which is unchanged.
+    func testSidebarListMenuEditOpensEditPanel() throws {
         try CadenceUITestEnvironment.requireInteractiveUITests()
         launchApp(resetStore: true, resetDefaults: true)
 
@@ -107,10 +113,22 @@ final class CadenceUITests: XCTestCase {
 
         alphaArea.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).rightClick()
 
+        // The row's menu, read whole before anything is picked from it: all three of its items,
+        // so a menu belonging to some other surface cannot pass for it.
+        let edit = app.menuItems["Edit Area"]
+        XCTAssertTrue(
+            edit.waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
+            "the right-click opened no menu with an Edit Area item. Items seen: \(menuItemReport())"
+            + "\n  \(transientReport())"
+        )
+        XCTAssertTrue(app.menuItems["Complete Area"].exists, "the row menu has no Complete Area. Items seen: \(menuItemReport())")
+        XCTAssertTrue(app.menuItems["Archive Area"].exists, "the row menu has no Archive Area. Items seen: \(menuItemReport())")
+        edit.click()
+
         let sheet = app.sheets.firstMatch
         XCTAssertTrue(
             sheet.waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
-            "the right-click opened no sheet at all.\n  BEFORE: \(beforeClick)\n  AFTER:  "
+            "Edit Area in the row menu opened no sheet at all.\n  BEFORE: \(beforeClick)\n  AFTER:  "
             + "\(transientReport())\n  \(surfaceReport())"
         )
 
@@ -118,7 +136,7 @@ final class CadenceUITests: XCTestCase {
         // picker publishes exactly one *Selected colour* button, next to the name field.
         XCTAssertTrue(
             sheet.buttons["Selected colour"].waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
-            "the right-click opened a sheet, but not the list editor — it carries no colour picker."
+            "Edit Area opened a sheet, but not the list editor — it carries no colour picker."
             + "\n  BEFORE: \(beforeClick)\n  AFTER:  \(transientReport())"
         )
         XCTAssertGreaterThan(
@@ -150,12 +168,19 @@ final class CadenceUITests: XCTestCase {
             alphaArea.waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
             "there is no sidebar row to right-click. \(surfaceReport())"
         )
+        // [[T-12665]]: since [[T-12621]] the right-click opens the row's menu, not the sheet.
         alphaArea.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).rightClick()
+        let edit = app.menuItems["Edit Area"]
+        XCTAssertTrue(
+            edit.waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
+            "the right-click opened no menu with an Edit Area item. Items seen: \(menuItemReport())"
+        )
+        edit.click()
 
         let sheet = app.sheets.firstMatch
         XCTAssertTrue(
             sheet.waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
-            "the right-click opened no sheet. \(transientReport())"
+            "Edit Area in the row menu opened no sheet. \(transientReport())"
         )
         XCTAssertTrue(
             sheet.buttons["Selected colour"].waitForExistence(timeout: CadenceUITestBounds.sidebarRow),
@@ -172,6 +197,14 @@ final class CadenceUITests: XCTestCase {
             heading.count, 1,
             "the sheet's heading should be published once. Its static texts: \(staticTextReport(in: sheet))"
         )
+    }
+
+    /// The titles of the menu items the app publishes, first forty non-empty ([[T-12665]]). A
+    /// right-click that opened no menu and one that opened a menu without the item asked for read
+    /// the same in a bare `waitForExistence` failure; this tells them apart.
+    private func menuItemReport() -> String {
+        let titles = app.menuItems.allElementsBoundByIndex.prefix(40).map(\.title).filter { !$0.isEmpty }
+        return titles.isEmpty ? "none" : titles.joined(separator: " | ")
     }
 
     /// Every static text under `element`, with all three strings XCUITest can read off it. A label
