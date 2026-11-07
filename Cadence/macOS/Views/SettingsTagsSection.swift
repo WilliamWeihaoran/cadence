@@ -294,14 +294,9 @@ private struct SettingsTagRow: View {
                     HStack(spacing: 7) {
                         tagTitle
 
-                        if tag.isArchived {
-                            Text("Archived")
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(Theme.dim)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(Theme.surfaceElevated.opacity(0.72))
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                        // [[T-12741]]: the same pill the phone's tag row draws, from one view.
+                        if let status = CadenceTagSettingsRowStyle.statusLabel(isArchived: tag.isArchived) {
+                            CadenceTagSettingsStatusPill(text: status)
                         }
                     }
 
@@ -344,7 +339,8 @@ private struct SettingsTagRow: View {
     private var tagTitle: some View {
         Text(CadenceTagChipStyle.displayName(name: tag.name, slug: tag.slug))
             .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Theme.text)
+            // [[T-12741]]: muted once archived, as the phone's tag row and both archived context rows are.
+            .foregroundStyle(CadenceTagSettingsRowStyle.titleInk(isArchived: tag.isArchived))
             .lineLimit(1)
             .truncationMode(.tail)
     }

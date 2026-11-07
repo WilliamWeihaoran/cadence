@@ -82,3 +82,44 @@ struct CadenceSettingsHeader: View {
     }
 }
 #endif
+
+// MARK: - Settings > Tags: an archived tag's row
+
+/// **[[T-12741]]: an archived tag's Settings row says so the same way on both platforms.** The
+/// Mac's `SettingsTagRow` drew an "Archived" pill beside the tag's title and kept the title in
+/// `Theme.text`; the phone's `iOSTagSettingsRow` dimmed the title to `Theme.muted` and said nothing.
+/// Neither choice answers a hardware or input constraint ([[T-8201]]), and the archived CONTEXT
+/// rows on the same two Settings screens already agree on both halves -- a muted title and the word
+/// "Archived" (`ArchivedContextRow`, `iOSSettingsArchivedContextRow`). The tag rows now take
+/// both halves from here: the muted title and the one pill, drawn by the same view.
+enum CadenceTagSettingsRowStyle {
+    /// The status word an archived tag's row wears beside its title.
+    static let archivedStatusLabel = "Archived"
+
+    /// The pill's text, or `nil` for a live tag, which wears none.
+    static func statusLabel(isArchived: Bool) -> String? {
+        isArchived ? archivedStatusLabel : nil
+    }
+
+    /// The tag title's ink: muted once archived, as the archived context rows' titles are.
+    static func titleInk(isArchived: Bool) -> Color {
+        isArchived ? Theme.muted : Theme.text
+    }
+}
+
+/// The "Archived" pill both tag Settings rows draw beside an archived tag's title. One view, so the
+/// two platforms cannot spell it differently again; the size resolves through `cadenceFont`, which
+/// leaves the Mac's fixed-scaling surface on its 9pt literal.
+struct CadenceTagSettingsStatusPill: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .cadenceFont(.metadata, base: 9, weight: .semibold)
+            .foregroundStyle(Theme.dim)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Theme.surfaceElevated.opacity(0.72))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+}

@@ -349,7 +349,7 @@ private struct iOSTagSettingsRow: View {
     private var tagTitle: some View {
         Text(CadenceTagChipStyle.displayName(name: tag.name, slug: tag.slug))
             .cadenceFont(.rowTitle, base: 15, weight: .semibold)
-            .foregroundStyle(tag.isArchived ? Theme.muted : Theme.text)
+            .foregroundStyle(CadenceTagSettingsRowStyle.titleInk(isArchived: tag.isArchived))
             .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
     }
 
@@ -373,7 +373,15 @@ private struct iOSTagSettingsRow: View {
             tagDot(hex: tag.colorHex)
 
             VStack(alignment: .leading, spacing: 5) {
-                tagTitle
+                // [[T-12741]]: an archived tag says so beside its title, in the pill the Mac's
+                // tag row draws -- it only dimmed here, and the archived context rows on this
+                // same screen already say "Archived" on both platforms.
+                HStack(spacing: 7) {
+                    tagTitle
+                    if let status = CadenceTagSettingsRowStyle.statusLabel(isArchived: tag.isArchived) {
+                        CadenceTagSettingsStatusPill(text: status)
+                    }
+                }
 
                 if !tag.desc.isEmpty {
                     Text(tag.desc)
