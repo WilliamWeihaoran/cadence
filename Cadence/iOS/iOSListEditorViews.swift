@@ -1154,11 +1154,14 @@ private struct iOSSectionDraftRow: View {
                     )
                 }
 
+                // [[T-12511]]: muted, never Delete's red. An archived column is one tap from
+                // Unarchive in this same row, and the Mac's column popover draws "Archive Column"
+                // dim -- the same ruling [[T-12322]] made for the list rows (`ListEditorArchiveButton`).
                 iOSActionButton(
                     title: "Archive",
                     systemImage: "archivebox",
-                    role: .destructive,
                     size: .compact,
+                    tint: Theme.muted,
                     action: lifecycle.archive
                 )
             }

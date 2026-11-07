@@ -18,6 +18,14 @@ enum iOSTagSettingsEdit {
         return allTags.contains { $0.id != tag.id && $0.slug == slug }
     }
 
+    /// [[T-12512]]: the colour the edit form's header dot draws -- the draft, normalized, falling
+    /// back to the saved colour while the Hex field holds something that is not yet a colour. The
+    /// same expression the Mac tag row's edit card fills its dot with (`SettingsTagRow`), and what
+    /// `save` would store.
+    static func headerDotHex(draft: String, saved: String) -> String {
+        TagSupport.normalizedColorHex(draft, fallback: saved)
+    }
+
     static func canSave(name: String, tag: Tag, allTags: [Tag]) -> Bool {
         !TagSupport.displayName(for: name).isEmpty && !hasDuplicate(name: name, tag: tag, allTags: allTags)
     }
@@ -326,9 +334,10 @@ private struct iOSTagSettingsRow: View {
         }
     }
 
-    private var tagDot: some View {
+    /// The saved colour on the display row; the edit header passes the draft's preview instead.
+    private func tagDot(hex: String) -> some View {
         Circle()
-            .fill(Color(hex: tag.colorHex))
+            .fill(Color(hex: hex))
             .frame(width: 11, height: 11)
             .padding(.top, 5)
     }
@@ -350,7 +359,9 @@ private struct iOSTagSettingsRow: View {
     /// title the display row draws, so the form is visibly owned by its tag.
     private var editingHeader: some View {
         HStack(alignment: .top, spacing: 11) {
-            tagDot
+            // [[T-12512]]: the dot previews the DRAFT colour as the Mac's edit dot does, so it
+            // moves with the swatch strip and the Hex field; the title beside it stays the saved name.
+            tagDot(hex: iOSTagSettingsEdit.headerDotHex(draft: draftColorHex, saved: tag.colorHex))
             tagTitle
         }
         .accessibilityElement(children: .combine)
@@ -359,7 +370,7 @@ private struct iOSTagSettingsRow: View {
 
     private var displayContent: some View {
         HStack(alignment: .top, spacing: 11) {
-            tagDot
+            tagDot(hex: tag.colorHex)
 
             VStack(alignment: .leading, spacing: 5) {
                 tagTitle

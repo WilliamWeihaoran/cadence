@@ -56,6 +56,31 @@ struct CadenceTagSettingsEditHeaderTests {
         #expect(headerAt < nameAt, "the tag's title row must sit above the form, not below it")
     }
 
+    /// **[[T-12512]].** The iOS header dot filled the SAVED colour, so picking a swatch or typing a
+    /// hex moved the strip below it but not the dot beside the tag's name; the Mac's edit dot
+    /// previews the draft. The dot now reads the normalized draft, falling back to the saved colour
+    /// while the Hex field holds something that is not yet a colour. The title stays the saved name.
+    @Test func theIOSEditHeaderDotPreviewsTheDraftColour() throws {
+        #expect(iOSTagSettingsEdit.headerDotHex(draft: "#3B82F6", saved: "#ef4444") == "#3b82f6")
+        #expect(iOSTagSettingsEdit.headerDotHex(draft: " 3b82f6 ", saved: "#ef4444") == "#3b82f6")
+        #expect(iOSTagSettingsEdit.headerDotHex(draft: "#3b8", saved: "#ef4444") == "#ef4444",
+                "a half-typed hex previews the saved colour, as the swatch strip does")
+        #expect(iOSTagSettingsEdit.headerDotHex(draft: "", saved: "#ef4444") == "#ef4444")
+
+        func squeezed(_ text: String) -> String { String(text.filter { !$0.isWhitespace }) }
+        let file = "Cadence/iOS/iOSSettingsTagsSection.swift"
+        let header = squeezed(try Self.body("private var editingHeader", in: file))
+        #expect(header.contains("tagDot(hex:iOSTagSettingsEdit.headerDotHex(draft:draftColorHex,saved:tag.colorHex))"),
+                "the iOS edit header's dot must preview the draft colour")
+        #expect(header.contains("tagTitle"), "the title beside it keeps the saved name")
+        let display = squeezed(try Self.body("private var displayContent", in: file))
+        #expect(display.contains("tagDot(hex:tag.colorHex)"), "the display row still draws the saved colour")
+
+        // The Mac's edit dot, which this mirrors ([[T-8201]]).
+        let macEdit = squeezed(try Self.body("private var editContent", in: "Cadence/macOS/Views/SettingsTagsSection.swift"))
+        #expect(macEdit.contains("TagSupport.normalizedColorHex(draftColorHex,fallback:tag.colorHex)"))
+    }
+
     @Test func theMacEditFormOpensWithTheTagsTitleRow() throws {
         let file = "Cadence/macOS/Views/SettingsTagsSection.swift"
         let edit = try Self.body("private var editContent", in: file)

@@ -614,6 +614,26 @@ struct CadenceListWindDownSurfaceTests {
         #expect(sidebar.contains(".iOSListWindDown(target: $pendingWindDown)"))
     }
 
+    /// **[[T-12511]].** The list editor's kanban COLUMN row drew Archive with `role: .destructive`
+    /// -- Delete's red -- although the same row offers Unarchive the moment it is archived, and the
+    /// Mac's column popover draws "Archive Column" dim. [[T-12322]]'s ruling covers it: only Delete
+    /// keeps the red, so the column's Archive takes the muted secondary treatment the Mac's
+    /// `ListEditorArchiveButton` uses.
+    @Test func theListEditorsColumnArchiveIsMutedNotDestructive() throws {
+        func squeezed(_ text: String) -> String { String(text.filter { !$0.isWhitespace }) }
+        let editor = try strippingComments(sourceFile("Cadence/iOS/iOSListEditorViews.swift"))
+        let controls = squeezed(try #require(CadenceSourceScan.functionBody(named: "lifecycleControls", in: editor)))
+        #expect(controls.contains("iOSActionButton(title:\"Complete\""), "non-vacuity: the column's lifecycle row was not read")
+        #expect(
+            controls.contains("iOSActionButton(title:\"Archive\",systemImage:\"archivebox\",size:.compact,tint:Theme.muted,action:lifecycle.archive)"),
+            "the column's Archive must be the muted secondary button, as the Mac's list Archive is"
+        )
+        #expect(!controls.contains("role:.destructive"), "the column's Archive is recoverable -- never Delete's red ([[T-12322]])")
+
+        let mac = squeezed(try strippingComments(sourceFile("Cadence/macOS/Sheets/ListEditorSupportViews.swift")))
+        #expect(mac.contains("role:.secondary,size:.compact,tint:Theme.muted"), "the Mac's Archive this is measured against moved")
+    }
+
     /// The other direction of the same divergence. macOS's branches are what iOS was measured
     /// against, so they are pinned too: closing either ticket by *removing* the Mac's wind-down
     /// would satisfy every assertion above and be the wrong fix.
