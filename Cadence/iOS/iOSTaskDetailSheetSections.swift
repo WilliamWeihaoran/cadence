@@ -350,10 +350,13 @@ struct iOSTaskStatusActionsSection: View {
                 if CadenceTaskInspectorSupport.offersCompletionAction(for: task.status) {
                     iOSActionButton(
                         title: isFinished ? "Reopen" : "Complete",
-                        systemImage: isFinished ? "arrow.uturn.backward.circle" : "checkmark.circle",
-                        role: task.isDone ? .primary : .secondary,
+                        // [[T-12581]]: coloured by the ACTION, as the Mac inspector is — green
+                        // Complete on an open task, muted Reopen on a done one, both on the
+                        // `.secondary` wash (the Mac's 0.12 plate). It painted the state before.
+                        systemImage: CadenceTaskInspectorSupport.completionSystemImage(isDone: task.isDone),
+                        role: .secondary,
                         size: .compact,
-                        tint: task.isDone ? CadenceTaskPresentationSupport.statusColor(.done) : Theme.muted,
+                        tint: CadenceTaskInspectorSupport.completionTint(isDone: task.isDone),
                         fullWidth: true,
                         action: onToggleCompletion
                     )

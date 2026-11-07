@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -219,5 +220,47 @@ struct CadenceTaskInspectorSupportTests {
             #expect(action.systemImage(for: action.status).isEmpty == false)
             #expect(action.systemImage(for: .todo) != action.systemImage(for: action.status))
         }
+    }
+
+    /// **[[T-12581]]: the Complete / Reopen button is coloured by the ACTION on both platforms.**
+    /// iOS painted the state (grey Complete, filled green Reopen) while the Mac painted the action;
+    /// the keeper's call ([[T-12590]]) was the Mac's. Behavioural half: Complete is green and
+    /// Reopen is the muted dim, never the other way round. Source half: both inspectors draw from
+    /// the shared helper and neither spells its own tint again.
+    @Test
+    func completionButtonIsColouredByTheActionOnBothPlatforms() throws {
+        #expect(CadenceTaskInspectorSupport.completionTint(isDone: false) == Theme.green,
+                "an open task's Complete is not the green action")
+        #expect(CadenceTaskInspectorSupport.completionTint(isDone: true) == Theme.dim,
+                "a done task's Reopen is not muted")
+        #expect(CadenceTaskInspectorSupport.completionTint(isDone: true)
+                != CadenceTaskPresentationSupport.statusColor(.done),
+                "Reopen paints the done state again (T-12581)")
+        #expect(CadenceTaskInspectorSupport.completionSystemImage(isDone: false) == "checkmark.circle.fill")
+        #expect(CadenceTaskInspectorSupport.completionSystemImage(isDone: true) == "arrow.uturn.backward.circle")
+
+        let ios = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailSheetSections.swift")
+        )
+        let iosBody = try #require(
+            CadenceSourceScan.declarationBody("struct iOSTaskStatusActionsSection: View", in: ios)
+        )
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift")
+        )
+        let macBody = try #require(CadenceSourceScan.declarationBody("private var controlRow: some View", in: mac))
+
+        #expect(iosBody.contains("tint: CadenceTaskInspectorSupport.completionTint(isDone: task.isDone)"),
+                "the iOS Complete / Reopen no longer reads the shared tint")
+        #expect(iosBody.contains("systemImage: CadenceTaskInspectorSupport.completionSystemImage(isDone: task.isDone)"),
+                "the iOS Complete / Reopen no longer reads the shared glyph")
+        #expect(!iosBody.contains("role: task.isDone ? .primary"),
+                "the iOS Reopen is a filled plate again (T-12581)")
+        #expect(macBody.contains(".foregroundStyle(CadenceTaskInspectorSupport.completionTint(isDone: task.isDone))"),
+                "the Mac Complete / Reopen no longer reads the shared tint")
+        #expect(macBody.contains("Image(systemName: CadenceTaskInspectorSupport.completionSystemImage(isDone: task.isDone))"),
+                "the Mac Complete / Reopen no longer reads the shared glyph")
+        #expect(!macBody.contains("task.isDone ? Theme.dim : Theme.green"),
+                "the Mac spells its own completion tint again")
     }
 }

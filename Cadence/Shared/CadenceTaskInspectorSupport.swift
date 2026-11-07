@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import SwiftUI
 
 /// The rules the task inspector runs on, shared by the macOS inspector (`TaskDetailPopover` and its
 /// content views) and the iOS task detail sheet.
@@ -197,5 +198,20 @@ enum CadenceTaskInspectorSupport {
     /// task keeps T-344's rule: nothing on the sheet turns abandoned work into accomplished work.
     static func offersCompletionAction(for status: TaskStatus) -> Bool {
         status != .cancelled
+    }
+
+    /// The Complete / Reopen button's colour, on both platforms ([[T-12581]]): it paints the
+    /// ACTION, not the state — green Complete on an open task, muted Reopen on a done one. iOS used
+    /// to paint the state (grey Complete, filled green Reopen) while the Mac painted the action; the
+    /// owner's call was the Mac's reading, which is also how iOS's own kanban row draws Complete
+    /// ([[T-12511]]). Both inspectors read this so the two cannot part again.
+    static func completionTint(isDone: Bool) -> Color {
+        isDone ? Theme.dim : Theme.green
+    }
+
+    /// The Complete / Reopen button's glyph, on both platforms ([[T-12581]]): the filled check is
+    /// the action on an open task, the back-arrow the action on a done one.
+    static func completionSystemImage(isDone: Bool) -> String {
+        isDone ? "arrow.uturn.backward.circle" : "checkmark.circle.fill"
     }
 }

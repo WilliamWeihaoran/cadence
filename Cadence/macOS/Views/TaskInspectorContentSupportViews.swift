@@ -502,16 +502,17 @@ struct TaskDetailActionsSection: View {
                     markDoneOrNotDone()
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: task.isDone ? "arrow.uturn.backward.circle" : "checkmark.circle.fill")
+                        // [[T-12581]]: glyph and tint are the shared action colouring iOS draws too.
+                        Image(systemName: CadenceTaskInspectorSupport.completionSystemImage(isDone: task.isDone))
                             .font(.system(size: 12, weight: .semibold))
                         Text(primaryTitle)
                             .font(.system(size: 12, weight: .semibold))
                             .lineLimit(1)
                     }
-                    .foregroundStyle(task.isDone ? Theme.dim : Theme.green)
+                    .foregroundStyle(CadenceTaskInspectorSupport.completionTint(isDone: task.isDone))
                     .frame(maxWidth: .infinity)
                     .frame(height: Self.controlHeight)
-                    .background(task.isDone ? Theme.surfaceElevated : Theme.green.opacity(0.12))
+                    .background(task.isDone ? Theme.surfaceElevated : CadenceTaskInspectorSupport.completionTint(isDone: false).opacity(0.12))
                     .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
                     .contentShape(Rectangle())
                 }
