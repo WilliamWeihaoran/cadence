@@ -156,9 +156,11 @@ struct iPadMacStyleRootShell<Content: View>: View {
     /// The drawer's targets are the sidebar's own — `iOSSidebarListsRegion` registers them, and
     /// opening the drawer moves them on screen, which is a geometry change and so republishes them.
     ///
-    /// **Not driven in landscape**, because nothing in the permitted simulator tooling rotates a
-    /// device: at ≥865pt the sidebar docks, `isModal` is false, this draws nothing, and the page's
-    /// own `+` is live exactly as before.
+    /// In landscape (≥865pt) the sidebar docks, `isModal` is false, this draws nothing, and the
+    /// page's own `+` is live exactly as before. [[T-12336]]: this used to say the landscape arm
+    /// could not be driven because no permitted simulator tool rotates a device. Claude Code's
+    /// simulator control tool has a rotate action, and the 2026-11-06 iPad sighting run used it to
+    /// see both arms on the standing iPad -- so drive it rather than take this paragraph's word.
     private var drawerCaptureButton: some View {
         iOSCaptureRadialMenuButton(
             diameter: iOSCircularAddButton.floatingDiameter,
@@ -1256,6 +1258,13 @@ struct iOSSidebarListRow: View {
             .contentShape(rowShape)
         }
         .buttonStyle(.iosPressable)
+        // **[[T-12333]]: the long-press lift takes the row's own outline.** An unselected row's
+        // fill is `Color.clear`, so its preview had no shape of its own: the lift was bare text,
+        // and its scaled trailing count painted past the sidebar's divider. Naming the preview's
+        // shape -- the same `rowShape` the selection fill and the hit region use -- is
+        // `iOSBoardTaskCard`'s [[T-9614]] fix; the resting row is unchanged. iOS only: the
+        // Mac's row menu is an `NSMenu`, which lifts no preview.
+        .contentShape(.contextMenuPreview, rowShape)
         // The touch equivalent of macOS's right-click-to-edit on the same row. Not `.swipeActions`:
         // that modifier does nothing outside a `List`, and this region is a `ScrollView`.
         // [[T-10058]]: `square.and.pencil`, the glyph the Lists page's own "Edit Area" / "Edit

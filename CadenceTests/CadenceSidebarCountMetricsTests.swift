@@ -399,6 +399,28 @@ struct CadenceSidebarMetricsTests {
         )
     }
 
+    /// **[[T-12333]]: the list row's long-press lift is outlined by the row's own shape.** An
+    /// unselected row fills with `Color.clear`, so without a named preview shape its lift was bare
+    /// text whose scaled trailing count painted past the sidebar's divider. A source read, as
+    /// above: one preview shape, naming `rowShape`, applied before the `.contextMenu` it outlines.
+    @Test func theListRowsLongPressPreviewTakesTheRowsOwnShape() throws {
+        let file = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootSidebar.swift")
+        )
+        let listRow = try #require(
+            CadenceSourceScan.declarationBody("struct iOSSidebarListRow: View", in: file),
+            "non-vacuity: wrong file"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"\.contentShape\(\.contextMenuPreview, rowShape\)"#, in: listRow) == 1,
+            "the sidebar list row's context-menu preview no longer takes the row's own outline"
+        )
+        let previewAt = try #require(listRow.range(of: ".contextMenuPreview"))
+        let menuAt = try #require(listRow.range(of: ".contextMenu {"))
+        #expect(previewAt.lowerBound < menuAt.lowerBound,
+                "the preview shape is applied after the context menu, outside the view it outlines")
+    }
+
     /// The figures that were actually forked, named individually so a regression says which one
     /// came back rather than only that the structs differ.
     ///
