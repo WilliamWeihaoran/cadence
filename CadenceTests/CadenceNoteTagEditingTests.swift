@@ -126,6 +126,93 @@ struct CadenceNoteTagEditingTests {
         #expect(note.content == "Body")
     }
 
+    // MARK: - A removal commits (T-11754)
+
+    /// Seeds a note holding `alpha` and `beta` in its tags and its frontmatter, committed.
+    private func seededTwoTagNote(content: String = "Body") throws -> (ModelContainer, ModelContext, Note, Cadence.Tag) {
+        let (container, context) = try makeContext()
+        let alpha = Tag(name: "alpha", slug: "alpha")
+        let beta = Tag(name: "beta", slug: "beta")
+        let note = Note(kind: .permanent, title: "Kickoff", content: content)
+        for tag in [alpha, beta] { context.insert(tag) }
+        context.insert(note)
+        try context.save()
+        #expect(CadenceNoteTagEditing.setTags([alpha, beta], on: note, in: context))
+        #expect(Set(note.tags?.map(\.slug) ?? []) == ["alpha", "beta"], "precondition: both tags set")
+        #expect(note.content.contains("beta"), "precondition: beta is in the frontmatter")
+        return (container, context, note, beta)
+    }
+
+    /// **[[T-11754]]: a refused removal answers `false` and leaves the note as it was.** A chip's
+    /// `x` mints nothing, and until this ticket it reached no commit at all and answered `true`
+    /// whatever the store said, so `iOSNoteTagControl.commitRemoval`'s and
+    /// `NoteEditorPane.noteTagsBinding`'s failure branches were dead for a removal.
+    @Test func aRefusedNoteTagRemovalAnswersFalseAndLeavesTheNoteAsItWas() throws {
+        let (container, context, note, beta) = try seededTwoTagNote()
+        let contentBefore = note.content
+        let updatedAtBefore = note.updatedAt
+        var commitsAttempted = 0
+
+        let wrote = CadenceNoteTagEditing.remove(beta, from: note, in: context, commit: { _ in
+            commitsAttempted += 1
+            throw CommitRefused()
+        })
+
+        #expect(wrote == false, "a refused removal must report the refusal")
+        #expect(commitsAttempted == 1, "a removal reaches the commit seam")
+        #expect(Set(note.tags?.map(\.slug) ?? []) == ["alpha", "beta"], "the removed tag is put back")
+        #expect(note.content == contentBefore, "the frontmatter rewrite is undone")
+        #expect(note.updatedAt == updatedAtBefore, "updatedAt is put back")
+
+        try context.save()
+        let reader = ModelContext(container)
+        let stored = try #require(try reader.fetch(FetchDescriptor<Note>()).first)
+        #expect(Set(stored.tags?.map(\.slug) ?? []) == ["alpha", "beta"], "the store still holds both tags")
+    }
+
+    /// The accepted removal commits: a second context reads the note without the tag, with no
+    /// further `save()` from the caller.
+    @Test func anAcceptedNoteTagRemovalIsCommittedToTheStore() throws {
+        let (container, context, note, beta) = try seededTwoTagNote()
+        var commitsAttempted = 0
+
+        let wrote = CadenceNoteTagEditing.remove(beta, from: note, in: context, commit: {
+            commitsAttempted += 1
+            try $0.save()
+        })
+
+        #expect(wrote)
+        #expect(commitsAttempted == 1, "a removal reaches the commit seam")
+        #expect(Set(note.tags?.map(\.slug) ?? []) == ["alpha"])
+        let reader = ModelContext(container)
+        let stored = try #require(try reader.fetch(FetchDescriptor<Note>()).first)
+        #expect(Set(stored.tags?.map(\.slug) ?? []) == ["alpha"], "the removal reached the store")
+        #expect(!stored.content.contains("beta"), "the frontmatter rewrite reached the store")
+    }
+
+    /// A refused removal that also has to mint (an inline `#tag` the store holds no row for) puts
+    /// the note back and leaves no minted row in the context — the mint path's own undo, kept.
+    @Test func aRefusedNoteTagRemovalThatMintsLeavesNoRowBehind() throws {
+        let (container, context, note, beta) = try seededTwoTagNote()
+        note.content += "\n\nNow mentions #fresh inline"
+        try context.save()
+        let contentBefore = note.content
+
+        let wrote = CadenceNoteTagEditing.remove(beta, from: note, in: context, commit: { _ in
+            throw CommitRefused()
+        })
+
+        #expect(wrote == false)
+        #expect(Set(note.tags?.map(\.slug) ?? []) == ["alpha", "beta"])
+        #expect(note.content == contentBefore)
+        #expect(
+            Set(try context.fetch(FetchDescriptor<Cadence.Tag>()).map(\.slug)) == ["alpha", "beta"],
+            "the row minted for #fresh was un-inserted"
+        )
+        try context.save()
+        #expect(Set(try ModelContext(container).fetch(FetchDescriptor<Cadence.Tag>()).map(\.slug)) == ["alpha", "beta"])
+    }
+
     // MARK: - The iOS chrome
 
     /// The control writes only through `CadenceNoteTagEditing`, and resigns the editor before it

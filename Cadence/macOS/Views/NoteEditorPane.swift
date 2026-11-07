@@ -100,12 +100,11 @@ struct NoteEditorPane: View {
                 // frontmatter so the YAML stays in sync with the chips even though the block is
                 // never rendered.
                 //
-                // **Commits the mint now (T-762).** A name typed here that matches no existing
-                // `Tag` mints one, and until this ticket that insert rode along on whatever
-                // unrelated screen saved next. Nothing below is written unless that commit lands —
-                // on a refusal the picker's own binding still reads the tags the store holds, so
-                // the tapped chip does not light up, and the notice already shown for a refused
-                // inline create (`tagFailureNotice`) says why.
+                // **Commits every write (T-762, T-11754).** A name typed here that matches no
+                // existing `Tag` mints one, and a chip's `x` mints nothing; both now commit, and on
+                // a refusal the note is put back, so the picker's own binding still reads the tags
+                // the store holds, the tapped chip does not change, and the notice already shown
+                // for a refused inline create (`tagFailureNotice`) says why.
                 guard TagSupport.setTagsCommittingInsertions(
                     named: newTags.map(\.name),
                     on: note,

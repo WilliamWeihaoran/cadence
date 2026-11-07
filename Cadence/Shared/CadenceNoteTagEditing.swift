@@ -20,8 +20,8 @@ extension TagSupport {
 /// regular width, the editor's format row at compact) edits a note's tags through these, and they
 /// are `TagSupport.setTagsCommittingInsertions(... writeFrontmatter: true)` — the door macOS's
 /// `NoteEditorPane.noteTagsBinding` uses — so a tag picked on the phone lands in `note.tags` and in
-/// the frontmatter block exactly as one picked on the Mac does, mint committed first and nothing
-/// written on a refusal.
+/// the frontmatter block exactly as one picked on the Mac does, every write (a removal included,
+/// [[T-11754]]) committed, and the note put back on a refusal.
 ///
 /// Here rather than in the iOS view so the behaviour can be pinned: `CadenceTests` runs on macOS and
 /// cannot reach `Cadence/iOS/`.
@@ -30,8 +30,8 @@ enum CadenceNoteTagEditing {
     /// `setTagsCommittingInsertions`, the same as on the Mac, so a tag the prose still mentions
     /// cannot be removed from chrome alone.
     ///
-    /// - Returns: Whether the write happened. `false` means the store refused a tag this had to
-    ///   mint, and the note is untouched.
+    /// - Returns: Whether the write committed. `false` means the store refused it — a removal as
+    ///   much as a mint ([[T-11754]]) — and the note is as it was.
     @discardableResult
     static func setTags(
         _ tags: [Tag],

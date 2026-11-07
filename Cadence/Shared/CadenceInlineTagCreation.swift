@@ -184,23 +184,30 @@ extension TagSupport {
         CadencePendingChangePersistence.commitTypedContent(in: context, commit: commit)
     }
 
-    /// `TagSupport.setTags(named:on:in:writeFrontmatter:)` for a `Note`, plus the commit for the
-    /// rows it had to mint — `NoteEditorPane.noteTagsBinding`'s own door onto the same T-631 shape
+    /// `TagSupport.setTags(named:on:in:writeFrontmatter:)` for a `Note`, committed — mint and edit
+    /// together — `NoteEditorPane.noteTagsBinding`'s own door onto the same T-631 shape
     /// (T-762), and the reason it needed a separate function rather than reusing
     /// `syncNoteTagsFromMarkdownCommittingInsertions` above: that one only ever *reads* the tag
     /// names out of the frontmatter it already has; this one is the picker's write path, so it also
     /// has to fold the picked names back into the frontmatter block, the same as `setTags` does.
     ///
-    /// **Nothing is written until the mint is safely committed.** `note.tags`, the frontmatter
-    /// rewrite and `note.updatedAt` all happen *after* `commitInsert` returns — never before — so a
-    /// refusal has nothing to undo: the picker's binding still reads the tags the store actually
-    /// holds, and the chip the user tapped simply does not light up. That is the answer T-497 gave
-    /// for an in-place field edit, reached here by construction instead of by a rollback that would
-    /// have had to fight whatever the user has since typed in `note.content`. It is a materially
-    /// different answer to the one `CadencePendingChangePersistence.commitEdit`'s doc argues
-    /// `rollback()` is wrong for, because there is no "restore the old value" step at all — only a
-    /// "do not take the new one yet" one, and there is nothing under a live caret to lose either
-    /// way, since the frontmatter block is never rendered.
+    /// **Every write commits, a removal included, and a refusal leaves the note as it was**
+    /// ([[T-11754]]). Until then the commit was entered only when the write had to MINT a row, so a
+    /// chip's `x` — which mints nothing — rewrote `note.tags`, the frontmatter and `updatedAt`,
+    /// reached no commit at all and answered `true` whatever the store would have said: every
+    /// caller's failure branch (`iOSNoteTagControl.commitRemoval`, `NoteEditorPane.noteTagsBinding`)
+    /// was dead for a removal, and the write rode on autosave.
+    ///
+    /// So the whole write is one in-place edit, committed through
+    /// `CadencePendingChangePersistence.commitEdit` with a field snapshot for its undo — that
+    /// type's rule for an edit, and the reason it is not `rollback()`, which would take whatever
+    /// else is pending in the app's single context. On a refusal the undo puts `note.tags`,
+    /// `note.content` and `note.updatedAt` back **and then** deletes every row this call minted,
+    /// which is exactly what `commitInsert`'s undo did for the mint alone: the picker's binding
+    /// reads the tags the store holds, no minted row is left in the context, and the chip the user
+    /// tapped (or tried to remove) is drawn as it was. The tags go back before the delete so the
+    /// note never holds a reference to a row being removed. The snapshot is taken synchronously
+    /// beside the write, so there is no typing between them for the restore to overwrite.
     ///
     /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     @discardableResult
@@ -213,22 +220,24 @@ extension TagSupport {
     ) -> Bool {
         let resolvedNames = writeFrontmatter ? names + MarkdownMetadataParser.inlineTagNames(in: note.content) : names
         guard let resolution = resolution(named: resolvedNames, in: context) else { return false }
-        if !resolution.inserted.isEmpty {
-            do {
-                try CadencePendingChangePersistence.commitInsert(
-                    of: resolution.inserted,
-                    in: context,
-                    commit: commit
-                )
-            } catch {
-                return false
-            }
-        }
+        let previousTags = note.tags
+        let previousContent = note.content
+        let previousUpdatedAt = note.updatedAt
         note.tags = resolution.tags
         if writeFrontmatter {
             note.content = MarkdownMetadataParser.content(note.content, replacingFrontmatterTags: names)
         }
         note.updatedAt = Date()
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: context, commit: commit) {
+                note.tags = previousTags
+                note.content = previousContent
+                note.updatedAt = previousUpdatedAt
+                for tag in resolution.inserted { context.delete(tag) }
+            }
+        } catch {
+            return false
+        }
         return true
     }
 

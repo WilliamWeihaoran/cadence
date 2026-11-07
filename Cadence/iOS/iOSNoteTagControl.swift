@@ -133,8 +133,8 @@ struct iOSNoteTagControl: View {
                 ),
                 allTags: allTags,
                 newTagName: $newTagName,
-                // Nothing to restore on a refusal: `setTagsCommittingInsertions` writes nothing
-                // until its mint has committed, so the binding already reads what the store holds.
+                // Nothing to restore on a refusal: `setTagsCommittingInsertions` puts the note back
+                // itself when its commit is refused, so the binding already reads what the store holds.
                 onCommit: { _ in lastWrite.succeeded },
                 onDismissRefusal: { report($0) }
             )
