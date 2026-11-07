@@ -78,3 +78,42 @@ struct CadenceFocusPickCardAccentClipTests {
                 "non-vacuity: the timer card no longer clips its bar")
     }
 }
+
+/// **[[T-11211]] (b): both Focus session headers say the task repeats, at every width.** The fact
+/// used to be only in the Mac's width-gated sidebar Session block; iOS Focus never said it. One
+/// helper decides whether it draws, and each header draws it in its own vocabulary.
+struct FocusSessionHeaderRecurrenceTests {
+    @Test func aTaskThatDoesNotRepeatDrawsNothing() {
+        #expect(CadenceFocusSupport.sessionHeaderRecurrence(for: .none) == nil)
+    }
+
+    @Test func aRepeatingTaskYieldsItsRuleAndTheRepeatGlyph() {
+        let repeating = TaskRecurrenceRule.allCases.filter { $0 != .none }
+        #expect(repeating.count == 4, "non-vacuity: the repeating rules changed")
+        for rule in repeating {
+            #expect(
+                CadenceFocusSupport.sessionHeaderRecurrence(for: rule)
+                    == CadenceFocusRecurrenceFact(label: rule.label, systemImage: TaskRecurrenceRule.repeatSymbol)
+            )
+        }
+        #expect(CadenceFocusSupport.sessionHeaderRecurrence(for: .weekly)?.label == "Weekly")
+    }
+
+    @Test func bothHeadersReadTheOneHelper() throws {
+        let call = "CadenceFocusSupport.sessionHeaderRecurrence(for: task.recurrenceRule)"
+        let ios = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFocusView.swift"))
+        let iosBody = try #require(CadenceSourceScan.functionBody(named: "selectedTaskHeader", in: ios))
+        #expect(iosBody.contains("task.priority.label"), "non-vacuity: still the session header")
+        #expect(iosBody.contains(call), "iOS's Focus session header no longer says the task repeats")
+        #expect(iosBody.contains("systemImage: recurrence.systemImage"), "the iOS chip lost the repeat glyph")
+
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusChromeSupportViews.swift")
+        )
+        let header = try #require(CadenceSourceScan.declarationBody("struct FocusSessionHeader: View", in: mac))
+        #expect(header.contains("task.priority.label"), "non-vacuity: still the session header")
+        #expect(header.contains(call), "the Mac's Focus session header no longer says the task repeats")
+        #expect(!header.contains("isRecurring"), "the Mac header decides recurrence on its own again")
+        #expect(!iosBody.contains("isRecurring"), "the iOS header decides recurrence on its own again")
+    }
+}

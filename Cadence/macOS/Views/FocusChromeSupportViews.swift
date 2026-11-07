@@ -68,6 +68,9 @@ struct FocusSessionHeader: View {
         let dueLabel = CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: task.dueDate)
         let hasDueDate = dueLabel != nil
         let hasEstimate = estimateLabel != nil
+        // [[T-11211]] (b): the shared helper decides whether the task repeats.
+        let recurrence = CadenceFocusSupport.sessionHeaderRecurrence(for: task.recurrenceRule)
+        let hasRecurrence = recurrence != nil
 
         FocusSurfaceHeader(
             eyebrow: "Focus Session",
@@ -83,7 +86,7 @@ struct FocusSessionHeader: View {
                             .fill(Color(hex: task.containerColor))
                             .frame(width: 6, height: 6)
                     }
-                    if hasPriority || hasDueDate || hasEstimate { FocusMetaSeparator() }
+                    if hasPriority || hasDueDate || hasEstimate || hasRecurrence { FocusMetaSeparator() }
                 }
 
                 if hasPriority {
@@ -94,7 +97,7 @@ struct FocusSessionHeader: View {
                             .fill(Theme.priorityColor(task.priority))
                             .frame(width: 6, height: 6)
                     }
-                    if hasDueDate || hasEstimate { FocusMetaSeparator() }
+                    if hasDueDate || hasEstimate || hasRecurrence { FocusMetaSeparator() }
                 }
 
                 if let dueLabel {
@@ -105,12 +108,24 @@ struct FocusSessionHeader: View {
                             CadenceFocusSupport.isOverdue(dueDateKey: task.dueDate, todayKey: DateFormatters.todayKey())
                                 ? Theme.red : Theme.dim
                         )
-                    if hasEstimate { FocusMetaSeparator() }
+                    if hasEstimate || hasRecurrence { FocusMetaSeparator() }
                 }
 
                 if let estimateLabel {
                     Text(estimateLabel)
                         .lineLimit(1)
+                    if hasRecurrence { FocusMetaSeparator() }
+                }
+
+                if let recurrence {
+                    // The glyph takes the Mac sidebar repeat chip's blue, as the dots take their
+                    // list and priority colours; the words stay the row's dim.
+                    Label {
+                        Text(recurrence.label)
+                    } icon: {
+                        Image(systemName: recurrence.systemImage)
+                            .foregroundStyle(Theme.blue)
+                    }
                 }
             }
         }

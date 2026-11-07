@@ -539,6 +539,11 @@ struct iOSFocusView: View {
             if let estimate = estimateLabel(for: task) {
                 iOSMetaChip(label: estimate, color: Theme.dim)
             }
+            // [[T-11211]] (b): the shared helper decides whether the task repeats; the blue matches
+            // the Mac sidebar's repeat chip.
+            if let recurrence = CadenceFocusSupport.sessionHeaderRecurrence(for: task.recurrenceRule) {
+                iOSMetaChip(label: recurrence.label, color: Theme.blue, systemImage: recurrence.systemImage)
+            }
         }
     }
 
@@ -552,9 +557,9 @@ struct iOSFocusView: View {
                 .foregroundStyle(Theme.text)
                 .lineLimit(3)
 
-            // Wraps rather than squeezing (T-7087). Up to four chips — list, priority, "Due …",
-            // estimate — ride this row, and on a 393pt iPhone the detail pane leaves it ~329pt: a
-            // longer list name or "Due Wednesday" pushed an `HStack` past that, and each chip is
+            // Wraps rather than squeezing (T-7087). Up to five chips — list, priority, "Due …",
+            // estimate, recurrence — ride this row, and on a 393pt iPhone the detail pane leaves it
+            // ~329pt: a longer list name or "Due Wednesday" pushed an `HStack` past that, and each chip is
             // one line, so the row truncated its own words ("Personal Er…") instead of taking a
             // second line. macOS's `FocusSessionHeader` has a whole window and keeps its one row.
             CadenceWrappingHStack(spacing: 8, lineSpacing: 6) {

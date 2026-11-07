@@ -147,6 +147,13 @@ nonisolated enum CadenceFocusTimerPhase: Equatable, Sendable {
     }
 }
 
+/// What a Focus session header draws for a repeating task ([[T-11211]] (b)): the rule's words and
+/// `TaskRecurrenceRule.systemImage`. Built only by `CadenceFocusSupport.sessionHeaderRecurrence`.
+nonisolated struct CadenceFocusRecurrenceFact: Equatable {
+    let label: String
+    let systemImage: String
+}
+
 enum CadenceFocusSupport {
 
     /// Whether a task can be the **subject** of a focus session at all.
@@ -214,6 +221,17 @@ enum CadenceFocusSupport {
     static func sessionHeaderDueLabel(forDueDateKey key: String, relativeTo referenceDate: Date = Date()) -> String? {
         guard !key.isEmpty else { return nil }
         return "Due \(DateFormatters.relativeDate(from: key, relativeTo: referenceDate))"
+    }
+
+    /// The recurrence fact in a **Focus session header**, on both platforms ([[T-11211]] (b)):
+    /// the rule's `label` beside the shared repeat glyph. `nil` for `.none`, so a task that does
+    /// not repeat draws nothing rather than a "Never" chip. This is the ONE place that decides
+    /// whether the fact draws; iOS's `selectedTaskHeader` (an `iOSMetaChip`) and macOS's
+    /// `FocusSessionHeader` (a label in its slash row) both read it. Before this the fact was only
+    /// in the Mac's width-gated sidebar Session block, and iOS Focus never said the task repeats.
+    static func sessionHeaderRecurrence(for rule: TaskRecurrenceRule) -> CadenceFocusRecurrenceFact? {
+        guard rule != .none else { return nil }
+        return CadenceFocusRecurrenceFact(label: rule.label, systemImage: rule.systemImage)
     }
 
     /// Detail line for focus rows, split into segments so surfaces can tint the due segment red
