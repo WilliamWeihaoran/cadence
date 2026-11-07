@@ -21,6 +21,8 @@ Read [AGENTS.md](../AGENTS.md) for the directory map and the non-negotiable UI p
 - **Check whether a stated blocker is still true.** Tickets here go stale in one specific way: they
   name a live agent or a dirty file, that work lands, and the ticket stays parked on a condition
   that no longer exists. Confirm the branch exists and the file is still dirty before believing it.
+- **A read-only sweep resolves any claim about what IS on main through `git show main:<path>` /
+  `git grep <sym> main`, never the working tree it sits in, and names the ref it read** (T-6413).
 
 ## Build and test
 
