@@ -49,7 +49,7 @@ struct TaskRecurrenceRuleLabelTests {
             ("Cadence/macOS/Editor/MarkdownTaskEmbedDrawingSupport.swift", "label: recurrence.label,"),
             (
                 "Cadence/macOS/Views/FocusSidebarSupportViews.swift",
-                "FocusStatusChip(title: task.recurrenceRule.label, color: Theme.blue, icon: \"arrow.clockwise\")"
+                "FocusStatusChip(title: task.recurrenceRule.label, color: Theme.blue, icon: TaskRecurrenceRule.repeatSymbol)"
             )
         ]
         for site in sites {

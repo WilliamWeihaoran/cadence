@@ -100,7 +100,7 @@ struct FocusSidebar: View {
             HStack(spacing: 8) {
                 FocusStatusChip(title: phase.label, color: phaseTint, icon: phase.systemImage)
                 if task.isRecurring {
-                    FocusStatusChip(title: task.recurrenceRule.label, color: Theme.blue, icon: "arrow.clockwise")
+                    FocusStatusChip(title: task.recurrenceRule.label, color: Theme.blue, icon: TaskRecurrenceRule.repeatSymbol)
                 }
             }
         }

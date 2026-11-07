@@ -104,7 +104,7 @@ enum CadenceCaptureField: String, CaseIterable, Identifiable {
         case .dueDate: return "flag"
         case .list: return CadenceListKindIcon.inbox
         case .tags: return "tag"
-        case .repeatRule: return "repeat"
+        case .repeatRule: return TaskRecurrenceRule.repeatSymbol
         case .priority: return "exclamationmark"
         case .estimate: return "clock"
         case .location: return "mappin.and.ellipse"

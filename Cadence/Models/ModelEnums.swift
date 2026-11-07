@@ -321,13 +321,25 @@ nonisolated enum TaskRecurrenceRule: String, Codable, CaseIterable, Hashable {
         }
     }
 
+    /// **[[T-12285]]: the one glyph that says "this repeats"** — the capture card's Repeat-field
+    /// glyph (in `CadenceScheduleCaptureCard.swift`), and the icon of every "Repeat" field row
+    /// whatever rule it currently holds (the row names the field; its value text names the rule).
+    static let repeatSymbol = "repeat"
+
+    /// **[[T-12285]]: the "Never" choice in a picker or menu listing every case.** Neutral on
+    /// purpose: not a loop (it does not repeat) and not a calendar or sun glyph, which the app
+    /// spends on dates (`sun.max.fill` is the do-date/Today glyph).
+    static let notRepeatingSymbol = "minus.circle"
+
+    /// **[[T-12285]]: every repeating case draws the same loop.** `.daily` was `sun.max` — the
+    /// do-date/Today glyph, so a repeating undated task read as scheduled for today — and the other
+    /// periods were calendar glyphs, while `.none`, the one case that does not repeat, was the only
+    /// one given a loop (`arrow.clockwise`). Which period a rule repeats on is told by `label`,
+    /// which every chip, picker row and menu item already draws beside this glyph.
     var systemImage: String {
         switch self {
-        case .none: return "arrow.clockwise"
-        case .daily: return "sun.max"
-        case .weekly: return "calendar"
-        case .monthly: return "calendar.badge.clock"
-        case .yearly: return "calendar.circle"
+        case .none: return Self.notRepeatingSymbol
+        case .daily, .weekly, .monthly, .yearly: return Self.repeatSymbol
         }
     }
 }

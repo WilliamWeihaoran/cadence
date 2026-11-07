@@ -64,7 +64,7 @@ struct iOSTaskFieldListSection: View {
     // MARK: - Repeat
 
     private var repeatRow: some View {
-        iOSEditorFieldRow(label: "Repeat", systemImage: draft.repeatRule.systemImage, color: Theme.purple) {
+        iOSEditorFieldRow(label: "Repeat", systemImage: TaskRecurrenceRule.repeatSymbol, color: Theme.purple) {
             iOSChoiceValueButton(
                 title: draft.repeatRule.label,
                 color: draft.repeatRule == .none ? Theme.dim : Theme.text,

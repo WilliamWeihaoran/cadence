@@ -711,7 +711,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
     // MARK: Shared rows
 
     private var repeatRow: some View {
-        CadenceFieldRow(label: "Repeat", systemImage: draft.repeatRule.systemImage, color: Theme.purple) {
+        CadenceFieldRow(label: "Repeat", systemImage: TaskRecurrenceRule.repeatSymbol, color: Theme.purple) {
             CadenceChoiceValueButton(
                 title: draft.repeatRule.label,
                 color: draft.repeatRule == .none ? Theme.dim : Theme.text
