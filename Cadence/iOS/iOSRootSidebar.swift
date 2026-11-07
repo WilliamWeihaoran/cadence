@@ -1279,19 +1279,19 @@ struct iOSSidebarListRow: View {
             // [[T-11753]]: the Lists page row menu's wind-down pair, same labels, order and roles
             // (`iOSListsView.completeAreaButton` / `archiveAreaButton`). This column is the only
             // list door a full-screen iPad has, so without them completion hid inside the editor's
-            // Status menu. Completion is not `.destructive`: finishing work is not destruction.
+            // Status menu. Neither is `.destructive`: finishing work is not destruction, and
+            // archiving is recoverable ([[T-12322]], the Mac's `ListEditorArchiveButton` ruling).
             Button {
                 onWindDown(.complete)
             } label: {
                 Label("Complete \(item.kind == .area ? "Area" : "Project")", systemImage: iOSListWindDownAction.complete.icon)
             }
 
-            Button(role: .destructive) {
+            Button {
                 onWindDown(.archive)
             } label: {
                 Label("Archive \(item.kind == .area ? "Area" : "Project")", systemImage: iOSListWindDownAction.archive.icon)
             }
-            .cadenceDestructiveMenuRow()
 
             // [[T-7260]](a): list order within the section, which only the Mac's drag could
             // change. Settings' context rows' Move Up / Move Down, on the same touch idiom

@@ -129,6 +129,31 @@ struct TaskSortHelperTests {
                 "a header defined by a day gone by takes no drop")
     }
 
+    /// [[T-12371]]: no two By Date headings share an accent. Leftover (a day gone by) and
+    /// Unscheduled (no day at all) both drew `Theme.amber`, so the eyebrow tint said the same
+    /// thing twice about opposite situations. A RELATION over all six groups, not a pinned token,
+    /// so a later retint of any one heading still has to stay distinct from the other five.
+    @Test func everyByDateHeadingDrawsItsOwnAccent() {
+        let todayKey = "2026-05-11"
+        let tasks = [
+            task(title: "overdue", dueDate: "2026-05-01", order: 0),
+            task(title: "leftover", scheduledDate: "2026-05-10", order: 1),
+            task(title: "due-today", dueDate: todayKey, order: 2),
+            task(title: "do-today", scheduledDate: todayKey, order: 3),
+            task(title: "scheduled", scheduledDate: "2026-05-25", order: 4),
+            task(title: "unscheduled", order: 5),
+        ]
+
+        let groups = CadenceTaskQuerySupport.dateDisplayGroups(from: tasks, todayKey: todayKey)
+        #expect(groups.map(\.id) == ["overdue", "past-do", "due-today", "do-today", "scheduled", "unscheduled"],
+                "non-vacuity: every By Date heading is drawn")
+        for (index, group) in groups.enumerated() {
+            for other in groups[(index + 1)...] {
+                #expect(group.accent != other.accent, "\(group.title) and \(other.title) share an accent")
+            }
+        }
+    }
+
     private func task(
         title: String,
         dueDate: String = "",

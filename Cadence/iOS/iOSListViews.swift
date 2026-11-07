@@ -320,22 +320,27 @@ struct iOSListsView: View {
         }
     }
 
+    /// **Archive is not destructive ([[T-12322]], decided under [[T-8201]]).** No
+    /// `role: .destructive` and no `cadenceDestructiveMenuRow()`: archiving is recoverable from
+    /// Settings, and macOS's `ListEditorArchiveButton` already draws it as a neutral secondary
+    /// action that "must not borrow Delete's red". No hardware constraint separates a long-press
+    /// menu from that sheet button, so iOS follows the Mac and only Delete keeps the red -- the
+    /// same reasoning `completeAreaButton` gives below. The sidebar row menu and the regular-width
+    /// pane build the same rows the same way.
     private func archiveAreaButton(_ area: Area, title: String = "Archive") -> some View {
-        Button(role: .destructive) {
+        Button {
             archive(area)
         } label: {
             Label(title, systemImage: "archivebox")
         }
-        .cadenceDestructiveMenuRow()
     }
 
     private func archiveProjectButton(_ project: Project, title: String = "Archive") -> some View {
-        Button(role: .destructive) {
+        Button {
             archive(project)
         } label: {
             Label(title, systemImage: "archivebox")
         }
-        .cadenceDestructiveMenuRow()
     }
 
     /// Completion is offered in the **context menu only**, never on the row swipe, and the swipe

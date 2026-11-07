@@ -465,7 +465,11 @@ enum CadenceTaskQuerySupport {
         groups.append(contentsOf: [
             CadenceTaskDisplayGroup(id: "do-today", title: "Do Today", accent: Theme.blue, tasks: doToday),
             CadenceTaskDisplayGroup(id: "scheduled", title: "Scheduled", accent: Theme.dim, tasks: scheduled),
-            CadenceTaskDisplayGroup(id: "unscheduled", title: "Unscheduled", accent: Theme.amber, tasks: unscheduled)
+            // [[T-12371]]: neutral, not amber. Amber is Leftover's (a day gone by, the warning
+            // hue); a task with no day at all is waiting, not late, so it takes a grey as the
+            // Calendar Board's Unscheduled rail does. `muted`, not that rail's `dim`, because
+            // `dim` is Scheduled's two lines up and the six headings must stay distinct.
+            CadenceTaskDisplayGroup(id: "unscheduled", title: "Unscheduled", accent: Theme.muted, tasks: unscheduled)
         ])
 
         return groups.filter { !$0.tasks.isEmpty }

@@ -36,11 +36,14 @@ struct CadenceDestructiveMenuRowTests {
         // Task row menus.
         ("Cadence/iOS/iOSTaskRowActionViews.swift", 1),
         ("Cadence/macOS/Views/MacTaskRowContextMenu.swift", 1),
-        // Archive rows: role `.destructive`, so the same red title and the same blue glyph.
-        ("Cadence/iOS/iOSListsRegularPane.swift", 2),
-        ("Cadence/iOS/iOSListViews.swift", 2),
-        // [[T-11753]]: the sidebar row's Archive, the Lists page's own row.
-        ("Cadence/iOS/iOSRootSidebar.swift", 1),
+        // [[T-12322]]: a list's Archive row is NOT destructive (the Mac's `ListEditorArchiveButton`
+        // ruling, under T-8201), so the Lists page, its regular-width pane and the sidebar row
+        // ([[T-11753]]) wear the shared red on none of their rows. Zero, not dropped: a list
+        // Archive that regains the red moves these numbers.
+        ("Cadence/iOS/iOSListsRegularPane.swift", 0),
+        ("Cadence/iOS/iOSListViews.swift", 0),
+        ("Cadence/iOS/iOSRootSidebar.swift", 0),
+        // Settings' context Archive keeps role `.destructive` for now.
         ("Cadence/iOS/iOSSettingsView.swift", 1),
         // Mac note row menus.
         ("Cadence/macOS/Views/ListNotesViewSupportViews.swift", 1),

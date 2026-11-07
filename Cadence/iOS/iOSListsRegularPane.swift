@@ -96,12 +96,12 @@ struct iOSListsRegularPane: View {
                             Label("Complete Area", systemImage: iOSListWindDownAction.complete.icon)
                         }
 
-                        Button(role: .destructive) {
+                        // [[T-12322]]: plain, as `iOSListsView.archiveAreaButton` says why.
+                        Button {
                             archiveArea(area)
                         } label: {
                             Label("Archive Area", systemImage: "archivebox")
                         }
-                        .cadenceDestructiveMenuRow()
 
                         iOSListDeleteMenuButton(target: .area(area), request: requestDeletion)
                     }
@@ -141,12 +141,12 @@ struct iOSListsRegularPane: View {
                             Label("Complete Project", systemImage: iOSListWindDownAction.complete.icon)
                         }
 
-                        Button(role: .destructive) {
+                        // [[T-12322]]: plain, as `iOSListsView.archiveAreaButton` says why.
+                        Button {
                             archiveProject(project)
                         } label: {
                             Label("Archive Project", systemImage: "archivebox")
                         }
-                        .cadenceDestructiveMenuRow()
 
                         iOSListDeleteMenuButton(target: .project(project), request: requestDeletion)
                     }

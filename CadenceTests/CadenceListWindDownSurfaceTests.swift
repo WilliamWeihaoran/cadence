@@ -555,7 +555,8 @@ struct CadenceListWindDownSurfaceTests {
     /// full-screen iPad has no entrance to the Lists page, so its sidebar row menu is the list's
     /// only menu there; it offered Edit / Move Up / Move Down, and completion sat only inside the
     /// editor's Status menu. Both menus must name the same wind-downs, in the same order, with
-    /// the same roles: Complete plain (finishing work is not destruction), Archive destructive.
+    /// the same roles: Complete plain (finishing work is not destruction), and Archive plain too
+    /// ([[T-12322]]: recoverable, so never Delete's red, as the Mac's `ListEditorArchiveButton`).
     /// Whitespace is dropped so the shape, not the indentation, is what is read.
     @Test func theSidebarRowMenuOffersTheListsPageWindDownSet() throws {
         func squeezed(_ text: String) -> String { String(text.filter { !$0.isWhitespace }) }
@@ -586,10 +587,18 @@ struct CadenceListWindDownSurfaceTests {
         // Same roles and labels as the page's builders.
         let pageCode = squeezed(page)
         #expect(pageCode.contains("Button{complete(area)}label:{Label(\"CompleteArea\""))
-        #expect(pageCode.contains("Button(role:.destructive){archive(area)}"))
+        // [[T-12322]]: Archive is plain like Complete -- recoverable, so never Delete's red.
+        #expect(pageCode.contains("Button{archive(area)}label:{Label(title,systemImage:\"archivebox\")}"))
+        #expect(pageCode.contains("Button{archive(project)}label:{Label(title,systemImage:\"archivebox\")}"))
+        #expect(!pageCode.contains("Button(role:.destructive){archive("))
+        let pane = squeezed(try strippingComments(sourceFile("Cadence/iOS/iOSListsRegularPane.swift")))
+        #expect(pane.contains("Button{archiveArea(area)}label:{Label(\"ArchiveArea\""))
+        #expect(pane.contains("Button{archiveProject(project)}label:{Label(\"ArchiveProject\""))
+        #expect(!pane.contains("Button(role:.destructive){archive"))
         let menu = squeezed(rowMenu)
         #expect(menu.contains("Button{onWindDown(.complete)}label:{Label(\"Complete\\(item.kind==.area?\"Area\":\"Project\")\",systemImage:iOSListWindDownAction.complete.icon)"))
-        #expect(menu.contains("Button(role:.destructive){onWindDown(.archive)}label:{Label(\"Archive\\(item.kind==.area?\"Area\":\"Project\")\",systemImage:iOSListWindDownAction.archive.icon)}.cadenceDestructiveMenuRow()"))
+        #expect(menu.contains("Button{onWindDown(.archive)}label:{Label(\"Archive\\(item.kind==.area?\"Area\":\"Project\")\",systemImage:iOSListWindDownAction.archive.icon)}"))
+        #expect(!menu.contains("role:.destructive"), "the sidebar row menu's Archive is plain, as the page's ([[T-12322]])")
         // Edit first, then the wind-downs, then Move: the page's Edit-first order.
         let edit = try #require(menu.range(of: "onEdit()"))
         let complete = try #require(menu.range(of: "onWindDown(.complete)"))
