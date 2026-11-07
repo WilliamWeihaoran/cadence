@@ -320,6 +320,7 @@ enum iOSScheduleDraftCreation {
                 scheduledDate: draft.startDateKey,
                 scheduledStartMin: draft.scheduledStartMin,
                 estimatedMinutes: draft.estimateMinutes,
+                subtaskTitles: draft.subtaskTitles,
                 configure: { task in
                     configure(task, from: draft, area: area, project: project, allTasks: allTasks)
                 }
@@ -428,6 +429,7 @@ struct iOSTimelineDraftPanelHost: View {
                 sectionChoices: CadenceScheduleDraftChoices.sectionChoices(for: draft, areas: areas, projects: projects),
                 calendarChoices: iOSScheduleDraftCreation.calendarChoices(calendarManager),
                 calendarUnavailableNotice: calendarUnavailableNotice,
+                offersSubtasks: true,
                 actions: CadenceSchedulePanelActions(
                     commit: commit,
                     cancel: onCancel,

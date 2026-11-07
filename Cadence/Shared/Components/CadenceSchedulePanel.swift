@@ -96,7 +96,9 @@ struct CadenceSchedulePanelActions {
 ///   write has no location. No current host is: the macOS drag-create popover's write,
 ///   `CalendarManager.createStandaloneEvent`, gained one under [[T-3171]] (iii).
 /// - `offersSubtasks` — off unless a creation host can carry checklist titles into storage.
-///   The macOS drag-create host opts in; existing iOS hosts keep their present fields.
+///   Every task-creating host does: the macOS drag-create popover, and on iOS the capture sheet
+///   and both calendar create sheets ([[T-12641]]). The default stays `false` so a host that
+///   edits an existing item never shows a create-time checklist it would drop.
 /// - `notesField` — the host's own notes editor. A sheet has room for the platform's full
 ///   markdown well and its reference sheets; a popover hanging off a block does not, and gets the
 ///   plain field below. Both write the same `draft.notes`.
@@ -275,6 +277,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                     titleStatus: titleStatus,
                     offersTaskRepeat: offersTaskRepeat,
                     offersEventRepeat: offersEventRepeat,
+                    offersSubtasks: offersSubtasks,
                     options: captureOptions,
                     actions: actions,
                     notesField: notesField,

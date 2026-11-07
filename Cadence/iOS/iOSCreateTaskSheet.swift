@@ -58,6 +58,7 @@ struct iOSCreateTaskSheet: View {
                 calendarUnavailableNotice: calendarUnavailableNotice,
                 failureNotice: actionError,
                 canCommit: canCreate,
+                offersSubtasks: true,
                 actions: CadenceSchedulePanelActions(commit: create, cancel: { dismiss() })
             ) {
                 markerSuggestions
@@ -219,7 +220,8 @@ struct iOSCreateTaskSheet: View {
         var creation = CadenceTaskComposerSupport.draft(
             title: draft.title, notes: draft.notes, fields: fields,
             tags: tags.filter { selectedTagIDs.contains($0.id.uuidString) },
-            scheduledStartMin: draft.scheduledStartMin, estimatedMinutes: draft.estimateMinutes
+            scheduledStartMin: draft.scheduledStartMin, estimatedMinutes: draft.estimateMinutes,
+            subtaskTitles: draft.subtaskTitles
         )
         creation.repeatRule = draft.repeatRule
         creation.seriesEndMode = draft.seriesEndMode

@@ -297,6 +297,10 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
     var titleStatus: CadenceSchedulePanelTitleStatus?
     var offersTaskRepeat: Bool
     var offersEventRepeat: Bool
+    /// `CadenceSchedulePanel.offersSubtasks`, forwarded: the iOS capture and slot sheets are
+    /// capture presentations, so a flag only the standard panel read reached none of them
+    /// ([[T-12641]]).
+    var offersSubtasks: Bool
     var options: CadenceScheduleCaptureOptions
     var actions: CadenceSchedulePanelActions
     var notesField: NotesField?
@@ -483,6 +487,21 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                 .cadenceFont(.bodyText)
                 .lineLimit(1...6)
                 .focused($notesIsFocused)
+                .disabled(isReadOnly)
+        }
+        if offersSubtasks, draft.kind == .task, !draft.subject.isEditing {
+            // The checklist a new task is created with ([[T-12641]]): the standard panel's
+            // `subtasksEditor` in this card's idiom -- a field that grows with what is typed, like
+            // Notes above, rather than a fixed 80pt well. One title per line, the same
+            // `draft.subtaskTitles` split, so the creation write drops blank lines either way.
+            TextField("Subtasks, one per line", text: Binding(
+                get: { draft.subtaskTitles.joined(separator: "\n") },
+                set: { draft.subtaskTitles = $0.components(separatedBy: "\n") }
+            ), axis: .vertical)
+                .textFieldStyle(.plain)
+                .cadenceFont(.bodyText)
+                .lineLimit(1...6)
+                .accessibilityIdentifier("capture-subtasks")
                 .disabled(isReadOnly)
         }
 

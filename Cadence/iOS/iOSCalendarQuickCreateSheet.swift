@@ -89,6 +89,7 @@ struct iOSCalendarQuickCreateSheet: View {
                 calendarChoices: iOSScheduleDraftCreation.calendarChoices(calendarManager),
                 calendarUnavailableNotice: calendarUnavailableNotice,
                 canCommit: canCreate,
+                offersSubtasks: true,
                 actions: CadenceSchedulePanelActions(
                     commit: create,
                     cancel: { dismiss() },

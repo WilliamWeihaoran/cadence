@@ -126,7 +126,8 @@ enum CadenceTaskComposerSupport {
         fields: CadenceTaskComposerFields,
         tags: [Tag],
         scheduledStartMin: Int = -1,
-        estimatedMinutes: Int = defaultEstimatedMinutes
+        estimatedMinutes: Int = defaultEstimatedMinutes,
+        subtaskTitles: [String] = []
     ) -> TaskCreationDraft {
         TaskCreationDraft(
             title: title,
@@ -136,7 +137,9 @@ enum CadenceTaskComposerSupport {
             sectionName: fields.sectionName,
             dueDateKey: fields.dueDateKey,
             scheduledDateKey: fields.doDateKey,
-            subtaskTitles: [],
+            // Raw editor lines: `TaskCreationService` drops the blanks and trims the rest
+            // ([[T-12641]] -- this was a literal `[]`, so the iOS capture sheet lost its checklist).
+            subtaskTitles: subtaskTitles,
             tags: tags,
             // A slot on no day is not a slot. The service enforces the same rule; agreeing with it
             // here keeps the draft readable on its own.

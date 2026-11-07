@@ -1235,6 +1235,7 @@ extension CadenceTaskMutationSupport {
         scheduledDate: String,
         scheduledStartMin: Int,
         estimatedMinutes: Int,
+        subtaskTitles: [String] = [],
         configure: (AppTask) -> Void = { _ in },
         refusing: Bool = CadencePendingChangePersistence.refusesCommitsForUITest
     ) throws -> AppTask? {
@@ -1248,11 +1249,16 @@ extension CadenceTaskMutationSupport {
         task.scheduledStartMin = scheduledStartMin
         configure(task)
         modelContext.insert(task)
+        // A checklist typed into the create panel ([[T-12641]]) rides the same commit, and a
+        // refused commit takes its rows back out with the task rather than orphaning them.
+        let subtasks = insertSubtasks(titled: subtaskTitles, into: task, modelContext: modelContext)
         // The spine's insert, not an inline save-and-delete ([[T-11581]]): the same undo, and the
         // one seam `CADENCE_UI_TEST_REFUSE_COMMITS` can refuse, so the iOS timeline draft's
         // `TaskCreationService.saveFailureNotice` is sightable. `insertTask` above keeps its inline
         // save: its one caller is the iOS sample-data seed, which must never refuse.
-        try CadencePendingChangePersistence.commitInsert(of: task, in: modelContext, refusing: refusing)
+        try CadencePendingChangePersistence.commitInsert(
+            of: [task] + subtasks, in: modelContext, refusing: refusing
+        )
         return task
     }
 
