@@ -143,7 +143,9 @@ struct AITaskDraftReviewSheet: View {
             if let message = statusMessage ?? review.refusalMessage {
                 Text(message)
                     .font(.system(size: 12))
-                    .foregroundStyle(statusMessage == nil && !review.blockingErrors.isEmpty ? Theme.red : Theme.muted)
+                    // [[T-12580]]: a failed Create is an error too, so it draws red like the summary
+                    // sheet's failure above; it was red only when there was NO status message.
+                    .foregroundStyle(statusMessage != nil || !review.blockingErrors.isEmpty ? Theme.red : Theme.muted)
             }
 
             HStack {
@@ -171,20 +173,27 @@ struct AITaskDraftReviewSheet: View {
         .padding(20)
         .frame(width: 720, height: 620)
         .background(Theme.bg)
+        // [[T-12580]]: an edit is a new attempt, so the last failure stops masking the review's
+        // own refusal text. `applyApproved` does not mutate `review`, so this cannot clear the
+        // failure it is about to report.
+        .onChange(of: review) {
+            statusMessage = nil
+        }
     }
 
     /// Through the review, not around it. `applyApproved` refuses on its own account, so a future
     /// edit that loses the `isDisabled: !review.canCreate` above cannot write anything.
     private func createSelected() {
+        // [[T-12580]]: a retry starts clean, as `AIActionsSupportViews.run` does.
+        statusMessage = nil
         do {
-            let created = try review.applyApproved(
+            _ = try review.applyApproved(
                 area: area,
                 project: project,
                 areas: areas,
                 projects: projects,
                 modelContext: modelContext
             )
-            statusMessage = "Created \(created.count) task\(created.count == 1 ? "" : "s")."
             dismiss()
         } catch {
             statusMessage = AIErrorPresenter.message(for: error)

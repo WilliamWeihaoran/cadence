@@ -621,6 +621,43 @@ struct AINoteActionReviewTests {
         #expect(!support.contains("try?"), "the summary append still swallows its commit")
     }
 
+    // MARK: - T-12580: a failed Create on the Mac reads as a failure
+
+    /// The Mac draft sheet's status line drew red only when there was NO `statusMessage`, and the
+    /// only message it ever showed is the failed-Create error -- so a refused write was grey caption
+    /// text, where the summary sheet beside it draws its failure red and iOS raises an alert. And
+    /// the message was never cleared, so one failure masked the review's own refusal text for the
+    /// rest of the sheet's life.
+    @Test func aFailedMacDraftCreateIsRedAndClearsOnRetryAndEdit() throws {
+        let source = try sourceFile(Self.macReviewSheet)
+        let sheet = try #require(
+            CadenceSourceScan.declarationBody("struct AITaskDraftReviewSheet: View", in: source),
+            "AITaskDraftReviewSheet not found"
+        )
+
+        // Red for a failure as well as for a blocking refusal.
+        #expect(sheet.contains(
+            ".foregroundStyle(statusMessage != nil || !review.blockingErrors.isEmpty ? Theme.red : Theme.muted)"
+        ), "a failed Create no longer draws red")
+        #expect(!sheet.contains("statusMessage == nil &&"), "the status line is still red only without a status message")
+
+        // A retry starts clean: the reset comes before the write is attempted.
+        let create = try #require(
+            CadenceSourceScan.declarationBody("private func createSelected()", in: source),
+            "createSelected not found"
+        )
+        let reset = try #require(create.range(of: "statusMessage = nil"), "createSelected does not clear the last failure")
+        let attempt = try #require(create.range(of: "try review.applyApproved("), "createSelected no longer writes")
+        #expect(reset.lowerBound < attempt.lowerBound, "the last failure is cleared only after the retry")
+
+        // An edit clears it too, so the review's refusal text is visible again.
+        let onEdit = try #require(
+            CadenceSourceScan.declarationBody(".onChange(of: review)", in: sheet),
+            "the sheet does not watch the review for edits"
+        )
+        #expect(onEdit.contains("statusMessage = nil"), "an edit does not clear the last failure")
+    }
+
     // MARK: - T-316: one container for the note, and the project wins
 
     private struct DoubleOwnedNote {
