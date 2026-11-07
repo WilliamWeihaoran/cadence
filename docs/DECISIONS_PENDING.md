@@ -47,8 +47,8 @@ Ranked by how often you would meet it, 11-inch iPad first, then the Mac.
    tags, Do, Due and Active/Completed; iOS Search uses its own shorter subtitle. Note rows
    already match. (a) one shared task subtitle on both, (b) leave. **(a)** -- per T-8201 no
    input or hardware forces the difference. [T-8763] Code checked (added 2026-10-30 by keeper
-   `keeper2208`; Mac `GlobalSearchIndexSupport.swift:284-290`, iOS
-   `CadenceSearchCandidateSupport.swift:66`).
+   `keeper2208`; re-cited 2026-11-07 by `sweep0538`: Mac `GlobalSearchIndexSupport.swift:303-312`, iOS
+   `CadenceSearchCandidateSupport.swift:124`).
 8. **Mac `/` picker in a note has no height cap** -- a bare `/` lists ~22 rows (~580pt), more than
    a 13-inch MacBook fits beside the caret. Cap it (~10 rows, scrolling with the highlight) or
    leave. **Cap it** -- the keyboard highlight can walk off screen today. [T-7233] Code checked
@@ -146,7 +146,7 @@ call -- it is a POST-RC fix with two technical shapes for the agent who takes it
 32. Answer the per-session automation prompt when a UI run asks. [T-2049]
 33. One attended `CADENCE_T710_RUNS=40` run of `CadenceSeededSidebarTimingUITests` (it drives
     your screen) to find the blank-launch cause; everything else in the ticket landed. [T-2020]
-    Code checked (the variable is read at `CadenceSeededSidebarTimingUITests.swift:79`, not `:80`).
+    Code checked (the variable is read at `CadenceSeededSidebarTimingUITests.swift:80`; re-cited 2026-11-07).
 
 ## D. Tooling and process (nothing a user sees)
 
