@@ -357,3 +357,121 @@ struct CadenceFocusSessionPersistenceTests {
     }
 
 }
+
+/// **[[T-12691]]: the iOS half of [[T-5310]].** A focused task finished anywhere but Log Session
+/// (Today, a task sheet, a sync from the Mac) stayed the iOS session under a running clock; the
+/// Mac has banked it and moved on since T-5310. `CadenceFocusSupport.releaseIfSettled` is the
+/// rule, `iOSFocusView` the one caller.
+@MainActor
+@Suite
+struct CadenceFocusSettledSubjectReleaseTests {
+    private let epoch = Date(timeIntervalSince1970: 7_000_000)
+
+    private func makeTasks(_ titles: [String]) throws -> ([AppTask], Project, ModelContext) {
+        let context = ModelContext(try CadenceTestStore.container())
+        let project = Project(name: "Ledger")
+        context.insert(project)
+        let tasks = titles.map { title -> AppTask in
+            let task = AppTask(title: title)
+            task.project = project
+            context.insert(task)
+            return task
+        }
+        try context.save()
+        return (tasks, project, context)
+    }
+
+    private func running(for minutes: Int) -> CadenceFocusTimerState {
+        var state = CadenceFocusTimerState()
+        state.toggle(now: epoch.addingTimeInterval(TimeInterval(-minutes * 60)))
+        return state
+    }
+
+    @Test func aTaskFinishedElsewhereIsBankedAndTheSessionMovesToTheNextReadyTask() throws {
+        let (tasks, project, context) = try makeTasks(["Reconcile invoices", "File receipts"])
+        let (done, next) = (tasks[0], tasks[1])
+        done.status = .done
+
+        let release = try #require(CadenceFocusSupport.releaseIfSettled(
+            .task(done),
+            state: running(for: 30),
+            readyItems: [.task(done), .task(next)],
+            modelContext: context,
+            now: epoch
+        ))
+
+        #expect(release.next?.target == .task(next.id))
+        #expect(release.bankRefused == false)
+        #expect(release.state.isRunning == false)
+        #expect(release.state.elapsedSeconds(now: epoch) == 0)
+        #expect(done.actualMinutes == 30)
+        #expect(project.loggedMinutes == 30)
+    }
+
+    @Test func aCancelledTaskWithNothingElseReadyEndsTheSession() throws {
+        let (tasks, _, context) = try makeTasks(["Reconcile invoices"])
+        tasks[0].status = .cancelled
+
+        let release = try #require(CadenceFocusSupport.releaseIfSettled(
+            .task(tasks[0]),
+            state: running(for: 10),
+            readyItems: [],
+            modelContext: context,
+            now: epoch
+        ))
+
+        #expect(release.next == nil)
+        #expect(release.state.elapsedSeconds(now: epoch) == 0)
+    }
+
+    @Test func anOpenSubjectIsNotReleased() throws {
+        let (tasks, _, context) = try makeTasks(["Reconcile invoices", "File receipts"])
+
+        let release = CadenceFocusSupport.releaseIfSettled(
+            .task(tasks[0]),
+            state: running(for: 30),
+            readyItems: tasks.map(CadenceFocusPickItem.task),
+            modelContext: context,
+            now: epoch
+        )
+
+        #expect(release == nil)
+        #expect(tasks[0].actualMinutes == 0)
+    }
+
+    /// The Mac's rule (`aRefusedBankStillMovesTheSessionOnWithTheClockAtZero`): a refused bank is
+    /// reported, and the clock still does not keep running over a finished task.
+    @Test func aRefusedBankIsReportedAndTheSessionStillMovesOnAtZero() throws {
+        struct Refused: Error {}
+        let (tasks, _, context) = try makeTasks(["Reconcile invoices", "File receipts"])
+        tasks[0].status = .done
+
+        let release = try #require(CadenceFocusSupport.releaseIfSettled(
+            .task(tasks[0]),
+            state: running(for: 30),
+            readyItems: [.task(tasks[1])],
+            modelContext: context,
+            now: epoch,
+            commit: { _ in throw Refused() }
+        ))
+
+        #expect(release.bankRefused)
+        #expect(release.next?.target == .task(tasks[1].id))
+        #expect(release.state.isRunning == false)
+        #expect(release.state.elapsedSeconds(now: epoch) == 0)
+        #expect(tasks[0].actualMinutes == 0)
+    }
+
+    /// The screen calls the rule from a status watch and acts on all three of its answers.
+    @Test func theIOSFocusScreenReleasesASettledSubjectThroughTheSharedRule() throws {
+        let view = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFocusView.swift"))
+        #expect(view.contains(".onChange(of: selectedSubjectIsSettled)"))
+        #expect(view.contains("!CadenceFocusSupport.canFocus(task)"))
+        let body = try #require(CadenceSourceScan.declarationBody("private func releaseSettledSubject()", in: view))
+        #expect(body.contains("CadenceFocusSupport.releaseIfSettled("))
+        #expect(body.contains("CadenceTaskSettleFailureCenter.shared.record()"))
+        #expect(body.contains("timerState = release.state"))
+        #expect(body.contains("adopt(next)"))
+        #expect(body.contains("selectedTarget = nil"))
+    }
+}

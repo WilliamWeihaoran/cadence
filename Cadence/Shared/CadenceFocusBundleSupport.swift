@@ -265,6 +265,50 @@ extension CadenceFocusSupport {
         return reset
     }
 
+    /// What `releaseIfSettled` did to a session whose subject was finished somewhere else.
+    struct SettledSubjectRelease {
+        /// The stopwatch afterwards: always back at zero, whether or not the bank landed.
+        let state: CadenceFocusTimerState
+        /// The ready subject the session moves on to, or `nil` to end it.
+        let next: CadenceFocusPickItem?
+        /// Whether the store refused the bank. The caller names it; the session moves on anyway.
+        let bankRefused: Bool
+    }
+
+    /// **[[T-12691]]: the iOS half of [[T-5310]].** When the subject of a session is done or
+    /// cancelled -- ticked on Today, in a task sheet, or on the Mac and synced in -- bank its
+    /// elapsed seconds against it and move the session on to the next ready subject, else end it.
+    ///
+    /// macOS has done this since T-5310 (`FocusManager.releaseIfActiveTaskSettled`), and only a
+    /// finished task completed through Log Session moved on on iOS: a task ticked anywhere else
+    /// stayed under a running clock, which the next visit to Focus showed still timing it. Same
+    /// rule as the Mac's: the bank goes through `endSession`, and a refused bank still resets the
+    /// clock and moves on, because a finished task is not something to keep timing. Returns `nil`
+    /// -- nothing to do -- when there is no subject or it can still be focused.
+    static func releaseIfSettled(
+        _ subject: CadenceFocusSubject?,
+        state: CadenceFocusTimerState,
+        readyItems: [CadenceFocusPickItem],
+        modelContext: ModelContext,
+        now: Date = Date(),
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> SettledSubjectRelease? {
+        guard let subject else { return nil }
+        switch subject {
+        case .task(let task):
+            guard !canFocus(task) else { return nil }
+        }
+        let next = readyItems.first { $0.target != subject.target }
+        do {
+            let banked = try endSession(leaving: subject, state: state, modelContext: modelContext, now: now, commit: commit)
+            return SettledSubjectRelease(state: banked, next: next, bankRefused: false)
+        } catch {
+            var reset = state
+            reset.reset()
+            return SettledSubjectRelease(state: reset, next: next, bankRefused: true)
+        }
+    }
+
     /// The stopwatch state after the play/pause control on a pick row is tapped, stated against
     /// targets rather than ids.
     ///

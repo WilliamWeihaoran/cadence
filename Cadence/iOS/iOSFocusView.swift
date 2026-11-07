@@ -74,10 +74,19 @@ struct iOSFocusView: View {
 
     /// The row the session is running against. An explicitly chosen subject wins even after it
     /// leaves the ready list — completing the focused task must not silently re-point the clock at
-    /// something else mid-session — and with nothing chosen the head of the list is offered.
+    /// something else mid-session — and with nothing chosen the head of the list is offered. A
+    /// subject that is finished is moved on from explicitly, banked and at zero, by
+    /// `releaseSettledSubject()` ([[T-12691]]), never by this lookup.
     private var selectedItem: CadenceFocusPickItem? {
         guard let selectedTarget else { return pickItems.first }
         return pickItem(for: selectedTarget)
+    }
+
+    /// Whether the session's subject is done or cancelled ([[T-12691]]). Read in the body, so a
+    /// write to the task's status from any screen re-evaluates it.
+    private var selectedSubjectIsSettled: Bool {
+        guard case .task(let task)? = selectedItem else { return false }
+        return !CadenceFocusSupport.canFocus(task)
     }
 
     /// Resolve a target to a row, falling back to the whole store when the picker does not list it.
@@ -153,6 +162,12 @@ struct iOSFocusView: View {
         // which is the shape that acquires a branch that forgets.
         .onChange(of: sessionRecord) { _, record in
             CadenceFocusSessionPersistence.write(record)
+        }
+        // [[T-12691]]: the subject finished somewhere else -- Today, a task sheet, a sync from the
+        // Mac -- while this screen stood in the tab stack. Bank it and move on, as the Mac's
+        // `FocusManager` does ([[T-5310]]), rather than keep timing a finished task.
+        .onChange(of: selectedSubjectIsSettled) { _, settled in
+            if settled { releaseSettledSubject() }
         }
         // [[T-6223]]: leaving the foreground only *notes the instant*; it banks nothing, because
         // a glance at another app is not the end of a session ([[T-6001]] declined that). Coming
@@ -868,6 +883,29 @@ struct iOSFocusView: View {
     /// Point the session at `item`.
     private func adopt(_ item: CadenceFocusPickItem) {
         selectedTarget = item.target
+    }
+
+    /// **[[T-12691]]: the Mac's [[T-5310]] release, on this screen.** The subject was finished
+    /// elsewhere, so its seconds are banked against it and the session moves to the next ready
+    /// task, else ends -- what Log Session's "Mark task as complete" already does below. A refused
+    /// bank is named through the settle-failure notice and the session still moves on, as on the
+    /// Mac: the clock is not left running over a finished task.
+    private func releaseSettledSubject() {
+        guard let release = CadenceFocusSupport.releaseIfSettled(
+            selectedSubject,
+            state: timerState,
+            readyItems: pickItems,
+            modelContext: modelContext
+        ) else { return }
+        if release.bankRefused {
+            CadenceTaskSettleFailureCenter.shared.record()
+        }
+        timerState = release.state
+        if let next = release.next {
+            adopt(next)
+        } else {
+            selectedTarget = nil
+        }
     }
 
     /// **[[T-6001]].** Put back the session the process was carrying when it went away.
