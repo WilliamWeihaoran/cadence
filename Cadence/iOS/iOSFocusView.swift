@@ -933,8 +933,19 @@ struct iOSFocusView: View {
         timerState = resumed.state
     }
 
+    /// **[[T-12720]].** Starting the clock on the offered head of the list pins it, so the session
+    /// has a subject the way every running Mac session does: finished elsewhere, it is then banked
+    /// and moved on from by `releaseSettledSubject()`, rather than the clock sliding silently onto
+    /// the next head of the list.
     private func toggleTimer() {
         timerState.toggle()
+        if let pinned = CadenceFocusSupport.implicitTargetToPin(
+            selectedTarget: selectedTarget,
+            offered: selectedItem,
+            state: timerState
+        ) {
+            adopt(pinned)
+        }
     }
 
     private func resetTimer() {

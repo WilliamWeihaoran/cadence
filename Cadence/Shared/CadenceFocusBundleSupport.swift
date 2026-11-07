@@ -309,6 +309,28 @@ extension CadenceFocusSupport {
         }
     }
 
+    /// **[[T-12720]]: the implicit subject, pinned once the clock carries time.** With nothing
+    /// explicitly chosen, iOS's Focus screen offers the head of the ready list, and a clock started
+    /// there used to stay unpinned: when that task was finished elsewhere it left the ready list,
+    /// the screen's lookup quietly fell through to the next head, and the clock kept running --
+    /// its seconds now credited to a task that never earned them, and `releaseIfSettled` never
+    /// called, because the new head is open. The Mac has no such state: its clock runs only on a
+    /// `FocusManager.activeSession`, so every running session there has a subject (T-8201).
+    ///
+    /// Returns the offered target to adopt when nothing is chosen and the clock holds time
+    /// (running, or paused with seconds on it); `nil` when a subject is already chosen, nothing is
+    /// offered, or the clock is idle at zero -- an idle offer is free to follow the list.
+    static func implicitTargetToPin(
+        selectedTarget: CadenceFocusTarget?,
+        offered: CadenceFocusPickItem?,
+        state: CadenceFocusTimerState,
+        now: Date = Date()
+    ) -> CadenceFocusPickItem? {
+        guard selectedTarget == nil, let offered else { return nil }
+        guard state.isRunning || state.elapsedSeconds(now: now) > 0 else { return nil }
+        return offered
+    }
+
     /// The stopwatch state after the play/pause control on a pick row is tapped, stated against
     /// targets rather than ids.
     ///

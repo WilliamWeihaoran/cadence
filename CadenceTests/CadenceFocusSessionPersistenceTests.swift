@@ -474,4 +474,74 @@ struct CadenceFocusSettledSubjectReleaseTests {
         #expect(body.contains("adopt(next)"))
         #expect(body.contains("selectedTarget = nil"))
     }
+
+    // MARK: - [[T-12720]]: the implicit subject is pinned once the clock carries time
+
+    /// The defect end to end: a clock started on the offered head is pinned to it, so finishing
+    /// that task elsewhere banks its minutes against it instead of handing them to the next head.
+    @Test func aClockStartedOnTheOfferedHeadIsPinnedSoFinishingItBanksAgainstIt() throws {
+        let (tasks, project, context) = try makeTasks(["Reconcile invoices", "File receipts"])
+        let (head, next) = (tasks[0], tasks[1])
+
+        let pinned = try #require(CadenceFocusSupport.implicitTargetToPin(
+            selectedTarget: nil,
+            offered: .task(head),
+            state: running(for: 0),
+            now: epoch
+        ))
+        #expect(pinned.target == .task(head.id))
+
+        head.status = .done
+        let release = try #require(CadenceFocusSupport.releaseIfSettled(
+            .task(head),
+            state: running(for: 25),
+            readyItems: [.task(next)],
+            modelContext: context,
+            now: epoch
+        ))
+        #expect(release.next?.target == .task(next.id))
+        #expect(release.state.elapsedSeconds(now: epoch) == 0)
+        #expect(head.actualMinutes == 25)
+        #expect(next.actualMinutes == 0)
+        #expect(project.loggedMinutes == 25)
+    }
+
+    @Test func aPausedClockWithSecondsOnItAlsoPinsTheOfferedHead() throws {
+        let (tasks, _, _) = try makeTasks(["Reconcile invoices"])
+        var paused = running(for: 3)
+        paused.toggle(now: epoch)
+        #expect(paused.isRunning == false)
+
+        let pinned = CadenceFocusSupport.implicitTargetToPin(
+            selectedTarget: nil, offered: .task(tasks[0]), state: paused, now: epoch
+        )
+        #expect(pinned?.target == .task(tasks[0].id))
+    }
+
+    /// An idle offer follows the list; a chosen subject is never replaced; nothing offered pins nothing.
+    @Test func anIdleClockAChosenSubjectOrNoOfferPinsNothing() throws {
+        let (tasks, _, _) = try makeTasks(["Reconcile invoices", "File receipts"])
+
+        #expect(CadenceFocusSupport.implicitTargetToPin(
+            selectedTarget: nil, offered: .task(tasks[0]), state: CadenceFocusTimerState(), now: epoch
+        )?.target == nil)
+        #expect(CadenceFocusSupport.implicitTargetToPin(
+            selectedTarget: .task(tasks[1].id), offered: .task(tasks[0]), state: running(for: 5), now: epoch
+        )?.target == nil)
+        #expect(CadenceFocusSupport.implicitTargetToPin(
+            selectedTarget: nil, offered: nil, state: running(for: 5), now: epoch
+        )?.target == nil)
+    }
+
+    /// The screen's play control asks the rule after toggling and adopts what it answers.
+    @Test func theIOSPlayControlPinsTheOfferedHeadThroughTheSharedRule() throws {
+        let view = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFocusView.swift"))
+        #expect(view.contains("action: toggleTimer"))
+        let body = try #require(CadenceSourceScan.declarationBody("private func toggleTimer()", in: view))
+        let toggle = try #require(body.range(of: "timerState.toggle()"))
+        let rule = try #require(body.range(of: "CadenceFocusSupport.implicitTargetToPin("))
+        #expect(toggle.lowerBound < rule.lowerBound)
+        #expect(body.contains("offered: selectedItem"))
+        #expect(body.contains("adopt(pinned)"))
+    }
 }
