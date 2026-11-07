@@ -85,7 +85,7 @@ struct TaskDetailPopover: View {
             TaskInspectorSectionGroup(title: "Notes") {
                 TaskDetailNotesSection(task: task, flush: notesFlush)
             }
-            TaskDetailActionsSection(task: task, offersUnschedule: false, offersDelete: false, offersStatusActions: true)
+            TaskDetailActionsSection(task: task, offersStatusActions: true)
         }
     }
 

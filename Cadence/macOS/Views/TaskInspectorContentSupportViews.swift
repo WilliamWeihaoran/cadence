@@ -462,17 +462,15 @@ struct TaskDetailSubtasksSection: View {
 /// Unschedule and Delete: a 32pt square with its glyph, its name as the label and tooltip, and the
 /// shared `StatusAction` copy and glyphs so it still cannot drift from iOS. The row's rule is that
 /// the primary is the only control here that takes the width, and
-/// `CadenceMacTaskInspectorStatusActionsTests` pins it.
+/// `CadenceMacTaskInspectorStatusActionsTests` pins it. [[T-12644]]: the Unschedule and Delete
+/// buttons themselves are gone — the one host had switched both off, so they were unreachable.
 struct TaskDetailActionsSection: View {
     @Bindable var task: AppTask
-    var offersUnschedule = true
-    var offersDelete = true
     /// The shared `CadenceTaskInspectorSupport.StatusAction` set (Cancel/Restore since [[T-5015]]
     /// (b)), as icon buttons after the primary. Off by default: the full inspector is the one host
     /// that offers it.
     var offersStatusActions = false
     @Environment(\.modelContext) private var modelContext
-    @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
 
     private static let controlHeight: CGFloat = 32
     private static let cornerRadius: CGFloat = Theme.radiusControlCompact
@@ -493,8 +491,7 @@ struct TaskDetailActionsSection: View {
     }
 
     private var controlRow: some View {
-        // One row: a flexible primary action plus two square icon buttons. The old layout used
-        // three equal-width text buttons, which forced "Unschedule" to wrap mid-word.
+        // One row: a flexible primary action plus the square status icon buttons.
         HStack(spacing: 8) {
             // [[T-7447]]: not on a cancelled task, where it said "Mark done" beside "Restore task"
             // and completed it — abandoned work turned into accomplished work (T-344). iOS hides
@@ -526,26 +523,9 @@ struct TaskDetailActionsSection: View {
                 Spacer(minLength: 0)
             }
 
-            if offersUnschedule && task.scheduledStartMin >= 0 {
-                iconButton(
-                    systemImage: "calendar.badge.minus",
-                    tint: Theme.dim,
-                    accessibilityLabel: "Unschedule"
-                ) {
-                    SchedulingActions.removeFromCalendar(task)
-                    CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext)
-                }
-            }
-
             if offersStatusActions {
                 ForEach(CadenceTaskInspectorSupport.StatusAction.allCases, id: \.self) { action in
                     statusActionButton(action)
-                }
-            }
-
-            if offersDelete {
-                iconButton(systemImage: "trash", tint: Theme.red, accessibilityLabel: "Delete task") {
-                    deleteConfirmationManager.presentTaskDelete(task, in: modelContext)
                 }
             }
         }
@@ -571,7 +551,7 @@ struct TaskDetailActionsSection: View {
     }
 
     /// [[T-7201]]: the icon button's name and tooltip — "Cancel task" / "Restore task", the shape
-    /// the Delete sibling in this row already reads ("Delete task"). The bare shared title said
+    /// the task's Delete control reads ("Delete task"). The bare shared title said
     /// "Cancel", and the schedule panel's footer button directly below is also "Cancel" (discard
     /// edits), so VoiceOver and the tooltip offered two "Cancel" controls that do opposite things.
     static func statusActionLabel(

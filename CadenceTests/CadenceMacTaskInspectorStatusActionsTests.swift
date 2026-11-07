@@ -64,7 +64,11 @@ struct CadenceMacTaskInspectorStatusActionsTests {
         let host = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SchedulePanelComponents.swift")
         )
-        #expect(host.contains("TaskDetailActionsSection(task: task, offersUnschedule: false, offersDelete: false, offersStatusActions: true)"))
+        #expect(host.contains("TaskDetailActionsSection(task: task, offersStatusActions: true)"))
+        // [[T-12644]]: the Unschedule and Delete icon buttons the host switched off are deleted,
+        // not left behind as flags nothing turns on.
+        #expect(!section.contains("offersUnschedule"))
+        #expect(!section.contains("offersDelete"))
     }
 
     /// **[[T-6231]]: Cancel/Restore is an icon button in the actions row, not a full-width row of
@@ -96,8 +100,7 @@ struct CadenceMacTaskInspectorStatusActionsTests {
     /// **[[T-7201]]: the status icon button is named "Cancel task" / "Restore task".** The bare
     /// shared title made it a second "Cancel" a few points above the schedule panel's footer
     /// "Cancel", which discards the form's edits instead — to VoiceOver and in the tooltip, two
-    /// controls with one name and opposite effects. The sibling icon button already reads
-    /// "Delete task".
+    /// controls with one name and opposite effects. It takes the "Delete task" shape.
     @Test func theStatusIconButtonNamesTheTaskSoItIsNotASecondCancel() throws {
         #expect(TaskDetailActionsSection.statusActionLabel(.cancelled, for: .todo) == "Cancel task")
         #expect(TaskDetailActionsSection.statusActionLabel(.cancelled, for: .cancelled) == "Restore task")
@@ -107,7 +110,6 @@ struct CadenceMacTaskInspectorStatusActionsTests {
         let status = try #require(CadenceSourceScan.functionBody(named: "statusActionButton", in: section))
         #expect(status.contains("accessibilityLabel: Self.statusActionLabel(action, for: task.status)"),
                 "the status icon button no longer takes its name from statusActionLabel (T-7201)")
-        #expect(section.contains(#"accessibilityLabel: "Delete task""#), "the sibling this copies is gone")
     }
 
     /// **[[T-7204]]: the iOS sheet's visible status word is the Mac's icon-button name**, in each
