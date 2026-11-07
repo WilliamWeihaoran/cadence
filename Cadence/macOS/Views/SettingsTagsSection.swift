@@ -292,11 +292,7 @@ private struct SettingsTagRow: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 7) {
-                        Text(tag.name)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Theme.text)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
+                        tagTitle
 
                         if tag.isArchived {
                             Text("Archived")
@@ -341,15 +337,31 @@ private struct SettingsTagRow: View {
         }
     }
 
+    /// The tag's CURRENT title, never the draft: while editing it names the tag the form changes.
+    private var tagTitle: some View {
+        Text(tag.name)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Theme.text)
+            .lineLimit(1)
+            .truncationMode(.tail)
+    }
+
     private var editContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 Circle()
                     .fill(Color(hex: TagSupport.normalizedColorHex(draftColorHex, fallback: tag.colorHex)))
                     .frame(width: 12, height: 12)
-                    .padding(.top, 12)
+                    .padding(.top, 3)
 
                 VStack(alignment: .leading, spacing: 10) {
+                    // [[T-12284]]: the edited tag's own title stays above its form, as on the
+                    // phone. The card border already keeps the form off the previous tag's row
+                    // here, but nothing on the card named the tag being edited except the
+                    // current value in the Name field.
+                    tagTitle
+                        .accessibilityAddTraits(.isHeader)
+
                     HStack(spacing: 10) {
                         editField(CadenceTagSettingsCopy.nameFieldPlaceholder, text: $draftName)
                             .frame(minWidth: 180)

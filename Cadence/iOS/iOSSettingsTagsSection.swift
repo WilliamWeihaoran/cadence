@@ -326,18 +326,40 @@ private struct iOSTagSettingsRow: View {
         }
     }
 
+    private var tagDot: some View {
+        Circle()
+            .fill(Color(hex: tag.colorHex))
+            .frame(width: 11, height: 11)
+            .padding(.top, 5)
+    }
+
+    /// The tag's CURRENT title, never the draft: while editing it names the tag the form changes.
+    private var tagTitle: some View {
+        Text("#\(tag.name)")
+            .cadenceFont(.rowTitle, base: 15, weight: .semibold)
+            .foregroundStyle(tag.isArchived ? Theme.muted : Theme.text)
+            .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
+    }
+
+    /// **[[T-12284]]: the edited tag's own title row, kept above its form.** The row used to swap
+    /// its whole display content for the editor, so the form hung under the PREVIOUS tag's title,
+    /// counts, pencil and archive button with nothing naming the tag being edited. The same dot and
+    /// title the display row draws, so the form is visibly owned by its tag.
+    private var editingHeader: some View {
+        HStack(alignment: .top, spacing: 11) {
+            tagDot
+            tagTitle
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+
     private var displayContent: some View {
         HStack(alignment: .top, spacing: 11) {
-            Circle()
-                .fill(Color(hex: tag.colorHex))
-                .frame(width: 11, height: 11)
-                .padding(.top, 5)
+            tagDot
 
             VStack(alignment: .leading, spacing: 5) {
-                Text("#\(tag.name)")
-                    .cadenceFont(.rowTitle, base: 15, weight: .semibold)
-                    .foregroundStyle(tag.isArchived ? Theme.muted : Theme.text)
-                    .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
+                tagTitle
 
                 if !tag.desc.isEmpty {
                     Text(tag.desc)
@@ -386,6 +408,7 @@ private struct iOSTagSettingsRow: View {
 
     private var editContent: some View {
         VStack(alignment: .leading, spacing: 12) {
+            editingHeader
             iOSSettingsField(title: "Name") {
                 // [[T-10044]]: Return saves through the Save button's own `requestSave` (gated
                 // by `canSave`, still asking about inline mentions first), as on the Mac.
