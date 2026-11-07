@@ -187,6 +187,25 @@ struct CadenceTaskSortGroupParityTests {
         #expect(!byPriority.isEmpty)
     }
 
+    /// **[[T-12323]], on the path the iPhone and iPad draw.** By Date through `displayGroups` (the
+    /// call `iOSTaskCollectionPage` makes) files a do date already gone by under "Leftover", never
+    /// under "Scheduled" beside work planned weeks ahead. `TaskSortHelperTests` pins the same rule
+    /// but is macOS-only; this suite runs on both legs.
+    @Test func byDateFilesAPastDoDateUnderLeftoverNotScheduled() throws {
+        let todayKey = "2026-11-01"
+        let plannedYesterday = AppTask(title: "Planned yesterday")
+        plannedYesterday.scheduledDate = "2026-10-31"
+        let plannedAhead = AppTask(title: "Planned ahead")
+        plannedAhead.scheduledDate = "2026-11-15"
+        let tasks = [plannedAhead, plannedYesterday]
+
+        let byDate = CadenceTaskQuerySupport.displayGroups(from: tasks, mode: .byDate, todayKey: todayKey, contexts: [])
+        #expect(byDate.map(\.id) == ["past-do", "scheduled"])
+        #expect(byDate.first { $0.id == "past-do" }?.title == "Leftover")
+        #expect(byDate.first { $0.id == "past-do" }?.tasks.map(\.id) == [plannedYesterday.id])
+        #expect(byDate.first { $0.id == "scheduled" }?.tasks.map(\.id) == [plannedAhead.id])
+    }
+
     /// By List buckets and orders through the one list-grouping rule, and its headers carry the
     /// `list:` drop key the Mac's By List headers accept.
     @Test func theByListGroupsAreTheSharedListGroupsWithListDropKeys() throws {

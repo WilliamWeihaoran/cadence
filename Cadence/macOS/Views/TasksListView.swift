@@ -36,7 +36,7 @@ private struct TasksListSection: Identifiable {
 /// - **Group headers.** All Tasks' collapsed; Inbox's were pinned open (`isToggleEnabled: false`)
 ///   for no stated reason. Collapsible everywhere.
 /// - **Date buckets.** Inbox used the shared `CadenceTaskQuerySupport.dateDisplayGroups` — Overdue,
-///   Due Today, Do Today, Scheduled, Unscheduled — and so does the area/project Tasks tab. All
+///   Leftover, Due Today, Do Today, Scheduled, Unscheduled — and so does the area/project Tasks tab. All
 ///   Tasks hand-rolled three of its own. Two of the three surfaces already agreed; All Tasks was
 ///   the odd one out, so it moves.
 /// - **Drag decode.** Inbox took the strict `listTask:` decode, All Tasks the lenient one that also
@@ -258,10 +258,10 @@ struct TasksListView: View {
 
     /// The three date buckets a task can be *moved into*.
     ///
-    /// `CadenceTaskQuerySupport.dateDisplayGroups` leaves `dropKey` nil for all five — deliberately,
+    /// `CadenceTaskQuerySupport.dateDisplayGroups` leaves `dropKey` nil for all six — deliberately,
     /// per `CadenceTaskDropSupport`, which says a group header that lights up and then applies
-    /// nothing is noise. Overdue and Due Today are exactly that: both are defined by a day that has
-    /// already gone by, and there is no "make this late" assignment. The other three map onto the
+    /// nothing is noise. Overdue, Leftover and Due Today are exactly that: Overdue and Leftover are
+    /// defined by a day that has already gone by, and there is no "make this late" assignment. The other three map onto the
     /// keys `TasksPanelSupport.assignTask` has always read, so All Tasks' droppable date sections
     /// survive the move to the shared buckets unchanged.
     ///

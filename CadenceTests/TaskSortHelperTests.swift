@@ -104,6 +104,31 @@ struct TaskSortHelperTests {
         #expect(groups.first { $0.id == "unscheduled" }?.tasks.map(\.id) == [future.id])
     }
 
+    /// [[T-12323]]: a do date that has already gone by is "Leftover", never "Scheduled" — the
+    /// heading that also holds work planned for weeks ahead. Seen on screen as three rows planned
+    /// for yesterday under one SCHEDULED heading with a row planned two weeks out.
+    @Test func aDoDateAlreadyGoneByIsLeftoverNotScheduled() {
+        let todayKey = "2026-05-11"
+        let plannedYesterday = task(title: "planned-yesterday", scheduledDate: "2026-05-10", order: 0)
+        let plannedAhead = task(title: "planned-ahead", scheduledDate: "2026-05-25", order: 1)
+        // A due date outranks a do date (`AppTask.todayStanding`), so this one is due-today.
+        let dueTodayPlannedYesterday = task(
+            title: "due-today-planned-yesterday", dueDate: todayKey, scheduledDate: "2026-05-10", order: 2
+        )
+        let tasks = [plannedAhead, plannedYesterday, dueTodayPlannedYesterday]
+
+        let groups = CadenceTaskQuerySupport.dateDisplayGroups(from: tasks, todayKey: todayKey)
+        #expect(groups.map(\.id) == ["past-do", "due-today", "scheduled"],
+                "Leftover ranks where the past-do standing sorts: after Overdue, before Due Today")
+        #expect(groups.first { $0.id == "past-do" }?.tasks.map(\.id) == [plannedYesterday.id])
+        #expect(groups.first { $0.id == "past-do" }?.title == "Leftover")
+        #expect(groups.first { $0.id == "scheduled" }?.tasks.map(\.id) == [plannedAhead.id],
+                "Scheduled holds only a do date still to come")
+        #expect(groups.first { $0.id == "due-today" }?.tasks.map(\.id) == [dueTodayPlannedYesterday.id])
+        #expect(TasksListView.dateDropKey(forGroupID: "past-do") == nil,
+                "a header defined by a day gone by takes no drop")
+    }
+
     private func task(
         title: String,
         dueDate: String = "",

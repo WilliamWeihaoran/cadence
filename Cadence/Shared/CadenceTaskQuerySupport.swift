@@ -431,6 +431,7 @@ enum CadenceTaskQuerySupport {
     ) -> [CadenceTaskDisplayGroup] {
         let buckets = dateBuckets(for: tasks, todayKey: todayKey)
         let overdue = tasks.filter { buckets.overdueIDs.contains($0.id) }
+        let pastDo = tasks.filter { buckets.pastDoIDs.contains($0.id) }
         let dueToday = tasks.filter { buckets.dueTodayIDs.contains($0.id) }
         let doToday = tasks.filter { buckets.doTodayIDs.contains($0.id) }
         let scheduled = tasks.filter {
@@ -444,7 +445,19 @@ enum CadenceTaskQuerySupport {
         }
 
         var groups = [
-            CadenceTaskDisplayGroup(id: "overdue", title: "Overdue", accent: Theme.red, tasks: overdue)
+            CadenceTaskDisplayGroup(id: "overdue", title: "Overdue", accent: Theme.red, tasks: overdue),
+            // **A do date already gone by is not "Scheduled" ([[T-12323]]).** "Scheduled" used to
+            // be "has a do date that is not today", so a task planned for yesterday and never done
+            // sat under one heading with work planned two weeks out, told apart only by a chip
+            // tint. The bucket is the past-do standing (`CadenceTodayStanding.pastDo`) and ranks
+            // where that standing sorts: after Overdue, before Due Today. Its heading is the word
+            // the Today rollover banner already uses for exactly these rows ("Roll leftover tasks
+            // over to today?"), NOT the old macOS Today heading for them: the owner removed that
+            // heading and `CadenceTodayUnificationTests` holds it out of the product. The amber
+            // accent is that old heading's. The header refuses drops (`TasksListView.dateDropKey`
+            // has no arm for it) for the reason Overdue's does: there is no "make this late"
+            // assignment.
+            CadenceTaskDisplayGroup(id: "past-do", title: "Leftover", accent: Theme.amber, tasks: pastDo)
         ]
         if includeDueToday {
             groups.append(CadenceTaskDisplayGroup(id: "due-today", title: "Due Today", accent: Theme.red.opacity(0.8), tasks: dueToday))
@@ -653,27 +666,30 @@ enum CadenceTaskQuerySupport {
     /// `TaskSortHelpers`, and what kept this type's own `sortDateKey` twin of
     /// `TaskOrdering.dateSortKey` out of the five-file sweep that consolidated the rest (T-640).
     /// That file is gone (T-639) and so is the twin.
+    ///
+    /// **It asks `AppTask.todayStanding(todayKey:)` rather than restating it ([[T-12323]]).** The
+    /// local spelling here had three of that rule's four branches — no past-do one — which is the
+    /// shape T-353 found in the widget, and the missing branch is what filed a task planned for
+    /// yesterday under "Scheduled".
     static func dateBuckets(for tasks: [AppTask], todayKey: String) -> CadenceTaskDateBuckets {
         var overdueIDs = Set<UUID>()
+        var pastDoIDs = Set<UUID>()
         var dueTodayIDs = Set<UUID>()
         var doTodayIDs = Set<UUID>()
 
         for task in tasks {
-            if !task.dueDate.isEmpty && task.dueDate < todayKey {
-                overdueIDs.insert(task.id)
-            } else if task.dueDate == todayKey {
-                dueTodayIDs.insert(task.id)
-            }
-        }
-
-        for task in tasks where !overdueIDs.contains(task.id) && !dueTodayIDs.contains(task.id) {
-            if task.scheduledDate == todayKey {
-                doTodayIDs.insert(task.id)
+            switch task.todayStanding(todayKey: todayKey) {
+            case .pastDue: overdueIDs.insert(task.id)
+            case .pastDo: pastDoIDs.insert(task.id)
+            case .dueToday: dueTodayIDs.insert(task.id)
+            case .doToday: doTodayIDs.insert(task.id)
+            case nil: break
             }
         }
 
         return CadenceTaskDateBuckets(
             overdueIDs: overdueIDs,
+            pastDoIDs: pastDoIDs,
             dueTodayIDs: dueTodayIDs,
             doTodayIDs: doTodayIDs
         )

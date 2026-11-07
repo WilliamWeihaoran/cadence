@@ -351,11 +351,16 @@ struct CadenceTaskDisplayGroup: Identifiable {
 
 struct CadenceTaskDateBuckets {
     let overdueIDs: Set<UUID>
+    /// Planned for an earlier day, not done, and with no deadline today or before. Without this
+    /// bucket such a task matched none of the other three and fell through to "Scheduled", beside
+    /// work planned for next month ([[T-12323]]).
+    let pastDoIDs: Set<UUID>
     let dueTodayIDs: Set<UUID>
     let doTodayIDs: Set<UUID>
 
     func contains(_ task: AppTask) -> Bool {
-        overdueIDs.contains(task.id) || dueTodayIDs.contains(task.id) || doTodayIDs.contains(task.id)
+        overdueIDs.contains(task.id) || pastDoIDs.contains(task.id)
+            || dueTodayIDs.contains(task.id) || doTodayIDs.contains(task.id)
     }
 }
 
