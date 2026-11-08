@@ -6,6 +6,8 @@ struct TaskListsKanbanView: View {
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
+    /// The sidebar's context order, which the list columns follow ([[T-13851]]).
+    @Query(sort: \Context.order) private var contexts: [Context]
     /// The Tasks page's All / Inbox switch. `.inbox` leaves the board's Inbox column and drops the
     /// rest — see `KanbanBoardSupport.listColumns`.
     var scope: CadenceTasksPageScope = .all
@@ -56,6 +58,7 @@ struct TaskListsKanbanView: View {
 
     private func listColumns(activeTasks: [AppTask]) -> [KanbanListColumnModel] {
         KanbanBoardSupport.listColumns(
+            contexts: contexts,
             areas: areas,
             projects: projects,
             activeTasks: activeTasks,

@@ -1410,12 +1410,16 @@ struct CadenceTodayListGroupingTests {
         modelContext.insert(work)
         modelContext.insert(home)
 
+        // Work's two lists hold distinct `order`s, the state a sidebar drag leaves, so they read
+        // as one sequence — Admin, then Launch — exactly as `CadenceSidebarLists.sorted` draws them.
+        // Launch held 0 beside Admin's 1 until [[T-13851]], and every by-list test below pinned
+        // Admin first anyway: an order neither sidebar draws for those numbers.
         let admin = Area(name: "Admin", context: work)
-        admin.order = 1
+        admin.order = 0
         let errands = Area(name: "Errands", context: home)
         errands.order = 0
         let launch = Project(name: "Launch", context: work)
-        launch.order = 0
+        launch.order = 1
         modelContext.insert(admin)
         modelContext.insert(errands)
         modelContext.insert(launch)

@@ -146,7 +146,17 @@ enum KanbanBoardSupport {
     /// All Tasks and Inbox were one surface all along — so the Inbox scope is this same board with
     /// the other columns dropped rather than a second board. A one-column board is the honest
     /// rendering of "the Inbox, as a board"; it is not a degenerate case to be special-cased away.
+    ///
+    /// **The list columns come out in the sidebar's order ([[T-13851]]).** They were every active
+    /// area in `Area.order`, then every active project in `Project.order` — across all contexts,
+    /// so a Home area numbered 0 sat in front of a Work area numbered 1 regardless of which context
+    /// the sidebar draws first, and a project the user dragged above an area in the sidebar still
+    /// came after every area here. The same page in List mode, grouped by list, follows contexts.
+    /// It is `CadenceSidebarLists.sections` now — the call both sidebars make, with the same
+    /// archived-context and active-list filters — flattened, so the board reads left to right as
+    /// the sidebar reads top to bottom, lists with no live context last.
     static func listColumns(
+        contexts: [Context],
         areas: [Area],
         projects: [Project],
         activeTasks: [AppTask],
@@ -169,30 +179,46 @@ enum KanbanBoardSupport {
             )
         ]
 
-        columns += areas.filter(\.isActive).map { area in
-            KanbanListColumnModel(
-                id: "area-\(area.id.uuidString)",
-                title: CadenceTitleNormalization.display(area.name, fallback: CadenceTitleNormalization.defaultAreaName),
-                color: Color(hex: area.colorHex),
-                tasks: groupedAreas[area.id] ?? [],
-                container: .area(area.id),
-                onAssignTask: { task in
-                    assignContainer(task, area: area, project: nil)
+        let sidebarOrdered = CadenceSidebarLists.sections(
+            contexts: contexts.filter { !$0.isArchived }.map {
+                CadenceSidebarLists.ContextRef(id: $0.id, name: $0.name)
+            },
+            elements: areas.filter(\.isActive).map(SidebarListEntry.area)
+                + projects.filter(\.isActive).map(SidebarListEntry.project),
+            keepingEmptyContexts: false,
+            item: { entry in
+                switch entry {
+                case .area(let area): return CadenceSidebarLists.Item.orderingOnly(area)
+                case .project(let project): return CadenceSidebarLists.Item.orderingOnly(project)
                 }
-            )
-        }
+            }
+        ).flatMap(\.elements)
 
-        columns += projects.filter(\.isActive).map { project in
-            KanbanListColumnModel(
-                id: "project-\(project.id.uuidString)",
-                title: CadenceTitleNormalization.display(project.name, fallback: CadenceTitleNormalization.defaultProjectName),
-                color: Color(hex: project.colorHex),
-                tasks: groupedProjects[project.id] ?? [],
-                container: .project(project.id),
-                onAssignTask: { task in
-                    assignContainer(task, area: nil, project: project)
-                }
-            )
+        columns += sidebarOrdered.map { entry in
+            switch entry {
+            case .area(let area):
+                return KanbanListColumnModel(
+                    id: "area-\(area.id.uuidString)",
+                    title: CadenceTitleNormalization.display(area.name, fallback: CadenceTitleNormalization.defaultAreaName),
+                    color: Color(hex: area.colorHex),
+                    tasks: groupedAreas[area.id] ?? [],
+                    container: .area(area.id),
+                    onAssignTask: { task in
+                        assignContainer(task, area: area, project: nil)
+                    }
+                )
+            case .project(let project):
+                return KanbanListColumnModel(
+                    id: "project-\(project.id.uuidString)",
+                    title: CadenceTitleNormalization.display(project.name, fallback: CadenceTitleNormalization.defaultProjectName),
+                    color: Color(hex: project.colorHex),
+                    tasks: groupedProjects[project.id] ?? [],
+                    container: .project(project.id),
+                    onAssignTask: { task in
+                        assignContainer(task, area: nil, project: project)
+                    }
+                )
+            }
         }
 
         return scope == .inbox ? Array(columns.prefix(1)) : columns

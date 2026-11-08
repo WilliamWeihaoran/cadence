@@ -166,13 +166,27 @@ enum CadenceTaskQuerySupport {
     /// Every list key in sidebar order, Inbox first — the order any by-list grouping presents its
     /// groups in. All Tasks' by-list mode and Today's groups both reach it through `todayListGroups`
     /// (the Mac's via `displayGroups` since [[T-12212]]), so they cannot come out in different orders.
+    ///
+    /// **Within a context the order is `CadenceSidebarLists.sorted`'s, the rule both sidebars draw
+    /// ([[T-13851]]).** This used to put every area ahead of every project, each kind sorted by a
+    /// bare `order`. The sidebar does that only while the two kinds' numbers collide; once the
+    /// user drags a row there, the drop renumbers the whole context as one sequence and areas and
+    /// projects interleave. So a reorder made in the sidebar never reached Today's groups or All
+    /// Tasks' by-list groups — a project dragged above an area stayed below it on both pages.
+    ///
+    /// An archived context is skipped, as both sidebars skip it: its lists move to the sidebar's
+    /// trailing "Other" section, and here they fall through to `todayListGroups`' leftovers tail.
     static func listGroupOrder(contexts: [Context]) -> [String] {
         var order: [String] = [CadenceTaskDropSupport.containerKey(for: .inbox)]
-        for context in contexts.sorted(by: { $0.order < $1.order }) {
-            let sortedAreas = (context.areas ?? []).sorted { $0.order < $1.order }
-            let sortedProjects = (context.projects ?? []).sorted { $0.order < $1.order }
-            order.append(contentsOf: sortedAreas.map { CadenceTaskDropSupport.containerKey(for: .area($0.id)) })
-            order.append(contentsOf: sortedProjects.map { CadenceTaskDropSupport.containerKey(for: .project($0.id)) })
+        for context in contexts.sorted(by: { $0.order < $1.order }) where !context.isArchived {
+            let items = (context.areas ?? []).map { CadenceSidebarLists.Item.orderingOnly($0) }
+                + (context.projects ?? []).map { CadenceSidebarLists.Item.orderingOnly($0) }
+            order.append(contentsOf: CadenceSidebarLists.sorted(items).map { item in
+                switch item.kind {
+                case .area: return CadenceTaskDropSupport.containerKey(for: .area(item.id))
+                case .project: return CadenceTaskDropSupport.containerKey(for: .project(item.id))
+                }
+            })
         }
         return order
     }

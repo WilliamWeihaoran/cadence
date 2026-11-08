@@ -18,6 +18,7 @@ import Testing
 struct CadenceKanbanListColumnRefileTests {
     private func columns(areas: [Area], projects: [Project], tasks: [AppTask]) -> [KanbanListColumnModel] {
         KanbanBoardSupport.listColumns(
+            contexts: [],
             areas: areas,
             projects: projects,
             activeTasks: tasks,

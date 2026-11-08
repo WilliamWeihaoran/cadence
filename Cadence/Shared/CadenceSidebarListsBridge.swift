@@ -40,4 +40,31 @@ extension CadenceSidebarLists.Item {
             openTaskCount: CadenceTaskQuerySupport.openTaskCount(for: project)
         )
     }
+
+    /// The same row **without the open-task tally**, for a surface that only wants the sidebar's
+    /// *order* ([[T-13851]]): the Tasks page's Kanban board and every by-list grouping place their
+    /// columns and groups through `CadenceSidebarLists`, and the tally is a relationship walk per
+    /// list they would compute and throw away. Everything the ordering reads — `order`, kind,
+    /// name, id, context — is the same as `init(_:)`'s.
+    static func orderingOnly(_ area: Area) -> Self {
+        Self(
+            id: area.id,
+            kind: .area,
+            name: area.name,
+            colorHex: area.colorHex,
+            order: area.order,
+            contextID: area.context?.id
+        )
+    }
+
+    static func orderingOnly(_ project: Project) -> Self {
+        Self(
+            id: project.id,
+            kind: .project,
+            name: project.name,
+            colorHex: project.colorHex,
+            order: project.order,
+            contextID: project.context?.id
+        )
+    }
 }
