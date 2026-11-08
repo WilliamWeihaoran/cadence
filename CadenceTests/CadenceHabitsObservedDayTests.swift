@@ -15,8 +15,9 @@ import Testing
 /// `CadenceCodexTrackingUIRetirementTests.codexRetiredTrackingViewsAreGoneFromTheTree`.
 ///
 /// What survives is the half the pages were only ever a caller of, and it still has live readers:
-/// `CadenceHabitWidgetSupport`, `CadenceFocusPlanningSupport` and `CadenceCompactShellSupport` all
-/// ask `Habit.isDone(on:)` / `Habit.isDue(onDayKey:)` with a key someone handed them. So these two
+/// `CadenceHabitWidgetSupport` and `CadenceCompactShellSupport` both ask `Habit.isDone(on:)` /
+/// `Habit.isDue(onDayKey:)` with a key someone handed them (`CadenceFocusPlanningSupport` was a
+/// third until [[T-13874]] deleted its unread habit counts). So these two
 /// tests are re-pointed at the model methods the deleted filter was a wrapper over, rather than
 /// deleted with it: the rollover claim is the claim, and it was never the view's.
 @MainActor

@@ -683,15 +683,6 @@ struct CadenceGoalGroupSummary {
     var nextActionTitle: String? {
         goals.compactMap { GoalContributionResolver.summary(for: $0).nextActionTitle }.first
     }
-
-    var dueHabitCount: Int {
-        habits.filter(\.isDueToday).count
-    }
-
-    var doneHabitCount: Int {
-        let todayKey = DateFormatters.todayKey()
-        return habits.filter { $0.isDone(on: todayKey) }.count
-    }
 }
 
 enum CadenceGoalGroupSupport {

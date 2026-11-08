@@ -253,6 +253,32 @@ struct GlobalSearchEventResultsTests {
         #expect(subtitles["Retro next"]?.hasPrefix("Jan 5, 2028 • ") == true)
         #expect(subtitles["Retro last"] == "Dec 1, 2026")
     }
+
+    /// **T-13873: an EventKit change while the palette is open re-runs the Events fetch.**
+    ///
+    /// The Mac palette fetched events on appear and on a committed query change only, so a synced
+    /// deletion left the event listed and pickable until the query changed. iOS keys the same fetch
+    /// on `storeVersion` and `isAuthorized` (`calendarSearchRequestID`); the Mac now watches the
+    /// same two signals. A source scan because the fetch is a `DispatchWorkItem` against a live
+    /// `CalendarManager`, which this target never opens. Each assertion is one of the three ways
+    /// to lose the refetch: drop the hook, or drop either signal from what it watches.
+    @Test func aCalendarStoreChangeWhileThePaletteIsOpenRerunsTheEventsFetch() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GlobalSearchView.swift")
+        )
+        let identity = try #require(
+            CadenceSourceScan.declarationBody("private var eventStoreIdentity: String", in: source),
+            "the palette no longer names the EventKit state its Events section was fetched against"
+        )
+        #expect(identity.contains("calendarManager.storeVersion"), "a synced edit or deletion would not re-run the fetch")
+        #expect(identity.contains("calendarManager.isAuthorized"), "a revocation would leave the last fetch listed")
+
+        let hook = try #require(
+            CadenceSourceScan.declarationBody(".onChange(of: eventStoreIdentity)", in: source),
+            "nothing re-runs the Events fetch when the calendar store changes"
+        )
+        #expect(hook.contains("runEventSearch()"), "the store-change hook does not re-run the Events fetch")
+    }
 }
 
 #endif

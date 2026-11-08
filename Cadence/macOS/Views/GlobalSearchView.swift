@@ -50,6 +50,14 @@ struct GlobalSearchOverlay: View {
 
     private var query: String { committedQuery.trimmingCharacters(in: .whitespacesAndNewlines) }
 
+    /// The EventKit state the Events section was fetched against ([[T-13873]]). A synced edit or
+    /// deletion bumps `storeVersion` and a revocation flips `isAuthorized`; either has to re-run
+    /// the fetch while the palette is open, or a deleted event stays listed and pickable. iOS keys
+    /// the same fetch on both (`calendarSearchRequestID` in `iOSSearchView`).
+    private var eventStoreIdentity: String {
+        "\(calendarManager.isAuthorized ? "authorized" : "unauthorized")|\(calendarManager.storeVersion)"
+    }
+
     private var hiddenTabs: Set<SidebarStaticDestination> {
         GlobalSearchOverlayStateSupport.hiddenTabs(
             of: CadenceSidebarLayoutPreferenceStore.layout(
@@ -145,6 +153,9 @@ struct GlobalSearchOverlay: View {
                 expandedCategories.removeAll()
                 runEventSearch()
                 syncHighlightToAvailableResults()
+            }
+            .onChange(of: eventStoreIdentity) { _, _ in
+                runEventSearch()
             }
             .onChange(of: includesCompletedTasks) { _, _ in
                 // A different result set, so the expansions belong to the previous one. The
