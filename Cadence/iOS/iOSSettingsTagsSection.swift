@@ -141,7 +141,7 @@ struct iOSTagsSettingsSection: View {
                     } else if hasDuplicate {
                         iOSTagNoticeRow(
                             icon: "exclamationmark.triangle.fill",
-                            text: "A tag with this name already exists.",
+                            text: CadenceTagSettingsCopy.duplicateNameNotice,
                             actionTitle: nil,
                             action: {}
                         )
@@ -458,7 +458,7 @@ private struct iOSTagSettingsRow: View {
             }
             if iOSTagSettingsEdit.hasDuplicate(name: draftName, tag: tag, allTags: allTags) {
                 iOSTagNoticeRow(icon: "exclamationmark.triangle.fill",
-                                text: "A tag with this name already exists.",
+                                text: CadenceTagSettingsCopy.duplicateNameNotice,
                                 actionTitle: nil, action: {})
             }
             if let saveFailureNotice {

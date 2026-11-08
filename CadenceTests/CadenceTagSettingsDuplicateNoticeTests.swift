@@ -18,7 +18,32 @@ struct CadenceTagSettingsDuplicateNoticeTests {
     }
 
     private static let noticeRow =
-        #"icon:"exclamationmark.triangle.fill",text:"Atagwiththisnamealreadyexists.""#
+        #"icon:"exclamationmark.triangle.fill",text:CadenceTagSettingsCopy.duplicateNameNotice"#
+
+    /// **[[T-13062]].** Every tag editor that can draw the duplicate-name notice, with how many
+    /// times it draws it: the Mac Settings create and edit cards, the Mac tag picker's Edit Tag
+    /// sheet, and the phone's create and edit cards. Named per file and counted, so a site that
+    /// reverts to a literal reds even while its sibling in the same file still reads the constant.
+    private static let duplicateNoticeSites: [(path: String, count: Int)] = [
+        ("Cadence/macOS/Views/SettingsTagsSection.swift", 2),
+        ("Cadence/macOS/Views/TagPickerPopoverViews.swift", 1),
+        ("Cadence/iOS/iOSSettingsTagsSection.swift", 2),
+    ]
+
+    @Test func everyTagEditorReadsTheSharedDuplicateNameSentence() throws {
+        #expect(CadenceTagSettingsCopy.duplicateNameNotice == "A tag with this name already exists.")
+        var total = 0
+        for site in Self.duplicateNoticeSites {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(site.path))
+            let reads = CadenceSourceScan.matchCount(#"text: CadenceTagSettingsCopy\.duplicateNameNotice\b"#, in: source)
+            total += reads
+            #expect(reads == site.count,
+                    "\(site.path) reads the shared duplicate-name sentence \(reads) times, expected \(site.count)")
+            #expect(!source.contains("already exists."),
+                    "\(site.path) spells a duplicate-name sentence instead of reading CadenceTagSettingsCopy")
+        }
+        #expect(total == 5, "non-vacuity: five tag editors draw the notice, found \(total)")
+    }
 
     @Test func theMacTagEditCardDrawsTheDuplicateNameAsANoticeRow() throws {
         let edit = try Self.squeezedBody("private var editContent",

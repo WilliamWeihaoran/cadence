@@ -86,7 +86,7 @@ struct SettingsTagsSection: View {
                     } else if hasDuplicateSlug {
                         TagNoticeRow(
                             icon: "exclamationmark.triangle.fill",
-                            text: "A tag with this name already exists.",
+                            text: CadenceTagSettingsCopy.duplicateNameNotice,
                             actionTitle: nil,
                             action: {}
                         )
@@ -383,7 +383,7 @@ private struct SettingsTagRow: View {
             if hasDuplicateSlug {
                 TagNoticeRow(
                     icon: "exclamationmark.triangle.fill",
-                    text: "A tag with this name already exists.",
+                    text: CadenceTagSettingsCopy.duplicateNameNotice,
                     actionTitle: nil,
                     action: {}
                 )

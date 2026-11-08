@@ -57,6 +57,9 @@ struct CadenceSettingsSectionCopyTests {
     private static let tagPairs: [(expression: String, literal: String)] = [
         ("CadenceTagSettingsCopy.emptyCatalogTitle", "No active tags"),
         ("CadenceTagSettingsCopy.emptyCatalogSubtitle", "Create a tag or add the default set."),
+        // [[T-13062]]: the duplicate-name notice; every site is pinned by
+        // `CadenceTagSettingsDuplicateNoticeTests.everyTagEditorReadsTheSharedDuplicateNameSentence`.
+        ("CadenceTagSettingsCopy.duplicateNameNotice", "A tag with this name already exists."),
     ]
 
     private static let templatePairs: [(expression: String, literal: String)] = [
@@ -1080,6 +1083,7 @@ struct CadenceSettingsSectionCopyTests {
         // ticket decided, which is what a value assertion is for.
         #expect(CadenceTagSettingsCopy.emptyCatalogTitle == "No active tags")
         #expect(CadenceTagSettingsCopy.emptyCatalogSubtitle == "Create a tag or add the default set.")
+        #expect(CadenceTagSettingsCopy.duplicateNameNotice == "A tag with this name already exists.")
         #expect(
             CadenceTemplateSettingsCopy.editScopeFootnote
                 == "Templates affect future insertions only. Existing notes keep their current content."

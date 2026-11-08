@@ -150,6 +150,13 @@ nonisolated enum CadenceTagSettingsCopy {
     /// field, and the description is no less optional on the edit card than on the create card.
     static let nameFieldPlaceholder = "Tag name"
     static let descriptionFieldPlaceholder = "Optional description"
+
+    /// The notice every tag editor draws when the typed name collides with another tag's
+    /// ([[T-13062]]): the Mac Settings create and edit cards, the Mac tag picker's Edit Tag sheet,
+    /// and both iOS Settings tag cards. It was a literal at all five sites. The column refusal
+    /// (`KanbanColumnRenameRefusal.notice`) is deliberately the same sentence one noun along, and
+    /// stays spelled there.
+    static let duplicateNameNotice = "A tag with this name already exists."
 }
 
 /// Settings → Note Templates, on both surfaces.

@@ -122,7 +122,8 @@ struct CadenceCodexInlineTagEditingTests {
         // [[T-10303]]: single-line, as the Mac's tag card description is.
         #expect(source.contains("TextField(CadenceTagSettingsCopy.descriptionFieldPlaceholder, text: $draftDescription)"))
         #expect(source.contains("iOSSettingsColorSwatchRow(selectedHex: $draftColorHex, fallbackHex: tag.colorHex)"))
-        #expect(source.contains("A tag with this name already exists."))
+        #expect(source.contains("text: CadenceTagSettingsCopy.duplicateNameNotice"),
+                "the duplicate-name notice is the shared tag copy (T-13062)")
         #expect(source.contains("CadenceInlineFailureNotice(text: saveFailureNotice)"))
         let body = try #require(CadenceSourceScan.functionBody(named: "saveEdits", in: source))
         #expect(body.contains("try iOSTagSettingsEdit.save("))
