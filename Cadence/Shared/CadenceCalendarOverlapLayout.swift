@@ -259,14 +259,34 @@ nonisolated enum CadenceCalendarOverlapLayout {
             placed.append(index)
         }
 
-        return slots.indices.map { index in
-            var widest = columns[index]
-            for other in slots.indices where overlaps(slots[other], slots[index]) {
-                widest = max(widest, columns[other])
+        // The column count is the CLUSTER's, not the block's ([[T-13981]]). A cluster is a run of
+        // blocks chained together by overlap: swept in start order, a block that starts at or after
+        // the latest end seen so far opens a new one. Every block in a cluster divides the strip
+        // into the same number of columns, so a column number is the same x-range for all of them.
+        //
+        // It used to be the widest column among the blocks this one *directly* overlaps. That let
+        // two overlapping blocks disagree on the count: three blocks at 9:00 (one running to 11:00,
+        // a third starting 9:30) fill columns 0-2, and a 10:00-11:00 block that overlaps only the
+        // long one takes column 0 of **2** -- the left half -- while the long one sits in column 1
+        // of **3**, the middle third. From 10:00 to 11:00 the two were drawn across each other.
+        var clusterOf = [Int](repeating: 0, count: slots.count)
+        var clusterWidest: [Int] = []
+        var clusterEnd = Int.min
+        for index in order {
+            if clusterWidest.isEmpty || slots[index].startMin >= clusterEnd {
+                clusterWidest.append(columns[index])
+                clusterEnd = slots[index].endMin
+            } else {
+                clusterWidest[clusterWidest.count - 1] = max(clusterWidest[clusterWidest.count - 1], columns[index])
+                clusterEnd = max(clusterEnd, slots[index].endMin)
             }
-            return CadenceCalendarOverlapPlacement(
+            clusterOf[index] = clusterWidest.count - 1
+        }
+
+        return slots.indices.map { index in
+            CadenceCalendarOverlapPlacement(
                 column: columns[index],
-                totalColumns: widest + 1,
+                totalColumns: clusterWidest[clusterOf[index]] + 1,
                 cascadeDepth: depths[index]
             )
         }

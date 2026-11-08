@@ -397,8 +397,49 @@ struct CadenceCalendarOverlapLayoutTests {
         // B clears A by 40 minutes and stacks on it; C clears B by 50 and stacks on B.
         #expect(placed.map(\.column) == [0, 0, 0])
         #expect(placed.map(\.cascadeDepth) == [0, 1, 2])
-        // A sees only B, C sees only B — but the column count is per block, and all are column 0.
+        // A sees only B, C sees only B — they are one cluster, and every block in it is column 0.
         #expect(placed.map(\.totalColumns) == [1, 1, 1])
+    }
+
+    /// [[T-13981]]. Two blocks that overlap must agree on how many columns the strip is cut into,
+    /// or one column number is a different x-range for each and they are drawn across each other.
+    ///
+    /// Three blocks at 9:00 (to 10:00, to 11:00, and one starting 9:30) fill columns 0-2. A
+    /// 10:00-11:00 block overlaps only the 9:00-11:00 one and takes column 0. It used to count
+    /// only the columns of the blocks it touches directly -- 2 -- while the long block counted 3,
+    /// so the late block's left half ran over the long block's middle third from 10 to 11.
+    @Test func overlappingBlocksShareOneColumnCountSoTheirStripsNeverCross() {
+        let slots = [Self.task(540, 600), Self.task(540, 660), Self.task(570, 600), Self.task(600, 660)]
+        let placed = CadenceCalendarOverlapLayout.solve(slots: slots, cascadeGapMinutes: 24)
+
+        #expect(placed.map(\.column) == [0, 1, 2, 0], "non-vacuity: the greedy packing changed")
+        #expect(placed.map(\.totalColumns) == [3, 3, 3, 3])
+
+        // The property itself, over the fractional strip each block is drawn in.
+        for i in slots.indices {
+            for j in slots.indices where i < j && CadenceCalendarOverlapLayout.overlaps(slots[i], slots[j]) {
+                let a = placed[i], b = placed[j]
+                let aLo = Double(a.column) / Double(a.totalColumns), aHi = Double(a.column + 1) / Double(a.totalColumns)
+                let bLo = Double(b.column) / Double(b.totalColumns), bHi = Double(b.column + 1) / Double(b.totalColumns)
+                #expect(aHi <= bLo + 1e-9 || bHi <= aLo + 1e-9, "blocks \(i) and \(j) overlap in time and are drawn across each other")
+            }
+        }
+    }
+
+    /// The count is the cluster's and ends with it: a block that starts once every earlier block
+    /// has ended is a new cluster and keeps the whole strip.
+    @Test func aBlockAfterAClusterHasEndedKeepsTheWholeStrip() {
+        let slots = [Self.task(540, 600), Self.task(540, 600), Self.task(600, 660), Self.task(620, 640)]
+        let placed = CadenceCalendarOverlapLayout.solve(slots: slots, cascadeGapMinutes: 24)
+
+        #expect(placed.map(\.column) == [0, 1, 0, 1])
+        #expect(placed.map(\.totalColumns) == [2, 2, 2, 2])
+
+        let lone = CadenceCalendarOverlapLayout.solve(
+            slots: [Self.task(540, 600), Self.task(540, 600), Self.task(600, 660)],
+            cascadeGapMinutes: 24
+        )
+        #expect(lone.map(\.totalColumns) == [2, 2, 1], "a block touching the cluster only at its end joined it")
     }
 
     @Test func zeroAndFiveMinuteDurationsAreLaidOutWithoutOverlappingAnything() {
