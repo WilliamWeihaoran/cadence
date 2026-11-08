@@ -477,14 +477,21 @@ enum CadenceTaskPresentationSupport {
     /// That guard was applied at one call site (iOS's task row) and re-derived nowhere else, so the
     /// three surfaces that gained a subtask list under T-173 would each have had to remember it.
     /// It is a decision, not a shell, so it lives here with the cap it belongs to.
+    ///
+    /// **[[T-13841]]: "finished" is done OR cancelled** — `CadenceTaskQuerySupport.isFinishedTask`,
+    /// the predicate that files a task under Completed in the first place. The gate read
+    /// `task.isDone` alone, so a cancelled task in a Completed section, struck through and wearing
+    /// the "Canceled" chip, still listed its open subtasks with tickable circles under it on both
+    /// rows and both boards: leftover items of a task that is over, which is the case this gate
+    /// exists to keep off those surfaces.
     static func listedSubtasks(for task: AppTask) -> [Subtask] {
-        task.isDone ? [] : unfinishedSubtasks(for: task)
+        CadenceTaskQuerySupport.isFinishedTask(task) ? [] : unfinishedSubtasks(for: task)
     }
 
     /// The "+N more" that goes with `listedSubtasks`, or `nil` when there is nothing more to say —
     /// including for a finished task, which lists none and therefore hides none.
     static func unlistedSubtaskCount(for task: AppTask) -> Int? {
-        task.isDone ? nil : hiddenSubtaskCount(for: task)
+        CadenceTaskQuerySupport.isFinishedTask(task) ? nil : hiddenSubtaskCount(for: task)
     }
 
     /// What VoiceOver says for the "+N more" button under a task row's subtasks. **T-4980:** iOS

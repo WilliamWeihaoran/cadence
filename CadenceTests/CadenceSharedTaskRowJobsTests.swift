@@ -516,6 +516,22 @@ struct CadenceSharedTaskRowJobsTests {
         #expect(CadenceTaskPresentationSupport.allUnfinishedSubtasks(for: done).count == 9)
     }
 
+    /// [[T-13841]]: a cancelled task is finished too — it is filed under Completed by
+    /// `isFinishedTask`, struck through, and wears the "Canceled" chip — so it lists no subtasks and
+    /// counts none hidden. The gate read `isDone` alone, and every row and board card listed a
+    /// cancelled task's open subtasks with tickable circles under it.
+    @Test func aCancelledTaskListsNoSubtasksAndHidesNone() {
+        let cancelled = task(unfinished: 9)
+        cancelled.status = .cancelled
+
+        #expect(CadenceTaskPresentationSupport.listedSubtasks(for: cancelled).isEmpty)
+        #expect(CadenceTaskPresentationSupport.unlistedSubtaskCount(for: cancelled) == nil)
+        // Non-vacuity: the subtasks are there and open; only the gate hides them.
+        #expect(CadenceTaskPresentationSupport.allUnfinishedSubtasks(for: cancelled).count == 9)
+        cancelled.status = .todo
+        #expect(!CadenceTaskPresentationSupport.listedSubtasks(for: cancelled).isEmpty)
+    }
+
     // MARK: - T-173: the call sites
 
     /// **The T-161 test for T-173.** Both cards must list tags and subtasks through the shared
