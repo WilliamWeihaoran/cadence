@@ -87,15 +87,17 @@ enum CadenceListRelatedNotes {
             return note.displayTitle.localizedCaseInsensitiveContains(query) ||
                 MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
                     .localizedCaseInsensitiveContains(query) ||
-                note.sortedTags.contains { tag in
-                    tag.name.localizedCaseInsensitiveContains(query) ||
-                        tag.slug.localizedCaseInsensitiveContains(TagSupport.slug(for: query))
-                }
+                anyTag(note.sortedTags, matches: query)
         }
     }
 
     /// A task note survives when it carries every required tag and, given a query, the query is in
-    /// its title or its notes.
+    /// its title, its notes, or one of its tags' names or slugs.
+    ///
+    /// **[[T-13761]]: the tag leg is the notes' own.** This predicate stopped at title and notes, so
+    /// in one search field typing `urgent` kept every note tagged Urgent and dropped every task note
+    /// tagged Urgent -- although the filter bar above offers that tag *because* a task note carries
+    /// it, and Cmd+K / iOS Search find the same task by the same tag name.
     static func filter(
         taskNotes: [AppTask],
         query rawQuery: String,
@@ -107,7 +109,16 @@ enum CadenceListRelatedNotes {
             guard requiredTagSlugs.isSubset(of: taskTagSlugs) else { return false }
             guard !query.isEmpty else { return true }
             return $0.title.localizedCaseInsensitiveContains(query) ||
-                $0.notes.localizedCaseInsensitiveContains(query)
+                $0.notes.localizedCaseInsensitiveContains(query) ||
+                anyTag($0.sortedTags, matches: query)
+        }
+    }
+
+    /// The tag leg both predicates share: the query in a tag's name, or its slug form in the slug.
+    private static func anyTag(_ tags: [Tag], matches query: String) -> Bool {
+        tags.contains { tag in
+            tag.name.localizedCaseInsensitiveContains(query) ||
+                tag.slug.localizedCaseInsensitiveContains(TagSupport.slug(for: query))
         }
     }
 }

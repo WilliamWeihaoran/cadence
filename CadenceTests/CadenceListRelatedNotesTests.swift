@@ -132,6 +132,12 @@ struct CadenceListRelatedNotesTests {
         #expect(CadenceListRelatedNotes.filter(notes, query: "", requiredTagSlugs: slugs, tasks: []).map(\.id) == [plan.id])
         #expect(CadenceListRelatedNotes.filter(taskNotes: taskNotes, query: "", requiredTagSlugs: slugs).map(\.id) == [tagged.id])
 
+        // [[T-13761]]: a typed tag name reaches a task note as it reaches a note -- neither "Fix
+        // sink" nor "washer size" says urgent, only the tag does.
+        #expect(CadenceListRelatedNotes.filter(notes, query: "urgent", requiredTagSlugs: [], tasks: []).map(\.id) == [plan.id])
+        #expect(CadenceListRelatedNotes.filter(taskNotes: taskNotes, query: "urgent", requiredTagSlugs: []).map(\.id) == [tagged.id])
+        #expect(CadenceListRelatedNotes.filter(taskNotes: taskNotes, query: "#Urg", requiredTagSlugs: []).map(\.id) == [tagged.id])
+
         // Both at once are an AND.
         #expect(CadenceListRelatedNotes.filter(taskNotes: taskNotes, query: "budget", requiredTagSlugs: slugs).isEmpty)
 
