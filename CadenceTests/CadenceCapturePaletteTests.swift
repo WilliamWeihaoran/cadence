@@ -787,6 +787,11 @@ struct CadenceCapturePaletteTests {
     /// list refuses is the next one added without that argument — see
     /// `theModalDrawerDrawsTheCapturePlusAboveItsOwnScrim`, which pins the `isModal` gate that makes
     /// the claim true.
+    ///
+    /// **The fourth entry is [[T-13281]]'s, and it is no `+` at all.** `iOSRootView` hosts the
+    /// composer Cmd+N opens from a hardware keyboard, as the Mac's File > New Task does. Nothing draws
+    /// against that interaction and nothing presses it, so it never opens a palette; it is in this
+    /// list so the host stays one implementation of the composers rather than a sheet of its own.
     @Test func theCaptureHostIsAppliedOncePerPlacement() throws {
         var perFile: [String: Int] = [:]
         for file in try iOSSourceFiles() {
@@ -798,7 +803,8 @@ struct CadenceCapturePaletteTests {
         #expect(perFile == [
             "iOSCompactTabShell.swift": 1,
             "iOSFloatingCreateTaskButton.swift": 1,
-            "iOSRootSidebar.swift": 1
+            "iOSRootSidebar.swift": 1,
+            "iOSRootView.swift": 1
         ])
     }
 

@@ -50,6 +50,9 @@ struct iOSRootView: View {
     /// [[T-8791]]: Cmd+K asks Search to raise its field; a sidebar or More-list tap does not. Shared
     /// with both shells through the environment, since the compact shell builds its own Search.
     @State private var searchFocusRequest = CadenceSearchFocusRequest()
+    /// [[T-13281]]: Cmd+N's composer. No `+` draws against it -- the key is the whole press --
+    /// so its placement only satisfies the type; it never opens a palette.
+    @State private var keyboardCapture = iOSCaptureInteraction(placement: .bottomCentre)
 
     private var selectedTab: CadenceCompactTab {
         CadenceCompactTab.resolved(selectedTabRaw)
@@ -143,7 +146,16 @@ struct iOSRootView: View {
                 .opacity(0)
                 .frame(width: 0, height: 0)
                 .accessibilityHidden(true)
+            // [[T-13281]]: Cmd+N is New Task, as the Mac's File menu binds it ([[T-5953]]). It opens
+            // the composer a plain tap on the `+` opens -- unscoped, through the same capture host --
+            // and is listed in the Cmd-hold overlay as "New Task", the Mac item's title.
+            Button("New Task", action: openNewTask)
+                .keyboardShortcut("n", modifiers: .command)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
         }
+        .iOSCaptureHost(keyboardCapture)
         .background(Theme.bg)
         // Both shells, one call ([[T-9975]]). The palette's blue was declared only on the iPhone's
         // tab shell, so on the iPad sidebar shell every control that inherits its tint and sits
@@ -322,6 +334,12 @@ private extension iOSRootView {
         // [[T-8791]]: the key means "I am about to type", so the field is raised -- by request,
         // never on appear, so reaching Search any other way leaves the keyboard down.
         searchFocusRequest.request()
+    }
+
+    /// Cmd+N ([[T-13281]]): what a plain tap on either `+` asks for, so the key and the button
+    /// open one composer with one seed.
+    func openNewTask() {
+        keyboardCapture.request(.task(CadenceCaptureSeedResolver.seed(for: .tap, dropKey: nil, todayKey: DateFormatters.todayKey())))
     }
 
     /// Show the Focus screen on whichever shell is up, without disturbing a Focus screen already

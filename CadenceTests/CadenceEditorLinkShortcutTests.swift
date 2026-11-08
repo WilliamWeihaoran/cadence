@@ -134,4 +134,52 @@ struct CadenceiPadSearchKeyCommandTests {
         #expect(search.components(separatedBy: "isSearchFieldFocused = true").count - 1 == 1)
     }
 }
+
+/// [[T-13281]]. **On iPad (or any iOS device with a hardware keyboard), Cmd+N is New Task, as it
+/// is on the Mac** ([[T-5953]]'s File > New Task). The iOS root shell bound Cmd+K alone
+/// ([[T-8766]]), so the key the Mac spends on capture did nothing at all on an iPad keyboard. Read
+/// from source for the reason `CadenceiPadSearchKeyCommandTests` gives: `Cadence/iOS/` is invisible
+/// to this macOS target. The key and the title are read off the Mac's own menu data, so the two
+/// platforms cannot drift apart again by editing one side.
+@Suite
+struct CadenceiPadNewTaskKeyCommandTests {
+    private static func root() throws -> String {
+        CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootView.swift"))
+    }
+
+    @Test func theRootShellBindsTheMacsNewTaskKeyToOpenTheComposer() throws {
+        let root = try Self.root()
+        let binding = ".keyboardShortcut(\"\(CadenceNewItemMenu.newTaskShortcut)\", modifiers: .command)"
+        #expect(root.components(separatedBy: binding).count - 1 == 1)
+        #expect(root.contains("Button(\"\(CadenceNewItemMenu.newTask.title)\", action: openNewTask)\n                \(binding)"))
+        // Hidden with opacity, not `.hidden()`, which can take the shortcut with it.
+        #expect(!root.contains("\(binding)\n                .hidden()"))
+    }
+
+    /// The key asks the capture host for the composer a plain tap on the `+` opens: the same seed,
+    /// through a host mounted on the root so it works from either shell and every page.
+    @Test func theKeyRequestsTheTapsComposerThroughARootCaptureHost() throws {
+        let root = try Self.root()
+        #expect(root.components(separatedBy: ".iOSCaptureHost(keyboardCapture)").count - 1 == 1)
+        let body = try #require(root.range(of: "func openNewTask() {").map { String(root[$0.upperBound...].prefix(200)) })
+        #expect(body.contains("keyboardCapture.request(.task(CadenceCaptureSeedResolver.seed(for: .tap,"))
+    }
+
+    /// A tap's seed is the empty one, so Cmd+N opens an unscoped New Task like the Mac's item does.
+    @MainActor @Test func aTapsSeedIsTheEmptyComposerSeed() {
+        #expect(CadenceCaptureSeedResolver.seed(for: .tap, dropKey: nil, todayKey: "2026-11-08") == CadenceTaskComposerSeed())
+    }
+
+    /// The note editor's text view is the one iOS responder with its own key table; plain Cmd+N must
+    /// stay unbound there so the root's binding is reached while typing. Cmd+Option+N is its note
+    /// link and stays.
+    @Test func theNoteEditorLeavesPlainCommandNUnbound() throws {
+        let editor = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownTextView.swift"))
+        #expect(editor.contains("command(\"n\", [.command, .alternate],"))
+        #expect(!editor.contains("command(\"n\", [.command],"))
+        #expect(!editor.contains("input: \"n\", modifierFlags: .command"))
+        #expect(!editor.contains("input: \"n\", modifierFlags: [.command]"))
+    }
+}
+
 #endif
