@@ -30,6 +30,13 @@ struct TaskDetailPopover: View {
         CadenceTaskPresentationSupport.subtaskProgress(for: task)?.countLabel
     }
 
+    /// The focus time the task has logged, or nil (and so no row) when it has none.
+    /// [[T-13565]]: the read-only figure the iOS sheet's "Logged" row draws, from the same shared
+    /// helper. Measured, never typed -- a row that reports it, not an editor (T-1278).
+    static func loggedLabel(for task: AppTask) -> String? {
+        CadenceTaskInspectorSupport.loggedLabel(minutes: task.actualMinutes)
+    }
+
     private var taskTagsBinding: Binding<[Tag]> {
         Binding(
             get: { task.tags ?? [] },
@@ -82,6 +89,13 @@ struct TaskDetailPopover: View {
                 triggerSymbol: "plus"
             )
             if let tagFailureNotice { CadenceInlineFailureNotice(text: tagFailureNotice) }
+            if let logged = Self.loggedLabel(for: task) {
+                CadenceFieldRow(label: "Logged", systemImage: "stopwatch") {
+                    Text(logged)
+                        .cadenceFont(.controlLabel)
+                        .foregroundStyle(Theme.text)
+                }
+            }
             subtasksSection
             TaskInspectorSectionGroup(title: "Notes") {
                 TaskDetailNotesSection(task: task, flush: notesFlush)
