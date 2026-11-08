@@ -503,8 +503,8 @@ struct CadenceInPlaceEditFlushCommitTests {
             "the recurrence alert types its own title"
         )
         #expect(
-            CadenceSourceScan.matchCount(#"Text\(CadenceTaskFieldEditCommit\.saveFailureNotice\)"#, in: actions) == 4,
-            "the move, recurrence, date and priority alerts ([[T-11614]] added the last two) are the only callers of this sentence in the file"
+            CadenceSourceScan.matchCount(#"Text\(CadenceTaskFieldEditCommit\.saveFailureNotice\)"#, in: actions) == 5,
+            "the move, recurrence, date, priority and duplicate alerts ([[T-11614]] added date and priority, [[T-13843]] duplicate) are the only callers of this sentence in the file"
         )
 
         let row = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTaskViews.swift")

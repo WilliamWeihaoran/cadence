@@ -359,11 +359,14 @@ struct CadenceSaveCommitDisciplineTests {
     @Test func theUnrepairedCommitHalfDeclinesTheCleanSwallowsItWasMeasuredAgainst() throws {
         let repairing = try repairIndexOverTheApp()
         for (path, call) in [
-            // `duplicate`: an insert, committed through `commitInsert` since T-1299 converted its
-            // hand-rolled undo. Its `insertBundle` sibling row went with [[T-3170]]: the one
-            // `try?` over it was SchedulingActions.createBundle(from:adding:in:), removed with
-            // the Mac timeline's drop-a-task-on-a-task gesture.
-            ("Cadence/iOS/iOSTaskRowActionViews.swift", "try? CadenceTaskMutationSupport.duplicate("),
+            // An insert committed through `commitInsert`, reached through a pass-through: the Mac
+            // Notes page's first-notepad accessor. It replaced the iOS row's
+            // `try? CadenceTaskMutationSupport.duplicate(` row, which [[T-13843]] turned into a
+            // `do`/`catch` that reports the refusal; same shape (an insert whose callee undoes),
+            // one frame further from the commit. Its `insertBundle` sibling row went with
+            // [[T-3170]]: the one `try?` over it was SchedulingActions.createBundle(from:adding:in:),
+            // removed with the Mac timeline's drop-a-task-on-a-task gesture.
+            ("Cadence/macOS/Views/NotesView.swift", "try? CadenceCoreNoteSupport.note("),
             // The three core-note accessors, routed through `commitInsert` by [[T-1181]].
             ("Cadence/Shared/CadenceNotePlanningSupport.swift", "try? NoteMigrationService.dailyNote("),
         ] {

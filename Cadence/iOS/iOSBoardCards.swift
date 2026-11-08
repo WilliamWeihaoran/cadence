@@ -261,6 +261,8 @@ struct iOSBoardTaskCard: View {
     /// [[T-11614]]: the menu's date and priority submenus, as on the row.
     @State private var dateFailed = false
     @State private var priorityFailed = false
+    /// [[T-13843]]: the menu's Duplicate, as on the row.
+    @State private var duplicateFailed = false
     @State private var pendingRecurrenceRule: TaskRecurrenceRule?
 
     private var listColor: Color {
@@ -348,6 +350,7 @@ struct iOSBoardTaskCard: View {
                 recurrenceFailed: $recurrenceFailed,
                 dateFailed: $dateFailed,
                 priorityFailed: $priorityFailed,
+                duplicateFailed: $duplicateFailed,
                 pendingRecurrenceRule: $pendingRecurrenceRule
             )
         }
@@ -370,6 +373,7 @@ struct iOSBoardTaskCard: View {
         .iOSTaskRowRecurrenceFailureAlert(isPresented: $recurrenceFailed)
         .iOSTaskRowDateFailureAlert(isPresented: $dateFailed)
         .iOSTaskRowPriorityFailureAlert(isPresented: $priorityFailed)
+        .iOSTaskRowDuplicateFailureAlert(isPresented: $duplicateFailed)
     }
 
     private func openDetail() {

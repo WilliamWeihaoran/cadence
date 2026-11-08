@@ -649,7 +649,14 @@ extension CadenceTaskMutationSupport {
         return true
     }
 
-    static func duplicate(_ task: AppTask, allTasks: [AppTask], modelContext: ModelContext) throws -> AppTask {
+    /// `commit:` exists so a test can make the write refuse ([[T-13843]]); every caller takes the
+    /// default.
+    static func duplicate(
+        _ task: AppTask,
+        allTasks: [AppTask],
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> AppTask {
         let duplicate = AppTask(title: task.title)
         duplicate.notes = task.notes
         duplicate.priority = task.priority
@@ -680,7 +687,7 @@ extension CadenceTaskMutationSupport {
         // insert and leaves it pending. `commitInsert` *is* the undo contract; a caller's `try?`
         // over it is safe because of what it calls, not because of what its own catch happens to
         // say.
-        try CadencePendingChangePersistence.commitInsert(of: duplicate, in: modelContext)
+        try CadencePendingChangePersistence.commitInsert(of: duplicate, in: modelContext, commit: commit)
         return duplicate
     }
 
@@ -787,6 +794,11 @@ extension CadenceTaskMutationSupport {
 
     /// **[[T-11614]].** The Priority submenu's refusal, one submenu over from the date one.
     static let priorityFailureAlertTitle = "Couldn't Change Priority"
+
+    /// **[[T-13843]].** A refused Duplicate from either platform's row menu. The Mac said it in its
+    /// own file and the phone said nothing: `commitInsert` undid the copy and the closed menu left
+    /// no trace. Same sentence under it as the move, date and priority alerts.
+    static let duplicateFailureAlertTitle = "Couldn't Duplicate Task"
 
 
 

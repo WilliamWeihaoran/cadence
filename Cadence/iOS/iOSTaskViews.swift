@@ -59,6 +59,8 @@ struct iOSTaskRow: View {
     @State private var dateFailed = false
     /// [[T-11614]]: the menu's Priority submenu. See `iOSTaskRowPriorityFailureAlertModifier`.
     @State private var priorityFailed = false
+    /// [[T-13843]]: the menu's Duplicate. See `iOSTaskRowDuplicateFailureAlertModifier`.
+    @State private var duplicateFailed = false
     @State private var pendingRecurrenceRule: TaskRecurrenceRule?
 
     private var isRegularWidth: Bool {
@@ -126,6 +128,7 @@ struct iOSTaskRow: View {
                     recurrenceFailed: $recurrenceFailed,
                     dateFailed: $dateFailed,
                     priorityFailed: $priorityFailed,
+                    duplicateFailed: $duplicateFailed,
                     pendingRecurrenceRule: $pendingRecurrenceRule
                 )
             }
@@ -212,6 +215,8 @@ struct iOSTaskRow: View {
             // the tap in the same way.
             .iOSTaskRowDateFailureAlert(isPresented: $dateFailed)
             .iOSTaskRowPriorityFailureAlert(isPresented: $priorityFailed)
+            // [[T-13843]]: Duplicate, the last write in that menu that refused without a word.
+            .iOSTaskRowDuplicateFailureAlert(isPresented: $duplicateFailed)
             .onAppear(perform: handlePendingDeepLink)
             .onChange(of: deepLinkManager.pendingTaskID) { _, _ in
                 handlePendingDeepLink()

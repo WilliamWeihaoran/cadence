@@ -507,6 +507,9 @@ struct iOSTaskRowContextMenu: View {
     @Binding var dateFailed: Bool
     /// **[[T-11614]] (G4).** The Priority submenu. See `iOSTaskRowPriorityFailureAlertModifier`.
     @Binding var priorityFailed: Bool
+    /// **[[T-13843]].** Duplicate, the one write in this menu that still refused without a word.
+    /// See `iOSTaskRowDuplicateFailureAlertModifier`.
+    @Binding var duplicateFailed: Bool
     @Binding var pendingRecurrenceRule: TaskRecurrenceRule?
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
@@ -549,7 +552,7 @@ struct iOSTaskRowContextMenu: View {
         moveToListMenu
 
         Button {
-            Self.duplicate(task, allTasks: allTasks, modelContext: modelContext)
+            duplicateFailed = !Self.duplicate(task, allTasks: allTasks, modelContext: modelContext)
         } label: {
             Label("Duplicate", systemImage: "plus.square.on.square")
         }
@@ -760,18 +763,27 @@ struct iOSTaskRowContextMenu: View {
     // parity reader in `MacTaskRowContextMenuParityTests` still sees all fifteen shared calls in
     // the menu's body, and each one keeps the exact write its call site had.
     //
-    // `commit:` is threaded where the shared helper takes one. `moveToList` and, since
-    // [[T-11614]], `moveSection` are the ones a test can make refuse:
-    // `CadenceTaskMutationSupport.duplicate` takes no `commit:`, and
-    // `iOSTaskRecurrenceSelection.select` is declared outside this struct, so a refused Duplicate
-    // or Repeat has nothing to inject. The Mac half had the same hole in the same places.
+    // `commit:` is threaded where the shared helper takes one. `moveToList`, `moveSection` (since
+    // [[T-11614]]) and `duplicate` (since [[T-13843]]) are the ones a test can make refuse:
+    // `iOSTaskRecurrenceSelection.select` is declared outside this struct, so a refused Repeat has
+    // nothing to inject.
 
-    /// iOS does not report a refused duplicate — `MacTaskRowMenuFailure` carries no iOS title for
-    /// it — so the swallow stays as it was. The save rule permits it because the shared helper
-    /// commits through `commitInsert`, and `CadenceSaveCommitDisciplineTests` reads this exact
-    /// `try?` as one of the two live rows that half of the rule has left.
-    static func duplicate(_ task: AppTask, allTasks: [AppTask], modelContext: ModelContext) {
-        _ = try? CadenceTaskMutationSupport.duplicate(task, allTasks: allTasks, modelContext: modelContext)
+    /// **[[T-13843]].** `false` is a refusal the shared helper has already undone (it commits
+    /// through `commitInsert`), so nothing appeared; the menu has closed, so the row's duplicate
+    /// alert says it, as the Mac row's `MacTaskRowMenuFailure.duplicate` does. This was
+    /// `_ = try?`, and a refused Duplicate looked exactly like a menu that did nothing.
+    static func duplicate(
+        _ task: AppTask,
+        allTasks: [AppTask],
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        do {
+            _ = try CadenceTaskMutationSupport.duplicate(task, allTasks: allTasks, modelContext: modelContext, commit: commit)
+            return true
+        } catch {
+            return false
+        }
     }
 
     /// **[[T-11614]] (G4).** This used to say there was "nothing here to refuse", because the
@@ -1128,7 +1140,28 @@ struct iOSTaskRowPriorityFailureAlertModifier: ViewModifier {
     }
 }
 
+/// A refused **Duplicate** from the row's long-press menu ([[T-13843]]). The menu closes on the
+/// tap and `commitInsert` takes the copy back out, so without this nothing at all happened on
+/// screen. Same title as the Mac row's, same sentence as the alerts above.
+struct iOSTaskRowDuplicateFailureAlertModifier: ViewModifier {
+    @Binding var isPresented: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .alert(CadenceTaskMutationSupport.duplicateFailureAlertTitle, isPresented: $isPresented) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(CadenceTaskFieldEditCommit.saveFailureNotice)
+            }
+    }
+}
+
 extension View {
+    /// See `iOSTaskRowDuplicateFailureAlertModifier`.
+    func iOSTaskRowDuplicateFailureAlert(isPresented: Binding<Bool>) -> some View {
+        modifier(iOSTaskRowDuplicateFailureAlertModifier(isPresented: isPresented))
+    }
+
     /// See `iOSTaskRowDateFailureAlertModifier`.
     func iOSTaskRowDateFailureAlert(isPresented: Binding<Bool>) -> some View {
         modifier(iOSTaskRowDateFailureAlertModifier(isPresented: isPresented))

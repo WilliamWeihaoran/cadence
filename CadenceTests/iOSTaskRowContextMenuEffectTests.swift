@@ -84,14 +84,13 @@ struct iOSTaskRowContextMenuEffectTests {
 
     /// The copy is of the ROW's task, carries its list and its section, and is committed.
     ///
-    /// `iOSTaskRowContextMenu.duplicate` swallows the refusal (`_ = try?`), which the save rule
-    /// permits because the shared helper commits through `commitInsert` — so "it committed" is a
-    /// statement about the store, and only a second context can make it.
+    /// "It committed" is a statement about the store, and only a second context can make it.
     @Test func duplicateCommitsACopyOfTheRowsTaskInItsOwnListOnIOS() throws {
         let f = try makeFixture()
 
-        iOSTaskRowContextMenu.duplicate(f.subject, allTasks: f.allTasks, modelContext: f.context)
+        let landed = iOSTaskRowContextMenu.duplicate(f.subject, allTasks: f.allTasks, modelContext: f.context)
 
+        #expect(landed, "a committed duplicate was reported as refused")
         let committed = try f.committedTasks()
         #expect(committed.count == 3, "exactly one task inserted and committed, read \(committed.count)")
         let copy = try #require(committed.first { $0.id != f.subject.id && $0.id != f.sibling.id })
@@ -102,6 +101,25 @@ struct iOSTaskRowContextMenuEffectTests {
         // The original and its sibling are left as they were.
         #expect(f.subject.area?.id == f.area.id && f.subject.sectionName == "Later")
         #expect(f.sibling.title == "Sibling" && f.sibling.sectionName == "Now")
+    }
+
+    /// **[[T-13843]].** A refused Duplicate answers `false` -- the row's alert reads it -- and
+    /// leaves nothing behind, in the store or pending in the menu's context. It was `_ = try?`,
+    /// so the menu closed over a refusal and said nothing.
+    @Test func aRefusedDuplicateAnswersFalseAndLeavesNoCopyOnIOS() throws {
+        let f = try makeFixture()
+
+        let landed = iOSTaskRowContextMenu.duplicate(
+            f.subject,
+            allTasks: f.allTasks,
+            modelContext: f.context,
+            commit: { _ in throw CommitRefused() }
+        )
+
+        #expect(!landed, "a refused duplicate was reported as landed")
+        #expect(try f.committedTasks().count == 2, "the refused copy reached the store")
+        let pending = try f.context.fetch(FetchDescriptor<AppTask>())
+        #expect(pending.count == 2, "the refused copy is still pending in the menu's context")
     }
 
     // MARK: - Move to List
@@ -381,6 +399,11 @@ struct iOSTaskRowContextMenuRoutingTests {
         #expect(CadenceSourceScan.matchCount(
             #"moveFailed = !Self\.moveSection\("#, in: try body("private var sectionMenu: some View")
         ) == 1)
+        // [[T-13843]]: Duplicate, in the menu's own body.
+        #expect(CadenceSourceScan.matchCount(
+            #"duplicateFailed = !Self\.duplicate\(task, allTasks: allTasks, modelContext: modelContext\)"#,
+            in: try body("var body: some View")
+        ) == 1)
 
         let swipe = try #require(CadenceSourceScan.declarationBody("enum iOSTaskRowSwipeActions", in: try code()))
         #expect(CadenceSourceScan.matchCount(#"dateFailed\.wrappedValue = !CadenceTaskDateEditing\.schedule\w+\(task, in: modelContext\)"#, in: swipe) == 2)
@@ -390,6 +413,8 @@ struct iOSTaskRowContextMenuRoutingTests {
             let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(host))
             #expect(source.contains(".iOSTaskRowDateFailureAlert(isPresented: $dateFailed)"), "\(host)")
             #expect(source.contains(".iOSTaskRowPriorityFailureAlert(isPresented: $priorityFailed)"), "\(host)")
+            #expect(source.contains(".iOSTaskRowDuplicateFailureAlert(isPresented: $duplicateFailed)"), "\(host)")
+            #expect(source.contains("duplicateFailed: $duplicateFailed,"), "\(host)")
             #expect(source.contains("dateFailed: $dateFailed,") && source.contains("priorityFailed: $priorityFailed,"), "\(host)")
         }
         let row = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskViews.swift"))

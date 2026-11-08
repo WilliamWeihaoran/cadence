@@ -126,6 +126,22 @@ struct MacTaskRowContextMenuEffectTests {
         #expect(try #require(try f.committed(f.sibling)).area?.id == f.area.id)
     }
 
+    /// [[T-13843]]: the shared helper takes a `commit:` now, so the refusal half of Duplicate is
+    /// held by effect rather than only by the `catch` being there. Nothing is left behind, in the
+    /// store or pending in the menu's context.
+    @Test func aRefusedDuplicateIsReportedAndLeavesNoCopy() throws {
+        let f = try makeFixture()
+
+        let outcome = MacTaskRowContextMenu.duplicate(
+            f.subject, allTasks: f.allTasks, modelContext: f.context,
+            commit: { _ in throw CommitRefused() }
+        )
+
+        #expect(outcome == .refused(.duplicate))
+        #expect(try allCommittedTasks(f).count == 2, "the refused copy reached the store")
+        #expect(try f.context.fetch(FetchDescriptor<AppTask>()).count == 2, "the refused copy is still pending")
+    }
+
     @Test func aRefusedMoveToListIsReportedAndUndone() throws {
         let f = try makeFixture()
 

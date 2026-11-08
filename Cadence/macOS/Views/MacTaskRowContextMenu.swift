@@ -271,15 +271,21 @@ struct MacTaskRowContextMenu: View {
     // presented from a unit test. They stay inside this struct so the parity reader in
     // `MacTaskRowContextMenuParityTests` still sees every shared call in the menu's body.
     // `MacTaskRowContextMenuEffectTests` holds them by effect. `commit:` is threaded wherever the
-    // shared helper takes one; `duplicate` takes none. [[T-11614]] added `setPriority` and gave
-    // `moveSection` a `commit:`; the date submenus answer through `dateOutcome`.
+    // shared helper takes one -- `duplicate` too since [[T-13843]] gave the helper one. [[T-11614]]
+    // added `setPriority` and gave `moveSection` a `commit:`; the date submenus answer through
+    // `dateOutcome`.
 
-    /// iOS swallows this one (`_ = try?`), which the save rule permits because `duplicate` commits
-    /// through `commitInsert`; but a refused duplicate then looks exactly like a menu that did
-    /// nothing. Here the refusal is named, as every other write in this menu that can refuse is.
-    static func duplicate(_ task: AppTask, allTasks: [AppTask], modelContext: ModelContext) -> ActionOutcome {
+    /// A refused duplicate would otherwise look exactly like a menu that did nothing, so the
+    /// refusal is named, as every other write in this menu that can refuse is. iOS names it too
+    /// since [[T-13843]] (`iOSTaskRowContextMenu.duplicate`).
+    static func duplicate(
+        _ task: AppTask,
+        allTasks: [AppTask],
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> ActionOutcome {
         do {
-            _ = try CadenceTaskMutationSupport.duplicate(task, allTasks: allTasks, modelContext: modelContext)
+            _ = try CadenceTaskMutationSupport.duplicate(task, allTasks: allTasks, modelContext: modelContext, commit: commit)
         } catch {
             return .refused(.duplicate)
         }
@@ -446,8 +452,7 @@ extension MacTaskRowContextMenu {
 }
 
 /// What a closed menu could not report itself. Titles are the shared ones iOS's row alerts carry,
-/// so a refusal reads the same on both platforms; `duplicate` has no iOS title because iOS does
-/// not report it.
+/// so a refusal reads the same on both platforms.
 enum MacTaskRowMenuFailure: Equatable {
     case move
     case recurrence(String)
@@ -461,7 +466,7 @@ enum MacTaskRowMenuFailure: Equatable {
         switch self {
         case .move: CadenceTaskMutationSupport.moveFailureAlertTitle
         case .recurrence: CadenceTaskMutationSupport.recurrenceFailureAlertTitle
-        case .duplicate: "Couldn't Duplicate Task"
+        case .duplicate: CadenceTaskMutationSupport.duplicateFailureAlertTitle
         case .date: CadenceTaskMutationSupport.dateFailureAlertTitle
         case .priority: CadenceTaskMutationSupport.priorityFailureAlertTitle
         }
