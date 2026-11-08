@@ -53,6 +53,8 @@ path outside `docs/audits/` and `docs/TODO.md` is stale — and the shared check
 
 ### Open work
 
+**STRANDED, finish first (keeper `keeper1108`, 2026-11-08 ~11:55 EST).** Agent `fix1108` ([[T-13860]]) wrote and scoped-tested fixes for [[T-13853]] (Mac board card in both area and project columns) and [[T-13843]] (iOS Duplicate refusal now alerts), then its session ended before landing. Its 12 edited files sit UNCOMMITTED in the shared checkout (KanbanBoardSupport, CadenceTaskMutationSupport, MacTaskRowContextMenu, iOSTaskRowActionViews, iOSBoardCards, iOSTaskViews + six test files); 1160 scoped macOS tests green, iOS leg compiles. Its `mutate.sh fix1108` run (M1-M4, log `scratchpad/fix1108/mutate-fix1108.log`) was still running. To finish: read the verdicts (strengthen and re-run any SURVIVED/INVALID); correct `scratchpad/fix1108/ledger-fix1108.py` (it pre-says KILLED) and commit T-13853 then T-13843 via `agent-commit.sh fix1108` with `docs/TODO.md=<file>`; push; `xcb.sh release-dd fix1108`; delete `/private/tmp/cadence-mut-fix1108-tree`; then delete this paragraph.
+
 `./scripts/ledger-view.sh brief` is the live list (139 active entries at `e5a1da4b`); an entry's
 own lead token is the only authority, read with `head T-NNNN`. Grouped by who can move it:
 
