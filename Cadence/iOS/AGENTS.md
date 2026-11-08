@@ -142,6 +142,23 @@ that "does nothing" is not evidence until these are ruled out.
   action is not.** The MCP action served pixel-identical frames with a frozen clock for minutes
   while the app had moved two screens on ([[T-11401]]; trigger not identified). Use it to aim, but
   re-take any load-bearing frame, and every "the control did nothing" verdict, with `simctl`.
+- **A mid-gesture frame IS capturable -- by RECORDING, not by screenshotting.** The line above this
+  one used to end the matter; it does not. `xcrun simctl io <udid> recordVideo --codec h264 --force
+  <file>`, started in the background for the duration of a `touch_path` and stopped with `kill -INT`
+  on its OWN pid (check `ps` first -- a sibling may be recording too), captures the whole gesture;
+  pull frames out with a short `AVAssetImageGenerator` script run through `xcrun swift`. 23.7 s
+  recorded gave 95 frames at 0.25 s and finally measured [[T-8321]]'s 2pt drop rule, which two runs
+  had written off as unreachable. There is no ffmpeg, PyObjC or OpenCV on this Mac, so AVFoundation
+  via `xcrun swift` is the extraction route that works. Do **not** attempt this with screenshots:
+  `xcrun simctl io ... screenshot` measured **6.9-9.7 s** per frame under load, and seven launched in
+  parallel 1 s apart returned seven BYTE-IDENTICAL files -- the grab happens when the call
+  completes, not when it starts ([[T-13523]]).
+- **`press_key` has no `escape`, and the `text` action is literal.** The key set is closed:
+  `return`, `delete`, `forward_delete`, the four arrows, `home`, `end`, `page_up`, `page_down`,
+  `select_all`, `undo`, `redo`. `escape` is refused by the schema, and sending `\u001b` through
+  `text` types those six characters into the field. With no `simctl` key-injection subcommand and
+  the hardware keyboard belonging to the host Simulator.app, an Escape check -- or any modified key
+  -- is a HUMAN sighting, not an agent one ([[T-11051]], [[T-13282]]).
 
 ## Reference Sections
 
