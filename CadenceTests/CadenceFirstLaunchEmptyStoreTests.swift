@@ -718,7 +718,8 @@ struct CadenceFirstLaunchEmptyStoreTests {
         #expect(host.contains("case .offerDefaultTags"))
         let decision = try read("Cadence/Shared/CadenceTagPickerPlaceholder.swift")
         #expect(decision.contains("case offerDefaultTags"))
-        #expect(host.contains("Text(\"Add Default Tags\")"))
+        // [[T-13321]]: the words are the shared constant all three pickers draw.
+        #expect(host.contains("Text(TagPickerPlaceholder.offerDefaultTagsTitle)"))
         #expect(
             Self.seedCallOffsets(in: host).count == 1,
             "the placeholder row is not the only seed call in its file"
@@ -728,6 +729,43 @@ struct CadenceFirstLaunchEmptyStoreTests {
         // from the filtered list, which is the whole distinction `resolve` exists to make.
         let entry = try read("Cadence/macOS/Views/TaskTitleEntryField.swift")
         #expect(entry.contains("hasActiveTags: !activeTags.isEmpty"))
+    }
+
+    /// **[[T-13321]]: the three pickers draw the offer with one anatomy** -- the shared glyph and the
+    /// shared words. The phone's tag popover drew it as bare blue text with no glyph, beside its own
+    /// Create and Unarchive rows that draw glyph + label as the Mac's `TagPickerPlaceholderRow`
+    /// does, and indented 2pt past every other row's label. No input constraint answers that
+    /// ([[T-8201]]). `Cadence/iOS/` is a view file the macOS target cannot run, so this reads it.
+    @Test func everyTagPickerDrawsTheDefaultTagsOfferWithTheSharedGlyphAndWords() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        #expect(TagPickerPlaceholder.offerDefaultTagsTitle == "Add Default Tags")
+        #expect(TagPickerPlaceholder.offerDefaultTagsSystemImage == "tag.fill")
+
+        for path in [
+            "Cadence/macOS/Views/TagPickerSupportViews.swift",
+            "Cadence/iOS/iOSTaskDetailComponents.swift",
+            "Cadence/iOS/iOSCreateTaskSheetSupportViews.swift",
+        ] {
+            let code = try read(path)
+            #expect(code.count > 400, "non-vacuity: \(path) read as \(code.count) characters")
+            #expect(code.contains("TagPickerPlaceholder.offerDefaultTagsTitle"),
+                    "\(path) does not draw the shared offer words")
+            #expect(code.contains("TagPickerPlaceholder.offerDefaultTagsSystemImage"),
+                    "\(path) does not draw the shared offer glyph")
+            #expect(!code.contains("\"Add Default Tags\""),
+                    "\(path) spells its own copy of the offer")
+        }
+
+        // The phone's popover draws the offer through the row its Create and Unarchive rows use,
+        // so the three cannot differ in ink, glyph slot or inset.
+        let popover = try read("Cadence/iOS/iOSTaskDetailComponents.swift")
+        #expect(CadenceSourceScan.matchCount(
+            #"case \.offerDefaultTags:\s*queryActionRow\(\s*systemImage: TagPickerPlaceholder\.offerDefaultTagsSystemImage"#,
+            in: popover
+        ) == 1, "the popover's offer is not a query action row")
+        // And its two placeholder rows sit on the rows' own inset, not a literal 12.
+        #expect(!popover.contains(".padding(.horizontal, 12)"),
+                "a placeholder row is inset past the tag rows again")
     }
 
     // MARK: - What the surfaces show

@@ -50,6 +50,14 @@ nonisolated enum TagPickerPlaceholder: Equatable {
         guard matchCount == 0, !canCreate, !canRestore else { return .none }
         return hasActiveTags ? .noMatches : .offerDefaultTags
     }
+
+    /// **[[T-13321]]: the `.offerDefaultTags` row's words and glyph, drawn by all three pickers** --
+    /// the Mac's `TagPickerPlaceholderRow`, the phone's `iOSTaskTagPickerPopover` and its capture
+    /// strip. The iOS popover alone drew the offer as bare blue text with no glyph, beside its own
+    /// Create and Unarchive rows that draw glyph + label as the Mac's do; no input constraint
+    /// answers that difference ([[T-8201]]).
+    static let offerDefaultTagsTitle = "Add Default Tags"
+    static let offerDefaultTagsSystemImage = "tag.fill"
 }
 
 // MARK: - The iOS capture sheet's `#` strip

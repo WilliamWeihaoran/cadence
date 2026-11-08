@@ -223,10 +223,10 @@ struct TagPickerPlaceholderRow: View {
                     seedDefaults()
                 } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: "tag.fill")
+                        Image(systemName: TagPickerPlaceholder.offerDefaultTagsSystemImage)
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Theme.blue)
-                        Text("Add Default Tags")
+                        Text(TagPickerPlaceholder.offerDefaultTagsTitle)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Theme.text)
                         Spacer()
@@ -237,7 +237,7 @@ struct TagPickerPlaceholderRow: View {
                 }
                 // [[T-9465]]: the row style is the one hover plate.
                 .buttonStyle(.cadenceMenuRow)
-                .accessibilityLabel("Add Default Tags")
+                .accessibilityLabel(TagPickerPlaceholder.offerDefaultTagsTitle)
                 .help("Add Cadence's starter tags")
 
                 if let seedFailureNotice {

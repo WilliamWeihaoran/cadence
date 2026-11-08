@@ -369,23 +369,16 @@ struct iOSTaskTagPickerPopover: View {
                     case .none:
                         EmptyView()
                     case .offerDefaultTags:
-                        Button {
+                        // [[T-13321]]: the offer is an action row like Create and Unarchive above
+                        // it -- the Mac picker's anatomy (`TagPickerPlaceholderRow`): the shared
+                        // glyph in blue, the label in row ink. It was bare blue text with no glyph,
+                        // indented 2pt past every other row's label.
+                        queryActionRow(
+                            systemImage: TagPickerPlaceholder.offerDefaultTagsSystemImage,
+                            title: TagPickerPlaceholder.offerDefaultTagsTitle
+                        ) {
                             addDefaultTags()
-                        } label: {
-                            Text("Add Default Tags")
-                                .cadenceFont(.rowTitle)
-                                .foregroundStyle(Theme.blue)
-                                .frame(
-                                    maxWidth: .infinity,
-                                    minHeight: CadenceTagPickerMetrics.rowMinHeight(
-                                        at: dynamicTypeSize, scaling: .enabled
-                                    ),
-                                    alignment: .leading
-                                )
-                                .padding(.horizontal, 12)
-                                .contentShape(Rectangle())
                         }
-                        .buttonStyle(.iosPressable)
                     case .noMatches:
                         Text("No matching tags")
                             .cadenceFont(.rowTitle)
@@ -397,7 +390,8 @@ struct iOSTaskTagPickerPopover: View {
                                 ),
                                 alignment: .leading
                             )
-                            .padding(.horizontal, 12)
+                            // [[T-13321]]: the rows' own inset, as the Mac's "No matching tags" is.
+                            .padding(.horizontal, CadenceTagPickerMetrics.rowHorizontalPadding)
                     }
                 }
                 .padding(CadenceTagPickerMetrics.listPadding)

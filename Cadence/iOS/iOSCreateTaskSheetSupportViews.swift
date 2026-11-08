@@ -149,7 +149,11 @@ struct iOSTaskComposerMarkerSuggestions: View {
         case .offerDefaultTags:
             // The same offer the Mac's `#` picker and this platform's own tag popover make on an
             // empty catalogue, as a chip because this strip is a row of chips.
-            suggestion(title: "Add Default Tags", systemImage: "tag.fill", tint: Theme.blue) {
+            suggestion(
+                title: TagPickerPlaceholder.offerDefaultTagsTitle,
+                systemImage: TagPickerPlaceholder.offerDefaultTagsSystemImage,
+                tint: Theme.blue
+            ) {
                 onAddDefaultTags()
             }
         case .noMatches:
