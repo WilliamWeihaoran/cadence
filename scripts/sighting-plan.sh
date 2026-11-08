@@ -187,7 +187,7 @@ bucket_label() {
     case "$1" in
         phone) say "sightphone   Cadence-iPhone15    CAD0F62C-5A83-4FE5-BEBB-5F567FD456B0" ;;
         ipad)  say "sightipad    Cadence-iPadPro11   630EA883-AA8E-4290-9E37-C616B58D40BD" ;;
-        mac)   say "sightmac     macOS               scripts/run-macos-app.sh (never the shipping configuration)" ;;
+        mac)   say "sightmac     macOS               scripts/run-macos-app.sh (never the shipping configuration); drive per Cadence/macOS/AGENTS.md" ;;
     esac
 }
 
