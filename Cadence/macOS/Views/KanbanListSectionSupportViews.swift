@@ -113,7 +113,7 @@ struct ListSectionsKanbanView: View {
                                     isAnotherSectionBeingDragged: draggingSectionName != nil && draggingSectionName?.caseInsensitiveCompare(section.name) != .orderedSame,
                                     isHighlighted: activeHighlightSectionName?.caseInsensitiveCompare(section.name) == .orderedSame,
                                     onReorderBefore: { movingName in
-                                        let reordered = reorderSection(named: movingName, before: section.name)
+                                        let reordered = reorderSection(named: movingName, onto: section.name)
                                         DispatchQueue.main.async {
                                             draggingSectionName = nil
                                         }
@@ -296,7 +296,7 @@ struct ListSectionsKanbanView: View {
     /// user can see reporting a success that had not happened (T-614). No `\.order` sweep would
     /// ever have found it: a column's position *is* its index in this array, and there is no order
     /// field on a `TaskSectionConfig` to sweep for.
-    private func reorderSection(named movingName: String, before targetName: String) -> Bool {
+    private func reorderSection(named movingName: String, onto targetName: String) -> Bool {
         guard let container = CadenceSectionConfigMerge.container(area: area, project: project) else { return false }
         let reordered = withAnimation(kanbanColumnReorderAnimation) {
             container.reorderSectionConfigs(in: modelContext) {

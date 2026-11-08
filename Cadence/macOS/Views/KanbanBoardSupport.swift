@@ -354,10 +354,16 @@ enum KanbanBoardSupport {
             return sectionConfigs
         }
 
+        // **The dropped column takes the target's slot, in either direction ([[T-13931]]).** This was
+        // "insert before the target" (`toIndex - 1` on a rightward drag), and on a board that is
+        // two defects: a column dropped on its right-hand neighbour landed exactly where it was
+        // (`CadenceOrderReassignment`'s point 2, the do-nothing one-step move down), and no column
+        // could ever reach the last position, because the board has no drop target after its last
+        // column. Taking the target's index after the removal puts a rightward drop just after the
+        // target and a leftward one just before it -- the column always lands where it was let go.
         var updated = sectionConfigs
         let moved = updated.remove(at: fromIndex)
-        let insertAt = fromIndex < toIndex ? toIndex - 1 : toIndex
-        updated.insert(moved, at: max(0, insertAt))
+        updated.insert(moved, at: min(toIndex, updated.count))
 
         if let defaultIndex = updated.firstIndex(where: \.isDefault), defaultIndex != 0 {
             let defaultSection = updated.remove(at: defaultIndex)
