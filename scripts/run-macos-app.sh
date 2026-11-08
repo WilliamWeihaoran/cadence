@@ -151,6 +151,11 @@
 # still names the binary `start` launched (exit 6 otherwise) -- it never matches by name.
 # `-ApplePersistenceIgnoreState YES` keeps the launch from restoring or rewriting the OWNER'S saved
 # window state, which lives in the same container (same bundle id).
+# `start` also takes a `caffeinate -d -w <app pid>` assertion and `stop` releases it (T-13541):
+# an attended slot used to lose its second half to the screen saver's idle lock, after which
+# windows can still be CAPTURED but no longer clicked or typed into. `-w` means it cannot outlive
+# the app by any path. It never unlocks or wakes a screen -- see start_caffeinate for the measured
+# reason `-d` is the flag that matters, and for why it is deliberately not `-u`.
 
 set -uo pipefail
 CMD="${1:-status}"
@@ -168,6 +173,7 @@ esac
 RUNDIR="${CADENCE_LAUNCH_RUNDIR:-${TMPDIR:-/tmp}/CadenceAgentRuns}"; mkdir -p "$RUNDIR"
 PIDFILE="$RUNDIR/$ID.pid"
 BINFILE="$RUNDIR/$ID.bin"
+CAFFILE="$RUNDIR/$ID.caffeinate.pid"   # T-13541, see start_caffeinate below
 SCENARIO_SOURCE="$ROOT_DIR/Cadence/Services/CadenceUITestScenarioSeed.swift"
 PAGE_SOURCE="$ROOT_DIR/Cadence/Services/CadenceUITestLaunchPage.swift"
 CATEGORY_SOURCE="$ROOT_DIR/Cadence/Shared/CadenceSettingsPresentationSupport.swift"
@@ -263,6 +269,61 @@ refuse_if_owner_running() {
 
 # The executable a live pid is running, by pid -- never by name (T-3247).
 pid_executable() { ps -o comm= -p "$1" 2>/dev/null | sed -e 's/^ *//' -e 's/ *$//' }
+
+# T-13541: hold off the display's IDLE LOCK for the life of the launched app, and no longer.
+# What ended the 2026-11-08 sighting slot was not display sleep -- `displaysleep` is 180 min on
+# this Mac -- but loginwindow's `ScreenSaverDaemon` at `idleTime: 600`. Measured in that lock's
+# own log lines (01:41:09.433, reason `kLWLockFromScreenSaverIdleLaunch`), the daemon asks
+# PMDisplaySleepIsBlocked FIRST and starts the saver only because the answer was no:
+#     PMDisplaySleepIsBlocked | intValue for preventIdleDisplaySleep = 0
+#     PMDisplaySleepIsBlocked | PMDisplaySleepIsBlocked is NOT blocked
+#     -[ScreenSaverDaemon _checkUserIdleDuringReset:] | starting screen saver due to user idle
+# `preventIdleDisplaySleep` is exactly the PreventUserIdleDisplaySleep assertion `caffeinate -d`
+# creates, so holding one across the run is what keeps that branch from being taken. That is the
+# measurement, not an inference from the flag's name.
+#
+# `-w <app pid>` is the half that makes it UNLEAKABLE: caffeinate releases the assertion and
+# exits when the app exits, by any path -- `stop`, an external kill, a crash, or this script
+# dying mid-run. There is no path that leaves a machine that will not sleep.
+#
+# It is deliberately NOT `-u`, which turns a sleeping display back ON. Nothing here touches an
+# already-locked screen, posts an event, or changes a pmset/energy/security setting: a locked
+# screen stays locked, and this only stops an UNLOCKED one from idling into a lock mid-run.
+start_caffeinate() {
+  local app_pid="$1" caf
+  if [[ ! -x /usr/bin/caffeinate ]]; then
+    print -r -- "note: no /usr/bin/caffeinate -- the display may idle-lock mid-run (T-13541)"
+    return 0
+  fi
+  /usr/bin/caffeinate -d -w "$app_pid" &
+  caf=$!
+  print -r -- "$caf" > "$CAFFILE"
+  sleep 0.3
+  if kill -0 "$caf" 2>/dev/null; then
+    print -r -- "display idle-lock held off: caffeinate -d -w $app_pid (pid $caf, exits with the app)"
+  else
+    rm -f "$CAFFILE"
+    print -r -- "note: caffeinate -d did not stay up -- the display may idle-lock mid-run (T-13541)"
+  fi
+}
+
+# Release it, guarded the way `stop` guards the app pid: signal only a live pid that `ps` still
+# names caffeinate. `-w` means this is belt-and-braces -- the assertion is already going away on
+# its own -- but a `stop` that returns having left a process behind is the thing being avoided.
+stop_caffeinate() {
+  local p have
+  [[ -f "$CAFFILE" ]] || return 0
+  p=$(<"$CAFFILE")
+  if [[ -n "$p" ]] && kill -0 "$p" 2>/dev/null; then
+    have=$(pid_executable "$p")
+    if [[ "${have:t}" == caffeinate ]]; then
+      kill "$p" 2>/dev/null && print -r -- "released the display assertion (caffeinate pid $p)"
+    else
+      print -r -- "!! REFUSING to signal pid $p from $CAFFILE: it now runs '$have', not caffeinate. Nothing killed."
+    fi
+  fi
+  rm -f "$CAFFILE"
+}
 
 # The tracked pid, but only while it is still the process `start` launched. Prints the pid;
 # returns 1 with no pidfile, 2 if it is gone, 6 if the pid now names some other executable.
@@ -364,6 +425,7 @@ case "$CMD" in
     print -r -- "$BIN" > "$BINFILE"
     sleep 2
     if kill -0 "$(<$PIDFILE)" 2>/dev/null; then
+      start_caffeinate "$(<$PIDFILE)"
       print -r -- "started pid $(<$PIDFILE)  id=$ID  store=$APP_STORE_ROOT/$ID  scenario=${SCENARIO:-none}  page=${PAGE:-today (default)}${CATEGORY:+  settings-category=$CATEGORY}"
       print -r -- "  defaults: $SUITE_PREFIX$ID   (-CadenceSuiteName, T-1157)"
       print -r -- "REMEMBER: $0 stop $ID   — in this same turn."
@@ -409,6 +471,9 @@ case "$CMD" in
     print -r -- "captured window $WIN of pid $(<$PIDFILE) -> $OUT ($(sips -g pixelWidth -g pixelHeight "$OUT" 2>/dev/null | awk '/pixel/ {printf "%s ", $2}')px)"
     ;;
   stop)
+    # First, and outside the pidfile branch: the refusal path below exits early, and the
+    # assertion must come down on that path too (T-13541).
+    stop_caffeinate
     if [[ -f "$PIDFILE" ]]; then
       pid=$(tracked_pid); trc=$?
       if (( trc == 6 )); then
@@ -488,6 +553,10 @@ case "$CMD" in
     local -a pf; pf=("$RUNDIR"/*.pid(N))
     print -r -- "tracked runs: ${#pf}"
     print -r -- "debug-build processes: $(pgrep -f 'Build/Products/Debug/Cadence.app' 2>/dev/null | wc -l | tr -d ' ')"
+    # T-13541. A tracked file whose pid is gone is normal (caffeinate -w outlives nothing);
+    # a LIVE one with no run beside it is the leak this prints to make findable.
+    local -a cf; cf=("$RUNDIR"/*.caffeinate.pid(N))
+    print -r -- "display assertions tracked: ${#cf}   (caffeinate -d -w, T-13541)"
     local -a st; st=("$APP_STORE_ROOT"/*(N/))
     print -r -- "private stores: ${#st}   ($APP_STORE_ROOT)"
     ;;
@@ -533,7 +602,28 @@ case "$CMD" in
     out=$(st stop st-legacy); rc=$?
     check stop-spares-stranger-without-binfile $(( rc == 6 )) "exit $rc: $out"
     check stranger-alive-after-legacy $( kill -0 $stranger 2>/dev/null && print 1 || print 0 ) "pid $stranger died"
+    # T-13541, the refusal half: a caffeinate pidfile whose pid was recycled is not ours either.
+    print -r -- "$stranger" > "$ws/run/st-caf.caffeinate.pid"
+    out=$(st stop st-caf); rc=$?
+    check caffeinate-stop-spares-a-stranger $( kill -0 $stranger 2>/dev/null && print 1 || print 0 ) "pid $stranger died: $out"
+    check caffeinate-stop-clears-its-file $( [[ ! -e "$ws/run/st-caf.caffeinate.pid" ]] && print 1 || print 0 ) "$(ls "$ws/run")"
     kill $stranger 2>/dev/null; wait $stranger 2>/dev/null
+
+    # T-13541, the leak half, proved against the real tool rather than reasoned from `-w`'s
+    # manpage: the watched process is killed and the assertion must go with it unaided. No app
+    # is launched and nothing is unlocked -- `-d` only declines to let an awake display idle.
+    if [[ -x /usr/bin/caffeinate ]]; then
+      /bin/sleep 30 & watched=$!
+      /usr/bin/caffeinate -d -w $watched & caf=$!
+      sleep 0.5
+      check caffeinate-comes-up $( kill -0 $caf 2>/dev/null && print 1 || print 0 ) "caffeinate pid $caf is not running"
+      kill $watched 2>/dev/null; wait $watched 2>/dev/null
+      for (( i = 0; i < 30; i++ )); do kill -0 $caf 2>/dev/null || break; sleep 0.2; done
+      check caffeinate-dies-with-the-watched-process $( kill -0 $caf 2>/dev/null && print 0 || print 1 ) "caffeinate pid $caf outlived the pid it watched"
+      kill -9 $caf 2>/dev/null; wait $caf 2>/dev/null
+    else
+      print -r -- "SKIP caffeinate-dies-with-the-watched-process: no /usr/bin/caffeinate here"
+    fi
 
     ( exec -a "$fakebin" /bin/sleep 60 ) & own=$!
     sleep 0.3
