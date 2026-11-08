@@ -30,6 +30,9 @@ struct iOSTaskComposerMarkerSuggestions: View {
     let onPickContainer: (TaskContainerSelection) -> Void
     let onPickTag: (Tag) -> Void
     let onCreateTag: (String) -> Void
+    /// [[T-13963]]: un-archives and attaches the archived tag the query names, the strip's answer
+    /// where it used to offer a false `Create`. Defaulted only because the `~` strip never draws it.
+    var onUnarchiveTag: (Tag) -> Void = { _ in }
     /// Seeds the default tag set. Only ever run from the strip's button — see
     /// `CadenceFirstLaunchEmptyStoreTests.noUnpromptedCodePathSeedsTheDefaultTags`.
     var onAddDefaultTags: () -> Void = {}
@@ -64,7 +67,12 @@ struct iOSTaskComposerMarkerSuggestions: View {
     }
 
     private var canCreateTag: Bool {
-        kind == .tag && CadenceTaskComposerSupport.canCreateSuggestedTag(query: shortcut.query, matches: matchingTags)
+        kind == .tag && CadenceTaskComposerSupport.canCreateSuggestedTag(query: shortcut.query, allTags: allTags)
+    }
+
+    /// [[T-13963]]: the archived tag the query's slug names, offered as Unarchive in place of Create.
+    private var archivedTagMatch: Tag? {
+        kind == .tag ? CadenceTaskComposerSupport.archivedSuggestedTag(query: shortcut.query, allTags: allTags) : nil
     }
 
     /// [[T-9231]]: what to draw when there is no row — asked of the shared rule the Mac's `#`
@@ -129,7 +137,17 @@ struct iOSTaskComposerMarkerSuggestions: View {
 
     @ViewBuilder
     private var tagSuggestions: some View {
-        if canCreateTag {
+        if let archivedTagMatch {
+            suggestion(
+                title: CadenceListVocabularyCopy.unarchiveRowTitle(
+                    name: CadenceTaskComposerSupport.suggestionTitle(for: archivedTagMatch)
+                ),
+                systemImage: "arrow.uturn.backward",
+                tint: Theme.blue
+            ) {
+                onUnarchiveTag(archivedTagMatch)
+            }
+        } else if canCreateTag {
             suggestion(title: "Create “\(trimmedQuery)”", systemImage: "plus", tint: Theme.blue) {
                 onCreateTag(trimmedQuery)
             }

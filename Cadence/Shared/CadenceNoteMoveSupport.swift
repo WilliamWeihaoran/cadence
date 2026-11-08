@@ -32,6 +32,8 @@ enum NoteActionSupport {
         let previousArea = note.area
         let previousProject = note.project
         let previousUpdatedAt = note.updatedAt
+        let previousOrder = note.order
+        note.order = arrivalOrder(for: note, area: area, project: nil)
         note.area = area
         note.project = nil
         note.updatedAt = Date()
@@ -39,10 +41,11 @@ enum NoteActionSupport {
             note.area = previousArea
             note.project = previousProject
             note.updatedAt = previousUpdatedAt
+            note.order = previousOrder
         }
     }
 
-    /// The project half of `move(_:toArea:modelContext:commit:)`, undoing the same three fields.
+    /// The project half of `move(_:toArea:modelContext:commit:)`, undoing the same four fields.
     ///
     /// Written out rather than routed through a shared private helper: a third declaration named
     /// `move` in this file would make every `declarationBody(named: "move")` reader ambiguous, and
@@ -56,6 +59,8 @@ enum NoteActionSupport {
         let previousArea = note.area
         let previousProject = note.project
         let previousUpdatedAt = note.updatedAt
+        let previousOrder = note.order
+        note.order = arrivalOrder(for: note, area: nil, project: project)
         note.area = nil
         note.project = project
         note.updatedAt = Date()
@@ -63,7 +68,29 @@ enum NoteActionSupport {
             note.area = previousArea
             note.project = previousProject
             note.updatedAt = previousUpdatedAt
+            note.order = previousOrder
         }
+    }
+
+    /// The `order` a note takes on arriving in a list: last among that list's notes, as a new
+    /// note lands ([[T-13973]]).
+    ///
+    /// Both moves used to carry the note's old `order` across, which in the destination is a
+    /// number from another list's sequence -- above every note there if the source list was
+    /// young, below if old. `CadenceListNoteFiling.nextOrder(in:)` is the one allocation the `+`
+    /// buttons read ([[T-13971]]). Read **before** the note is repointed, so the destination's
+    /// inverse does not yet hold it.
+    ///
+    /// Two cases keep the order the note has: re-choosing the list it is already in (the checked
+    /// row) is not an arrival, and "No List" has no list sequence to join -- unfiled list notes
+    /// are not drawn in an `order`-sorted column.
+    static func arrivalOrder(for note: Note, area: Area?, project: Project?) -> Int {
+        let alreadyThere = (area != nil && note.area?.id == area?.id)
+            || (project != nil && note.project?.id == project?.id)
+        guard !alreadyThere, area != nil || project != nil else { return note.order }
+        let residents = (area?.notes ?? project?.notes ?? [])
+            .filter { $0.kind == .list && $0.id != note.id }
+        return CadenceListNoteFiling.nextOrder(in: residents)
     }
 }
 

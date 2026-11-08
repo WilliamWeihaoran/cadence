@@ -150,6 +150,94 @@ struct CadenceNoteMoveParityTests {
         #expect(CadenceNoteMoveDestinations.isUnfiled(note) == false)
     }
 
+    /// [[T-13973]]: a moved note lands **last** among the destination's list notes, as a new note
+    /// does, rather than keeping an `order` drawn from its old list's sequence. The source list is
+    /// young (order 0) and the destination old (orders 4 and 9), so the carried order would have
+    /// drawn the note above both residents. A daily note filed under the same area is not a list
+    /// note and does not count.
+    @Test func aMovedNoteLandsLastInItsDestinationList() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let home = Area(name: "Home")
+        let work = Area(name: "Work")
+        let launch = Project(name: "Launch")
+        let note = Note(kind: .list, title: "Plan")
+        let older = Note(kind: .list, title: "Older")
+        let newer = Note(kind: .list, title: "Newer")
+        let projectResident = Note(kind: .list, title: "Brief")
+        let dated = Note(kind: .daily, title: "Day")
+        for model in [home, work] { context.insert(model) }
+        context.insert(launch)
+        for model in [note, older, newer, projectResident, dated] { context.insert(model) }
+        note.area = home
+        note.order = 0
+        older.area = work
+        older.order = 4
+        newer.area = work
+        newer.order = 9
+        dated.area = work
+        dated.order = 50
+        projectResident.project = launch
+        projectResident.order = 2
+        let homeResident = Note(kind: .list, title: "Home resident")
+        context.insert(homeResident)
+        homeResident.area = home
+        homeResident.order = 6
+        try context.save()
+
+        // Re-choosing the list it is already in (the checked row) is not an arrival: the note
+        // keeps its place rather than jumping below `homeResident`.
+        try NoteActionSupport.move(note, toArea: home, modelContext: context)
+        #expect(note.order == 0, "re-choosing the current list moved the note to the end")
+
+        try NoteActionSupport.move(note, toArea: work, modelContext: context)
+        #expect(note.order == 10, "the moved note kept an order from its old list")
+
+        try NoteActionSupport.move(note, toProject: launch, modelContext: context)
+        #expect(note.order == 3, "the project move kept an order from its old list")
+
+        let noteID = note.id
+        let reader = ModelContext(container)
+        let stored = try #require(try reader.fetch(FetchDescriptor<Note>(predicate: #Predicate { $0.id == noteID })).first)
+        #expect(stored.order == 3)
+    }
+
+    /// A refused move puts the old `order` back with the old list, so the note does not sit in its
+    /// own list at a number allocated for somewhere else.
+    @Test func aRefusedMoveRestoresTheNotesOrder() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let home = Area(name: "Home")
+        let work = Area(name: "Work")
+        let launch = Project(name: "Launch")
+        let note = Note(kind: .list, title: "Plan")
+        let resident = Note(kind: .list, title: "Resident")
+        let projectResident = Note(kind: .list, title: "Brief")
+        context.insert(home)
+        context.insert(work)
+        context.insert(launch)
+        for model in [note, resident, projectResident] { context.insert(model) }
+        note.area = home
+        note.order = 1
+        resident.area = work
+        resident.order = 7
+        projectResident.project = launch
+        projectResident.order = 5
+        try context.save()
+
+        #expect(throws: CommitRefused.self) {
+            try NoteActionSupport.move(note, toArea: work, modelContext: context) { _ in throw CommitRefused() }
+        }
+        #expect(note.order == 1)
+        #expect(note.area?.name == "Home")
+
+        #expect(throws: CommitRefused.self) {
+            try NoteActionSupport.move(note, toProject: launch, modelContext: context) { _ in throw CommitRefused() }
+        }
+        #expect(note.order == 1)
+        #expect(note.project == nil)
+    }
+
     // MARK: - Source shape: both platforms' chrome reach the same helpers
 
     /// The two note menus — the Mac popover and the iOS editor menu — offer Move Note through the

@@ -129,6 +129,12 @@ struct iOSCreateTaskSheet: View {
                         draft.title = CadenceTaskComposerSupport.title(removingShortcut: shortcut)
                     }
                 },
+                onUnarchiveTag: { tag in
+                    // [[T-13963]]: the same keep-on-refusal as Create.
+                    if unarchiveTag(tag) == nil {
+                        draft.title = CadenceTaskComposerSupport.title(removingShortcut: shortcut)
+                    }
+                },
                 // The `#` stays in the title: the strip then lists the new tags to pick from.
                 onAddDefaultTags: addDefaultTags
             )
@@ -180,6 +186,18 @@ struct iOSCreateTaskSheet: View {
         } catch {
             actionError = CadencePendingChangePersistence.editFailureNotice
         }
+    }
+
+    /// [[T-13963]]: the strip's Unarchive chip. The un-archive is committed before the tag is
+    /// selected, so the chip never outruns the store.
+    private func unarchiveTag(_ tag: Tag) -> String? {
+        guard TagSupport.committedUnarchive(tag, in: modelContext) else {
+            actionError = CadencePendingChangePersistence.editFailureNotice
+            return actionError
+        }
+        selectedTagIDs.insert(tag.id.uuidString)
+        actionError = nil
+        return nil
     }
 
     private func createTag(_ name: String) -> String? {

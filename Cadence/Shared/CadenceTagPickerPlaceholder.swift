@@ -75,17 +75,49 @@ extension CadenceTaskComposerSupport {
         tag.name.isEmpty ? tag.slug : tag.name
     }
 
-    /// The active tags whose drawn name starts with `query`. An empty query matches every one.
+    /// The active tags whose drawn name starts with `query`, or whose slug starts with the query's
+    /// slug. An empty query matches every one.
+    ///
+    /// **The slug half is [[T-13963]].** `#day-job` against an existing `Day Job` matched no drawn
+    /// name, so the strip offered `Create “day-job”` -- and the create resolved the slug straight
+    /// back to `Day Job`. Now the query's slug finds it, and `canCreateSuggestedTag` declines the
+    /// Create. A query with no letter or digit has no slug of its own (`slug(for:)` falls back to
+    /// `tag`), so it matches on the drawn name alone.
     static func tagSuggestions(from allTags: [Tag], query: String) -> [Tag] {
-        activeSuggestionTags(allTags).filter { matchesQuery(suggestionTitle(for: $0), query: query) }
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        let querySlug = trimmed.rangeOfCharacter(from: .alphanumerics) == nil ? nil : TagSupport.slug(for: trimmed)
+        return activeSuggestionTags(allTags).filter { tag in
+            if matchesQuery(suggestionTitle(for: tag), query: query) { return true }
+            guard let querySlug else { return false }
+            return tag.slug.hasPrefix(querySlug)
+        }
     }
 
-    /// Whether the strip offers `Create “query”`: there is something typed, and no drawn
-    /// suggestion already carries exactly that name.
-    static func canCreateSuggestedTag(query: String, matches: [Tag]) -> Bool {
+    /// Whether the strip offers `Create “query”`: something usable is typed and **no tag in the
+    /// store, active or archived, carries its slug** -- `TagSupport.creationDecision`, the rule
+    /// every other tag entry point reads.
+    ///
+    /// **[[T-13963]].** This compared the query against the strip's own drawn matches, which
+    /// `activeSuggestionTags` had already stripped of archived tags, and by drawn name rather than
+    /// slug. So an archived tag's name offered `Create “work”`, and the create's
+    /// `TagSupport.committedTag` resolved the slug to the archived row and attached it, still
+    /// archived -- a tag every picker hides. An archived match is offered as Unarchive instead
+    /// (`archivedSuggestedTag`); an active one is already among the matches to pick.
+    ///
+    /// - Parameter allTags: every tag in the store, archived and active.
+    static func canCreateSuggestedTag(query: String, allTags: [Tag]) -> Bool {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return false }
-        return !matches.contains { suggestionTitle(for: $0).caseInsensitiveCompare(trimmed) == .orderedSame }
+        return TagSupport.creationDecision(for: trimmed, in: allTags).isCreatable
+    }
+
+    /// The archived tag carrying the query's slug, which the strip offers as `Unarchive "<name>"`
+    /// in place of a Create -- the same row the Mac tag picker and the phone's tag popover draw for
+    /// the same text ([[T-13963]]). `nil` when nothing is typed.
+    static func archivedSuggestedTag(query: String, allTags: [Tag]) -> Tag? {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        return TagSupport.creationDecision(for: trimmed, in: allTags).archivedMatch
     }
 
     /// What the `#` strip draws in place of rows. `hasActiveTags` is read off the **catalogue**,
@@ -96,7 +128,8 @@ extension CadenceTaskComposerSupport {
         return TagPickerPlaceholder.resolve(
             hasActiveTags: !activeSuggestionTags(allTags).isEmpty,
             matchCount: matches.count,
-            canCreate: canCreateSuggestedTag(query: query, matches: matches)
+            canCreate: canCreateSuggestedTag(query: query, allTags: allTags),
+            canRestore: archivedSuggestedTag(query: query, allTags: allTags) != nil
         )
     }
 }

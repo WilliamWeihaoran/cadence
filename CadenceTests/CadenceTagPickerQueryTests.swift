@@ -156,4 +156,84 @@ struct CadenceTagPickerQueryTests {
         // Something typed on an empty catalogue gets the Create row, not the offer beside it.
         #expect(TagSupport.pickerQuery("Garden", in: []).placeholder == .none)
     }
+
+    // MARK: - [[T-13963]]: the capture card's `#` strip
+
+    /// The strip offered `Create “old project”` for an archived tag's name, because it compared the
+    /// query only against its own (archived-free) matches; the create then resolved the slug to the
+    /// archived row and attached it, still archived. It now asks `creationDecision`, as every other
+    /// tag entry point does: an archived name is an Unarchive offer, never a Create.
+    @Test func theCaptureStripOffersUnarchiveNotCreateForAnArchivedName() throws {
+        let (_, tags) = try makeTags()
+        let old = try #require(tags.first { $0.isArchived })
+        for query in ["old project", "Old Project", "old-project", "#old-project"] {
+            #expect(!CadenceTaskComposerSupport.canCreateSuggestedTag(query: query, allTags: tags), "\(query)")
+            #expect(CadenceTaskComposerSupport.archivedSuggestedTag(query: query, allTags: tags)?.id == old.id, "\(query)")
+            #expect(CadenceTaskComposerSupport.tagSuggestions(from: tags, query: query).isEmpty, "an archived tag is never a chip")
+            // The Unarchive chip is a row, so the strip does not also say nothing matched.
+            #expect(CadenceTaskComposerSupport.tagSuggestionPlaceholder(allTags: tags, query: query) == .none)
+        }
+        // A new name still creates, and is not mistaken for an archived one.
+        #expect(CadenceTaskComposerSupport.canCreateSuggestedTag(query: "Wor", allTags: tags))
+        #expect(CadenceTaskComposerSupport.archivedSuggestedTag(query: "Wor", allTags: tags) == nil)
+        #expect(CadenceTaskComposerSupport.archivedSuggestedTag(query: "  ", allTags: tags) == nil)
+    }
+
+    /// The comparison is by slug, not drawn name: `day-job` against an existing `Day Job` used to
+    /// read as Create (and the create resolved straight back to `Day Job`). Now the slug finds the
+    /// chip to pick, and no Create is drawn beside it. A query with no letter or digit has no slug
+    /// of its own and neither matches by slug nor creates.
+    @Test func theCaptureStripComparesTheQueryBySlug() throws {
+        let (container, tags) = try makeTags()
+        let dayJob = Cadence.Tag(name: "Day Job", slug: "day-job")
+        ModelContext(container).insert(dayJob)
+        let all = tags + [dayJob]
+
+        #expect(!CadenceTaskComposerSupport.canCreateSuggestedTag(query: "day-job", allTags: all))
+        #expect(CadenceTaskComposerSupport.tagSuggestions(from: all, query: "day-job").map(\.slug) == ["day-job"])
+        #expect(CadenceTaskComposerSupport.tagSuggestions(from: all, query: "day-j").map(\.slug) == ["day-job"])
+        // The drawn-name prefix still works on its own.
+        #expect(Set(CadenceTaskComposerSupport.tagSuggestions(from: all, query: "Wo").map(\.slug)) == ["work"])
+
+        #expect(!CadenceTaskComposerSupport.canCreateSuggestedTag(query: "--", allTags: all))
+        #expect(CadenceTaskComposerSupport.tagSuggestions(from: all, query: "--").isEmpty)
+    }
+
+    /// What the Unarchive chip runs: the tag is un-archived **in the store** (read back through a
+    /// second context), and a refused commit puts both fields back and answers `false`, so the
+    /// sheet keeps the `#` query and says so instead of selecting a tag the store still hides.
+    @MainActor
+    @Test func theStripsUnarchiveCommitsAndARefusalUndoes() throws {
+        struct CommitRefused: Error {}
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let tag = Cadence.Tag(name: "Old Project", slug: "old-project")
+        tag.isArchived = true
+        context.insert(tag)
+        try context.save()
+        let archivedAt = tag.updatedAt
+
+        #expect(!TagSupport.committedUnarchive(tag, in: context, commit: { _ in throw CommitRefused() }))
+        #expect(tag.isArchived)
+        #expect(tag.updatedAt == archivedAt)
+
+        #expect(TagSupport.committedUnarchive(tag, in: context))
+        #expect(!context.hasChanges)
+        let stored = try ModelContext(container).fetch(FetchDescriptor<Cadence.Tag>())
+        #expect(stored.count == 1)
+        #expect(stored.first?.isArchived == false)
+    }
+
+    /// Both capture sheets hand the strip an Unarchive action that commits through the shared
+    /// helper; the strip draws it in place of Create. Source shape, because the sheets are views.
+    @Test func bothCaptureSheetsWireTheStripsUnarchiveChip() throws {
+        let strip = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCreateTaskSheetSupportViews.swift"))
+        #expect(strip.contains("CadenceTaskComposerSupport.canCreateSuggestedTag(query: shortcut.query, allTags: allTags)"))
+        #expect(strip.contains("onUnarchiveTag(archivedTagMatch)"))
+        for path in ["Cadence/iOS/iOSCreateTaskSheet.swift", "Cadence/macOS/Sheets/CreateTaskSheet.swift"] {
+            let sheet = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            #expect(sheet.contains("onUnarchiveTag: { tag in"), "\(path)")
+            #expect(sheet.contains("TagSupport.committedUnarchive(tag, in: modelContext)"), "\(path)")
+        }
+    }
 }

@@ -659,10 +659,7 @@ struct CadenceFirstLaunchEmptyStoreTests {
         #expect(try CadenceTaskComposerSupport.tagSuggestionPlaceholder(allTags: tags(), query: "") == .offerDefaultTags)
         // Something typed on a fresh store gets the create chip, not an offer beside it.
         #expect(try CadenceTaskComposerSupport.tagSuggestionPlaceholder(allTags: tags(), query: "wo") == .none)
-        #expect(try CadenceTaskComposerSupport.canCreateSuggestedTag(
-            query: "wo",
-            matches: CadenceTaskComposerSupport.tagSuggestions(from: tags(), query: "wo")
-        ))
+        #expect(try CadenceTaskComposerSupport.canCreateSuggestedTag(query: "wo", allTags: tags()))
 
         // What the chip's action runs, then the strip has rows of its own to draw.
         try TagSupport.seedDefaultTagsCommitting(in: context)
@@ -679,10 +676,7 @@ struct CadenceFirstLaunchEmptyStoreTests {
         for tag in seeded { tag.isArchived = false }
         let first = try #require(seeded.first)
         let exact = CadenceTaskComposerSupport.suggestionTitle(for: first)
-        #expect(!CadenceTaskComposerSupport.canCreateSuggestedTag(
-            query: exact.uppercased(),
-            matches: CadenceTaskComposerSupport.tagSuggestions(from: seeded, query: exact)
-        ))
+        #expect(!CadenceTaskComposerSupport.canCreateSuggestedTag(query: exact.uppercased(), allTags: seeded))
     }
 
     /// Both macOS pickers go through the one placeholder, and neither keeps its own copy of the

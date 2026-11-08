@@ -99,6 +99,35 @@ extension TagSupport {
         }
     }
 
+    /// Un-archives `tag` **and commits it**, answering whether the store took it -- the capture
+    /// strip's Unarchive chip ([[T-13963]]), in `committedTag`'s value-not-throw shape for the same
+    /// reason: its caller is a non-throwing closure on a view.
+    ///
+    /// The undo is the two-field snapshot the Mac tag picker's `restore` and the phone popover's
+    /// `unarchive` take, not `rollback()`: the capture sheet has its draft pending behind it. See
+    /// `CadencePendingChangePersistence.commitEdit`.
+    ///
+    /// - Parameter commit: forwarded so a test can reach the `false` a refused commit produces.
+    static func committedUnarchive(
+        _ tag: Tag,
+        in context: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let previousIsArchived = tag.isArchived
+        let previousUpdatedAt = tag.updatedAt
+        tag.isArchived = false
+        tag.updatedAt = Date()
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: context, commit: commit) {
+                tag.isArchived = previousIsArchived
+                tag.updatedAt = previousUpdatedAt
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// `syncNoteTagsFromMarkdown`, **plus the commit for the rows it had to mint** (T-651).
     ///
     /// The same shape as `committedTag`, one call site over: `CadenceCoreNoteSupport.update` calls

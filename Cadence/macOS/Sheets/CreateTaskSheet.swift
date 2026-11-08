@@ -164,6 +164,12 @@ struct CreateTaskSheet: View {
                         draft.title = CadenceTaskComposerSupport.title(removingShortcut: shortcut)
                     }
                 },
+                onUnarchiveTag: { tag in
+                    // [[T-13963]]: the same keep-on-refusal as Create.
+                    if unarchiveTag(tag) == nil {
+                        draft.title = CadenceTaskComposerSupport.title(removingShortcut: shortcut)
+                    }
+                },
                 onAddDefaultTags: addDefaultTags
             )
         }
@@ -419,6 +425,18 @@ struct CreateTaskSheet: View {
     /// **T-631, half 3 of the `try? save()` rule.** A tag typed here is committed on the spot, so
     /// one abandoned with Cancel is not left *pending* for whatever unrelated screen saves next.
     /// `nil` when the tag exists and is selected; the sentence the card draws when it does not.
+    /// [[T-13963]]: the strip's Unarchive chip. The un-archive is committed before the tag is
+    /// selected, so the chip never outruns the store.
+    private func unarchiveTag(_ tag: Tag) -> String? {
+        guard TagSupport.committedUnarchive(tag, in: modelContext) else {
+            actionError = CadencePendingChangePersistence.editFailureNotice
+            return actionError
+        }
+        selectedTagIDs.insert(tag.id.uuidString)
+        actionError = nil
+        return nil
+    }
+
     private func createTag(_ name: String) -> String? {
         guard let tag = TagSupport.committedTag(named: name, in: modelContext) else {
             actionError = CadencePendingChangePersistence.editFailureNotice
