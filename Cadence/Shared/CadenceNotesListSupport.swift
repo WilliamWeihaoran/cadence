@@ -535,9 +535,13 @@ enum NotesListVisibility {
     /// A body with nothing in it but whitespace, or nothing but the heading the note was seeded
     /// with. Shared with the "looks empty" row styling so the list cannot dim a row it also lists
     /// as written.
+    ///
+    /// **The seeded heading is `# <title>` or, for a note nobody has named, a bare `#`**
+    /// ([[T-13901]]): the list `+` and Notepad's New Note seed `"# \n\n"` ([[T-733]]), whose
+    /// heading has no title to compare with -- `displayTitle` is then the kind's fallback word.
     static func isBlankBody(_ body: String, displayTitle: String) -> Bool {
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty || trimmed == "# \(displayTitle)"
+        return trimmed.isEmpty || trimmed == "#" || trimmed == "# \(displayTitle)"
     }
 
     /// The body a row should preview: frontmatter stripped, so a tagged-but-unwritten note reads as

@@ -275,17 +275,53 @@ enum CadenceCoreNoteSupport {
     }
 }
 
+/// **[[T-13901]] — applying a template to a whole note, on both platforms.** The header and
+/// placeholder routes (iOS's template menu, the Mac's empty-body placeholder and Actions popover,
+/// the Mac's Task Notes pane) all rewrite the note through `contentByApplying`; the `/` route is an
+/// insertion at the caret and keeps its own rule in `MarkdownSlashCommandCoreSupport`.
+///
+/// Two things went wrong before this was one function:
+///
+/// - **A new nameless note was never blank.** The list `+` and Notepad's New Note seed `"# \n\n"`
+///   ([[T-733]]), so the iOS rule (`content.isEmpty`) and the Mac rule (`body == "# <title>"`)
+///   both saw text and *appended* -- leaving a stray empty `#` heading above the template, and,
+///   because `MarkdownNoteTitleSync` reads that empty first heading as "leave the title alone",
+///   a note still called Untitled under a "# Project Brief" heading. The Mac's empty-body
+///   placeholder, which offers templates only on a blank note, never showed on such a note.
+/// - **A template's frontmatter was pasted into the body.** Three of the eight templates open with
+///   a `---` block, which means something only at the very top of a note. Appended below text, or
+///   added under a note's own block, it drew as a rule, two lines of YAML and another rule.
+///
+/// So: a blank note (`NotesListVisibility.isBlankBody`, the list's own rule) is replaced by the
+/// template; anything else gets the template's body appended. The template's frontmatter is
+/// kept only when it can still be frontmatter -- the note is blank and has no block of its own.
 enum CadenceNoteTemplateInsertionSupport {
-    static func contentByApplying(_ template: NoteTemplate, to currentContent: String) -> String {
-        let trimmed = currentContent.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return template.body }
-        return trimmed + "\n\n" + template.body
+    static func contentByApplying(
+        _ template: NoteTemplate,
+        to currentContent: String,
+        displayTitle: String
+    ) -> String {
+        let note = MarkdownMetadataParser.splitFrontmatter(in: currentContent)
+        let stencil = MarkdownMetadataParser.splitFrontmatter(in: template.body)
+        let stencilBody = String(stencil.body.drop { $0.isWhitespace })
+
+        if NotesListVisibility.isBlankBody(note.body, displayTitle: displayTitle) {
+            // No block of either kind to keep apart: the template verbatim, as it always was.
+            guard !note.frontmatter.isEmpty else { return template.body }
+            return MarkdownMetadataParser.content(frontmatter: note.frontmatter, body: stencilBody)
+        }
+
+        let trimmedBody = note.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        return MarkdownMetadataParser.content(
+            frontmatter: note.frontmatter,
+            body: trimmedBody + "\n\n" + stencilBody
+        )
     }
 
     static func apply(_ template: NoteTemplate, to note: Note, in modelContext: ModelContext) {
         CadenceCoreNoteSupport.update(
             note,
-            content: contentByApplying(template, to: note.content),
+            content: contentByApplying(template, to: note.content, displayTitle: note.displayTitle),
             in: modelContext
         )
     }

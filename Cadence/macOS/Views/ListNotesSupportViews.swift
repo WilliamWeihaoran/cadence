@@ -56,9 +56,10 @@ struct TaskNoteEditorPane: View {
     /// Drives the empty-body placeholder — same rule as `applyTemplate`'s fill-vs-append branch.
     private var isNoteBlank: Bool {
         let source = loadedTaskID == task.id ? editorContent : task.notes
-        return MarkdownMetadataParser.splitFrontmatter(in: source).body
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .isEmpty
+        return NotesListVisibility.isBlankBody(
+            MarkdownMetadataParser.splitFrontmatter(in: source).body,
+            displayTitle: ""
+        )
     }
 
     private var toolbarAccessory: AnyView {
@@ -328,13 +329,13 @@ struct TaskNoteEditorPane: View {
         editorTextView.scrollRangeToVisible(NSRange(location: safeLocation, length: 0))
     }
 
+    /// The shared whole-note rule ([[T-13901]]), as `NoteEditorPane.applyTemplate`: the note's
+    /// own frontmatter survives, and a template's block is never pasted below text. Task notes
+    /// carry no seeded heading, so the only blank they have is an empty body.
     private func applyTemplate(_ template: NoteTemplate) {
-        // Same split-and-restore as `NoteEditorPane.applyTemplate`: a leading `---` block renders
-        // at zero height, so a wholesale rewrite would destroy content the user cannot see.
-        let parts = MarkdownMetadataParser.splitFrontmatter(in: editorContent)
-        let trimmedBody = parts.body.trimmingCharacters(in: .whitespacesAndNewlines)
-        let newBody = trimmedBody.isEmpty ? template.body : trimmedBody + "\n\n" + template.body
-        replaceEditorContent(MarkdownMetadataParser.content(frontmatter: parts.frontmatter, body: newBody))
+        replaceEditorContent(
+            CadenceNoteTemplateInsertionSupport.contentByApplying(template, to: editorContent, displayTitle: "")
+        )
     }
 
     private func linkMention(_ mentionedNote: Note) {

@@ -162,12 +162,11 @@ struct NoteEditorPane: View {
     /// frontmatter block the user cannot see, and it should still read as empty.
     private var isNoteBlank: Bool {
         let source = loadedNoteID == note.id ? editorContent : note.content
-        return isBlankBody(MarkdownMetadataParser.splitFrontmatter(in: source).body)
-    }
-
-    private func isBlankBody(_ body: String) -> Bool {
-        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty || trimmed == "# \(note.displayTitle)"
+        // [[T-13901]]: the list's rule, which also reads a nameless note's seeded `#` as blank.
+        return NotesListVisibility.isBlankBody(
+            MarkdownMetadataParser.splitFrontmatter(in: source).body,
+            displayTitle: note.displayTitle
+        )
     }
 
     /// The note's entire header: one row.
@@ -623,13 +622,16 @@ struct NoteEditorPane: View {
         editorTextView.scrollRangeToVisible(NSRange(location: safeLocation, length: 0))
     }
 
+    /// The shared whole-note rule ([[T-13901]]): it keeps the note's frontmatter, which is
+    /// invisible here, and never pastes the template's own block into the body.
     private func applyTemplate(_ template: NoteTemplate) {
-        // Split the frontmatter off first and put it back after. The block is invisible, so
-        // rewriting `editorContent` wholesale would silently take the note's tags with it.
-        let parts = MarkdownMetadataParser.splitFrontmatter(in: editorContent)
-        let trimmedBody = parts.body.trimmingCharacters(in: .whitespacesAndNewlines)
-        let newBody = isBlankBody(parts.body) ? template.body : trimmedBody + "\n\n" + template.body
-        replaceEditorContent(MarkdownMetadataParser.content(frontmatter: parts.frontmatter, body: newBody))
+        replaceEditorContent(
+            CadenceNoteTemplateInsertionSupport.contentByApplying(
+                template,
+                to: editorContent,
+                displayTitle: note.displayTitle
+            )
+        )
     }
 
     private func linkMention(_ mentionedNote: Note) {
