@@ -153,9 +153,13 @@ nonisolated enum CadenceTaskSearchSupport {
         CadenceSearchMatcher.matchScore(query: query, fields: searchFields(for: task))
     }
 
+    /// **Completion is asked first** ([[T-14012]]), the order `TaskCompletionAnimationManager.glyph(for:)`
+    /// already uses. A finished task keeps its timeline slot, so asking the slot first drew a done
+    /// task -- visible once the Completed filter is on -- with the open-work clock instead of the
+    /// filled check, on both search surfaces.
     static func glyph(for task: AppTask) -> CadenceTaskSearchGlyph {
-        if task.scheduledStartMin >= 0 { return .scheduled }
-        return task.isDone ? .completed : .active
+        if task.isDone { return .completed }
+        return task.scheduledStartMin >= 0 ? .scheduled : .active
     }
 
     /// How many tasks the query matches that the Completed filter is holding back ([[T-6971]],
@@ -543,13 +547,18 @@ nonisolated enum CadenceSearchIdleSuggestions {
     /// iOS Search's idle window for each section.
     static let limit = 8
 
-    /// Open work on today's plate: scheduled for `today`, or due on or before it. Cancelled and
-    /// completed work is never suggested, whatever the Completed filter says — the filter widens a
-    /// *search*, and a suggestion list of finished work answers nothing.
+    /// Open work on today's plate: exactly what the Today page lists, through
+    /// `AppTask.isTodayWork(todayKey:)` -- due on or before `today`, or planned for it **or for an
+    /// earlier day and never done** (Today's Leftover). Cancelled and completed work is never
+    /// suggested, whatever the Completed filter says -- the filter widens a *search*, and a
+    /// suggestion list of finished work answers nothing.
+    ///
+    /// **[[T-14011]].** This was a second, narrower spelling -- `scheduledDate == today` or
+    /// `dueDate <= today` -- with no past-do arm, so a task planned for yesterday with no due date
+    /// sat on Today and was missing from both search surfaces' idle Tasks list: [[T-353]]'s widget
+    /// defect, again, in the one place that rule had not reached.
     static func isSuggested(_ task: AppTask, today: String) -> Bool {
-        !task.isCancelled &&
-            !task.isDone &&
-            (task.scheduledDate == today || !task.dueDate.isEmpty && task.dueDate <= today)
+        task.isTodayWork(todayKey: today)
     }
 
     /// Due date (undated last), then the user's manual order, then identity (T-498). `order` is

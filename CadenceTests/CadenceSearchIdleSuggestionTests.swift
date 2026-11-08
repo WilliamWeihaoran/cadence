@@ -73,6 +73,38 @@ struct CadenceSearchIdleSuggestionTests {
         #expect(CadenceSearchIdleSuggestions.limit == 8)
     }
 
+    /// **[[T-14011]]: work planned for an earlier day and never done is suggested** -- Today's
+    /// Leftover -- because Today lists it. The rule had no past-do arm, so such a task sat on Today
+    /// and was missing from both search surfaces' idle Tasks list. Due-dated work still leads; a
+    /// past-do task with no due date sorts with the other undated rows, by manual order.
+    @Test func workPlannedForAnEarlierDayAndNeverDoneIsSuggestedAsTodayListsIt() {
+        let leftover = task("Leftover from yesterday", scheduled: "2026-10-29", order: 0)
+        let leftoverDoneOnTime = task("Finished leftover", scheduled: "2026-10-29", status: .done)
+        let leftoverCancelled = task("Dropped leftover", scheduled: "2026-10-28", status: .cancelled)
+        let dueToday = task("Due today", due: Self.today)
+        let doToday = task("Do today", scheduled: Self.today, order: 1)
+        let tomorrow = task("Tomorrow", scheduled: "2026-10-31")
+        let all = [tomorrow, doToday, leftoverCancelled, leftover, leftoverDoneOnTime, dueToday]
+
+        // Membership is Today's own, task by task.
+        for candidate in all {
+            #expect(
+                CadenceSearchIdleSuggestions.isSuggested(candidate, today: Self.today)
+                    == candidate.isTodayWork(todayKey: Self.today),
+                "\(candidate.title)"
+            )
+        }
+        #expect(CadenceSearchIdleSuggestions.isSuggested(leftover, today: Self.today))
+
+        let suggested = CadenceSearchIdleSuggestions.tasks(all, today: Self.today)
+        #expect(suggested.map(\.id) == [dueToday.id, leftover.id, doToday.id])
+
+        // The palette's idle Tasks section reads the same list.
+        let palette = GlobalSearchIndexSupport.taskResults(tasks: all, query: "", today: Self.today)
+        #expect(palette.map(\.id).contains(CadenceSearchIdentity.task(leftover.id)))
+        #expect(palette.count == 3)
+    }
+
     @Test func theSharedRuleOrdersNotesMostRecentlyEditedFirst() {
         let base = Date(timeIntervalSince1970: 1_800_000_000)
         let oldest = Note(kind: .permanent, title: "Alpha", updatedAt: base)

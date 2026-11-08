@@ -197,6 +197,26 @@ struct CadenceSearchCandidateSupportTests {
         #expect(CadenceTaskSearchGlyph.active.systemImage == "circle")
     }
 
+    /// **[[T-14012]]: a finished task draws the filled check even when it holds a timeline slot.**
+    /// Completing a task keeps its slot, so the slot used to be asked first and a done task --
+    /// listed once the Completed filter is on -- drew the open-work clock on both surfaces. An open
+    /// task with a slot still draws the clock.
+    @Test func aCompletedTaskWithATimelineSlotDrawsTheCompletedGlyph() throws {
+        let fixture = try makeTaskFixture()
+        let slotted = fixture.completed
+        slotted.scheduledStartMin = 600
+        #expect(slotted.isDone, "non-vacuity: the fixture's completed task is done")
+
+        #expect(CadenceTaskSearchSupport.glyph(for: slotted) == .completed)
+        #expect(CadenceTaskSearchSupport.glyph(for: fixture.scheduled) == .scheduled)
+
+        let row = try #require(
+            GlobalSearchIndexSupport.taskResults(tasks: fixture.tasks, query: "beta", includingCompleted: true)
+                .first { $0.destination == .task(slotted.id) }
+        )
+        #expect(row.icon == "checkmark.circle.fill")
+    }
+
     @Test func anInboxTaskIsFindableByTypingInboxOnBothSurfaces() throws {
         let fixture = try makeTaskFixture()
 
