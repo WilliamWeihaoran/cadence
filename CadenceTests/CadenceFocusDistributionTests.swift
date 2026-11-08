@@ -156,6 +156,43 @@ struct CadenceFocusDistributionTests {
         #expect(occurrencesInFocusSource(of: "readyCount: readyTasks.count", in: page) == 1)
     }
 
+    // MARK: - The picker's search field ([[T-13871]])
+
+    private func pickTitles(_ ready: [AppTask], query: String) -> [String] {
+        CadenceFocusPickItem.filtered(tasks: ready, query: query, todayKey: "2026-08-22", limit: nil).map {
+            switch $0 {
+            case .task(let task): return task.title
+            }
+        }
+    }
+
+    /// The picker's field finds what Cmd+K and iOS Search find over the same task: accents folded,
+    /// words in any order, the row's own "Untitled Task" and "Inbox" spellings. The private
+    /// substring test it replaced answered "No matches" to all four.
+    @Test func thepickerSearchMatchesThroughTheSharedScorer() {
+        let cafe = AppTask(title: "Café rota")
+        let draft = AppTask(title: "Draft report")
+        let untitled = AppTask(title: "")
+        let ready = [cafe, draft, untitled]
+
+        #expect(pickTitles(ready, query: "cafe") == ["Café rota"])
+        #expect(pickTitles(ready, query: "report draft") == ["Draft report"])
+        #expect(pickTitles(ready, query: "untitled") == [""])
+        // All three are unfiled, so all three are Inbox rows -- in the ready order, not by score.
+        #expect(pickTitles(ready, query: "inbox") == ["Café rota", "Draft report", ""])
+    }
+
+    /// Nothing the old substring test found is lost: a fragment inside a word still matches, a
+    /// query matching nothing still matches nothing, and the order is the ready order the caller
+    /// passed rather than a ranking.
+    @Test func thepickerSearchKeepsSubstringHitsAndTheReadyOrder() {
+        let ready = [AppTask(title: "Write report"), AppTask(title: "Reply to Sam"), AppTask(title: "Report out")]
+
+        #expect(pickTitles(ready, query: "port") == ["Write report", "Report out"])
+        #expect(pickTitles(ready, query: "re") == ["Write report", "Reply to Sam", "Report out"])
+        #expect(pickTitles(ready, query: "zzz").isEmpty)
+    }
+
     /// A row names the subject it would run against, which is how a surface re-finds the session it
     /// started without comparing titles.
     @Test func apickItemNamesItsOwnTarget() {

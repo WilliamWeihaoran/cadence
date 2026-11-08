@@ -86,21 +86,34 @@ enum CadenceFocusPickItem: Identifiable {
         return shownCount < readyCount ? "Top \(shownCount) of \(total)" : total
     }
 
+    /// **[[T-13871]]: the picker's field matches through `CadenceSearchMatcher`, the one scorer.**
+    ///
+    /// It used to lowercase the query and ask whether the joined fields `contains` it -- a private
+    /// fourth matcher with none of the shared one's folding. So "cafe" did not find "Café", "report
+    /// draft" did not find "Draft report", an untitled task drawn as "Untitled Task" was not found
+    /// by typing what the row said, and an Inbox task was not found by "inbox" -- while Cmd+K and
+    /// iOS Search, over the same task, found all four. Every query the substring test matched still
+    /// matches: the scorer's last fallback is containment of each token in the joined fields.
+    ///
+    /// Filtering only. The rows keep the ready order `readyTasks` gave them, because that order is
+    /// what both pickers offer as the next session; a match score has no say in it.
     private func matches(_ query: String) -> Bool {
-        let needle = query.lowercased()
-        return searchText.lowercased().contains(needle)
+        CadenceSearchMatcher.matchScore(query: query, fields: searchFields) != nil
     }
 
-    private var searchText: String {
+    /// What the row draws, in its own spelling (the display title, the "Inbox" container label),
+    /// then the priority and the two date keys the empty state's "project, task title, priority,
+    /// or date" promises.
+    private var searchFields: [String] {
         switch self {
         case .task(let task):
             return [
-                task.title,
-                task.containerName,
+                TaskTitleSupport.displayTitle(task.title),
+                CadenceTaskSearchSupport.containerLabel(for: task),
                 task.priority.label,
                 task.dueDate,
                 task.scheduledDate
-            ].joined(separator: " ")
+            ]
         }
     }
 }
