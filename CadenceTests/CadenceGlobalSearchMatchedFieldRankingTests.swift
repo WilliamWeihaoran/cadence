@@ -83,5 +83,68 @@ struct CadenceGlobalSearchMatchedFieldRankingTests {
         let palette = GlobalSearchIndexSupport.eventResults(from: [alpha, beta], query: Self.query, relativeTo: start)
         #expect(palette.map(\.title) == ["Beta sync", "Alpha sync"])
     }
+
+    // MARK: - [[T-13022]]: the two fixed catalogs, Commands and Pages
+
+    /// A query no command's title or drawn subtitle holds: every row it finds, it finds through
+    /// `aliases`. Calendar's aliases say "schedule" early, Today's and All Tasks' late.
+    private static let aliasOnlyQuery = "schedule"
+
+    /// The palette's order is the score order of the row's own `searchFields`, best first, and is
+    /// NOT the alphabetical order every alias-only row fell back to while it scored `Int.min`.
+    private static func expectRankedByScore(
+        _ titles: [String],
+        score: (String) -> Int?,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) {
+        let scores = titles.map { score($0) }
+        #expect(!scores.contains(nil), "a row the gate let in does not match its own fields", sourceLocation: sourceLocation)
+        let values = scores.compactMap { $0 }
+        #expect(zip(values, values.dropFirst()).allSatisfy { $0 >= $1 }, "\(titles) scored \(values)", sourceLocation: sourceLocation)
+        // Non-vacuity: more than one row, and the score order is not the A-to-Z fallback.
+        #expect(titles.count > 1, sourceLocation: sourceLocation)
+        #expect(titles != titles.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }, sourceLocation: sourceLocation)
+    }
+
+    @Test func aCommandFoundOnlyThroughItsAliasesRanksByThatMatchRatherThanByTitle() throws {
+        let rows = GlobalSearchIndexSupport.commandResults(query: Self.aliasOnlyQuery, sidebarTabColorsRaw: "")
+        let definitions = GlobalSearchCommandDefinition.all
+        let definition: (String) -> GlobalSearchCommandDefinition? = { title in definitions.first { $0.title == title } }
+
+        // Every row is alias-only: neither line the row draws holds the query.
+        for row in rows {
+            #expect(CadenceSearchMatcher.matchScore(query: Self.aliasOnlyQuery, fields: [row.title, row.subtitle]) == nil, "\(row.title)")
+        }
+        Self.expectRankedByScore(rows.map(\.title)) { title in
+            definition(title).flatMap { CadenceSearchMatcher.matchScore(query: Self.aliasOnlyQuery, fields: $0.searchFields) }
+        }
+        #expect(rows.first?.title == "Calendar")
+    }
+
+    @Test func aPageFoundThroughItsAliasesRanksByTheFieldsIOSSearchScores() throws {
+        let rows = GlobalSearchIndexSupport.pageResults(query: Self.aliasOnlyQuery, hiddenTabs: [], sidebarTabColorsRaw: "")
+        let feature: (String) -> CadenceFeatureDestination? = { title in
+            GlobalSearchPageDefinition.all.first { $0.label == title }?.feature
+        }
+        // Calendar is found only past its drawn lines, and it is the best match.
+        let calendar = try #require(rows.first { $0.title == "Calendar" })
+        #expect(CadenceSearchMatcher.matchScore(query: Self.aliasOnlyQuery, fields: [calendar.title, calendar.subtitle]) == nil)
+        Self.expectRankedByScore(rows.map(\.title)) { title in
+            feature(title).flatMap { CadenceSearchMatcher.matchScore(query: Self.aliasOnlyQuery, fields: $0.searchFields) }
+        }
+        #expect(rows.first?.title == "Calendar")
+
+        // iOS Search's Pages section scores the same list (`#if os(iOS)`, so read as source).
+        let iOS = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchView.swift"))
+        #expect(iOS.contains("fields: destination.searchFields"))
+        #expect(!iOS.contains("destination.searchSummary, destination.searchAliases"))
+    }
+
+    /// The row's own "Hidden from sidebar" note is still a field, so the word keeps finding the
+    /// page the sidebar hides -- and only that page.
+    @Test func aHiddenPageIsStillFoundByTheWordItsRowStates() {
+        let rows = GlobalSearchIndexSupport.pageResults(query: "hidden", hiddenTabs: [.focus], sidebarTabColorsRaw: "")
+        #expect(rows.map(\.title) == ["Focus"])
+    }
 }
 #endif

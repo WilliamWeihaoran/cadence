@@ -218,6 +218,17 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         "\(rawValue) \(title) \(compactTitle) \(subtitle) \(searchSummary) \(searchKeywords)"
     }
 
+    /// **The fields a search Pages row is matched AND ranked on, on both platforms** ([[T-13022]]).
+    ///
+    /// `CadenceSearchMatcher` weighs the first field as the title and a word by how early it sits,
+    /// so the ORDER of this list is part of the ranking, not just its contents: iOS Search scored
+    /// `[title, subtitle, searchSummary, searchAliases]` while Cmd+K gated on
+    /// `[title, searchSummary, searchAliases]` and then ranked on its two drawn lines, so one query
+    /// listed the pages in different orders on a Mac and a phone ([[T-8201]]). Both read this now.
+    var searchFields: [String] {
+        [title, subtitle, searchSummary, searchAliases]
+    }
+
     var systemImage: String {
         switch self {
         case .today: return "sun.max.fill"

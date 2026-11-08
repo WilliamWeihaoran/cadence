@@ -150,8 +150,10 @@ enum GlobalSearchIndexSupport {
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
         return idleOrRanked(
             GlobalSearchCommandDefinition.all.compactMap { definition in
-                guard matches(query: preparedQuery, fields: [definition.title, definition.subtitle, definition.aliases]) else { return nil }
-                return GlobalSearchResult(
+                guard let score = CadenceSearchMatcher.matchScore(
+                    query: preparedQuery, fields: definition.searchFields
+                ) else { return nil }
+                return (GlobalSearchResult(
                     id: CadenceSearchIdentity.command(definition.command.rawValue),
                     category: .commands,
                     title: definition.title,
@@ -159,9 +161,9 @@ enum GlobalSearchIndexSupport {
                     icon: definition.icon,
                     tintHex: definition.tintHex(sidebarTabColorsRaw: sidebarTabColorsRaw),
                     destination: .command(definition.command)
-                )
+                ), score)
             },
-            query: query, preparedQuery: preparedQuery
+            query: query
         )
     }
 
@@ -183,8 +185,11 @@ enum GlobalSearchIndexSupport {
             } else {
                 page.baseSubtitle
             }
-            guard matches(query: preparedQuery, fields: [page.label, subtitle, page.aliases]) else { return nil }
-            return GlobalSearchResult(
+            // [[T-13022]]: the shared Pages field list iOS Search scores, plus the one fact only
+            // this row states -- so "hidden" still finds a page the sidebar hides.
+            let fields = page.feature.searchFields + (subtitle == page.baseSubtitle ? [] : [subtitle])
+            guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: fields) else { return nil }
+            return (GlobalSearchResult(
                 id: CadenceSearchIdentity.page(page.label),
                 category: .pages,
                 title: page.label,
@@ -192,8 +197,8 @@ enum GlobalSearchIndexSupport {
                 icon: page.icon,
                 tintHex: page.tintHex(sidebarTabColorsRaw: sidebarTabColorsRaw),
                 destination: .sidebar(item)
-            )
-        }, query: query, preparedQuery: preparedQuery)
+            ), score)
+        }, query: query)
     }
 
     /// Which lists search can see, and which words reach them, is `CadenceListSearchSupport`'s
@@ -600,18 +605,15 @@ enum GlobalSearchIndexSupport {
     }
 
     /// The two fixed catalogs, Commands and Pages: in declared order while nothing is typed,
-    /// ranked once something is ([[T-11194]]).
+    /// ranked once something is ([[T-11194]]) -- by the gate's own score over the row's
+    /// `searchFields`, through `rankedByScore` ([[T-13022]]). Re-scoring on `[title, subtitle]`
+    /// sank every row found only through its aliases to `Int.min`, where they read A to Z.
     static func idleOrRanked(
-        _ results: [GlobalSearchResult],
-        query: String,
-        preparedQuery: CadenceSearchMatcher.PreparedQuery? = nil
+        _ scored: [(result: GlobalSearchResult, score: Int)],
+        query: String
     ) -> [GlobalSearchResult] {
-        guard CadenceListSearchSupport.isSearching(query) else { return results }
-        return rankedResults(results, query: query, preparedQuery: preparedQuery)
-    }
-
-    static func matches(query: CadenceSearchMatcher.PreparedQuery, fields: [String]) -> Bool {
-        CadenceSearchMatcher.matchScore(query: query, fields: fields) != nil
+        guard CadenceListSearchSupport.isSearching(query) else { return scored.map(\.result) }
+        return rankedByScore(scored)
     }
 }
 #endif

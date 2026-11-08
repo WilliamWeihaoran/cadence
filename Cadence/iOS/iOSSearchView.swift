@@ -122,7 +122,7 @@ struct iOSSearchView: View {
                 icon: destination.systemImage,
                 color: Color(hex: CadenceSidebarTint.hex(for: destination, overridesRaw: sidebarTabColorsRaw)),
                 destination: destination,
-                fields: [destination.title, destination.subtitle, destination.searchSummary, destination.searchAliases]
+                fields: destination.searchFields
             )
         }
 

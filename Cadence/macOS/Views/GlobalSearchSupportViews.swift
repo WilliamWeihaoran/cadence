@@ -116,6 +116,11 @@ struct GlobalSearchCommandDefinition {
     /// in the same palette.
     var aliases: String { command.destination?.searchAliases ?? "create task add" }
 
+    /// The fields this row is matched AND ranked on ([[T-13022]]). One list, read by the gate and
+    /// the score alike: the gate read `aliases` and the ranking did not, so a command found only
+    /// through an alias scored no match and the section read A to Z.
+    var searchFields: [String] { [title, subtitle, aliases] }
+
     func tintHex(sidebarTabColorsRaw: String) -> String {
         CadenceSidebarTint.hex(for: command.tintSource, overridesRaw: sidebarTabColorsRaw)
     }
