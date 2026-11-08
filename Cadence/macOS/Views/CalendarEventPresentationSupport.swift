@@ -66,7 +66,11 @@ struct CalendarEventItem: Identifiable {
         self.eventDateKey = DateFormatters.dateKey(from: eventStart)
         self.eventStartMin = CalendarEventIdentity.startMinute(for: eventStart, calendar: calendar)
         self.eventDurationMinutes = max(5, Int(eventEnd.timeIntervalSince(eventStart) / 60))
-        self.isMultiDayTimedEvent = !calendar.isDate(eventStart, inSameDayAs: eventEnd)
+        self.isMultiDayTimedEvent = CalendarEventChipTimeSupport.isMultiDayTimedEvent(
+            start: eventStart,
+            end: eventEnd,
+            calendar: calendar
+        )
         self.isFirstSegment = abs(segmentStart.timeIntervalSince(eventStart)) < 1
         self.isLastSegment = abs(segmentEnd.timeIntervalSince(eventEnd)) < 1
         self.calendarColor = Color(cgColor: event.calendar?.cgColor ?? Theme.nsDim.cgColor)

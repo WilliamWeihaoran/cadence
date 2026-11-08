@@ -194,6 +194,20 @@ nonisolated enum CadenceCalendarChipGlyphRow: String, Equatable, Sendable, CaseI
 /// regular-width grid draws the same cell as the Mac and so the same `9 AM`. Both faces honour a
 /// 24-hour clock through `TimeFormatters`.
 nonisolated enum CalendarEventChipTimeSupport {
+    /// Whether a timed event runs into a day after the one it starts on ([[T-13821]]).
+    ///
+    /// An end is **exclusive**, so it is read one second early: a 10 PM -> 12 AM event ends at the
+    /// first instant of the next day and occupies none of it. The Mac's `CalendarEventItem` read the
+    /// raw end, so that event counted as multi-day there and its timeline move kept only the
+    /// start-only clamp -- dragged to the last slot it was written as 11:55 PM -> 1:55 AM into the
+    /// owner's Calendar, the [[T-5355]] defect for exactly the events that end at midnight. iOS's
+    /// month cell already read `end - 1s`; both now ask this one function, the rule
+    /// `CadenceScheduleSupport.eventListTimeRangeLabel` also uses for its day gap.
+    static func isMultiDayTimedEvent(start: Date, end: Date, calendar: Calendar = .current) -> Bool {
+        let lastInstant = end > start ? end.addingTimeInterval(-1) : end
+        return !calendar.isDate(start, inSameDayAs: lastInstant)
+    }
+
     /// `nil` whenever no single time describes the chip: an all-day event has none, and a middle
     /// segment of a multi-day event fills its whole day, so either endpoint would name a time that
     /// day never sees.

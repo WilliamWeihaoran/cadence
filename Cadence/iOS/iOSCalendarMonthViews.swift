@@ -438,7 +438,7 @@ private struct iOSCalendarMonthDayCell: View {
         }
         return CalendarEventChipTimeSupport.label(
             isAllDay: event.isAllDay,
-            isMultiDayTimedEvent: !calendar.isDate(start, inSameDayAs: lastInstant),
+            isMultiDayTimedEvent: CalendarEventChipTimeSupport.isMultiDayTimedEvent(start: start, end: end, calendar: calendar),
             isFirstSegment: calendar.isDate(start, inSameDayAs: date),
             isLastSegment: calendar.isDate(lastInstant, inSameDayAs: date),
             eventStartMin: minutes(start),

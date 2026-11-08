@@ -146,7 +146,7 @@ final class CalendarEventDayCache {
         let key = DateFormatters.dateKey(from: date)
         touch(key)
         if let cached = timedEventsByDate[key] { return cached }
-        let events = calendarManager.fetchEvents(for: date)
+        let events = Self.ordered(calendarManager.fetchEvents(for: date))
         timedEventsByDate[key] = events
         pruneIfNeeded()
         return events
@@ -165,10 +165,22 @@ final class CalendarEventDayCache {
         let key = DateFormatters.dateKey(from: date)
         touch(key)
         if let cached = allDayEventsByDate[key] { return cached }
-        let events = calendarManager.fetchAllDayEvents(for: date)
+        let events = Self.ordered(calendarManager.fetchAllDayEvents(for: date))
         allDayEventsByDate[key] = events
         pruneIfNeeded()
         return events
+    }
+
+    /// A day's events in the shared total order -- start, then title, then identity ([[T-13822]]).
+    ///
+    /// `EKEventStore.events(matching:)` promises no order, and the Mac read it as handed back: the
+    /// Month cell drew its chips and cut its `+N more` in fetch order, and the timeline's overlap
+    /// solver broke equal starts by it. iOS sorts its day fetch with this same comparator
+    /// (`iOSCalendarManager.fetchEvents`), so one day read in a different order on the two
+    /// platforms ([[T-8201]]). Sorted here, once per cached day, because this cache is the one door
+    /// every Mac calendar surface reads a day's events through.
+    static func ordered(_ events: [EKEvent]) -> [EKEvent] {
+        events.sorted(by: CadenceCalendarEventSearchSupport.precedes)
     }
 
     private func refreshIfNeeded(storeVersion: Int) {
