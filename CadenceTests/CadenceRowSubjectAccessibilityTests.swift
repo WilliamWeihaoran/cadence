@@ -172,6 +172,48 @@ struct CadenceRowSubjectAccessibilityTests {
         #expect(draftRow.contains(#""xmark""#))
     }
 
+    /// **The Mac subtask tick is the shared completion circle** ([[T-13563]]). [[T-8411]] made
+    /// `CadenceTaskCompletionCircle` the one circle and converted every Mac task circle but this
+    /// one, which still drew `circle` / `checkmark.circle.fill` at its own stroke weight while
+    /// iOS's `iOSSubtaskRow` drew the shared ring. No hardware or input constraint names that
+    /// difference ([[T-8201]]), so both rows now draw the same type with the same tint.
+    @Test func theMacSubtaskTickIsTheSharedCompletionCircle() throws {
+        let row = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.tasksPanelSupportPath))
+        let rowBody = try #require(CadenceSourceScan.declarationBody("struct SubtaskRow: View", in: row))
+        #expect(rowBody.contains(#"Image(systemName: "trash")"#), "non-vacuity: wrong body read")
+        #expect(rowBody.contains("CadenceTaskCompletionCircle(isDone: subtask.isDone, tint: Theme.dim, diameter: 14)"))
+        #expect(!rowBody.contains(#""checkmark.circle.fill""#))
+        #expect(!rowBody.contains(#"Image(systemName: subtask.isDone"#))
+        // [[T-9501]]'s hit area survives the swap.
+        #expect(rowBody.contains(".frame(minWidth: 18, minHeight: 16)"))
+
+        let iOSRow = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.iOSTaskDetailComponentsPath))
+        let iOSRowBody = try #require(CadenceSourceScan.declarationBody("struct iOSSubtaskRow: View", in: iOSRow))
+        #expect(iOSRowBody.contains("CadenceTaskCompletionCircle(isDone: subtask.isDone, tint: Theme.dim"))
+    }
+
+    /// **One Subtasks heading count on both inspectors** ([[T-13564]]). The Mac read
+    /// `compactLabel` ("1/3") and iOS `countLabel` ("1 of 3") for the same section heading's
+    /// trailing text. The heading takes `countLabel`, which `CadenceSubtaskProgress` documents as
+    /// the section-label form (T-1278); `1/3` stays the task-row badge on both.
+    @Test func bothInspectorSubtaskHeadingsReadTheOneCountLabel() throws {
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SchedulePanelComponents.swift")
+        )
+        let macLabel = try #require(CadenceSourceScan.declarationBody("private var subtaskProgressLabel: String?", in: mac))
+        #expect(mac.contains(#"TaskInspectorSectionGroup(title: "Subtasks", trailing: subtaskProgressLabel)"#), "non-vacuity: the heading")
+        #expect(macLabel.contains("?.countLabel"))
+        #expect(!macLabel.contains("compactLabel"))
+
+        let iOS = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailSheetSections.swift")
+        )
+        let iOSLabel = try #require(CadenceSourceScan.declarationBody("private var progressLabel: String?", in: iOS))
+        #expect(iOSLabel.contains("?.countLabel"))
+
+        #expect(CadenceSubtaskProgress(completed: 1, total: 3).countLabel == "1 of 3")
+    }
+
     // MARK: - The iOS twin of sites 6 and 7: the task sheet's subtask row ([[T-7011]])
 
     private static let iOSTaskDetailComponentsPath = "Cadence/iOS/iOSTaskDetailComponents.swift"

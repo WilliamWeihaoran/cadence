@@ -121,9 +121,9 @@ struct SubtaskRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Button { Self.toggleCompletion(of: subtask, in: modelContext) } label: {
-                Image(systemName: subtask.isDone ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 14))
-                    .foregroundStyle(subtask.isDone ? Theme.green : Theme.dim.opacity(0.6))
+                // [[T-13563]]: the shared circle iOS's `iOSSubtaskRow` draws, not an SF Symbol tick
+                // of its own weight -- the last Mac completion circle [[T-8411]] had not converted.
+                CadenceTaskCompletionCircle(isDone: subtask.isDone, tint: Theme.dim, diameter: 14)
                     // [[T-9501]]: the bare glyph was the whole hit area and hover wash.
                     .frame(minWidth: 18, minHeight: 16)
                     .contentShape(Rectangle())

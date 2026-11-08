@@ -24,9 +24,10 @@ struct TaskDetailPopover: View {
     @State private var presentationMode: TaskDetailPresentationMode = .full
     @FocusState private var subtaskFieldFocused: Bool
 
-    /// "1/3" beside the SUBTASKS heading; nil (and so omitted) when there are no subtasks.
+    /// "1 of 3" beside the SUBTASKS heading; nil (and so omitted) when there are no subtasks.
+    /// [[T-13564]]: the iOS inspector's heading wording, `countLabel`; the `1/3` badge is a row's.
     private var subtaskProgressLabel: String? {
-        CadenceTaskPresentationSupport.subtaskProgress(for: task)?.compactLabel
+        CadenceTaskPresentationSupport.subtaskProgress(for: task)?.countLabel
     }
 
     private var taskTagsBinding: Binding<[Tag]> {
