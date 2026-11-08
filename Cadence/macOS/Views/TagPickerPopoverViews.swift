@@ -54,7 +54,7 @@ struct TagPickerPopover: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.text)
                     .focused($isSearchFocused)
-                    .onSubmit(createQueriedTagIfNeeded)
+                    .onSubmit(commitQueriedField)
                 // [[T-9971]]: the title field's `#` picker (`TaskTitleInlineTagPicker`), with this
                 // same "Find or create tag" field, clears from the shared button; this one had none.
                 CadenceSearchFieldClearButton(text: $query, glyphSize: 11, focus: $isSearchFocused)
@@ -223,6 +223,20 @@ struct TagPickerPopover: View {
             selectedTags.append(tag)
         }
         query = ""
+    }
+
+    /// **[[T-12782]]: Return reads the field through `TagSupport.pickerFieldCommit`**, the decision
+    /// the phone's `+`/Return/dismiss already ask ([[T-12772]]). An archived match goes through
+    /// `restore(_:)` -- the `Unarchive "<name>"` row directly below offers exactly that for the same
+    /// text -- where Return used to stop at `canCreate`, false for an archived match, and leave the
+    /// name in the field. Every other name keeps the Create row's rules, so an active tag's name
+    /// still does nothing here (the Mac has no committedTag-style pick on Return).
+    private func commitQueriedField() {
+        if case let .unarchive(archived) = TagSupport.pickerFieldCommit(query, in: allTags) {
+            restore(archived)
+            return
+        }
+        createQueriedTagIfNeeded()
     }
 
     /// **T-652, and the third member of the set [[T-497]] fixed two of.** `archive(_:)` one screen

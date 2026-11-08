@@ -476,6 +476,37 @@ struct CadenceTagAndNoteCommitSurfaceTests {
         #expect(CadenceSourceScan.matchCount(#"\.rollback\(\)"#, in: picker) == 0)
     }
 
+    /// **[[T-12782]]: the Mac picker's Return un-archives an archived tag's typed name**, as the
+    /// phone's `+`/Return/dismiss do ([[T-12772]], keeper decision [[T-12780]]). It used to run
+    /// `createQueriedTagIfNeeded`, whose `canCreate` guard is false for an archived match, so
+    /// Return did nothing while the row below offered `Unarchive "<name>"`. Now it asks the shared
+    /// `pickerFieldCommit` first and hands `.unarchive` to the row's own `restore(_:)`, so the
+    /// store write, the undo snapshot and the failure notice stay the one path pinned above.
+    ///
+    /// Source-shape: `.onSubmit` is not callable from here. The decision it reads is covered
+    /// behaviourally by `CadenceTagPickerQueryTests.theFieldUnarchivesAnArchivedNameRatherThanResolvingIt`.
+    @Test func theMacTagPickersReturnUnarchivesAnArchivedNameThroughRestore() throws {
+        let picker = try scanned("Cadence/macOS/Views/TagPickerPopoverViews.swift")
+        #expect(picker.contains(".onSubmit(commitQueriedField)"), "Return no longer reads the field's decision")
+        #expect(!picker.contains(".onSubmit(createQueriedTagIfNeeded)"), "Return went back to the Create-only path")
+
+        let commit = try declarationBody(named: "commitQueriedField", in: picker)
+        let asked = try #require(
+            commit.range(of: "TagSupport.pickerFieldCommit(query, in: allTags)"),
+            "Return no longer asks the decision the phone asks"
+        )
+        let restored = try #require(
+            commit.range(
+                of: #"case let \.unarchive\(archived\) = [^\n]*\{\s*restore\(archived\)\s*return"#,
+                options: .regularExpression
+            ),
+            "an archived match no longer goes through restore(_:)"
+        )
+        let created = try #require(commit.range(of: "createQueriedTagIfNeeded()"))
+        #expect(asked.lowerBound < restored.upperBound)
+        #expect(restored.upperBound < created.lowerBound, "an archived match falls through to Create first")
+    }
+
     // MARK: - Non-vacuity
 
     /// Non-vacuity for every scan above: the reader really opened these six files, `scanned` really
