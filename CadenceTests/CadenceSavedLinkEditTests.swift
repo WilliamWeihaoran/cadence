@@ -185,5 +185,29 @@ struct CadenceSavedLinkEditTests {
         #expect(swipe.contains("beginEditing(link)"), "the iOS swipe offers no Edit")
         #expect(CadenceSavedLinkRowMenu.editTitle == "Edit Link")
     }
+
+    // MARK: - Both rows draw the same title
+
+    /// [[T-12793]]: the Mac row drew `link.title` raw while iOS's drew it through
+    /// `CadenceTitleNormalization.display(_:fallback:)`, so a blank title written outside the add
+    /// form was an empty row on the Mac and the URL on iOS ([[T-8201]]). Source shape, because
+    /// both rows are private views; the helper's answer for that title is pinned alongside.
+    @Test func bothLinkRowsDrawABlankTitleAsTheURL() throws {
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/LinksView.swift")
+        )
+        let ios = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListSupportViews.swift")
+        )
+        let macRow = try #require(CadenceSourceScan.declarationBody("private struct LinkRow: View", in: mac))
+        let iosRow = try #require(CadenceSourceScan.declarationBody("private struct iOSLinkRow: View", in: ios))
+        let spelling = "Text(CadenceTitleNormalization.display(link.title, fallback: link.url))"
+        for (name, row) in [("LinkRow", macRow), ("iOSLinkRow", iosRow)] {
+            #expect(row.contains(spelling), "\(name) does not draw its title through display(_:fallback:)")
+            #expect(!row.contains("Text(link.title)"), "\(name) still draws the raw title")
+        }
+        #expect(CadenceTitleNormalization.display("  \n", fallback: "https://example.com") == "https://example.com")
+        #expect(CadenceTitleNormalization.display(" Spec ", fallback: "https://example.com") == "Spec")
+    }
 }
 #endif

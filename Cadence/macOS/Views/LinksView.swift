@@ -269,7 +269,10 @@ private struct LinkRow: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(link.title)
+                // [[T-12793]]: iOS's row's spelling. A blank title written outside the add form
+                // (an import, an MCP write, sync from an older build) drew an empty row here and
+                // the URL on iOS ([[T-8201]]).
+                Text(CadenceTitleNormalization.display(link.title, fallback: link.url))
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)

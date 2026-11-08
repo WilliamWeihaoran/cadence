@@ -665,6 +665,9 @@ struct CadenceListWindDownSurfaceTests {
         let host = try strippingComments(sourceFile("Cadence/macOS/Views/SidebarComponents.swift"))
         #expect(host.contains("onWindDown: { requestWindDown(SidebarListWindDown(.area(area), choice: $0)) }"))
         #expect(host.contains("onWindDown: { requestWindDown(SidebarListWindDown(.project(project), choice: $0)) }"))
+        // [[T-12941]]: the dialog's message is the one that carries the reversal sentence.
+        #expect(squeezed(host).contains("Text(target.confirmationMessage)"), "the Mac confirmation no longer says reopening leaves the work settled")
+        #expect(!squeezed(host).contains("Text(target.summary.settledLine"), "the Mac confirmation is back to the bare count")
     }
 
     /// The Mac row menu's wind-down settles what the Edit sheet's `apply(_:)` settles, in the
@@ -698,6 +701,8 @@ struct CadenceListWindDownSurfaceTests {
         #expect(refused.summary.openTasks == 2)
         #expect(refused.summary.requiresConfirmation)
         #expect(refused.confirmationTitle == "Complete Area?")
+        // [[T-12941]]: the Mac says what iOS says -- reopening the list does not reopen its work.
+        #expect(refused.confirmationMessage == "2 open tasks will be marked done. Reopening the area later does not reopen them.")
         struct Refusal: Error {}
         #expect(throws: Refusal.self) {
             try SidebarListWindDown.windDown(refused, in: modelContext, commit: { _ in throw Refusal() })
@@ -713,6 +718,7 @@ struct CadenceListWindDownSurfaceTests {
         // Archive cancels the project's work.
         let archive = try #require(SidebarListWindDown(.project(project), choice: .archived))
         #expect(archive.actionTitle == "Archive Project")
+        #expect(archive.confirmationMessage == "1 open task will be canceled. Unarchiving the project later does not reopen them.")
         try SidebarListWindDown.windDown(archive, in: modelContext)
         #expect(project.status == .archived)
         #expect(shipOpen.status == .cancelled)

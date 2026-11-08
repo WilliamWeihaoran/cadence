@@ -278,7 +278,7 @@ struct ContextSection: View {
             Button(target.actionTitle) { commitWindDown(target) }
             Button("Cancel", role: .cancel) { pendingWindDown = nil }
         } message: { target in
-            Text(target.summary.settledLine ?? "")
+            Text(target.confirmationMessage)
         }
     }
 
@@ -511,6 +511,19 @@ struct SidebarListWindDown: Identifiable {
     }
 
     var confirmationTitle: String { "\(actionTitle)?" }
+
+    /// What the confirmation says under its title: the count, then that the settle outlives the
+    /// list's own reversal ([[T-12941]]). iOS's confirmation has always said "Reopening it does not
+    /// reopen the work below" (`iOSWindDownSubject`); the Mac's said only the count, and an
+    /// owner who reopened a completed list from Settings > Lists found its tasks still done with
+    /// nothing on screen having said they would be. There is no hardware reason for the Mac to
+    /// leave the sentence out ([[T-8201]]). Asked only when `summary.requiresConfirmation`, so the
+    /// count is never nil where this is read.
+    var confirmationMessage: String {
+        guard let settled = summary.settledLine else { return "" }
+        let reversal = outcome == .done ? "Reopening" : "Unarchiving"
+        return "\(settled). \(reversal) the \(noun.lowercased()) later does not reopen them."
+    }
 
     /// The settle's own array, counted before the fact -- the iPad's confirmation counts the same.
     var summary: CadenceContainerWindDownSummary {
