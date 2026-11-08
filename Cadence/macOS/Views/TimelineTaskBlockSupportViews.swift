@@ -164,8 +164,9 @@ func timelineBlockBody(
     onToggleDone: (() -> Void)? = nil
 ) -> some View {
     let taskColor = Color(hex: task.containerColor)
-    let dueUrgency = CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone, todayKey: todayKey)
-    let dueLabel = CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey)
+    // [[T-13141]]: the details line's facts are the one value iOS's block reads too.
+    let details = CadenceTimelineTaskBlockDetails.resolve(task: task, durationMinutes: durationMinutes, todayKey: todayKey)
+    let dueLabel = details.dueLabel
     let clampedProgress = min(max(completionProgress, 0), 1)
     let pendingOverlayOpacity = 1 - max(0, (clampedProgress - 0.86) / 0.14)
     // **T-3160: the task block wears the solved plate the event block used to wear** — a fill
@@ -206,7 +207,7 @@ func timelineBlockBody(
     // above 4.5:1 on the brighter plate, so the two converge and only the wording separates them
     // there. Buying the distinction back would mean either a hue that fails AA or a fourth white
     // tier under it, which is the same failure wearing a different name.
-    let dueInk = (dueUrgency == .overdue || dueUrgency == .dueToday) ? primaryInk : secondaryInk
+    let dueInk = details.dueIsUrgent ? primaryInk : secondaryInk
     HStack(alignment: .top, spacing: 0) {
         HStack(alignment: .top, spacing: 4) {
             if let onToggleDone {
@@ -250,8 +251,7 @@ func timelineBlockBody(
                             plateRange
                         }
                         timelineBlockDetailsRow(
-                            durationLabel: TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: durationMinutes),
-                            dueLabel: dueLabel,
+                            details: details,
                             secondaryInk: secondaryInk,
                             dueInk: dueInk
                         )
@@ -278,8 +278,7 @@ func timelineBlockBody(
                             .foregroundStyle(titleInk)
                             .lineLimit(2)
                         timelineBlockDetailsRow(
-                            durationLabel: TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: durationMinutes),
-                            dueLabel: dueLabel,
+                            details: details,
                             secondaryInk: secondaryInk,
                             dueInk: dueInk
                         )
@@ -288,7 +287,6 @@ func timelineBlockBody(
                         // duration, and deadline. A due date is a commitment and an estimate is not, so
                         // the duration label is what yields when there is a deadline to print, and the
                         // deadline outranks the title for width so the title truncates first.
-                        let label = TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: durationMinutes)
                         HStack(spacing: 4) {
                             Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                                 .font(.system(size: 11, weight: .semibold))
@@ -301,7 +299,7 @@ func timelineBlockBody(
                                     .foregroundStyle(dueInk)
                                     .lineLimit(1)
                                     .layoutPriority(1)
-                            } else if label != "-/-" {
+                            } else if let label = details.durationLabel {
                                 Text(label)
                                     .font(.system(size: 9))
                                     .foregroundStyle(secondaryInk)
@@ -392,14 +390,13 @@ func timelineBlockBody(
 /// its title and range as well ([[T-8456]]).
 @ViewBuilder
 private func timelineBlockDetailsRow(
-    durationLabel label: String,
-    dueLabel: String?,
+    details: CadenceTimelineTaskBlockDetails,
     secondaryInk: Color,
     dueInk: Color
 ) -> some View {
-    if label != "-/-" || dueLabel != nil {
+    if !details.isEmpty {
         HStack(spacing: 5) {
-            if label != "-/-" {
+            if let label = details.durationLabel {
                 // The block is hard-clipped to a fixed frame, so a wrapped label would
                 // lose its second line and silently report a shorter duration.
                 Text(label)
@@ -407,7 +404,7 @@ private func timelineBlockDetailsRow(
                     .foregroundStyle(secondaryInk)
                     .lineLimit(1)
             }
-            if let dueLabel {
+            if let dueLabel = details.dueLabel {
                 Text(dueLabel)
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(dueInk)

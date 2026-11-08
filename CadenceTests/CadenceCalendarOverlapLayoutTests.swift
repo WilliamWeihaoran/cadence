@@ -765,8 +765,11 @@ struct CadenceCalendarOverlapLayoutTests {
         #expect(CadenceSourceScan.matchCount(#"\.padding\(\.horizontal, 7\)"#, in: phone) >= 2)
         for declaration in ["private struct iOSCalendarEventBlock: View", "struct iOSTimelineTaskBlock: View"] {
             let body = try #require(CadenceSourceScan.declarationBody(declaration, in: phone), "\(declaration) was not found")
+            // Three indents: the task block's title moved into `titleAndRange(details:)` with
+            // [[T-13141]]'s details line.
             #expect(body.contains(".lineLimit(titleLineLimit)\n                            .truncationMode(.tail)")
-                    || body.contains(".lineLimit(titleLineLimit)\n                        .truncationMode(.tail)"),
+                    || body.contains(".lineLimit(titleLineLimit)\n                        .truncationMode(.tail)")
+                    || body.contains(".lineLimit(titleLineLimit)\n                .truncationMode(.tail)"),
                     "\(declaration)'s two-line title is not tail-truncated by the title-fit rule")
             #expect(body.contains("availableWidth: CadenceCalendarBlockTitleFit.iOS"), "\(declaration) does not measure its own title row")
         }

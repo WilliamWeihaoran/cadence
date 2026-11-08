@@ -1615,6 +1615,7 @@ private struct iOSCalendarTimelineDayColumn: View {
                     startMin: range.start,
                     endMin: range.end,
                     blockWidth: slot.width,
+                    todayKey: todayKey,
                     onClearTime: onClearTime.map { clear in { clear(task) } },
                     editing: blockEditing(for: task, stored: stored, drawnHeight: height, slotX: slot.x)
                 )
@@ -2609,6 +2610,10 @@ struct iOSTimelineTaskBlock: View {
     /// The width the day column gives the block, so the title can be measured before it is drawn
     /// (T-3323).
     let blockWidth: CGFloat
+    /// The day the grid observes, so the details line's "Due today" / "Overdue" moves at midnight
+    /// with the rest of the grid rather than with whenever the block last redrew ([[T-13141]], the
+    /// Mac block's T-3140 rule).
+    let todayKey: String
     /// The Calendar grid positions every block and hands it an exact height, so the block must fill
     /// what it is given. Today's pane stacks blocks inside an hour row that sizes to its content,
     /// where an infinite max height lets one block swallow the row.
@@ -2923,26 +2928,60 @@ struct iOSTimelineTaskBlock: View {
         )
     }
 
+    /// The title over the time range, and -- when `details` is passed -- the details line the
+    /// Mac block prints under them ([[T-13141]]): the same `CadenceTimelineTaskBlockDetails`, the
+    /// same primary-tier ink on an urgent deadline.
+    private func titleAndRange(details: CadenceTimelineTaskBlockDetails?) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            // A finished task drops one ink tier rather than going grey. `Theme.dim` was
+            // chosen for a near-black surface and this surface is no longer near-black —
+            // it reads about 2:1 on the plate. The diagonal stripes and the filled green
+            // check are what still say done, as on macOS ([[T-8241]]).
+            titleLabel
+                .lineLimit(titleLineLimit)
+                .truncationMode(.tail)
+            Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
+                .cadenceFont(.metadata, base: 9, weight: .medium)
+                .foregroundStyle(secondaryInk)
+                .lineLimit(1)
+            if let details {
+                HStack(spacing: 5) {
+                    if let duration = details.durationLabel {
+                        Text(duration)
+                            .cadenceFont(.metadata, base: 9)
+                            .foregroundStyle(secondaryInk)
+                            .lineLimit(1)
+                    }
+                    if let due = details.dueLabel {
+                        Text(due)
+                            .cadenceFont(.metadata, base: 9, weight: .semibold)
+                            .foregroundStyle(details.dueIsUrgent ? primaryInk : secondaryInk)
+                            .lineLimit(1)
+                            .layoutPriority(1)
+                    }
+                }
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
     private var blockFace: some View {
         HStack(alignment: .top, spacing: 6) {
             completionControl
                 .padding(.top, 2)
 
+            // [[T-13141]]: the tallest form adds the Mac block's details line -- actual/estimate
+            // and the deadline -- and is dropped first when the block is too short for it.
+            let details = CadenceTimelineTaskBlockDetails.resolve(
+                task: task,
+                durationMinutes: task.timelineDurationMinutes,
+                todayKey: todayKey
+            )
             ViewThatFits(in: .vertical) {
-                VStack(alignment: .leading, spacing: 3) {
-                    // A finished task drops one ink tier rather than going grey. `Theme.dim` was
-                    // chosen for a near-black surface and this surface is no longer near-black —
-                    // it reads about 2:1 on the plate. The diagonal stripes and the filled green
-                    // check are what still say done, as on macOS ([[T-8241]]).
-                    titleLabel
-                        .lineLimit(titleLineLimit)
-                        .truncationMode(.tail)
-                    Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
-                        .cadenceFont(.metadata, base: 9, weight: .medium)
-                        .foregroundStyle(secondaryInk)
-                        .lineLimit(1)
+                if !details.isEmpty {
+                    titleAndRange(details: details)
                 }
-                .fixedSize(horizontal: false, vertical: true)
+                titleAndRange(details: nil)
                 titleLabel
                     .lineLimit(1)
             }

@@ -145,7 +145,15 @@ struct CadenceCodexRefreshRegressionTests {
         let block = try read(prefix + "TimelineTaskBlockSupportViews.swift")
         let rendering = try #require(CadenceSourceScan.functionBody(named: "timelineBlockBody", in: block))
         #expect(!rendering.contains("DateFormatters.todayKey()"))
-        #expect(rendering.contains("dueDateKey: task.dueDate, isDone: task.isDone, todayKey: todayKey"))
-        #expect(rendering.contains("dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey)"))
+        // [[T-13141]]: both due readings come from the one shared details value, handed the
+        // observed day; iOS's block is handed its grid's `todayKey` the same way.
+        #expect(rendering.contains("CadenceTimelineTaskBlockDetails.resolve(task: task, durationMinutes: durationMinutes, todayKey: todayKey)"))
+        let details = try read("Cadence/Shared/CadenceTimelineTaskBlockDetails.swift")
+        #expect(details.contains("CadenceDueUrgency.evaluate(dueDateKey: dueDateKey, isDone: isDone, todayKey: todayKey)"))
+        #expect(details.contains("dueLabel(forDueDateKey: dueDateKey, todayKey: todayKey)"))
+        let phone = try read("Cadence/iOS/iOSCalendarTimelineViews.swift")
+        let phoneBlock = try #require(CadenceSourceScan.declarationBody("struct iOSTimelineTaskBlock: View", in: phone))
+        #expect(phoneBlock.contains("CadenceTimelineTaskBlockDetails.resolve("))
+        #expect(!phoneBlock.contains("DateFormatters.todayKey()"))
     }
 }
