@@ -115,6 +115,46 @@ struct CadenceSidebarOrderedListSurfacesTests {
         #expect(groups.map(\.listKey) == ["inbox"] + sidebarKeys(f))
     }
 
+    /// **[[T-14001]].** A blank-named project and a whitespace-named area head their Today / By List
+    /// groups with the picker's "Untitled" names -- the words the sidebar and the Mac Tasks board
+    /// print for the same lists -- and a named list keeps its name, trimmed.
+    @Test func aBlankNamedListsGroupIsHeadedWithItsUntitledName() throws {
+        let f = try fixture()
+        f.launch.name = ""
+        f.admin.name = "   "
+        f.errands.name = "  Errands  "
+        func task(_ title: String, area: Area? = nil, project: Project? = nil) -> AppTask {
+            let task = AppTask(title: title)
+            task.area = area
+            task.project = project
+            f.modelContext.insert(task)
+            return task
+        }
+        let tasks = [
+            task("Launch work", project: f.launch),
+            task("Admin work", area: f.admin),
+            task("Errand", area: f.errands),
+        ]
+        let groups = CadenceTaskQuerySupport.todayListGroups(from: tasks, contexts: [f.work, f.home])
+        #expect(groups.map(\.listKey) == sidebarKeys(f).dropLast())
+        #expect(groups.map(\.title) == [
+            CadenceTitleNormalization.defaultProjectName,
+            CadenceTitleNormalization.defaultAreaName,
+            "Errands",
+        ])
+        // Non-vacuity: the two defaults are words, not the empty heading this replaced.
+        #expect(groups.allSatisfy { !$0.title.isEmpty })
+
+        // All Tasks' By List mode reads the same groups, so it says the same.
+        let byList = CadenceTaskQuerySupport.displayGroups(
+            from: tasks,
+            mode: .byList,
+            todayKey: "2026-11-08",
+            contexts: [f.work, f.home]
+        )
+        #expect(byList.map(\.title) == groups.map(\.title))
+    }
+
     /// An archived context's lists leave its place, as they leave it in the sidebar, and land on
     /// the tail with the other lists no live context owns.
     @Test func anArchivedContextsListsGoToTheTail() throws {

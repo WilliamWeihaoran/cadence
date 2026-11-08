@@ -192,11 +192,18 @@ enum CadenceTaskQuerySupport {
     }
 
     /// A list group with no tasks in it yet: everything the header draws, read off one member.
+    /// The heading a list's group draws. **[[T-14001]]: the picker title, never the raw name** --
+    /// `CadenceProjectPickerSupport.title(for:)` / `CadenceAreaPickerSupport.title(for:)`, so a
+    /// blank or whitespace-only list name reads "Untitled Project" / "Untitled Area" over its
+    /// Today group and its All Tasks By List group, as it already does in the sidebar, Cmd+K, the
+    /// row's list chip ([[T-11892]]) and the Mac Tasks board's column header
+    /// (`KanbanBoardSupport.listColumns`). This printed `project.name` / `area.name` straight, so
+    /// the same list was "Untitled Project" in the sidebar and a heading with no words on Today.
     private static func listGroupShell(for task: AppTask) -> CadenceTodayTaskGroup {
         if let project = task.project {
             return CadenceTodayTaskGroup(
                 listKey: CadenceTaskDropSupport.containerKey(for: .project(project.id)),
-                title: project.name,
+                title: CadenceProjectPickerSupport.title(for: project),
                 accent: Color(hex: project.colorHex),
                 listIcon: project.icon,
                 contextIcon: project.context?.icon,
@@ -207,7 +214,7 @@ enum CadenceTaskQuerySupport {
         if let area = task.area {
             return CadenceTodayTaskGroup(
                 listKey: CadenceTaskDropSupport.containerKey(for: .area(area.id)),
-                title: area.name,
+                title: CadenceAreaPickerSupport.title(for: area),
                 accent: Color(hex: area.colorHex),
                 listIcon: area.icon,
                 contextIcon: area.context?.icon,
