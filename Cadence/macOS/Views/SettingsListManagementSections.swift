@@ -546,7 +546,7 @@ private struct SettingsCalendarRow: View {
                 HStack(spacing: 8) {
                     Text(calendar.title)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(isActive ? Theme.text : Theme.muted)
+                        .foregroundStyle(CadenceCalendarSettingsRowStyle.titleInk(isActive: isActive))
                         .lineLimit(1)
 
                     if !calendar.allowsContentModifications {

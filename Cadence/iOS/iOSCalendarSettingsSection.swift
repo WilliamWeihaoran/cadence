@@ -625,7 +625,7 @@ private struct iOSCalendarSettingsRow: View {
                 HStack(spacing: 7) {
                     Text(calendar.title)
                         .cadenceFont(.rowTitle, base: 15, weight: .semibold)
-                        .foregroundStyle(isActive ? Theme.text : Theme.muted)
+                        .foregroundStyle(CadenceCalendarSettingsRowStyle.titleInk(isActive: isActive))
                         .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
 
                     if !calendar.allowsContentModifications {
@@ -668,7 +668,8 @@ private struct iOSCalendarSettingsRow: View {
             .padding(.top, 5)
         }
         .padding(.vertical, 10)
-        .opacity(isActive ? 1 : 0.68)
+        // [[T-13261]]: no row-wide fade. The muted title is the whole "switched off" signal, as on
+        // the Mac; fading the row greyed the Active switch that turns the calendar back on.
     }
 
     /// The rows read `CadenceListKindIcon` rather than each list's own `icon` ([[T-10102]]):

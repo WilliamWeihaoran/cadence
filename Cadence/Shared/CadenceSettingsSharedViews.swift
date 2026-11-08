@@ -107,6 +107,22 @@ enum CadenceTagSettingsRowStyle {
     }
 }
 
+// MARK: - Settings > Calendar: a calendar switched off
+
+/// **[[T-13261]]: a calendar switched off in Settings > Calendar says so the same way on both
+/// platforms, through its title alone.** Both rows muted the title, and the phone's
+/// `iOSCalendarSettingsRow` ALSO faded the whole row to 0.68 -- the colour dot, the link menu and
+/// the Active switch with it -- where the Mac's `SettingsCalendarRow` kept them at full strength.
+/// No hardware or input constraint separates the two ([[T-8201]]), and the fade was the worse
+/// half: it greyed the one control that turns the calendar back on, so an enabled switch read as
+/// a disabled one. Both rows now take the title ink from here and draw nothing else dimmed.
+enum CadenceCalendarSettingsRowStyle {
+    /// The calendar title's ink: muted while the calendar is switched off.
+    static func titleInk(isActive: Bool) -> Color {
+        isActive ? Theme.text : Theme.muted
+    }
+}
+
 /// The "Archived" pill both tag Settings rows draw beside an archived tag's title. One view, so the
 /// two platforms cannot spell it differently again; the size resolves through `cadenceFont`, which
 /// leaves the Mac's fixed-scaling surface on its 9pt literal.
