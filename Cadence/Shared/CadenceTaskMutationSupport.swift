@@ -681,13 +681,33 @@ extension CadenceTaskMutationSupport {
         duplicate.tags = task.tags
 
         modelContext.insert(duplicate)
+        // [[T-13921]]: the checklist comes with the copy. Duplicate used to drop every subtask, so
+        // a task duplicated for its checklist (the usual reason to duplicate one) arrived as a bare
+        // title on both platforms' row menus. The copies are unticked, in the source's order,
+        // because the copy itself starts as `.todo` — the same rule the recurrence spawn applies
+        // in `CadenceTaskRecurrenceWorkflowSupport.makeNextRecurringTask`. Both sides of the
+        // inverse are written for the reason that function gives.
+        let copiedSubtasks = (task.subtasks ?? [])
+            .sorted { $0.order < $1.order }
+            .map { source -> Subtask in
+                let copy = Subtask(title: source.title)
+                copy.order = source.order
+                copy.parentTask = duplicate
+                modelContext.insert(copy)
+                return copy
+            }
+        if !copiedSubtasks.isEmpty {
+            duplicate.subtasks = copiedSubtasks
+        }
         // Through the shared helper rather than a hand-rolled `do`/`catch` (T-1299). The two are
         // the same three lines — commit, un-insert, rethrow — and spelling it out here made this
         // declaration indistinguishable, to any reader and to the sweep, from one that commits an
         // insert and leaves it pending. `commitInsert` *is* the undo contract; a caller's `try?`
         // over it is safe because of what it calls, not because of what its own catch happens to
         // say.
-        try CadencePendingChangePersistence.commitInsert(of: duplicate, in: modelContext, commit: commit)
+        // The copied subtasks are un-inserted with the task on a refusal, so none is left pending.
+        let inserted: [any PersistentModel] = [duplicate] + copiedSubtasks.map { $0 as any PersistentModel }
+        try CadencePendingChangePersistence.commitInsert(of: inserted, in: modelContext, commit: commit)
         return duplicate
     }
 
