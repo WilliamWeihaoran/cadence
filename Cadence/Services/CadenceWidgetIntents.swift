@@ -195,8 +195,15 @@ struct OpenCadenceTodayIntent: AppIntent {
     static var description: IntentDescription { IntentDescription("Opens Cadence to Today.") }
     static var openAppWhenRun: Bool { true }
 
+    /// **[[T-13283]].** `openAppWhenRun` only brings the app forward; it navigates nowhere, so
+    /// this used to return `.result()` alone and the shortcut left the user on whatever page the
+    /// app was last left on. The route goes through the same `handle(_:)` call both roots'
+    /// `.onOpenURL` and a reminder tap use, so a running app follows it via `.onChange` and a
+    /// cold launch claims it on appear (`takeUnappliedRoute()`, [[T-3049]]).
+    @MainActor
     func perform() async throws -> some IntentResult {
-        .result()
+        CadenceDeepLinkManager.shared.handle(CadenceDeepLink.today.url)
+        return .result()
     }
 }
 
