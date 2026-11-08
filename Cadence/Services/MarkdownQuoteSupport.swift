@@ -44,7 +44,12 @@ nonisolated enum MarkdownQuoteSupport {
         return MarkdownQuotedListLine(quote: quote, list: list.shifted(by: offset))
     }
 
-    private static let quoteRegex = try! NSRegularExpression(pattern: #"^([ \t]*)(>\s*)+"#)
+    /// Leading indent, every `>`, and AT MOST ONE space or tab after the last `>` — CommonMark's
+    /// rule. This was `^([ \t]*)(>\s*)+`, which swallowed every space after the last marker, so
+    /// `>   - nested` handed the list reader `- nested` with its indent stripped and both editors
+    /// drew a nested item at level 0 while Return copied the spaces back ([[T-13182]]). Spaces
+    /// BETWEEN markers (`> > x`) still belong to the prefix: they only separate nesting levels.
+    private static let quoteRegex = try! NSRegularExpression(pattern: #"^([ \t]*)>(?:[ \t]*>)*[ \t]?"#)
 
     static func lineInfo(in line: String) -> MarkdownQuoteLine? {
         let regex = quoteRegex

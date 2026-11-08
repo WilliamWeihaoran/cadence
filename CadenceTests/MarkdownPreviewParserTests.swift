@@ -181,6 +181,34 @@ struct MarkdownPreviewParserTests {
         ])
     }
 
+    /// A quoted list or task line is the list block the editors draw, not a quote whose text is
+    /// the literal marker ([[T-13181]]); a nested one keeps its level ([[T-13182]]).
+    @Test func parsesQuotedListsAsTheListBlocksTheEditorsDraw() {
+        let markdown = """
+        > A plain quote
+        > - [ ] todo
+        > - [x] shipped
+        > - point
+        >   - nested point
+        > 1. step
+        >> - deep
+        """
+
+        let blocks = MarkdownPreviewParser.blocks(in: markdown)
+
+        #expect(blocks == [
+            .quote(depth: 1, text: "A plain quote"),
+            .checklist(depth: 0, isDone: false, text: "todo", lineIndex: 1),
+            .checklist(depth: 0, isDone: true, text: "shipped", lineIndex: 2),
+            .bullet(depth: 0, text: "point"),
+            .bullet(depth: 1, text: "nested point"),
+            .ordered(depth: 0, number: "1.", text: "step"),
+            .bullet(depth: 0, text: "deep")
+        ])
+        // The excerpt a row and search read no longer carries the raw marker.
+        #expect(CadenceMarkdownPresentationSupport.plainPreviewText(from: "> - [ ] todo") == "todo")
+    }
+
     @Test func parsesIndentedQuotesWithSharedQuoteRules() {
         let markdown = """
             > Project note

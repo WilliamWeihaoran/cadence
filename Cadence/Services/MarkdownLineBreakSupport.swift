@@ -74,9 +74,13 @@ nonisolated enum MarkdownLineBreakSupport {
         guard let quote = MarkdownQuoteSupport.lineInfo(in: line), !quote.content.isEmpty else { return nil }
         let nsLine = line as NSString
         let quotePrefix = nsLine.substring(with: quote.prefixRange)
+        // The text after the prefix, untrimmed: since the prefix takes at most one space after the
+        // last `>` ([[T-13182]]), a nested item's indent lives here, and the continued marker has
+        // to carry it — reading the trimmed `quote.content` would continue `>   - x` as `> - `.
+        let afterPrefix = nsLine.substring(from: NSMaxRange(quote.prefixRange))
 
-        if let prefixMatch = MarkdownListSupport.listPrefixMatch(in: quote.content) {
-            let contentAfterPrefix = String(quote.content.dropFirst(prefixMatch.prefix.count)).trimmingCharacters(in: .whitespaces)
+        if let prefixMatch = MarkdownListSupport.listPrefixMatch(in: afterPrefix) {
+            let contentAfterPrefix = String(afterPrefix.dropFirst(prefixMatch.prefix.count)).trimmingCharacters(in: .whitespaces)
             guard !contentAfterPrefix.isEmpty else { return nil }
             return quotePrefix + continuedListPrefix(for: prefixMatch)
         }

@@ -96,6 +96,35 @@ struct MarkdownLineBreakSupportTests {
         #expect(quotedTodo.replacement == "\n> - [ ] ")
     }
 
+    /// A nested item inside a quote continues at its own level: the indent after `> ` is part of
+    /// the list, not of the quote prefix ([[T-13182]]), and Return carries it exactly once.
+    @Test func continuesANestedQuotedItemAtItsOwnLevel() throws {
+        for (line, expected) in [
+            (">   - nested", "\n>   - "),
+            (">   - [ ] nested task", "\n>   - [ ] "),
+            (">> - [x] done", "\n>> - [ ] ")
+        ] {
+            let mutation = try #require(MarkdownLineBreakSupport.mutation(
+                in: line,
+                selection: NSRange(location: (line as NSString).length, length: 0)
+            ))
+            #expect(mutation.replacement == expected, "\(line)")
+        }
+        // A nested ordered item continues exactly as the same item unquoted does, quote prefix in front.
+        let unquoted = try #require(MarkdownLineBreakSupport.continuedListPrefix(after: "    1. nested step"))
+        #expect(unquoted.hasPrefix("    "))
+        let nestedOrdered = try #require(MarkdownLineBreakSupport.mutation(
+            in: ">     1. nested step",
+            selection: NSRange(location: (">     1. nested step" as NSString).length, length: 0)
+        ))
+        #expect(nestedOrdered.replacement == "\n> " + unquoted)
+        // An empty nested quoted item ends the list rather than continuing it.
+        #expect(MarkdownLineBreakSupport.mutation(
+            in: ">   - ",
+            selection: NSRange(location: (">   - " as NSString).length, length: 0)
+        ) == nil)
+    }
+
     @Test func doesNotContinueEmptyQuoteMarkersOrPlainText() {
         #expect(MarkdownLineBreakSupport.mutation(
             in: "> ",

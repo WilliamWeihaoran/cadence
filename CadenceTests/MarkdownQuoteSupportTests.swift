@@ -11,7 +11,9 @@ struct MarkdownQuoteSupportTests {
 
         #expect(quote.depth == 2)
         #expect(quote.content == "Nested thought")
-        #expect(quote.prefixRange == NSRange(location: 0, length: 9))
+        // CommonMark: the prefix takes at most one space after the last `>` ([[T-13182]]); the
+        // other two stay with the content and are trimmed off `content`/`contentRange`.
+        #expect(quote.prefixRange == NSRange(location: 0, length: 7))
         #expect(quote.contentRange == NSRange(location: 9, length: 14))
     }
 
@@ -99,7 +101,8 @@ struct MarkdownQuoteSupportTests {
     @Test func continuationAndStylingAgreeAboutQuotedListLines() throws {
         let lines = [
             "> - [ ] todo item", "> - [x] done", "> - point", "> 1. step", "> ○ legacy",
-            ">> - [ ] nested", "> plain quote", "> -not a list", "> [ ] no bullet"
+            ">> - [ ] nested", "> plain quote", "> -not a list", "> [ ] no bullet",
+            ">   - indented", ">   - [ ] indented task", ">   plain indented quote"
         ]
         var listCount = 0
         for line in lines {
@@ -114,7 +117,38 @@ struct MarkdownQuoteSupportTests {
             #expect(continuesAList == styledAsList, "\(line)")
             if styledAsList { listCount += 1 }
         }
-        #expect(listCount == 6, "non-vacuity: both sides of the relation are exercised")
+        #expect(listCount == 8, "non-vacuity: both sides of the relation are exercised")
+    }
+
+    // MARK: - A nested list inside a quote keeps its level ([[T-13182]])
+
+    @Test func aNestedItemInsideAQuoteKeepsItsIndentAndLevel() throws {
+        let line = ">   - nested"
+        let quoted = try #require(MarkdownQuoteSupport.listLineInfo(in: line))
+        // The prefix is `> ` only; the two remaining spaces are the list's indentation.
+        #expect(quoted.quote.prefixRange == NSRange(location: 0, length: 2))
+        #expect(quoted.list.indentation == "  ")
+        #expect(quoted.list.visualLevel == 1)
+        #expect(quoted.list.markerRange == NSRange(location: 4, length: 1))
+
+        let top = try #require(MarkdownQuoteSupport.listLineInfo(in: "> - top"))
+        #expect(top.list.visualLevel == 0)
+        #expect(quoted.list.visualLevel > top.list.visualLevel)
+
+        let deeper = try #require(MarkdownQuoteSupport.listLineInfo(in: ">       - [ ] deeper"))
+        #expect(deeper.list.kind == .todo)
+        #expect(deeper.list.visualLevel == 2)
+
+        // Spaces BETWEEN markers still separate nesting levels and belong to the prefix.
+        let spaced = try #require(MarkdownQuoteSupport.listLineInfo(in: "> > - item"))
+        #expect(spaced.quote.depth == 2)
+        #expect(spaced.quote.prefixRange == NSRange(location: 0, length: 4))
+        #expect(spaced.list.visualLevel == 0)
+
+        // A tab right after `>` is the one optional separator, as a space is.
+        let tabbed = try #require(MarkdownQuoteSupport.lineInfo(in: ">\tTabbed"))
+        #expect(tabbed.prefixRange == NSRange(location: 0, length: 2))
+        #expect(tabbed.content == "Tabbed")
     }
 
     #if os(macOS)

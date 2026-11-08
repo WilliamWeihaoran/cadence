@@ -134,6 +134,22 @@ nonisolated enum MarkdownPreviewParser {
                 continue
             }
 
+            // A quoted list or task line (`> - [ ] todo`) is read the way both editors' stylers
+            // read it — `MarkdownQuoteSupport.listLineInfo` — and becomes the list block, not a
+            // quote whose text is the literal `- [ ] todo` ([[T-13181]]). The list is parsed from
+            // the text after the quote prefix by the same `listBlock` an unquoted line takes, so
+            // depth, number and checklist state cannot read differently inside a quote.
+            if let quoted = MarkdownQuoteSupport.listLineInfo(in: rawLine),
+               let list = listBlock(
+                   in: (rawLine as NSString).substring(from: NSMaxRange(quoted.quote.prefixRange)),
+                   lineIndex: lineIndex
+               ) {
+                flushParagraph()
+                blocks.append(list)
+                lineIndex += 1
+                continue
+            }
+
             if let quote = MarkdownQuoteSupport.lineInfo(in: rawLine), !quote.content.isEmpty {
                 flushParagraph()
                 blocks.append(.quote(depth: quote.depth, text: quote.content))
