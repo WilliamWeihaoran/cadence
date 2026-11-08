@@ -810,13 +810,10 @@ struct iOSSearchView: View {
         return "Due \(CadenceTaskPresentationSupport.dueDateLabel(for: task))"
     }
 
+    /// The shared ranking list Cmd+K reads too ([[T-12803]]); this view supplies only its row's
+    /// day-and-time line.
     private func eventSearchFields(for event: EKEvent) -> [String] {
-        [
-            iOSCalendarEventSupport.title(for: event),
-            event.notes ?? "",
-            event.calendar?.title ?? "",
-            eventDetail(event)
-        ]
+        CadenceCalendarEventSearchSupport.rankingFields(for: event, dayTimeLine: eventDetail(event))
     }
 
     /// "Sat, Mar 28" in the reference date's year and "Sat, Mar 28, 2027" outside it

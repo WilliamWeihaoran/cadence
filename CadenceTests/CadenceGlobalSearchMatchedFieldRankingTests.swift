@@ -1,5 +1,6 @@
 // macOS only: `GlobalSearchIndexSupport` is the Cmd+K palette and is behind `#if os(macOS)`.
 #if os(macOS)
+import EventKit
 import Foundation
 import Testing
 @testable import Cadence
@@ -49,6 +50,38 @@ struct CadenceGlobalSearchMatchedFieldRankingTests {
 
         let palette = GlobalSearchIndexSupport.noteResults(notes: [alpha, beta], query: Self.query, taskTitles: [:])
         #expect(palette.map(\.title) == ["Beta page", "Alpha page"])
+    }
+
+    /// [[T-12803]]: the Events section, the one [[T-12801]] left on the drawn row. Two events that
+    /// only their notes find; the palette must rank them by the shared ranking fields iOS Search
+    /// scores (`CadenceCalendarEventSearchSupport.rankingFields`), not A to Z.
+    @Test func anEventFoundThroughItsNotesRanksByThatMatchRatherThanByTitle() {
+        let store = EKEventStore()
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        func event(_ title: String, notes: String) -> EKEvent {
+            let event = EKEvent(eventStore: store)
+            event.title = title
+            event.notes = notes
+            event.startDate = start
+            event.endDate = start.addingTimeInterval(3_600)
+            return event
+        }
+        let alpha = event("Alpha sync", notes: Self.deepBody)
+        let beta = event("Beta sync", notes: Self.shallowBody)
+
+        let score: (EKEvent) -> Int? = {
+            CadenceSearchMatcher.matchScore(
+                query: Self.query,
+                fields: CadenceCalendarEventSearchSupport.rankingFields(
+                    for: $0, dayTimeLine: GlobalSearchIndexSupport.eventDayTimeLine(for: $0, relativeTo: start)
+                )
+            )
+        }
+        #expect(score(alpha) != nil && score(beta) != nil)
+        #expect((score(beta) ?? 0) > (score(alpha) ?? 0))
+
+        let palette = GlobalSearchIndexSupport.eventResults(from: [alpha, beta], query: Self.query, relativeTo: start)
+        #expect(palette.map(\.title) == ["Beta sync", "Alpha sync"])
     }
 }
 #endif

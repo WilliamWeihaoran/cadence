@@ -100,6 +100,16 @@ struct CadenceCalendarEventSearchSupportTests {
         #expect(CadenceCalendarEventSearchSupport.matches(query: "roadmap", event: event))
     }
 
+    /// [[T-12803]]: the one list both platforms RANK a matched event on -- the drawn title, the
+    /// gate's notes and calendar, then the day-and-time line the caller draws. iOS Search used to
+    /// hand-build it in the view and Cmd+K ranked on the row's two lines instead.
+    @Test func rankingFieldsAreTheDrawnTitleTheGatesFieldsAndTheDayTimeLine() {
+        let event = event(title: "Standup", notes: "bring the roadmap", start: now.addingTimeInterval(3_600))
+
+        #expect(CadenceCalendarEventSearchSupport.rankingFields(for: event, dayTimeLine: "Sat, Mar 28 · All day")
+                == ["Standup", "bring the roadmap", "", "Sat, Mar 28 · All day"])
+    }
+
     // MARK: - The empty-query window
 
     @Test func anEmptyQueryDropsEventsThatHaveAlreadyEnded() {

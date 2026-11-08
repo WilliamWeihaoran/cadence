@@ -374,7 +374,17 @@ enum GlobalSearchIndexSupport {
             // nonisolated function value and loses this enum's main-actor isolation.
             return events.map { eventResult(for: $0, relativeTo: referenceDate) }
         }
-        return rankedResults(events.map { eventResult(for: $0, relativeTo: referenceDate) }, query: query)
+        // [[T-12803]]: ranked on the fields the event MATCHED on -- the shared list iOS Search
+        // scores too -- not on the two lines the row draws, so an event found through its notes
+        // keeps that score instead of sinking to `Int.min` and reading A to Z.
+        let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
+        return rankedByScore(events.compactMap { event in
+            let fields = CadenceCalendarEventSearchSupport.rankingFields(
+                for: event, dayTimeLine: eventDayTimeLine(for: event, relativeTo: referenceDate)
+            )
+            guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: fields) else { return nil }
+            return (eventResult(for: event, relativeTo: referenceDate), score)
+        })
     }
 
     /// The day reads "Sat, Mar 28" in the reference date's year and "Sat, Mar 28, 2027" outside it
@@ -382,6 +392,27 @@ enum GlobalSearchIndexSupport {
     /// recurring event's occurrences a year apart otherwise read identically.
     static func eventResult(for event: EKEvent, relativeTo referenceDate: Date = Date()) -> GlobalSearchResult {
         let item = CalendarEventItem(event: event)
+        let subtitle = [
+            item.calendarTitle,
+            eventDayTimeLine(for: event, relativeTo: referenceDate)
+        ]
+        .filter { !$0.isEmpty }
+        .joined(separator: " • ")
+
+        return GlobalSearchResult(
+            id: CadenceSearchIdentity.event(item.id),
+            category: .events,
+            title: item.title,
+            subtitle: subtitle,
+            icon: CadenceSearchEventGlyph.systemImage,
+            tintHex: item.calendarColor.globalSearchHexString() ?? Theme.purpleHex,
+            destination: .event(item.id)
+        )
+    }
+
+    /// The day and time half of an event row's subtitle, which is also the last field it ranks on
+    /// (`CadenceCalendarEventSearchSupport.rankingFields`, [[T-12803]]).
+    static func eventDayTimeLine(for event: EKEvent, relativeTo referenceDate: Date = Date()) -> String {
         let startDate = event.startDate ?? Date()
         let timeLabel = "\(DateFormatters.dayOfWeek.string(from: startDate)), \(DateFormatters.absoluteDay(startDate, relativeTo: referenceDate))"
         // All-day events reach this list now that `searchEvents` stopped dropping them, and
@@ -396,23 +427,9 @@ enum GlobalSearchIndexSupport {
                 from: startDate,
                 to: event.endDate ?? startDate.addingTimeInterval(30 * 60)
             )
-        let subtitle = [
-            item.calendarTitle,
-            timeLabel,
-            timeRange
-        ]
-        .filter { !$0.isEmpty }
-        .joined(separator: " • ")
-
-        return GlobalSearchResult(
-            id: CadenceSearchIdentity.event(item.id),
-            category: .events,
-            title: item.title,
-            subtitle: subtitle,
-            icon: CadenceSearchEventGlyph.systemImage,
-            tintHex: item.calendarColor.globalSearchHexString() ?? Theme.purpleHex,
-            destination: .event(item.id)
-        )
+        return [timeLabel, timeRange]
+            .filter { !$0.isEmpty }
+            .joined(separator: " • ")
     }
 
     /// `taskTitles` names the note's task embeds from the live task rather than from the title

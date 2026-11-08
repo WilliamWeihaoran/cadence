@@ -30,6 +30,22 @@ nonisolated enum CadenceCalendarEventSearchSupport {
         ]
     }
 
+    /// **[[T-12803]]: the fields a matched event is RANKED on, on both platforms** -- the drawn
+    /// title, then `searchFields`' notes and calendar, then the row's own day-and-time line.
+    ///
+    /// iOS Search scored `[title, notes, calendar, day · time]` from a list hand-built in the view
+    /// while Cmd+K re-scored the row on the two lines it draws, so an event `results` found through
+    /// its notes scored no match on the Mac, sank to `Int.min` and read A to Z ([[T-8201]]: one
+    /// query over one calendar, two orders). Both now read this one list; the day-and-time line is
+    /// passed in because each platform draws its own spelling of it, and `CadenceSearchMatcher`
+    /// strips the separator. The gate stays `searchFields` -- this list is a superset of it, so
+    /// everything the gate finds still scores.
+    static func rankingFields(for event: EKEvent, dayTimeLine: String) -> [String] {
+        [CadenceEventTitleSupport.displayTitle(event.title)]
+            + searchFields(for: event).dropFirst()
+            + [dayTimeLine]
+    }
+
     static func matches(query: String, event: EKEvent) -> Bool {
         CadenceSearchMatcher.matchScore(query: query, fields: searchFields(for: event)) != nil
     }
