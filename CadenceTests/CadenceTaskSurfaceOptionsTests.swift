@@ -945,7 +945,8 @@ struct iOSCompletedDisclosureTests {
 
         for (path, barName) in [
             ("Cadence/iOS/iOSTaskCollectionPage.swift", "iOSTaskSortGroupBar("),
-            ("Cadence/iOS/iOSListDetailView.swift", "iOSTaskViewOptionsBar("),
+            // [[T-13561]]: a list's Tasks tab draws the Mac's three controls too.
+            ("Cadence/iOS/iOSListDetailView.swift", "iOSTaskSortGroupBar("),
             ("Cadence/iOS/iOSTodayCompactViews.swift", "iOSTaskViewOptionsBar("),
             ("Cadence/iOS/iPadTodaySupportViews.swift", "iOSTaskViewOptionsBar("),
         ] {

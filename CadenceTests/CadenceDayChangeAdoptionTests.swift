@@ -54,6 +54,8 @@ struct CadenceDayChangeAdoptionTests {
         // [[T-8731]]: the touch Inbox and All Tasks took the Mac's Group control, and its By Date
         // buckets are measured against today — the same reason `TasksListView` above observes it.
         ("Cadence/iOS/iOSTaskCollectionPage.swift", "struct iOSTaskCollectionPage: View"),
+        // [[T-13561]]: a list's touch Tasks tab took the Mac's Group control too, By Date included.
+        ("Cadence/iOS/iOSListDetailView.swift", "struct iOSListDetailView: View"),
     ]
 
     private static let install = ".cadenceTracksDayChanges($observedDay)"

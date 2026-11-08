@@ -73,17 +73,9 @@ struct MissingListDetailView: View {
     }
 }
 
-/// **[[T-5833]] — on a list's own Tasks tab, `.byList` is "By Section".** `TaskGroupingMode` says
-/// "By List", which is right on Today and All Tasks, where it groups by list; on one list's page it
-/// groups that list's tasks by section (`CadenceTaskQuerySupport.sectionGroups`), beside the
-/// page's own "+ Section" row and the row menu's "Move Section". Only the label changes here — the
-/// stored grouping key and every other page keep "By List".
-enum ListTasksGroupingLabel {
-    /// `nonisolated`: the badge's `labelOverride` is a plain, non-isolated closure.
-    nonisolated static func label(for mode: TaskGroupingMode) -> String? {
-        mode == .byList ? "By Section" : nil
-    }
-}
+// `ListTasksGroupingLabel` — "By Section" for `.byList` on this page — lives in
+// `Shared/CadenceListDetailSortControls.swift` since [[T-13561]]: the iPhone and iPad list tab draws
+// the same Group chip.
 
 // MARK: - Detail View
 
@@ -100,11 +92,12 @@ private struct ListDetailView: View {
     @State private var showEdit = false
     @State private var keyMonitor: Any? = nil
     @State private var showArchivedKanbanColumns = false
-    @State private var kanbanSortField: TaskSortField = .custom
-    @State private var kanbanSortDirection: TaskSortDirection = .ascending
-    @State private var taskGroupingMode: TaskGroupingMode = .byDate
-    @State private var taskSortField: TaskSortField = .custom
-    @State private var taskSortDirection: TaskSortDirection = .ascending
+    // Defaults and keys are `ListDetailSortControls`', which iOS reads too ([[T-13561]]).
+    @State private var kanbanSortField: TaskSortField = ListDetailSortControls.defaultKanban.sortField
+    @State private var kanbanSortDirection: TaskSortDirection = ListDetailSortControls.defaultKanban.sortDirection
+    @State private var taskGroupingMode: TaskGroupingMode = ListDetailSortControls.defaultTasks.grouping
+    @State private var taskSortField: TaskSortField = ListDetailSortControls.defaultTasks.sortField
+    @State private var taskSortDirection: TaskSortDirection = ListDetailSortControls.defaultTasks.sortDirection
     @State private var highlightedKanbanSectionName: String?
     @State private var requestedEventNoteID: UUID?
     /// The list document a global-search hit asked for ([[T-3084]]), handed to the Documents tab
@@ -112,15 +105,11 @@ private struct ListDetailView: View {
     @State private var requestedListNoteID: UUID?
 
     private var kanbanUDKey: String {
-        if let a = area { return "kanban_\(a.id.uuidString)" }
-        if let p = project { return "kanban_\(p.id.uuidString)" }
-        return "kanban_generic"
+        ListDetailSortControls.kanbanKeyPrefix(areaID: area?.id, projectID: project?.id)
     }
 
     private var taskUDKeyPrefix: String {
-        if let a = area { return "list_\(a.id.uuidString)" }
-        if let p = project { return "list_\(p.id.uuidString)" }
-        return "list_generic"
+        ListDetailSortControls.tasksKeyPrefix(areaID: area?.id, projectID: project?.id)
     }
 
     private var tabDefaultsKey: String {
@@ -189,21 +178,13 @@ private struct ListDetailView: View {
 
     private func restoreTaskAndKanbanControls() {
         let ud = CadenceDefaults.store
-        if let raw = ud.string(forKey: "\(kanbanUDKey)_sortField"), let v = TaskSortField(rawValue: raw) {
-            kanbanSortField = v
-        }
-        if let raw = ud.string(forKey: "\(kanbanUDKey)_sortDir"), let v = TaskSortDirection(rawValue: raw) {
-            kanbanSortDirection = v
-        }
-        if let raw = ud.string(forKey: "\(taskUDKeyPrefix)_sortField"), let v = TaskSortField(rawValue: raw) {
-            taskSortField = v
-        }
-        if let raw = ud.string(forKey: "\(taskUDKeyPrefix)_sortDir"), let v = TaskSortDirection(rawValue: raw) {
-            taskSortDirection = v
-        }
-        if let raw = ud.string(forKey: "\(taskUDKeyPrefix)_grouping"), let v = TaskGroupingMode(rawValue: raw) {
-            taskGroupingMode = v
-        }
+        let kanban = ListDetailSortControls.kanban(prefix: kanbanUDKey, in: ud)
+        kanbanSortField = kanban.sortField
+        kanbanSortDirection = kanban.sortDirection
+        let tasks = ListDetailSortControls.tasks(prefix: taskUDKeyPrefix, in: ud)
+        taskSortField = tasks.sortField
+        taskSortDirection = tasks.sortDirection
+        taskGroupingMode = tasks.grouping
     }
 
     private func installKeyMonitorIfNeeded() {
@@ -419,10 +400,10 @@ private struct ListDetailTabAndKanbanPersistenceModifier: ViewModifier {
                 CadenceDefaults.store.set(newValue.rawValue, forKey: tabDefaultsKey)
             }
             .onChange(of: kanbanSortField) { _, value in
-                CadenceDefaults.store.set(value.rawValue, forKey: "\(kanbanUDKey)_sortField")
+                CadenceDefaults.store.set(value.rawValue, forKey: ListDetailSortControls.sortFieldKey(kanbanUDKey))
             }
             .onChange(of: kanbanSortDirection) { _, value in
-                CadenceDefaults.store.set(value.rawValue, forKey: "\(kanbanUDKey)_sortDir")
+                CadenceDefaults.store.set(value.rawValue, forKey: ListDetailSortControls.sortDirectionKey(kanbanUDKey))
             }
     }
 }
@@ -437,13 +418,13 @@ private struct ListDetailTaskPreferencePersistenceModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onChange(of: taskSortField) { _, value in
-                CadenceDefaults.store.set(value.rawValue, forKey: "\(taskUDKeyPrefix)_sortField")
+                CadenceDefaults.store.set(value.rawValue, forKey: ListDetailSortControls.sortFieldKey(taskUDKeyPrefix))
             }
             .onChange(of: taskSortDirection) { _, value in
-                CadenceDefaults.store.set(value.rawValue, forKey: "\(taskUDKeyPrefix)_sortDir")
+                CadenceDefaults.store.set(value.rawValue, forKey: ListDetailSortControls.sortDirectionKey(taskUDKeyPrefix))
             }
             .onChange(of: taskGroupingMode) { _, value in
-                CadenceDefaults.store.set(value.rawValue, forKey: "\(taskUDKeyPrefix)_grouping")
+                CadenceDefaults.store.set(value.rawValue, forKey: ListDetailSortControls.groupingKey(taskUDKeyPrefix))
             }
     }
 }

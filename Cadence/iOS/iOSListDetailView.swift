@@ -42,6 +42,16 @@ struct iOSListDetailView: View {
     /// untagged "on" made on list A would open list B on its archived columns (T-7032). The Mac
     /// gets the same per-list reset from keying its page on the list ([[T-5831]]).
     @State private var showArchivedKanbanColumnsListKey: String?
+    /// **The Tasks tab's Sort / Order / Group and the board's Sort / Order, the Mac's per-list
+    /// controls** ([[T-13561]], [[T-13562]]). A pick is held with the list it was made on, for the
+    /// reason `selectedPageListKey` is, and written through to the keys the Mac's list page reads,
+    /// so a list opens the same way on both. `ListDetailSortControls.displayed` decides.
+    @State private var taskControlsChoice: ListDetailSortControls.Tasks?
+    @State private var taskControlsListKey: String?
+    @State private var kanbanControlsChoice: ListDetailSortControls.Kanban?
+    @State private var kanbanControlsListKey: String?
+    /// The day the By Date groups are cut against ([[T-5012]]), as the Mac's `ListTasksView` holds.
+    @State private var observedDay = CadenceObservedDay()
 
     init(
         area: Area,
@@ -159,23 +169,86 @@ struct iOSListDetailView: View {
         return false
     }
 
-    @AppStorage(CadencePreferenceKeys.iosListDetailSortMode) private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
     @AppStorage(CadencePreferenceKeys.iosListDetailShowCompleted) private var showCompleted = false
     /// The Tasks tab's folded columns, by group id ([[T-12191]]): unpersisted, one set per page,
     /// as the Mac's `ListTasksView.collapsedGroupIDs` is.
     @State private var collapsedGroupIDs: Set<String> = []
 
-    /// Read-only: the picker writes `sortModeRaw` through its own `Binding(get:set:)` below. The
-    /// setter this used to carry was uncallable — a `View`'s `body` cannot mutate `self`.
-    private var sortMode: CadenceTaskSortMode {
-        CadenceTaskSortMode(rawValue: sortModeRaw) ?? .listOrder
+    private var tasksKeyPrefix: String {
+        ListDetailSortControls.tasksKeyPrefix(areaID: area?.id, projectID: project?.id)
     }
 
+    private var kanbanKeyPrefix: String {
+        ListDetailSortControls.kanbanKeyPrefix(areaID: area?.id, projectID: project?.id)
+    }
+
+    /// The retired app-wide `ios.listDetail.sortMode`, read only as the fallback for a list this
+    /// device has never sorted on its own (`ListDetailSortControls.tasks(prefix:in:legacyMode:)`).
+    private var legacySortMode: CadenceTaskSortMode? {
+        CadenceDefaults.store.string(forKey: CadencePreferenceKeys.iosListDetailSortMode)
+            .flatMap(CadenceTaskSortMode.init(rawValue:))
+    }
+
+    private var taskControls: ListDetailSortControls.Tasks {
+        ListDetailSortControls.displayed(
+            choice: taskControlsChoice,
+            choiceListKey: taskControlsListKey,
+            listKey: tasksKeyPrefix
+        ) {
+            ListDetailSortControls.tasks(prefix: tasksKeyPrefix, in: CadenceDefaults.store, legacyMode: legacySortMode)
+        }
+    }
+
+    private var kanbanControls: ListDetailSortControls.Kanban {
+        ListDetailSortControls.displayed(
+            choice: kanbanControlsChoice,
+            choiceListKey: kanbanControlsListKey,
+            listKey: kanbanKeyPrefix
+        ) {
+            ListDetailSortControls.kanban(prefix: kanbanKeyPrefix, in: CadenceDefaults.store)
+        }
+    }
+
+    /// One of the Tasks tab's three controls, written to this list's keys as the Mac writes them.
+    private func taskControl<Value>(_ keyPath: WritableKeyPath<ListDetailSortControls.Tasks, Value>) -> Binding<Value> {
+        Binding(get: { taskControls[keyPath: keyPath] }, set: { value in
+            var next = taskControls
+            next[keyPath: keyPath] = value
+            taskControlsChoice = next
+            taskControlsListKey = tasksKeyPrefix
+            ListDetailSortControls.save(next, prefix: tasksKeyPrefix, in: CadenceDefaults.store)
+        })
+    }
+
+    /// One of the board's two controls, under the Mac board's own `kanban_<uuid>` keys.
+    private func kanbanControl<Value>(_ keyPath: WritableKeyPath<ListDetailSortControls.Kanban, Value>) -> Binding<Value> {
+        Binding(get: { kanbanControls[keyPath: keyPath] }, set: { value in
+            var next = kanbanControls
+            next[keyPath: keyPath] = value
+            kanbanControlsChoice = next
+            kanbanControlsListKey = kanbanKeyPrefix
+            ListDetailSortControls.save(next, prefix: kanbanKeyPrefix, in: CadenceDefaults.store)
+        })
+    }
+
+    /// The Tasks tab's open rows, in its own Sort + Order.
     private var activeTasks: [AppTask] {
-        CadenceTaskQuerySupport.activeTasks(
-            from: filteredTasks,
-            sortMode: sortMode,
-            sectionNames: configuredSectionNames
+        let controls = taskControls
+        return ListDetailSortControls.sortedOpenTasks(
+            filteredTasks,
+            sortField: controls.sortField,
+            sortDirection: controls.sortDirection
+        )
+    }
+
+    /// The board's open cards, in the board's OWN Sort + Order ([[T-13562]]) — not the Tasks tab's,
+    /// which is what the board silently took before it had controls of its own.
+    private var kanbanTasks: [AppTask] {
+        let controls = kanbanControls
+        return ListDetailSortControls.sortedOpenTasks(
+            filteredTasks,
+            sortField: controls.sortField,
+            sortDirection: controls.sortDirection
         )
     }
 
@@ -229,6 +302,9 @@ struct iOSListDetailView: View {
         }
         .cadenceScaledTypography()
         .background(Theme.bg.ignoresSafeArea())
+        // The By Date groups' day ([[T-13561]]), observed once for the page as the Mac's
+        // `ListTasksView` does.
+        .cadenceTracksDayChanges($observedDay)
         // Unseeded. It used to hand this page's list to the composer; T-337 moved that inheritance
         // to the drop — the list's own section headers, its kanban columns and its empty state are
         // all drop targets, and each seeds this container by name. That also retires the staleness
@@ -276,11 +352,16 @@ struct iOSListDetailView: View {
         }
     }
 
-    /// The Kanban tab: the "Show Archived" chip on a band of its own, as the Tasks tab carries
-    /// Sort, then the board ([[T-8565]]). The Mac draws the same pill in its tab bar.
+    /// The Kanban tab: Sort, Order and "Show Archived" on a band of their own, as the Tasks tab
+    /// carries its controls, then the board ([[T-8565]], [[T-13562]]). The Mac draws the same three
+    /// in its tab bar, in this order, with Order only where the field honours one (T-7006).
     private var kanbanPage: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
+            HStack(spacing: 10) {
+                iOSEnumChoiceChip(title: "Sort", glyph: "arrow.up.arrow.down", selection: kanbanControl(\.sortField))
+                if kanbanControls.sortField.honorsDirection {
+                    iOSEnumChoiceChip(title: "Order", glyph: "arrow.up.arrow.down.square", selection: kanbanControl(\.sortDirection))
+                }
                 archivedColumnsChip
                 Spacer(minLength: 0)
             }
@@ -289,7 +370,7 @@ struct iOSListDetailView: View {
             .padding(.bottom, 4)
 
             iOSListKanbanPanel(
-                tasks: activeTasks,
+                tasks: kanbanTasks,
                 // [[T-9837]]: the finished half, which the board used never to be given at all --
                 // so a column whose work was all done read "0" and empty here while the Mac showed
                 // it behind a Completed toggle. The page's own Completed TAB keeps this same list;
@@ -337,13 +418,15 @@ struct iOSListDetailView: View {
         .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 
+    /// Sort / Order / Group over this list's own keys, with By List called "By Section" — the Mac's
+    /// list tab, control for control ([[T-13561]]).
     private var taskColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSTaskViewOptionsBar(
-                sortMode: Binding(
-                    get: { sortMode },
-                    set: { sortModeRaw = $0.rawValue }
-                )
+            iOSTaskSortGroupBar(
+                sortField: taskControl(\.sortField),
+                sortDirection: taskControl(\.sortDirection),
+                groupingMode: taskControl(\.grouping),
+                groupingLabel: ListTasksGroupingLabel.label(for:)
             )
             .padding(.horizontal, 16)
             .padding(.top, 14)
@@ -362,15 +445,24 @@ struct iOSListDetailView: View {
                 // the floating `+` applied above — which is the exact mistake
                 // `CadenceTodayPresentationSupport.emptySubtitle` already records having made.
                 listEmptyPanel
-                CadenceSectionCreationRow(area: area, project: project)
-                    .padding(.horizontal, iOSListDetailTaskMetrics.horizontalPadding)
-                    .padding(.bottom, iOSListDetailTaskMetrics.bottomPadding)
+                if groupsBySection {
+                    CadenceSectionCreationRow(area: area, project: project)
+                        .padding(.horizontal, iOSListDetailTaskMetrics.horizontalPadding)
+                        .padding(.bottom, iOSListDetailTaskMetrics.bottomPadding)
+                }
             } else {
                 sectionStack
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.bg)
+    }
+
+    /// **Only By Section draws sections, so only By Section offers the row that makes one** — the
+    /// Mac's rule ([[T-5832]] (b)): under By Date, By Priority and None a new section would appear
+    /// nowhere, and the control would read as broken.
+    private var groupsBySection: Bool {
+        taskControls.grouping == .byList
     }
 
     /// The page's empty state, with the list itself as its drop placement. Drawn alone when the
@@ -389,11 +481,6 @@ struct iOSListDetailView: View {
                 listName: title
             )
         )
-    }
-
-    /// The shared rule, which the Mac's list Tasks tab reads too ([[T-11214]]).
-    private func sectionColor(for name: String) -> Color {
-        CadenceTaskQuerySupport.sectionAccent(named: name, configs: sectionConfigs)
     }
 
     /// **Finished work counts as content whether or not it is unfolded (T-2090).** This read
@@ -415,12 +502,30 @@ struct iOSListDetailView: View {
     /// The headings are the live columns only: a task whose section names none of them is drawn
     /// under Default, not under a heading appended for its name, which brought an archived column
     /// back onto this tab while the Mac's showed the task nowhere ([[T-12121]]).
+    ///
+    /// **That is the By Section arm.** Since [[T-13561]] the Group chip picks among the Mac's four
+    /// arms through `ListDetailSortControls.taskGroups`, each group tinted as the Mac's heading is.
     private var sectionGroups: [CadenceTaskDisplayGroup] {
-        CadenceTaskQuerySupport.listSectionGroups(
+        ListDetailSortControls.taskGroups(
             from: activeTasks,
+            grouping: taskControls.grouping,
             sectionNames: configuredSectionNames,
+            sectionConfigs: sectionConfigs,
             pageIsEmpty: isTaskColumnEmpty,
-            filing: ListBoardCardFiling(configs: sectionConfigs)
+            todayKey: observedDay.todayKey
+        )
+    }
+
+    /// Where a `+` dropped on a group's heading lands: the section, under By Section; the list
+    /// itself under the other three, whose groups are days and priorities, not places to file a task.
+    private func dropIdentity(for group: CadenceTaskDisplayGroup) -> CadenceTaskGroupDropIdentity {
+        guard groupsBySection else {
+            return CadenceTaskDropSupport.groupIdentity(container: containerSelection, listName: title)
+        }
+        return CadenceTaskDropSupport.groupIdentity(
+            container: containerSelection,
+            listName: title,
+            sectionName: group.title
         )
     }
 
@@ -442,17 +547,13 @@ struct iOSListDetailView: View {
                 ForEach(sectionGroups) { group in
                     iOSTaskGroupSection(
                         title: group.title,
-                        // Same colour the board's column dot takes, so a column is the same column
-                        // whichever tab you are looking at it from.
-                        color: sectionColor(for: group.title),
+                        // Under By Section, the colour the board's column dot takes, so a column is
+                        // the same column whichever tab you are looking at it from.
+                        color: group.accent,
                         tasks: group.tasks,
                         // Scoped to one list already — the chip would name the page you are on.
                         showsContainer: false,
-                        dropIdentity: CadenceTaskDropSupport.groupIdentity(
-                            container: containerSelection,
-                            listName: title,
-                            sectionName: group.title
-                        ),
+                        dropIdentity: dropIdentity(for: group),
                         collapsedGroupIDs: $collapsedGroupIDs,
                         groupID: group.id
                     )
@@ -474,7 +575,9 @@ struct iOSListDetailView: View {
                     accessibilityNoun: "the tasks you have finished",
                     isExpanded: $showCompleted
                 )
-                CadenceSectionCreationRow(area: area, project: project)
+                if groupsBySection {
+                    CadenceSectionCreationRow(area: area, project: project)
+                }
             }
             // One gutter, not two (T-613). This was `.padding(12)` — the inset of the
             // `.cadenceCard()` `85809ff` deleted — *plus* the panel's own 12, so the section

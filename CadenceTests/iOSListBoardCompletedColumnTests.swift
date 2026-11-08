@@ -85,7 +85,7 @@ struct iOSListBoardCompletedColumnTests {
         // LENGTH, so a `prefix(n)` after the call can be almost entirely blanked comment.
         let page = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(Self.pageFile))
         let call = try #require(page.range(of: "iOSListKanbanPanel("), "the list page draws no board")
-        let active = try #require(page.range(of: "tasks: activeTasks,", range: call.upperBound..<page.endIndex),
+        let active = try #require(page.range(of: "tasks: kanbanTasks,", range: call.upperBound..<page.endIndex),
                                   "non-vacuity: the call read is not the board's")
         let finished = try #require(
             page.range(of: "completedTasks: completedTasks,", range: active.upperBound..<page.endIndex),

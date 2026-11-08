@@ -102,8 +102,12 @@ struct ListTasksSectionGroupsTests {
     @Test func theIOSListTabDrawsAnEmptyPagesSectionsFromTheSharedRule() throws {
         let source = try CadenceSourceScan.strippedSourceReader()("Cadence/iOS/iOSListDetailView.swift")
         let groups = try #require(CadenceSourceScan.declarationBody("private var sectionGroups: [CadenceTaskDisplayGroup]", in: source))
-        #expect(groups.contains("CadenceTaskQuerySupport.listSectionGroups("))
+        // [[T-13561]]: through the Group chip's switch, whose By Section arm is the shared rule.
+        #expect(groups.contains("ListDetailSortControls.taskGroups("))
         #expect(groups.contains("pageIsEmpty: isTaskColumnEmpty"))
+        let shared = try CadenceSourceScan.strippedSourceReader()("Cadence/Shared/CadenceListDetailSortControls.swift")
+        let arms = try #require(CadenceSourceScan.declarationBody("static func taskGroups(", in: shared))
+        #expect(arms.contains("CadenceTaskQuerySupport.listSectionGroups("))
         let column = try #require(CadenceSourceScan.declarationBody("private var taskColumn: some View", in: source))
         #expect(column.contains("if isTaskColumnEmpty && sectionGroups.isEmpty {"))
         // The empty state heads the stack when the page is empty but has sections to draw.
@@ -183,7 +187,7 @@ struct ListTasksSectionGroupsTests {
     }
 
     /// **[[T-11214]] — a section's heading is the section's colour, on both platforms.** The rule
-    /// was `iOSListDetailView.sectionColor(for:)` alone while the Mac's headings drew no tint; the
+    /// was a private helper on the iOS list page alone while the Mac's headings drew no tint; the
     /// Mac's list Tasks tab draws the shared `CadenceTaskGroupHeading` now and reads the same
     /// function. Run here rather than pinned: it is a plain function of the configs.
     @Test func aSectionHeadingIsItsSectionsColourGreenOnceCompletedAndDimWhenUnknown() {
@@ -222,7 +226,10 @@ struct ListTasksSectionGroupsTests {
 
         // iOS's half, so the two cannot drift apart again: the same rule, the same green.
         let page = try CadenceSourceScan.strippedSourceReader()("Cadence/iOS/iOSListDetailView.swift")
-        #expect(page.contains("CadenceTaskQuerySupport.sectionAccent(named: name, configs: sectionConfigs)"))
+        // [[T-13561]]: the group carries its tint from the shared switch, as the Mac's do.
+        #expect(page.contains("color: group.accent,"))
+        let shared = try CadenceSourceScan.strippedSourceReader()("Cadence/Shared/CadenceListDetailSortControls.swift")
+        #expect(shared.contains("CadenceTaskQuerySupport.sectionAccent(named: group.title, configs: sectionConfigs)"))
         #expect(page.contains(#"title: "Completed",\#n                    tint: Theme.green,"#))
     }
 

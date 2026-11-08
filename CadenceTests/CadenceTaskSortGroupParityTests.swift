@@ -361,10 +361,9 @@ struct CadenceTaskSortGroupParityTests {
         #expect(bar.contains("title: mode.title"))
         #expect(!bar.contains("excluded:"), "the one chip filters its cases")
 
-        // The three surfaces that draw that one chip. A list's Tasks tab is the ticket's own
-        // surface; the other two are why the label change could not be scoped to it.
+        // The surfaces that draw that one chip. A list's Tasks tab was the ticket's own surface;
+        // it draws the three-control bar since [[T-13561]], and these two are what is left.
         for path in [
-            "Cadence/iOS/iOSListDetailView.swift",
             "Cadence/iOS/iOSTodayCompactViews.swift",
             "Cadence/iOS/iPadTodaySupportViews.swift"
         ] {

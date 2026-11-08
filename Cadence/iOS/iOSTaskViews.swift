@@ -719,9 +719,10 @@ enum iOSTaskChipMetrics {
 /// `TaskOrdering.fallbackPrecedes`, so an "Order: Descending" pill beside "Sort: Custom" would be
 /// a control that does nothing. Custom is the Inbox's default, so this is the common case.
 ///
-/// `iOSTaskViewOptionsBar` is still the control on Today and a list's Tasks tab, which keep the
-/// single `CadenceTaskSortMode` chip: the ticket's scope is the Inbox and All Tasks, and those two
-/// surfaces are the ones the owner's decision names.
+/// A list's own Tasks tab draws it too since [[T-13561]], over that list's own keys and with
+/// By List called "By Section" (`groupingLabel`), as the Mac's list tab does.
+/// `iOSTaskViewOptionsBar` is still the control on Today, which keeps the single
+/// `CadenceTaskSortMode` chip.
 struct iOSTaskSortGroupBar: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
@@ -731,6 +732,9 @@ struct iOSTaskSortGroupBar: View {
     /// The Group cases this page leaves out -- `TaskGroupingMode.excluded(on:)`, the same answer
     /// the Mac badge reads ([[T-7985]], [[T-10461]]).
     var excludedGroupings: [TaskGroupingMode] = []
+    /// What a Group case is called on this page, when not its raw value — a list's own Tasks tab
+    /// passes `ListTasksGroupingLabel.label(for:)`, the Mac badge's `labelOverride` ([[T-13561]]).
+    var groupingLabel: (TaskGroupingMode) -> String? = { _ in nil }
 
     var body: some View {
         let stacks = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
@@ -743,7 +747,13 @@ struct iOSTaskSortGroupBar: View {
             if sortField.honorsDirection {
                 iOSEnumChoiceChip(title: "Order", glyph: "arrow.up.arrow.down.square", selection: $sortDirection)
             }
-            iOSEnumChoiceChip(title: "Group", glyph: "rectangle.3.group", selection: $groupingMode, excluded: excludedGroupings)
+            iOSEnumChoiceChip(
+                title: "Group",
+                glyph: "rectangle.3.group",
+                selection: $groupingMode,
+                excluded: excludedGroupings,
+                labelOverride: groupingLabel
+            )
 
             if !stacks {
                 Spacer()
@@ -771,6 +781,9 @@ struct iOSEnumChoiceChip<T: CaseIterable & RawRepresentable & Identifiable & Has
     @Binding var selection: T
     /// Cases this page leaves out of the menu, as `CadenceEnumPickerBadge.excluded` does on macOS.
     var excluded: [T] = []
+    /// A page's own name for a case, ahead of the type's — `CadenceEnumPickerBadge.labelOverride`,
+    /// which is how a list's tab calls By List "By Section" on both platforms ([[T-13561]]).
+    var labelOverride: (T) -> String? = { _ in nil }
     @State private var showPicker = false
 
     /// What a value is *called*. `rawValue` unless the type says otherwise — the same question
@@ -778,7 +791,7 @@ struct iOSEnumChoiceChip<T: CaseIterable & RawRepresentable & Identifiable & Has
     /// controls cannot print a vocabulary differently. `TaskSortField.date` is the case that needs
     /// it: it is stored as `"Date"` and drawn as "Do Date" ([[T-9742]]).
     private func label(for value: T) -> String {
-        (value as? CadenceLabelledPickerValue)?.pickerLabel ?? value.rawValue
+        labelOverride(value) ?? (value as? CadenceLabelledPickerValue)?.pickerLabel ?? value.rawValue
     }
 
     var body: some View {

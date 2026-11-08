@@ -50,7 +50,7 @@ struct CadenceInboxGroupingCasesTests {
     @Test func theIOSInboxReadsTheSharedAnswer() throws {
         let views = try Self.code("Cadence/iOS/iOSTaskViews.swift")
         #expect(views.contains("rows:Array(T.allCases).filter{!excluded.contains($0)}"))
-        #expect(views.contains(#"iOSEnumChoiceChip(title:"Group",glyph:"rectangle.3.group",selection:$groupingMode,excluded:excludedGroupings)"#))
+        #expect(views.contains(#"iOSEnumChoiceChip(title:"Group",glyph:"rectangle.3.group",selection:$groupingMode,excluded:excludedGroupings,labelOverride:groupingLabel)"#))
 
         let page = try Self.code("Cadence/iOS/iOSTaskCollectionPage.swift")
         #expect(page.contains("excludedGroupings:TaskGroupingMode.excluded(on:CadenceTasksPageScope(collection:collection))"))

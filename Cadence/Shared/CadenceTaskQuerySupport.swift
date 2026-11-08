@@ -348,7 +348,7 @@ enum CadenceTaskQuerySupport {
 
     /// The tint a list's Tasks tab heads one of its sections with, on **both** platforms
     /// ([[T-11214]]): the section's own colour, green once the section is marked completed, and
-    /// `Theme.dim` for a name no config carries. It was `iOSListDetailView.sectionColor(for:)`, the
+    /// `Theme.dim` for a name no config carries. It was a private helper on the iOS list page, the
     /// only reader while the Mac's headings drew no tint; the Mac's `TaskListGroupHeader` draws the
     /// shared `CadenceTaskGroupHeading` now, so the rule moved here rather than being copied.
     /// `sectionGroups` leaves every group's `accent` at `Theme.blue` because it has no configs.

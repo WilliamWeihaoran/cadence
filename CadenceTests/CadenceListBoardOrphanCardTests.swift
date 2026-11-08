@@ -187,7 +187,11 @@ struct CadenceListBoardOrphanCardTests {
         let page = try read("Cadence/iOS/iOSListDetailView.swift")
         let groups = try #require(CadenceSourceScan.declarationBody("private var sectionGroups: [CadenceTaskDisplayGroup]", in: page))
         #expect(groups.contains("sectionNames: configuredSectionNames,"))
-        #expect(groups.contains("filing: ListBoardCardFiling(configs: sectionConfigs)"))
+        #expect(groups.contains("sectionConfigs: sectionConfigs,"))
+        // [[T-13561]]: the By Section arm lives in the shared switch, which passes the filing.
+        let shared = try read("Cadence/Shared/CadenceListDetailSortControls.swift")
+        let arms = try #require(CadenceSourceScan.declarationBody("static func taskGroups(", in: shared))
+        #expect(arms.contains("filing: ListBoardCardFiling(configs: sectionConfigs)"))
         #expect(!page.contains("private var sectionNames: [String]"), "the appended-heading list is gone")
     }
     #endif
