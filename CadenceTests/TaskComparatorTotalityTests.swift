@@ -201,4 +201,30 @@ struct TaskComparatorTotalityTests {
 
         #expect(ready.map(\.title) == ["Today", "Undated"])
     }
+
+    /// [[T-13941]]: work planned for an earlier day and never finished is still today's work
+    /// (`CadenceTodayStanding.pastDo`, [[T-353]]), so Focus ranks it with today's plan -- ahead of
+    /// an undated task of the same priority even when that task is newer, which is the tie-break
+    /// that used to decide it.
+    @Test func focusReadyTasksRankYesterdaysUnfinishedPlanWithTodaysWork() throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let todayKey = "2026-08-22"
+
+        let carried = AppTask(title: "Carried over")
+        carried.scheduledDate = "2026-08-21"
+        carried.createdAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let backlog = AppTask(title: "Backlog")
+        backlog.createdAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let later = AppTask(title: "Planned later")
+        later.scheduledDate = "2026-08-23"
+        later.createdAt = Date(timeIntervalSince1970: 1_900_000_000)
+        for task in [carried, backlog, later] { context.insert(task) }
+
+        let ready = CadenceFocusSupport.readyTasks(from: [later, backlog, carried], todayKey: todayKey)
+
+        // A plan for a later day earns nothing over the backlog: those two tie on score and fall
+        // to the newest-first tie-break.
+        #expect(ready.map(\.title) == ["Carried over", "Planned later", "Backlog"])
+    }
 }

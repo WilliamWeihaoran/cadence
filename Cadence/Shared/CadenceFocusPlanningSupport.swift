@@ -655,9 +655,14 @@ enum CadenceFocusSupport {
         }
     }
 
+    /// **[[T-13941]].** "Planned for today" includes work planned for an earlier day and never
+    /// finished -- `CadenceTodayStanding.pastDo`, which the app's Today page and both widgets
+    /// already count as today's work ([[T-353]]). This used to test `scheduledDate == todayKey`
+    /// alone, so yesterday's unfinished plan scored exactly like an undated backlog task and Focus
+    /// offered a backlog task (or a newer one of the same priority) ahead of it.
     private static func focusScore(for task: AppTask, todayKey: String) -> Int {
         var score = 0
-        if task.scheduledDate == todayKey { score += 4 }
+        if !task.scheduledDate.isEmpty && task.scheduledDate <= todayKey { score += 4 }
         if task.dueDate == todayKey { score += 3 }
         if !task.dueDate.isEmpty && task.dueDate < todayKey { score += 5 }
         score += task.priority.rank
