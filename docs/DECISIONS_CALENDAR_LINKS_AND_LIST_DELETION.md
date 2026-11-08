@@ -89,7 +89,8 @@ it is one line back.
 *One naming note before you search the ledger:* the id `T-1043` was accidentally handed out twice
 (recorded in T-1072). The one this memo is about is the calendar-link ticket. The other one — text
 sitting on top of an image in a note — was fixed and closed on 2026-09-05 and has nothing to do with
-any of this.
+any of this. (Since 2026-11-08 the calendar-link entry is filed as **T-13661**, renumbered by
+T-13701; `T-1043` in the ledger now means only the note-image fix.)
 
 ## Status update, 2026-10-20 — all four of the named tickets are closed; **T-1117 is the whole of what is left**
 
