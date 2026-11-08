@@ -35,6 +35,25 @@ nonisolated enum TaskTitleSupport {
         trailingInlineShortcut(in: title, marker: "#")
     }
 
+    /// **[[T-13961]].** Where a `~`/`#` the user sent back to the title with Escape or
+    /// backspace-at-empty begins: the title up to and including the marker.
+    static func declinedInlineShortcutAnchor(prefix: String, marker: Character) -> String {
+        prefix + String(marker)
+    }
+
+    /// **[[T-13961]].** Whether `title` still ends in the shortcut token the user declined at
+    /// `anchor`, and so must stay literal text rather than reopen its panel.
+    ///
+    /// Restoring the literal writes `#query` back into the title, and the title field's change
+    /// handler read that write as a freshly typed `#` and reopened the panel at once — so Escape
+    /// and backspace-at-empty, the two documented ways out, put the user straight back in, and
+    /// `Fix #42` could not be typed at all. The token stays declined while the user keeps
+    /// typing into it; a space starts a new token, and deleting back past the marker ends it.
+    static func isDeclinedInlineShortcut(in title: String, anchor: String?) -> Bool {
+        guard let anchor, !anchor.isEmpty, title.hasPrefix(anchor) else { return false }
+        return !title.dropFirst(anchor.count).contains(where: \.isWhitespace)
+    }
+
     static func priorityShortcut(in title: String) -> TaskTitlePriorityShortcut? {
         TaskTitleShortcutParsing.priorityShortcut(in: title)
     }

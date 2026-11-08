@@ -31,6 +31,8 @@ struct TaskTitleEntryField: View {
     @State private var isTagMode = false
     @State private var tagSearchQuery = ""
     @State private var tagHighlightIdx = 0
+    /// [[T-13961]]: where the `~`/`#` token the user last restored as literal text begins.
+    @State private var declinedShortcutAnchor: String?
     @State private var shouldSuppressInitialTitleSelection = false
     @FocusState private var isTitleFocused: Bool
 
@@ -128,6 +130,12 @@ struct TaskTitleEntryField: View {
                 }
                 .onChange(of: title) { _, newValue in
                     guard tildeMode == .none, !isTagMode else { return }
+                    // [[T-13961]]: a token the user just sent back to the title stays text.
+                    if TaskTitleSupport.isDeclinedInlineShortcut(in: newValue, anchor: declinedShortcutAnchor) {
+                        syncPriorityShortcut(from: newValue)
+                        return
+                    }
+                    declinedShortcutAnchor = nil
                     if canUseTildeRouting,
                        let shortcut = TaskTitleSupport.containerShortcut(in: newValue) {
                         enterTildeSearch(shortcut)
@@ -454,6 +462,7 @@ struct TaskTitleEntryField: View {
     }
 
     private func restoreLiteralShortcut(marker: Character, query: String) {
+        declinedShortcutAnchor = TaskTitleSupport.declinedInlineShortcutAnchor(prefix: title, marker: marker)
         title += "\(marker)\(query)"
         tildeMode = .none
         tildeSearchQuery = ""
