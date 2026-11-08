@@ -423,7 +423,7 @@ struct TaskDetailSubtasksSection: View {
             VStack(alignment: .leading, spacing: 2) {
                 let sortedSubtasks = (task.subtasks ?? []).sorted { $0.order < $1.order }
                 ForEach(sortedSubtasks) { subtask in
-                    SubtaskRow(subtask: subtask, showDelete: true) {
+                    SubtaskRow(subtask: subtask, showDelete: true, editsTitle: true) {
                         onDeleteSubtask(subtask)
                     }
                 }

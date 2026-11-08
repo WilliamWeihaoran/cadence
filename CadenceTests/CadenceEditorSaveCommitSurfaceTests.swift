@@ -974,6 +974,39 @@ struct CadenceEditorSaveCommitSurfaceTests {
         #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<Subtask>()).map(\.isDone) == [false])
     }
 
+    /// **Behavioural ([[T-13161]]).** A subtask retitled in the macOS inspector is in the store, as
+    /// the iOS sheet's title field leaves it.
+    @Test func acommittedSubtaskRowTitleEditIsInTheStore() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let subtask = Subtask(title: "Book flight")
+        modelContext.insert(subtask)
+        try modelContext.save()
+
+        subtask.title = "Book flight to Lisbon"
+        #expect(SubtaskRow.commitTitle(in: modelContext))
+
+        #expect(!modelContext.hasChanges, "the retitle is still pending")
+        #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<Subtask>()).map(\.title) == ["Book flight to Lisbon"])
+    }
+
+    /// **Behavioural ([[T-13161]]).** A refused retitle answers `false` and leaves the typing where
+    /// it was, pending for the next keystroke, rather than undoing it under the caret.
+    @Test func arefusedSubtaskRowTitleEditKeepsTheTyping() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let subtask = Subtask(title: "Book flight")
+        modelContext.insert(subtask)
+        try modelContext.save()
+
+        subtask.title = "Book flight to Lisbon"
+        #expect(!SubtaskRow.commitTitle(in: modelContext, commit: { _ in throw CommitRefused() }))
+
+        #expect(subtask.title == "Book flight to Lisbon", "the refused retitle took the typing back")
+        #expect(modelContext.hasChanges, "the refused retitle was not left pending for a retry")
+        #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<Subtask>()).map(\.title) == ["Book flight"])
+    }
+
     /// **Behavioural ([[T-7013]]).** The iOS task sheet's subtask circle commits its tick and
     /// names nothing.
     @Test func acommittedIOSSheetSubtaskTickIsInTheStoreWithNoNotice() throws {
@@ -1201,6 +1234,32 @@ struct CadenceEditorSaveCommitSurfaceTests {
         #expect(toggle.contains(
             "subtaskFailureNotice = CadenceTaskInspectorSupport.toggleSubtaskCommitting(subtask, in: modelContext)"
         ))
+    }
+
+    /// [[T-13161]]'s call sites: the Mac inspector's subtask row takes its title as a field that
+    /// commits through `SubtaskRow.commitTitle`, as the iOS sheet's row does through its `save()`;
+    /// the dense preview list under a task row keeps plain text, so a click there still opens the
+    /// inspector.
+    @Test func theT13161InspectorSubtaskTitleIsAnEditableFieldAsOnIOS() throws {
+        let row = try scanned("Cadence/macOS/Views/TasksPanelSupportViews.swift")
+        let rowBody = try #require(CadenceSourceScan.declarationBody("struct SubtaskRow: View", in: row))
+        #expect(rowBody.contains(#"TextField("Subtask", text: $subtask.title)"#))
+        // Every edit commits, as iOS's `onChange` does; Return alone would leave typing pending.
+        #expect(rowBody.contains(".onChange(of: subtask.title) { _, _ in Self.commitTitle(in: modelContext) }"))
+        #expect(rowBody.contains(".onSubmit { Self.commitTitle(in: modelContext) }"))
+        #expect(rowBody.contains("var editsTitle: Bool = false"))
+
+        let preview = try #require(CadenceSourceScan.declarationBody("struct MacTaskSubtaskPreviewList: View", in: row))
+        #expect(preview.contains("SubtaskRow(subtask: subtask)"), "non-vacuity: wrong body read")
+        #expect(!preview.contains("editsTitle"))
+
+        let inspector = try scanned("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift")
+        let section = try #require(CadenceSourceScan.declarationBody("struct TaskDetailSubtasksSection: View", in: inspector))
+        #expect(section.contains("SubtaskRow(subtask: subtask, showDelete: true, editsTitle: true)"))
+
+        let iOSRow = try scanned("Cadence/iOS/iOSTaskDetailComponents.swift")
+        let iOSRowBody = try #require(CadenceSourceScan.declarationBody("struct iOSSubtaskRow: View", in: iOSRow))
+        #expect(iOSRowBody.contains(#"TextField("Subtask", text: $subtask.title"#), "the iOS side this matches")
     }
 
     /// [[T-8592]]'s call site: the iOS task row's (and board card's) listed subtask ticks through

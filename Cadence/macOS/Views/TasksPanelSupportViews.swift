@@ -105,6 +105,10 @@ struct TasksPanelHeader<Trailing: View>: View {
 struct SubtaskRow: View {
     @Bindable var subtask: Subtask
     var showDelete: Bool = false
+    /// [[T-13161]]: the inspector's rows take their title as a field, as iOS's `iOSSubtaskRow`
+    /// does, so a subtask can be retitled on the Mac. Off under a task row and on a card, where a
+    /// click on the title falls through to the host (it opens the inspector).
+    var editsTitle: Bool = false
     var onDelete: (() -> Void)? = nil
     @Environment(\.modelContext) private var modelContext
 
@@ -130,11 +134,22 @@ struct SubtaskRow: View {
             .accessibilityLabel(CadenceSubtaskAccessibility.completionActionLabel(isDone: subtask.isDone))
             .accessibilityValue(displayTitle)
 
-            Text(displayTitle)
-                .font(.system(size: 13))
-                .foregroundStyle(subtask.isDone ? Theme.dim : Theme.muted)
-                .strikethrough(subtask.isDone, color: Theme.dim)
-                .lineLimit(1)
+            if editsTitle {
+                TextField("Subtask", text: $subtask.title)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundStyle(subtask.isDone ? Theme.dim : Theme.muted)
+                    .strikethrough(subtask.isDone, color: Theme.dim)
+                    .lineLimit(1)
+                    .onSubmit { Self.commitTitle(in: modelContext) }
+                    .onChange(of: subtask.title) { _, _ in Self.commitTitle(in: modelContext) }
+            } else {
+                Text(displayTitle)
+                    .font(.system(size: 13))
+                    .foregroundStyle(subtask.isDone ? Theme.dim : Theme.muted)
+                    .strikethrough(subtask.isDone, color: Theme.dim)
+                    .lineLimit(1)
+            }
 
             Spacer(minLength: 0)
 
@@ -174,6 +189,19 @@ struct SubtaskRow: View {
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
         CadenceNoteTaskEmbedEditing.toggleSubtask(subtask, in: modelContext, commit: commit)
+    }
+
+    /// The title field's commit ([[T-13161]]), on every edit as iOS's `iOSSubtaskRow.save()` does.
+    ///
+    /// Typed content, so `commitTypedContent` rather than `commitEdit`: an edit's undo would put the
+    /// old title back under the caret. A refusal leaves the typing pending for the next keystroke to
+    /// retry, which is iOS's behaviour too; the row has no notice surface of its own.
+    @discardableResult
+    static func commitTitle(
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        CadencePendingChangePersistence.commitTypedContent(in: modelContext, commit: commit)
     }
 }
 
