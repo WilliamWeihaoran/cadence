@@ -37,12 +37,8 @@ Ranked by how often you would meet it, 11-inch iPad first, then the Mac.
    "Mark done" + "Restore".** Pick one rule. **The Mac's**: the completion button keys on done
    only, so a cancelled task offers Complete + Restore, two different actions; each platform
    keeps its own verbs. [T-7012] Code checked (iOS keys `isFinishedTask`, Mac keys `isDone`).
-7. **Mac Cmd+K search copy**: an untitled daily note reads `2026-10-26` over
-   `Daily • 2026-10-26` (iOS `Daily / 2026-10-26`); the empty title is "No matches found" on the
-   Mac, "No results" on iOS; the idle line leaves out notes. **Format the dates through
-   `DateFormatters`, "No results" on both, add "notes"** to the idle line. [T-7205] Code checked
-   (`GlobalSearchIndexSupport.swift:456-457`, `GlobalSearchSupportViews.swift:502,514`,
-   `iOSSearchView.swift:345`).
+7. *(Taken 2026-11-08 by agent `hunt0608`, the recommendation as written: "No results" on both
+   and notes in the Cmd+K idle line; the dates had already landed.)* [T-7205] CLOSED.
 7a. **A task search result reads differently per platform**: the Mac's Cmd+K row shows list,
    tags, Do, Due and Active/Completed; iOS Search uses its own shorter subtitle. Note rows
    already match. (a) one shared task subtitle on both, (b) leave. **(a)** -- per T-8201 no

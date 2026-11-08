@@ -444,6 +444,23 @@ struct CadenceGlobalSearchCapContinuationTests {
         #expect(!ordinary.contains("cleaner"))
     }
 
+    /// **[[T-7205]] (b) and (c).** A failed search is titled "No results" -- the literal iOS Search's
+    /// panel carries, pinned there by `theIOSNoResultsPanelSaysWhenCompletedHoldsMatchesBack` --
+    /// not "No matches found"; and the idle sentence that lists what the palette shows names notes,
+    /// two of its sections.
+    @Test func emptyStateTitleMatchesIOSAndTheIdleLineNamesNotes() throws {
+        #expect(GlobalSearchEmptyState.title(query: "roadmap") == "No results")
+        #expect(GlobalSearchEmptyState.title(query: "") == "Start typing to search or run a command")
+        let ios = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchView.swift"))
+        #expect(ios.contains("title: \"\(GlobalSearchEmptyState.title(query: "roadmap"))\""))
+
+        let idle = GlobalSearchEmptyState.subtitle(query: "", withheldCompletedTaskCount: 0)
+        #expect(idle == "Pages, lists, tasks, events, notes, and quick commands all show up here.")
+
+        let view = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GlobalSearchSupportViews.swift"))
+        #expect(view.contains("Text(Self.title(query: query))"), "the empty state draws a title of its own again")
+    }
+
     /// Declared and reached: the overlay must hand the count down to the empty state, or the hint
     /// is a sentence nothing ever draws.
     @Test func overlayPassesTheWithheldCountToTheEmptyState() throws {

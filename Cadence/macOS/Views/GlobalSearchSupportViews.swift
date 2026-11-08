@@ -518,11 +518,20 @@ struct GlobalSearchEmptyState: View {
     /// subtitle now says how many are held back and names that control.
     static func subtitle(query: String, withheldCompletedTaskCount: Int) -> String {
         if query.isEmpty {
-            return "Pages, lists, tasks, events, and quick commands all show up here."
+            // [[T-7205]] (c): notes and event notes are two of the palette's sections, and the
+            // sentence that lists what shows up here left them out.
+            return "Pages, lists, tasks, events, notes, and quick commands all show up here."
         }
         // The sentence is shared with iOS Search's "No results" panel ([[T-6975]]).
         return CadenceEmptyStateCopy.searchWithheldCompletedTasks(count: withheldCompletedTaskCount)
             ?? "Try a different title or list name, or a command like New Task."
+    }
+
+    /// [[T-7205]] (b): a failed search is titled "No results", the title iOS Search's panel reads
+    /// over the same failure. It said "No matches found" here; nothing about a pointer or a
+    /// palette makes one failure deserve two names ([[T-8201]]).
+    static func title(query: String) -> String {
+        query.isEmpty ? "Start typing to search or run a command" : "No results"
     }
 
     var body: some View {
@@ -530,7 +539,7 @@ struct GlobalSearchEmptyState: View {
             Image(systemName: "command")
                 .font(.system(size: 28, weight: .semibold))
                 .foregroundStyle(Theme.dim.opacity(0.8))
-            Text(query.isEmpty ? "Start typing to search or run a command" : "No matches found")
+            Text(Self.title(query: query))
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.text)
             Text(Self.subtitle(query: query, withheldCompletedTaskCount: withheldCompletedTaskCount))
