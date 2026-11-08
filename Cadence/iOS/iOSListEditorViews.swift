@@ -1138,14 +1138,9 @@ private struct iOSSectionDraftRow: View {
         }
 
         HStack(spacing: 8) {
-            if lifecycle.isArchived {
-                iOSActionButton(
-                    title: "Unarchive",
-                    systemImage: "tray.and.arrow.up.fill",
-                    size: .compact,
-                    action: lifecycle.reopen
-                )
-            } else {
+            // [[T-13101]]: the one rule the Mac column popover and header read too
+            // (`CadenceBoardColumnLifecycleOffer`) -- an archived column offers no Complete / Reopen.
+            if CadenceBoardColumnLifecycleOffer.offersCompletionToggle(supportsLifecycle: true, isArchived: lifecycle.isArchived) {
                 if lifecycle.isCompleted {
                     iOSActionButton(
                         title: "Reopen",
@@ -1162,7 +1157,16 @@ private struct iOSSectionDraftRow: View {
                         action: lifecycle.complete
                     )
                 }
+            }
 
+            if lifecycle.isArchived {
+                iOSActionButton(
+                    title: "Unarchive",
+                    systemImage: "tray.and.arrow.up.fill",
+                    size: .compact,
+                    action: lifecycle.reopen
+                )
+            } else {
                 // [[T-12511]]: muted, never Delete's red. An archived column is one tap from
                 // Unarchive in this same row, and the Mac's column popover draws "Archive Column"
                 // dim -- the same ruling [[T-12322]] made for the list rows (`ListEditorArchiveButton`).

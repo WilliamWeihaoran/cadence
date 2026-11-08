@@ -72,6 +72,27 @@ nonisolated enum CadenceBoardColumnLifecycleCopy {
     }
 }
 
+/// **Which completion control a column offers, decided once for both column editors** ([[T-13101]],
+/// one app on two platforms, [[T-8201]]).
+///
+/// The iOS list editor gave an archived column one button, Unarchive, because completing a column
+/// whose open work archiving already cancelled is a second settle over that work. The Mac's
+/// Show Archived board drew the same column with its header completion circle, the editor
+/// popover's "Complete Column" / "Reopen Column" and the Cmd+Return route all still live, so an
+/// archived column could be completed or reopened while staying archived on one platform and not
+/// the other. Neither a pointer nor a touch answers which transitions a column has, so there is one
+/// rule: Default has no lifecycle (`TaskSectionConfig.supportsLifecycle`, T-268), an archived
+/// column offers only Unarchive, and every other column offers Complete or Reopen.
+nonisolated enum CadenceBoardColumnLifecycleOffer {
+    static func offersCompletionToggle(supportsLifecycle: Bool, isArchived: Bool) -> Bool {
+        supportsLifecycle && !isArchived
+    }
+
+    static func offersCompletionToggle(_ config: TaskSectionConfig) -> Bool {
+        offersCompletionToggle(supportsLifecycle: config.supportsLifecycle, isArchived: config.isArchived)
+    }
+}
+
 /// The one drawing of that line, as `CadenceBoardColumnDueDateLine` is the one drawing of the due
 /// date above it.
 struct CadenceBoardColumnLifecycleLine: View {

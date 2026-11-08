@@ -215,8 +215,8 @@ struct ListSectionKanbanColumn: View {
                 // with no visible control to hide. Default does not register at all rather than
                 // registering a no-op: `triggerToggleComplete()` reports whether it handled the
                 // key, so a registered target would swallow Cmd+Return instead of letting it
-                // through (T-268).
-                if section.supportsLifecycle {
+                // through (T-268). An archived column registers nothing either ([[T-13101]]).
+                if CadenceBoardColumnLifecycleOffer.offersCompletionToggle(section) {
                     hoveredSectionManager.beginHovering(id: section.id) {
                         toggleSectionCompletion()
                     }
@@ -777,7 +777,7 @@ struct ListSectionKanbanColumn: View {
     /// than either refusing or persisting: the tasks stay done and nothing on screen says so
     /// (`docs/TODO.md` T-268).
     private func toggleSectionCompletion() {
-        guard section.supportsLifecycle else { return }
+        guard CadenceBoardColumnLifecycleOffer.offersCompletionToggle(section) else { return }
         sectionCompletionAnimationManager.toggleCompletion(
             for: section,
             getCurrent: currentSection,

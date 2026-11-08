@@ -242,22 +242,25 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
     @Test func bothVisibleCompletionControlsSitInsideTheLifecycleGate() throws {
         let code = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanColumnSupportViews.swift"))
 
-        // The column header's completion glyph.
+        // Both completion controls sit directly inside the shared offer, which refuses Default
+        // (`supportsLifecycle`, pinned by value in `CadenceBoardColumnParityTests`) and, since
+        // [[T-13101]], an archived column.
         #expect(
-            matches(#"if section\.supportsLifecycle \{\s*Button\(action: onToggleCompletion\)"#, in: code) == 1,
-            "the section header's completion glyph is not directly inside a supportsLifecycle gate"
+            matches(#"if CadenceBoardColumnLifecycleOffer\.offersCompletionToggle\(section\) \{\s*Button\(action: onToggleCompletion\)"#, in: code) == 2,
+            "a completion control is not directly inside the shared lifecycle offer"
         )
-        // The editor popover's "Complete Column", which now shares Archive's gate — the
-        // divider came inside with it.
+        // The editor popover's "Complete Column" still shares Archive's gate — the divider came
+        // inside with it — with the offer nested inside that gate.
         #expect(
-            matches(#"if section\.supportsLifecycle \{\s*Divider\(\)[^\n]*\s*Button\(action: onToggleCompletion\)"#, in: code) == 1,
+            matches(#"if section\.supportsLifecycle \{\s*Divider\(\)[^\n]*\s*if CadenceBoardColumnLifecycleOffer\.offersCompletionToggle\(section\) \{\s*Button\(action: onToggleCompletion\)"#, in: code) == 1,
             "the editor popover's completion item is not inside the same gate as Archive"
         )
 
-        // Exactly two completion controls in this file, and exactly two gates: a third of either
-        // would mean one of them is ungated.
+        // Exactly two completion controls in this file, exactly two offers and one Archive gate:
+        // a third of either would mean one of them is ungated.
         #expect(code.components(separatedBy: "Button(action: onToggleCompletion)").count - 1 == 2)
-        #expect(code.components(separatedBy: "section.supportsLifecycle").count - 1 == 2)
+        #expect(code.components(separatedBy: "CadenceBoardColumnLifecycleOffer.offersCompletionToggle(section)").count - 1 == 2)
+        #expect(code.components(separatedBy: "section.supportsLifecycle").count - 1 == 1)
 
         // Archive and Delete are still gated too — this fix moved Completion in beside them, it
         // did not move them out.
@@ -274,14 +277,14 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
         let code = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanSectionColumnView.swift"))
 
         #expect(
-            matches(#"if section\.supportsLifecycle \{\s*hoveredSectionManager\.beginHovering\("#, in: code) == 1,
+            matches(#"if CadenceBoardColumnLifecycleOffer\.offersCompletionToggle\(section\) \{\s*hoveredSectionManager\.beginHovering\("#, in: code) == 1,
             "the hovered-column completion target is registered for the Default column"
         )
         #expect(
-            matches(#"guard section\.supportsLifecycle else \{ return \}\s*sectionCompletionAnimationManager\.toggleCompletion\("#, in: code) == 1,
+            matches(#"guard CadenceBoardColumnLifecycleOffer\.offersCompletionToggle\(section\) else \{ return \}\s*sectionCompletionAnimationManager\.toggleCompletion\("#, in: code) == 1,
             "toggleSectionCompletion does not refuse a column with no lifecycle"
         )
-        #expect(code.components(separatedBy: "section.supportsLifecycle").count - 1 == 2)
+        #expect(code.components(separatedBy: "CadenceBoardColumnLifecycleOffer.offersCompletionToggle(section)").count - 1 == 2)
     }
 
     /// The fix must not be read as "columns no longer wind down". Every non-default column still
@@ -1296,18 +1299,18 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
 
         // The stripper stripped: `supportsLifecycle` is named in prose in both files, so a
         // comment-blind count would exceed the two live uses each one asserts.
-        #expect(rawSourceFile("Cadence/macOS/Views/KanbanColumnSupportViews.swift").components(separatedBy: "supportsLifecycle").count - 1 > 2)
-        #expect(support.components(separatedBy: "supportsLifecycle").count - 1 == 2)
+        #expect(rawSourceFile("Cadence/macOS/Views/KanbanColumnSupportViews.swift").components(separatedBy: "supportsLifecycle").count - 1 > 1)
+        #expect(support.components(separatedBy: "supportsLifecycle").count - 1 == 1)
 
         // Pattern self-check: each needle matches a literal that must match and misses one that
         // must not, so a typo cannot pass every scan built on it.
-        let gateHeader = #"if section\.supportsLifecycle \{\s*Button\(action: onToggleCompletion\)"#
-        #expect(matches(gateHeader, in: "if section.supportsLifecycle {\n    Button(action: onToggleCompletion) {") == 1)
+        let gateHeader = #"if CadenceBoardColumnLifecycleOffer\.offersCompletionToggle\(section\) \{\s*Button\(action: onToggleCompletion\)"#
+        #expect(matches(gateHeader, in: "if CadenceBoardColumnLifecycleOffer.offersCompletionToggle(section) {\n    Button(action: onToggleCompletion) {") == 1)
         #expect(matches(gateHeader, in: "Button(action: onToggleCompletion) {") == 0)
         #expect(matches(gateHeader, in: "if section.isDefault {\n    Button(action: onToggleCompletion) {") == 0)
 
-        let gateGuard = #"guard section\.supportsLifecycle else \{ return \}\s*sectionCompletionAnimationManager\.toggleCompletion\("#
-        #expect(matches(gateGuard, in: "guard section.supportsLifecycle else { return }\n    sectionCompletionAnimationManager.toggleCompletion(") == 1)
+        let gateGuard = #"guard CadenceBoardColumnLifecycleOffer\.offersCompletionToggle\(section\) else \{ return \}\s*sectionCompletionAnimationManager\.toggleCompletion\("#
+        #expect(matches(gateGuard, in: "guard CadenceBoardColumnLifecycleOffer.offersCompletionToggle(section) else { return }\n    sectionCompletionAnimationManager.toggleCompletion(") == 1)
         #expect(matches(gateGuard, in: "sectionCompletionAnimationManager.toggleCompletion(") == 0)
     }
 }

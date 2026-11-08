@@ -368,8 +368,9 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
         Group {
             // Not offered on Default, for the same reason Archive is not (T-268): the model
             // refuses the flag and the settle underneath the button does not. See
-            // `TaskSectionConfig.supportsLifecycle`.
-            if section.supportsLifecycle {
+            // `TaskSectionConfig.supportsLifecycle`. Nor on an archived column ([[T-13101]]): the
+            // Show Archived board draws it, and its one transition is Unarchive, as on iOS.
+            if CadenceBoardColumnLifecycleOffer.offersCompletionToggle(section) {
                 Button(action: onToggleCompletion) {
                     // [[T-8411]]: the task's drawn circle, from the shared table's column row.
                     CadenceTaskCompletionCircle(
@@ -604,21 +605,26 @@ struct KanbanSectionEditorPopover: View {
             if section.supportsLifecycle {
                 Divider().background(Theme.borderSubtle)
 
-                Button(action: onToggleCompletion) {
-                    HStack(spacing: 8) {
-                        Image(systemName: section.isCompleted ? "arrow.uturn.backward.circle.fill" : "checkmark.circle.fill")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text(section.isCompleted ? "Reopen Column" : "Complete Column")
-                            .font(.system(size: 12, weight: .semibold))
-                        Spacer()
+                // [[T-13101]]: an archived column offers Unarchive below and no Complete / Reopen,
+                // the iOS list editor's one-button archived row. Archiving already cancelled the
+                // open work; completing it afterwards would settle it a second time.
+                if CadenceBoardColumnLifecycleOffer.offersCompletionToggle(section) {
+                    Button(action: onToggleCompletion) {
+                        HStack(spacing: 8) {
+                            Image(systemName: section.isCompleted ? "arrow.uturn.backward.circle.fill" : "checkmark.circle.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(section.isCompleted ? "Reopen Column" : "Complete Column")
+                                .font(.system(size: 12, weight: .semibold))
+                            Spacer()
+                        }
+                        .foregroundStyle(section.isCompleted ? Theme.blue : Theme.green)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 9)
+                        .background(Theme.surfaceElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
-                    .foregroundStyle(section.isCompleted ? Theme.blue : Theme.green)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 9)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .buttonStyle(.cadencePlain(cornerRadius: 8))
                 }
-                .buttonStyle(.cadencePlain(cornerRadius: 8))
 
                 Button(action: onToggleArchive) {
                     HStack(spacing: 8) {
