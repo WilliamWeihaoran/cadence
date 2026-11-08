@@ -27,25 +27,8 @@ struct iOSCreateTaskSheet: View {
         onCreated: ((AppTask) -> Void)? = nil
     ) {
         self.onCreated = onCreated
-        var draft = CadenceScheduleDraft.quickCreate(
-            dateKey: seed.doDateKey.isEmpty ? DateFormatters.todayKey() : seed.doDateKey,
-            startMin: seed.scheduledStartMin >= 0 ? seed.scheduledStartMin : min(
-                max(Calendar.current.component(.hour, from: Date()) + 1, CadenceScheduleSupport.calendarStartHour),
-                CadenceScheduleSupport.calendarEndHour - 1
-            ) * 60,
-            opensTimed: seed.scheduledStartMin >= 0,
-            kind: initialKind
-        )
-        draft.title = seed.title
-        draft.notes = seed.notes
-        draft.dueDateKey = seed.dueDateKey
-        draft.priority = seed.priority
-        draft.listToken = CadenceTaskComposerSupport.token(for: seed.container)
-        draft.sectionName = seed.sectionName
-        draft.setEstimate(seed.estimatedMinutes)
-        draft.estimateIsExplicit = seed.estimatedMinutes != CadenceTaskComposerSupport.defaultEstimatedMinutes
-        if initialKind == .task, seed.doDateKey.isEmpty { draft.clearDoDate() }
-        _draft = State(initialValue: draft)
+        // [[T-13792]]: the shared opening rule, which the Mac's Cmd+N composer reads too.
+        _draft = State(initialValue: CadenceTaskComposerSupport.captureDraft(seed: seed, initialKind: initialKind))
     }
 
     var body: some View {

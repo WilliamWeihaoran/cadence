@@ -4,6 +4,12 @@ struct CadenceScheduleCaptureOptions {
     var tagChoices: [CadenceSchedulePanelChoice] = []
     var selectedTagIDs: Binding<Set<String>> = .constant([])
     var createTag: ((String) -> String?)?
+    /// A field the host asks the card to open, as if its icon or chip had been clicked; the card
+    /// opens it and sets this back to `nil`. The Mac composer's Cmd+Shift+T and Cmd+Shift+D open
+    /// the Do and Due panels through it ([[T-13792]]): the panel state is the card's own, so a
+    /// keyboard layer on top of it has no other way in. A field the card is not offering for the
+    /// draft's kind is dropped.
+    var fieldRequest: Binding<CadenceCaptureField?> = .constant(nil)
 }
 
 /// What the capture card's "New tag" field may hand `createTag` ([[T-10028]]): the name trimmed,
@@ -387,6 +393,11 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
         .onAppear { titleIsFocused = !draft.subject.isEditing && !isReadOnly }
         .onChange(of: activeField) { _, field in if field == nil { titleIsFocused = !draft.subject.isEditing && !isReadOnly } }
         .onChange(of: draft.title) { _, _ in actionError = nil }
+        .onChange(of: options.fieldRequest.wrappedValue) { _, field in
+            guard let field else { return }
+            options.fieldRequest.wrappedValue = nil
+            if fields.contains(field), !isReadOnly { open(field) }
+        }
     }
 
     // MARK: - Header and body

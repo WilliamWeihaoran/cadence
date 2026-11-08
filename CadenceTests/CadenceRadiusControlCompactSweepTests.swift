@@ -210,8 +210,11 @@ struct CadenceRadiusControlCompactSweepTests {
             // became `iOSCalendarTimelineGrid`. Re-pointed at another `, style: .continuous`
             // conversion rather than dropped, because the shape this entry pins is the *spelling*
             // with the style argument, which is the one the sweep below cannot distinguish.
+            // Was `Cadence/macOS/Sheets/CreateTaskSheet.swift`, whose Add arrow went when the
+            // sheet became the shared capture card ([[T-13792]]); re-pointed at another
+            // `, style: .continuous` conversion for the reason the entry above gives.
             (
-                "Cadence/macOS/Sheets/CreateTaskSheet.swift",
+                "Cadence/macOS/Views/TimelineEventBlockSupportViews.swift",
                 "cornerRadius: Theme\\.radiusControlCompact, style: \\.continuous"
             ),
         ]

@@ -1,7 +1,26 @@
 #if os(macOS)
 import SwiftUI
 import SwiftData
+import EventKit
 
+/// **The Mac's Cmd+N / `+` composer is the shared capture card** ([[T-13792]]).
+///
+/// It was its own form -- priority, title, notes, subtasks and a toolbar of List, Section, Do Date,
+/// Due Date and Tags badges -- so a task made here could not be given a repeat, a time of day or an
+/// estimate, and could not be an event at all, while iOS's `+` offered every one of them. The form
+/// is `CadenceSchedulePanel` + `.capturePresentation`, as `iOSCreateTaskSheet` hosts it, and this
+/// view owns only what a Mac adds on top:
+///
+/// - **The keyboard layer** (`keyboardShortcuts`): Cmd+T / Cmd+D set or clear today as the do and
+///   due date, Cmd+Shift+T / Cmd+Shift+D open the card's Do and Due panels, Cmd+P cycles priority,
+///   Cmd+Shift+= / Cmd+Shift+- nudge the do date a day, Cmd+Return creates and Escape cancels.
+///   Each answers a hardware keyboard, which is the one thing [[T-8201]] lets differ.
+/// - **The draft subtask rows**, in the card's host slot, so [[T-10040]]'s Return rule survives:
+///   the card's own one-per-line field is switched off here (`offersSubtasks: false`).
+/// - **The `~` / `#` suggestion strip** under the title -- the same strip iOS's card draws.
+///
+/// The **Event arm** comes with the card: keeper `keeper0938` decided it under [[T-13810]], because
+/// iOS's `+` offers it and no Mac hardware constraint answers its absence.
 struct CreateTaskSheet: View {
     let seed: TaskCreationSeed
     let dismissAction: (() -> Void)?
@@ -9,28 +28,18 @@ struct CreateTaskSheet: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(TaskCreationManager.self) private var taskCreationManager
-    @Query(sort: \Context.order)  private var contexts:  [Context]
+    @Environment(CalendarManager.self) private var calendarManager
     @Query(sort: \Area.order)     private var areas:     [Area]
     @Query(sort: \Project.order)  private var projects:  [Project]
     @Query(sort: \Tag.order)      private var tags:      [Tag]
 
-    @State private var title:             String
-    @State private var notes:             String
-    @State private var selectedPriority:  TaskPriority
-    @State private var selectedContainer: TaskContainerSelection
-    @State private var selectedSectionName: String
-    @State private var hasDueDate:        Bool
-    @State private var dueDate:           Date
-    @State private var hasDoDate:         Bool
-    @State private var doDate:            Date
-    @State private var selectedTags:      [Tag] = []
-
-    /// Why the sheet is still open. `nil` on every path that has not failed.
+    @State private var draft: CadenceScheduleDraft
+    @State private var selectedTagIDs: Set<String> = []
+    /// Why the sheet is still open. `nil` on every path that has not failed. Drawn by the card,
+    /// through the panel's `failureNotice:`, above the controls the user is about to press again.
     @State private var actionError: String?
-
-    @State private var showDoPicker  = false
-    @State private var showDuePicker = false
-    // showLocalSuccessToast removed — global toast used instead
+    /// Cmd+Shift+T / Cmd+Shift+D: the card panel to open. See `CadenceScheduleCaptureOptions`.
+    @State private var fieldRequest: CadenceCaptureField?
     @FocusState private var focusedSubtask: CreateTaskSubtaskDraft.ID?
     @State private var subtaskDrafts: [CreateTaskSubtaskDraft] = []
 
@@ -42,124 +51,122 @@ struct CreateTaskSheet: View {
         self.seed = seed
         self.dismissAction = dismissAction
         self.successAction = successAction
-        let resolvedDueDate = DateFormatters.date(from: seed.dueDateKey) ?? Date()
-        let resolvedDoDate  = DateFormatters.date(from: seed.doDateKey)  ?? Date()
-        _title             = State(initialValue: seed.title)
-        _notes             = State(initialValue: seed.notes)
-        _selectedPriority  = State(initialValue: seed.priority)
-        _selectedContainer = State(initialValue: seed.container)
-        _selectedSectionName = State(initialValue: seed.sectionName)
-        _hasDueDate        = State(initialValue: !seed.dueDateKey.isEmpty)
-        _dueDate           = State(initialValue: resolvedDueDate)
-        _hasDoDate         = State(initialValue: !seed.doDateKey.isEmpty)
-        _doDate            = State(initialValue: resolvedDoDate)
-        _subtaskDrafts     = State(initialValue: CreateTaskSubtaskDraft.drafts(from: seed.subtaskTitles))
+        _draft = State(initialValue: CadenceTaskComposerSupport.captureDraft(seed: seed.composerSeed))
+        _subtaskDrafts = State(initialValue: CreateTaskSubtaskDraft.drafts(from: seed.subtaskTitles))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             keyboardShortcuts
-            actionErrorNotice
-            titleSection
-            notesSection
-            subtasksSection
-            addSubtaskButton
-
-            Divider().background(Theme.borderSubtle)
-
-            toolbarRow
+            CadenceSchedulePanel(
+                draft: $draft,
+                listChoices: CadenceScheduleDraftChoices.listChoices(for: draft, areas: areas, projects: projects),
+                sectionChoices: CadenceScheduleDraftChoices.sectionChoices(for: draft, areas: areas, projects: projects),
+                calendarChoices: calendarChoices,
+                calendarUnavailableNotice: calendarUnavailableNotice,
+                failureNotice: actionError,
+                canCommit: canCreate,
+                // The draft rows below carry the checklist, with [[T-10040]]'s Return rule.
+                offersSubtasks: false,
+                actions: CadenceSchedulePanelActions(commit: commit, cancel: dismiss)
+            ) {
+                markerSuggestions
+                if draft.kind == .task {
+                    subtasksSection
+                    addSubtaskButton
+                }
+            }
+            .capturePresentation(CadenceScheduleCaptureOptions(
+                tagChoices: TagSupport.uniqueBySlug(tags.filter { !$0.isArchived }).map {
+                    CadenceSchedulePanelChoice(id: $0.id.uuidString, name: $0.name, color: Color(hex: $0.colorHex), systemImage: "tag")
+                },
+                selectedTagIDs: $selectedTagIDs,
+                createTag: createTag,
+                fieldRequest: $fieldRequest
+            ))
         }
         .frame(width: 600)
         .background(Theme.surface)
         .onAppear {
             reconcileContainer()
-            normalizeSelectedSection()
+            normalizeCalendar()
         }
-        .onChange(of: selectedContainer) { _, _ in normalizeSelectedSection() }
-        // **T-317: the lists change too, not just the selection.** The section was re-normalized
-        // whenever the *selection* changed and never when the available lists did, so a container
-        // deleted in another window or removed by sync stayed selected — and creation quietly
-        // downgraded it to the Inbox. `@Query` republishes when the store does, so this flips the
-        // moment the chosen list stops existing.
+        // **T-317: the lists change too, not just the selection.** A container deleted in another
+        // window or removed by sync stayed selected, and creation quietly downgraded it to the
+        // Inbox. `@Query` republishes when the store does, so this flips the moment the chosen
+        // list stops existing. A list picked in the card re-resolves its section there ([[T-8591]]).
         .onChange(of: containerStillExists) { _, _ in reconcileContainer() }
-    }
-
-    /// Said above the title field: the sheet has stayed open, and this is the reason. Placed there
-    /// rather than beside the Add button for the reason iOS.s composer gives — the fields
-    /// underneath are the ones that survived, and the user is about to press Add again.
-    @ViewBuilder
-    private var actionErrorNotice: some View {
-        if let actionError {
-            CadenceInlineFailureNotice(text: actionError)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
+        .onChange(of: draft.kind) { _, _ in
+            actionError = nil
+            normalizeCalendar()
         }
+        .onChange(of: calendarManager.writableCalendars.map(\.calendarIdentifier)) { _, _ in normalizeCalendar() }
     }
 
+    /// The Mac's keyboard layer over the shared card ([[T-13792]]). Hidden buttons, so each chord
+    /// is a key equivalent of this window -- the card's popovers are their own windows and keep
+    /// their keys, Escape included.
     private var keyboardShortcuts: some View {
         ZStack {
-            Button("") { setDoToday() }
+            Button("") { CreateTaskKeyboardCommands.toggleDoToday(&draft) }
                 .keyboardShortcut("t", modifiers: .command)
-            Button("") { showDoPicker = true }
+            Button("") { fieldRequest = .doDate }
                 .keyboardShortcut("t", modifiers: [.command, .shift])
-            Button("") { setDueToday() }
+            Button("") { CreateTaskKeyboardCommands.toggleDueToday(&draft) }
                 .keyboardShortcut("d", modifiers: .command)
-            Button("") { showDuePicker = true }
+            Button("") { fieldRequest = .dueDate }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
-            Button("") { cyclePriority() }
+            Button("") { CreateTaskKeyboardCommands.cyclePriority(&draft) }
                 .keyboardShortcut("p", modifiers: .command)
+            // Was `TaskTitleEntryField`'s, which the card's title field is not.
+            Button("") { CreateTaskKeyboardCommands.nudgeDoDate(&draft, by: 1) }
+                .keyboardShortcut("=", modifiers: [.command, .shift])
+            Button("") { CreateTaskKeyboardCommands.nudgeDoDate(&draft, by: -1) }
+                .keyboardShortcut("-", modifiers: [.command, .shift])
+            Button("") { actionError = commit() }
+                .keyboardShortcut(.return, modifiers: [.command])
+            // [[T-8103]] (a): Escape closes the sheet the way the card's ✕ does. The in-window host
+            // (`TaskCreationLayerView`) had no Escape at all, so the key fell through to the main
+            // window's `cancelOperation` and did nothing. The quick-capture panel's
+            // `dismissAction` is the `closeDiscardingDraft` its `NSPanel.cancelOperation` runs, so
+            // the key means the same there. The card's field popovers, and the `~` / `#` strip's,
+            // are their own windows, so this key equivalent does not take Escape from them.
+            Button("", action: dismiss)
+                .keyboardShortcut(.cancelAction)
         }
         .frame(width: 0, height: 0)
         .clipped()
+        .accessibilityHidden(true)
     }
 
-    private var titleSection: some View {
-        HStack(alignment: .center, spacing: 8) {
-            TaskPriorityPicker(selection: $selectedPriority)
-
-            TaskTitleEntryField(
-                title: $title,
-                priority: $selectedPriority,
-                placeholder: "What needs doing?",
-                font: .system(size: 17, weight: .semibold),
-                autofocus: true,
-                contexts: contexts,
-                areas: areas,
-                projects: projects,
-                allTags: tags,
-                containerSelection: $selectedContainer,
-                sectionName: $selectedSectionName,
-                selectedTags: $selectedTags,
-                onCreateTag: createTag,
-                onDateNudge: nudgeDoDate
-            ) {
-                if !TaskTitleSupport.isEmpty(title) { createTask() }
-            }
+    @ViewBuilder
+    private var markerSuggestions: some View {
+        if draft.kind == .task, let shortcut = TaskTitleSupport.containerShortcut(in: draft.title) {
+            iOSTaskComposerMarkerSuggestions(
+                kind: .list, shortcut: shortcut, areas: areas, projects: projects, allTags: tags,
+                onPickContainer: { selection in
+                    draft.title = CadenceTaskComposerSupport.title(removingShortcut: shortcut)
+                    draft.listToken = CadenceTaskComposerSupport.token(for: selection)
+                    normalizeSection()
+                }, onPickTag: { _ in }, onCreateTag: { _ in }
+            )
+        } else if draft.kind == .task, let shortcut = TaskTitleSupport.tagShortcut(in: draft.title) {
+            iOSTaskComposerMarkerSuggestions(
+                kind: .tag, shortcut: shortcut, areas: areas, projects: projects, allTags: tags,
+                onPickContainer: { _ in },
+                onPickTag: { tag in
+                    draft.title = CadenceTaskComposerSupport.title(removingShortcut: shortcut)
+                    selectedTagIDs.insert(tag.id.uuidString)
+                },
+                onCreateTag: { name in
+                    // Keep the shortcut on refusal, so no typed input is lost.
+                    if createTag(name) == nil {
+                        draft.title = CadenceTaskComposerSupport.title(removingShortcut: shortcut)
+                    }
+                },
+                onAddDefaultTags: addDefaultTags
+            )
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 6)
-    }
-
-    private var notesSection: some View {
-        ZStack(alignment: .topLeading) {
-            if notes.isEmpty {
-                Text("Notes")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.dim.opacity(0.45))
-                    .padding(.top, 1)
-                    .padding(.leading, 5)
-                    .allowsHitTesting(false)
-            }
-            TextEditor(text: $notes)
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.text)
-                .scrollContentBackground(.hidden)
-                .frame(height: 40)
-        }
-        .padding(.leading, 52)
-        .padding(.trailing, 16)
-        .padding(.bottom, 6)
     }
 
     @ViewBuilder
@@ -208,8 +215,6 @@ struct CreateTaskSheet: View {
                 fallback: TaskTitleSupport.defaultCompactDisplayTitle
             ))
         }
-        .padding(.leading, 52)
-        .padding(.trailing, 16)
         .padding(.vertical, 4)
     }
 
@@ -226,87 +231,6 @@ struct CreateTaskSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.cadencePlain)
-        .padding(.leading, 52)
-        .padding(.bottom, 4)
-    }
-
-    private var toolbarRow: some View {
-        HStack(spacing: 8) {
-            ContainerPickerBadge(
-                selection: $selectedContainer,
-                contexts: contexts,
-                areas: areas,
-                projects: projects,
-                outlined: true
-            )
-
-            if showsSectionPicker {
-                TaskSectionPickerBadge(
-                    selection: $selectedSectionName,
-                    sections: availableSections
-                )
-            }
-
-            // [[T-8104]]: the do date wears the app's sun; the flag stays with Priority alone, so
-            // the due date takes a calendar-deadline glyph rather than a second identical flag.
-            TaskDateChip(label: "Do Date",
-                         icon: CadenceBoardCardMetadata.doDateIcon,
-                         activeColor: Theme.blue,
-                         isOn: $hasDoDate, date: $doDate,
-                         showPicker: $showDoPicker)
-
-            TaskDateChip(label: "Due Date",
-                         icon: "calendar.badge.exclamationmark",
-                         activeColor: Theme.red,
-                         isOn: $hasDueDate, date: $dueDate,
-                         showPicker: $showDuePicker)
-
-            TagPickerControl(
-                selectedTags: $selectedTags,
-                allTags: tags,
-                onCreateTag: createTag,
-                showsLabel: true
-            )
-
-            Spacer(minLength: 0)
-
-            Button(action: dismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.cadencePlain)
-            // [[T-8103]] (a): Escape closes the sheet the way this ✕ does. The in-window host
-            // (`TaskCreationLayerView`) had no Escape at all, so the key fell through to the main
-            // window's `cancelOperation` and did nothing. The quick-capture panel already answered
-            // Escape from its `NSPanel.cancelOperation`, and its `dismissAction` is that same
-            // `closeDiscardingDraft`, so the key means the same there. The `~`, `#`, date and tag
-            // pickers are popovers — their own windows — so this window's key equivalent does not
-            // take Escape from them.
-            .keyboardShortcut(.cancelAction)
-            // [[T-10230]]: name and tooltip from one string, as every other icon-only Mac
-            // control has them; the panel's three glyph buttons drew no tooltip.
-            .cadenceControlLabel("Cancel")
-
-            Button(action: createTask) {
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.onColor(for: Theme.blue))
-                    .frame(width: 26, height: 26)
-                    .background(Theme.blue)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous))
-            }
-            .buttonStyle(.cadencePlain(cornerRadius: Theme.radiusControlCompact))
-            .disabled(trimmedTitle.isEmpty)
-            .opacity(trimmedTitle.isEmpty ? 0.5 : 1)
-            .keyboardShortcut(.return, modifiers: [.command])
-            .cadenceControlLabel("Create Task")
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Theme.surfaceElevated)
     }
 
     /// Return in a draft row (`after:` that row) or the Add Subtask button (`after: nil`).
@@ -319,6 +243,10 @@ struct CreateTaskSheet: View {
 
     // MARK: - Logic
 
+    private var selection: TaskContainerSelection {
+        CadenceTaskComposerSupport.selection(fromToken: draft.listToken)
+    }
+
     private var containerResolver: TaskContainerResolver {
         TaskContainerResolver(areas: areas, projects: projects)
     }
@@ -326,33 +254,26 @@ struct CreateTaskSheet: View {
     /// `false` once the chosen list has stopped existing. Watched rather than read — see the
     /// `onChange` in `body`.
     private var containerStillExists: Bool {
-        !CadenceTaskComposerSupport.namesMissingContainer(
-            selectedContainer,
-            areas: areas,
-            projects: projects
-        )
+        !CadenceTaskComposerSupport.namesMissingContainer(selection, areas: areas, projects: projects)
     }
 
-    private var availableSections: [String] {
-        containerResolver.availableSections(for: selectedContainer)
-    }
-
-    private var showsSectionPicker: Bool {
-        switch selectedContainer {
-        case .inbox: return false
-        case .area, .project: return true
+    private var canCreate: Bool {
+        switch draft.kind {
+        case .task: return CadenceTaskComposerSupport.canCreate(title: draft.title)
+        case .event:
+            return !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedCalendar != nil
         }
     }
 
-    private var trimmedTitle: String {
-        TaskTitleSupport.priorityShortcut(in: title)?.title ?? TaskTitleSupport.normalized(title)
+    private func normalizeSection() {
+        draft.sectionName = containerResolver.normalizedSectionName(draft.sectionName, for: selection)
     }
 
     /// Puts the selection back where it can be honoured, and says so when it had to.
     ///
     /// **T-317.** `TaskContainerResolver.applyContainer` attaches nothing for an id it cannot find
     /// and `insertTask` inserts the task regardless, so a stale selection produced an Inbox task
-    /// under a sheet whose badge still named a list. The badge is reset where the user can see it
+    /// under a card whose chip still named a list. The chip is reset where the user can see it
     /// and this Add is refused; the composer still holds everything they typed, so confirming costs
     /// one keystroke and nothing is lost by asking.
     ///
@@ -360,43 +281,49 @@ struct CreateTaskSheet: View {
     @discardableResult
     private func reconcileContainer() -> Bool {
         guard CadenceTaskComposerSupport.namesMissingContainer(
-            selectedContainer,
+            selection,
             areas: areas,
             projects: projects
         ) else { return true }
 
-        selectedContainer = .inbox
-        normalizeSelectedSection()
+        draft.listToken = CadenceTaskComposerSupport.token(for: .inbox)
+        normalizeSection()
         actionError = CadenceTaskComposerSupport.missingContainerNotice
         return false
     }
 
+    /// The card's Add, its title's Return, and Cmd+Return. `nil` when the draft left the sheet,
+    /// the sentence to draw when it did not.
+    private func commit() -> String? {
+        guard canCreate else { return nil }
+        switch draft.kind {
+        case .task:
+            createTask()
+        case .event:
+            createEvent()
+        }
+        return actionError
+    }
+
     private func createTask() {
-        guard !trimmedTitle.isEmpty else { return }
+        guard CadenceTaskComposerSupport.canCreate(title: draft.title) else { return }
         guard reconcileContainer() else { return }
-        let draft = TaskCreationDraft(
-            title: title,
-            notes: notes,
-            priority: selectedPriority,
-            container: selectedContainer,
-            sectionName: selectedSectionName,
-            dueDateKey: hasDueDate ? DateFormatters.dateKey(from: dueDate) : "",
-            scheduledDateKey: hasDoDate ? DateFormatters.dateKey(from: doDate) : "",
-            subtaskTitles: CreateTaskSubtaskDraft.titles(of: subtaskDrafts),
-            tags: selectedTags,
-            scheduledStartMin: seed.scheduledStartMin,
-            estimatedMinutes: seed.estimatedMinutes
+        let creation = CadenceTaskComposerSupport.creationDraft(
+            from: draft,
+            container: selection,
+            tags: tags.filter { selectedTagIDs.contains($0.id.uuidString) },
+            subtaskTitles: CreateTaskSubtaskDraft.titles(of: subtaskDrafts)
         )
         // T-364: the commit is part of the creation, and it can fail. Everything below this line
         // is the success experience — a reconcile pass, a success toast, a closed sheet — and none
         // of it may run over a task the store did not take. On a throw `createTask` has already
         // removed the task and its subtasks again, so the sheet is back to exactly what the user
-        // typed, with the reason above the title field. `iOSCreateTaskSheet.create()` is the same
-        // shape; the two composers do not get to differ about this.
+        // typed, with the reason on the card. `iOSCreateTaskSheet.create()` is the same shape; the
+        // two composers do not get to differ about this.
         let created: AppTask?
         do {
             created = try TaskCreationService(areas: areas, projects: projects)
-                .createTask(from: draft, into: modelContext)
+                .createTask(from: creation, into: modelContext)
         } catch {
             actionError = TaskCreationService.saveFailureNotice
             return
@@ -416,74 +343,157 @@ struct CreateTaskSheet: View {
         }
     }
 
-    private func setDoToday() {
-        let today = Calendar.current.startOfDay(for: Date())
-        if hasDoDate && Calendar.current.isDateInToday(doDate) {
-            hasDoDate = false
-        } else {
-            hasDoDate = true
-            doDate = today
+    /// The card's Event arm, through the write the drag-create popover uses. A refusal stays on the
+    /// card with the draft (T-658); `report` clears the window-wide alert so it is said once.
+    private func createEvent() {
+        let failure = calendarManager.createStandaloneEvent(
+            QuickCreateEventDraft(scheduleDraft: draft),
+            hostDay: Date()
+        )
+        calendarManager.report(
+            CadenceCalendarEventEditingSupport.saveOutcome(for: failure),
+            into: $actionError
+        ) {
+            if let successAction { successAction() } else { dismiss() }
         }
-    }
-
-    private func setDueToday() {
-        let today = Calendar.current.startOfDay(for: Date())
-        if hasDueDate && Calendar.current.isDateInToday(dueDate) {
-            hasDueDate = false
-        } else {
-            hasDueDate = true
-            dueDate = today
-        }
-    }
-
-    private func nudgeDoDate(by days: Int) {
-        let cal = Calendar.current
-        if !hasDoDate {
-            hasDoDate = true
-            doDate = cal.startOfDay(for: Date())
-        }
-        doDate = cal.date(byAdding: .day, value: days, to: doDate) ?? doDate
-    }
-
-    private func cyclePriority() {
-        let all = TaskPriority.allCases
-        let idx = all.firstIndex(of: selectedPriority) ?? 0
-        selectedPriority = all[(idx + 1) % all.count]
     }
 
     private func dismiss() {
         if let dismissAction { dismissAction() } else { taskCreationManager.dismiss() }
     }
 
-    /// `TaskContainerResolver.normalizedSectionName`, not a fourth copy of it (T-287/T-374). This
-    /// file, `QuickCreateChoicePopover` and `TaskTitleEntryField` each open-coded the same four
-    /// lines; the resolver also canonicalises the *spelling* of a case-insensitive match, which
-    /// none of the three did.
-    private func normalizeSelectedSection() {
-        selectedSectionName = containerResolver.normalizedSectionName(
-            selectedSectionName,
-            for: selectedContainer
-        )
+    // MARK: - Calendars
+
+    private var selectedCalendar: EKCalendar? {
+        calendarManager.writableCalendars.first { $0.calendarIdentifier == draft.calendarID }
     }
 
-    /// **T-631, half 3 of the `try? save()` rule.** This reached for the sheet's ambient
-    /// `ModelContext`, inserted a `Tag` one frame down in `TagSupport.resolveTags`, and committed
-    /// nothing — so a tag typed here and then abandoned with Cancel stayed *pending* for whatever
-    /// unrelated screen saved next. `createTask` un-inserts `[task] + subtasks` on a refusal and
-    /// never knew about the tag, so even a refused Add left one behind.
-    ///
-    /// The old `?? Tag(name: name)` fallback went with it. It returned a `Tag` the store had never
-    /// been asked about, which the picker then drew as a chip; there is nothing to draw now, and
-    /// the sheet's own notice line says why.
-    private func createTag(_ name: String) -> Tag? {
+    private var calendarChoices: [CadenceSchedulePanelChoice] {
+        let _ = calendarManager.storeVersion
+        return calendarManager.writableCalendars.map {
+            CadenceSchedulePanelChoice(
+                id: $0.calendarIdentifier,
+                name: $0.title,
+                // `cgColor` is implicitly unwrapped and nil on a calendar EventKit has not coloured
+                // yet; read as the dim row rather than trapping (T-2047's shape).
+                color: $0.cgColor.map { Color(cgColor: $0) } ?? Theme.dim,
+                systemImage: "calendar"
+            )
+        }
+    }
+
+    /// Said instead of the picker when there is nothing to pick. Never a permission request: the
+    /// composer names what is missing and leaves the request to Settings, as the drag-create
+    /// popover does.
+    private var calendarUnavailableNotice: String? {
+        guard draft.kind == .event else { return nil }
+        if !calendarManager.isAuthorized {
+            return "Calendar access is needed to create events. Turn it on in Settings, then try again."
+        }
+        if calendarManager.writableCalendars.isEmpty {
+            return "No writable calendars are available."
+        }
+        return nil
+    }
+
+    private func normalizeCalendar() {
+        guard draft.kind == .event, selectedCalendar == nil else { return }
+        draft.calendarID = calendarManager.defaultWritableCalendar?.calendarIdentifier
+            ?? calendarManager.writableCalendars.first?.calendarIdentifier
+            ?? ""
+    }
+
+    // MARK: - Tags
+
+    /// [[T-9231]]: the strip's Add Default Tags chip, the same committing seed the tag popover
+    /// runs. A refusal rolls the whole seed back and says so.
+    private func addDefaultTags() {
+        do {
+            try TagSupport.seedDefaultTagsCommitting(in: modelContext)
+            actionError = nil
+        } catch {
+            actionError = CadencePendingChangePersistence.editFailureNotice
+        }
+    }
+
+    /// **T-631, half 3 of the `try? save()` rule.** A tag typed here is committed on the spot, so
+    /// one abandoned with Cancel is not left *pending* for whatever unrelated screen saves next.
+    /// `nil` when the tag exists and is selected; the sentence the card draws when it does not.
+    private func createTag(_ name: String) -> String? {
         guard let tag = TagSupport.committedTag(named: name, in: modelContext) else {
             actionError = CadencePendingChangePersistence.editFailureNotice
-            return nil
+            return actionError
         }
+        selectedTagIDs.insert(tag.id.uuidString)
         actionError = nil
-        return tag
+        return nil
+    }
+}
+
+extension TaskCreationSeed {
+    /// The fields the shared capture card opens on ([[T-13792]]). The draft subtasks are the
+    /// Mac sheet's own rows and travel separately.
+    var composerSeed: CadenceTaskComposerSeed {
+        CadenceTaskComposerSeed(
+            title: title,
+            notes: notes,
+            doDateKey: doDateKey,
+            dueDateKey: dueDateKey,
+            priority: priority,
+            container: container,
+            sectionName: sectionName,
+            scheduledStartMin: scheduledStartMin,
+            estimatedMinutes: estimatedMinutes
+        )
+    }
+}
+
+/// The Mac composer's keyboard layer, as draft edits ([[T-13792]]). Static so each chord is
+/// checked against a draft rather than inferred from a view.
+///
+/// The date chords are the **task's**: an event's start is a range with an end to keep after it,
+/// which the card's Starts row moves; a chord that cleared it would leave an event with no day.
+enum CreateTaskKeyboardCommands {
+    /// Cmd+T: today as the do date, or no do date when it is already today.
+    static func toggleDoToday(_ draft: inout CadenceScheduleDraft, today: String = DateFormatters.todayKey()) {
+        guard draft.kind == .task else { return }
+        if draft.startDateKey == today {
+            draft.clearDoDate()
+        } else {
+            setDoDate(&draft, to: today)
+        }
     }
 
+    /// Cmd+D: today as the due date, or none when it is already today.
+    static func toggleDueToday(_ draft: inout CadenceScheduleDraft, today: String = DateFormatters.todayKey()) {
+        guard draft.kind == .task else { return }
+        draft.dueDateKey = draft.dueDateKey == today ? "" : today
+    }
+
+    /// Cmd+Shift+= / Cmd+Shift+-: the do date a day later or earlier, starting from today when
+    /// there is none.
+    static func nudgeDoDate(_ draft: inout CadenceScheduleDraft, by days: Int, today: String = DateFormatters.todayKey()) {
+        guard draft.kind == .task else { return }
+        let base = draft.startDateKey.isEmpty ? today : draft.startDateKey
+        guard let day = DateFormatters.date(from: base),
+              let moved = Calendar.current.date(byAdding: .day, value: days, to: day) else { return }
+        setDoDate(&draft, to: DateFormatters.dateKey(from: moved))
+    }
+
+    /// Cmd+P: the next priority, wrapping.
+    static func cyclePriority(_ draft: inout CadenceScheduleDraft) {
+        guard draft.kind == .task else { return }
+        let all = TaskPriority.allCases
+        let index = all.firstIndex(of: draft.priority) ?? 0
+        draft.priority = all[(index + 1) % all.count]
+    }
+
+    /// A task's one day: start and end together, as the card's own Do grid writes it. A task with
+    /// no do date stays untimed (`clearDoDate` left it all-day); one with a time keeps it.
+    private static func setDoDate(_ draft: inout CadenceScheduleDraft, to key: String) {
+        draft.startDateKey = key
+        draft.endDateKey = key
+    }
 }
 
 /// One draft subtask in the New Task sheet, with an identity of its own (T-6452).

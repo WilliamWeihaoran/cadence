@@ -805,10 +805,13 @@ struct CadenceQuickCreateTaskInspectorTests {
             ) == 1,
             "the shared priority picker is not declared where the create sheet's spellings live"
         )
+        // [[T-13792]]: the create sheet is the shared capture card, whose priority is the card's
+        // own field; the sheet builds no picker of its own beside it.
         #expect(
-            CadenceSourceScan.matchCount(#"TaskPriorityPicker\("#, in: try code(Self.createSheetPath)) == 1,
-            "the create sheet does not build the shared priority picker"
+            CadenceSourceScan.matchCount(#"TaskPriorityPicker\("#, in: try code(Self.createSheetPath)) == 0,
+            "the create sheet builds a second priority control beside the capture card's"
         )
+        #expect(try code(Self.createSheetPath).contains(".capturePresentation("))
         #expect(
             CadenceSourceScan.matchCount(#"priorityMarkButton"#, in: try code(Self.createSheetPath)) == 0,
             "the create sheet still carries its private priority button"

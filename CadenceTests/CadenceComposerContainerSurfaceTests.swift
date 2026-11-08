@@ -401,7 +401,7 @@ struct CadenceComposerContainerSurfaceTests {
 
         let createTask = try #require(CadenceSourceScan.functionBody(named: "createTask", in: sheet))
         let reconcileCall = createTask.range(of: "reconcileContainer()")
-        let draftCall = createTask.range(of: "TaskCreationDraft(")
+        let draftCall = createTask.range(of: "CadenceTaskComposerSupport.creationDraft(")
         #expect(reconcileCall != nil, "createTask() creates without preflighting its container")
         if let reconcileCall, let draftCall {
             #expect(reconcileCall.upperBound < draftCall.lowerBound)
@@ -409,7 +409,7 @@ struct CadenceComposerContainerSurfaceTests {
 
         let reconcile = try #require(CadenceSourceScan.functionBody(named: "reconcileContainer", in: sheet))
         #expect(reconcile.contains("namesMissingContainer"))
-        #expect(reconcile.contains("selectedContainer = .inbox"))
+        #expect(reconcile.contains("draft.listToken = CadenceTaskComposerSupport.token(for: .inbox)"))
         #expect(reconcile.contains("CadenceTaskComposerSupport.missingContainerNotice"))
         #expect(sheet.contains(".onChange(of: containerStillExists)"))
 

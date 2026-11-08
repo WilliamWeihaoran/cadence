@@ -148,6 +148,70 @@ enum CadenceTaskComposerSupport {
         )
     }
 
+    // MARK: - The capture card's draft
+
+    /// The capture card's opening draft for a seed: iOS's `+` sheet and the Mac's Cmd+N composer
+    /// read this one rule ([[T-13792]]), so a seed opens the same card on both platforms.
+    ///
+    /// A seeded slot opens timed at it; with no slot the card offers the next hour, inside the
+    /// calendar's day, should a time be added. A task seeded with no do date opens with none, so
+    /// a bare Cmd+N or `+` files nothing on today unasked.
+    static func captureDraft(
+        seed: CadenceTaskComposerSeed,
+        initialKind: CadenceScheduleDraftKind = .task,
+        subtaskTitles: [String] = [],
+        now: Date = Date()
+    ) -> CadenceScheduleDraft {
+        var draft = CadenceScheduleDraft.quickCreate(
+            dateKey: seed.doDateKey.isEmpty ? DateFormatters.todayKey() : seed.doDateKey,
+            startMin: seed.scheduledStartMin >= 0 ? seed.scheduledStartMin : min(
+                max(Calendar.current.component(.hour, from: now) + 1, CadenceScheduleSupport.calendarStartHour),
+                CadenceScheduleSupport.calendarEndHour - 1
+            ) * 60,
+            opensTimed: seed.scheduledStartMin >= 0,
+            kind: initialKind
+        )
+        draft.title = seed.title
+        draft.notes = seed.notes
+        draft.dueDateKey = seed.dueDateKey
+        draft.priority = seed.priority
+        draft.listToken = token(for: seed.container)
+        draft.sectionName = seed.sectionName
+        draft.subtaskTitles = subtaskTitles
+        draft.setEstimate(seed.estimatedMinutes)
+        draft.estimateIsExplicit = seed.estimatedMinutes != defaultEstimatedMinutes
+        if initialKind == .task, seed.doDateKey.isEmpty { draft.clearDoDate() }
+        return draft
+    }
+
+    /// What a capture card's **task** draft hands `TaskCreationService` ([[T-13792]]): the
+    /// fields, the time, the estimate and the series. The Mac's Cmd+N composer used to build its
+    /// draft from its own form and set no repeat rule at all.
+    ///
+    /// The series end is `effectiveSeriesEndMode`, as the drag-create popover's
+    /// `QuickCreateTaskDraft` carries it, so an `.onDate` with no day arrives as `.never`.
+    static func creationDraft(
+        from draft: CadenceScheduleDraft,
+        container: TaskContainerSelection,
+        tags: [Tag],
+        subtaskTitles: [String]
+    ) -> TaskCreationDraft {
+        let fields = CadenceTaskComposerFields(
+            container: container, sectionName: draft.sectionName, doDateKey: draft.startDateKey,
+            dueDateKey: draft.dueDateKey, priority: draft.priority
+        )
+        var creation = self.draft(
+            title: draft.title, notes: draft.notes, fields: fields, tags: tags,
+            scheduledStartMin: draft.scheduledStartMin, estimatedMinutes: draft.estimateMinutes,
+            subtaskTitles: subtaskTitles
+        )
+        creation.repeatRule = draft.repeatRule
+        creation.seriesEndMode = draft.effectiveSeriesEndMode
+        creation.seriesEndDateKey = draft.seriesEndDateKey
+        creation.seriesEndCount = draft.seriesEndCount
+        return creation
+    }
+
     // MARK: - Inline title markers
 
     /// The priority the draft will actually be created with, given what the title says and what the

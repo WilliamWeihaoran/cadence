@@ -7,8 +7,8 @@ import SwiftUI
 // Enter or Tab to commit. The [[T-123]] split extracted the sibling `#` panel into
 // `TaskTitleInlineTagPicker` and left this one written out twice — once in `TaskTitleEntryField`
 // and once in `QuickCreateChoicePopover`, under the same five names (`tildeFlatContainers`,
-// `selectTildeContainer`, `selectTildeContainerItem`, `clampTildeHighlight`,
-// `normalizeSelectedSection`), sharing only `TildeContainerPickerRow`.
+// `selectTildeContainer`, `selectTildeContainerItem`, `clampTildeHighlight`, and the
+// section re-normalisation), sharing only `TildeContainerPickerRow`.
 //
 // The two copies had drifted in exactly the place a duplicate drifts: the escape hatches. The
 // title field restored the literal `~query` into the title on Escape and on backspace-at-empty;

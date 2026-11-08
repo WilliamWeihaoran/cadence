@@ -51,6 +51,9 @@ final class QuickTaskPanelController: NSObject {
         .padding(Self.shadowPadding)
         .modelContainer(container)
         .environment(TaskCreationManager.shared)
+        // [[T-13792]]: the composer is the shared capture card, whose Event arm writes through
+        // the calendar manager. The main window's root installs it; this panel is its own root.
+        .environment(CalendarManager.shared)
         .preferredColorScheme(.dark)
 
         // [[T-5302]]. **The half-typed task survives a click into another app.** The panel still

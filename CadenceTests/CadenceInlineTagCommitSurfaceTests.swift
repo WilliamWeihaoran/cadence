@@ -350,7 +350,8 @@ struct CadenceInlineTagCommitSurfaceTests {
     /// `iOSCalendarEventEditSheet` made at regular width (T-497).
     @Test func everyRefusalNoticeTheseCreatorsSetIsDrawnSomewhere() throws {
         for (path, notice) in [
-            ("Cadence/macOS/Sheets/CreateTaskSheet.swift", "CadenceInlineFailureNotice(text: actionError)"),
+            // [[T-13792]]: the sheet hands its notice to the shared capture card, as iOS's does.
+            ("Cadence/macOS/Sheets/CreateTaskSheet.swift", "failureNotice: actionError"),
             ("Cadence/macOS/Views/SchedulePanelComponents.swift", "CadenceInlineFailureNotice(text: tagFailureNotice)"),
             ("Cadence/macOS/Views/NoteEditorPane.swift", "CadenceInlineFailureNotice(text: tagFailureNotice)"),
             ("Cadence/iOS/iOSTaskDetailComponents.swift", "CadenceInlineFailureNotice(text: tagFailureNotice)")

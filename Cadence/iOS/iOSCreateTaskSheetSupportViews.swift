@@ -1,8 +1,10 @@
-#if os(iOS)
 import SwiftData
 import SwiftUI
 
 // Capture's inline title-marker suggestions; fields and pickers live in CadenceSchedulePanel.
+// Compiled on both platforms since [[T-13792]]: the Mac's Cmd+N composer hosts the same capture
+// card and draws this same strip under its title. Only the touch hit area and press style below
+// are iOS's own.
 
 enum iOSTaskComposerMarkerKind {
     case list
@@ -189,9 +191,15 @@ struct iOSTaskComposerMarkerSuggestions: View {
                     .strokeBorder(tint.opacity(0.24), lineWidth: 1)
             }
             .contentShape(Rectangle())
+            #if os(iOS)
             .iOSExpandedHitArea(5)
+            #endif
         }
+        #if os(iOS)
         .buttonStyle(.iosPressable)
+        #endif
+        // On the Mac the strip inherits the capture card's own button style: the card sets one
+        // for everything it draws, its host slot included.
     }
 
     private func emptyHint(_ text: String) -> some View {
@@ -203,4 +211,3 @@ struct iOSTaskComposerMarkerSuggestions: View {
             .frame(minHeight: CadenceTaskComposerLayout.suggestionHeight(at: dynamicTypeSize, scaling: scaling))
     }
 }
-#endif

@@ -311,7 +311,7 @@ struct CadenceTildeContainerPickerTests {
 
     // MARK: - What committing a choice means
 
-    /// The half the ticket calls "the silent `normalizeSelectedSection()` that both must perform" —
+    /// The half the ticket calls the silent section re-normalisation "that both must perform" —
     /// section names belong to a container, so moving the draft has to move the section too.
     @Test func committingATildeChoiceCarriesTheSectionNameIntoTheChosenContainer() throws {
         let fixture = try makeListFixture()

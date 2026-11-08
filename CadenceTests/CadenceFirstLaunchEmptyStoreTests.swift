@@ -549,6 +549,8 @@ struct CadenceFirstLaunchEmptyStoreTests {
                 "Cadence/iOS/iOSCreateTaskSheet.swift",
                 "Cadence/iOS/iOSSettingsTagsSection.swift",
                 "Cadence/iOS/iOSTaskDetailComponents.swift",
+                // [[T-13792]]: the Mac's New Task card draws the same `#` strip and chip.
+                "Cadence/macOS/Sheets/CreateTaskSheet.swift",
                 "Cadence/macOS/Views/SettingsTagsSection.swift",
                 // T-532: the macOS pickers' shared placeholder row, in a Button action.
                 "Cadence/macOS/Views/TagPickerSupportViews.swift",

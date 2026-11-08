@@ -22,8 +22,6 @@ struct CadenceMacNewTaskTooltipTests {
     }
 
     @Test(arguments: [
-        ("struct CreateTaskSheet: View", "Cadence/macOS/Sheets/CreateTaskSheet.swift", "Cancel"),
-        ("struct CreateTaskSheet: View", "Cadence/macOS/Sheets/CreateTaskSheet.swift", "Create Task"),
         ("struct CreateTaskSheet: View", "Cadence/macOS/Sheets/CreateTaskSheet.swift", "Remove"),
         ("struct TaskPriorityPicker: View", "Cadence/macOS/Sheets/CreateTaskSheetSupportViews.swift", "Priority"),
         ("struct FloatingNewTaskButton: View", "Cadence/macOS/Views/macOSRootSupportViews.swift", "New Task"),
@@ -62,10 +60,10 @@ struct CadenceMacNewTaskTooltipTests {
         #expect(!chip.contains("star.fill"), "a today do date keeps the sun; only its tint changes")
         #expect(chip.contains("icon==CadenceBoardCardMetadata.doDateIcon"))
 
+        // [[T-13792]]: the New Task sheet draws the shared capture card's Do and Due chips now, not
+        // these; the inline composer is the chip's remaining host.
         let sheet = try Self.body("struct CreateTaskSheet: View", in: "Cadence/macOS/Sheets/CreateTaskSheet.swift")
-        #expect(sheet.contains("TaskDateChip(label:\"DoDate\",icon:CadenceBoardCardMetadata.doDateIcon,"))
-        let due = try #require(sheet.range(of: "TaskDateChip(label:\"DueDate\","))
-        #expect(!sheet[due.lowerBound...].prefix(80).contains("flag"), "the due chip must not wear Priority's flag")
+        #expect(!sheet.contains("TaskDateChip("), "the New Task sheet is the capture card, not the badge toolbar")
 
         let inline = try Self.body("struct InlineTaskComposer: View", in: "Cadence/macOS/Views/InlineTaskComposerView.swift")
         #expect(inline.contains("TaskDateChip(label:\"DoDate\",icon:CadenceBoardCardMetadata.doDateIcon,"))
