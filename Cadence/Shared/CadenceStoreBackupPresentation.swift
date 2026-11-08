@@ -26,9 +26,10 @@ nonisolated enum CadenceStoreBackupPlatform: Hashable, CaseIterable {
 ///    pre-restore backup — which `StoreBackupManager.applyRestore` takes before its swap and
 ///    `CadenceStoreRestoreTests.aRestoreThatSucceedsReplacesTheStoreAndClearsThePendingFlag`
 ///    holds. On a phone "the next time it starts" is not a moment the user chooses — iOS can
-///    relaunch an app in the background — so the phone's dialog says that, and the phone's
-///    section offers **Cancel Staged Restore** (`CadenceStoreBackupControls.cancelStagedRestore`)
-///    for as long as one is pending.
+///    relaunch an app in the background — so the phone's dialog says that. Both sections offer
+///    **Cancel Staged Restore** (`CadenceStoreBackupControls.cancelStagedRestore`) for as long as
+///    one is pending: the Mac gained it in [[T-13771]], because an instruction a later launch
+///    acts on is worth seeing and withdrawing there too.
 ///
 /// 2. **CloudKit.** The restore cannot race a sync *in this process*: it runs in
 ///    `PersistenceController`'s launch preflight, before `makeContainer()` opens the CloudKit-backed
@@ -101,6 +102,9 @@ enum CadenceStoreBackupPresentation {
 
     static let pendingRestoreLabel = "Staged Restore"
     static let cancelStagedRestoreButtonTitle = "Cancel Staged Restore"
+    /// One glyph for the button on both platforms ([[T-13771]]); iOS typed it inline when it was
+    /// the only screen with the button.
+    static let cancelStagedRestoreGlyph = "xmark.circle"
 
     static func pendingRestoreDescription(
         backup: StoreBackupSnapshot?,

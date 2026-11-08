@@ -247,6 +247,12 @@ nonisolated enum CadenceAISettingsCopy {
     static let testConnectionAction = "Test Connection"
     static let deleteAPIKeyAction = "Delete API Key"
     static let testingConnectionStatus = "Testing…"
+
+    /// The three buttons' glyphs ([[T-13772]]). iOS typed them inline and the Mac drew bare words,
+    /// the drift [[T-11199]] fixed for Refresh; one name each, read by both panes.
+    static let saveAPIKeyGlyph = "key.fill"
+    static let testConnectionGlyph = "network"
+    static let deleteAPIKeyGlyph = "trash"
 }
 
 /// Settings → Notifications, which is one row in two states on both surfaces.

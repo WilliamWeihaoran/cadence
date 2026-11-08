@@ -38,6 +38,11 @@ struct SettingsDataSafetySection: View {
     /// Create / clean / reveal / stage-restore, shown under the Backups card and nowhere else.
     @State private var backupStatusMessage: String?
     @State private var pendingRestore: StoreBackupSnapshot?
+    /// The restore already staged and waiting for the next launch, read back from the controls on
+    /// every refresh ([[T-13771]]). `pendingRestore` above is only the confirmation's target; this
+    /// is what the Staged Restore card draws, so the instruction stays visible, and withdrawable,
+    /// after the status sentence under the Backups card is gone.
+    @State private var stagedRestore: (url: URL, snapshot: StoreBackupSnapshot?)?
     @State private var isConfirmingDataDelete = false
     @State private var exportDocument: CadenceArchiveDocument?
     @State private var isExportingArchive = false
@@ -114,6 +119,30 @@ struct SettingsDataSafetySection: View {
                             }
                             SettingsActionButton(tone: .tinted(Theme.blue), action: revealBackupFolder) {
                                 Label("Show Folder", systemImage: "folder.fill")
+                            }
+                        }
+                    }
+                }
+            }
+
+            // [[T-13771]]: between the Backups card and the list, where iOS draws it. A launch the
+            // user does not watch acts on this, so it is shown and can be called off on both
+            // platforms; only the sentence about how to relaunch differs.
+            if let stagedRestore {
+                VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
+                    SettingsSectionLabel(text: CadenceStoreBackupPresentation.pendingRestoreLabel)
+                    SettingsCard {
+                        HStack(alignment: .center, spacing: 14) {
+                            Text(CadenceStoreBackupPresentation.pendingRestoreDescription(backup: stagedRestore.snapshot, on: .mac))
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.dim)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer()
+                            SettingsActionButton(tone: .tinted(Theme.blue), action: cancelStagedRestore) {
+                                Label(
+                                    CadenceStoreBackupPresentation.cancelStagedRestoreButtonTitle,
+                                    systemImage: CadenceStoreBackupPresentation.cancelStagedRestoreGlyph
+                                )
                             }
                         }
                     }
@@ -327,6 +356,7 @@ struct SettingsDataSafetySection: View {
 
     private func refreshBackups() {
         backups = backupControls?.backups() ?? []
+        stagedRestore = backupControls?.pendingRestore()
         // Read-only, and the only call on this screen that reaches a path outside the live store
         // directory. `unmanagedBackupDirectories` lists and sizes; nothing here can write.
         unmanagedBackupDirectories = StoreBackupManager.unmanagedBackupDirectories()
@@ -391,6 +421,14 @@ struct SettingsDataSafetySection: View {
     private func stageRestore(_ backup: StoreBackupSnapshot) {
         guard let backupControls else { return }
         backupStatusMessage = backupControls.stageRestore(backup, on: .mac)
+        refreshBackups()
+    }
+
+    /// Withdraws the staged restore ([[T-13771]]). The store and every backup are untouched.
+    private func cancelStagedRestore() {
+        guard let backupControls else { return }
+        backupStatusMessage = backupControls.cancelStagedRestore()
+        refreshBackups()
     }
 
     private func deleteCadenceData() {

@@ -98,7 +98,8 @@ struct CadenceSectionLabelGroupingTests {
             // — the `Recovery/` folder inside the live store directory, and the earlier store
             // locations — none of which the reset deletes and none of which any screen named.
             // 4 since [[T-3045]]: "Unrestored Store Files", the folders a restore moved aside.
-            ("struct SettingsDataSafetySection: View", dataSafety, 4),
+            // 5 since [[T-13771]]: "Staged Restore", the restore the next launch will apply.
+            ("struct SettingsDataSafetySection: View", dataSafety, 5),
             ("struct SettingsAboutSection: View", about, 2)
         ]
 

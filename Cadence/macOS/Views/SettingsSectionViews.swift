@@ -225,6 +225,7 @@ struct SettingsAISection: View {
                         // [[T-9461]]: the shared action button, as the account buttons above.
                         CadenceActionButton(
                             title: CadenceAISettingsCopy.saveAPIKeyAction,
+                            systemImage: CadenceAISettingsCopy.saveAPIKeyGlyph,
                             role: .primary,
                             size: .compact,
                             isDisabled: isAPIKeyDraftEmpty
@@ -239,6 +240,7 @@ struct SettingsAISection: View {
 
                         CadenceActionButton(
                             title: aiSettingsManager.isTestingConnection ? CadenceAISettingsCopy.testingConnectionStatus : CadenceAISettingsCopy.testConnectionAction,
+                            systemImage: CadenceAISettingsCopy.testConnectionGlyph,
                             role: .secondary,
                             size: .compact,
                             isDisabled: !aiSettingsManager.hasAPIKey || aiSettingsManager.isTestingConnection
@@ -247,7 +249,12 @@ struct SettingsAISection: View {
                         }
 
                         if aiSettingsManager.hasAPIKey {
-                            CadenceActionButton(title: CadenceAISettingsCopy.deleteAPIKeyAction, role: .destructive, size: .compact) {
+                            CadenceActionButton(
+                                title: CadenceAISettingsCopy.deleteAPIKeyAction,
+                                systemImage: CadenceAISettingsCopy.deleteAPIKeyGlyph,
+                                role: .destructive,
+                                size: .compact
+                            ) {
                                 do {
                                     try aiSettingsManager.removeAPIKey()
                                 } catch {

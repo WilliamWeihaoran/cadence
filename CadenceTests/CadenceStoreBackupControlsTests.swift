@@ -241,6 +241,15 @@ struct CadenceStoreBackupControlsTests {
         #expect(count("StoreBackupManager.cleanUpAutomaticBackups") == 0)
         #expect(count(".stageRestore(backup, on: .mac)") == 1)
         #expect(count("CadenceStoreBackupPresentation.confirmationMessage(for: backup, on: .mac)") == 1)
+        // [[T-13771]]: the staged restore is read back and can be withdrawn, as on the phone.
+        #expect(count("stagedRestore = backupControls?.pendingRestore()") == 1, "the Mac no longer reads the staged restore back")
+        #expect(count("backupControls.cancelStagedRestore()") == 1, "the Mac can no longer cancel a staged restore")
+        #expect(count("CadenceStoreBackupPresentation.pendingRestoreDescription(backup: stagedRestore.snapshot, on: .mac)") == 1)
+        #expect(count("systemImage: CadenceStoreBackupPresentation.cancelStagedRestoreGlyph") == 1)
+        #expect(count("StoreBackupManager.clearPendingRestore") == 0)
+        // Staging re-reads, so the card appears the moment the restore is staged.
+        let stage = try #require(CadenceSourceScan.declarationBody("private func stageRestore(_ backup: StoreBackupSnapshot)", in: code))
+        #expect(stage.contains("refreshBackups()"), "staging no longer re-reads the staged restore")
     }
 
     // MARK: - The phone makes the same calls
@@ -259,6 +268,7 @@ struct CadenceStoreBackupControlsTests {
         #expect(count("StoreBackupManager.") == 0, "the phone section calls the engine directly")
         #expect(count(".stageRestore(backup, on: .phone)") == 1)
         #expect(count(".cancelStagedRestore()") == 1)
+        #expect(count("systemImage: CadenceStoreBackupPresentation.cancelStagedRestoreGlyph") == 1)
         #expect(count("CadenceStoreBackupPresentation.confirmationMessage(for: backup, on: .phone)") == 1)
         #expect(count("role: .destructive") == 1, "the stage button is the dialog's one destructive action")
         #expect(count("deleteAllBackups") == 0)

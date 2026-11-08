@@ -485,7 +485,7 @@ struct iOSAISettingsSection: View {
                         HStack(spacing: 10) {
                             iOSActionButton(
                                 title: CadenceAISettingsCopy.saveAPIKeyAction,
-                                systemImage: "key.fill",
+                                systemImage: CadenceAISettingsCopy.saveAPIKeyGlyph,
                                 role: .primary,
                                 size: .compact,
                                 fullWidth: true,
@@ -495,7 +495,7 @@ struct iOSAISettingsSection: View {
 
                             iOSActionButton(
                                 title: aiSettingsManager.isTestingConnection ? CadenceAISettingsCopy.testingConnectionStatus : CadenceAISettingsCopy.testConnectionAction,
-                                systemImage: "network",
+                                systemImage: CadenceAISettingsCopy.testConnectionGlyph,
                                 role: .secondary,
                                 size: .compact,
                                 tint: aiSettingsManager.hasAPIKey ? Theme.blue : Theme.dim,
@@ -509,7 +509,7 @@ struct iOSAISettingsSection: View {
                         if aiSettingsManager.hasAPIKey {
                             iOSActionButton(
                                 title: CadenceAISettingsCopy.deleteAPIKeyAction,
-                                systemImage: "trash",
+                                systemImage: CadenceAISettingsCopy.deleteAPIKeyGlyph,
                                 role: .destructive,
                                 size: .compact,
                                 fullWidth: true,

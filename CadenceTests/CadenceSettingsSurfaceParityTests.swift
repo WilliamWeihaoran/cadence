@@ -62,6 +62,31 @@ struct CadenceSettingsSurfaceParityTests {
         }
     }
 
+    // MARK: - Settings > AI's key buttons
+
+    /// [[T-13772]]: iOS's Save API Key / Test Connection / Delete API Key drew `key.fill`, `network`
+    /// and `trash`, typed inline; the Mac's drew bare words. Both now read the one name.
+    @Test func bothAIKeyCardsDrawTheSharedButtonGlyphs() throws {
+        #expect(CadenceAISettingsCopy.saveAPIKeyGlyph == "key.fill")
+        #expect(CadenceAISettingsCopy.testConnectionGlyph == "network")
+        #expect(CadenceAISettingsCopy.deleteAPIKeyGlyph == "trash")
+        let mac = try Self.body("struct SettingsAISection: View", in: "Cadence/macOS/Views/SettingsSectionViews.swift")
+        let iOS = try Self.body("struct iOSAISettingsSection: View", in: "Cadence/iOS/iOSSettingsTemplateAndListSections.swift")
+        for (name, body) in [("Mac", mac), ("iOS", iOS)] {
+            #expect(body.contains("CadenceAISettingsCopy.saveAPIKeyAction"), "non-vacuity: \(name) is not the AI key card")
+            for glyph in ["saveAPIKeyGlyph", "testConnectionGlyph", "deleteAPIKeyGlyph"] {
+                #expect(
+                    body.components(separatedBy: "systemImage: CadenceAISettingsCopy.\(glyph)").count - 1 == 1,
+                    "\(name) does not draw CadenceAISettingsCopy.\(glyph) exactly once"
+                )
+            }
+            // `systemImage:` only: the card's disclosure row draws a `key.fill` icon of its own.
+            for literal in ["\"key.fill\"", "\"network\"", "\"trash\""] {
+                #expect(!body.contains("systemImage: \(literal)"), "\(name) spells \(literal) of its own")
+            }
+        }
+    }
+
     // MARK: - Check iCloud Status's emphasis
 
     /// [[T-12622]]: iOS drew Check iCloud Status as a filled `.primary` plate while the Mac draws it

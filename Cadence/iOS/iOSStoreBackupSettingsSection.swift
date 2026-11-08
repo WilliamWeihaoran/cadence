@@ -14,10 +14,9 @@ import SwiftUI
 /// **What differs from the Mac, and why.**
 /// - No **Show Folder** and no per-row **Reveal**: iOS has no Files route into Cadence's container
 ///   (see `iOSUnmanagedStoreSettingsSection`), so there is nowhere for either to go.
-/// - A **Staged Restore** row with **Cancel Staged Restore** while one is pending. A Mac user
-///   applies a restore by quitting; a phone user cannot be sure when the next launch is, because
-///   iOS can relaunch the app in the background. An instruction whose moment the user does not
-///   control has to be visible and withdrawable for as long as it waits.
+/// - The **Staged Restore** row's sentence: a phone user cannot be sure when the next launch is,
+///   because iOS can relaunch the app in the background. The row and its **Cancel Staged
+///   Restore** are on the Mac too since [[T-13771]]; only `whenItApplies(on:)` differs.
 /// - The confirmation's second sentence is the phone's: close from the app switcher.
 ///
 /// **Unrestored Store Files** is listed here as well, read-only. The Mac's comment on that list
@@ -193,7 +192,7 @@ struct iOSStoreBackupSettingsSection: View {
 
                     iOSActionButton(
                         title: CadenceStoreBackupPresentation.cancelStagedRestoreButtonTitle,
-                        systemImage: "xmark.circle",
+                        systemImage: CadenceStoreBackupPresentation.cancelStagedRestoreGlyph,
                         size: .compact,
                         tint: Theme.blue,
                         action: cancelStagedRestore
