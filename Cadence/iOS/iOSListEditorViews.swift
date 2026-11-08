@@ -351,7 +351,7 @@ struct iOSListEditorSheet: View {
                     // changes nothing.
                     if isProjectMode {
                         HStack {
-                            Text("Due date")
+                            Text(CadenceListVocabularyCopy.dueDateFieldLabel)
                                 .foregroundStyle(Theme.subdued)
                             Spacer()
                             CadenceDatePicker(
@@ -1091,7 +1091,7 @@ private struct iOSSectionDraftRow: View {
             // Every pick commits through the setter rather than `.onChange`: after a clear the
             // bound day is still the cleared one, and picking it again changes nothing.
             HStack {
-                Text("Due date")
+                Text(CadenceListVocabularyCopy.dueDateFieldLabel)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.subdued)
                 Spacer()

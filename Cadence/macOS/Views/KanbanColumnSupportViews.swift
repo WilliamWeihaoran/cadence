@@ -568,7 +568,8 @@ struct KanbanSectionEditorPopover: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Due Date")
+                // [[T-13221]]: the iOS column row's word, from the one constant both read.
+                Text(CadenceListVocabularyCopy.dueDateFieldLabel)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.dim)
 

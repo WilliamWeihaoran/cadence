@@ -92,7 +92,7 @@ struct CadenceColumnEditorDefaultAndDateTests {
         let gate = try #require(popover.range(of: "if !section.isDefault {"))
         let heading = try #require(popover.range(of: "Text(\"Color\")"))
         let swatches = try #require(popover.range(of: "ForEach(editorColorOptions"))
-        let dueDate = try #require(popover.range(of: "Text(\"Due Date\")"))
+        let dueDate = try #require(popover.range(of: "Text(CadenceListVocabularyCopy.dueDateFieldLabel)"))
         #expect(gate.upperBound <= heading.lowerBound, "the Color heading is drawn above its Default gate")
         #expect(heading.lowerBound < swatches.lowerBound)
         // The gate closes before Due Date, which Default keeps. Between the gate's `{` and the Due
@@ -114,7 +114,7 @@ struct CadenceColumnEditorDefaultAndDateTests {
         #expect(CadenceSourceScan.matchCount("iOSSectionColorPicker\\(", in: row) == 1)
         let gate = try #require(row.range(of: "if !draft.isDefaultColumn {"))
         let picker = try #require(row.range(of: "iOSSectionColorPicker(selectedHex: $draft.colorHex)"))
-        let dueDate = try #require(row.range(of: "Text(\"Due date\")"))
+        let dueDate = try #require(row.range(of: "Text(CadenceListVocabularyCopy.dueDateFieldLabel)"))
         #expect(gate.upperBound <= picker.lowerBound, "the Color picker is drawn above its Default gate")
         #expect(picker.lowerBound < dueDate.lowerBound)
         let between = String(row[gate.upperBound..<dueDate.lowerBound])
@@ -236,5 +236,39 @@ struct CadenceColumnEditorDefaultAndDateTests {
         )
         #expect(dated != CadenceBoardColumnDueDatePlan.emptyLabel, "a dated row shows its date")
         #endif
+    }
+
+    /// **[[T-13221]]: one name for the list editors' due-date field, on both platforms.** A project's
+    /// due date read "Due" in the Mac's list sheets and "Due date" in the iOS editor; a column's
+    /// read "Due Date" in the Mac popover and "Due date" in the iOS editor row. No hardware or input
+    /// makes a field label differ ([[T-8201]]), so all four read `dueDateFieldLabel`, and none of
+    /// the four declarations types a spelling of its own.
+    @Test func everyListEditorDueDateRowReadsTheOneSharedLabel() throws {
+        #expect(CadenceListVocabularyCopy.dueDateFieldLabel == "Due date")
+        #expect(CadenceListVocabularyCopy.dueDateFieldLabel == CadenceTaskControlAccessibility.dueDate,
+                "the visible name and the accessibility name of the field are one word")
+
+        let read = CadenceSourceScan.strippedSourceReader()
+        let constant = "CadenceListVocabularyCopy\\.dueDateFieldLabel"
+        let typed = #"(Text|label:)\s*\(?\s*"Due( [Dd]ate)?""#
+
+        let support = try read("Cadence/macOS/Sheets/ListEditorSupportViews.swift")
+        let macProjectRow = try #require(CadenceSourceScan.declarationBody("struct ListEditorDueDateRow: View", in: support))
+        let columns = try read("Cadence/macOS/Views/KanbanColumnSupportViews.swift")
+        let macColumnPopover = try #require(CadenceSourceScan.declarationBody("struct KanbanSectionEditorPopover", in: columns))
+        let editor = try read("Cadence/iOS/iOSListEditorViews.swift")
+        let iOSSheet = try #require(CadenceSourceScan.declarationBody("struct iOSListEditorSheet: View", in: editor))
+        let iOSColumnRow = try #require(CadenceSourceScan.declarationBody("private struct iOSSectionDraftRow", in: editor))
+
+        let sites: [(String, String)] = [
+            ("Mac project Due row", macProjectRow),
+            ("Mac column popover", macColumnPopover),
+            ("iOS project Due row", iOSSheet),
+            ("iOS column row", iOSColumnRow),
+        ]
+        for (name, body) in sites {
+            #expect(CadenceSourceScan.matchCount(constant, in: body) == 1, "\(name) reads the shared label once")
+            #expect(CadenceSourceScan.matchCount(typed, in: body) == 0, "\(name) types its own spelling of the field")
+        }
     }
 }

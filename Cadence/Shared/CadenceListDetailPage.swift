@@ -350,6 +350,14 @@ nonisolated enum CadenceListVocabularyCopy {
     static let hideEmptyTaskDueDatesToggle = "Hide empty task due dates"
     static let hideEmptyColumnDueDatesToggle = "Hide empty column due dates"
 
+    /// The name of a project's due-date row and a kanban column's due-date row, in every list
+    /// editor on both platforms ([[T-13221]], under [[T-8201]]). One field had three names: "Due"
+    /// in the Mac's list sheets, "Due Date" in the Mac column popover, "Due date" in both iOS
+    /// editor rows -- no hardware makes a label differ. Sentence case, the iOS spelling and the
+    /// field's accessibility name (`CadenceTaskControlAccessibility.dueDate`); it reads above or
+    /// beside `CadenceBoardColumnDueDatePlan.emptyLabel` ("No due date") in all four.
+    static let dueDateFieldLabel = "Due date"
+
     /// The list editors' name placeholders, with no ellipsis on a single-line field
     /// ([[T-10006]]).
     static let areaNamePlaceholder = "Area name"

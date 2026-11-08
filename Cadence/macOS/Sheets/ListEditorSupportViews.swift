@@ -305,10 +305,11 @@ private struct ListEditorIconCell: View {
 
 // MARK: - Due date row
 
-/// [[T-9804]]: a project's "Due" row in both macOS list sheets. Whether the project is dated is
-/// `dueDateKey` alone -- the value the sheet stores, "" for none -- so there is no second flag
-/// that can disagree with it, the same rule as the iOS editor's placeholder picker and the column
-/// popover's. `seed` is only where the panel opens and the day last picked.
+/// [[T-9804]]: a project's due-date row in both macOS list sheets, named as iOS names it
+/// ([[T-13221]]: `CadenceListVocabularyCopy.dueDateFieldLabel`, not the task inspector's "Due").
+/// Whether the project is dated is `dueDateKey` alone -- the value the sheet stores, "" for
+/// none -- so there is no second flag that can disagree with it, the same rule as the iOS
+/// editor's placeholder picker and the column popover's. `seed` is only where the panel opens and the day last picked.
 ///
 /// `TaskInspectorDateControl` is already the one-trigger shape (a pick sets the field, the panel's
 /// Clear unsets it), so this row derives its `isOn:` / `date:` from the key rather than changing
@@ -321,7 +322,7 @@ struct ListEditorDueDateRow: View {
 
     var body: some View {
         TaskInspectorDateControl(
-            label: "Due",
+            label: CadenceListVocabularyCopy.dueDateFieldLabel,
             reservesIconSlot: false,
             emptyLabel: CadenceBoardColumnDueDatePlan.emptyLabel,
             isOn: Binding(
