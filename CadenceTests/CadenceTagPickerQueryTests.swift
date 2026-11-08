@@ -102,6 +102,50 @@ struct CadenceTagPickerQueryTests {
         }
     }
 
+    /// **[[T-13501]].** A name `creationDecision` calls unusable (non-empty, no letter or digit)
+    /// draws `No matching tags` and no Create row; the field must not mint it either. The iOS `+`,
+    /// Return and dismiss-add all go through `pickerFieldCommit`, so `.nothing` here is the refusal.
+    @Test func theFieldRefusesANameTheListWillNotOfferToCreate() throws {
+        let (_, tags) = try makeTags()
+        for unusable in ["--", "...", " -_- ", "#!"] {
+            let query = TagSupport.pickerQuery(unusable, in: tags)
+            #expect(query.createName == nil, "non-vacuity: the list offers Create for \(unusable)")
+            #expect(query.archivedMatch == nil)
+            let commit = TagSupport.pickerFieldCommit(unusable, in: tags)
+            guard case .nothing = commit else {
+                Issue.record("\(unusable) would be minted by the field the list refuses: \(commit)")
+                continue
+            }
+            #expect(!commit.commits, "the footer + stays enabled for \(unusable)")
+        }
+        // The refusal is the unusable name alone: a usable new name still commits.
+        #expect(TagSupport.pickerFieldCommit("a-b", in: tags).commits)
+        // An archived `tag` is still offered for `--` (slug fallback), so the field un-archives it.
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let archivedTag = Cadence.Tag(name: "Tag", slug: "tag")
+        archivedTag.isArchived = true
+        context.insert(archivedTag)
+        guard case let .unarchive(restored) = TagSupport.pickerFieldCommit("--", in: [archivedTag]) else {
+            Issue.record("an archived `tag` must still be un-archived for --"); return
+        }
+        #expect(restored.slug == "tag")
+    }
+
+    /// [[T-13501]]: the iOS footer `+` is enabled by the field's commit decision, not by a bare
+    /// non-empty test, so it cannot be live for a name the field refuses.
+    @Test func theIOSFooterPlusIsGatedByTheFieldCommitDecision() throws {
+        let file = CadenceSourceScan.codeOnly(CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailComponents.swift")
+        ))
+        let popover = try #require(
+            CadenceSourceScan.declarationBody("struct iOSTaskTagPickerPopover: View", in: file)
+        )
+        #expect(popover.contains("TagSupport.pickerFieldCommit(newTagName, in: allTags).commits"))
+        #expect(popover.contains(".disabled(!fieldCommits)"))
+        #expect(CadenceSourceScan.matchCount(#"\.disabled\(trimmedNewTagName\.isEmpty\)"#, in: popover) == 0)
+    }
+
     @Test func aQueryThatReachesNothingSaysNoMatchesAndAnEmptyCatalogueOffersTheDefaults() throws {
         let (_, tags) = try makeTags()
         #expect(TagSupport.pickerQuery("#", in: tags).placeholder == .noMatches)

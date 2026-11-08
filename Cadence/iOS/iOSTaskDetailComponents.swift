@@ -339,8 +339,10 @@ struct iOSTaskTagPickerPopover: View {
         TagSupport.pickerQuery(newTagName, in: allTags)
     }
 
-    private var trimmedNewTagName: String {
-        TagSupport.displayName(for: newTagName)
+    /// [[T-13501]]: the footer `+` is enabled by the field's own commit decision, so it is
+    /// disabled for a name the field would refuse (`--`, blank), not only for an empty one.
+    private var fieldCommits: Bool {
+        TagSupport.pickerFieldCommit(newTagName, in: allTags).commits
     }
 
     var body: some View {
@@ -434,13 +436,13 @@ struct iOSTaskTagPickerPopover: View {
                                 at: dynamicTypeSize, scaling: .enabled
                             )
                         )
-                        .background(trimmedNewTagName.isEmpty ? Theme.surface : Theme.blue)
+                        .background(fieldCommits ? Theme.blue : Theme.surface)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                         .contentShape(Rectangle())
                         .iOSExpandedHitArea(2)
                 }
                 .buttonStyle(.iosPressable)
-                .disabled(trimmedNewTagName.isEmpty)
+                .disabled(!fieldCommits)
                 .accessibilityLabel("Create tag")
             }
             .padding(CadenceTagPickerMetrics.footerPadding)

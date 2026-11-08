@@ -84,16 +84,33 @@ nonisolated enum TagPickerFieldCommit {
     case unarchive(Tag)
     /// Resolve (pick or mint) this display name through `TagSupport.committedTag`.
     case resolve(name: String)
+
+    /// Whether the field would act at all. The iOS footer `+` is enabled by this, so it goes
+    /// disabled exactly when the field would do nothing ([[T-13501]]).
+    var commits: Bool {
+        if case .nothing = self { return false }
+        return true
+    }
 }
 
 extension TagSupport {
-    /// The field's commit for `query`, decided by `pickerQuery` so the field and the list above it
-    /// cannot disagree. `allTags` is every tag in the store, archived and active.
+    /// The field's commit for `query`, decided by `creationDecision` -- the decision `pickerQuery`
+    /// draws the list from -- so the field and the list above it cannot disagree. `allTags` is
+    /// every tag in the store, archived and active.
+    ///
+    /// **[[T-13501]].** A name `creationDecision` calls `.unusableName` (non-empty but with no
+    /// letter or digit, such as `--`, whose slug falls back to `tag`) is `.nothing`: the list draws
+    /// `No matching tags` and no Create row for it, and the field used to mint and attach it anyway
+    /// on `+`, Return and the dismiss-add. An active tag carrying the slug still resolves to it.
     static func pickerFieldCommit(_ query: String, in allTags: [Tag]) -> TagPickerFieldCommit {
         let name = displayName(for: query)
         guard !name.isEmpty else { return .nothing }
-        if let archived = pickerQuery(query, in: allTags).archivedMatch {
+        let decision = creationDecision(for: query, in: allTags)
+        if let archived = decision.archivedMatch {
             return .unarchive(archived)
+        }
+        if case .unusableName = decision {
+            return .nothing
         }
         return .resolve(name: name)
     }
