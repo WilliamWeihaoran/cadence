@@ -557,7 +557,9 @@ struct TagColorSwatches: View {
     }
 }
 
-private struct TagNoticeRow: View {
+/// [[T-12761]]: not `private` -- the tag picker's Edit Tag sheet (`TagPickerPopoverViews.swift`)
+/// draws its duplicate-name notice with this same row rather than a hand-rolled copy.
+struct TagNoticeRow: View {
     let icon: String
     let text: String
     let actionTitle: String?

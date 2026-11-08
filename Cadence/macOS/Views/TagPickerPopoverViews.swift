@@ -401,10 +401,15 @@ private struct TagEditSheet: View {
                     .frame(width: 96)
             }
 
+            // [[T-12761]]: Settings' warning-icon notice row, as every other tag duplicate notice on
+            // both platforms draws it ([[T-12743]]), not bare red text. Save's gate is unchanged.
             if hasDuplicateSlug {
-                Text("A tag with this name already exists.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.red)
+                TagNoticeRow(
+                    icon: "exclamationmark.triangle.fill",
+                    text: "A tag with this name already exists.",
+                    actionTitle: nil,
+                    action: {}
+                )
             }
 
             if let failureNotice {
