@@ -140,9 +140,9 @@ nonisolated enum CadenceNoteFolderPath {
 enum CadenceListNoteFiling {
     /// A new list note, filed where it was asked for.
     ///
-    /// `order` is the list's current note count, which is what macOS passed — it puts a new note at
-    /// the end of whichever folder it lands in, because `CadenceNoteFolderGrouping.precedes` sorts
-    /// on `order` inside a group.
+    /// `order` is `nextOrder(in:)` over the list's notes -- it puts a new note at the end of
+    /// whichever folder it lands in, because `CadenceNoteFolderGrouping.precedes` sorts on `order`
+    /// inside a group.
     ///
     /// **T-497, the existence half of the `try? save()` rule.** This inserted a note, swallowed the
     /// save and handed the note back, and both callers then *selected* it — so the editor opened on
@@ -227,6 +227,19 @@ enum CadenceListNoteFiling {
         try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
             note.folderPath = previousFolderPath
         }
+    }
+
+    /// The `order` a new list note takes: max-plus-one over the list's notes, never their count
+    /// ([[T-13971]]).
+    ///
+    /// Both `+` buttons passed `listNotes.count`, which agrees with max-plus-one only while nothing
+    /// has left the list. Delete two of three notes and the survivor still holds `2` while the count
+    /// is `1`, so the next note drew **above** it -- a new note landing in the middle of its folder
+    /// instead of at the end, where `createNote` promises it. A note moved in from another list
+    /// keeps its old `order` and did the same. `create_list_note` already allocated this way;
+    /// this is the one spelling all three callers read, through `CadenceOrderAllocation` (T-329).
+    static func nextOrder(in listNotes: [Note]) -> Int {
+        CadenceOrderAllocation.nextOrder(after: listNotes, order: \.order)
     }
 
     /// A new note opens onto its own title as an H1, which is what the markdown editor keeps in

@@ -246,6 +246,46 @@ struct CadenceNoteFolderSurfaceTests {
         #expect(try context.fetch(FetchDescriptor<Note>()).count == 1)
     }
 
+    /// [[T-13971]]: a new list note takes max-plus-one over the list's notes, not their count, so
+    /// it lands **last** in its folder even after the list has lost notes or gained one from
+    /// another list. With the count, deleting two of three left the survivor at `2` and handed the
+    /// next note `1` -- which drew above it.
+    @Test func aNewListNoteLandsLastAfterDeletesAndMoves() throws {
+        let context = try makeContext()
+        let project = Project(name: "Launch")
+        context.insert(project)
+
+        #expect(CadenceListNoteFiling.nextOrder(in: []) == 0)
+
+        // Three notes made at 0, 1, 2; the first two deleted.
+        let survivor = note("Survivor", folder: "", order: 2, project: project, in: context)
+        #expect(CadenceListNoteFiling.nextOrder(in: [survivor]) == 3)
+
+        let created = try CadenceListNoteFiling.createNote(
+            in: context,
+            area: nil,
+            project: project,
+            order: CadenceListNoteFiling.nextOrder(in: [survivor])
+        )
+        let rootNotes = CadenceNoteFolderGrouping.groups(for: [survivor, created]).first?.notes ?? []
+        #expect(rootNotes.map(\.id) == [survivor.id, created.id])
+
+        // A note moved in from another list keeps its old, higher order.
+        let movedIn = note("Moved In", folder: "", order: 9, project: project, in: context)
+        #expect(CadenceListNoteFiling.nextOrder(in: [survivor, created, movedIn]) == 10)
+    }
+
+    /// Both `+` buttons allocate through `nextOrder(in:)`; neither counts the list.
+    @Test func bothAddNoteButtonsAllocateMaxPlusOne() throws {
+        for path in ["Cadence/macOS/Views/ListNotesView.swift", "Cadence/iOS/iOSListNotesView.swift"] {
+            let code = try folderStrippingComments(folderSource(path))
+            #expect(code.folderMatchCount(
+                ofPattern: #"order: CadenceListNoteFiling\.nextOrder\(in: listNotes\)"#
+            ) == 1, "\(path)")
+            #expect(code.folderMatchCount(ofPattern: #"order: listNotes\.count"#) == 0, "\(path)")
+        }
+    }
+
     /// The default is the root, and anything that normalizes to nothing lands there too — so a
     /// sheet answered with whitespace cannot create a folder called `" "`.
     @Test func aNoteWithNoFolderLandsAtTheRoot() throws {

@@ -1454,12 +1454,11 @@ final class CadenceWriteService {
     /// this call's `inserted:` list instead, so there is one commit, one audit entry and one undo.
     /// A create has nothing to put back, so there is no `undo`.
     ///
-    /// **`order` is max-plus-one, where both `+` buttons pass `listNotes.count`.** They agree on
-    /// every list nothing has been deleted from, and `CadenceOrderAllocation.nextOrder` is what
-    /// T-329 exists to stop being retyped — a count over a list that has lost a note hands the new
-    /// row an order an existing one already holds. `CadenceNoteFolderGrouping.precedes` is total on
-    /// `order`, title and id, so the disagreement was only ever which of two notes drew first;
-    /// this end of it cannot collide at all.
+    /// **`order` is max-plus-one**, as both `+` buttons allocate it through
+    /// `CadenceListNoteFiling.nextOrder` since [[T-13971]] -- they passed `listNotes.count`, which
+    /// on a list that had lost a note handed the new row an order at or below an existing one, so
+    /// the new note drew above a survivor. `CadenceOrderAllocation.nextOrder` is what T-329 exists
+    /// to stop being retyped.
     func createListNote(options: CadenceCreateListNoteOptions) throws -> CadenceNoteDetail {
         let kind = try normalizedContainerKind(options.containerKind)
         guard let resolved = try resolveContainer(kind: kind, id: options.containerId) else {

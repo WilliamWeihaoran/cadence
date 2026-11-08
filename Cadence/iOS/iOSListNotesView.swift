@@ -563,7 +563,7 @@ struct iOSListNotesView: View {
                 area: area,
                 project: project,
                 folderPath: folderPath,
-                order: listNotes.count
+                order: CadenceListNoteFiling.nextOrder(in: listNotes)
             )
         } catch {
             createFailureNotice = CadencePendingChangePersistence.editFailureNotice
