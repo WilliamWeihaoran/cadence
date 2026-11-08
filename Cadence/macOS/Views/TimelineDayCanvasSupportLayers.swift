@@ -98,6 +98,8 @@ struct TimelineScheduledBlocksLayer: View {
     @Binding var selectedEventID: String?
     @Binding var activeDragTaskID: UUID?
     let onTaskSelected: () -> Void
+    /// Whether a block's resize landed ([[T-13301]]); the canvas names a refusal.
+    let onBlockEditAnswered: (Bool) -> Void
 
     var body: some View {
         ForEach(eventLayouts, id: \.item.id) { layout in
@@ -129,7 +131,8 @@ struct TimelineScheduledBlocksLayer: View {
                 style: style,
                 selectedTaskID: $selectedTaskID,
                 activeDragTaskID: $activeDragTaskID,
-                onSelect: onTaskSelected
+                onSelect: onTaskSelected,
+                onResizeAnswered: onBlockEditAnswered
             )
             .zIndex(2)
         }

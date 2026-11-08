@@ -517,7 +517,8 @@ struct CadenceFocusSessionAndBlockCommitTests {
         #expect(CadenceSourceScan.matchCount(#"bundleCreateFailureAlertTitle"#, in: source) == 0)
         // Non-vacuity: the canvas is still the frame that owns the task create it commits.
         #expect(source.contains("struct TimelineDayCanvas: View"))
-        #expect(source.contains("onDropTaskAtMinute: onDropTaskAtMinute,"))
+        // [[T-13301]]: the drop reaches the host's reschedule with its answer read.
+        #expect(source.contains("reportBlockEdit(landed: onDropTaskAtMinute(task, startMin))"))
     }
 
     /// The comment-stripper the two scans above read through is discriminating on these files:

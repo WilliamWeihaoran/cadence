@@ -22,7 +22,8 @@ struct TimelineDayCanvas: View {
     var showHalfHourMarks: Bool = false
     var showWorkHoursHighlight = false
     let onCreateTask: (QuickCreateTaskDraft) -> Void
-    let onDropTaskAtMinute: (AppTask, Int) -> Void
+    /// Answers whether the drop landed, so a refusal is named here ([[T-13301]]).
+    let onDropTaskAtMinute: (AppTask, Int) -> Bool
     var externalEvents: [CalendarEventItem] = []
     /// Optional: if provided, the drag-to-create popover will offer a "Calendar Event" tab.
     ///
@@ -66,6 +67,13 @@ struct TimelineDayCanvas: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
     @State private var eventCreateFailureNotice: String?
+    /// A refused move (a drop) or resize on this canvas ([[T-13301]]); see
+    /// `TimelineDayCanvasStateSupport.blockEditFailureNotice(landed:)`.
+    @State private var blockEditFailureNotice: String?
+
+    private func reportBlockEdit(landed: Bool) {
+        blockEditFailureNotice = TimelineDayCanvasStateSupport.blockEditFailureNotice(landed: landed)
+    }
 
     private func clearDraftCreation() {
         TimelineDayCanvasStateSupport.clearDraftCreation(
@@ -97,7 +105,9 @@ struct TimelineDayCanvas: View {
                 dropDelegate: TimelineDropDelegate(
                     metrics: metrics,
                     allTasks: allTasks,
-                    onDropTaskAtMinute: onDropTaskAtMinute,
+                    onDropTaskAtMinute: { task, startMin in
+                        reportBlockEdit(landed: onDropTaskAtMinute(task, startMin))
+                    },
                     onDropAllDayEventAtMinute: onDropAllDayEventAtMinute,
                     // [[T-3170]]: no task block draws a bundle shelf any more, so no region of
                     // the canvas defers a task drop to one — and the delegate's parameter for
@@ -172,7 +182,8 @@ struct TimelineDayCanvas: View {
                 selectedTaskID: $selectedTaskID,
                 selectedEventID: $selectedEventID,
                 activeDragTaskID: activeDragTaskIDBinding,
-                onTaskSelected: selectTaskBlock
+                onTaskSelected: selectTaskBlock,
+                onBlockEditAnswered: reportBlockEdit
             )
 
             TimelineCurrentTimeOverlay(
@@ -192,6 +203,17 @@ struct TimelineDayCanvas: View {
         // side by side and the one with no seeded block on it is the one a draft can be made in.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(CadenceAccessibilityIdentifiers.timelineDayCanvas(dateKey: dateKey))
+        .alert(
+            TimelineDayCanvasStateSupport.blockEditFailureAlertTitle,
+            isPresented: Binding(
+                get: { blockEditFailureNotice != nil },
+                set: { if !$0 { blockEditFailureNotice = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(blockEditFailureNotice ?? "")
+        }
     }
 
     private func resetCanvasSelection() {

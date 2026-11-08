@@ -19,6 +19,9 @@ struct TimelineTaskBlock: View {
     @Binding var selectedTaskID: UUID?
     @Binding var activeDragTaskID: UUID?
     let onSelect: () -> Void
+    /// Whether the resize this block just ended landed ([[T-13301]]). The commit always answered;
+    /// the block used to drop the answer, so a refused resize snapped back with nothing said.
+    var onResizeAnswered: (Bool) -> Void = { _ in }
 
     @State private var resizeSession: TimelineResizeSession? = nil
     /// The task as the current resize drag found it — the undo `commitResize` restores when the
@@ -279,7 +282,9 @@ struct TimelineTaskBlock: View {
 
     private func endResize() {
         if let resizeOrigin {
-            TimelineTaskBlockInteractionSupport.commitResize(task, restoring: resizeOrigin, in: modelContext)
+            onResizeAnswered(
+                TimelineTaskBlockInteractionSupport.commitResize(task, restoring: resizeOrigin, in: modelContext)
+            )
         }
         resizeOrigin = nil
         TimelineTaskBlockStateSupport.endResize(resizeSession: &resizeSession)

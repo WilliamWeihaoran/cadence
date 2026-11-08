@@ -426,7 +426,7 @@ struct iOSCalendarTimelineGrid: View {
                     onDay: CadenceTimelineBlockEdit.movedDateKey(from: date, dayDelta: dayDelta, calendar: calendar)
                 )
             },
-            onDropTaskAtMinute: { id, minute in onDropTaskAtMinute(id, key, minute) },
+            onDropTaskAtMinute: { id, minute in reportTimelineWrite(landed: onDropTaskAtMinute(id, key, minute)) },
             resolveDroppedTask: resolveDroppedTask,
             allDayDraft: allDayDraft
         )
@@ -471,8 +471,18 @@ struct iOSCalendarTimelineGrid: View {
         range: (start: Int, end: Int),
         onDay dateKey: String?
     ) {
-        let landed = CadenceTimelineBlockEdit.commit(task, kind: kind, range: range, onDay: dateKey, in: modelContext)
+        reportTimelineWrite(landed: CadenceTimelineBlockEdit.commit(task, kind: kind, range: range, onDay: dateKey, in: modelContext))
+    }
+
+    /// The one place a timeline write's answer becomes the strip above the canvas: a moved or
+    /// resized block, and **a task dropped onto a column** ([[T-13301]]). The drop's `Bool` was
+    /// returned by both hosts and then thrown away by the column's drop delegate, so a refused
+    /// drop sprang the row back with nothing said, while a refused move one gesture over named
+    /// itself here; the Mac canvas now answers both, so this does too.
+    @discardableResult
+    private func reportTimelineWrite(landed: Bool) -> Bool {
         blockEditFailureNotice = landed ? nil : CadencePendingChangePersistence.editFailureNotice
+        return landed
     }
 
     /// The block's "put this back with the untimed work" corner, on the span that has somewhere to

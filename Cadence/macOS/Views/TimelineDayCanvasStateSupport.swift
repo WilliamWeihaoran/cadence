@@ -36,6 +36,22 @@ enum TimelineDraftSelection: Equatable {
 }
 
 enum TimelineDayCanvasStateSupport {
+    /// The title of the alert a refused block edit raises on this canvas ([[T-13301]]).
+    static let blockEditFailureAlertTitle = "Couldn't Reschedule Task"
+
+    /// What a finished timeline write leaves to say ([[T-13301]]): the iOS grid's sentence for a
+    /// refused move, resize or drop (`iOSCalendarTimelineGrid.reportTimelineWrite`), and `nil`
+    /// for one that landed, so the next edit that lands clears what an earlier refusal raised.
+    ///
+    /// The Mac's move is a drop (`SchedulingActions.commitDropTask`) and its resize ends in
+    /// `TimelineTaskBlockInteractionSupport.commitResize`; both answered, and both answers were
+    /// discarded, so a refused edit put the block back without a word while iOS named it. An
+    /// alert rather than iOS's strip for `SchedulePanel`'s reason: the canvas is one of seven day
+    /// columns in a scroll view, with no row above it that belongs to it.
+    static func blockEditFailureNotice(landed: Bool) -> String? {
+        landed ? nil : CadencePendingChangePersistence.editFailureNotice
+    }
+
     /// Orders the raw gesture pair and floors it at five minutes.
     ///
     /// `startMin` is always the gesture's fixed anchor point and `endMin` tracks the live drag

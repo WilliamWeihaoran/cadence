@@ -216,7 +216,7 @@ struct SchedulePanelTimelineViewport: View {
     let todayKey: String
     let externalEventItems: [CalendarEventItem]
     let onCreateTask: (QuickCreateTaskDraft) -> Void
-    let onDropTaskAtMinute: (AppTask, Int) -> Void
+    let onDropTaskAtMinute: (AppTask, Int) -> Bool
     /// The all-day band's chips drag onto this ladder ([[T-8091]]). Required, not defaulted: the
     /// canvas's own parameter is optional, and leaving it unset here is what made the drop land and
     /// do nothing.

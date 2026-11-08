@@ -127,7 +127,8 @@ struct CadenceBundleCreationParityTests {
 
         let canvas = try strippingBundleTestComments(sourceFile("Cadence/macOS/Views/TimelineDayCanvas.swift"))
         #expect(occurrences(of: "bundleShelfFrames", in: canvas) == 0)
-        #expect(occurrences(of: "onDropTaskAtMinute: onDropTaskAtMinute,", in: canvas) == 1)
+        // [[T-13301]]: still the host's reschedule, now with its answer read for a refusal.
+        #expect(occurrences(of: "reportBlockEdit(landed: onDropTaskAtMinute(task, startMin))", in: canvas) == 1)
 
         // The delegate's own guard, read rather than assumed: the task arm is the reschedule, and
         // it yields only to a shelf rect.
