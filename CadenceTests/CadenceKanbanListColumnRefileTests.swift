@@ -102,6 +102,29 @@ struct CadenceKanbanListColumnRefileTests {
         #expect(card.sectionName == TaskSectionDefaults.defaultName)
     }
 
+    /// [[T-13853]]: a task holding both an `area` and a `project` (repaired, imported or synced
+    /// into that state) was a card in both columns. It is one card, in the project's column -- the
+    /// "project before area" rule of `CadenceTaskQuerySupport.listGroupKey(for:)`.
+    @Test func aTaskHoldingBothAnAreaAndAProjectIsOneCardInTheProjectsColumn() throws {
+        let modelContext = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let home = Area(name: "Home")
+        let launch = Project(name: "Launch")
+        let both = AppTask(title: "Both")
+        both.area = home
+        both.project = launch
+        let areaOnly = AppTask(title: "Area only")
+        areaOnly.area = home
+        for model in [home, launch, both, areaOnly] as [any PersistentModel] { modelContext.insert(model) }
+        try modelContext.save()
+
+        let board = columns(areas: [home], projects: [launch], tasks: [both, areaOnly])
+        let cards = board.flatMap { column in column.tasks.map { (column.container, $0.id) } }
+
+        #expect(cards.filter { $0.1 == both.id }.count == 1)
+        #expect(cards.first { $0.1 == both.id }?.0 == .project(launch.id))
+        #expect(board.first { $0.container == .area(home.id) }?.tasks.map(\.id) == [areaOnly.id])
+    }
+
     @Test func blankNamedListsGetTheUntitledFallbackTitle() {
         let blankArea = Area(name: "   ")
         let blankProject = Project(name: "\n\t")

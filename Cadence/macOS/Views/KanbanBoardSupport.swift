@@ -113,13 +113,17 @@ enum KanbanBoardSupport {
             .taskSorted(by: sortField, direction: sortDirection)
     }
 
+    /// An area's column holds only the tasks the rest of the app files under that area: **project
+    /// before area** ([[T-13853]]), `CadenceTaskQuerySupport.listGroupKey(for:)`'s rule. A row
+    /// repaired, imported or synced into holding both an `area` and a `project` was drawn as a card
+    /// in both columns; it belongs to the project's column only, as it does in every by-list group.
     static func groupedTasksByAreaID(
         from activeTasks: [AppTask],
         sortField: TaskSortField,
         sortDirection: TaskSortDirection
     ) -> [UUID: [AppTask]] {
         Dictionary(grouping: activeTasks.compactMap { task -> (UUID, AppTask)? in
-            guard let areaID = task.area?.id else { return nil }
+            guard task.project == nil, let areaID = task.area?.id else { return nil }
             return (areaID, task)
         }, by: \.0).mapValues { entries in
             entries.map(\.1).taskSorted(by: sortField, direction: sortDirection)
