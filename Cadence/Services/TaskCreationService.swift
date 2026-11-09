@@ -190,6 +190,17 @@ struct TaskCreationService {
         task.estimatedMinutes = draft.estimatedMinutes <= 0 ? 0 : max(5, draft.estimatedMinutes)
         task.tags = TagSupport.sorted(draft.tags)
         containerResolver.applyContainer(draft.container, to: task)
+        // **Last in its own list ([[T-14522]]).** Left at `AppTask.order`'s default `0`, a new task
+        // tied the list's top row once any drag had renumbered it `0...n-1`, and the `createdAt`
+        // tie-break put it second under Custom order. Max over the list it was filed in (after
+        // `applyContainer`, so an unknown list is the Inbox it fell back to), plus one -- the rule a
+        // move already uses. The fetch includes pending inserts, so a batch of drafts
+        // (`AIActionService.applyTaskDrafts`) lands in the order given. A failed fetch leaves `0`,
+        // the old placement, rather than refusing the create.
+        let existing = (try? modelContext.fetch(FetchDescriptor<AppTask>())) ?? []
+        task.order = CadenceTaskMutationSupport.nextContainerOrder(
+            excluding: task, in: existing, area: task.area, project: task.project
+        )
 
         // Recurrence belongs to the insertion, so a refused create cannot leave a second write.
         if draft.repeatRule != .none {

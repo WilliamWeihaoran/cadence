@@ -1448,7 +1448,10 @@ extension CadenceTaskMutationSupport {
         )
     }
 
-    private static func nextContainerOrder(
+    /// The next `order` in one list (or the Inbox, with neither given): the max over that
+    /// container's other tasks plus one, so the task lands last in it. Internal for
+    /// `TaskCreationService.insertion(from:into:)`, which gives a new task this order ([[T-14522]]).
+    static func nextContainerOrder(
         excluding task: AppTask,
         in allTasks: [AppTask],
         area: Area?,

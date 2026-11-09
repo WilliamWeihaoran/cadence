@@ -172,7 +172,27 @@ struct iOSListDetailView: View {
     @AppStorage(CadencePreferenceKeys.iosListDetailShowCompleted) private var showCompleted = false
     /// The Tasks tab's folded columns, by group id ([[T-12191]]): unpersisted, one set per page,
     /// as the Mac's `ListTasksView.collapsedGroupIDs` is.
+    ///
+    /// **Tagged with the list it was folded on** (`collapsedGroupIDsListKey`, [[T-14521]]), for the
+    /// reason `selectedPageListKey` is: the iPad sidebar swaps lists under this one live view, and
+    /// group ids name the same group on every list, so an untagged fold on list A folded list B's
+    /// group of the same name. The groups read it through `collapsedGroupIDsBinding` only.
     @State private var collapsedGroupIDs: Set<String> = []
+    @State private var collapsedGroupIDsListKey: String?
+
+    /// The fold set on this list, and a fold recorded against this list.
+    private var collapsedGroupIDsBinding: Binding<Set<String>> {
+        Binding(get: {
+            CadenceTaskGroupFold.displayed(
+                collapsedGroupIDs,
+                foldedOnListKey: collapsedGroupIDsListKey,
+                listKey: rememberedPageKey
+            )
+        }, set: { collapsed in
+            collapsedGroupIDs = collapsed
+            collapsedGroupIDsListKey = rememberedPageKey
+        })
+    }
 
     private var tasksKeyPrefix: String {
         ListDetailSortControls.tasksKeyPrefix(areaID: area?.id, projectID: project?.id)
@@ -555,7 +575,7 @@ struct iOSListDetailView: View {
                         showsContainer: false,
                         todayKey: observedDay.todayKey,
                         dropIdentity: dropIdentity(for: group),
-                        collapsedGroupIDs: $collapsedGroupIDs,
+                        collapsedGroupIDs: collapsedGroupIDsBinding,
                         groupID: group.id
                     )
                 }

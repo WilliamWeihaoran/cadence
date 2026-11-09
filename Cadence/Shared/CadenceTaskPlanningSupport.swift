@@ -325,6 +325,17 @@ enum CadenceTaskGroupFold {
             collapsed.insert(groupID)
         }
     }
+
+    /// **The fold set a list page shows, for a set held with the list it was folded on
+    /// ([[T-14521]]).** Group ids are not list-scoped -- `overdue`, `section-Default` and the rest
+    /// name the same group on every list -- and the iPad sidebar swaps lists under one live
+    /// `iOSListDetailView`, so an untagged set folded on list A folded A's same-named groups on
+    /// list B. The set counts only on the list it was made on, the rule
+    /// `ListDetailPage.displayedPage` applies to the tab (T-7032); any other list opens with every
+    /// group unfolded, as the Mac's per-list page does.
+    static func displayed(_ collapsed: Set<String>, foldedOnListKey: String?, listKey: String) -> Set<String> {
+        foldedOnListKey == listKey ? collapsed : []
+    }
 }
 
 struct CadenceTaskDisplayGroup: Identifiable {

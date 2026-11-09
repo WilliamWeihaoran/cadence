@@ -105,4 +105,81 @@ struct TaskCreationServiceTests {
         #expect(task.sectionName == TaskSectionDefaults.defaultName)
         #expect(task.scheduledStartMin == -1)
     }
+
+    // MARK: - [[T-14522]]: a new task lands last in its own list under Custom order
+
+    private func draft(_ title: String, into container: TaskContainerSelection) -> TaskCreationDraft {
+        TaskCreationDraft(
+            title: title,
+            notes: "",
+            priority: .none,
+            container: container,
+            sectionName: TaskSectionDefaults.defaultName,
+            dueDateKey: "",
+            scheduledDateKey: "",
+            subtaskTitles: [],
+            tags: []
+        )
+    }
+
+    /// A drag renumbers a list `0...n-1`. A new task left at `order` `0` tied the top row and the
+    /// `createdAt` tie-break put it second; it must sort last, in a list and in the Inbox alike,
+    /// and take its own list's next order rather than the app-wide one.
+    @Test func aNewTaskSortsLastUnderCustomOrderAfterAListWasRenumbered() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let area = Area(name: "Home")
+        let project = Project(name: "Elsewhere")
+        modelContext.insert(area)
+        modelContext.insert(project)
+
+        func existing(_ title: String, order: Int, area: Area? = nil, project: Project? = nil) {
+            let task = AppTask(title: title)
+            task.order = order
+            task.area = area
+            task.project = project
+            modelContext.insert(task)
+        }
+        // As a drag leaves them: the list and the Inbox each renumbered from 0.
+        existing("A0", order: 0, area: area)
+        existing("A1", order: 1, area: area)
+        existing("A2", order: 2, area: area)
+        existing("I0", order: 0)
+        existing("I1", order: 1)
+        // Another list's high order, which a global allocation would max over.
+        existing("Other", order: 90, project: project)
+        try modelContext.save()
+
+        let service = TaskCreationService(areas: [area], projects: [project])
+        let inArea = try #require(try service.createTask(from: draft("New in area", into: .area(area.id)), into: modelContext))
+        let inInbox = try #require(try service.createTask(from: draft("New in inbox", into: .inbox), into: modelContext))
+
+        #expect(inArea.order == 3, "the area's new task did not take that list's next order")
+        #expect(inInbox.order == 2, "the Inbox's new task did not take the Inbox's next order")
+
+        let all = try modelContext.fetch(FetchDescriptor<AppTask>())
+        let areaRows = all.filter { $0.area?.id == area.id }.taskSorted(by: .custom, direction: .ascending)
+        let inboxRows = all.filter { $0.area == nil && $0.project == nil }.taskSorted(by: .custom, direction: .ascending)
+        #expect(areaRows.map(\.title) == ["A0", "A1", "A2", "New in area"])
+        #expect(inboxRows.map(\.title) == ["I0", "I1", "New in inbox"])
+    }
+
+    /// `AIActionService.applyTaskDrafts` inserts several drafts before one commit; each must see
+    /// the one inserted before it, so the batch lands last and in the order given.
+    @Test func uncommittedInsertionsIntoOneListTakeSuccessiveOrders() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let project = Project(name: "Launch")
+        modelContext.insert(project)
+        let top = AppTask(title: "Top")
+        top.order = 5
+        top.project = project
+        modelContext.insert(top)
+        try modelContext.save()
+
+        let service = TaskCreationService(areas: [], projects: [project])
+        let first = try #require(service.insertion(from: draft("First", into: .project(project.id)), into: modelContext))
+        let second = try #require(service.insertion(from: draft("Second", into: .project(project.id)), into: modelContext))
+        #expect([first.task.order, second.task.order] == [6, 7])
+    }
 }

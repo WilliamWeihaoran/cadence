@@ -50,31 +50,29 @@ struct CadenceRowReorderSliceSpanTests {
 
     // MARK: - The baseline the ticket got wrong
 
-    /// **MEASURED.** The app's primary creation path never allocates an `order` at all, so the
-    /// ticket's stated blocker — "`order` is allocated per container (`nextTaskOrder(in:)` maxes
-    /// over one list)" — is not what the shipped app does on the path that makes most tasks.
+    /// **MEASURED, then fixed by [[T-14522]].** T-1055 measured that the app's primary creation
+    /// path never allocated an `order` at all: `TaskCreationService.insertion(from:into:)` left every
+    /// new task at `AppTask.order`'s declared default of `0`, in every container, so once a drag
+    /// had renumbered a list `0...n-1` a new task tied its top row and sorted second.
     ///
-    /// `TaskCreationService.insertion(from:into:)` writes eight fields of the new `AppTask` and
-    /// applies its container, and `order` is not among them, so every task the composer creates keeps `AppTask.order`'s
-    /// declared default of `0`, in every container. `CadenceTaskQuerySupport.makeTask` — the *other*
-    /// creation path, used by the quick-capture surfaces — allocates `nextTaskOrder(in: allTasks)`,
-    /// which is the max over **every task in the app** and not over one list.
-    ///
-    /// So the app has three rules at once: no allocation (the composer), a global allocation
-    /// (quick capture and `CadenceWidgetIntents.captureTask`), and a per-container allocation
-    /// (`CadenceTaskMutationSupport.nextContainerOrder`, on the move and duplicate paths only).
-    /// That is the fact any renumber-the-whole-sequence fix would have to be built on, and it is
-    /// not the one the ticket recorded.
-    @Test func thecomposerPathNeverAllocatesAnOrderWhileQuickCaptureAllocatesGlobally() throws {
+    /// The composer now allocates **per container**, the rule `CadenceTaskMutationSupport.nextContainerOrder`
+    /// already applied to moves and duplicates: max over the target list's tasks (or the Inbox's)
+    /// plus one, so a new task lands last in its own list. `CadenceTaskQuerySupport.makeTask` — the
+    /// quick-capture path — still allocates `nextTaskOrder(in: allTasks)`, the max over **every task
+    /// in the app**; that is still last in any list, just with a larger number.
+    @Test func thecomposerPathAllocatesPerContainerWhileQuickCaptureAllocatesGlobally() throws {
         let modelContext = ModelContext(try container())
         let area = Area(name: "Home")
         let project = Project(name: "Work")
         modelContext.insert(area)
         modelContext.insert(project)
 
-        // An existing task carrying a high order, so a per-container or global allocation would be
-        // visible as anything other than 0.
-        _ = task("Existing", order: 40, project: project, in: modelContext)
+        // One existing task per container, each with a distinct order, so a zero, a global or a
+        // wrong-container allocation each reads as a different number.
+        _ = task("Existing inbox", order: 7, in: modelContext)
+        let inArea = task("Existing area", order: 3, in: modelContext)
+        inArea.area = area
+        _ = task("Existing project", order: 40, project: project, in: modelContext)
         try modelContext.save()
 
         let service = TaskCreationService(areas: [area], projects: [project])
@@ -95,7 +93,7 @@ struct CadenceRowReorderSliceSpanTests {
             created.append(try #require(try service.createTask(from: draft, into: modelContext)))
         }
 
-        #expect(created.map(\.order) == [0, 0, 0], "the composer has started allocating an order")
+        #expect(created.map(\.order) == [8, 4, 41], "the composer no longer allocates its own list's next order")
 
         // The other creation path, over the same store, allocates the global maximum plus one.
         let captured = try #require(
@@ -104,7 +102,7 @@ struct CadenceRowReorderSliceSpanTests {
                 allTasks: try modelContext.fetch(FetchDescriptor<AppTask>())
             )
         )
-        #expect(captured.order == 41, "quick capture no longer maxes over every task in the app")
+        #expect(captured.order == 42, "quick capture no longer maxes over every task in the app")
     }
 
     // MARK: - Do orders collide?

@@ -35,6 +35,28 @@ struct CadenceTaskGroupFoldTests {
         #expect(CadenceTaskGroupFold.isExpanded("a", in: collapsed))
     }
 
+    // MARK: - One list's fold is not another's ([[T-14521]])
+
+    /// The iPad sidebar swaps lists under one live `iOSListDetailView`, and group ids such as
+    /// `overdue` name the same group on every list. A fold made on list A must not fold list B's
+    /// group of the same name, and must still be there when A is shown again.
+    @Test func aFoldMadeOnOneListLeavesTheNextListOpen() {
+        let listA = ListDetailPage.rememberedPageDefaultsKey(areaID: UUID(), projectID: nil)
+        let listB = ListDetailPage.rememberedPageDefaultsKey(areaID: nil, projectID: UUID())
+        #expect(listA != listB, "non-vacuity: the two lists share a key")
+
+        var collapsed: Set<String> = []
+        CadenceTaskGroupFold.setExpanded(false, "overdue", in: &collapsed)
+        let foldedOn = listA
+
+        #expect(CadenceTaskGroupFold.displayed(collapsed, foldedOnListKey: foldedOn, listKey: listA) == ["overdue"])
+        let onB = CadenceTaskGroupFold.displayed(collapsed, foldedOnListKey: foldedOn, listKey: listB)
+        #expect(onB.isEmpty, "list B opens with list A's folds")
+        #expect(CadenceTaskGroupFold.isExpanded("overdue", in: onB))
+        #expect(CadenceTaskGroupFold.displayed(collapsed, foldedOnListKey: nil, listKey: listA).isEmpty,
+                "an untagged set is shown on a list")
+    }
+
     // MARK: - The iOS component
 
     private func code(_ path: String) throws -> String {
@@ -87,19 +109,37 @@ struct CadenceTaskGroupFoldTests {
         // Every group is handed its page's set, and every grouped call site keys its group by the
         // group's own id, which is unique per page; the single ungrouped section folds under its
         // title. The collection page also hands the set down to `iOSTaskCollectionSections`.
-        let sites: [(path: String, sections: Int, bindings: Int, keyed: Int)] = [
-            ("Cadence/iOS/iOSTaskCollectionPage.swift", 2, 3, 1),
-            ("Cadence/iOS/iOSListDetailView.swift", 1, 1, 1),
-            ("Cadence/iOS/iOSTodayTaskSections.swift", 1, 1, 1),
+        // The list page hands its list-tagged binding instead of the bare set ([[T-14521]]).
+        let sites: [(path: String, sections: Int, binding: String, bindings: Int, keyed: Int)] = [
+            ("Cadence/iOS/iOSTaskCollectionPage.swift", 2, "collapsedGroupIDs: $collapsedGroupIDs", 3, 1),
+            ("Cadence/iOS/iOSListDetailView.swift", 1, "collapsedGroupIDs: collapsedGroupIDsBinding", 1, 1),
+            ("Cadence/iOS/iOSTodayTaskSections.swift", 1, "collapsedGroupIDs: $collapsedGroupIDs", 1, 1),
         ]
         for site in sites {
             let source = try code(site.path)
             func count(_ needle: String) -> Int { source.components(separatedBy: needle).count - 1 }
             #expect(count("iOSTaskGroupSection(") == site.sections, "non-vacuity: \(site.path)")
-            #expect(count("collapsedGroupIDs: $collapsedGroupIDs") == site.bindings,
+            #expect(count(site.binding) == site.bindings,
                     "\(site.path): a group is drawn without its page's fold set")
             #expect(count("groupID: group.id") == site.keyed, "\(site.path)")
         }
+    }
+
+    /// **[[T-14521]].** The iPad list page is not rebuilt on a list switch, so its fold set is held
+    /// with the list it was folded on and read through `CadenceTaskGroupFold.displayed`, as its
+    /// sibling per-list state is (T-7032). The bare set reaching a group would carry list A's
+    /// folds onto list B.
+    @Test func theListPageReadsItsFoldSetOnlyOnTheListItWasFoldedOn() throws {
+        let source = try code("Cadence/iOS/iOSListDetailView.swift")
+        func count(_ needle: String) -> Int { source.components(separatedBy: needle).count - 1 }
+        #expect(count("$collapsedGroupIDs") == 0, "a group reads the untagged fold set")
+        #expect(count("@State private var collapsedGroupIDsListKey: String?") == 1)
+        let binding = try #require(
+            CadenceSourceScan.declarationBody("private var collapsedGroupIDsBinding: Binding<Set<String>>", in: source)
+        )
+        #expect(binding.contains("foldedOnListKey: collapsedGroupIDsListKey,"))
+        #expect(binding.contains("listKey: rememberedPageKey"))
+        #expect(binding.contains("collapsedGroupIDsListKey = rememberedPageKey"), "a fold is not recorded against its list")
     }
 
     /// `iOSCompactTodayHost` is an `Equatable` view that skips its body when `==` holds. A fold
