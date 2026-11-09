@@ -138,7 +138,7 @@ struct GlobalSearchOverlay: View {
                 GlobalSearchInteractionSupport.handleAppear(
                     searchManager: searchManager,
                     setDraftQuery: { draftQuery = $0 },
-                    setCommittedQuery: { committedQuery = $0 },
+                    setCommittedQuery: setCommittedQuery,
                     setFocused: { isSearchFocused = $0 },
                     runEventSearch: runEventSearch,
                     syncHighlight: syncHighlightToAvailableResults
@@ -146,13 +146,6 @@ struct GlobalSearchOverlay: View {
             }
             .onChange(of: draftQuery) { _, newValue in
                 scheduleQueryCommit(newValue)
-            }
-            .onChange(of: committedQuery) { _, _ in
-                // Typing swaps the rows under a resting pointer, like scrolling does.
-                keyboardTookHighlight()
-                expandedCategories.removeAll()
-                runEventSearch()
-                syncHighlightToAvailableResults()
             }
             .onChange(of: eventStoreIdentity) { _, _ in
                 runEventSearch()
@@ -221,9 +214,28 @@ struct GlobalSearchOverlay: View {
             cancelPending: { pendingQueryCommit?.cancel() },
             storePending: { pendingQueryCommit = $0 }
         ) { committed in
-            committedQuery = committed
-            searchManager.query = committed
+            commitQuery(committed)
         }
+    }
+
+    private func commitQuery(_ committed: String) {
+        setCommittedQuery(committed)
+        searchManager.query = committed
+    }
+
+    /// **Every write of `committedQuery` goes through here, and its reaction runs inline**
+    /// ([[T-14014]]). It used to run from `.onChange(of: committedQuery)`, after the next update;
+    /// Return now commits a pending draft and resolves in the same call, so the highlight has to be
+    /// re-synced before Return reads it, and a deferred reaction would then also clear a section
+    /// that Return had just revealed.
+    private func setCommittedQuery(_ value: String) {
+        guard value != committedQuery else { return }
+        committedQuery = value
+        // Typing swaps the rows under a resting pointer, like scrolling does.
+        keyboardTookHighlight()
+        expandedCategories.removeAll()
+        runEventSearch()
+        syncHighlightToAvailableResults()
     }
 
     private func clearQuery() {
@@ -231,15 +243,21 @@ struct GlobalSearchOverlay: View {
             pendingQueryCommit: &pendingQueryCommit,
             searchManager: searchManager,
             setDraftQuery: { draftQuery = $0 },
-            setCommittedQuery: { committedQuery = $0 },
+            setCommittedQuery: setCommittedQuery,
             setFocused: { isSearchFocused = $0 }
         )
     }
 
+    /// [[T-14014]]: a draft still inside the 40 ms debounce is committed first, so Return opens a
+    /// row of the query in the field rather than of the one before it.
     private func submitHighlightedResult() {
         GlobalSearchInteractionSupport.submitHighlightedResult(
-            highlightedResultID: highlightedResultID,
-            rows: keyboardRows,
+            draftQuery: draftQuery,
+            committedQuery: committedQuery,
+            pendingQueryCommit: &pendingQueryCommit,
+            commit: commitQuery,
+            highlightedResultID: { highlightedResultID },
+            rows: { keyboardRows },
             onSelect: onSelect,
             onReveal: revealSection
         )
