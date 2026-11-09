@@ -476,7 +476,11 @@ struct TaskWorkflowRecurrenceTests {
             == ["2026-01-30", "2026-02-28", "2026-03-30"])
     }
 
-    @Test func lateMonthlyCompletionStillCatchesUpFromTodayRatherThanTheAnchor() throws {
+    /// **[[T-14821]]: a late completion keeps the series' anchor.** This used to pin the opposite
+    /// (`2026-04-03`): the catch-up restarted the cadence on the day of completion, so rent due on
+    /// the 31st and paid on the 3rd was due on the 3rd from then on. The next date is still after
+    /// today -- the catch-up's own reason for existing -- but on the series' own day.
+    @Test func lateMonthlyCompletionCatchesUpOnTheSeriesAnchorDay() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
 
@@ -491,7 +495,67 @@ struct TaskWorkflowRecurrenceTests {
         CadenceTaskRecurrenceWorkflowSupport.markDone(februaryTask, in: context, now: lateNow)
         try context.save()
         let next = try #require(try spawnedTask(for: februaryTask, in: context))
-        #expect(next.dueDate == "2026-04-03")
+        #expect(next.dueDate == "2026-03-31")
+    }
+
+    // MARK: - 10b. A late completion does not move the series off its own day (T-14821)
+
+    /// Marks `task` done at `nowKey` and returns its successor's (due, do) dates.
+    private func successorDates(
+        rule: TaskRecurrenceRule,
+        dueDate: String = "",
+        scheduledDate: String = "",
+        completedOn nowKey: String
+    ) throws -> (due: String, scheduled: String) {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = makeRecurringTask(rule: rule, dueDate: dueDate, scheduledDate: scheduledDate)
+        context.insert(task)
+        try context.save()
+        let now = try #require(DateFormatters.date(from: nowKey))
+        CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: context, now: now)
+        try context.save()
+        let next = try #require(try spawnedTask(for: task, in: context))
+        return (next.dueDate, next.scheduledDate)
+    }
+
+    /// A weekly task planned for Monday 2026-11-02 and ticked on Wednesday 2026-11-04 comes back on
+    /// Monday 2026-11-09, not Wednesday 2026-11-11 -- and stays a Monday task.
+    @Test func lateWeeklyCompletionComesBackOnTheSeriesWeekday() throws {
+        let late = try successorDates(rule: .weekly, dueDate: "2026-11-02", scheduledDate: "2026-11-02", completedOn: "2026-11-04")
+        #expect(late.due == "2026-11-09")
+        #expect(late.scheduled == "2026-11-09")
+
+        // Weeks late: still the next Monday after today.
+        let weeksLate = try successorDates(rule: .weekly, scheduledDate: "2026-10-05", completedOn: "2026-11-04")
+        #expect(weeksLate.scheduled == "2026-11-09")
+    }
+
+    /// Completed late ON the series' next day: that day is today, and the catch-up never mints an
+    /// occurrence due on the day it was completed, so it is the one after.
+    @Test func lateCompletionOnTheNextScheduledDayMovesToTheOneAfter() throws {
+        let weekly = try successorDates(rule: .weekly, dueDate: "2026-11-02", completedOn: "2026-11-09")
+        #expect(weekly.due == "2026-11-16")
+        let monthly = try successorDates(rule: .monthly, dueDate: "2026-10-01", completedOn: "2026-11-01")
+        #expect(monthly.due == "2026-12-01")
+    }
+
+    /// Rent due on the 1st and paid on the 3rd is due on the 1st next month, not the 3rd; a yearly
+    /// renewal paid late keeps its date too.
+    @Test func lateMonthlyAndYearlyCompletionsKeepTheirDay() throws {
+        let rent = try successorDates(rule: .monthly, dueDate: "2026-11-01", completedOn: "2026-11-03")
+        #expect(rent.due == "2026-12-01")
+        let monthsLate = try successorDates(rule: .monthly, dueDate: "2026-08-15", completedOn: "2026-11-20")
+        #expect(monthsLate.due == "2026-12-15")
+        let renewal = try successorDates(rule: .yearly, dueDate: "2026-03-10", completedOn: "2026-04-02")
+        #expect(renewal.due == "2027-03-10")
+    }
+
+    /// The daily answer is unchanged: tomorrow, however stale the occurrence was.
+    @Test func lateDailyCompletionStillComesBackTomorrow() throws {
+        let daily = try successorDates(rule: .daily, dueDate: "2026-10-20", scheduledDate: "2026-11-08", completedOn: "2026-11-09")
+        #expect(daily.due == "2026-11-10")
+        #expect(daily.scheduled == "2026-11-10")
     }
 
     // MARK: - 11. The next occurrence keeps the predecessor's place in a hand-ordered list (T-6112)

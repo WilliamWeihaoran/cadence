@@ -698,14 +698,17 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         ].joined(separator: "|")
     }
 
-    /// Shifts one recurrence period forward from whichever is later: the occurrence's own date or today.
+    /// The next occurrence's date: one period after the occurrence's own date, or — when that date
+    /// has already gone by — the first date **on the series' own schedule** that is after today.
     /// A daily/weekly/etc. task completed long after it was last due (e.g. a week-stale daily task)
-    /// should catch up to today rather than advancing by one period from its stale date, which would
-    /// just produce another still-overdue occurrence.
+    /// must not produce another still-overdue occurrence (`dd93a5d2`), and that rule is kept.
     ///
-    /// `anchorDay` is only consulted when the occurrence's own date wins (T-3103): a catch-up from
-    /// today deliberately restarts the cadence on today's day, so the series' old day-of-month no
-    /// longer applies.
+    /// **[[T-14821]]: a late completion no longer moves the series.** The catch-up used to restart
+    /// the cadence from TODAY: a weekly task due Monday and ticked on Wednesday came back the next
+    /// Wednesday, and every Wednesday after; rent due on the 1st and paid on the 3rd came back due
+    /// on the 3rd. Now the periods are stepped forward from the occurrence's own date, on its own
+    /// weekday and its own anchored day of the month (T-3103's `anchorDay`, clamped per hop), until
+    /// one lands after today. For `.daily` that is tomorrow, exactly what the old rule gave.
     private static func nextRecurrenceDateKey(
         from key: String,
         todayKey: String,
@@ -713,8 +716,41 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         anchorDay: () -> Int?
     ) -> String? {
         guard recurrence != .none else { return nil }
-        guard key >= todayKey else { return shiftedDateKey(todayKey, recurrence: recurrence, anchorDay: nil) }
-        return shiftedDateKey(key, recurrence: recurrence, anchorDay: anchorDay())
+        let anchor = anchorDay()
+        guard key < todayKey else { return shiftedDateKey(key, recurrence: recurrence, anchorDay: anchor) }
+        return firstScheduledDateKey(after: todayKey, from: key, recurrence: recurrence, anchorDay: anchor)
+    }
+
+    /// The first date a whole number of periods (at least one) after `key` that is later than
+    /// `todayKey`. The starting estimate is the number of periods between the two days, so the loop
+    /// runs at most a couple of hops however stale the occurrence is; the cap only guards a date the
+    /// shift cannot advance.
+    private static func firstScheduledDateKey(
+        after todayKey: String,
+        from key: String,
+        recurrence: TaskRecurrenceRule,
+        anchorDay: Int?
+    ) -> String? {
+        guard let start = DateFormatters.date(from: key), let today = DateFormatters.date(from: todayKey) else {
+            return shiftedDateKey(todayKey, recurrence: recurrence, anchorDay: nil)
+        }
+        let calendar = DateFormatters.storageCalendar(inheritingTimeZoneFrom: Calendar.current)
+        let elapsed: Int
+        switch recurrence {
+        case .none: return nil
+        case .daily: elapsed = calendar.dateComponents([.day], from: start, to: today).day ?? 0
+        case .weekly: elapsed = (calendar.dateComponents([.day], from: start, to: today).day ?? 0) / 7
+        case .monthly: elapsed = calendar.dateComponents([.month], from: start, to: today).month ?? 0
+        case .yearly: elapsed = calendar.dateComponents([.year], from: start, to: today).year ?? 0
+        }
+        var periods = max(1, elapsed)
+        for _ in 0..<4 {
+            guard let candidate = shiftedDateKey(key, recurrence: recurrence, anchorDay: anchorDay, periods: periods)
+            else { return nil }
+            if candidate > todayKey { return candidate }
+            periods += 1
+        }
+        return shiftedDateKey(todayKey, recurrence: recurrence, anchorDay: nil)
     }
 
     /// One period forward. `.monthly` and `.yearly` land on `anchorDay` (or the key's own day when
@@ -723,7 +759,15 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
     /// letting `Calendar.date(byAdding: .month, ...)` clamp and then carrying the clamped day
     /// forward, is what lets Jan 31 -> Feb 28 come back to Mar 31 instead of sticking on the 28th
     /// for ever (T-3103).
-    private static func shiftedDateKey(_ key: String, recurrence: TaskRecurrenceRule, anchorDay: Int? = nil) -> String? {
+    ///
+    /// `periods` is how many whole periods to move (1 for an ordinary hop); the late-completion
+    /// path in `firstScheduledDateKey` moves several at once, still landing on the anchor day.
+    private static func shiftedDateKey(
+        _ key: String,
+        recurrence: TaskRecurrenceRule,
+        anchorDay: Int? = nil,
+        periods: Int = 1
+    ) -> String? {
         guard recurrence != .none, let date = DateFormatters.date(from: key) else { return nil }
 
         switch recurrence {
@@ -732,13 +776,13 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         case .daily, .weekly:
             let calendar = Calendar.current
             let component: Calendar.Component = recurrence == .daily ? .day : .weekOfYear
-            guard let next = calendar.date(byAdding: component, value: 1, to: date) else { return nil }
+            guard let next = calendar.date(byAdding: component, value: periods, to: date) else { return nil }
             return DateFormatters.dateKey(from: next)
         case .monthly, .yearly:
             let calendar = DateFormatters.storageCalendar(inheritingTimeZoneFrom: Calendar.current)
             let parts = calendar.dateComponents([.year, .month, .day], from: date)
             guard let year = parts.year, let month = parts.month, let day = parts.day else { return nil }
-            let monthsAhead = recurrence == .monthly ? 1 : 12
+            let monthsAhead = (recurrence == .monthly ? 1 : 12) * periods
             let zeroBasedMonth = month - 1 + monthsAhead
             let targetYear = year + zeroBasedMonth / 12
             let targetMonth = zeroBasedMonth % 12 + 1
