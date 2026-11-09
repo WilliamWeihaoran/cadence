@@ -314,7 +314,6 @@ struct SidebarListRow: View {
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @State private var isHovered = false
     @State private var showDueDatePicker = false
-    @State private var dueDatePickerDate = Date()
     @State private var dueDateViewMonth = Date()
     /// The day the due-date flag is coloured against ([[T-5011]]). The row observes it itself
     /// rather than being handed it: its host, `ContextSection`, has no day of its own, and a list's
@@ -456,13 +455,17 @@ struct SidebarListRow: View {
         .accessibilityValue(DateFormatters.relativeDate(from: key))
         .help("Set due date")
         .popover(isPresented: $showDueDatePicker) {
+            // [[T-14192]]: the popover's selection is read from `key` -- the list's stored due
+            // date, the same value the badge is drawing -- not from a `@State` copy seeded by the
+            // button's action. That copy started life as `Date()`, and the popover was seen on
+            // screen opening on it (Today lit, the list's Tomorrow unlit) while the row read
+            // Tomorrow: whatever path presents the popover without the seed landing first, the
+            // seed is what it shows. With no copy there is nothing to go stale; a pick writes the
+            // list and the redrawn row hands the popover the new key.
             CadenceQuickDatePopover(
                 selection: Binding(
-                    get: { dueDatePickerDate },
-                    set: {
-                        dueDatePickerDate = $0
-                        onSetDueDate?(DateFormatters.dateKey(from: $0))
-                    }
+                    get: { Self.dueDatePickerSelection(forKey: key) },
+                    set: { onSetDueDate?(DateFormatters.dateKey(from: $0)) }
                 ),
                 viewMonth: $dueDateViewMonth,
                 isOpen: $showDueDatePicker,
@@ -471,16 +474,31 @@ struct SidebarListRow: View {
                     onSetDueDate?("")
                 }
             )
+            .onAppear { dueDateViewMonth = Self.dueDatePickerViewMonth(forKey: key) }
         }
     }
 
     private func openDueDatePicker(_ key: String) {
-        let resolved = DateFormatters.date(from: key) ?? Date()
-        dueDatePickerDate = resolved
-        var comps = Calendar.current.dateComponents([.year, .month], from: resolved)
-        comps.day = 1
-        dueDateViewMonth = Calendar.current.date(from: comps) ?? resolved
+        dueDateViewMonth = Self.dueDatePickerViewMonth(forKey: key)
         showDueDatePicker = true
+    }
+
+    /// The day the due-date popover opens on: the list's own due date, or `today` when the key does
+    /// not parse ([[T-14192]]).
+    nonisolated static func dueDatePickerSelection(forKey key: String, today: Date = Date()) -> Date {
+        DateFormatters.date(from: key) ?? today
+    }
+
+    /// The month the due-date popover's grid opens on: the first of the due date's month.
+    nonisolated static func dueDatePickerViewMonth(
+        forKey key: String,
+        today: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Date {
+        let resolved = dueDatePickerSelection(forKey: key, today: today)
+        var comps = calendar.dateComponents([.year, .month], from: resolved)
+        comps.day = 1
+        return calendar.date(from: comps) ?? resolved
     }
 }
 
