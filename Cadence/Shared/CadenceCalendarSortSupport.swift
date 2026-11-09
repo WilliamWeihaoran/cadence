@@ -53,6 +53,36 @@ nonisolated enum CadenceCalendarSorting {
         sorted(calendars, title: \.title, identifier: \.calendarIdentifier)
     }
 
+    /// Calendars grouped under their account, for the Mac calendar picker popover ([[T-14701]]).
+    ///
+    /// The accounts are in the same localized, case-insensitive order the calendars are, and each
+    /// account's calendars are in `sorted(_:title:identifier:)`'s order. The popover used to re-sort
+    /// both with a raw `<` -- the spelling T-379 retired everywhere else -- and a raw `<` puts every
+    /// capitalised name ahead of every lowercase one, so the usual Mac accounts read "Other",
+    /// "Subscribed Calendars", "iCloud": the iCloud account, where most people's calendars live,
+    /// came last, and a calendar named "gym" sat below "Work" while the iPhone's list and Settings
+    /// put it above. A raw `<` also left two same-titled calendars in one account free to swap.
+    static func groupedBySource<Element>(
+        _ calendars: [Element],
+        source: (Element) -> String,
+        title: (Element) -> String,
+        identifier: (Element) -> String
+    ) -> [(source: String, calendars: [Element])] {
+        var bySource: [String: [Element]] = [:]
+        for calendar in calendars {
+            bySource[source(calendar), default: []].append(calendar)
+        }
+        return bySource
+            .sorted { lhs, rhs in
+                switch lhs.key.localizedCaseInsensitiveCompare(rhs.key) {
+                case .orderedAscending: return true
+                case .orderedDescending: return false
+                case .orderedSame: return lhs.key < rhs.key
+                }
+            }
+            .map { (source: $0.key, calendars: sorted($0.value, title: title, identifier: identifier)) }
+    }
+
     /// The calendar a new event goes to when the person has not picked one, on both platforms
     /// ([[T-8552]]): the system's default calendar for new events when Cadence may write to it,
     /// otherwise the first writable calendar in the shared order.

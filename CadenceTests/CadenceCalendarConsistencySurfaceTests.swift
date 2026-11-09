@@ -535,3 +535,68 @@ struct CadenceCalendarConsistencySurfaceTests {
         )
     }
 }
+
+/// A calendar as the Mac picker popover groups it: its account, its title and its identity.
+private struct CalendarGroupStub {
+    let source: String
+    let title: String
+    let calendarIdentifier: String
+}
+
+/// [[T-14701]]: the Mac calendar picker popover groups calendars under their account, and it used
+/// to order both the accounts and the calendars in each with a raw `<` -- after T-379 had put every
+/// other calendar list on `CadenceCalendarSorting`'s localized, case-insensitive, identity-tied
+/// order. A raw `<` sorts every capitalised name ahead of every lowercase one, so the iCloud
+/// account came last.
+struct CadenceCalendarPickerGroupOrderTests {
+    private func grouped(_ stubs: [CalendarGroupStub]) -> [(source: String, ids: [String])] {
+        CadenceCalendarSorting.groupedBySource(
+            stubs,
+            source: \.source,
+            title: \.title,
+            identifier: \.calendarIdentifier
+        )
+        .map { (source: $0.source, ids: $0.calendars.map(\.calendarIdentifier)) }
+    }
+
+    /// The accounts a Mac usually has. A raw `<` ordered them "Other", "Subscribed Calendars",
+    /// "iCloud".
+    @Test func theICloudAccountSortsWithItsLetterNotAfterEveryCapitalisedAccount() {
+        let stubs = [
+            CalendarGroupStub(source: "Subscribed Calendars", title: "Holidays", calendarIdentifier: "id-h"),
+            CalendarGroupStub(source: "iCloud", title: "Home", calendarIdentifier: "id-home"),
+            CalendarGroupStub(source: "Other", title: "Birthdays", calendarIdentifier: "id-b")
+        ]
+
+        #expect(grouped(stubs).map(\.source) == ["iCloud", "Other", "Subscribed Calendars"])
+    }
+
+    /// Inside one account the calendars are in the shared order: case-insensitive, then identity --
+    /// the order the iPhone's list and Mac Settings already draw the same calendars in.
+    @Test func eachAccountsCalendarsAreInTheSharedCalendarOrder() {
+        let stubs = [
+            CalendarGroupStub(source: "iCloud", title: "Work", calendarIdentifier: "id-work-2"),
+            CalendarGroupStub(source: "iCloud", title: "gym", calendarIdentifier: "id-gym"),
+            CalendarGroupStub(source: "iCloud", title: "Work", calendarIdentifier: "id-work-1"),
+            CalendarGroupStub(source: "iCloud", title: "Home", calendarIdentifier: "id-home")
+        ]
+        let shared = CadenceCalendarSorting
+            .sorted(stubs, title: \.title, identifier: \.calendarIdentifier)
+            .map(\.calendarIdentifier)
+
+        let groups = grouped(stubs)
+        #expect(groups.count == 1)
+        #expect(groups.first?.ids == ["id-gym", "id-home", "id-work-1", "id-work-2"])
+        #expect(groups.first?.ids == shared)
+        // Whatever order EventKit handed them over in.
+        #expect(grouped(stubs.reversed()).first?.ids == groups.first?.ids)
+    }
+
+    /// The popover reads the helper rather than re-spelling a sort of its own.
+    @Test func theMacPickerPopoverGroupsThroughTheSharedHelper() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/CadenceCalendarPicker.swift")
+        #expect(raw.contains("CadenceCalendarSorting.groupedBySource("))
+        #expect(!raw.contains("$0.title < $1.title"))
+        #expect(!raw.contains("$0.source < $1.source"))
+    }
+}

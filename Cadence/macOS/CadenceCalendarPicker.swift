@@ -33,14 +33,14 @@ struct CadenceCalendarPickerList: View {
     /// (text: group.source, …)` below), so an unnamed source's group in this popover reads the same
     /// as its row in Settings.
     private var allGroups: [(source: String, cals: [EKCalendar])] {
-        var dict: [String: [EKCalendar]] = [:]
-        for cal in calendars {
-            let src = cal.source?.title ?? CadenceAppleCalendarNaming.unnamedAccountTitle
-            dict[src, default: []].append(cal)
-        }
-        return dict
-            .map { (source: $0.key, cals: $0.value.sorted { $0.title < $1.title }) }
-            .sorted { $0.source < $1.source }
+        // T-14701: the shared order, not a raw `<`, for the accounts and for the calendars in each.
+        CadenceCalendarSorting.groupedBySource(
+            calendars,
+            source: { $0.source?.title ?? CadenceAppleCalendarNaming.unnamedAccountTitle },
+            title: \.title,
+            identifier: \.calendarIdentifier
+        )
+        .map { (source: $0.source, cals: $0.calendars) }
     }
 
     private var groups: [(source: String, cals: [EKCalendar])] {
