@@ -47,15 +47,42 @@ struct CadenceSidebarListsSupportTests {
         #expect(sections[0].contextID == work.id)
     }
 
-    /// The header carries no control of its own, so an empty one is a word over nothing.
-    @Test func aContextWithNoListsGetsNoSection() {
+    /// [[T-14793]]: the flattened overload is what the iPad sidebar and the iPhone Tasks index
+    /// call, and since [[T-3073]] every header there carries the `+` that opens the list editor
+    /// seeded with that context. A context with no lists keeps its section, as on the Mac, or a
+    /// context just made in Settings has no door on either touch column. The empty catch-all is
+    /// still dropped, so a store with no contexts and no lists yields no sections and the region
+    /// draws its "Add first list" row.
+    @Test func aContextWithNoListsKeepsItsSectionOnTheTouchColumns() {
         let sections = CadenceSidebarLists.sections(
             contexts: [work, home],
             items: [item("Clients", context: work)]
         )
 
-        #expect(sections.map(\.title) == ["Work"])
-        #expect(CadenceSidebarLists.sections(contexts: [work, home], items: []).isEmpty)
+        #expect(sections.map(\.title) == ["Work", "Home"],
+                "an empty context lost its header, and with it its + Add list, on iPad and iPhone")
+        #expect(sections.last?.contextID == home.id)
+        #expect(sections.last?.items.isEmpty == true)
+
+        let noListsAtAll = CadenceSidebarLists.sections(contexts: [work, home], items: [])
+        #expect(noListsAtAll.map(\.title) == ["Work", "Home"])
+        #expect(CadenceSidebarLists.sections(contexts: [], items: []).isEmpty)
+    }
+
+    /// The choice is made once, in the overload, and both touch hosts reach it: neither calls the
+    /// generic form with its own `keepingEmptyContexts`, which is how the two columns would drift
+    /// from each other again.
+    @Test func bothTouchHostsBuildTheirSectionsThroughTheFlattenedOverload() throws {
+        for path in ["Cadence/iOS/iOSRootSidebar.swift", "Cadence/iOS/iOSTasksTabView.swift"] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            let body = try #require(
+                CadenceSourceScan.declarationBody("private var listSections: [CadenceSidebarLists.Section]", in: code),
+                "\(path) no longer declares listSections"
+            )
+            #expect(body.contains("CadenceSidebarLists.sections("), "\(path)")
+            #expect(body.contains("items:"), "\(path) left the flattened overload")
+            #expect(!body.contains("keepingEmptyContexts"), "\(path) chose its own empty-context rule")
+        }
     }
 
     /// macOS iterates contexts and never looks at the leftovers, so a list with no context is
@@ -212,10 +239,9 @@ struct CadenceSidebarListsSupportTests {
         #expect(sections.flatMap(\.elements).map(\.handle).sorted() == ["Clients", "Loose", "Orphan"])
     }
 
-    /// The one thing the two columns legitimately differ on. The macOS header carries the "+" that
-    /// opens `CreateListSheet` — the only way to make a list in a given context there — so a
-    /// context with no lists yet must keep its section or it becomes unusable. iPad's header
-    /// carries no control, so an empty one there is a word over nothing.
+    /// Every sidebar header carries a "+" — `CreateListSheet` on macOS, the seeded list editor on
+    /// iOS — so a context with no lists yet must keep its section or it becomes unusable. Only a
+    /// caller that draws no header (the Mac's Kanban board) asks for empty contexts to be dropped.
     @Test func anEmptyContextKeepsItsSectionOnlyForACallerThatAsksToKeepIt() {
         let kept = CadenceSidebarLists.sections(
             contexts: [work, home],
@@ -264,7 +290,7 @@ struct CadenceSidebarListsSupportTests {
         let generic = CadenceSidebarLists.sections(
             contexts: [work, home],
             elements: items,
-            keepingEmptyContexts: false,
+            keepingEmptyContexts: true,
             item: { $0 }
         )
 

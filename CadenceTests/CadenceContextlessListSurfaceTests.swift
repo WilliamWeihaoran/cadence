@@ -761,8 +761,8 @@ struct CadenceContextlessListSurfaceTests {
     /// **And the other half: a store that produces even one section gets no second create control.**
     ///
     /// Both ways a single section arises are checked, because they arise for opposite reasons — the
-    /// catch-all exists when a context-less list does, and an empty context is kept only on macOS
-    /// and only because its header carries the "+". Either way the header is on screen, so the
+    /// catch-all exists when a context-less list does, and an empty context is kept on every
+    /// sidebar only because its header carries the "+". Either way the header is on screen, so the
     /// empty-state row must not be.
     @Test func anyStoreThatProducesASectionDrawsSectionsAndNoSecondCreateControl() throws {
         let fixture = try makeFixture()

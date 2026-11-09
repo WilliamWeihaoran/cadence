@@ -153,13 +153,16 @@ nonisolated enum CadenceSidebarLists {
         )
     }
 
-    /// The region, top to bottom, for the iPad column — which renders flattened `Item`s.
+    /// The region, top to bottom, for the touch columns — the iPad sidebar and the iPhone Tasks
+    /// index, both `iOSSidebarListsRegion` — which render flattened `Item`s.
     ///
-    /// `contexts` supplies the order and the naming. **A section with no rows is dropped** here,
-    /// catch-all included: on this column no header carries a control of its own — creating a list
-    /// is the Lists row above the region — so an empty one would be a word over nothing.
+    /// `contexts` supplies the order and the naming. **A context with no lists keeps its section**,
+    /// as on the Mac ([[T-14793]]): since [[T-3073]] every header on these columns carries the `+`
+    /// that opens the list editor seeded with that context, so dropping an empty one hid the only
+    /// door to a list in a context just made in Settings. Nothing about touch forces a difference
+    /// here ([[T-8201]]). The empty catch-all is still dropped, as everywhere — see below.
     static func sections(contexts: [ContextRef], items: [Item]) -> [Section] {
-        sections(contexts: contexts, elements: items, keepingEmptyContexts: false, item: { $0 })
+        sections(contexts: contexts, elements: items, keepingEmptyContexts: true, item: { $0 })
             .map { Section(contextID: $0.contextID, title: $0.title, items: $0.elements) }
     }
 
@@ -172,10 +175,12 @@ nonisolated enum CadenceSidebarLists {
     /// mode alike, so this state is one tap away on the phone and arrives on the Mac by sync. Both
     /// columns route through here now, so neither can reach the leftovers by not looking.
     ///
-    /// `keepingEmptyContexts` is the one thing the two columns genuinely differ on, and it is not
-    /// cosmetic: the macOS header *does* carry a control — the "+" that opens `CreateListSheet`,
-    /// which is the only way to make a list in a given context on that platform — so dropping an
-    /// empty context there would make a newly created context unusable. The catch-all is never
+    /// `keepingEmptyContexts` is true for every sidebar — the macOS column and, through the
+    /// flattened overload above, both touch columns ([[T-14793]]) — and it is not cosmetic: each
+    /// header carries a control — the "+" that opens `CreateListSheet` on macOS and the seeded
+    /// list editor on iOS — so dropping an empty context would make a newly created context
+    /// unusable. Only a caller that draws no header, the Mac's Kanban board flattening this into
+    /// columns, passes false. The catch-all is never
     /// kept when empty either way: it draws a "+" on macOS since T-559, but that button only
     /// pre-selects "No context" in a sheet every other header can also reach, so an empty catch-all
     /// would be a heading over nothing that offers nothing the column does not already offer.
