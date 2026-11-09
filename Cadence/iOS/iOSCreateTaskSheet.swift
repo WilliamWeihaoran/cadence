@@ -214,20 +214,14 @@ struct iOSCreateTaskSheet: View {
         guard canCreate else { return nil }
         if draft.kind == .event { return createEvent() }
         guard reconcileContainer() else { return actionError }
-        let fields = CadenceTaskComposerFields(
-            container: selection, sectionName: draft.sectionName, doDateKey: draft.startDateKey,
-            dueDateKey: draft.dueDateKey, priority: draft.priority
-        )
-        var creation = CadenceTaskComposerSupport.draft(
-            title: draft.title, notes: draft.notes, fields: fields,
+        // The Mac's Cmd+N card builds through the same call ([[T-14794]]): a hand-rolled copy here
+        // carried the raw series end where the shared builder carries `effectiveSeriesEndMode`.
+        let creation = CadenceTaskComposerSupport.creationDraft(
+            from: draft,
+            container: selection,
             tags: tags.filter { selectedTagIDs.contains($0.id.uuidString) },
-            scheduledStartMin: draft.scheduledStartMin, estimatedMinutes: draft.estimateMinutes,
             subtaskTitles: draft.subtaskTitles
         )
-        creation.repeatRule = draft.repeatRule
-        creation.seriesEndMode = draft.seriesEndMode
-        creation.seriesEndDateKey = draft.seriesEndDateKey
-        creation.seriesEndCount = draft.seriesEndCount
         let created: AppTask?
         do {
             created = try TaskCreationService(areas: areas, projects: projects)

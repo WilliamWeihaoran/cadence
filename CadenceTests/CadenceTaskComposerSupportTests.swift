@@ -87,6 +87,38 @@ struct CadenceTaskComposerSupportTests {
         #expect(CadenceTaskComposerSupport.canCreate(title: "Buy milk"))
     }
 
+    // MARK: - The iOS capture sheet's draft
+
+    /// [[T-14794]]: `iOSCreateTaskSheet.create()` built its `TaskCreationDraft` by hand and copied
+    /// the raw `seriesEndMode`, so an `.afterCount` end with a count of 0 reached the service as a
+    /// series that stops after one occurrence. It calls the builder the Mac's Cmd+N card calls now,
+    /// which resolves the end first. The sheet cannot be presented here, so its call is read from
+    /// source and the builder's answer is checked on the very draft that diverged.
+    @Test
+    func theIOSCaptureSheetBuildsItsDraftThroughTheSharedBuilder() throws {
+        let host = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCreateTaskSheet.swift")
+        )
+        let create = try #require(CadenceSourceScan.functionBody(named: "create", in: host))
+        #expect(create.contains("TaskCreationService(areas: areas, projects: projects)"),
+                "read the wrong create()")
+        #expect(CadenceSourceScan.matchCount(#"CadenceTaskComposerSupport\.creationDraft\("#, in: create) == 1,
+                "the iOS sheet no longer builds through the shared builder")
+        #expect(CadenceSourceScan.matchCount(#"creation\.\w+\s*="#, in: create) == 0,
+                "the iOS sheet writes a draft field by hand again")
+        #expect(!create.contains("CadenceTaskComposerSupport.draft("))
+
+        var draft = CadenceScheduleDraft.quickCreate(dateKey: "2026-11-10", startMin: 9 * 60, opensTimed: false, kind: .task)
+        draft.repeatRule = .weekly
+        draft.seriesEndMode = .afterCount
+        draft.seriesEndCount = 0
+        let creation = CadenceTaskComposerSupport.creationDraft(
+            from: draft, container: .inbox, tags: [], subtaskTitles: []
+        )
+        #expect(creation.repeatRule == .weekly)
+        #expect(creation.seriesEndMode == .never, "a count of 0 is no end, not an end after one")
+    }
+
     // MARK: - Draft
 
     @Test

@@ -82,11 +82,11 @@ struct CadenceCodexCaptureSectionBatchTests {
         // `SettingsSharedVocabularyTests.noMobileOrSharedSurfaceDrawsANativePicker` enforces.
         #expect(card.contains("CadenceScheduleKindSwitch(kind: kindBinding"))
         #expect(card.contains("Button(\"Repeat\", systemImage: \"repeat\")"))
+        // The repeat and the series end travel through the shared builder ([[T-14794]]), which
+        // `CadenceTaskComposerSupportTests.theIOSCaptureSheetBuildsItsDraftThroughTheSharedBuilder`
+        // pins together with the resolved series end.
         let create = try #require(CadenceSourceScan.functionBody(named: "create", in: host))
-        #expect(create.contains("creation.repeatRule = draft.repeatRule"))
-        #expect(create.contains("creation.seriesEndMode = draft.seriesEndMode"))
-        #expect(create.contains("creation.seriesEndDateKey = draft.seriesEndDateKey"))
-        #expect(create.contains("creation.seriesEndCount = draft.seriesEndCount"))
+        #expect(create.contains("CadenceTaskComposerSupport.creationDraft("))
     }
 
     @Test func captureCardIconsKeepTheirRelativeOrderAndClearingRestoresEveryTaskField() {
