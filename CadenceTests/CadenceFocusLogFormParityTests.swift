@@ -108,6 +108,60 @@ struct CadenceFocusLogFormParityTests {
         #expect(task.actualMinutes == 40)
     }
 
+    /// **[[T-14733]].** Neither field limits its length, so a pasted 19-digit hours value used to
+    /// parse to an `Int` whose `* 60` trapped -- in the confirm label the view body evaluates on
+    /// every keystroke, and again in the write. Under the keeper's 1440-minute cap
+    /// ([[T-14750]]) it neither traps nor banks more than a day, on both platforms.
+    @Test func aNineteenDigitHoursValueNeitherTrapsNorBanksMoreThanADay() throws {
+        let cap = CadenceFocusSupport.maxLoggedMinutes
+        #expect(cap == 1440)
+        for hoursText in ["9000000000000000000", "999999999999999999", "99999999999999999999999", "99999"] {
+            let typed = CadenceFocusSupport.logFieldValues(hoursText: hoursText, minutesText: "59")
+            #expect(typed.hours <= cap / 60, "hours \(hoursText) parsed past the cap")
+            #expect(CadenceFocusSupport.logButtonTitle(hours: typed.hours, minutes: typed.minutes) == "Log 24h")
+
+            let (task, context) = try makeTask()
+            try CadenceFocusSupport.logSession(
+                hours: typed.hours,
+                minutes: typed.minutes,
+                complete: false,
+                task: task,
+                modelContext: context,
+                reconciler: .inert
+            )
+            #expect(task.actualMinutes == cap, "hours \(hoursText) banked \(task.actualMinutes)")
+        }
+        // The shared write clamps for itself: raw `Int`s at the extremes reach it unparsed.
+        #expect(CadenceFocusSupport.loggedTotalMinutes(hours: .max, minutes: .max) == cap)
+        #expect(CadenceFocusSupport.loggedTotalMinutes(hours: .min, minutes: .min) == 0)
+        #expect(CadenceFocusSupport.logButtonTitle(hours: .max, minutes: .max) == "Log 24h")
+        let (task, context) = try makeTask()
+        try CadenceFocusSupport.logSession(
+            hours: .max, minutes: .max, complete: false,
+            task: task, modelContext: context, reconciler: .inert
+        )
+        #expect(task.actualMinutes == cap)
+    }
+
+    /// The cap is a ceiling, not a rewrite: ordinary values log exactly what was typed, a minutes
+    /// field past 59 still adds up, and a day is reachable.
+    @Test func normalLoggedValuesAreUnchangedByTheCap() {
+        func parsed(_ hours: String, _ minutes: String) -> [Int] {
+            let value = CadenceFocusSupport.logFieldValues(hoursText: hours, minutesText: minutes)
+            return [value.hours, value.minutes]
+        }
+        #expect(parsed("2", "30") == [2, 30])
+        #expect(parsed("24", "0") == [24, 0])
+        #expect(parsed("0", "1440") == [0, 1440])
+        #expect(parsed("0", "99999999999999999999") == [0, 1440])
+        #expect(parsed("12abc", "5") == [0, 5])
+        #expect(CadenceFocusSupport.loggedTotalMinutes(hours: 1, minutes: 75) == 135)
+        #expect(CadenceFocusSupport.loggedTotalMinutes(hours: 23, minutes: 59) == 1439)
+        #expect(CadenceFocusSupport.loggedTotalMinutes(hours: 24, minutes: 0) == 1440)
+        #expect(CadenceFocusSupport.loggedTotalMinutes(hours: 23, minutes: 120) == 1440)
+        #expect(CadenceFocusSupport.logButtonTitle(hours: 23, minutes: 59) == "Log 23h\u{00A0}59m")
+    }
+
     /// T-654's rule on both branches: a refused commit leaves the counters exactly where they were.
     /// `CadenceFocusLedger.bank` writes with `+=` and inserts a `FocusSessionLog` per counter, so
     /// "the next fetch corrects it" is no reading at all here.

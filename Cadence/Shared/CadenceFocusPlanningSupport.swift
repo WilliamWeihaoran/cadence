@@ -520,11 +520,43 @@ enum CadenceFocusSupport {
     /// own label kept saying "Log 25m". Both forms hold the text and parse it here at the moment it
     /// is read. Unparseable text is 0, and both halves are clamped at 0: a negative hours value
     /// used to reach `CadenceFocusLedger.bank` and subtract time.
+    ///
+    /// **[[T-14733]]: and both are clamped above.** Neither field limits its length, so a pasted
+    /// 18-digit hours value parsed to an `Int` whose `* 60` trapped in `logButtonTitle` -- which
+    /// the view body evaluates on every keystroke -- and crashed the app on both platforms. Each
+    /// half is capped at `maxLoggedMinutes` worth (24 hours, 1440 minutes) before anything
+    /// multiplies it, and a digit string too long for `Int` saturates to that cap rather than
+    /// reading as 0.
     static func logFieldValues(hoursText: String, minutesText: String) -> (hours: Int, minutes: Int) {
-        func parse(_ text: String) -> Int {
-            max(0, Int(text.trimmingCharacters(in: .whitespaces)) ?? 0)
+        func parse(_ text: String, cap: Int) -> Int {
+            let trimmed = text.trimmingCharacters(in: .whitespaces)
+            guard let value = Int(trimmed) else {
+                let digits = trimmed.hasPrefix("+") ? trimmed.dropFirst() : Substring(trimmed)
+                return !digits.isEmpty && digits.allSatisfy { $0.isASCII && $0.isNumber } ? cap : 0
+            }
+            return min(max(0, value), cap)
         }
-        return (parse(hoursText), parse(minutesText))
+        return (
+            parse(hoursText, cap: maxLoggedMinutes / 60),
+            parse(minutesText, cap: maxLoggedMinutes)
+        )
+    }
+
+    /// **[[T-14733]], keeper-decided on [[T-14750]].** The most one logged session may bank: a
+    /// day, the duration-field ceiling every estimate entry point already uses
+    /// (`EstimateRollerMetrics.maxMinutes`). A single focus session longer than that is not a real
+    /// session, and refusing to crash on one is not optional.
+    static let maxLoggedMinutes = EstimateRollerMetrics.maxMinutes
+
+    /// The minutes a Log Session form banks for `hours` and `minutes`: never negative, never more
+    /// than `maxLoggedMinutes`, and overflow-safe for ANY pair of `Int`s, because each half is
+    /// clamped before it is multiplied. The confirm label and the write both read it, so the
+    /// button names exactly what is banked.
+    static func loggedTotalMinutes(hours: Int, minutes: Int) -> Int {
+        let cap = maxLoggedMinutes
+        let h = min(max(0, hours), cap / 60)
+        let m = min(max(0, minutes), cap)
+        return min(h * 60 + m, cap)
     }
 
     /// **[[T-9121]].** The form's confirm label: "Log" with nothing to log, else "Log " and the
@@ -533,9 +565,9 @@ enum CadenceFocusSupport {
     /// The Mac's popover used to print its two fields back as typed, so 90 in the minutes field
     /// read "Log 90m" and 1 h + 75 min read "Log 1h 75m" -- while the same 90 minutes, once logged,
     /// reads "1h 30m" on every chip, the inspector and the timeline. The button names what it will
-    /// bank, which is `hours * 60 + minutes`, so it is formatted from that sum.
+    /// bank, which is `loggedTotalMinutes(hours:minutes:)`, so it is formatted from that sum.
     static func logButtonTitle(hours: Int, minutes: Int) -> String {
-        let total = hours * 60 + minutes
+        let total = loggedTotalMinutes(hours: hours, minutes: minutes)
         guard total > 0 else { return "Log" }
         return "Log \(TimeFormatters.durationLabel(minutes: total, emptyPlaceholder: ""))"
     }
@@ -568,7 +600,9 @@ enum CadenceFocusSupport {
         commit: (ModelContext) throws -> Void = { try $0.save() },
         refusingBank: Bool = CadencePendingChangePersistence.refusesCommitsForUITest
     ) throws {
-        let totalMinutes = hours * 60 + loggedMinutes
+        // Capped and overflow-safe ([[T-14733]]): this door takes raw `Int`s from both platforms'
+        // forms, so it clamps for itself rather than trusting the parse ahead of it.
+        let totalMinutes = loggedTotalMinutes(hours: hours, minutes: loggedMinutes)
         guard markComplete else {
             let banked = BankedMinutes(task)
             CadenceFocusLedger.bank(totalMinutes, forTaskAndItsList: task, in: modelContext)
