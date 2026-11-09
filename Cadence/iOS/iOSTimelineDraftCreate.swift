@@ -321,8 +321,11 @@ enum iOSScheduleDraftCreation {
                 scheduledStartMin: draft.scheduledStartMin,
                 estimatedMinutes: draft.estimateMinutes,
                 subtaskTitles: draft.subtaskTitles,
+                // The shared write, which carries the series' end as well as its rule ([[T-14471]]).
                 configure: { task in
-                    configure(task, from: draft, area: area, project: project, allTasks: allTasks)
+                    CadenceScheduleDraftTaskWrite.configure(
+                        task, from: draft, area: area, project: project, allTasks: allTasks
+                    )
                 }
             )
         } catch {
@@ -331,38 +334,6 @@ enum iOSScheduleDraftCreation {
         guard created != nil else { return "Add a title first." }
         HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
         return nil
-    }
-
-    private static func configure(
-        _ task: AppTask,
-        from draft: CadenceScheduleDraft,
-        area: Area?,
-        project: Project?,
-        allTasks: [AppTask]
-    ) {
-        task.notes = draft.notes
-        task.estimatedMinutes = draft.estimateMinutes
-        task.dueDate = draft.dueDateKey
-        if draft.priority != .none {
-            task.priority = draft.priority
-        }
-        CadenceTaskMutationSupport.assignContainer(
-            task,
-            area: area,
-            project: project,
-            sectionName: draft.sectionName,
-            allTasks: allTasks
-        )
-        if draft.repeatRule != .none {
-            // Through the workflow support, not a bare `task.recurrenceRule =`: the series id has
-            // to exist before the rule does, and that is the half a direct write leaves out.
-            CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
-                draft.repeatRule,
-                to: task,
-                allTasks: allTasks,
-                scope: .thisTask
-            )
-        }
     }
 
     /// Every exit that is not a created event says so and says why — the rule T-324/T-339 settled.

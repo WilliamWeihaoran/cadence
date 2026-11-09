@@ -106,3 +106,57 @@ enum CadenceScheduleDraftChoices {
         return CadenceTaskMutationSupport.sectionNames(forArea: area, project: project)
     }
 }
+
+/// What a creating `CadenceSchedulePanel` draft gives the task the iOS calendar-slot sheet and the
+/// iPad timeline panel insert ([[T-14471]]): notes, estimate, due day, priority, list and section,
+/// and the series -- **its rule and its end**.
+///
+/// Lifted out of `iOSScheduleDraftCreation` so the Mac test target can run it. That private copy
+/// applied the Repeat rule and never the Ends answer, so a slot task created "Weekly, after 5
+/// times" was stored as an endless series while the Mac drag-create popover, the `+` capture card
+/// and the iOS event write all kept the bound ([[T-8201]] drift). The end is the draft's
+/// **resolved** mode, `effectiveSeriesEndMode`, as `CadenceTaskComposerSupport.creationDraft` and
+/// `QuickCreateTaskDraft` forward it: an `.onDate` with no day or an `.afterCount` of zero is
+/// `.never`, not a bound the card never captured.
+@MainActor
+enum CadenceScheduleDraftTaskWrite {
+    static func configure(
+        _ task: AppTask,
+        from draft: CadenceScheduleDraft,
+        area: Area?,
+        project: Project?,
+        allTasks: [AppTask]
+    ) {
+        task.notes = draft.notes
+        task.estimatedMinutes = draft.estimateMinutes
+        task.dueDate = draft.dueDateKey
+        if draft.priority != .none {
+            task.priority = draft.priority
+        }
+        CadenceTaskMutationSupport.assignContainer(
+            task,
+            area: area,
+            project: project,
+            sectionName: draft.sectionName,
+            allTasks: allTasks
+        )
+        if draft.repeatRule != .none {
+            // Through the workflow support, not a bare `task.recurrenceRule =`: the series id has
+            // to exist before the rule does, and that is the half a direct write leaves out.
+            CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
+                draft.repeatRule,
+                to: task,
+                allTasks: allTasks,
+                scope: .thisTask
+            )
+            CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceEnd(
+                mode: draft.effectiveSeriesEndMode,
+                endDateKey: draft.seriesEndDateKey,
+                endCount: draft.seriesEndCount,
+                to: task,
+                allTasks: allTasks,
+                scope: .thisTask
+            )
+        }
+    }
+}
