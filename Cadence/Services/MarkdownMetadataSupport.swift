@@ -407,9 +407,10 @@ nonisolated enum MarkdownMetadataParser {
     /// named `工作` or `Работа` is its own tag, so an ASCII-only body left it with no inline
     /// spelling: `#工作` in prose was plain text, never drawn as a chip, never swept, and a rename
     /// that wrote it stopped resolving. A combining mark (`\p{M}`) is admitted inside the body and
-    /// in the lookbehind because it belongs to the letter before it -- without it `#काम` stops at
-    /// its first vowel sign -- and it is the class `TagSupport.slug(for:)` already keeps. A mark
-    /// cannot start a body. `# Title` stays a heading (a space follows the `#`).
+    /// in the lookbehind because it belongs to the letter before it -- without it a Devanagari tag
+    /// (U+0915 U+093E U+092E) stops at its first vowel sign, U+093E -- and it is the class
+    /// `TagSupport.slug(for:)` already keeps. A mark cannot start a body. `# Title` stays a
+    /// heading (a space follows the `#`).
     nonisolated static let inlineTagPattern = #"(?<![\p{L}\p{M}\p{N}_])#([\p{L}\p{N}][\p{L}\p{M}\p{N}_-]*)"#
 
     /// The compiled form, read by the launch tag sweep above, by the stylers through

@@ -100,7 +100,7 @@ enum MarkdownTagCompletionTokenSupport {
     /// Whether one composed character can sit in a tag body: letters, marks and digits in any
     /// script, `_` and `-` -- `MarkdownMetadataParser.inlineTagPattern`'s body class ([[T-14763]]).
     /// Walked by composed character, not UTF-16 unit, so a letter outside the BMP (`𠀋`) or a
-    /// letter carrying a combining mark (`का`) is one step, never half of one.
+    /// letter carrying a combining mark (U+0915 U+093E) is one step, never half of one.
     private static func isTagBody(_ character: String) -> Bool {
         guard !character.isEmpty else { return false }
         return character.unicodeScalars.allSatisfy { scalar in

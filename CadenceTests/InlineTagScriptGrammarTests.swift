@@ -23,7 +23,10 @@ struct InlineTagScriptGrammarTests {
         #expect(names("Plan #工作 today") == ["工作"])
         #expect(names("План #работа на завтра") == ["работа"])
         #expect(names("#工作，然后 #学习。") == ["工作", "学习"], "full-width punctuation ends a tag")
-        #expect(names("काम #काम ok") == ["काम"], "a combining vowel sign stays inside the tag")
+        // U+0915 U+093E U+092E (Devanagari "kaam") as escapes, so the file holds no multi-scalar
+        // grapheme for the T-1590 census; the runtime string is the same composed text.
+        let kaam = "\u{915}\u{93E}\u{92E}"
+        #expect(names("\(kaam) #\(kaam) ok") == [kaam], "a combining vowel sign stays inside the tag")
         #expect(names("rare #𠀋字 glyph") == ["𠀋字"], "a letter outside the BMP is one letter")
         #expect(names("mixed #2026年 and #work工作") == ["2026年", "work工作"])
     }
@@ -94,7 +97,7 @@ struct InlineTagScriptGrammarTests {
         #expect(cjk.query == "工")
         #expect(cjk.range == NSRange(location: 5, length: 2))
         #expect(try #require(context("План #раб")).query == "раб")
-        #expect(try #require(context("x #काम")).query == "काम")
+        #expect(try #require(context("x #\u{915}\u{93E}\u{92E}")).query == "\u{915}\u{93E}\u{92E}")
         let astral = try #require(context("x #𠀋"))
         #expect(astral.query == "𠀋")
         #expect(astral.range.length == 3, "the surrogate pair is walked as one letter")
