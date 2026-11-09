@@ -256,10 +256,12 @@ nonisolated enum TaskNotificationPlanner {
         }
         guard fireDate > now else { return nil }
 
+        // The banner is a drawn task title like any other, so it gets the same "Untitled Task"
+        // fallback and trim every other surface applies ([[T-14452]]).
         return CadenceNotificationRequest(
             identifier: NotificationIdentifiers.taskStart(taskID: task.id),
             kind: .taskStart,
-            title: task.title,
+            title: TaskTitleSupport.displayTitle(task.title),
             body: "Starting now",
             fireDate: fireDate
         )
@@ -292,7 +294,7 @@ nonisolated enum TaskNotificationPlanner {
         return CadenceNotificationRequest(
             identifier: NotificationIdentifiers.taskDue(taskID: task.id),
             kind: .taskDue,
-            title: task.title,
+            title: TaskTitleSupport.displayTitle(task.title),
             body: "Due today",
             fireDate: fireDate
         )

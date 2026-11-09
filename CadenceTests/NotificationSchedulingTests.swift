@@ -129,6 +129,30 @@ struct NotificationSchedulingTests {
         #expect(request.fireDate == date("2026-06-10", hour: 9))
     }
 
+    // MARK: - Banner titles are display titles ([[T-14452]])
+
+    /// A blank or untrimmed task title reaches the banner as the same display title every other
+    /// surface draws: "Untitled Task" for blank, trimmed otherwise. Both legs, because each builds
+    /// its own request. "Standup"/"Submit report" above are the controls that a plain title passes.
+    @Test func bothLegsPlanTheDisplayTitleNotTheRawTitle() throws {
+        let now = date("2026-06-09")
+        for (raw, expected) in [("   ", "Untitled Task"), ("  Buy milk\n", "Buy milk")] {
+            let task = AppTask(title: raw)
+            task.scheduledDate = "2026-06-10"
+            task.scheduledStartMin = 540
+            task.dueDate = "2026-06-10"
+            #expect(task.title == raw, "the fixture must keep the raw title for this to test anything")
+
+            let start = try #require(TaskNotificationPlanner.startNotification(for: task, now: now))
+            #expect(start.title == expected, "start leg for \(raw.debugDescription)")
+
+            let due = try #require(
+                TaskNotificationPlanner.dueNotification(for: task, now: now, reminderHour: 9, reminderMinute: 0)
+            )
+            #expect(due.title == expected, "due leg for \(raw.debugDescription)")
+        }
+    }
+
     // MARK: - Habit reminders are retired ([[T-2081]])
 
     /// **The inversion of the five habit-reminder planner tests that stood here.**
