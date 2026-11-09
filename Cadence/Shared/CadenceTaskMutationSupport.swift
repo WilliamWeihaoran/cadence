@@ -55,8 +55,9 @@ extension CadenceTaskMutationSupport {
     ///
     /// - settling goes through `commitSettle`, which un-inserts the successor *and* puts the
     ///   status, timestamp and `recurrenceSpawnedTaskID` back;
-    /// - restoring inserts nothing, so it is an ordinary `commitEdit` over the two fields
-    ///   `markTodo` writes.
+    /// - restoring inserts nothing, so it goes through `reopen`: an ordinary `commitEdit` over the
+    ///   two fields `markTodo` writes, or — when the settle spawned a successor nobody has touched
+    ///   since — that edit and the successor's delete as one `commitCascade` ([[T-14824]]).
     ///
     /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     static func toggleCompletion(
@@ -66,13 +67,7 @@ extension CadenceTaskMutationSupport {
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) throws {
         if CadenceTaskQuerySupport.isFinishedTask(task) {
-            let status = task.status
-            let completedAt = task.completedAt
-            CadenceTaskRecurrenceWorkflowSupport.markTodo(task)
-            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
-                task.status = status
-                task.completedAt = completedAt
-            }
+            try reopen(task, as: .todo, modelContext: modelContext, commit: commit)
             (widgetEffects ?? .live).restoreTask(task.id)
         } else {
             try commitSettle(task, in: modelContext, commit: commit) {
@@ -136,7 +131,8 @@ extension CadenceTaskMutationSupport {
     /// - `.done` and `.cancelled` settle, so they may insert a successor: `commitSettle`, which
     ///   un-inserts it and puts the status, timestamp and `recurrenceSpawnedTaskID` back;
     /// - `.todo` and `.inProgress` insert nothing at all — `applyStatusCompletion` writes two
-    ///   fields and stops — so the undo is an ordinary `commitEdit` over exactly those two fields.
+    ///   fields and stops — so they go through `reopen`, the toggle's own restoring path, which
+    ///   also takes back an untouched successor ([[T-14824]]).
     ///
     /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     static func setStatus(
@@ -152,14 +148,58 @@ extension CadenceTaskMutationSupport {
                 applyStatusCompletion(status, to: task, modelContext: modelContext)
             }
         case .todo, .inProgress:
-            let previousStatus = task.status
-            let previousCompletedAt = task.completedAt
-            _ = applyStatusCompletion(status, to: task, modelContext: modelContext)
-            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
-                task.status = previousStatus
-                task.completedAt = previousCompletedAt
-            }
+            try reopen(task, as: status, modelContext: modelContext, commit: commit)
             (widgetEffects ?? .live).restoreTask(task.id)
+        }
+    }
+
+    /// The one reopen both doors above share: the toggle's restoring branch and `setStatus` to an
+    /// open status, so an untick and a status menu cannot disagree about the series.
+    ///
+    /// **[[T-14824]]: reopening a settled occurrence takes back the successor its settle spawned —
+    /// only while that successor is untouched.** Before this, the reopen wrote two fields and
+    /// stopped, so the successor stayed and the series had two open occurrences, and the
+    /// predecessor's `recurrenceSpawnedTaskID` kept pointing at it, so ticking again spawned
+    /// nothing. Now `CadenceTaskRecurrenceWorkflowSupport.untouchedSpawnedSuccessor` asks the fork
+    /// collapse's own gate whether the successor is still the spawn's copy; if it is, it is deleted
+    /// through `deleteTasks`, whose dangling-link repair clears the predecessor's pointer, so the
+    /// next tick spawns it afresh. A successor that has been edited, ticked or worked on answers
+    /// `nil` there, and both rows and the link are left exactly as they were.
+    ///
+    /// **One pending change, one commit.** The delete is deferred (`commitsImmediately: false`) and
+    /// committed by `commitCascade`, which holds the status undo beside the delete's own survivor
+    /// undo, runs both before its `rollback()` on a refusal, and releases the successor's reminder
+    /// cancellation only once the commit lands. So a refused reopen leaves the occurrence settled,
+    /// its successor present and the link intact — the state the user was looking at.
+    ///
+    /// Only a *finished* task has a successor to take back; reopening an open one (in progress to
+    /// to-do) is the plain two-field edit it always was. The widget publish stays with the two
+    /// callers, after this returns, so it still runs only on a reopen that committed.
+    private static func reopen(
+        _ task: AppTask,
+        as status: TaskStatus,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void
+    ) throws {
+        let previousStatus = task.status
+        let previousCompletedAt = task.completedAt
+        let successor = CadenceTaskQuerySupport.isFinishedTask(task)
+            ? CadenceTaskRecurrenceWorkflowSupport.untouchedSpawnedSuccessor(of: task, in: modelContext)
+            : nil
+        _ = applyStatusCompletion(status, to: task, modelContext: modelContext)
+        let restore = {
+            task.status = previousStatus
+            task.completedAt = previousCompletedAt
+        }
+        if let successor {
+            let successorID = successor.id
+            let effects = CadenceDeferredDeleteEffects()
+            effects.holdUndo(restore)
+            try CadencePendingChangePersistence.commitCascade(in: modelContext, commit: commit, effects: effects) {
+                deleteTasks(withIDs: [successorID], modelContext: modelContext, commitsImmediately: false)
+            }
+        } else {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit, undo: restore)
         }
     }
 

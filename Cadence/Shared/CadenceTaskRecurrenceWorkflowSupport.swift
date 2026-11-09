@@ -346,8 +346,74 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
     /// rewritten subtask. `bundleOrder` is only meaningful inside a bundle, and `bundle == nil` is
     /// already required below.
     private static func isUntouchedClone(_ task: AppTask, of survivor: AppTask) -> Bool {
-        spawnDefaultsAreUntouched(task)
-            && spawnCopiedFields(of: task) == spawnCopiedFields(of: survivor)
+        isUntouchedClone(task, matching: spawnCopiedFields(of: survivor))
+    }
+
+    /// The same test against the copied fields a row is *expected* to carry, rather than a
+    /// sibling's: the fork collapse compares two forks, and [[T-14824]]'s reopen compares a
+    /// successor with what its predecessor's spawn would have written. One gate, two references.
+    private static func isUntouchedClone(_ task: AppTask, matching expected: SpawnCopiedFields) -> Bool {
+        spawnDefaultsAreUntouched(task) && spawnCopiedFields(of: task) == expected
+    }
+
+    // MARK: - Reopening a settled occurrence ([[T-14824]])
+
+    /// The successor `task`'s settle spawned, when reopening `task` may take it back: it is still
+    /// exactly the copy the spawn made, so nobody has done anything to it.
+    ///
+    /// **Why reopening takes it back at all (keeper call, 2026-11-09).** Unticking is almost
+    /// always correcting an accidental or premature tick, and leaving the successor gave the series
+    /// two open occurrences — today's, reopened, beside tomorrow's copy. Dropping the successor and
+    /// clearing `recurrenceSpawnedTaskID` puts the series back as it was before the tick, so the
+    /// next tick spawns it afresh.
+    ///
+    /// **Strict in the same direction as the fork collapse**, through the same gate
+    /// (`isUntouchedClone`): open, never settled, no time, no focus session, no event, no bundle,
+    /// no successor of its own, no ticked subtask, and every field the spawn copies equal to what
+    /// the spawn would have copied. A successor the user has edited, ticked or worked on answers
+    /// `nil`, and the caller leaves both rows and the link alone — a visible second occurrence is
+    /// the side the user can fix; a deleted edit is not.
+    ///
+    /// **The expected dates are recomputed at the spawn's own `now`.** `markDone` and
+    /// `markCancelled` stamp `completedAt` with the very `now` they hand
+    /// `spawnNextOccurrenceIfNeeded`, so planning again from `completedAt` reproduces the dates the
+    /// spawn wrote, including a late completion's catch-up. A `completedAt` that has since been
+    /// changed, or a successor someone rescheduled, fails the comparison and is kept.
+    ///
+    /// Also `nil` unless exactly one row carries the successor's id: `deleteTasks(withIDs:)`
+    /// removes every row with an id, and two rows sharing one (T-6451) are not both this copy.
+    static func untouchedSpawnedSuccessor(of task: AppTask, in context: ModelContext) -> AppTask? {
+        guard task.isRecurring,
+              let successorID = task.recurrenceSpawnedTaskID,
+              let spawnedAt = task.completedAt
+        else { return nil }
+        let descriptor = FetchDescriptor<AppTask>(predicate: #Predicate<AppTask> { $0.id == successorID })
+        guard let matches = try? context.fetch(descriptor), matches.count == 1, let successor = matches.first
+        else { return nil }
+        let dates = plannedNextDates(for: task, in: context, now: spawnedAt)
+        guard isUntouchedClone(successor, matching: spawnedSuccessorFields(of: task, dates: dates))
+        else { return nil }
+        return successor
+    }
+
+    /// The copied fields `makeNextRecurringTask` writes on a successor of `task` carrying `dates`.
+    ///
+    /// Derived from `spawnCopiedFields(of: task)` so every field the spawn copies verbatim is
+    /// verbatim here by construction; only the ones the spawn *transforms* are re-spelled, each
+    /// beside the line it mirrors. A change to one of those lines in `makeNextRecurringTask` that is
+    /// not made here turns every successor into a "touched" one and the reopen keeps it — the safe
+    /// failure — and `CadenceRecurringReopenSuccessorTests` reds on it.
+    private static func spawnedSuccessorFields(of task: AppTask, dates: PlannedRecurrenceDates) -> SpawnCopiedFields {
+        var fields = spawnCopiedFields(of: task)
+        fields.estimatedMinutes = task.estimatedMinutes > 0 ? task.timelineDurationMinutes : 0
+        fields.recurrenceSeriesIDRaw = task.recurrenceSeriesID.uuidString
+        fields.recurrenceSourceTaskIDRaw = task.id.uuidString
+        fields.recurrenceOccurrenceIndex = task.recurrenceOccurrenceIndex + 1
+        fields.dueDate = dates.dueDate
+        fields.scheduledDate = dates.scheduledDate
+        // `AppTask.scheduledStartMin`'s default, "-1 = not scheduled", when the spawn sets no date.
+        fields.scheduledStartMin = dates.scheduledDate.isEmpty ? -1 : task.scheduledStartMin
+        return fields
     }
 
     /// The fields `makeNextRecurringTask` never writes, so the spawn left each at `AppTask`'s own
@@ -402,27 +468,27 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
     }
 
     private struct SpawnCopiedFields: Equatable {
-        let title: String
-        let notes: String
-        let priorityRaw: String
-        let recurrenceRaw: String
-        let recurrenceEndModeRaw: String
-        let recurrenceEndDate: String
-        let recurrenceEndCount: Int
-        let estimatedMinutes: Int
-        let sectionName: String
-        let areaID: UUID?
-        let projectID: UUID?
-        let contextID: UUID?
-        let goalID: UUID?
-        let tagIDs: [UUID]
-        let recurrenceSeriesIDRaw: String
-        let recurrenceSourceTaskIDRaw: String
-        let recurrenceOccurrenceIndex: Int
-        let dueDate: String
-        let scheduledDate: String
-        let scheduledStartMin: Int
-        let subtasks: [CopiedSubtask]
+        var title: String
+        var notes: String
+        var priorityRaw: String
+        var recurrenceRaw: String
+        var recurrenceEndModeRaw: String
+        var recurrenceEndDate: String
+        var recurrenceEndCount: Int
+        var estimatedMinutes: Int
+        var sectionName: String
+        var areaID: UUID?
+        var projectID: UUID?
+        var contextID: UUID?
+        var goalID: UUID?
+        var tagIDs: [UUID]
+        var recurrenceSeriesIDRaw: String
+        var recurrenceSourceTaskIDRaw: String
+        var recurrenceOccurrenceIndex: Int
+        var dueDate: String
+        var scheduledDate: String
+        var scheduledStartMin: Int
+        var subtasks: [CopiedSubtask]
     }
 
     static func ensureRecurrenceSeriesMetadata(for task: AppTask) {
