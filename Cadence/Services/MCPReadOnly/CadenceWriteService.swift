@@ -552,6 +552,7 @@ private struct CadenceMCPTaskFieldSnapshot {
     private let scheduledStartMin: Int
     private let estimatedMinutes: Int
     private let sectionName: String
+    private let order: Int
     private let recurrenceSeriesIDRaw: String
     private let recurrenceSpawnedTaskIDRaw: String
     private let area: Area?
@@ -571,6 +572,7 @@ private struct CadenceMCPTaskFieldSnapshot {
         scheduledStartMin = task.scheduledStartMin
         estimatedMinutes = task.estimatedMinutes
         sectionName = task.sectionName
+        order = task.order
         recurrenceSeriesIDRaw = task.recurrenceSeriesIDRaw
         recurrenceSpawnedTaskIDRaw = task.recurrenceSpawnedTaskIDRaw
         area = task.area
@@ -590,6 +592,7 @@ private struct CadenceMCPTaskFieldSnapshot {
         task.scheduledStartMin = scheduledStartMin
         task.estimatedMinutes = estimatedMinutes
         task.sectionName = sectionName
+        task.order = order
         task.recurrenceSeriesIDRaw = recurrenceSeriesIDRaw
         task.recurrenceSpawnedTaskIDRaw = recurrenceSpawnedTaskIDRaw
         task.area = area
@@ -1528,6 +1531,10 @@ final class CadenceWriteService {
         task.estimatedMinutes = estimatedMinutes
         task.sectionName = sectionName
         apply(container: container, to: task)
+        // [[T-14841]]: last in its own list, the order every in-app path gives a new task since
+        // [[T-14522]]. Left at the model default `0`, an agent's task sorted second under Custom
+        // order in any list that had ever been dragged into place.
+        task.order = try nextContainerOrder(excluding: task, in: container)
         task.tags = tagResolution.tags
 
         context.insert(task)
@@ -1591,6 +1598,16 @@ final class CadenceWriteService {
         // Same reason as createTask: the throw has to happen while the task is still untouched.
         let tagResolution = try options.tagNames.map { try resolvedTags(named: $0) }
 
+        // [[T-14842]]: a different list is a move, and a move is placed the way the app's own
+        // `CadenceTaskMutationSupport.assignContainer` places one -- last among its new siblings,
+        // under a section that list has. Read before `apply` rewrites the relationships; naming
+        // the list the task is already in is not a move and leaves both alone.
+        let isContainerChange = (options.clearContainer || container != nil)
+            && !Self.isSameContainer(currentContainer(for: task), finalContainer)
+        let arrivalOrder = isContainerChange
+            ? try nextContainerOrder(excluding: task, in: finalContainer)
+            : nil
+
         let snapshot = CadenceMCPTaskFieldSnapshot(task)
         if let title { task.title = title }
         if let notes = options.notes { task.notes = notes }
@@ -1606,10 +1623,13 @@ final class CadenceWriteService {
         } else if let container {
             apply(container: container, to: task)
         }
+        if let arrivalOrder { task.order = arrivalOrder }
         if let sectionName {
             task.sectionName = sectionName
         } else if options.clearContainer {
             task.sectionName = TaskSectionDefaults.defaultName
+        } else if isContainerChange {
+            task.sectionName = Self.arrivingSectionName(task.resolvedSectionName, in: finalContainer)
         }
         if let tagResolution {
             task.tags = tagResolution.tags
@@ -2215,6 +2235,43 @@ final class CadenceWriteService {
         default:
             throw CadenceReadError.incompleteContainerFilter
         }
+    }
+
+    /// The next `order` in `container`'s own list (the Inbox when `nil`): the max over that list's
+    /// other tasks plus one ([[T-14841]], [[T-14842]]). The rule is
+    /// `CadenceTaskMutationSupport.nextContainerOrder`'s, re-spelled here because that file cannot
+    /// join this target (see `createTask`).
+    private func nextContainerOrder(excluding task: AppTask, in container: CadenceResolvedContainer?) throws -> Int {
+        let siblings = try fetchTasks().filter { candidate in
+            guard candidate.id != task.id else { return false }
+            switch container {
+            case .area(let area): return candidate.area?.id == area.id
+            case .project(let project): return candidate.project?.id == project.id
+            case nil: return candidate.area == nil && candidate.project == nil
+            }
+        }
+        return CadenceOrderAllocation.nextOrder(after: siblings, order: \.order)
+    }
+
+    private static func isSameContainer(_ lhs: CadenceResolvedContainer?, _ rhs: CadenceResolvedContainer?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil): return true
+        case (.area(let a), .area(let b)): return a.id == b.id
+        case (.project(let a), .project(let b)): return a.id == b.id
+        default: return false
+        }
+    }
+
+    /// The section a task moved without a `sectionName` files under in its new list: its own when
+    /// that list has one by that name (case-insensitively, in the list's spelling), else the list's
+    /// first -- `CadenceTaskMutationSupport.normalizedSectionName`'s rule, which the app's moves
+    /// apply ([[T-8061]]).
+    private static func arrivingSectionName(_ current: String, in container: CadenceResolvedContainer?) -> String {
+        let names = container?.sectionNames ?? [TaskSectionDefaults.defaultName]
+        if let match = names.first(where: { $0.caseInsensitiveCompare(current) == .orderedSame }) {
+            return match
+        }
+        return names.first ?? TaskSectionDefaults.defaultName
     }
 
     private func currentContainer(for task: AppTask) -> CadenceResolvedContainer? {

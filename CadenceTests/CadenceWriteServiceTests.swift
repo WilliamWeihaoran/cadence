@@ -2490,6 +2490,143 @@ struct CadenceWriteServiceTests {
         let summary: String
     }
 
+    // MARK: - T-14841 / T-14842: an MCP-made or MCP-moved task lands last in its list
+
+    /// [[T-14841]]. `create_task` wrote no `order`, so every task an agent made kept the default
+    /// `0` and, once the list had been dragged into place (`0...n-1`), sorted SECOND under Custom
+    /// order -- the defect [[T-14522]] fixed for every in-app path and this surface kept.
+    @Test func createTaskLandsLastInItsOwnListUnderCustomOrder() throws {
+        let fixture = try Fixture()
+        var existing: [AppTask] = []
+        for (index, title) in ["First", "Second", "Third"].enumerated() {
+            let task = AppTask(title: title)
+            task.project = fixture.project
+            task.order = index
+            fixture.modelContext.insert(task)
+            existing.append(task)
+        }
+        // Another list's high order must not leak into this one's allocation.
+        let inboxTask = AppTask(title: "Inbox row")
+        inboxTask.order = 40
+        fixture.modelContext.insert(inboxTask)
+        try fixture.modelContext.save()
+
+        let detail = try fixture.writeService.createTask(options: .init(
+            title: "Made by an agent",
+            containerKind: "project",
+            containerId: fixture.project.id.uuidString
+        ))
+
+        let created = try #require(
+            try fixture.modelContext.fetch(FetchDescriptor<AppTask>()).first { $0.id.uuidString == detail.summary.id }
+        )
+        #expect(created.order == 3)
+        let sorted = (existing + [created]).sorted(by: TaskOrdering.fallbackPrecedes)
+        #expect(sorted.last?.id == created.id)
+    }
+
+    /// [[T-14842]]. `update_task` with a new `containerId` rewrote the relationships and kept the
+    /// task's `order` and `sectionName` from the list it left, so it landed wherever that number
+    /// fell among strangers and kept a section the new list may not have -- where the app's own
+    /// move (`CadenceTaskMutationSupport.assignContainer`) sends it last and refiles the section.
+    @Test func updateTaskMovingToAnotherListPlacesItLastAndTakesASectionThatListHas() throws {
+        let fixture = try Fixture()
+        let area = Area(name: "Home", context: fixture.context)
+        area.sectionNames = [TaskSectionDefaults.defaultName, "Doing"]
+        fixture.modelContext.insert(area)
+        for index in 0..<3 {
+            let sibling = AppTask(title: "Sibling \(index)")
+            sibling.project = fixture.project
+            sibling.order = index
+            fixture.modelContext.insert(sibling)
+        }
+        let moving = AppTask(title: "Moving")
+        moving.area = area
+        moving.sectionName = "Doing"
+        moving.order = 0
+        let matching = AppTask(title: "Matching section")
+        matching.area = area
+        matching.sectionName = "build"
+        matching.order = 1
+        fixture.modelContext.insert(moving)
+        fixture.modelContext.insert(matching)
+        try fixture.modelContext.save()
+
+        _ = try fixture.writeService.updateTask(options: .init(
+            taskId: moving.id.uuidString,
+            containerKind: "project",
+            containerId: fixture.project.id.uuidString
+        ))
+        #expect(moving.order == 3)
+        #expect(moving.sectionName == TaskSectionDefaults.defaultName)
+
+        _ = try fixture.writeService.updateTask(options: .init(
+            taskId: matching.id.uuidString,
+            containerKind: "project",
+            containerId: fixture.project.id.uuidString
+        ))
+        #expect(matching.order == 4)
+        #expect(matching.sectionName == "Build")
+    }
+
+    /// The move now writes `order`, so a refused commit has to put `order` back too -- or the task
+    /// returns to its old list at the tail number it was given in the new one.
+    @Test func aRefusedMovePutsTheOrderAndSectionBack() throws {
+        let fixture = try Fixture()
+        let sibling = AppTask(title: "Sibling")
+        sibling.project = fixture.project
+        sibling.order = 7
+        let moving = AppTask(title: "Moving")
+        moving.sectionName = TaskSectionDefaults.defaultName
+        moving.order = 2
+        fixture.modelContext.insert(sibling)
+        fixture.modelContext.insert(moving)
+        try fixture.modelContext.save()
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.updateTask(options: .init(
+                taskId: moving.id.uuidString,
+                containerKind: "project",
+                containerId: fixture.project.id.uuidString
+            ))
+        }
+
+        #expect(moving.project == nil)
+        #expect(moving.order == 2)
+        #expect(moving.sectionName == TaskSectionDefaults.defaultName)
+    }
+
+    /// Re-asserting the list a task is already in is not a move, exactly as `assignContainer`
+    /// reads it: the task keeps its place and its section.
+    @Test func updateTaskNamingTheCurrentListLeavesItsPlaceAlone() throws {
+        let fixture = try Fixture()
+        let task = AppTask(title: "Stays put")
+        task.project = fixture.project
+        task.sectionName = "Build"
+        task.order = 0
+        let below = AppTask(title: "Below")
+        below.project = fixture.project
+        below.order = 1
+        fixture.modelContext.insert(task)
+        fixture.modelContext.insert(below)
+        try fixture.modelContext.save()
+
+        _ = try fixture.writeService.updateTask(options: .init(
+            taskId: task.id.uuidString,
+            title: "Stays put, renamed",
+            containerKind: "project",
+            containerId: fixture.project.id.uuidString
+        ))
+
+        #expect(task.order == 0)
+        #expect(task.sectionName == "Build")
+    }
+
     @MainActor
     private final class Fixture {
         let container: ModelContainer
