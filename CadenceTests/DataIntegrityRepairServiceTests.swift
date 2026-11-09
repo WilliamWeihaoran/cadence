@@ -433,7 +433,8 @@ struct DataIntegrityRepairServiceTests {
         #expect(referrerContent.contains(unrelatedReference))
         #expect(referrerContent.contains("[[\(winnerID.uuidString)]]"))
         let linked = NoteReferenceResolver.linkedNotes(noteID: referrer.id, content: referrerContent, in: notes)
-        #expect(linked.map(\.id) == [winnerID, unrelated.id, winnerID])
+        // Both rewritten references resolve to the winner; the panel lists it once (T-14641).
+        #expect(linked.map(\.id) == [winnerID, unrelated.id])
         #expect(task.notes == "From [[note:\(winnerID.uuidString)|Old Day Label]]")
         #expect(legacy.content == "Legacy [[note:\(winnerID.uuidString)|Old Day Label]]")
     }
