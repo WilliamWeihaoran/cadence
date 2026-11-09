@@ -46,7 +46,8 @@ struct iOSListEditorSheet: View {
     @State private var selectedContextID = "none"
     @State private var selectedAreaID = "none"
     @State private var createsProject = false
-    @State private var sectionDrafts: [CadenceSectionDraft] = [CadenceSectionDraft(name: TaskSectionDefaults.defaultName)]
+    // [[T-14501]]: the seed IS the Default column, so create mode draws it read-only (T-5835).
+    @State private var sectionDrafts: [CadenceSectionDraft] = [CadenceSectionDraft.defaultColumnSeed()]
     @State private var originalSectionConfigs: [TaskSectionConfig] = []
     @State private var hideEmptyDueDates = true
     /// The list's `hideSectionDueDateIfEmpty`. iOS could set a *column's* due date and had no say

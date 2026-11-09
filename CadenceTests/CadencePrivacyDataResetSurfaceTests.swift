@@ -376,6 +376,29 @@ struct CadencePrivacyDataResetSurfaceTests {
         )
     }
 
+    /// **[[T-14502]]: the "Other Cadence Data Folders" list re-reads after the reset empties it.**
+    ///
+    /// The reset deletes the recovery and earlier-store folders' contents
+    /// (`StoreBackupManager.deleteUnusedStoreFoldersForDataReset()`), and its own copy says they
+    /// are "listed further down this page" ([[T-1841]]). The section loaded only `.onAppear`, so
+    /// after a reset it kept listing the emptied folders until the page was left; the Mac pane
+    /// re-reads them in `refreshBackups()`. The same two links as the backup list above: the page
+    /// hands it the generation, and it re-reads when that changes.
+    @Test func theIOSUnusedStoreFolderListRereadsAfterTheResetEmptiesIt() throws {
+        let page = try strippingComments(sourceFile("Cadence/iOS/iOSSettingsView.swift"))
+        #expect(
+            matchCount(#"iOSUnmanagedStoreSettingsSection\(\s*resetGeneration:\s*dataResetGeneration\s*\)"#, in: page) == 1,
+            "the unused-store-folder section is no longer handed the reset generation (T-14502)"
+        )
+
+        let folders = try strippingComments(sourceFile("Cadence/iOS/iOSUnmanagedStoreSettingsSection.swift"))
+        #expect(folders.contains("struct iOSUnmanagedStoreSettingsSection"), "non-vacuity: wrong file")
+        #expect(
+            matchCount(#"\.onChange\(of:\s*resetGeneration\)\s*\{[^}]*\brefresh\(\)"#, in: folders) == 1,
+            "the unused-store-folder section no longer re-reads its list when a reset finishes (T-14502)"
+        )
+    }
+
     private func matchCount(_ pattern: String, in text: String) -> Int {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return -1 }
         return regex.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text))

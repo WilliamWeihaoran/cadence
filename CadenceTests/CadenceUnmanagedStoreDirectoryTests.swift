@@ -675,7 +675,7 @@ struct CadenceUnmanagedStoreDirectoryTests {
             "the iOS Data Safety page no longer presents the reset at all"
         )
         let listAt = try #require(
-            dataSafety.range(of: "iOSUnmanagedStoreSettingsSection()"),
+            dataSafety.range(of: "iOSUnmanagedStoreSettingsSection("),  // takes `resetGeneration` since T-14502
             "the iOS Data Safety page does not list the store folders the reset says it leaves (T-1841)"
         )
         #expect(

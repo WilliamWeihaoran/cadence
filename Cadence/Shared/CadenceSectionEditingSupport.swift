@@ -42,6 +42,17 @@ struct CadenceSectionDraft: Identifiable, Hashable {
         originalName = nil
     }
 
+    /// **The Default column a list's editor starts with when it has no columns yet ([[T-14501]]).**
+    ///
+    /// Built from a config, so it carries `originalName` and reads as `isDefaultColumn`. Seeding
+    /// with `init(name:)` made it an *added* column: the iOS New List editor drew its name as a
+    /// field, offered a colour and let it be swiped away, and a rename to "Backlog" saved a list
+    /// with two columns, because `normalizedSectionConfigs` found no Default and inserted one.
+    /// That is [[T-5835]]'s bug, which its fix closed only for a list that already existed.
+    static func defaultColumnSeed() -> CadenceSectionDraft {
+        CadenceSectionDraft(config: TaskSectionConfig(name: TaskSectionDefaults.defaultName))
+    }
+
     /// Whether this draft is the list's existing **Default** column, which cannot be renamed or
     /// removed (T-5835) — the Mac's column popover says so and shows no name field for it.
     ///
@@ -135,7 +146,7 @@ enum CadenceSectionEditingSupport {
 
     static func drafts(from configs: [TaskSectionConfig]) -> [CadenceSectionDraft] {
         let drafts = configs.map { CadenceSectionDraft(config: $0) }
-        return drafts.isEmpty ? [CadenceSectionDraft(name: TaskSectionDefaults.defaultName)] : drafts
+        return drafts.isEmpty ? [CadenceSectionDraft.defaultColumnSeed()] : drafts
     }
 
     /// Drafts with an empty name are dropped rather than saved as an unnameable column, matching

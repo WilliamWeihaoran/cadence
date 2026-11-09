@@ -34,6 +34,13 @@ import SwiftUI
 /// One view for both size classes, like every other section on this screen: iPhone and iPad differ
 /// in the width this is handed, not in how a card or a row inside it looks.
 struct iOSUnmanagedStoreSettingsSection: View {
+    /// [[T-14502]]: `iOSSettingsView`'s count of finished "Delete Account & Data" runs, as
+    /// `iOSStoreBackupSettingsSection` is handed ([[T-5807]]). The reset empties the folders this
+    /// lists and the page stays on screen through it, so a change here re-reads them; without it
+    /// the emptied folders stayed listed until the page was left. The Mac re-reads the same list
+    /// in `SettingsDataSafetySection.refreshBackups()`.
+    let resetGeneration: Int
+
     @State private var directories: [UnmanagedStoreDirectory] = []
 
     var body: some View {
@@ -62,6 +69,9 @@ struct iOSUnmanagedStoreSettingsSection: View {
             }
         }
         .onAppear(perform: refresh)
+        .onChange(of: resetGeneration) { _, _ in
+            refresh()
+        }
     }
 
     /// The two shared claims, then the one sentence that is this platform's own. See the type

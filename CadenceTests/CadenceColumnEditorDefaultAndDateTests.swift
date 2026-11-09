@@ -36,6 +36,42 @@ struct CadenceColumnEditorDefaultAndDateTests {
         #expect(!CadenceSectionDraft(name: TaskSectionDefaults.defaultName).isDefaultColumn)
     }
 
+    // MARK: - T-14501, the column a new list starts with
+
+    /// The New List editor's seed column is the Default column, so every T-5835 guard holds in
+    /// create mode too; and a rename typed into it cannot make a second column, because the saved
+    /// configs still hold exactly one Default and nothing else.
+    @Test func theSeedColumnOfANewListIsTheDefaultColumn() {
+        let seed = CadenceSectionDraft.defaultColumnSeed()
+        #expect(seed.isDefaultColumn)
+        #expect(seed.name == TaskSectionDefaults.defaultName)
+        #expect(!CadenceSectionEditingSupport.deletionNeedsConfirmation(seed), "Default is never offered for deletion")
+
+        // A list with no stored columns opens on the same seed.
+        let opened = CadenceSectionEditingSupport.drafts(from: [])
+        #expect(opened.count == 1)
+        #expect(opened.first?.isDefaultColumn == true)
+
+        // Two seeds are two columns, not one shared identity.
+        #expect(CadenceSectionDraft.defaultColumnSeed().id != seed.id)
+    }
+
+    /// The iOS editor's `sectionDrafts` starts from that seed, not from an added-column draft.
+    @Test func iOSNewListEditorSeedsTheDefaultColumn() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListEditorViews.swift")
+        )
+        let declaration = try #require(
+            source.range(of: "@State private var sectionDrafts: [CadenceSectionDraft] = "),
+            "non-vacuity: the editor no longer declares its column drafts this way"
+        )
+        let line = source[declaration.upperBound...].prefix { $0 != "\n" }
+        #expect(
+            line.trimmingCharacters(in: .whitespaces) == "[CadenceSectionDraft.defaultColumnSeed()]",
+            "the New List editor seeds a column that is not the Default column (T-14501)"
+        )
+    }
+
     // MARK: - T-5835, the iOS row
 
     @Test func iOSDefaultRowHasNoNameFieldAndCannotBeDeleted() throws {

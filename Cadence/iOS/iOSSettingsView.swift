@@ -320,7 +320,7 @@ struct iOSSettingsView: View {
             // screen (T-1841). It draws nothing when there is nothing to list, which on a healthy
             // launch is every time — a recovery store only exists if a launch could not open the
             // main one.
-            iOSUnmanagedStoreSettingsSection()
+            iOSUnmanagedStoreSettingsSection(resetGeneration: dataResetGeneration)
         }
     }
 
