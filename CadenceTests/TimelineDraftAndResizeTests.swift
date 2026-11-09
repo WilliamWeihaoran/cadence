@@ -468,5 +468,90 @@ struct TimelineDraftAndResizeTests {
         #expect(collapsedStart.start == 595)
         #expect(collapsedStart.end == 600)
     }
+
+    // MARK: - [[T-14031]] A resize never leaves the canvas's day
+
+    @Test func aStartHandleGrabbedOffItsEdgeAndDraggedToTheTopStopsAtMidnight() {
+        // A 1:00-2:00 block at hourHeight 60. Grabbed 6 pt into its 8 pt start strip, the pointer
+        // reads 1:05, so the grab offset is +5 minutes. The pointer minute clamps at 0 when the
+        // drag reaches the top of the canvas; subtracting the offset after that clamp wrote -5,
+        // the "no time" sentinel for a task and an unwritable start for an event.
+        let style = TimelineBlockStyle.schedule
+        let topY = metrics.yOffset(for: 60)
+        let drawnHeight = metrics.height(for: 60, minHeight: style.minHeight)
+        let session = TimelineResizeSession.begin(
+            edge: .start,
+            localY: 6,
+            blockTopY: topY,
+            blockDrawnHeight: drawnHeight,
+            originStartMin: 60,
+            originEndMin: 120,
+            metrics: metrics
+        )
+        #expect(session.grabMinuteOffset > 0)   // the offset this regression needs is present
+
+        let range = metrics.resizedRange(
+            session: session,
+            localY: -400,
+            blockTopY: topY,
+            blockDrawnHeight: drawnHeight
+        )
+
+        #expect(range.start == 0)
+        #expect(range.end == 120)
+    }
+
+    @Test func anEndHandleGrabbedOffItsEdgeAndDraggedToTheBottomStopsAtMidnight() {
+        // A 22:00-23:00 block. Grabbed at the top of its end strip, the pointer reads 22:50, so
+        // the grab offset is -10 minutes; dragged past the bottom of the canvas, the old range
+        // ended at 24:05 -- five minutes into tomorrow, written into Apple Calendar for an event.
+        let style = TimelineBlockStyle.schedule
+        let topY = metrics.yOffset(for: 1320)
+        let drawnHeight = metrics.height(for: 60, minHeight: style.minHeight)
+        let session = TimelineResizeSession.begin(
+            edge: .end,
+            localY: 0,
+            blockTopY: topY,
+            blockDrawnHeight: drawnHeight,
+            originStartMin: 1320,
+            originEndMin: 1380,
+            metrics: metrics
+        )
+        #expect(session.grabMinuteOffset < 0)
+
+        let range = metrics.resizedRange(
+            session: session,
+            localY: 400,
+            blockTopY: topY,
+            blockDrawnHeight: drawnHeight
+        )
+
+        #expect(range.start == 1320)
+        #expect(range.end == 24 * 60)
+    }
+
+    @Test func aResizeOnACanvasThatStartsAtEightStopsAtEight() {
+        // The bounds are the canvas's own hours, the ones `yToMins` already clamps the pointer to.
+        let eightAm = TimelineMetrics(startHour: 8, endHour: 20, hourHeight: 60)
+        let topY = eightAm.yOffset(for: 9 * 60)
+        let drawnHeight = eightAm.height(for: 60, minHeight: TimelineBlockStyle.schedule.minHeight)
+        let session = TimelineResizeSession.begin(
+            edge: .start,
+            localY: 6,
+            blockTopY: topY,
+            blockDrawnHeight: drawnHeight,
+            originStartMin: 9 * 60,
+            originEndMin: 10 * 60,
+            metrics: eightAm
+        )
+        let range = eightAm.resizedRange(
+            session: session,
+            localY: -400,
+            blockTopY: topY,
+            blockDrawnHeight: drawnHeight
+        )
+        #expect(range.start == 8 * 60)
+        #expect(range.end == 10 * 60)
+    }
 }
 #endif

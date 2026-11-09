@@ -261,6 +261,14 @@ extension TimelineMetrics {
     ///
     /// The un-dragged edge stays pinned to its origin and the dragged one follows the pointer,
     /// never crossing to within 5 minutes of the other.
+    ///
+    /// **The dragged edge also stays on the canvas's day ([[T-14031]]).** The pointer minute is
+    /// clamped to the canvas, but `grabMinuteOffset` is applied *after* that clamp, so a handle
+    /// grabbed a few points off its edge carried the offset past the day: dragging a start handle
+    /// to the top wrote `scheduledStartMin = -5` (a negative start is the "no time" sentinel, so
+    /// the task left the timeline) or a refused event write, and dragging an end handle to the
+    /// bottom wrote 00:05 tomorrow into Apple Calendar. The iOS edit clamps both edges to the day
+    /// in `CadenceTimelineBlockEdit.editedRange`; this is the same rule.
     func resizedRange(
         session: TimelineResizeSession,
         localY: CGFloat,
@@ -274,11 +282,15 @@ extension TimelineMetrics {
             blockDrawnHeight: blockDrawnHeight
         )
         let edgeMinute = pointerMinute - session.grabMinuteOffset
+        let dayStartMinute = startHour * 60
+        let dayEndMinute = endHour * 60
         switch session.edge {
         case .start:
-            return (min(edgeMinute, session.originEndMin - 5), session.originEndMin)
+            let latestStart = max(dayStartMinute, session.originEndMin - 5)
+            return (min(max(edgeMinute, dayStartMinute), latestStart), session.originEndMin)
         case .end:
-            return (session.originStartMin, max(edgeMinute, session.originStartMin + 5))
+            let earliestEnd = min(dayEndMinute, session.originStartMin + 5)
+            return (session.originStartMin, max(min(edgeMinute, dayEndMinute), earliestEnd))
         }
     }
 }
