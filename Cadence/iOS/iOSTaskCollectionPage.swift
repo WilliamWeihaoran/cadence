@@ -140,6 +140,7 @@ struct iOSTaskCollectionPage: View {
                     showsCompleted: $showCompleted,
                     collapsedGroupIDs: $collapsedGroupIDs,
                     metrics: metrics,
+                    todayKey: observedDay.todayKey,
                     // The empty state and this section are alternatives, not neighbours: "Inbox is
                     // clear" over a list of open reminders says the opposite of what the screen is
                     // showing. macOS spells the same rule as an extra clause on its `isEmpty`, and
@@ -268,6 +269,8 @@ struct iOSTaskCollectionSections: View {
     /// The page's folded groups ([[T-12191]]). See `iOSTaskGroupSection.collapsedGroupIDs`.
     @Binding var collapsedGroupIDs: Set<String>
     let metrics: iOSTaskCollectionMetrics
+    /// The page's observed day, for `iOSTaskRow.todayKey` ([[T-14341]]).
+    let todayKey: String
     /// Set when the host is drawing something else in this collection's place — today that is the
     /// Inbox's Apple Reminders section, which is not a task group and so cannot be counted by
     /// `isEmpty`, but is very much content. Without it a cleared Inbox with three open reminders
@@ -353,6 +356,7 @@ struct iOSTaskCollectionSections: View {
                     color: Theme.blue,
                     tasks: activeTasks,
                     showsContainer: showsContainer,
+                    todayKey: todayKey,
                     dropIdentity: collection.activeGroupIdentity,
                     collapsedGroupIDs: $collapsedGroupIDs
                 )
@@ -366,6 +370,7 @@ struct iOSTaskCollectionSections: View {
                             on: collection.surface,
                             groupedBy: groupingMode
                         ),
+                        todayKey: todayKey,
                         collapsedGroupIDs: $collapsedGroupIDs,
                         groupID: group.id
                     )
@@ -402,6 +407,7 @@ struct iOSTaskCollectionSections: View {
                     revealing: deepLinkManager.revealedCompletedTaskID
                 ),
                 showsContainer: showsContainer,
+                todayKey: todayKey,
                 accessibilityNoun: "the tasks you have finished",
                 isExpanded: $showsCompleted
             )

@@ -348,7 +348,7 @@ struct iOSListDetailView: View {
         case .links:
             iOSListLinksPanel(area: area, project: project)
         case .completed:
-            iOSListCompletedPanel(tasks: completedTasks)
+            iOSListCompletedPanel(tasks: completedTasks, todayKey: observedDay.todayKey)
         }
     }
 
@@ -553,6 +553,7 @@ struct iOSListDetailView: View {
                         tasks: group.tasks,
                         // Scoped to one list already — the chip would name the page you are on.
                         showsContainer: false,
+                        todayKey: observedDay.todayKey,
                         dropIdentity: dropIdentity(for: group),
                         collapsedGroupIDs: $collapsedGroupIDs,
                         groupID: group.id
@@ -572,6 +573,7 @@ struct iOSListDetailView: View {
                     tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks, tier: .touch),
                     // Scoped to one list already — the chip would name the page you are on.
                     showsContainer: false,
+                    todayKey: observedDay.todayKey,
                     accessibilityNoun: "the tasks you have finished",
                     isExpanded: $showCompleted
                 )

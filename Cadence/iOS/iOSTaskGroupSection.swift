@@ -102,6 +102,8 @@ struct iOSTaskGroupSection: View {
     /// `yyyy-MM-dd` down so no row on the page called Today draws a pill reading "Today". Every
     /// other surface leaves it `nil` and gets the full strip.
     var dayAlreadyStatedBySurface: String? = nil
+    /// The host's observed day, for `iOSTaskRow.todayKey` ([[T-14341]]).
+    let todayKey: String
     /// Completed groups are dimmed as a whole rather than row by row.
     var opacity: Double = 1
     /// See `iOSTaskGroupHeader.dropIdentity`. It also decides whether an *empty* group renders at
@@ -155,7 +157,8 @@ struct iOSTaskGroupSection: View {
                             iOSTaskRow(
                                 task: task,
                                 showsContainer: showsContainer,
-                                dayAlreadyStatedBySurface: dayAlreadyStatedBySurface
+                                dayAlreadyStatedBySurface: dayAlreadyStatedBySurface,
+                                todayKey: todayKey
                             )
                             .opacity(opacity)
                         }
@@ -217,6 +220,8 @@ struct iOSCompletedTasksSection: View {
     let showsContainer: Bool
     /// The surface's own `yyyy-MM-dd`, where it has one. See `iOSTaskRow.dayAlreadyStatedBySurface`.
     var dayAlreadyStatedBySurface: String? = nil
+    /// The host's observed day, for `iOSTaskRow.todayKey` ([[T-14341]]).
+    let todayKey: String
     /// What the accessibility hint calls these rows — "the tasks you finished today" on Today,
     /// "the tasks you have finished" on a page that is not scoped to a day. A hint that named the
     /// wrong span is the only thing a shared disclosure could get wrong per surface.
@@ -258,7 +263,8 @@ struct iOSCompletedTasksSection: View {
                 iOSTaskRow(
                     task: task,
                     showsContainer: showsContainer,
-                    dayAlreadyStatedBySurface: dayAlreadyStatedBySurface
+                    dayAlreadyStatedBySurface: dayAlreadyStatedBySurface,
+                    todayKey: todayKey
                 )
                 .opacity(0.62)
             }

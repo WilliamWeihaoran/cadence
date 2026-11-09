@@ -33,11 +33,12 @@ struct CadenceIOSCalendarObservedDayTests {
     @Test func thePageHandsItsObservedDayToEveryPresentation() throws {
         let source = try Self.code("iOSCalendarView.swift")
         let page = try #require(CadenceSourceScan.declarationBody("struct iOSCalendarView: View", in: source))
-        // Board, timeline grid, month grid, month stack and agenda: five presentations, one key.
-        #expect(CadenceSourceScan.matchCount(#"todayKey: observedDay\.todayKey"#, in: page) == 5)
+        // Board, timeline grid, month grid, month stack and agenda: five presentations, one key --
+        // plus the day inspector, whose task rows measure lateness against it ([[T-14341]]).
+        #expect(CadenceSourceScan.matchCount(#"todayKey: observedDay\.todayKey"#, in: page) == 6)
         for child in [
             "iOSCalendarBoardPlanner(", "iOSCalendarTimelineGrid(", "iOSCalendarMonthGrid(",
-            "iOSCalendarMonthStack(", "iOSCalendarMonthAgendaList(",
+            "iOSCalendarMonthStack(", "iOSCalendarMonthAgendaList(", "iOSCalendarDayInspector(",
         ] {
             #expect(page.contains(child), "non-vacuity: the page stopped drawing \(child)")
         }

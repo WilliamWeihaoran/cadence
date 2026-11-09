@@ -83,6 +83,51 @@ struct CadenceListPagesObservedDayTests {
         }
     }
 
+    /// **[[T-14341]] -- the touch row, which [[T-5012]] left reading the clock.** `iOSTaskRow`
+    /// measured its do-date emphasis and its due flag against `DateFormatters.todayKey()`, so on a
+    /// phone left on Inbox, All Tasks, a list or the Calendar overnight a task due "today" stayed
+    /// amber instead of turning red -- the row's inputs are the same on both sides of midnight.
+    /// It takes the day with no default now, as `MacTaskRow` does, and every host hands down the
+    /// observed day it already holds.
+    @Test func theTouchRowTakesTheDayWithNoDefaultAndEveryHostHandsItsObservedDay() throws {
+        let views = try Self.code("Cadence/iOS/iOSTaskViews.swift")
+        let row = try #require(CadenceSourceScan.declarationBody("struct iOSTaskRow: View", in: views))
+        #expect(row.contains("let todayKey: String"))
+        #expect(!row.contains("let todayKey: String ="))
+        #expect(!row.contains("DateFormatters.todayKey()"))
+        #expect(CadenceSourceScan.matchCount(#"CadenceTaskRowDoDateEmphasis\.emphasis\(for: task, todayKey: todayKey\)"#, in: row) == 1)
+        #expect(CadenceSourceScan.matchCount(#"CadenceDueUrgency\.evaluate\(dueDateKey: task\.dueDate, isDone: task\.isDone, todayKey: todayKey\)"#, in: row) == 1)
+        let listRow = try #require(CadenceSourceScan.declarationBody("struct iOSTaskListRow: View", in: views))
+        #expect(listRow.contains("let todayKey: String"))
+        #expect(listRow.contains("todayKey: todayKey)"))
+
+        // The two group components take the key and hand it to every row they draw.
+        let groups = try Self.code("Cadence/iOS/iOSTaskGroupSection.swift")
+        for name in ["struct iOSTaskGroupSection: View", "struct iOSCompletedTasksSection: View"] {
+            let group = try #require(CadenceSourceScan.declarationBody(name, in: groups), "\(name)")
+            #expect(group.contains("let todayKey: String"), "\(name)")
+            #expect(group.contains("todayKey: todayKey\n"), "\(name)")
+        }
+
+        // Every host hands down its observed day, never the clock -- one argument per section or
+        // row it builds.
+        let hosts: [(path: String, needle: String, count: Int)] = [
+            ("Cadence/iOS/iOSTaskCollectionPage.swift", "todayKey: observedDay.todayKey,\n", 2),
+            ("Cadence/iOS/iOSTaskCollectionPage.swift", "todayKey: todayKey,\n", 3),
+            ("Cadence/iOS/iOSListDetailView.swift", "todayKey: observedDay.todayKey", 4),
+            ("Cadence/iOS/iOSListSupportViews.swift", "showsContainer: false, todayKey: todayKey)", 1),
+            ("Cadence/iOS/iOSTodayTaskSections.swift", "dayAlreadyStatedBySurface: todayKey,\n                    todayKey: todayKey,", 1),
+            ("Cadence/iOS/iOSTodayTaskSections.swift", "dayAlreadyStatedBySurface: todayKey,\n                todayKey: todayKey,", 1),
+            ("Cadence/iOS/iOSCalendarInspectorView.swift", "todayKey: todayKey)", 3),
+            ("Cadence/iOS/iOSCalendarView.swift", "dueOnlyTasks: selectedDueOnlyTasks,\n            todayKey: observedDay.todayKey,", 1),
+            ("Cadence/iOS/iOSCalendarMonthAgendaViews.swift", "dayAlreadyStatedBySurface: dayKey, todayKey: todayKey)", 1),
+        ]
+        for host in hosts {
+            let source = try Self.code(host.path)
+            #expect(source.components(separatedBy: host.needle).count - 1 == host.count, "\(host.path): \(host.needle)")
+        }
+    }
+
     @Test func theKanbanCardHandsTheDayToItsChips() throws {
         let source = try Self.code("Cadence/macOS/Views/KanbanCardView.swift")
         let card = try #require(CadenceSourceScan.declarationBody("struct KanbanCard: View", in: source))

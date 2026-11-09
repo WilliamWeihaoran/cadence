@@ -321,7 +321,7 @@ struct iOSCalendarMonthAgendaList: View {
             .buttonStyle(.iosPressable)
 
         case .task(let task):
-            iOSTaskRow(task: task, dayAlreadyStatedBySurface: dayKey)
+            iOSTaskRow(task: task, dayAlreadyStatedBySurface: dayKey, todayKey: todayKey)
         }
     }
 

@@ -224,6 +224,7 @@ struct iOSTodayTaskSections: View {
                     tasks: group.tasks,
                     showsContainer: false,
                     dayAlreadyStatedBySurface: todayKey,
+                    todayKey: todayKey,
                     dropIdentity: group.dropIdentity,
                     collapsedGroupIDs: $collapsedGroupIDs,
                     groupID: group.id
@@ -252,6 +253,7 @@ struct iOSTodayTaskSections: View {
                 tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks, tier: .touch),
                 showsContainer: showsContainer,
                 dayAlreadyStatedBySurface: todayKey,
+                todayKey: todayKey,
                 accessibilityNoun: "the tasks you finished today",
                 isExpanded: $showsCompleted
             )

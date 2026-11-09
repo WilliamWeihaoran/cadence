@@ -27,6 +27,13 @@ struct iOSTaskRow: View {
     /// "Today hides the sun" would have taken it. See `CadenceBoardCardMetadata.repeatsSurfaceDay`,
     /// which both calendar boards and macOS's Today already ask.
     var dayAlreadyStatedBySurface: String? = nil
+    /// The day this row measures lateness against -- its page host's observed day ([[T-14341]]),
+    /// as `MacTaskRow.todayKey` has been since [[T-5012]]. **No default.** The row read the clock
+    /// for its do-date emphasis and its due flag, and nothing else it is handed changes at
+    /// midnight, so a phone left on Inbox, All Tasks or a list overnight kept yesterday's amber
+    /// "today" and never turned it red. Every host already installs `.cadenceTracksDayChanges`;
+    /// a host that forgets to hand the key down is a compile error, not a quiet clock read.
+    let todayKey: String
     @Environment(\.modelContext) private var modelContext
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
@@ -541,7 +548,7 @@ struct iOSTaskRow: View {
     /// grey: the keeper's call on [[T-12650]] took the card's direction for both rows, because a
     /// row and a card of the same task should agree and no input constraint split the platforms.
     private var doDateEmphasis: CadenceBoardCardChip.Emphasis {
-        CadenceTaskRowDoDateEmphasis.emphasis(for: task, todayKey: DateFormatters.todayKey())
+        CadenceTaskRowDoDateEmphasis.emphasis(for: task, todayKey: todayKey)
     }
 
     /// The note / checklist / tag glyphs this row draws after its title — the shared answer, asked
@@ -592,7 +599,7 @@ struct iOSTaskRow: View {
     /// plan decides *whether*, this decides *how*. `evaluate` returns `nil` only for an empty key,
     /// so the two agree on the one case they overlap.
     private var dueUrgency: CadenceDueUrgency? {
-        CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone)
+        CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone, todayKey: todayKey)
     }
 
     /// The circle's tap is the shared deferred completion ([[T-8203]]): it starts the 1.2s fill,
@@ -662,9 +669,11 @@ struct iOSTaskListRow: View {
     @Bindable var task: AppTask
     var opacity: Double = 1
     var showsContainer: Bool = true
+    /// The host's observed day, for `iOSTaskRow.todayKey` ([[T-14341]]).
+    let todayKey: String
 
     var body: some View {
-        iOSTaskRow(task: task, showsContainer: showsContainer)
+        iOSTaskRow(task: task, showsContainer: showsContainer, todayKey: todayKey)
             .opacity(opacity)
             .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
             .listRowSeparator(.hidden)

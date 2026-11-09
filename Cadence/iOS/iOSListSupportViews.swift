@@ -420,6 +420,8 @@ struct iOSArchivedListRow: View {
 /// draws over the same rows. That is a count, not the tab's name again.
 struct iOSListCompletedPanel: View {
     let tasks: [AppTask]
+    /// The list page's observed day, for `iOSTaskRow.todayKey` ([[T-14341]]).
+    let todayKey: String
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     /// Over the rows' completion circles: the row's list inset plus the row's own content padding.
@@ -447,7 +449,7 @@ struct iOSListCompletedPanel: View {
 
                     ForEach(tasks) { task in
                         // Scoped to one list already — see `iOSTaskRow.showsContainer`.
-                        iOSTaskListRow(task: task, opacity: 0.62, showsContainer: false)
+                        iOSTaskListRow(task: task, opacity: 0.62, showsContainer: false, todayKey: todayKey)
                     }
                 }
                 .listStyle(.plain)

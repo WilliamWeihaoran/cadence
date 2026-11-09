@@ -432,7 +432,7 @@ struct CadenceSharedTaskRowJobsTests {
         let inspector = try strippingComments(sourceFile("Cadence/iOS/iOSCalendarInspectorView.swift"))
         #expect(inspector.contains("struct iOSCalendarDayInspector: View"), "non-vacuity: wrong file read")
         #expect(inspector.components(separatedBy: "iOSTaskRow(").count - 1 == 3)
-        #expect(inspector.contains("iOSTaskRow(task: task)"),
+        #expect(inspector.contains("iOSTaskRow(task: task, todayKey: todayKey)"),
                 "the Due section stopped drawing the do-date pill for a day it never named")
 
         try expectOccurrences(
@@ -445,12 +445,15 @@ struct CadenceSharedTaskRowJobsTests {
 
         // And the key is the pane's, never the clock's. A day inspector parked on last Tuesday
         // states last Tuesday; `todayKey()` here would suppress the pill on the wrong rows.
+        // [[T-14341]]: the pane now holds the page's observed `todayKey`, which every row takes
+        // for its lateness -- but never as the day it suppresses its pill against.
         try expectOccurrences(
-            of: "todayKey",
+            of: "dayAlreadyStatedBySurface: todayKey",
             at: [
                 "Cadence/iOS/iOSCalendarInspectorView.swift": 0,
             ]
         )
+        #expect(!inspector.contains("todayKey()"))
         #expect(inspector.contains("DateFormatters.dateKey(from: date)"))
 
         let agenda = try strippingComments(sourceFile("Cadence/iOS/iOSCalendarMonthAgendaViews.swift"))

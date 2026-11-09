@@ -18,6 +18,10 @@ struct iOSCalendarDayInspector: View {
     let events: [EKEvent]
     let unscheduledTasks: [AppTask]
     let dueOnlyTasks: [AppTask]
+    /// The Calendar page's observed day, for `iOSTaskRow.todayKey` ([[T-14341]]): what a row's
+    /// lateness is measured against. Never what a row suppresses its pill against -- that is
+    /// `dayKey`, this pane's own date.
+    let todayKey: String
     /// The empty day's one line — `CadenceEmptyStateCopy.nothingScheduledTitle`, or the not-connected wording while the
     /// Calendar page's access notice is up ([[T-5954]]).
     var emptyDayText: String = CadenceEmptyStateCopy.nothingScheduledTitle
@@ -92,7 +96,7 @@ struct iOSCalendarDayInspector: View {
                             // this pane's day and the sun pill can only restate it.
                             iOSCalendarInspectorSection(title: "Timed", color: Theme.blue) {
                                 ForEach(timedTasks) { task in
-                                    iOSTaskRow(task: task, dayAlreadyStatedBySurface: dayKey)
+                                    iOSTaskRow(task: task, dayAlreadyStatedBySurface: dayKey, todayKey: todayKey)
                                 }
                             }
                         }
@@ -103,7 +107,7 @@ struct iOSCalendarDayInspector: View {
                             // day", spelled once in its heading instead of once per row.
                             iOSCalendarInspectorSection(title: "Do Date", color: Theme.purple) {
                                 ForEach(unscheduledTasks) { task in
-                                    iOSTaskRow(task: task, dayAlreadyStatedBySurface: dayKey)
+                                    iOSTaskRow(task: task, dayAlreadyStatedBySurface: dayKey, todayKey: todayKey)
                                 }
                             }
                         }
@@ -119,7 +123,7 @@ struct iOSCalendarDayInspector: View {
                             // would be dead code that reads like a rule.
                             iOSCalendarInspectorSection(title: "Due", color: Theme.red) {
                                 ForEach(dueOnlyTasks) { task in
-                                    iOSTaskRow(task: task)
+                                    iOSTaskRow(task: task, todayKey: todayKey)
                                 }
                             }
                         }

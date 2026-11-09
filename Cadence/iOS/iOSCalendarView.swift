@@ -455,6 +455,7 @@ struct iOSCalendarView: View {
             events: selectedEvents,
             unscheduledTasks: selectedUnscheduledTasks,
             dueOnlyTasks: selectedDueOnlyTasks,
+            todayKey: observedDay.todayKey,
             emptyDayText: CadenceCalendarAccessNotice.dayEmptyText(notice: accessNotice)
         ) {
             openQuickCreate(on: selectedKey)
