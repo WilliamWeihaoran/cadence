@@ -107,8 +107,7 @@ struct CadenceContextPickerList: View {
     /// A search that matched no context. The "no context" row goes with it: picking it while
     /// looking for something named is not what the search was for.
     private var searchFoundNothing: Bool {
-        !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && pickerItems.allSatisfy(\.isNone)
+        CadenceContextPickerKeyboard.searchFoundNothing(items: pickerItems, query: searchQuery)
     }
 
     var body: some View {
@@ -166,8 +165,12 @@ struct CadenceContextPickerList: View {
                 .foregroundStyle(Theme.text)
                 .focused($isSearchFocused)
                 .onSubmit {
-                    guard highlightIndex >= 0, highlightIndex < pickerItems.count else { return }
-                    pick(pickerItems[highlightIndex].id)
+                    guard let target = CadenceContextPickerKeyboard.submitTarget(
+                        items: pickerItems,
+                        query: searchQuery,
+                        highlightIndex: highlightIndex
+                    ) else { return }
+                    pick(target)
                 }
 
             CadenceSearchFieldClearButton(text: $searchQuery, glyphSize: 12, focus: $isSearchFocused)
@@ -228,17 +231,57 @@ struct CadenceContextPickerList: View {
     }
 
     private func syncHighlight() {
-        let items = pickerItems
-        guard !items.isEmpty else {
-            highlightIndex = 0
-            return
-        }
+        highlightIndex = CadenceContextPickerKeyboard.highlightIndex(
+            items: pickerItems,
+            selectedID: selectedID,
+            query: searchQuery,
+            current: highlightIndex
+        )
+    }
+}
 
-        if let selectedIndex = items.firstIndex(where: { $0.id == selectedID }) {
-            highlightIndex = selectedIndex
-        } else {
-            highlightIndex = min(highlightIndex, items.count - 1)
+/// What the context picker's search field does with the keyboard ([[T-14791]]).
+///
+/// The "No context" row is always first in `CadenceContextPickerSupport.items`, even while a query
+/// is typed, and the highlight used to follow the current selection whenever it was in the list. So
+/// with no context set, typing `Wor` and pressing Return highlighted and picked "No context" again,
+/// and a query that matched nothing left only the hidden "No context" row, which Return picked —
+/// clearing an area's or project's context on Save. The container and tilde pickers move the
+/// highlight to the first match on every query change and ignore Return over no match; this does
+/// the same.
+enum CadenceContextPickerKeyboard {
+    private static func isSearching(_ query: String) -> Bool {
+        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// A typed query that matched no context. The "No context" row alone is not a match.
+    static func searchFoundNothing(items: [CadencePickerItem], query: String) -> Bool {
+        isSearching(query) && items.allSatisfy(\.isNone)
+    }
+
+    /// The row to highlight after the list or the query changes: the first matching context while
+    /// searching, otherwise the current selection.
+    static func highlightIndex(
+        items: [CadencePickerItem],
+        selectedID: UUID?,
+        query: String,
+        current: Int
+    ) -> Int {
+        guard !items.isEmpty else { return 0 }
+        if isSearching(query) {
+            return items.firstIndex(where: { !$0.isNone }) ?? 0
         }
+        if let selectedIndex = items.firstIndex(where: { $0.id == selectedID }) {
+            return selectedIndex
+        }
+        return min(max(current, 0), items.count - 1)
+    }
+
+    /// What Return picks: `.some(nil)` is "No context", `nil` is nothing at all.
+    static func submitTarget(items: [CadencePickerItem], query: String, highlightIndex: Int) -> UUID?? {
+        guard !searchFoundNothing(items: items, query: query),
+              highlightIndex >= 0, highlightIndex < items.count else { return nil }
+        return .some(items[highlightIndex].id)
     }
 }
 
