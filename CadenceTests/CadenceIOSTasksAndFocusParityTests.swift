@@ -116,7 +116,7 @@ struct CadenceIOSInboxRemindersOrderTests {
         )
         let active = try #require(groupStack.range(of: "iOSTaskGroupSection("), "non-vacuity: no Active section")
         let reminders = try #require(
-            groupStack.range(of: "iOSInboxRemindersSection(remindersManager: remindersManager)"),
+            groupStack.range(of: "iOSInboxRemindersSection(remindersManager: remindersManager, todayKey: todayKey)"),
             "the Reminders section is no longer placed by the group stack"
         )
         let completed = try #require(groupStack.range(of: "iOSCompletedTasksSection("), "non-vacuity: no Completed section")

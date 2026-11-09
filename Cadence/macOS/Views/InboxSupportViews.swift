@@ -36,6 +36,9 @@ struct InboxAppleRemindersSectionView: View {
     let state: RemindersConnectionState
     let reminders: [AppleReminderItem]
     let isLoading: Bool
+    /// [[T-14354]]: the host page's observed day (`TasksListView` observes it), so each row's due
+    /// badge turns at midnight.
+    let todayKey: String
     /// One handler for whichever action the state offers, rather than two closures the view has to
     /// choose between — choosing was the branch that got the order wrong.
     let onAccessAction: (RemindersAccessAction) -> Void
@@ -71,7 +74,7 @@ struct InboxAppleRemindersSectionView: View {
                     .padding(.vertical, 12)
                 } else {
                     ForEach(reminders) { reminder in
-                        AppleReminderTaskRow(reminder: reminder, onComplete: onComplete)
+                        AppleReminderTaskRow(reminder: reminder, todayKey: todayKey, onComplete: onComplete)
                             .padding(.leading, TaskListDisplayMetrics.taskLeadingInset)
                             .padding(.trailing, TaskListDisplayMetrics.taskTrailingInset)
                             .transition(.opacity.combined(with: .move(edge: .top)))
@@ -88,6 +91,7 @@ struct InboxAppleRemindersSectionView: View {
 
 private struct AppleReminderTaskRow: View {
     let reminder: AppleReminderItem
+    let todayKey: String
     let onComplete: (String) -> AppleReminderCompletionOutcome
     @State private var isHovered = false
     /// **T-255, reshaped by T-268.** The optimistic tick and the sentence a refused write leaves
@@ -205,14 +209,12 @@ private struct AppleReminderTaskRow: View {
     /// `AppleReminderRowPresentation`'s.
     private func reminderDueDateBadge(_ date: Date) -> some View {
         let dateKey = DateFormatters.dateKey(from: date)
-        let color = AppleReminderRowPresentation.dueTint(
-            dayOffset: DateFormatters.dayOffset(from: dateKey)
-        )
+        let color = AppleReminderRowPresentation.dueTint(forDueDateKey: dateKey, todayKey: todayKey)
 
         return HStack(spacing: 4) {
             Image(systemName: "calendar")
                 .font(.system(size: 9, weight: .semibold))
-            Text(DateFormatters.relativeDate(from: dateKey))
+            Text(AppleReminderRowPresentation.dueLabel(forDueDateKey: dateKey, todayKey: todayKey))
                 .font(.system(size: 10, weight: .medium))
         }
         .foregroundStyle(color)

@@ -345,6 +345,7 @@ struct TasksListView: View {
                             state: remindersManager.connectionState,
                             reminders: remindersManager.reminders,
                             isLoading: remindersManager.isLoading,
+                            todayKey: todayKey,
                             onAccessAction: { action in
                                 switch action {
                                 case .requestAccess: requestRemindersAccess()

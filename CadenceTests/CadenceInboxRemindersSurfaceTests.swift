@@ -928,6 +928,45 @@ struct CadenceInboxRemindersSurfaceTests {
         #expect(AppleReminderRowPresentation.dueTint(dayOffset: nil) == Theme.dim)
     }
 
+    /// **[[T-14354]].** The badge's words and tint are measured against the observed day handed
+    /// in, never the clock: a reminder due on the observed day is "Today" amber, and the same
+    /// reminder once that day turns is "Yesterday" red, whatever the clock says.
+    @Test func theReminderDueBadgeFollowsTheObservedDayNotTheClock() {
+        #expect(DateFormatters.todayKey() != "2001-03-04", "non-vacuity: the clock must not be on the observed day")
+        #expect(AppleReminderRowPresentation.dueLabel(forDueDateKey: "2001-03-04", todayKey: "2001-03-04") == "Today")
+        #expect(AppleReminderRowPresentation.dueTint(forDueDateKey: "2001-03-04", todayKey: "2001-03-04") == Theme.amber)
+        #expect(AppleReminderRowPresentation.dueLabel(forDueDateKey: "2001-03-04", todayKey: "2001-03-05") == "Yesterday")
+        #expect(AppleReminderRowPresentation.dueTint(forDueDateKey: "2001-03-04", todayKey: "2001-03-05") == Theme.red)
+        #expect(AppleReminderRowPresentation.dueTint(forDueDateKey: "2001-03-04", todayKey: "2001-03-03") == Theme.dim)
+    }
+
+    /// **[[T-14354]].** Both rows word and tint the badge through the observed-day helpers, with
+    /// the day their host page observes, and neither reads the clock's defaults beside them.
+    @Test func bothReminderRowsReadTheObservedDayForTheirDueBadge() throws {
+        for (path, declaration) in [
+            ("Cadence/macOS/Views/InboxSupportViews.swift", "private struct AppleReminderTaskRow: View"),
+            ("Cadence/iOS/iOSInboxRemindersSection.swift", "private struct iOSInboxReminderRow: View"),
+        ] {
+            let source = try strippingComments(sourceFile(path))
+            let row = try #require(CadenceSourceScan.declarationBody(declaration, in: source), "\(path)")
+            #expect(row.contains("let todayKey: String"), "\(path)")
+            #expect(row.contains("AppleReminderRowPresentation.dueLabel(forDueDateKey:"), "\(path) words its due date itself")
+            #expect(row.contains("AppleReminderRowPresentation.dueTint(forDueDateKey:"), "\(path) tints its due date itself")
+            #expect(row.contains("todayKey: todayKey"), "\(path) no longer hands the observed day in")
+            #expect(!row.contains("DateFormatters.relativeDate("), "\(path) words the badge from the clock again")
+            #expect(!row.contains("DateFormatters.dayOffset("), "\(path) tints the badge from the clock again")
+        }
+        // Each host hands down the day it observes.
+        let mac = try strippingComments(sourceFile("Cadence/macOS/Views/TasksListView.swift"))
+        let macCall = try #require(mac.range(of: "InboxAppleRemindersSectionView("), "non-vacuity: the Mac Inbox section moved")
+        let macCallEnd = try #require(
+            mac[macCall.upperBound...].range(of: "onComplete: remindersManager.completeReminder"),
+            "non-vacuity: the Mac Inbox section's arguments moved"
+        )
+        #expect(mac[macCall.upperBound..<macCallEnd.lowerBound].contains("todayKey: todayKey"),
+                "the Mac Inbox no longer hands its observed day to the reminders section")
+    }
+
     /// Neither row may re-spell the tints it was just handed. macOS's had them inline; the whole
     /// value of moving them is that the second platform could not write a third ramp.
     @Test func neitherReminderRowKeepsItsOwnColourRamp() throws {

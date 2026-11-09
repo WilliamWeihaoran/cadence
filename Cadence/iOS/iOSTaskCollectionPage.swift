@@ -378,7 +378,7 @@ struct iOSTaskCollectionSections: View {
             }
 
             if showsRemindersSection {
-                iOSInboxRemindersSection(remindersManager: remindersManager)
+                iOSInboxRemindersSection(remindersManager: remindersManager, todayKey: todayKey)
             }
 
             // **Always drawn, at the foot of the list, folded until it is asked for (T-2090).**

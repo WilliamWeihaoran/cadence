@@ -156,7 +156,8 @@ struct CadenceListPagesObservedDayTests {
         #expect(page.contains("private var todayKey: String { observedDay.todayKey }"))
         let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: page))
         #expect(body.contains("let todayKey = self.todayKey"))
-        #expect(CadenceSourceScan.matchCount(#"\n\s+todayKey: todayKey,"#, in: body) == 2)
+        // Both section kinds, and the Apple Reminders section ([[T-14354]]).
+        #expect(CadenceSourceScan.matchCount(#"\n\s+todayKey: todayKey,"#, in: body) == 3)
         for name in ["private struct TasksListSectionView: View", "private struct TasksListCompletedSectionView: View"] {
             let section = try #require(CadenceSourceScan.declarationBody(name, in: source), "\(name)")
             #expect(section.contains("let todayKey: String"), "\(name)")

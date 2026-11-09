@@ -26,6 +26,9 @@ import UIKit
 /// which is the same ramp every other task row on iOS reads.
 struct iOSInboxRemindersSection: View {
     let remindersManager: RemindersManager
+    /// [[T-14354]]: the host page's observed day (`iOSTaskCollectionPage` observes it), so each
+    /// row's due label turns at midnight.
+    let todayKey: String
 
     /// **T-254.** One value, resolved once on the manager, rather than a fifth call to the
     /// shared resolver written out beside four others.
@@ -79,6 +82,7 @@ struct iOSInboxRemindersSection: View {
                 ForEach(remindersManager.reminders) { reminder in
                     iOSInboxReminderRow(
                         reminder: reminder,
+                        todayKey: todayKey,
                         onComplete: remindersManager.completeReminder
                     )
                 }
@@ -154,6 +158,7 @@ private struct iOSInboxReminderRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
     let reminder: AppleReminderItem
+    let todayKey: String
     let onComplete: (String) -> AppleReminderCompletionOutcome
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// **T-255, reshaped by T-268.** The optimistic tick and the sentence a refused write leaves
@@ -253,10 +258,8 @@ private struct iOSInboxReminderRow: View {
             if let dueDateKey {
                 iOSTaskMetaLabel(
                     systemImage: "calendar",
-                    text: DateFormatters.relativeDate(from: dueDateKey),
-                    tint: AppleReminderRowPresentation.dueTint(
-                        dayOffset: DateFormatters.dayOffset(from: dueDateKey)
-                    )
+                    text: AppleReminderRowPresentation.dueLabel(forDueDateKey: dueDateKey, todayKey: todayKey),
+                    tint: AppleReminderRowPresentation.dueTint(forDueDateKey: dueDateKey, todayKey: todayKey)
                 )
             }
 

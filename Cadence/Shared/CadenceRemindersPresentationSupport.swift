@@ -322,6 +322,23 @@ enum AppleReminderRowPresentation {
         return dayOffset == 0 ? Theme.amber : Theme.dim
     }
 
+    /// [[T-14354]]: the due badge's words, measured against the host page's observed day
+    /// (`CadenceObservedDay`) rather than the clock. Both rows read this and `dueTint(forDueDateKey:
+    /// todayKey:)`; before, each called `relativeDate(from:)` / `dayOffset(from:)` with their
+    /// `Date()` defaults, so the badge stayed "Today" amber past midnight until EventKit refetched.
+    static func dueLabel(forDueDateKey key: String, todayKey: String) -> String {
+        DateFormatters.relativeDate(from: key, relativeTo: referenceDate(forTodayKey: todayKey))
+    }
+
+    /// [[T-14354]]: `dueTint(dayOffset:)` for a due-date key, against the observed day.
+    static func dueTint(forDueDateKey key: String, todayKey: String) -> Color {
+        dueTint(dayOffset: DateFormatters.dayOffset(from: key, relativeTo: referenceDate(forTodayKey: todayKey)))
+    }
+
+    private static func referenceDate(forTodayKey todayKey: String) -> Date {
+        DateFormatters.date(from: todayKey) ?? Date()
+    }
+
     /// What the completion circle is called, on both rows ([[T-7007]]).
     ///
     /// iOS spelled this; macOS named its circle "Complete in Apple Reminders" in every state, so on

@@ -147,7 +147,7 @@ struct iOSTaskCollectionMetricsTests {
         )
         #expect(reminders.contains("struct iOSInboxRemindersSection: View"), "non-vacuity: wrong file")
         #expect(!reminders.contains("iOSTaskCollectionMetrics"))
-        #expect(page.contains("iOSInboxRemindersSection(remindersManager: remindersManager)"))
+        #expect(page.contains("iOSInboxRemindersSection(remindersManager: remindersManager, todayKey: todayKey)"))
 
         // The list detail Tasks tab: one horizontal inset, and it is the one the options bar
         // directly above the rows already uses.
