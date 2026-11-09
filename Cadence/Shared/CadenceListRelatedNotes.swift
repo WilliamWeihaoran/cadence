@@ -58,13 +58,20 @@ enum CadenceListRelatedNotes {
 
     // MARK: - Search and tag filter
 
-    /// The tags the filter bar offers: those on any note or task note this tab lists, in the
-    /// catalogue's order.
+    /// The tags the filter bar offers: the active tags on any note or task note this tab lists,
+    /// one per slug, in the catalogue's order -- all of them, uncapped.
+    ///
+    /// **[[T-14451]].** This is the whole decision, for both platforms. The Mac's `TagFilterBar`
+    /// used to drop archived tags, collapse duplicate slugs and cap the strip at eight on its own,
+    /// while the iPad tab filtered archived in its own wrapper and kept duplicates, so a ninth tag could
+    /// be filtered by on one platform and not the other, and the Mac search field tightened its
+    /// padding for a bar that then drew nothing. Both bars now draw exactly this list, and
+    /// `hasTagFilters` reads the same list the bar draws.
     static func filterableTags(notes: [Note], taskNotes: [AppTask], in allTags: [Tag]) -> [Tag] {
         let noteSlugs = notes.flatMap { ($0.tags ?? []).map(\.slug) }
         let taskSlugs = taskNotes.flatMap { ($0.tags ?? []).map(\.slug) }
         let slugs = Set(noteSlugs + taskSlugs)
-        return allTags.filter { slugs.contains($0.slug) }
+        return TagSupport.uniqueBySlug(allTags.filter { !$0.isArchived && slugs.contains($0.slug) })
     }
 
     /// A note survives when it carries **every** required tag and, given a query, the query is in

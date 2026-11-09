@@ -148,6 +148,51 @@ struct CadenceListRelatedNotesTests {
         #expect(offered.map(\.slug) == [urgent.slug])
     }
 
+    /// [[T-14451]]: the bar's whole decision is this one shared list, for both platforms. Nine
+    /// active tags yield nine (the Mac's old cap was eight), an archived tag and a second row
+    /// sharing a slug add nothing, and the order is the catalogue's.
+    @Test func theFilterBarOffersEveryActiveTagOncePerSlugInCatalogueOrder() throws {
+        let context = try makeContext()
+        // Inserted out of order so the catalogue's `order` -- not insertion -- decides the strip.
+        let active = (0..<9).reversed().map { index in
+            Tag(name: "Tag \(index)", order: index)
+        }
+        let archived = Tag(name: "Old", order: 20, isArchived: true)
+        let duplicate = Tag(name: "Tag 4", slug: active.first { $0.order == 4 }!.slug, order: 30)
+        for tag in active + [archived, duplicate] { context.insert(tag) }
+
+        let note = Note(kind: .list, title: "Tagged", content: "# Tagged")
+        note.tags = Array(active.prefix(5)) + [archived, duplicate]
+        context.insert(note)
+        let area = Area(name: "Home")
+        context.insert(area)
+        let taskNote = task("Fix sink", notes: "washer size", area: area, in: context)
+        taskNote.tags = Array(active.suffix(4))
+        try context.save()
+
+        let catalogue = active + [archived, duplicate]
+        let offered = CadenceListRelatedNotes.filterableTags(notes: [note], taskNotes: [taskNote], in: catalogue)
+
+        #expect(offered.count == 9)
+        #expect(offered.map(\.name) == (0..<9).map { "Tag \($0)" })
+        #expect(!offered.contains { $0.isArchived })
+        #expect(Set(offered.map(\.slug)).count == offered.count)
+    }
+
+    /// The Mac bar draws what it is handed: the cap, and its own archived/slug pass, are gone, so
+    /// the search field's `hasTagFilters` and the strip read one list ([[T-14451]]).
+    @Test func theMacTagFilterBarDrawsTheSharedListUncapped() throws {
+        let bar = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TagPickerSupportViews.swift")
+        )
+        #expect(!bar.contains("maxVisibleTags"))
+        #expect(bar.contains("private var visibleTags: [Tag] { tags }"))
+        let iPad = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListNotesView.swift")
+        )
+        #expect(!iPad.contains(".filter { !$0.isArchived }"), "the iPad tab re-spells the archived rule")
+    }
+
     // MARK: - Both tabs read it
 
     /// macOS kept these as private members of `ListNotesView`; the iPad tab had none of them. Both

@@ -147,14 +147,14 @@ private struct TagOverflowBadge: View {
     }
 }
 
+/// Draws exactly the tags it is handed, in the order handed: which tags a list's Notes page offers
+/// (active, one per slug, uncapped) is `CadenceListRelatedNotes.filterableTags`, shared with the
+/// iPad tab ([[T-14451]]). The strip scrolls, so there is no cap to answer a width problem.
 struct TagFilterBar: View {
     let tags: [Tag]
     @Binding var selectedSlugs: Set<String>
-    var maxVisibleTags: Int = 8
 
-    private var visibleTags: [Tag] {
-        Array(TagSupport.uniqueBySlug(tags.filter { !$0.isArchived }).prefix(maxVisibleTags))
-    }
+    private var visibleTags: [Tag] { tags }
 
     var body: some View {
         if !visibleTags.isEmpty {
@@ -174,7 +174,7 @@ struct TagFilterBar: View {
                         .buttonStyle(.cadencePlain)
                         .accessibilityLabel("Filter by \(CadenceTagChipStyle.displayName(for: tag))")
                         .accessibilityValue(isSelected ? "On" : "Off")
-                        .help(isSelected ? "Remove tag filter" : "Filter by \(tag.name)")
+                        .help(isSelected ? "Remove tag filter" : "Filter by \(CadenceTagChipStyle.displayName(for: tag))")
                     }
 
                     if !selectedSlugs.isEmpty {

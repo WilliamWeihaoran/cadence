@@ -130,7 +130,7 @@ struct iOSListNotesView: View {
             notes: listNotes + eventNotes,
             taskNotes: taskNotes,
             in: allTags
-        ).filter { !$0.isArchived }
+        )
     }
 
     private var hasAnyNotes: Bool {
