@@ -16,10 +16,13 @@ struct MarkdownTagSuggestion: Identifiable, Hashable {
 
     var id: String { slug }
 
+    /// `slug` is the tag's stable identity, not the stored column ([[T-14763]]): a row stored
+    /// before [[T-14761]] as `"tag"` under the name `工作` is the `工作` tag, and choosing it must
+    /// write `#工作`, which resolves back to it, not `#tag`, which is a different tag.
     static func tag(_ tag: Tag) -> MarkdownTagSuggestion {
         MarkdownTagSuggestion(
             name: tag.name,
-            slug: tag.slug,
+            slug: TagSupport.stableSlug(storedSlug: tag.slug, name: tag.name),
             desc: tag.desc,
             colorHex: tag.colorHex,
             isArchived: tag.isArchived
@@ -28,9 +31,10 @@ struct MarkdownTagSuggestion: Identifiable, Hashable {
 
     /// Every tag the picker may offer, one per slug.
     static func suggestions(from tags: [Tag]) -> [MarkdownTagSuggestion] {
-        // A tag the inline grammar cannot spell is not offered ([[T-14761]]): choosing `工作` here
-        // would write `#工作`, which no sweep reads back as a tag. It is still reachable from the
-        // task and note tag pickers, which do not write prose.
+        // A tag the inline grammar cannot spell is not offered ([[T-14761]]). Since [[T-14763]]
+        // the grammar reads every script, so every slug `TagSupport.slug(for:)` produces is
+        // spellable and this is a guard, not a rule: it keeps the picker from ever writing a
+        // `#mention` no sweep resolves back, should the slug and the grammar drift apart.
         TagSupport.uniqueBySlug(tags)
             .filter { TagSupport.canBeMentionedInline($0) }
             .map { MarkdownTagSuggestion.tag($0) }
@@ -51,12 +55,10 @@ enum MarkdownTagCompletionTokenSupport {
 
         var queryStart = safeCursor
         while queryStart > lineRange.location {
-            let previous = text.character(at: queryStart - 1)
-            if isTagBodyCharacter(previous) {
-                queryStart -= 1
-            } else {
-                break
-            }
+            let previous = text.rangeOfComposedCharacterSequence(at: queryStart - 1)
+            guard previous.location >= lineRange.location,
+                  isTagBody(text.substring(with: previous)) else { break }
+            queryStart = previous.location
         }
 
         let hashLocation = queryStart - 1
@@ -65,8 +67,9 @@ enum MarkdownTagCompletionTokenSupport {
               text.character(at: hashLocation) == 35 else { return nil }
 
         if hashLocation > lineRange.location {
-            let beforeHash = text.character(at: hashLocation - 1)
-            guard beforeHash != 35, !isTagBodyCharacter(beforeHash) else { return nil }
+            let beforeHash = text.rangeOfComposedCharacterSequence(at: hashLocation - 1)
+            let before = text.substring(with: beforeHash)
+            guard before != "#", !isTagBody(before) else { return nil }
         }
 
         let queryRange = NSRange(location: hashLocation + 1, length: safeCursor - hashLocation - 1)
@@ -94,12 +97,23 @@ enum MarkdownTagCompletionTokenSupport {
         "#\(suggestion.slug)"
     }
 
-    private static func isTagBodyCharacter(_ character: unichar) -> Bool {
-        (character >= 48 && character <= 57) ||
-        (character >= 65 && character <= 90) ||
-        (character >= 97 && character <= 122) ||
-        character == 45 ||
-        character == 95
+    /// Whether one composed character can sit in a tag body: letters, marks and digits in any
+    /// script, `_` and `-` -- `MarkdownMetadataParser.inlineTagPattern`'s body class ([[T-14763]]).
+    /// Walked by composed character, not UTF-16 unit, so a letter outside the BMP (`𠀋`) or a
+    /// letter carrying a combining mark (`का`) is one step, never half of one.
+    private static func isTagBody(_ character: String) -> Bool {
+        guard !character.isEmpty else { return false }
+        return character.unicodeScalars.allSatisfy { scalar in
+            if scalar == "_" || scalar == "-" { return true }
+            switch scalar.properties.generalCategory {
+            case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter,
+                 .nonspacingMark, .spacingMark, .enclosingMark,
+                 .decimalNumber, .letterNumber, .otherNumber:
+                return true
+            default:
+                return false
+            }
+        }
     }
 }
 

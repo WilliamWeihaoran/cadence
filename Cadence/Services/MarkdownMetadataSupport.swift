@@ -390,7 +390,7 @@ nonisolated enum MarkdownMetadataParser {
     /// thread-safe, which is the same property `nonProseRegex` already relies on here. That is
     /// what lets three readers share the one compiled object below ([[T-1660]]).
     ///
-    /// The 46 bytes were written three times ([[T-1660]]): here, in
+    /// The pattern was written three times ([[T-1660]]): here, in
     /// `MarkdownInlineMarkerRanges.hashtagPattern`, and again inside
     /// `MarkdownInlinePreviewSupport.inlineMatches`, which compiled its copy on every inline
     /// string. The owner has to be *this* file rather than the styler's, and the reason is the
@@ -401,8 +401,16 @@ nonisolated enum MarkdownMetadataParser {
     /// moved between targets and `project.pbxproj` was not edited.
     ///
     /// The lookbehind is what keeps `C#` and `id_#4` from becoming tags; the tag body deliberately
-    /// starts with an alphanumeric so a bare `#-` or `#_` is not one either.
-    nonisolated static let inlineTagPattern = #"(?<![\p{L}\p{N}_])#([A-Za-z0-9][A-Za-z0-9_-]*)"#
+    /// starts with a letter or digit so a bare `#-` or `#_` is not one either.
+    ///
+    /// **Letters and digits in any script, not only ASCII ([[T-14763]]).** After [[T-14761]] a tag
+    /// named `工作` or `Работа` is its own tag, so an ASCII-only body left it with no inline
+    /// spelling: `#工作` in prose was plain text, never drawn as a chip, never swept, and a rename
+    /// that wrote it stopped resolving. A combining mark (`\p{M}`) is admitted inside the body and
+    /// in the lookbehind because it belongs to the letter before it -- without it `#काम` stops at
+    /// its first vowel sign -- and it is the class `TagSupport.slug(for:)` already keeps. A mark
+    /// cannot start a body. `# Title` stays a heading (a space follows the `#`).
+    nonisolated static let inlineTagPattern = #"(?<![\p{L}\p{M}\p{N}_])#([\p{L}\p{N}][\p{L}\p{M}\p{N}_-]*)"#
 
     /// The compiled form, read by the launch tag sweep above, by the stylers through
     /// `MarkdownInlineMarkerRanges.hashtagRegex`, and by the inline preview's tag rule — one

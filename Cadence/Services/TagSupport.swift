@@ -448,17 +448,17 @@ nonisolated enum TagSupport {
 
     /// The text an inline `#mention` must carry for the tag sweep to resolve it back to `name`.
     ///
-    /// An inline tag body is `[A-Za-z0-9][A-Za-z0-9_-]*` and nothing else, so a display name with
-    /// a space, an accent or punctuation in it cannot be written into prose as-is: `#Day Job`
-    /// parses as `#Day`, which is a *third* tag rather than the renamed one. The slug always slugs
+    /// An inline tag body is a letter or digit followed by letters, marks, digits, `_` and `-`
+    /// (`MarkdownMetadataParser.inlineTagPattern`), so a display name with a space or punctuation
+    /// in it cannot be written into prose as-is: `#Day Job` parses as `#Day`, which is a *third*
+    /// tag rather than the renamed one. The slug always slugs
     /// back to itself, so it is what gets written in that case; a name that is already a legal
     /// body is written as the user typed it, capitals and all, because `slug(for:)` folds case and
     /// `#Job` and `#job` are the same tag.
     ///
-    /// **The slug is a legal body except for a name with no ASCII letter or digit** ([[T-14761]]):
-    /// `工作` slugs to `工作`, which the inline grammar cannot read. Such a tag has no inline
-    /// spelling at all -- `canBeMentionedInline` is how the `#` picker asks -- and [[T-14763]]
-    /// holds the owner's call on whether the grammar should learn other scripts.
+    /// **The grammar reads every script ([[T-14763]])**, so `工作` is written as `工作` and resolves
+    /// back to the `工作` tag ([[T-14761]] gave it its own slug). `canBeMentionedInline` is how the
+    /// `#` picker asks whether a tag has an inline spelling at all.
     nonisolated static func inlineTagBody(for name: String) -> String {
         let display = displayName(for: name)
         if isLegalInlineTagBody(display) {
@@ -471,15 +471,20 @@ nonisolated enum TagSupport {
     /// offer a tag its choice would write as text no sweep resolves back ([[T-14761]]).
     ///
     /// Asked of `stableSlug` rather than the stored slug, because a row stored before T-14761 as
-    /// `"tag"` under the name `工作` is the `工作` tag now: offering it would write `#tag`, which
-    /// resolves to a different tag (or mints one).
+    /// `"tag"` under the name `工作` is the `工作` tag now, and the picker writes that identity
+    /// (`MarkdownTagSuggestion.tag`), never the stored `#tag`, which resolves to a different tag.
     static func canBeMentionedInline(_ tag: Tag) -> Bool {
         isLegalInlineTagBody(stableSlug(for: tag))
     }
 
-    /// `MarkdownMetadataParser.inlineTagPattern`'s body, anchored to the whole string.
+    /// Whether `#value` is exactly one inline tag, asked of `MarkdownMetadataParser.inlineTagRegex`
+    /// itself rather than a second spelling of its body ([[T-14763]]): a separate anchored copy is
+    /// how rename and the `#` picker would come to disagree with the sweep about what a tag is.
     nonisolated private static func isLegalInlineTagBody(_ value: String) -> Bool {
-        value.range(of: #"^[A-Za-z0-9][A-Za-z0-9_-]*$"#, options: .regularExpression) != nil
+        guard !value.isEmpty, let regex = MarkdownMetadataParser.inlineTagRegex else { return false }
+        let candidate = "#" + value
+        let whole = NSRange(location: 0, length: (candidate as NSString).length)
+        return regex.firstMatch(in: candidate, range: whole)?.range == whole
     }
 
     /// **How many of `tag`'s notes mention it INLINE in their prose**, and so would be left behind

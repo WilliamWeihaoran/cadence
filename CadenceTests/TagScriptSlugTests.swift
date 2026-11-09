@@ -80,19 +80,22 @@ struct TagScriptSlugTests {
         }
     }
 
-    /// The note editor's `#` picker writes `#<slug>` into prose, and the inline grammar is ASCII,
-    /// so a tag it cannot spell is not offered -- neither a new-style row nor a legacy `"tag"` row
-    /// whose name is `工作` (offering that one would write `#tag`, a different tag).
+    /// The note editor's `#` picker writes `#<slug>` into prose. Since [[T-14763]] the inline
+    /// grammar reads every script, so a script-only tag is offered too -- and a legacy `"tag"` row
+    /// whose name is `工作` is offered under its stable identity, so choosing it writes `#工作`
+    /// (which resolves back to it), never `#tag`.
     @Test func theInlinePickerOffersOnlyTagsItCanSpell() {
         let ascii = Cadence.Tag(name: "Work", order: 0)
         let script = Cadence.Tag(name: "学习", order: 1)
         let legacy = Cadence.Tag(name: "工作", slug: "tag", order: 2)
         let literal = Cadence.Tag(name: "tag", order: 3)
 
-        let offered = MarkdownTagSuggestion.suggestions(from: [ascii, script, legacy, literal]).map(\.name)
-        #expect(offered == ["Work", "tag"])
+        let offered = MarkdownTagSuggestion.suggestions(from: [ascii, script, legacy, literal])
+        #expect(offered.map(\.name) == ["Work", "学习", "工作", "tag"])
+        let legacySuggestion = offered.first { $0.name == "工作" }
+        #expect(legacySuggestion.map(MarkdownTagCompletionTokenSupport.replacement(for:)) == "#工作")
         #expect(TagSupport.canBeMentionedInline(ascii))
-        #expect(!TagSupport.canBeMentionedInline(script))
-        #expect(!TagSupport.canBeMentionedInline(legacy))
+        #expect(TagSupport.canBeMentionedInline(script))
+        #expect(TagSupport.canBeMentionedInline(legacy))
     }
 }

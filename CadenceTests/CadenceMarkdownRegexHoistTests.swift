@@ -575,17 +575,17 @@ struct CadenceMarkdownRegexHoistTests {
         ),
         LiteralExpectation(
             path: "Cadence/Services/MarkdownInlinePreviewSupport.swift",
-            literal: ##"#"(?<![\p{L}\p{N}_])#([A-Za-z0-9][A-Za-z0-9_-]*)"#"##, bytes: 46, occurrences: 0
+            literal: ##"#"(?<![\p{L}\p{M}\p{N}_])#([\p{L}\p{N}][\p{L}\p{M}\p{N}_-]*)"#"##, bytes: 58, occurrences: 0
         ),
 
         // The tag pattern: gone from the styler, kept by the one file in all three targets.
         LiteralExpectation(
             path: "Cadence/Services/MarkdownStyleRangeSupport.swift",
-            literal: ##"#"(?<![\p{L}\p{N}_])#([A-Za-z0-9][A-Za-z0-9_-]*)"#"##, bytes: 46, occurrences: 0
+            literal: ##"#"(?<![\p{L}\p{M}\p{N}_])#([\p{L}\p{N}][\p{L}\p{M}\p{N}_-]*)"#"##, bytes: 58, occurrences: 0
         ),
         LiteralExpectation(
             path: "Cadence/Services/MarkdownMetadataSupport.swift",
-            literal: ##"#"(?<![\p{L}\p{N}_])#([A-Za-z0-9][A-Za-z0-9_-]*)"#"##, bytes: 46, occurrences: 1
+            literal: ##"#"(?<![\p{L}\p{M}\p{N}_])#([\p{L}\p{N}][\p{L}\p{M}\p{N}_-]*)"#"##, bytes: 58, occurrences: 1
         ),
 
         // The five `MarkdownStylist` wrote as escaped Swift strings rather than raw literals —
@@ -1329,8 +1329,8 @@ struct CadenceMarkdownRegexHoistTests {
 
     // MARK: - [[T-1660]]: the tag pattern, one compiled object
 
-    /// **`(?<![\p{L}\p{N}_])#([A-Za-z0-9][A-Za-z0-9_-]*)` was written three times, and the owner
-    /// is the file a target boundary forces it to be.**
+    /// **The inline tag pattern was written three times, and the owner is the file a target
+    /// boundary forces it to be.** (46 bytes then; 58 since [[T-14763]] widened it past ASCII.)
     ///
     /// The ticket said two. Measured: three — `MarkdownInlineMarkerRanges.hashtagPattern`,
     /// `MarkdownInlinePreviewSupport.inlineMatches` (per inline string) and
@@ -1361,8 +1361,8 @@ struct CadenceMarkdownRegexHoistTests {
         )
         #expect(!mcp.contains("Cadence/Services/MarkdownInlinePreviewSupport.swift"))
 
-        #expect(MarkdownMetadataParser.inlineTagPattern == ##"(?<![\p{L}\p{N}_])#([A-Za-z0-9][A-Za-z0-9_-]*)"##)
-        #expect(MarkdownMetadataParser.inlineTagPattern.utf8.count == 46)
+        #expect(MarkdownMetadataParser.inlineTagPattern == ##"(?<![\p{L}\p{M}\p{N}_])#([\p{L}\p{N}][\p{L}\p{M}\p{N}_-]*)"##)
+        #expect(MarkdownMetadataParser.inlineTagPattern.utf8.count == 58)
         #expect(MarkdownInlineMarkerRanges.hashtagPattern == MarkdownMetadataParser.inlineTagPattern)
         #expect(
             MarkdownInlineMarkerRanges.hashtagRegex === MarkdownMetadataParser.inlineTagRegex,
