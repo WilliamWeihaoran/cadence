@@ -426,8 +426,14 @@ nonisolated enum MarkdownMetadataParser {
     /// spaces — hence the separate branch for `<a href="#quickstart">`. That branch insists on a
     /// tag name straight after the `<` and on an `=` inside, so comparisons stay prose: `a < b` and
     /// `1<2` have no tag name after the `<`, and `<y and z>` has no attribute.
+    ///
+    /// **A destination or bare URL admits one level of balanced parentheses ([[T-14783]])**, the
+    /// grammar `MarkdownLinkSupport.linkRegex` took in [[T-14781]]. Both branches stopped at the
+    /// first `)`, so in `[History](https://en.wikipedia.org/wiki/Swift_(programming_language)#History)`
+    /// the tail `#History)` was read as prose and the launch sweep inserted a `History` tag. A `)`
+    /// that opened nothing still ends the mask, so `(see https://x.com) #todo` keeps its tag.
     nonisolated private static let nonProseRegex = try? NSRegularExpression(
-        pattern: #"`[^`\n]*`|\]\([^)\n]*\)|<[^>\s]+>|<[A-Za-z][A-Za-z0-9-]*\s[^<>\n]*=[^<>\n]*>|https?://[^\s)]+"#
+        pattern: #"`[^`\n]*`|\]\((?:[^()\n]|\([^()\n]*\))*\)|<[^>\s]+>|<[A-Za-z][A-Za-z0-9-]*\s[^<>\n]*=[^<>\n]*>|https?://(?:[^\s()]|\([^\s()]*\))+"#
     )
 
     nonisolated private static func maskingNonProse(in line: String) -> String {

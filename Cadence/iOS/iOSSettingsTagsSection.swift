@@ -14,8 +14,7 @@ enum iOSTagSettingsEdit {
     }
 
     static func hasDuplicate(name: String, tag: Tag, allTags: [Tag]) -> Bool {
-        let slug = TagSupport.slug(for: name)
-        return allTags.contains { $0.id != tag.id && $0.slug == slug }
+        TagSupport.slugIsTaken(TagSupport.slug(for: name), in: allTags, except: tag)
     }
 
     /// [[T-12512]]: the colour the edit form's header dot draws -- the draft, normalized, falling

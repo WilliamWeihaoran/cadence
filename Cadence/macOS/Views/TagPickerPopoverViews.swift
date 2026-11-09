@@ -369,7 +369,7 @@ private struct TagEditSheet: View {
     }
 
     private var hasDuplicateSlug: Bool {
-        allTags.contains { $0.id != tag.id && $0.slug == normalizedSlug }
+        TagSupport.slugIsTaken(normalizedSlug, in: allTags, except: tag)
     }
 
     private var canSave: Bool {

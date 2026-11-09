@@ -598,6 +598,18 @@ nonisolated enum TagSupport {
         return .creatable(displayName: display, slug: candidateSlug)
     }
 
+    /// Whether a tag other than `excluded` already carries `candidateSlug` -- the rename-clash
+    /// question both tag edit cards, the picker's Edit Tag sheet and the Mac title field's inline
+    /// create ask ([[T-14772]]).
+    ///
+    /// Asked of `stableSlug`, not the stored `slug`, for the reason `tagsBySlug` gives: a row
+    /// stored as `"tag"` before [[T-14761]] under the name `工作` must still block renaming
+    /// another tag to `工作`, or the store holds two `工作` until `deduplicateTags` merges them.
+    /// Every site compared the stored slug by hand; this is the one comparison now.
+    static func slugIsTaken(_ candidateSlug: String, in tags: [Tag], except excluded: Tag? = nil) -> Bool {
+        tags.contains { $0.id != excluded?.id && stableSlug(for: $0) == candidateSlug }
+    }
+
     /// Keyed by `stableSlug`, the identity `deduplicateTags` already groups by ([[T-14761]]).
     ///
     /// For every row a current build wrote the two are the same string. They differ only for a row

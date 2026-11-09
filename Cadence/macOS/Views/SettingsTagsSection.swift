@@ -250,7 +250,7 @@ private struct SettingsTagRow: View {
     }
 
     private var hasDuplicateSlug: Bool {
-        allTags.contains { $0.id != tag.id && $0.slug == draftSlug }
+        TagSupport.slugIsTaken(draftSlug, in: allTags, except: tag)
     }
 
     private var canSave: Bool {

@@ -214,8 +214,7 @@ struct TaskTitleEntryField: View {
         let name = TagSupport.displayName(for: tagSearchQuery)
         guard !name.isEmpty,
               name.rangeOfCharacter(from: .alphanumerics) != nil else { return false }
-        let slug = TagSupport.slug(for: name)
-        return !allTags.contains { $0.slug == slug }
+        return !TagSupport.slugIsTaken(TagSupport.slug(for: name), in: allTags)
     }
 
     /// Cmd+Shift+= / Cmd+Shift+- nudge the do-date **while the title field is the thing on
