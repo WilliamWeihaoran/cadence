@@ -411,25 +411,8 @@ struct TaskListInteractiveRow: View {
     }
 }
 
-/// **[[T-6995]] — the eyebrow over a list's Completed tab.**
-///
-/// The tab used to hand-roll its row, and this enum answered that row's title, glyph, VoiceOver
-/// status and due line. Since [[T-12791]] the row is `TaskListDisplayRow`, which answers all four
-/// itself (`TaskTitleSupport`, `CadenceTaskCompletionGlyph`, the completion control's label, the
-/// due chip), so only the count is left here.
-enum ListLogRowPresentation {
-    /// The eyebrow over the rows. It counted cancelled tasks as "completed"; it now names both
-    /// when both are there.
-    static func countLabel(for tasks: [AppTask]) -> String {
-        let cancelled = tasks.filter(\.isCancelled).count
-        let completed = tasks.count - cancelled
-        switch (completed, cancelled) {
-        case (_, 0): return "\(completed) completed"
-        case (0, _): return "\(cancelled) canceled"
-        default: return "\(completed) completed, \(cancelled) canceled"
-        }
-    }
-}
+// `ListLogRowPresentation`, the eyebrow over this tab, lives in
+// `Cadence/Shared/ListLogRowPresentation.swift` so iOS's Completed tab draws it too ([[T-14292]]).
 
 /// A list's Completed tab.
 ///

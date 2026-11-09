@@ -414,8 +414,18 @@ struct iOSArchivedListRow: View {
 /// No panel header on any of the list-detail tabs. The tab bar sits directly above them and
 /// already names the tab; a second "COMPLETED / Completed" block 40pt underneath it was the page
 /// describing the page you are already on.
+///
+/// **[[T-14292]]: the rows are headed by their count**, `ListLogRowPresentation.countLabel(for:)`
+/// -- "3 completed", "2 completed, 1 canceled" -- the eyebrow the Mac's same tab (`ListLogView`)
+/// draws over the same rows. That is a count, not the tab's name again.
 struct iOSListCompletedPanel: View {
     let tasks: [AppTask]
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    /// Over the rows' completion circles: the row's list inset plus the row's own content padding.
+    private var eyebrowLeadingInset: CGFloat {
+        12 + CadenceTaskRowMetrics.metrics(isRegularWidth: horizontalSizeClass == .regular).horizontalPadding
+    }
 
     var body: some View {
         Group {
@@ -427,6 +437,14 @@ struct iOSListCompletedPanel: View {
                 )
             } else {
                 List {
+                    SectionEyebrowLabel(text: ListLogRowPresentation.countLabel(for: tasks))
+                        .padding(.top, 12)
+                        .padding(.bottom, 4)
+                        .textCase(nil)
+                        .listRowInsets(EdgeInsets(top: 0, leading: eyebrowLeadingInset, bottom: 0, trailing: 12))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+
                     ForEach(tasks) { task in
                         // Scoped to one list already — see `iOSTaskRow.showsContainer`.
                         iOSTaskListRow(task: task, opacity: 0.62, showsContainer: false)

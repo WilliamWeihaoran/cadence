@@ -1,4 +1,5 @@
-// macOS only: `ListLogRowPresentation` and the calendar chip views are macOS app types.
+// macOS only: `ListLogView` and the calendar chip views are macOS app types. `ListLogRowPresentation`
+// is shared since [[T-14292]]; `CadenceListCompletedCountEyebrowTests` covers it on both platforms.
 #if os(macOS)
 import Foundation
 import SwiftUI
