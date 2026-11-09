@@ -108,6 +108,34 @@ struct MarkdownFormatCommandSupportTests {
         #expect(mutation.selection == NSRange(location: 0, length: 8))
     }
 
+    /// [[T-14711]]: a caret on the empty line after the note's final newline -- type a line, press
+    /// Return, then pick Heading or a list -- formats THAT line, not the one above it. The line
+    /// range clamped the caret to `length - 1`, which is the previous line's newline, so
+    /// "Shopping" became the heading and the caret was left on a bare line below it.
+    @Test func lineCommandsFormatTheEmptyFinalLineTheCaretIsOn() {
+        let text = "Shopping\n"
+        let caret = NSRange(location: 9, length: 0)
+
+        let heading = MarkdownFormatCommandSupport.apply(.heading(1), text: text, selection: caret)
+        #expect(heading.text == "Shopping\n# ")
+        #expect(heading.selection == NSRange(location: 11, length: 0))
+
+        let bullet = MarkdownFormatCommandSupport.apply(.unorderedList, text: text, selection: caret)
+        #expect(bullet.text == "Shopping\n• ")
+        #expect(bullet.selection == NSRange(location: 11, length: 0))
+
+        let quote = MarkdownFormatCommandSupport.apply(.quote, text: text, selection: caret)
+        #expect(quote.text == "Shopping\n> ")
+        #expect(quote.selection == NSRange(location: 11, length: 0))
+
+        // The neighbouring cases keep their lines: a caret at the end of a final line with no
+        // newline after it, and a caret on an empty line in the middle of the note.
+        let endOfLastLine = MarkdownFormatCommandSupport.apply(.heading(1), text: "Shopping", selection: NSRange(location: 8, length: 0))
+        #expect(endOfLastLine.text == "# Shopping")
+        let middleBlank = MarkdownFormatCommandSupport.apply(.heading(1), text: "A\n\nB", selection: NSRange(location: 2, length: 0))
+        #expect(middleBlank.text == "A\n# \nB")
+    }
+
     @Test func paragraphCommandClearsBlockPrefixes() {
         let text = "## Title\n• Task\n> Quote"
         let mutation = MarkdownFormatCommandSupport.apply(

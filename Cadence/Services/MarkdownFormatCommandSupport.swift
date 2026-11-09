@@ -438,7 +438,11 @@ nonisolated enum MarkdownFormatCommandSupport {
     private static func effectiveLineRange(for selection: NSRange, in text: NSString) -> NSRange {
         guard text.length > 0 else { return NSRange(location: 0, length: 0) }
 
-        let startLocation = min(max(selection.location, 0), text.length - 1)
+        // [[T-14711]]: clamped to `length`, not `length - 1`. A caret on the empty line after the
+        // note's final newline sits AT `length`, and `lineRange` answers that location with the
+        // empty line itself; clamped one short, it landed on the previous line's newline, so
+        // Return-then-Heading turned the line above into the heading.
+        let startLocation = min(max(selection.location, 0), text.length)
         let startLine = text.lineRange(for: NSRange(location: startLocation, length: 0))
         guard selection.length > 0 else { return startLine }
 
