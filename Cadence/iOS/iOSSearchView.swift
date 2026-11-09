@@ -290,13 +290,16 @@ struct iOSSearchView: View {
 
     private var eventResults: [iOSSearchResult] {
         if isSearching {
-            return iOSSearchIndexSupport.rankedResults(calendarSearchEvents.compactMap { event in
+            // [[T-14622]]: ranked by the Events comparator Cmd+K shares -- a score tie breaks on
+            // time, upcoming soonest first -- not the generic funnel, whose identity leg listed a
+            // recurring series from its oldest occurrence in the 60-days-back window.
+            return iOSSearchIndexSupport.rankedEventResults(calendarSearchEvents.compactMap { event in
                 let fields = eventSearchFields(for: event)
                 guard let score = CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: fields) else {
                     return nil
                 }
-                return eventResult(event, score: score)
-            })
+                return (event, eventResult(event, score: score))
+            }, now: Date())
         }
 
         return calendarSearchEvents.prefix(8).map { eventResult($0, score: 0) }

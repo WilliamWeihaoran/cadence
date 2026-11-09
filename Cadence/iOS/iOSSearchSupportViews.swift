@@ -229,6 +229,25 @@ enum iOSSearchIndexSupport {
             identity: { $0.id }
         )
     }
+
+    /// The searching Events section's funnel ([[T-14622]]): `CadenceCalendarEventSearchSupport
+    /// .rankMatches`, the comparator Cmd+K's `eventResults` ranks through, so a recurring series
+    /// lists its next occurrence first on both platforms. Takes the matched event beside its row
+    /// because the time leg reads the event, which the row does not carry as a date.
+    static func rankedEventResults(
+        _ matches: [(event: EKEvent, row: iOSSearchResult)],
+        now: Date
+    ) -> [iOSSearchResult] {
+        CadenceCalendarEventSearchSupport.rankMatches(
+            matches,
+            now: now,
+            event: { $0.event },
+            score: { $0.row.score },
+            title: { $0.row.title },
+            identity: { $0.row.id }
+        )
+        .map(\.row)
+    }
 }
 
 /// The filter row above the results. macOS's palette has no scope filter — it is a

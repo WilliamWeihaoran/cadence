@@ -254,11 +254,15 @@ struct CreateListSheet: View {
     /// walked from a context that exists, so the no-context case had no siblings to number against
     /// and every context-less list would have been created at 0. `nil == nil` is the unfiled bucket,
     /// spelled the same way as the filed one.
+    ///
+    /// The rule itself is `CadenceSidebarLists.nextOrder` in `Shared/`, which the iOS list editor
+    /// asks too ([[T-14621]]: it used to number against every list of one kind in the store).
     private var nextListOrder: Int {
-        let selected = selectedContextID
-        var orders = areas.filter { $0.context?.id == selected }.map(\.order)
-        orders += projects.filter { $0.context?.id == selected }.map(\.order)
-        return (orders.max() ?? -1) + 1
+        CadenceSidebarLists.nextOrder(
+            inContextWithID: selectedContextID,
+            areas: areas.map { ($0.context?.id, $0.order) },
+            projects: projects.map { ($0.context?.id, $0.order) }
+        )
     }
 }
 

@@ -125,6 +125,34 @@ nonisolated enum CadenceSidebarLists {
         return offered.contains(contextID)
     }
 
+    /// One area's or project's place, as far as numbering a new sibling needs: where it is filed and
+    /// what `order` it holds.
+    typealias OrderSlot = (contextID: UUID?, order: Int)
+
+    /// The `order` a NEW area or project takes: one past the highest among the areas **and**
+    /// projects already filed in the context it is created in (`nil` is the unfiled bucket,
+    /// compared optional-to-optional so it is numbered the same way as a filed one).
+    ///
+    /// **[[T-14621]].** Both kinds share one section, and `sorted(_:)` keeps a user-dragged
+    /// interleaving only while every row in it holds a distinct `order`. The iOS list editor used to
+    /// number a new area against every area in the store and a new project against every project,
+    /// so after a dense renumber (`CadenceSidebarListReorder.commit`) a new project could take a
+    /// number an area in its own section already held — the section dropped to areas-first and the
+    /// project the user had dragged to the top fell to the bottom, on every device, because the
+    /// numbers sync. The Mac's `CreateListSheet` had the right rule privately; both editors now ask
+    /// here so they cannot drift again. MCP's `CadenceWriteService.nextListOrder` spells the same
+    /// rule in a target that does not compile this file.
+    static func nextOrder(
+        inContextWithID contextID: UUID?,
+        areas: [OrderSlot],
+        projects: [OrderSlot]
+    ) -> Int {
+        CadenceOrderAllocation.nextOrder(
+            after: (areas + projects).filter { $0.contextID == contextID },
+            order: { $0.order }
+        )
+    }
+
     /// The region, top to bottom, for the iPad column — which renders flattened `Item`s.
     ///
     /// `contexts` supplies the order and the naming. **A section with no rows is dropped** here,

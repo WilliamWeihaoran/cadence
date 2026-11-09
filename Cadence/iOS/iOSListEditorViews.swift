@@ -878,7 +878,7 @@ struct iOSListEditorSheet: View {
             case .newArea:
                 let area = Area(name: trimmedName, context: selectedContext, colorHex: normalizedColor, icon: normalizedIcon)
                 area.desc = details
-                area.order = nextAreaOrder()
+                area.order = nextListOrder()
                 area.sectionConfigs = normalizedSectionConfigs
                 area.hideDueDateIfEmpty = hideEmptyDueDates
                 area.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
@@ -888,7 +888,7 @@ struct iOSListEditorSheet: View {
                 let project = Project(name: trimmedName, context: selectedContext, area: selectedArea, colorHex: normalizedColor)
                 project.desc = details
                 project.icon = normalizedIcon
-                project.order = nextProjectOrder()
+                project.order = nextListOrder()
                 project.sectionConfigs = normalizedSectionConfigs
                 project.hideDueDateIfEmpty = hideEmptyDueDates
                 project.hideSectionDueDateIfEmpty = hideEmptySectionDueDates
@@ -1028,12 +1028,16 @@ struct iOSListEditorSheet: View {
         return trimmed
     }
 
-    private func nextAreaOrder() -> Int {
-        (areas.map(\.order).max() ?? -1) + 1
-    }
-
-    private func nextProjectOrder() -> Int {
-        (projects.map(\.order).max() ?? -1) + 1
+    /// [[T-14621]]: one past the highest `order` among the areas AND projects of the context the
+    /// new list is written into -- the Mac's `CreateListSheet` rule, asked of the one shared spelling.
+    /// Numbering against every area (or every project) in the store let a new list collide with a
+    /// sibling of the other kind and knock its section off a user-dragged order.
+    private func nextListOrder() -> Int {
+        CadenceSidebarLists.nextOrder(
+            inContextWithID: selectedContext?.id,
+            areas: areas.map { ($0.context?.id, $0.order) },
+            projects: projects.map { ($0.context?.id, $0.order) }
+        )
     }
 }
 

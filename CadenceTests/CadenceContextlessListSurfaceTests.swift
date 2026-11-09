@@ -299,8 +299,9 @@ struct CadenceContextlessListSurfaceTests {
         // Correct by scope: an MCP response *about* a named context, plus one habit filter keyed
         // on a context id the caller asked for.
         "Cadence/Services/MCPReadOnly/CadenceReadService.swift": 7,
-        // Correct: the same optional-to-optional comparison `CreateListSheet` makes, for the same
-        // reason and by deliberate copy (T-799). `createContainer`'s `nextListOrder` numbers a new
+        // Correct: the same optional-to-optional comparison `CadenceSidebarLists.nextOrder` makes
+        // for both list editors, for the same reason and by deliberate copy (T-799; this target
+        // does not compile that file). `createContainer`'s `nextListOrder` numbers a new
         // area or project one past the highest `order` among the lists it will sit beside, and
         // `nil == nil` is the unfiled bucket — a list created with no `contextId` is numbered
         // against the other unfiled ones rather than left at 0, where `CadenceMCPOrdering.precedes`
@@ -320,9 +321,9 @@ struct CadenceContextlessListSurfaceTests {
         "Cadence/Shared/CadenceTaskQuerySupport.swift": 2,
         // `CreateGoalSheet.swift` held two of these sites — the catch-all keyed on the offered
         // set ([[T-683]]) — and was deleted by [[T-2079]] with the rest of the goal write surface.
-        // Correct: the optional-to-optional comparison. `nil == nil` is the unfiled bucket, so the
-        // new list is numbered against the siblings it will actually sit beside (T-559).
-        "Cadence/macOS/Sheets/CreateListSheet.swift": 2,
+        // `CreateListSheet.swift` held two -- the optional-to-optional numbering comparison
+        // (T-559) -- until [[T-14621]] lifted it into `CadenceSidebarLists.nextOrder`, which both
+        // list editors now ask and which compares plain ids, not a context walk.
         // Correct: catch-all keyed on the offered set (T-534).
         "Cadence/macOS/Views/ContainerPickerSupportViews.swift": 2,
         // Correct: catch-all keyed on the offered set (T-558).
@@ -365,9 +366,10 @@ struct CadenceContextlessListSurfaceTests {
 
         #expect(actual == Self.knownContextDerivedListSites, "measured: \(actual.sorted { $0.key < $1.key })")
         // The headline, so a report and the ledger cannot disagree.
-        // 31 across 10 files until [[T-2079]] deleted `CreateGoalSheet.swift`, which held two.
-        #expect(actual.values.reduce(0, +) == 29)
-        #expect(actual.count == 9)
+        // 31 across 10 files until [[T-2079]] deleted `CreateGoalSheet.swift`, which held two;
+        // 29 across 9 until [[T-14621]] moved `CreateListSheet.swift`'s two into `Shared/`.
+        #expect(actual.values.reduce(0, +) == 27)
+        #expect(actual.count == 8)
         // And the two columns that used to be the worst of them are off the list entirely: neither
         // derives its rows by walking contexts any more (T-538).
         #expect(actual["Cadence/macOS/Views/SidebarView.swift"] == nil)

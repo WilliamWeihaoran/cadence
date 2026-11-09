@@ -174,8 +174,8 @@ struct CadenceAreaPickerConsolidationTests {
     /// `CadenceAreaPickerSupport` is correct and `iOSListEditorSheet` has gone back to
     /// `areas.filter(\.isActive)`.
     ///
-    /// `.map` is deliberately not a needle: `nextAreaOrder()` legitimately reads
-    /// `areas.map(\.order).max()`, which is allocation, not picking.
+    /// `.map` is deliberately not a needle: `nextListOrder()` legitimately reads
+    /// `areas.map { ($0.context?.id, $0.order) }`, which is allocation, not picking.
     @Test func noAreaPickerDerivesItsOwnList() throws {
         let derives = try CadenceScanInstrument(
             "area list derived at the call site",

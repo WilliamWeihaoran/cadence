@@ -128,6 +128,65 @@ nonisolated enum CadenceCalendarEventSearchSupport {
         return lhsIdentity < rhsIdentity
     }
 
+    /// What a matched event is RANKED by in a searching Events section, field by field so a test
+    /// can state every leg without an `EKEventStore` that has saved anything.
+    struct SearchRankKey: Equatable {
+        let score: Int
+        /// `isUpcoming` at the ranking instant -- the idle list's own test, so "upcoming" means one
+        /// thing on this screen whether or not anything is typed.
+        let isUpcoming: Bool
+        let start: Date
+        let title: String
+        let identity: String
+    }
+
+    /// **[[T-14622]]: the Events section's search order on both platforms** -- score, then time,
+    /// then title, then identity. Cmd+K (`GlobalSearchIndexSupport.eventResults`) and iOS Search
+    /// (`iOSSearchIndexSupport.rankedEventResults`) both rank through `rankMatches`, which sorts on
+    /// this.
+    ///
+    /// The time leg: upcoming occurrences (still running included) before past ones; upcoming
+    /// soonest first, past most-recent first. Every occurrence of a recurring series scores and
+    /// titles alike, so under `CadenceSearchMatcher.rank` the order fell to the identity leg, whose
+    /// `#occurrence=<yyyy-MM-dd>` suffix sorts from the START of the 60-days-back window: "standup"
+    /// listed the standups of two months ago and hid the next one behind "N more results". It
+    /// comes before title so two same-titled series ("1:1") interleave by date instead of listing
+    /// one series whole before the other. Identity stays the last leg, so the order is still total.
+    static func isRankedBefore(_ lhs: SearchRankKey, _ rhs: SearchRankKey) -> Bool {
+        if lhs.score != rhs.score { return lhs.score > rhs.score }
+        if lhs.isUpcoming != rhs.isUpcoming { return lhs.isUpcoming }
+        if lhs.start != rhs.start { return lhs.isUpcoming ? lhs.start < rhs.start : lhs.start > rhs.start }
+        let titles = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+        if titles != .orderedSame { return titles == .orderedAscending }
+        return lhs.identity < rhs.identity
+    }
+
+    /// Rank pre-scored event matches by `isRankedBefore`. Decorate-sort-undecorate, as
+    /// `CadenceSearchMatcher.rank` does, so each key is built once per item. The row's own drawn
+    /// title and id are passed in, so the title and identity legs are the ones the row shows.
+    static func rankMatches<Item>(
+        _ items: [Item],
+        now: Date,
+        event: (Item) -> EKEvent,
+        score: (Item) -> Int,
+        title: (Item) -> String,
+        identity: (Item) -> String
+    ) -> [Item] {
+        items
+            .map { item in
+                let matched = event(item)
+                return (item: item, key: SearchRankKey(
+                    score: score(item),
+                    isUpcoming: isUpcoming(matched, now: now),
+                    start: startInstant(of: matched),
+                    title: title(item),
+                    identity: identity(item)
+                ))
+            }
+            .sorted { isRankedBefore($0.key, $1.key) }
+            .map(\.item)
+    }
+
     /// Resolve a picked search result back to its `EKEvent`.
     ///
     /// This is the *inverse* of `results(from:query:now:)`, not a use of it. The identifier already

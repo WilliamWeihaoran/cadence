@@ -440,4 +440,56 @@ struct CadenceSidebarListsSupportTests {
         #expect(CadenceSourceScan.matchCount("sidebarListItem\\(contextID:", in: components) == 0)
         #expect(CadenceSourceScan.matchCount("var context: Context\\b", in: components) == 0)
     }
+
+    // MARK: - [[T-14621]]: a new list's order is its own context's, both kinds
+
+    @Test func aNewListIsNumberedOnePastBothKindsInItsOwnContextOnly() {
+        let work = UUID(), home = UUID()
+        let areas: [CadenceSidebarLists.OrderSlot] = [(work, 1), (work, 2), (home, 9), (nil, 4)]
+        let projects: [CadenceSidebarLists.OrderSlot] = [(work, 0), (work, 3), (home, 12)]
+
+        // Both kinds count: the work context's max is a project's 3, not the areas' 2.
+        #expect(CadenceSidebarLists.nextOrder(inContextWithID: work, areas: areas, projects: projects) == 4)
+        // The areas' max when they hold it, and another context's higher numbers are ignored.
+        #expect(CadenceSidebarLists.nextOrder(inContextWithID: home, areas: areas, projects: projects) == 13)
+        // The unfiled bucket is a context of its own, `nil == nil`.
+        #expect(CadenceSidebarLists.nextOrder(inContextWithID: nil, areas: areas, projects: projects) == 5)
+        // An empty context starts at 0, whatever the store's other contexts hold.
+        #expect(CadenceSidebarLists.nextOrder(inContextWithID: UUID(), areas: areas, projects: projects) == 0)
+    }
+
+    /// The ticket's repro: a dense renumber put a project above two areas (P=0, A=1, B=2). A new
+    /// project numbered by the old iOS rule -- one past every PROJECT in the store, here 1 --
+    /// collides with A, and the section falls back to areas-first, so P drops to the bottom. The
+    /// shared rule gives 3 and the section keeps its dragged order with the new list last.
+    @Test func creatingAfterADenseRenumberKeepsTheSectionOnItsGlobalOrder() {
+        let context = UUID()
+        let p = item("P", kind: .project, order: 0, contextID: context)
+        let a = item("A", kind: .area, order: 1, contextID: context)
+        let b = item("B", kind: .area, order: 2, contextID: context)
+        let existing = [p, a, b]
+        let slots: (CadenceSidebarLists.Kind) -> [CadenceSidebarLists.OrderSlot] = { kind in
+            existing.filter { $0.kind == kind }.map { ($0.contextID, $0.order) }
+        }
+
+        let order = CadenceSidebarLists.nextOrder(inContextWithID: context, areas: slots(.area), projects: slots(.project))
+        #expect(order == 3)
+        let q = item("Q", kind: .project, order: order, contextID: context)
+        #expect(CadenceSidebarLists.sorted(existing + [q]).map(\.name) == ["P", "A", "B", "Q"])
+
+        // Non-vacuity: the old per-kind number collides and the dragged order is lost.
+        let oldOrder = (slots(.project).map(\.order).max() ?? -1) + 1
+        let collided = item("Q", kind: .project, order: oldOrder, contextID: context)
+        #expect(CadenceSidebarLists.sorted(existing + [collided]).map(\.name) == ["A", "B", "P", "Q"])
+    }
+
+    /// Both editors' create arms ask the shared rule, so the two cannot drift again.
+    @Test func bothListEditorsNumberANewListThroughTheSharedRule() throws {
+        for path in ["Cadence/iOS/iOSListEditorViews.swift", "Cadence/macOS/Sheets/CreateListSheet.swift"] {
+            let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            #expect(CadenceSourceScan.matchCount("CadenceSidebarLists\\.nextOrder\\(", in: code) == 1, "\(path)")
+            #expect(CadenceSourceScan.matchCount("\\.order = nextListOrder", in: code) == 2, "\(path)")
+            #expect(CadenceSourceScan.matchCount("next(Area|Project)Order", in: code) == 0, "\(path)")
+        }
+    }
 }

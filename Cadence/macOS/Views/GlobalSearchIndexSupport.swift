@@ -382,14 +382,26 @@ enum GlobalSearchIndexSupport {
         // [[T-12803]]: ranked on the fields the event MATCHED on -- the shared list iOS Search
         // scores too -- not on the two lines the row draws, so an event found through its notes
         // keeps that score instead of sinking to `Int.min` and reading A to Z.
+        // [[T-14622]]: a score tie breaks on time (upcoming soonest, then past most-recent) before
+        // title, through the comparator iOS Search ranks its Events with too -- not
+        // `rankedByScore`, whose identity leg listed a recurring series from its oldest occurrence.
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
-        return rankedByScore(events.compactMap { event in
+        let matches: [(event: EKEvent, result: GlobalSearchResult, score: Int)] = events.compactMap { event in
             let fields = CadenceCalendarEventSearchSupport.rankingFields(
                 for: event, dayTimeLine: eventDayTimeLine(for: event, relativeTo: referenceDate)
             )
             guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: fields) else { return nil }
-            return (eventResult(for: event, relativeTo: referenceDate), score)
-        })
+            return (event, eventResult(for: event, relativeTo: referenceDate), score)
+        }
+        return CadenceCalendarEventSearchSupport.rankMatches(
+            matches,
+            now: referenceDate,
+            event: { $0.event },
+            score: { $0.score },
+            title: { $0.result.title },
+            identity: { $0.result.id }
+        )
+        .map(\.result)
     }
 
     /// The day reads "Sat, Mar 28" in the reference date's year and "Sat, Mar 28, 2027" outside it
