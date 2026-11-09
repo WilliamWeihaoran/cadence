@@ -201,6 +201,52 @@ struct NoteReferenceSupportTests {
         #expect(linkedNotes.map(\.id) == [noteID])
     }
 
+    /// **T-14641.** A note that names the same note twice — by id twice, or once by id and once
+    /// by title — links ONE note, and the order is the order the text first names each note. The
+    /// panel keys `ForEach` on the id, so a repeat was a duplicate chip and a duplicate SwiftUI id.
+    @Test func aNoteLinkedTwiceIsOneLinkedNoteInFirstAppearanceOrder() throws {
+        let alphaID = try #require(UUID(uuidString: "14641000-0000-0000-0000-00000000000A"))
+        let betaID = try #require(UUID(uuidString: "14641000-0000-0000-0000-00000000000B"))
+        let alpha = Note(id: alphaID, kind: .list, title: "Project Alpha")
+        let beta = Note(id: betaID, kind: .list, title: "Project Beta")
+
+        let idTwice = Note(
+            kind: .list,
+            title: "Daily",
+            content: "[[note:\(betaID.uuidString)|Project Beta]] then [[note:\(alphaID.uuidString)|Project Alpha]], "
+                + "and again [[note:\(betaID.uuidString)|Project Beta]]."
+        )
+        #expect(NoteReferenceResolver.linkedNotes(for: idTwice, in: [alpha, beta, idTwice]).map(\.id) == [betaID, alphaID])
+
+        let idThenTitle = Note(
+            kind: .list,
+            title: "Weekly",
+            content: "[[note:\(alphaID.uuidString)|Project Alpha]] and [[Project Beta]] and [[project alpha]]."
+        )
+        #expect(NoteReferenceResolver.linkedNotes(for: idThenTitle, in: [alpha, beta, idThenTitle]).map(\.id) == [alphaID, betaID])
+    }
+
+    /// **T-14641.** The same for tasks: one task embedded twice (id form, then title form) is one
+    /// linked task, and a second task keeps the place it first appears in.
+    @Test func aTaskEmbeddedTwiceIsOneLinkedTaskInFirstAppearanceOrder() throws {
+        let firstID = try #require(UUID(uuidString: "14641000-0000-0000-0000-0000000000A1"))
+        let secondID = try #require(UUID(uuidString: "14641000-0000-0000-0000-0000000000A2"))
+        let first = AppTask(title: "Draft budget")
+        first.id = firstID
+        let second = AppTask(title: "Book venue")
+        second.id = secondID
+        let content = """
+        [[task:\(firstID.uuidString)|Draft budget]]
+        Some text with [[task:\(secondID.uuidString)|Book venue]] inline.
+        [[task:\(firstID.uuidString)|Draft budget]]
+        [[task:Draft budget]]
+        """
+
+        let linkedTasks = NoteReferenceResolver.linkedTasks(in: content, tasks: [second, first])
+
+        #expect(linkedTasks.map(\.id) == [firstID, secondID])
+    }
+
     /// **T-348.** `[[note:<id>|Budget]]` names one note. When that note is deleted the resolver
     /// used to fall through to the label and hand back *a different note called Budget* — a
     /// precise reference quietly retargeted, on linked notes, backlinks and MCP note reads alike.

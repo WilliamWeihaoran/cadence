@@ -257,7 +257,7 @@ nonisolated enum NoteReferenceResolver {
 
     static func linkedNotes(noteID currentNoteID: UUID, content: String, in notes: [Note]) -> [Note] {
         let references = NoteReferenceParser.noteReferences(in: content)
-        return references.compactMap { reference -> Note? in
+        let resolved = references.compactMap { reference -> Note? in
             switch reference.target {
             case .identified(let id):
                 // A reference to a note that has been deleted resolves to nothing. It must not
@@ -271,6 +271,7 @@ nonisolated enum NoteReferenceResolver {
                 }
             }
         }
+        return firstOccurrences(of: resolved, id: \.id)
     }
 
     static func linkedTasks(for note: Note, in tasks: [AppTask]) -> [AppTask] {
@@ -279,7 +280,7 @@ nonisolated enum NoteReferenceResolver {
 
     static func linkedTasks(in content: String, tasks: [AppTask]) -> [AppTask] {
         let references = NoteReferenceParser.taskReferences(in: content)
-        return references.compactMap { reference -> AppTask? in
+        let resolved = references.compactMap { reference -> AppTask? in
             switch reference.target {
             case .identified(let id):
                 return tasks.first { $0.id == id }
@@ -291,6 +292,18 @@ nonisolated enum NoteReferenceResolver {
                 }
             }
         }
+        return firstOccurrences(of: resolved, id: \.id)
+    }
+
+    /// **One row per resolved note or task, in the order the text first names it ([[T-14641]]).**
+    /// A note that links `[[Project Alpha]]` twice — or names it once by id and once by title —
+    /// links one note, not two; every panel (Mac, iOS, the task-notes editor) and the MCP read
+    /// service read these lists unchanged, and the views key `ForEach` on `id`, so a repeated row
+    /// was both a duplicate chip and SwiftUI's duplicate-id case. De-duplicated on the resolved
+    /// id, not the reference text, because two spellings can reach the same row.
+    private static func firstOccurrences<Element>(of items: [Element], id: (Element) -> UUID) -> [Element] {
+        var seen = Set<UUID>()
+        return items.filter { seen.insert(id($0)).inserted }
     }
 
     static func backlinks(for note: Note, in notes: [Note]) -> [Note] {
