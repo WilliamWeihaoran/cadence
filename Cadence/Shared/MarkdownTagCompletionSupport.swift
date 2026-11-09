@@ -102,28 +102,40 @@ enum MarkdownTagPickerChoice: Hashable {
     case existing(MarkdownTagSuggestion)
     case create(String)
 
-    /// The rows a `#query` offers: up to eight matching tags (archived ones only once a query is
-    /// typed), else one Create row when the query has something to name a tag with. Empty means
-    /// the picker should not show at all.
+    /// The rows a `#query` offers, on the task tag pickers' rule (`TagSupport.pickerQuery`,
+    /// [[T-14472]]): the tags whose name or slug contains the query (archived ones only once a
+    /// query is typed, restored on choice), at most eight; and a Create row whenever no tag --
+    /// active or archived -- carries the query's slug, **beside** partial matches rather than only
+    /// when there are none. Empty means the picker should not show at all.
+    ///
+    /// **The first row is what the typed token already says.** The Mac popover's Return and Tab
+    /// apply the highlighted row, which starts at the first (`MarkdownTagPickerController`), so the
+    /// first row must never rewrite the token into a different tag: `#work` + Return in a store
+    /// holding `homework` wrote `#homework` and swallowed the newline. So a tag whose slug IS the
+    /// query's ranks first (promoted before the cap, so it cannot fall past the eighth row), and
+    /// with no such tag the Create row leads -- Return writes `#work`, exactly as the task
+    /// pickers' field Return resolves the typed name rather than the first partial match. A
+    /// completion to a longer tag is one arrow-key away, and is the first row on the iOS strip
+    /// after the Create chip.
     static func choices(query rawQuery: String, suggestions: [MarkdownTagSuggestion]) -> [MarkdownTagPickerChoice] {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         let querySlug = TagSupport.slug(for: query)
-        let matches = suggestions
-            .filter { suggestion in
-                if query.isEmpty {
-                    return !suggestion.isArchived
-                }
-                return suggestion.name.localizedCaseInsensitiveContains(query) ||
-                    suggestion.slug.localizedCaseInsensitiveContains(querySlug)
+        let matching = suggestions.filter { suggestion in
+            if query.isEmpty {
+                return !suggestion.isArchived
             }
-            .prefix(8)
-            .map(MarkdownTagPickerChoice.existing)
+            return suggestion.name.localizedCaseInsensitiveContains(query) ||
+                suggestion.slug.localizedCaseInsensitiveContains(querySlug)
+        }
+        guard !query.isEmpty else {
+            return matching.prefix(8).map(MarkdownTagPickerChoice.existing)
+        }
 
-        var choices = Array(matches)
-        if choices.isEmpty,
-           !query.isEmpty,
-           TagSupport.displayName(for: query).rangeOfCharacter(from: .alphanumerics) != nil {
-            choices.append(.create(TagSupport.displayName(for: query)))
+        let exact = matching.filter { $0.slug == querySlug }
+        let ranked = exact + matching.filter { $0.slug != querySlug }
+        var choices = ranked.prefix(8).map(MarkdownTagPickerChoice.existing)
+        if let createName = TagSupport.creatableName(for: query, existingSlugs: suggestions.map(\.slug)) {
+            choices.insert(.create(createName), at: 0)
         }
         return choices
     }

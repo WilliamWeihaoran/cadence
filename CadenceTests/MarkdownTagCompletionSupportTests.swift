@@ -40,10 +40,49 @@ struct MarkdownTagCompletionSupportTests {
     @Test func aQueryMatchesNameOrSlugIncludingArchivedAndCapsAtEight() {
         let pool = (0..<12).map { suggestion("Proj\($0)") } + [suggestion("Project Old", archived: true)]
         let choices = MarkdownTagPickerChoice.choices(query: "proj", suggestions: pool)
-        #expect(choices.count == 8)
+        // Eight tag rows, led by the Create row no tag's slug answers ([[T-14472]]).
+        #expect(choices.count == 9)
+        #expect(choices.first == .create(TagSupport.displayName(for: "proj")))
+        #expect(choices.dropFirst().allSatisfy { if case .existing = $0 { true } else { false } })
 
         let archived = MarkdownTagPickerChoice.choices(query: "old", suggestions: pool)
-        #expect(archived == [.existing(suggestion("Project Old", archived: true))])
+        #expect(archived == [.create("old"), .existing(suggestion("Project Old", archived: true))])
+    }
+
+    /// [[T-14472]]: the Mac popover's Return applies the first row, so `#work` + Return in a store
+    /// holding `homework` wrote `#homework`. With no tag carrying the query's slug the first row is
+    /// the Create row -- Return writes what was typed -- and the partial match stays one row down.
+    @Test func aPartialMatchNoLongerLeadsAndTheCreateRowIsOfferedBesideIt() {
+        let pool = [suggestion("homework"), suggestion("party")]
+        #expect(MarkdownTagPickerChoice.choices(query: "work", suggestions: pool)
+            == [.create("work"), .existing(suggestion("homework"))])
+        #expect(MarkdownTagPickerChoice.choices(query: "art", suggestions: pool)
+            == [.create("art"), .existing(suggestion("party"))])
+    }
+
+    /// An exact match ranks first even when the catalogue order puts a longer tag ahead of it, and
+    /// is promoted before the eight-row cap, so it cannot fall past the eighth row.
+    @Test func anExactMatchRanksFirstAndSurvivesTheCap() {
+        let homework = suggestion("homework")
+        let work = suggestion("work")
+        #expect(MarkdownTagPickerChoice.choices(query: "work", suggestions: [homework, work])
+            == [.existing(work), .existing(homework)])
+        #expect(MarkdownTagPickerChoice.choices(query: "Work", suggestions: [homework, work]).first == .existing(work))
+
+        let crowd = (0..<9).map { suggestion("a\($0)") }
+        let exact = suggestion("a")
+        let choices = MarkdownTagPickerChoice.choices(query: "a", suggestions: crowd + [exact])
+        #expect(choices.count == 8)
+        #expect(choices.first == .existing(exact))
+        #expect(!choices.contains(.create("a")), "a Create row is offered over a tag that already carries the slug")
+    }
+
+    /// An archived tag carrying the slug is the exact match -- restored when chosen -- and, as in
+    /// the task pickers (`creationDecision` puts `archived` first), no Create row is offered for it.
+    @Test func anArchivedExactMatchLeadsAndOffersNoCreateRow() {
+        let archived = suggestion("work", archived: true)
+        #expect(MarkdownTagPickerChoice.choices(query: "work", suggestions: [suggestion("homework"), archived])
+            == [.existing(archived), .existing(suggestion("homework"))])
     }
 
     @Test func anUnmatchedQueryOffersOneCreateRowAndSymbolsOfferNothing() {

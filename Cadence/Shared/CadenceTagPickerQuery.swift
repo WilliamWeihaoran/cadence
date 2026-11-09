@@ -68,6 +68,25 @@ extension TagSupport {
     }
 }
 
+extension TagSupport {
+    /// `pickerQuery`'s `createName`, for a catalogue held as slugs rather than `Tag` rows
+    /// ([[T-14472]]): the note editor's `#` picker works from `MarkdownTagSuggestion` values, which
+    /// keep a tag's slug and archived flag but not the model. The same three clauses as
+    /// `creationDecision`'s `.creatable` -- a non-empty display name, a slug no tag (active **or
+    /// archived**) carries, and at least one letter or digit -- and
+    /// `CadenceTagPickerQueryTests` pins the two answering alike over one store.
+    ///
+    /// - Parameter existingSlugs: every tag's slug, archived and active.
+    nonisolated static func creatableName(for candidate: String, existingSlugs: some Sequence<String>) -> String? {
+        let display = displayName(for: candidate)
+        guard !display.isEmpty else { return nil }
+        let candidateSlug = slug(for: display)
+        guard !existingSlugs.contains(candidateSlug) else { return nil }
+        guard display.rangeOfCharacter(from: .alphanumerics) != nil else { return nil }
+        return display
+    }
+}
+
 /// **[[T-12772]] — what the iOS popover's field commits on `+`, Return and dismiss.**
 ///
 /// `iOSTaskTagPickerPopover.addTag()` used to hand every non-blank name to

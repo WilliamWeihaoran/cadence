@@ -502,8 +502,9 @@ struct iOSMarkdownSlashCommandStrip: View {
     }
 }
 
-/// The `#` strip ([[T-8761]]): existing tags by their colour, or one Create row. Its rows come
-/// from `MarkdownTagPickerChoice.choices`, the list the macOS `#` popover draws.
+/// The `#` strip ([[T-8761]]): existing tags by their colour, led by a Create row while no tag
+/// carries the query ([[T-14472]]). Its rows come from `MarkdownTagPickerChoice.choices`, the list
+/// the macOS `#` popover draws.
 struct iOSMarkdownTagCompletionStrip: View {
     let context: MarkdownTagCompletionContext
     let choices: [MarkdownTagPickerChoice]

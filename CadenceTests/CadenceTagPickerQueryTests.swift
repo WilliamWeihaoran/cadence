@@ -65,6 +65,32 @@ struct CadenceTagPickerQueryTests {
         #expect(TagSupport.pickerQuery("Garden", in: tags).createName == "Garden")
     }
 
+    /// [[T-14472]]: the note editor's `#` picker holds slugs, not `Tag` rows, so it asks
+    /// `creatableName(for:existingSlugs:)`; over one store that answers exactly as `pickerQuery`'s
+    /// `createName`, and the `#` list leads with that Create row exactly when the task pickers
+    /// would offer one.
+    @Test @MainActor func theNoteHashPickerOffersCreateExactlyWhenTheTaskPickersDo() throws {
+        let (_, tags) = try makeTags()
+        let suggestions = MarkdownTagSuggestion.suggestions(from: tags)
+        let queries = ["", "  ", "work", "Work", "wor", "home", "deep work", "deep-work", "old project",
+                       "old", "errand", "Errands", "--", "#", "new tag", "  spaced  "]
+        for query in queries {
+            let createName = TagSupport.pickerQuery(query, in: tags).createName
+            #expect(
+                TagSupport.creatableName(for: query, existingSlugs: tags.map(\.slug)) == createName,
+                "the slug form and pickerQuery disagree over \(query)"
+            )
+            let first = MarkdownTagPickerChoice.choices(query: query, suggestions: suggestions).first
+            if let createName {
+                #expect(first == .create(createName), "the # picker does not lead with Create for \(query)")
+            } else if case .create = first {
+                Issue.record("the # picker offers Create for \(query), which the task pickers refuse")
+            }
+        }
+        #expect(TagSupport.pickerQuery("wor", in: tags).createName != nil, "non-vacuity: a partial match is creatable")
+        #expect(TagSupport.pickerQuery("old project", in: tags).createName == nil, "non-vacuity: an archived slug is not")
+    }
+
     @Test func anArchivedMatchIsNamedInsteadOfCreatingASecondRow() throws {
         let (_, tags) = try makeTags()
         let decision = TagSupport.pickerQuery("old project", in: tags)
