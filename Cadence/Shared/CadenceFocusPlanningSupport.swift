@@ -218,8 +218,13 @@ enum CadenceFocusSupport {
     /// `nil` when the task has no due date, so the chip is absent rather than empty. iOS's
     /// `selectedTaskHeader` drew container, priority and estimate and never the deadline; both
     /// headers now read this one builder so the two cannot word the same date differently.
-    static func sessionHeaderDueLabel(forDueDateKey key: String, relativeTo referenceDate: Date = Date()) -> String? {
+    ///
+    /// [[T-14353]]: `todayKey` is the host page's observed day (`CadenceObservedDay`), with no clock
+    /// default. The old `relativeTo: Date()` default let a session running across midnight keep
+    /// "Due Today" while the overdue tint beside it, which already read the observed day, turned.
+    static func sessionHeaderDueLabel(forDueDateKey key: String, todayKey: String) -> String? {
         guard !key.isEmpty else { return nil }
+        let referenceDate = DateFormatters.date(from: todayKey) ?? Date()
         return "Due \(DateFormatters.relativeDate(from: key, relativeTo: referenceDate))"
     }
 

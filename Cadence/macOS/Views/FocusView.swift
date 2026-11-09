@@ -75,6 +75,7 @@ struct FocusView: View {
             FocusSessionHeader(
                 task: task,
                 estimateLabel: durationLabel(for: task),
+                todayKey: todayKey,
                 onClose: { reportingFocusFailure { try focusManager.endSession(in: modelContext) } }
             )
 

@@ -9,21 +9,31 @@ import Testing
 /// yesterday was focused on the iPad with no sign of it in the detail pane. Both now read
 /// `CadenceFocusSupport.sessionHeaderDueLabel`.
 struct FocusSessionHeaderDueLabelTests {
-    private let reference = DateFormatters.date(from: "2026-08-09")!
+    private let today = "2026-08-09"
 
     @Test func noDueDateDrawsNoChip() {
-        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "", relativeTo: reference) == nil)
+        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "", todayKey: today) == nil)
     }
 
     @Test func aDueDateReadsDueAndTheRelativeDay() {
-        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2026-08-09", relativeTo: reference) == "Due Today")
-        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2026-08-10", relativeTo: reference) == "Due Tomorrow")
-        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2026-08-08", relativeTo: reference) == "Due Yesterday")
+        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2026-08-09", todayKey: today) == "Due Today")
+        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2026-08-10", todayKey: today) == "Due Tomorrow")
+        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2026-08-08", todayKey: today) == "Due Yesterday")
         // The words are `DateFormatters.relativeDate`'s, so the two cannot drift apart.
+        let reference = DateFormatters.date(from: today)!
         #expect(
-            CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2026-09-30", relativeTo: reference)
+            CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2026-09-30", todayKey: today)
                 == "Due \(DateFormatters.relativeDate(from: "2026-09-30", relativeTo: reference))"
         )
+    }
+
+    /// **[[T-14353]].** The words follow the observed day handed in, never the clock: a session
+    /// running across midnight turns "Due Today" into "Due Yesterday" when the page's day turns.
+    @Test func theWordsFollowTheObservedDayNotTheClock() {
+        let clockToday = DateFormatters.todayKey()
+        #expect(clockToday != "2001-03-04", "non-vacuity: the clock must not be on the observed day")
+        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2001-03-04", todayKey: "2001-03-04") == "Due Today")
+        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2001-03-04", todayKey: "2001-03-05") == "Due Yesterday")
     }
 
     /// iOS's header is behind `#if os(iOS)`, so its wiring is read as source.
@@ -33,7 +43,7 @@ struct FocusSessionHeaderDueLabelTests {
         #expect(body.contains("task.priority.label"), "non-vacuity: still the session header")
 
         let due = try #require(
-            body.range(of: "CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: task.dueDate)"),
+            body.range(of: "CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: task.dueDate, todayKey: todayKey)"),
             "iOS's Focus session header no longer draws the due-date chip"
         )
         let priority = try #require(body.range(of: "task.priority.label"))
@@ -50,7 +60,10 @@ struct FocusSessionHeaderDueLabelTests {
         )
         let header = try #require(CadenceSourceScan.declarationBody("struct FocusSessionHeader: View", in: source))
         #expect(header.contains("task.priority.label"), "non-vacuity: still the session header")
-        #expect(header.contains("CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: task.dueDate)"))
+        #expect(header.contains("CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: task.dueDate, todayKey: todayKey)"))
+        // [[T-14353]]: the overdue tint reads the same observed day as the words, never the clock.
+        #expect(header.contains("CadenceFocusSupport.isOverdue(dueDateKey: task.dueDate, todayKey: todayKey)"))
+        #expect(!header.contains("DateFormatters.todayKey()"), "the Mac header reads the clock again")
         #expect(!header.contains("\"Due \\("), "macOS spells its own due wording again")
     }
 }

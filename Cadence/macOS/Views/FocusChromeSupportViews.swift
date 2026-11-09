@@ -60,12 +60,14 @@ private struct FocusMetaSeparator: View {
 struct FocusSessionHeader: View {
     let task: AppTask
     let estimateLabel: String?
+    /// [[T-14353]]: the Focus page's observed day, so the due chip turns at midnight.
+    let todayKey: String
     let onClose: () -> Void
 
     var body: some View {
         let hasContainer = !task.containerName.isEmpty
         let hasPriority = task.priority != .none
-        let dueLabel = CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: task.dueDate)
+        let dueLabel = CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: task.dueDate, todayKey: todayKey)
         let hasDueDate = dueLabel != nil
         let hasEstimate = estimateLabel != nil
         // [[T-11211]] (b): the shared helper decides whether the task repeats.
@@ -105,7 +107,7 @@ struct FocusSessionHeader: View {
                     // reads, through the same predicate.
                     Text(dueLabel)
                         .foregroundStyle(
-                            CadenceFocusSupport.isOverdue(dueDateKey: task.dueDate, todayKey: DateFormatters.todayKey())
+                            CadenceFocusSupport.isOverdue(dueDateKey: task.dueDate, todayKey: todayKey)
                                 ? Theme.red : Theme.dim
                         )
                     if hasEstimate || hasRecurrence { FocusMetaSeparator() }
