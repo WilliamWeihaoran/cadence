@@ -567,7 +567,8 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                 .accessibilityLabel(draft.subject.isEditing ? "Save" : "Create \(draft.kind.title.lowercased())")
                 .accessibilityIdentifier(draft.subject.isEditing ? "capture-save" : "capture-create")
                 .help(draft.subject.isEditing ? "Save" : "Create \(draft.kind.title.lowercased())")
-                .disabled(!canCommit || TaskTitleSupport.normalized(draft.title).isEmpty)
+                // [[T-14042]]: the commit's own title gate, so a title of `!!!` alone greys this.
+                .disabled(!canCommit || !draft.hasCommittableTitle)
             }
         }
         if draft.kind == .event, let calendarUnavailableNotice {

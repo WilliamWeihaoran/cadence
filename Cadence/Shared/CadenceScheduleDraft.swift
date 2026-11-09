@@ -612,8 +612,18 @@ struct CadenceScheduleDraft: Equatable {
     /// for `iOSCalendarQuickCreateSheet`'s three arms, restated for these two. That sheet hosts this
     /// panel now and still hands it a stricter `canCommit` of its own: an event also needs a
     /// calendar it can be written to.
+    ///
+    /// **[[T-14042]]: a NEW task's name is what is left once its priority marks are read.** A
+    /// typed `!!!` is a priority, not a title -- `TaskCreationDraft.trimmedTitle` strips it and
+    /// `TaskCreationService.createTask` then refuses the empty name -- so a title of marks alone
+    /// left Create lit and Return doing nothing at all, with no sentence to say why. A saved
+    /// task's title and an event's are taken literally, as their writes take them.
     var hasCommittableTitle: Bool {
-        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard kind == .task, !subject.isEditing else {
+            return !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        let name = TaskTitleSupport.priorityShortcut(in: title)?.title ?? TaskTitleSupport.normalized(title)
+        return !name.isEmpty
     }
 
     // MARK: Do after Due

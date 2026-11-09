@@ -122,6 +122,34 @@ struct CadenceMacNewTaskCaptureCardTests {
         }
     }
 
+    /// [[T-14041]]: with `!!` typed in the title the card shows medium, and Cmd+P has to move what
+    /// the card shows -- and what the task will be created with -- rather than a `draft.priority`
+    /// the title mark overrules on both.
+    @Test func commandPStepsFromATitleMarkAndTakesItOut() {
+        var draft = Self.blankTask()
+        draft.title = "Call mom !!"
+        #expect(CadenceCaptureFieldInventory.priority(for: draft) == .medium)
+
+        CreateTaskKeyboardCommands.cyclePriority(&draft)
+
+        #expect(draft.title == "Call mom")
+        #expect(draft.priority == .high)
+        #expect(CadenceCaptureFieldInventory.priority(for: draft) == .high)
+        let creation = CadenceTaskComposerSupport.creationDraft(
+            from: draft, container: .inbox, tags: [], subtaskTitles: []
+        )
+        #expect(creation.resolvedPriority == .high)
+    }
+
+    /// A title with no mark keeps its text exactly, trailing space included: the caret is in it.
+    @Test func commandPLeavesAnUnmarkedTitleAsTyped() {
+        var draft = Self.blankTask()
+        draft.title = "Call mom "
+        CreateTaskKeyboardCommands.cyclePriority(&draft)
+        #expect(draft.title == "Call mom ")
+        #expect(draft.priority == .low)
+    }
+
     /// The date chords are the task's: an event's start is a range the card's Starts row moves.
     @Test func theChordsLeaveAnEventAlone() {
         var event = CadenceTaskComposerSupport.captureDraft(seed: TaskCreationSeed().composerSeed, initialKind: .event)

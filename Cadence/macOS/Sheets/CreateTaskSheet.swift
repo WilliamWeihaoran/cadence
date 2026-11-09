@@ -499,10 +499,19 @@ enum CreateTaskKeyboardCommands {
     }
 
     /// Cmd+P: the next priority, wrapping.
+    ///
+    /// [[T-14041]]: it steps from the priority the card SHOWS -- a `!`/`!!`/`!!!` in the title
+    /// wins over `draft.priority`, as it does at creation -- and takes the mark out of the title,
+    /// as the card's own priority picker does. It stepped `draft.priority` alone, so with `Call
+    /// mom !!` typed every press changed a value the chip and the created task both ignored.
     static func cyclePriority(_ draft: inout CadenceScheduleDraft) {
         guard draft.kind == .task else { return }
         let all = TaskPriority.allCases
-        let index = all.firstIndex(of: draft.priority) ?? 0
+        let current = CadenceCaptureFieldInventory.priority(for: draft)
+        let index = all.firstIndex(of: current) ?? 0
+        if !draft.subject.isEditing, TaskTitleSupport.priorityShortcut(in: draft.title) != nil {
+            draft.title = CadenceTaskComposerSupport.titleClearingPriorityMarker(draft.title)
+        }
         draft.priority = all[(index + 1) % all.count]
     }
 

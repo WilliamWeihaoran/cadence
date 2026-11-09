@@ -239,6 +239,36 @@ struct CadenceScheduleDraftTests {
         #expect(!named.hasCommittableTitle, "whitespace is not a name")
         #expect(named.displayTitle == "New Task")
     }
+
+    /// [[T-14042]]: a new task's `!!!` is its priority, and creation strips it and refuses the
+    /// empty name -- so marks alone are no name, wherever they sit. A saved task and an event take
+    /// their title literally.
+    @Test("A new task named only by priority marks has no title to commit")
+    func priorityMarksAloneAreNoNewTaskTitle() {
+        for marks in ["!!!", " ! ", "!! !!"] {
+            var task = draft()
+            task.title = marks
+            #expect(!task.hasCommittableTitle, "\(marks) is a priority, not a name")
+            let write = TaskCreationDraft(
+                title: marks, notes: "", priority: .none, container: .inbox, sectionName: "",
+                dueDateKey: "", scheduledDateKey: "", subtaskTitles: [], tags: []
+            )
+            #expect(write.trimmedTitle.isEmpty, "the write agrees: \(marks)")
+        }
+
+        var marked = draft()
+        marked.title = "!! Ship it"
+        #expect(marked.hasCommittableTitle)
+
+        var event = draft(kind: .event)
+        event.title = "!!!"
+        #expect(event.hasCommittableTitle, "an event's title is not parsed for marks")
+
+        var saved = draft()
+        saved.subject = .editingTask(UUID())
+        saved.title = "!!!"
+        #expect(saved.hasCommittableTitle, "a saved task's title is not parsed for marks")
+    }
 }
 
 /// The iPad Today timeline no longer creates through a bar bolted under the canvas ([[T-3169]]).
