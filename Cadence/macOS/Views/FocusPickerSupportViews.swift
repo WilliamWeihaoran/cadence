@@ -128,6 +128,13 @@ struct FocusPickSessionCard: View {
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.dim)
                 .lineLimit(2)
+
+            // [[T-14431]]: the no-open-task state is a view of the store, so during a cold iCloud
+            // import it says so, as iOS's Focus panels do through `EmptyStateView`. A search miss
+            // is a statement about the query and stays silent, as iOS's opts out.
+            if !isSearching {
+                CadenceColdImportNoticeLine()
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)

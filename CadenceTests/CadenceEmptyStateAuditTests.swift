@@ -1192,6 +1192,45 @@ struct CadenceEmptyStateAuditTests {
         }
     }
 
+    // MARK: T-14431 — the Mac's Focus card says a cold import is landing, as iOS's Focus does
+
+    /// **[[T-14431]]: the Mac's "Pick a task" card states the cold iCloud import in its
+    /// no-open-task branch, and only there.** iOS's Focus empty panels reach the sentence through
+    /// `EmptyStateView` (T-3041); the Mac card draws its own empty state, so it never did. The
+    /// reading is one view now, `CadenceColdImportNoticeLine`, which both draw — the search miss
+    /// stays silent on both, because no import changes what a query matched.
+    ///
+    /// Source-shape: the card is a `View` with no seam that returns what it shows.
+    @Test func theMacFocusCardStatesAColdImportOnlyWhenNotSearching() throws {
+        let shared = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/EmptyStateView.swift")
+        )
+        // The shared line holds the whole reading, so a second drawer cannot drift from the first.
+        let line = try #require(shared.range(of: "struct CadenceColdImportNoticeLine: View"), "the shared notice view is gone")
+        let lineBody = shared[line.upperBound...]
+        #expect(lineBody.contains("TimelineView(.periodic(from: .now, by: 30))"))
+        #expect(lineBody.contains("CadenceColdImportNotice.text("))
+        #expect(lineBody.contains("CadenceInlineNotice(text: text, tone: .informational)"))
+        // `EmptyStateView` draws that view rather than a copy of it.
+        let emptyNotice = try #require(bodyOfComputedProperty("coldImportNotice", in: shared))
+        #expect(emptyNotice.contains("CadenceColdImportNoticeLine()"))
+        #expect(CadenceSourceScan.matchCount("CadenceColdImportNotice\\.text\\(", in: shared) == 1, "a second reading of the notice")
+
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusPickerSupportViews.swift")
+        )
+        let empty = try #require(bodyOfComputedProperty("emptyState", in: mac), "the card has no emptyState")
+        #expect(empty.contains("CadenceEmptyStateCopy.focusTitle"), "non-vacuity: wrong property")
+        // Drawn once, and gated on the non-searching branch — the same split iOS makes with
+        // `statesColdImport: false` on its search-miss panel.
+        #expect(CadenceSourceScan.matchCount("CadenceColdImportNoticeLine\\(\\)", in: empty) == 1, "the card does not draw the notice")
+        #expect(
+            CadenceSourceScan.matchCount(#"if !isSearching \{\s*CadenceColdImportNoticeLine\(\)\s*\}"#, in: empty) == 1,
+            "the notice is not confined to the no-open-task branch"
+        )
+        #expect(!mac.contains("CadenceColdImportNotice.text("), "the card reads the notice itself instead of the shared view")
+    }
+
     // MARK: T-519 — the Focus detail pane, against the pane beside it
 
     /// **The Focus detail pane no longer promises tasks that are already next to it.**

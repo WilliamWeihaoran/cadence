@@ -62,24 +62,37 @@ struct EmptyStateView: View {
         .padding(.horizontal, 32)
     }
 
-    /// **Read through a `TimelineView` so the line can retire on its own.**
-    ///
-    /// The owner's ruling is "disappear when they stop", and stopping is a fact about the clock
-    /// rather than about the summary: an import that stalls posts no further event, so an
-    /// `@Observable` read alone would leave the sentence standing for the rest of the launch —
-    /// the exact "never clears" failure the ticket was filed against. The view therefore takes a
-    /// ticking `now`, at twice the rate of `CadenceColdImportNotice.progressWindow`.
-    ///
-    /// `.informational` and not an accent: a sentence under an empty state is secondary to it.
-    @ViewBuilder
+    /// The shared notice, set 2pt under the subtitle. The reading itself is
+    /// `CadenceColdImportNoticeLine`, which a hand-built empty state draws too ([[T-14431]]).
     private var coldImportNotice: some View {
+        CadenceColdImportNoticeLine()
+            .padding(.top, 2)
+    }
+}
+
+/// **[[T-14431]]: the cold-import sentence, as one view any empty state of the store can draw.**
+///
+/// Lifted out of `EmptyStateView` (T-3041) because the Mac's Focus "Pick a task" card draws its
+/// own hand-built empty state and so never said what iOS's Focus page, over the same state, says.
+/// Draws nothing at all when `CadenceColdImportNotice.text` answers `nil`, so a caller places it
+/// unconditionally and gets silence in every state but one.
+///
+/// **Read through a `TimelineView` so the line can retire on its own.** The owner's ruling is
+/// "disappear when they stop", and stopping is a fact about the clock rather than about the
+/// summary: an import that stalls posts no further event, so an `@Observable` read alone would
+/// leave the sentence standing for the rest of the launch — the exact "never clears" failure the
+/// ticket was filed against. The view therefore takes a ticking `now`, at twice the rate of
+/// `CadenceColdImportNotice.progressWindow`.
+///
+/// `.informational` and not an accent: a sentence under an empty state is secondary to it.
+struct CadenceColdImportNoticeLine: View {
+    var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             if let text = CadenceColdImportNotice.text(
                 for: CadenceSyncActivityLog.shared.summary,
                 now: context.date
             ) {
                 CadenceInlineNotice(text: text, tone: .informational)
-                    .padding(.top, 2)
             }
         }
     }
