@@ -66,6 +66,27 @@ struct MarkdownBackspaceSupportTests {
         #expect(mutation == nil)
     }
 
+    /// [[T-14713]]: Backspace on the empty line after the note's final newline, below an empty
+    /// bullet, is an ordinary Backspace (it removes that newline). The probe was clamped to
+    /// `length - 1`, the previous line's newline, so it read the empty bullet above, deleted its
+    /// "• " and jumped the caret to 0.
+    @Test func backspaceOnTheEmptyFinalLineLeavesTheBulletAboveAlone() throws {
+        let afterFinalNewline = MarkdownBackspaceSupport.listPrefixMutation(
+            in: "• \n",
+            selection: NSRange(location: 3, length: 0)
+        )
+        #expect(afterFinalNewline == nil)
+
+        // The neighbouring case keeps firing: an empty bullet that IS the last line, with no
+        // newline after it, still loses its marker.
+        let unterminated = try #require(MarkdownBackspaceSupport.listPrefixMutation(
+            in: "• ",
+            selection: NSRange(location: 2, length: 0)
+        ))
+        #expect(unterminated.replacementRange == NSRange(location: 0, length: 2))
+        #expect(unterminated.selection == NSRange(location: 0, length: 0))
+    }
+
     @Test func ignoresSelectedText() {
         let mutation = MarkdownBackspaceSupport.listPrefixMutation(
             in: "• item",

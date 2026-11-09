@@ -12,8 +12,11 @@ nonisolated enum MarkdownBackspaceSupport {
         guard selection.length == 0, nsText.length > 0 else { return nil }
 
         let safeLocation = min(max(0, selection.location), nsText.length)
-        let probeLocation = min(safeLocation, max(nsText.length - 1, 0))
-        let lineRange = nsText.lineRange(for: NSRange(location: probeLocation, length: 0))
+        // [[T-14713]]: probe the caret's own location, not `length - 1`. On the empty line after the
+        // note's final newline the caret sits AT `length`, and `lineRange` answers that with the
+        // empty line itself; probed one short, it read the previous line, so Backspace on a fresh
+        // last line below an empty bullet deleted that bullet's marker and jumped the caret up.
+        let lineRange = nsText.lineRange(for: NSRange(location: safeLocation, length: 0))
         let safeLineRange = NSIntersectionRange(lineRange, NSRange(location: 0, length: nsText.length))
         guard safeLineRange.location != NSNotFound else { return nil }
 

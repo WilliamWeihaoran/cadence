@@ -227,6 +227,27 @@ struct MarkdownListSupportTests {
         #expect(result == nil)
     }
 
+    /// [[T-14713]]: Tab on the empty line after the note's final newline acts on that line (a
+    /// plain empty line, so nothing to indent), not on the item above. The line range clamped the
+    /// caret to `length - 1`, the previous line's newline, so "• item" was indented instead.
+    @Test func indentationOnTheEmptyFinalLineLeavesTheItemAboveAlone() {
+        let onFreshLastLine = MarkdownListSupport.adjustedListIndentation(
+            in: "• item\n",
+            selection: NSRange(location: 7, length: 0),
+            increase: true
+        )
+        #expect(onFreshLastLine == nil)
+
+        // The neighbouring case keeps its line: a caret at the end of a final item with no
+        // newline after it still indents that item.
+        let endOfLastItem = MarkdownListSupport.adjustedListIndentation(
+            in: "• item",
+            selection: NSRange(location: 6, length: 0),
+            increase: true
+        )
+        #expect(endOfLastItem?.text == "    ◦ item")
+    }
+
     @Test func indentsOnlyListLinesAcrossASelection() {
         let text = "• first\nplain\n2. second"
         let selection = NSRange(location: 0, length: (text as NSString).length)

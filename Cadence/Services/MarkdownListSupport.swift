@@ -650,7 +650,11 @@ nonisolated enum MarkdownListSupport {
     private static func effectiveLineRange(for selection: NSRange, in text: NSString) -> NSRange {
         guard text.length > 0 else { return NSRange(location: 0, length: 0) }
 
-        let startLocation = min(max(selection.location, 0), text.length - 1)
+        // [[T-14713]]: clamped to `length`, not `length - 1`, as [[T-14711]] did for the format
+        // commands. A caret on the empty line after the note's final newline sits AT `length`, and
+        // `lineRange` answers that with the empty line itself; one short, it landed on the previous
+        // line's newline, so Tab on a fresh last line indented the item above.
+        let startLocation = min(max(selection.location, 0), text.length)
         let startLine = text.lineRange(for: NSRange(location: startLocation, length: 0))
 
         if selection.length == 0 {
