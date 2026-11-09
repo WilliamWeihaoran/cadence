@@ -9,8 +9,8 @@ enum CadenceAccentPalettePresentation {
     static let sectionTitle = "Accents"
     static let note = """
         Backgrounds, surfaces, borders and text do not change — Cadence stays dark. \
-        Colours you have already chosen for a list, tag, habit or section keep the exact \
-        colour you gave them.
+        Colours you have already chosen for a list, tag or column keep the exact colour \
+        you gave them.
         """
 
     /// Reads out what a row's swatches show, for VoiceOver. The six are the *jobs*, in the order

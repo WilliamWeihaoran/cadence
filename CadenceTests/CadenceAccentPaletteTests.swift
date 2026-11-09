@@ -521,6 +521,8 @@ struct CadenceAppearanceSettingsReachTests {
         // The note is the one place the app says what a palette switch does *not* touch.
         #expect(CadenceAccentPalettePresentation.note.contains("dark"))
         #expect(CadenceAccentPalettePresentation.note.contains("already chosen"))
+        // [[T-14562]]: habits have no surface since the Goals/Habits/Milestones retirement.
+        #expect(!CadenceAccentPalettePresentation.note.lowercased().contains("habit"))
 
         for palette in CadenceAccentPalette.all {
             let label = CadenceAccentPalettePresentation.accessibilityLabel(for: palette)

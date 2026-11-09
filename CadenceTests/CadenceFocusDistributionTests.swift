@@ -193,6 +193,35 @@ struct CadenceFocusDistributionTests {
         #expect(pickTitles(ready, query: "zzz").isEmpty)
     }
 
+    /// [[T-14561]]: the field finds a task by the date words its row draws -- "Due tomorrow",
+    /// "Scheduled today", "Overdue ...", "Due Aug 29" -- not only by the `yyyy-MM-dd` storage keys,
+    /// which still match when typed. The page's `todayKey` is 2026-08-22 in `pickTitles`.
+    @Test func thepickerSearchFindsATaskByItsRowsDateWords() {
+        let tomorrow = AppTask(title: "Alpha")
+        tomorrow.dueDate = "2026-08-23"
+        let scheduled = AppTask(title: "Bravo")
+        scheduled.scheduledDate = "2026-08-22"
+        let late = AppTask(title: "Charlie")
+        late.dueDate = "2026-08-15"
+        let weekOut = AppTask(title: "Delta")
+        weekOut.dueDate = "2026-08-29"
+        let undated = AppTask(title: "Echo")
+        let ready = [tomorrow, scheduled, late, weekOut, undated]
+
+        let weekOutWords = DateFormatters.shortDateString(
+            from: "2026-08-29",
+            relativeTo: DateFormatters.date(from: "2026-08-22") ?? Date()
+        )
+
+        #expect(pickTitles(ready, query: "tomorrow") == ["Alpha"])
+        #expect(pickTitles(ready, query: "today") == ["Bravo"])
+        #expect(pickTitles(ready, query: "overdue") == ["Charlie"])
+        #expect(pickTitles(ready, query: weekOutWords) == ["Delta"])
+        #expect(pickTitles(ready, query: "due") == ["Alpha", "Charlie", "Delta"])
+        // The storage keys are still fields, so a typed key finds its task.
+        #expect(pickTitles(ready, query: "2026-08-29") == ["Delta"])
+    }
+
     /// A row names the subject it would run against, which is how a surface re-finds the session it
     /// started without comparing titles.
     @Test func apickItemNamesItsOwnTarget() {

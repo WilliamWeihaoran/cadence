@@ -67,7 +67,7 @@ enum CadenceFocusPickItem: Identifiable {
             return Array(items.prefix(limit))
         }
 
-        return items.filter { $0.matches(cleanedQuery) }
+        return items.filter { $0.matches(cleanedQuery, todayKey: todayKey) }
     }
 
     /// The line over the picker's rows ([[T-8012]]). It names the real total, never the display
@@ -97,20 +97,26 @@ enum CadenceFocusPickItem: Identifiable {
     ///
     /// Filtering only. The rows keep the ready order `readyTasks` gave them, because that order is
     /// what both pickers offer as the next session; a match score has no say in it.
-    private func matches(_ query: String) -> Bool {
-        CadenceSearchMatcher.matchScore(query: query, fields: searchFields) != nil
+    private func matches(_ query: String, todayKey: String) -> Bool {
+        CadenceSearchMatcher.matchScore(query: query, fields: searchFields(todayKey: todayKey)) != nil
     }
 
     /// What the row draws, in its own spelling (the display title, the "Inbox" container label),
-    /// then the priority and the two date keys the empty state's "project, task title, priority,
-    /// or date" promises.
-    private var searchFields: [String] {
+    /// then the priority and the date the empty state's "project, task title, priority, or date"
+    /// promises.
+    ///
+    /// **[[T-14561]]: the date is the row's own sentence, not only its storage keys.** The row
+    /// draws `pickRowDetailParts` -- "Scheduled today", "Due tomorrow", "Overdue Nov 3", "Due Nov
+    /// 12" -- so that line is a field, built with the page's `todayKey` the row used. The raw
+    /// `yyyy-MM-dd` keys stay beside it so a typed `2026-11-12` still finds the task.
+    private func searchFields(todayKey: String) -> [String] {
         switch self {
         case .task(let task):
             return [
                 TaskTitleSupport.displayTitle(task.title),
                 CadenceTaskSearchSupport.containerLabel(for: task),
                 task.priority.label,
+                CadenceFocusSupport.pickRowDetailParts(for: task, todayKey: todayKey).text,
                 task.dueDate,
                 task.scheduledDate
             ]
