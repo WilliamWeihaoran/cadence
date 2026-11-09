@@ -468,20 +468,34 @@ struct CadenceNoteReferencePanelSurfaceTests {
         #expect(rowBody.contains("noteKindDetail"))
     }
 
-    @Test func aReferencedTaskFallsBackToWhereItActuallyIs() {
+    /// [[T-14424]]: an undated referenced task's chip says what its `[[` suggestion says. The panel's
+    /// own helper had said "Completed" (no "Inbox") for a listless finished task and "Inbox" for a
+    /// task in a blank-named list, where the suggestion said "Inbox · Completed" and "Untitled Area".
+    /// The pill is `#if os(iOS)`, so which helper it calls is read from source; the answers it gets
+    /// are asserted here.
+    @Test func aReferencedTaskFallsBackToWhereItActuallyIs() throws {
         let context = Context(name: "Work")
         let area = Area(name: "Documents", context: context)
         let filed = AppTask(title: "Draft")
         filed.area = area
-
-        #expect(NoteReferencePanelSupport.taskFallbackSubtitle(filed) == "Documents")
+        #expect(MarkdownReferenceCompletionSupport.taskSubtitle(for: filed) == "Documents")
 
         let loose = AppTask(title: "Loose end")
-        #expect(NoteReferencePanelSupport.taskFallbackSubtitle(loose) == "Inbox")
+        #expect(MarkdownReferenceCompletionSupport.taskSubtitle(for: loose) == "Inbox")
 
         let done = AppTask(title: "Finished")
         done.status = .done
-        #expect(NoteReferencePanelSupport.taskFallbackSubtitle(done) == "Completed")
+        #expect(MarkdownReferenceCompletionSupport.taskSubtitle(for: done) == "Inbox · Completed")
+
+        let blank = AppTask(title: "Blank")
+        blank.area = Area(name: "  ", context: context)
+        #expect(MarkdownReferenceCompletionSupport.taskSubtitle(for: blank) == "Untitled Area")
+
+        let accessories = try strippingComments(sourceFile("Cadence/iOS/iOSMarkdownAccessoryViews.swift"))
+        let pills = try cadenceFunctionBody("private func taskPills(", in: accessories)
+        #expect(pills.contains("subtitle: due ?? MarkdownReferenceCompletionSupport.taskSubtitle(for: task),"))
+        #expect(!pills.contains("containerName"))
+        #expect(!pills.contains("\"Completed\""))
     }
 
     /// The deadline wins the subtitle when there is one — the panel calls the same helpers macOS's
@@ -503,20 +517,20 @@ struct CadenceNoteReferencePanelSurfaceTests {
         overdue.area = area
         overdue.dueDate = "2026-08-19"
 
-        #expect(NoteReferencePanelSupport.taskFallbackSubtitle(overdue) == "Documents")
+        #expect(MarkdownReferenceCompletionSupport.taskSubtitle(for: overdue) == "Documents")
         #expect(CadenceFocusSupport.dueLabel(forDueDateKey: overdue.dueDate, todayKey: todayKey) != nil)
         #expect(overdue.isOverdue(todayKey: todayKey))
 
         let undated = AppTask(title: "Whenever")
         undated.area = area
-        #expect(NoteReferencePanelSupport.taskFallbackSubtitle(undated) == "Documents")
+        #expect(MarkdownReferenceCompletionSupport.taskSubtitle(for: undated) == "Documents")
         #expect(CadenceFocusSupport.dueLabel(forDueDateKey: undated.dueDate, todayKey: todayKey) == nil)
         #expect(!undated.isOverdue(todayKey: todayKey))
 
         // The deadline is the left operand, and the overdue red is spent only on a deadline that is
         // actually being shown — the two decisions the helpers above are the inputs to.
         try expectOccurrences(
-            of: "subtitle: due ?? NoteReferencePanelSupport.taskFallbackSubtitle(task)",
+            of: "subtitle: due ?? MarkdownReferenceCompletionSupport.taskSubtitle(for: task)",
             at: ["Cadence/iOS/iOSMarkdownAccessoryViews.swift": 1]
         )
         try expectOccurrences(
@@ -632,8 +646,15 @@ struct CadenceNoteReferencePanelSurfaceTests {
             // The `[[link]]` sheet's eyebrow went with the sheet ([[T-9663]]).
             "Cadence/iOS/iOSMarkdownReferenceSupport.swift": 0
         ])
-        try expectOccurrences(of: "NoteReferencePanelSupport.taskFallbackSubtitle(", at: [
+        // The chip's fallback is the `[[` suggestion's subtitle ([[T-14424]]); the panel's own
+        // helper is gone, so neither platform can draw it again.
+        try expectOccurrences(of: "due ?? MarkdownReferenceCompletionSupport.taskSubtitle(for: task)", at: [
             "Cadence/iOS/iOSMarkdownAccessoryViews.swift": 1
+        ])
+        try expectOccurrences(of: "taskFallbackSubtitle(", at: [
+            "Cadence/iOS/iOSMarkdownAccessoryViews.swift": 0,
+            "Cadence/macOS/Views/NoteReferenceSupportViews.swift": 0,
+            "Cadence/Services/NoteReferenceSupport.swift": 0
         ])
 
         let accessories = try strippingComments(sourceFile("Cadence/iOS/iOSMarkdownAccessoryViews.swift"))

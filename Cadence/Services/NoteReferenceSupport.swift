@@ -587,11 +587,9 @@ nonisolated enum NoteReferencePanelSupport {
             .first { !$0.isEmpty }
     }
 
-    /// What a referenced task's chip says when it has no due date to show. The container it lives in
-    /// if it has one, and otherwise where it actually is.
-    static func taskFallbackSubtitle(_ task: AppTask) -> String {
-        let container = task.containerName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !container.isEmpty { return container }
-        return task.isDone ? "Completed" : "Inbox"
-    }
+    // A referenced task's chip, when it has no due date to show, says what its `[[` suggestion
+    // says: `MarkdownReferenceCompletionSupport.taskSubtitle(for:)`, called from the iOS pill
+    // ([[T-14424]]). The helper that used to live here read the raw container name and said
+    // "Completed" for a listless finished task; it cannot call the shared one from this file,
+    // which `CadenceMCPServer` also compiles without `CadenceBoardCardMetadata`.
 }

@@ -841,13 +841,15 @@ struct iOSNoteReferencePanel: View {
             // The deadline wins the subtitle when there is one, and reddens when it has passed —
             // the same two decisions macOS's chip makes, through the same two helpers, so a
             // referenced task does not read as undated on one platform and overdue on the other.
+            // Without one, the chip names the task the way its `[[` suggestion does ([[T-14424]]):
+            // the list's display title or "Inbox", then " · Completed" when it is done.
             let due = CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey)
             let isOverdue = task.isOverdue(todayKey: todayKey)
             let title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
 
             iOSMarkdownSuggestionPill(
                 title: CadenceTitleNormalization.display(title, fallback: MarkdownTaskEmbedRenderInfo.untitledTaskTitle),
-                subtitle: due ?? NoteReferencePanelSupport.taskFallbackSubtitle(task),
+                subtitle: due ?? MarkdownReferenceCompletionSupport.taskSubtitle(for: task),
                 subtitleTint: due != nil && isOverdue ? Theme.red : Theme.dim,
                 action: { openTask(task) }
             ) {
