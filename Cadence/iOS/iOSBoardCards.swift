@@ -229,6 +229,12 @@ struct iOSBoardTaskCard: View {
     /// The day this card's surface has already stated, if it states one. See
     /// `CadenceBoardCardMetadata.repeatsSurfaceDay`.
     var dayAlreadyStatedBySurface: String? = nil
+    /// The day the do and due chips measure lateness against -- the host page's observed day
+    /// ([[T-14581]], the touch half of [[T-5012]]). No default, as `KanbanCard` and `iOSTaskRow`
+    /// take it: the chips defaulted to the clock, read in a body whose inputs do not change at
+    /// midnight, so a board left open overnight kept yesterday's grey "Today" due token and amber
+    /// do token instead of turning them red.
+    let todayKey: String
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
 
@@ -293,7 +299,8 @@ struct iOSBoardTaskCard: View {
                 for: task,
                 showsContainer: showsContainerChip,
                 dayAlreadyStatedBySurface: dayAlreadyStatedBySurface,
-                dateChipsArePickers: false
+                dateChipsArePickers: false,
+                todayKey: todayKey
             ),
             tagNames: CadenceLedgerTagTokens.names(for: task)
         )

@@ -345,10 +345,21 @@ nonisolated enum CadenceListVocabularyCopy {
         "\(unarchiveActionTitle) \"\(name)\""
     }
 
-    /// The list editor's two due-date toggles, plural because each governs every row (iOS's
-    /// spelling; the Mac's create and edit sheets read "due date").
-    static let hideEmptyTaskDueDatesToggle = "Hide empty task due dates"
+    /// The list editor's two due-date toggles, plural because each governs every card or column
+    /// (iOS's spelling; the Mac's create and edit sheets read "due date").
+    ///
+    /// **[[T-14582]]: the task half is named for what it controls.** `hideDueDateIfEmpty` has one
+    /// reader, the Mac board card's empty "Due" token (`KanbanCard`, via
+    /// `AppTask.shouldShowDueDateField`); no task row on either platform reads it, so "task due
+    /// dates" promised more than the switch does.
+    static let hideEmptyTaskDueDatesToggle = "Hide empty due dates on board cards"
     static let hideEmptyColumnDueDatesToggle = "Hide empty column due dates"
+    /// The caption under that switch in the iOS editor, which offers it because the field set is
+    /// one union on both platforms ([[T-8562]]) and the flag syncs to the Mac. The touch board card
+    /// draws no empty token at all -- its tokens are labels, not pickers (`iOSBoardTaskCard.tokens`),
+    /// an input difference under [[T-8201]] -- so on iPhone and iPad the switch changes nothing on
+    /// screen, and the caption says where it does.
+    static let hideEmptyTaskDueDatesTouchCaption = "Applies to board cards on Mac."
 
     /// The name of a project's due-date row and a kanban column's due-date row, in every list
     /// editor on both platforms ([[T-13221]], under [[T-8201]]). One field had three names: "Due"

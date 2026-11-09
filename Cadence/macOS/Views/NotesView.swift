@@ -207,6 +207,14 @@ private struct DailyNotesPage: View {
         .onAppear {
             if !applyRequestedSelection() { openNote(forDateKey: observedDay.todayKey) }
         }
+        // [[T-14583]]: the list pins the observed day, but only a note that EXISTS can be pinned,
+        // and `.onAppear` above made today's once. Across midnight the new day had no row and no
+        // way in, so the turn makes it -- and selects nothing: the editor stays on the note the
+        // user was in (it may be mid-sentence; a jump would tear the pane down under them).
+        .onChange(of: observedDay) { _, _ in
+            createNote(forDateKey: observedDay.todayKey)
+            normalizeSelection()
+        }
         .onChange(of: requestedNoteID) { _, _ in
             applyRequestedSelection()
         }
@@ -240,6 +248,16 @@ private struct DailyNotesPage: View {
         }
         createFailureNotice = nil
         selectedNoteID = note.id
+    }
+
+    /// Makes the day's note without opening it ([[T-14583]]). `NoteMigrationService.dailyNote`
+    /// returns an existing note untouched, so a turn onto a day already written in writes nothing.
+    private func createNote(forDateKey key: String) {
+        do {
+            try NoteMigrationService.dailyNote(for: key, in: modelContext)
+        } catch {
+            createFailureNotice = CadencePendingChangePersistence.editFailureNotice
+        }
     }
 
     private func normalizeSelection() {
@@ -340,6 +358,13 @@ private struct WeeklyNotesPage: View {
         .onAppear {
             if !applyRequestedSelection() { openNote(forWeekKey: currentWeekKey) }
         }
+        // [[T-14583]]: `DailyNotesPage`'s reason, one period up -- across a Monday the new week
+        // had no note to pin. Made, never selected; on any other day the week's note already
+        // exists and `weeklyNote` writes nothing.
+        .onChange(of: observedDay) { _, _ in
+            createNote(forWeekKey: currentWeekKey)
+            normalizeSelection()
+        }
         .onChange(of: requestedNoteID) { _, _ in
             applyRequestedSelection()
         }
@@ -373,6 +398,15 @@ private struct WeeklyNotesPage: View {
         }
         createFailureNotice = nil
         selectedNoteID = note.id
+    }
+
+    /// Makes the week's note without opening it ([[T-14583]]); see `DailyNotesPage.createNote`.
+    private func createNote(forWeekKey key: String) {
+        do {
+            try NoteMigrationService.weeklyNote(for: key, in: modelContext)
+        } catch {
+            createFailureNotice = CadencePendingChangePersistence.editFailureNotice
+        }
     }
 
     private func normalizeSelection() {

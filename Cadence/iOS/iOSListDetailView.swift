@@ -400,6 +400,7 @@ struct iOSListDetailView: View {
                 sectionNames: kanbanSectionNames,
                 sectionConfigs: sectionConfigs,
                 hideSectionDueDateIfEmpty: hideSectionDueDateIfEmpty,
+                todayKey: observedDay.todayKey,
                 accent: accent,
                 container: containerSelection,
                 listName: title,

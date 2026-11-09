@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import Cadence
 
@@ -121,6 +122,68 @@ struct CadenceDayChangeAdoptionTests {
         let flush = try #require(refresh.range(of: "flushPendingEditorContent()"))
         let reload = try #require(refresh.range(of: "loadOrCreate()"))
         #expect(flush.lowerBound < reload.lowerBound)
+    }
+
+    /// [[T-14583]]: the Notes Daily and Weekly lists pin the observed period, but only a note that
+    /// exists can be pinned -- and each host made the current period's note once, on appear (iOS:
+    /// for `selectedDayKey`, which does not move at midnight). So a list left open across midnight
+    /// (or a Monday) had no row for the new period. Each host now makes the new period's note when
+    /// its observed day turns, through the existing note services, and selects nothing: the
+    /// closure assigns no selection and the iOS one leaves `selectedDayKey` alone.
+    @Test func theNotesListsMakeTheNewPeriodsNoteWhenTheDayTurnsAndSelectNothing() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let hosts: [(path: String, declaration: String, call: String)] = [
+            ("Cadence/macOS/Views/NotesView.swift", "private struct DailyNotesPage: View",
+             "createNote(forDateKey:observedDay.todayKey)normalizeSelection()"),
+            ("Cadence/macOS/Views/NotesView.swift", "private struct WeeklyNotesPage: View",
+             "createNote(forWeekKey:currentWeekKey)normalizeSelection()"),
+            ("Cadence/iOS/iOSNotesView.swift", "struct iOSNotesView: View",
+             "_=CadenceCoreNoteSupport.loadOrCreateCoreNotes(in:modelContext,dayKey:observedDay.todayKey)"),
+        ]
+        for host in hosts {
+            let view = try #require(CadenceSourceScan.declarationBody(host.declaration, in: try read(host.path)), "\(host.path)")
+            let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: view), "\(host.declaration)")
+            let collapsed = body.filter { !$0.isWhitespace }
+            let opener = ".onChange(of:observedDay){_,_in"
+            #expect(collapsed.components(separatedBy: opener).count - 1 == 1, "\(host.declaration)")
+            let handler = try #require(collapsed.range(of: opener), "\(host.declaration)")
+            let rest = collapsed[handler.upperBound...]
+            let closure = try #require(rest.range(of: "}").map { rest[..<$0.lowerBound] }, "\(host.declaration)")
+            #expect(closure == Substring(host.call), "\(host.declaration): \(closure)")
+            #expect(!closure.contains("selectedNoteID"), "\(host.declaration) selects the new note")
+            #expect(!closure.contains("selectedDayKey"), "\(host.declaration) moves the browsed day")
+        }
+
+        // The Mac helpers make the note through the store service and never select it.
+        let mac = try read("Cadence/macOS/Views/NotesView.swift")
+        for (declaration, helper, service) in [
+            ("private struct DailyNotesPage: View", "private func createNote(forDateKey key: String)",
+             "try NoteMigrationService.dailyNote(for: key, in: modelContext)"),
+            ("private struct WeeklyNotesPage: View", "private func createNote(forWeekKey key: String)",
+             "try NoteMigrationService.weeklyNote(for: key, in: modelContext)"),
+        ] {
+            let view = try #require(CadenceSourceScan.declarationBody(declaration, in: mac), "\(declaration)")
+            let body = try #require(CadenceSourceScan.declarationBody(helper, in: view), "\(declaration)")
+            #expect(body.contains(service), "\(declaration)")
+            #expect(!body.contains("selectedNoteID"), "\(declaration) selects the note it makes")
+        }
+    }
+
+    /// The store half of [[T-14583]], against a throwaway in-memory store: before the new day's note
+    /// is made, a list pinned to the new day has no row for it and drops yesterday's blank note; once
+    /// the day-change service has run, the new day is listed -- and running it again writes nothing.
+    @Test func makingTheNewDaysNoteGivesThePinnedListItsRowAndIsIdempotent() throws {
+        let context = ModelContext(try CadenceTestStore.container())
+        _ = try NoteMigrationService.dailyNote(for: "2019-03-05", in: context)
+        func dailies() throws -> [Note] {
+            try context.fetch(FetchDescriptor<Note>()).filter { $0.kind == .daily }.sorted { $0.dateKey > $1.dateKey }
+        }
+        #expect(NotesListVisibility.dailyNotes(try dailies(), todayKey: "2019-03-06").isEmpty)
+
+        let made = try NoteMigrationService.dailyNote(for: "2019-03-06", in: context)
+        #expect(NotesListVisibility.dailyNotes(try dailies(), todayKey: "2019-03-06").map(\.id) == [made.id])
+        #expect(try NoteMigrationService.dailyNote(for: "2019-03-06", in: context).id == made.id)
+        #expect(try dailies().count == 2)
     }
 }
 #endif

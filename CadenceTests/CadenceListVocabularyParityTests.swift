@@ -15,7 +15,9 @@ struct CadenceListVocabularyParityTests {
     @Test func theSharedListWordsAreTheDecidedSpellings() {
         #expect(CadenceListVocabularyCopy.createActionTitle == "Create")
         #expect(CadenceListVocabularyCopy.unarchiveActionTitle == "Unarchive")
-        #expect(CadenceListVocabularyCopy.hideEmptyTaskDueDatesToggle == "Hide empty task due dates")
+        // [[T-14582]]: named for the one thing it controls, the Mac board card's empty Due token.
+        #expect(CadenceListVocabularyCopy.hideEmptyTaskDueDatesToggle == "Hide empty due dates on board cards")
+        #expect(CadenceListVocabularyCopy.hideEmptyTaskDueDatesTouchCaption == "Applies to board cards on Mac.")
         #expect(CadenceListVocabularyCopy.hideEmptyColumnDueDatesToggle == "Hide empty column due dates")
     }
 
@@ -118,7 +120,14 @@ struct CadenceListVocabularyParityTests {
     /// (c): every list editor on both platforms reads the plural toggles through the shared words.
     @Test func everyListEditorReadsThePluralDueDateToggles() throws {
         let editor = try Self.ios("Cadence/iOS/iOSListEditorViews.swift")
-        #expect(editor.contains("Toggle(CadenceListVocabularyCopy.hideEmptyTaskDueDatesToggle,"))
+        // [[T-14582]]: the task half carries its touch caption under the shared words, because on
+        // this device the switch changes nothing on screen (the touch card draws no empty token).
+        #expect(editor.contains(
+            "Toggle(isOn: $hideEmptyDueDates) {\n                        VStack(alignment: .leading, spacing: 2) {\n"
+                + "                            Text(CadenceListVocabularyCopy.hideEmptyTaskDueDatesToggle)\n"
+                + "                            Text(CadenceListVocabularyCopy.hideEmptyTaskDueDatesTouchCaption)\n"
+        ))
+        #expect(CadenceSourceScan.matchCount(#"CadenceListVocabularyCopy\.hideEmptyTaskDueDatesToggle"#, in: editor) == 1)
         #expect(editor.contains("Toggle(CadenceListVocabularyCopy.hideEmptyColumnDueDatesToggle,"))
         #expect(!editor.contains("Toggle(\"Hide empty"), "the iOS editor spells its own toggle")
 
@@ -128,7 +137,26 @@ struct CadenceListVocabularyParityTests {
             #expect(CadenceSourceScan.matchCount(#"label: CadenceListVocabularyCopy\.hideEmptyTaskDueDatesToggle,"#, in: code) == pairs, "\(path)")
             #expect(CadenceSourceScan.matchCount(#"label: CadenceListVocabularyCopy\.hideEmptyColumnDueDatesToggle,"#, in: code) == pairs, "\(path)")
             #expect(!code.contains("\"Hide empty"), "\(path) spells its own due-date toggle")
+            // The Mac half acts on the Mac's own board card, so it carries no "on Mac" caption.
+            #expect(!code.contains("hideEmptyTaskDueDatesTouchCaption"), "\(path)")
         }
+    }
+
+    /// [[T-14582]]: the switch's whole reach, stated so a new reader has to update the copy. The
+    /// stored flag answers one view field, `AppTask.shouldShowDueDateField`, and that is read by the
+    /// Mac board card alone -- not by any task row, and not by the touch board card.
+    @Test func theHideEmptyDueDatesFlagReachesOnlyTheMacBoardCard() throws {
+        let paths = try CadenceSourceScan.swiftFiles(under: "Cadence")
+        #expect(paths.count > 300, "non-vacuity: the walk found \(paths.count) files")
+        let readers = try paths.filter { path in
+            guard !path.hasPrefix("Cadence/Models/") else { return false }
+            return CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path)).contains("shouldShowDueDateField")
+        }
+        #expect(readers == ["Cadence/macOS/Views/KanbanCardView.swift"])
+        let card = try Self.ios("Cadence/iOS/iOSBoardCards.swift")
+        #expect(card.contains("struct iOSBoardTaskCard: View"), "non-vacuity")
+        #expect(!card.contains("showsEmptyDueDate"))
+        #expect(!card.contains("placeholders: true"))
     }
 
     /// (d): the name placeholders carry no ellipsis and come from one place on both platforms.

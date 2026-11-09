@@ -495,6 +495,9 @@ struct iOSListKanbanPanel: View {
     /// that ignored it would have shown "No due date" under every column of a list whose owner had
     /// asked for exactly the opposite — and there would have been no iOS control to ask with.
     let hideSectionDueDateIfEmpty: Bool
+    /// The list page's observed day, handed to every card's do and due chips ([[T-14581]]) -- the
+    /// board's inputs are otherwise the same on both sides of midnight.
+    let todayKey: String
     let accent: Color
     /// Which list this board belongs to, and what it is called — the two things a column header
     /// needs to seed a dropped `+`, and neither of which a *column* knows. See
@@ -604,6 +607,7 @@ struct iOSListKanbanPanel: View {
                                     lifecycleLabel: lifecycleLabel(for: column.title),
                                     tasks: column.tasks,
                                     completedTasks: finished[column.title] ?? [],
+                                    todayKey: todayKey,
                                     isHighlighted: isHighlighted(column.title),
                                     dropIdentity: identity,
                                     // [[T-8184]]: the header's drop identity, so a tap on the row
@@ -749,6 +753,8 @@ private struct iOSListKanbanColumn: View {
     /// macOS's rule and T-571's, and the toggle below carries its own count. Adding the two would
     /// state one number twice over.
     var completedTasks: [AppTask] = []
+    /// The board's observed day, for its cards' chips ([[T-14581]]).
+    let todayKey: String
     /// Set for the one column a caller arrived here to look at. It is emphasis, not selection —
     /// nothing about the column behaves differently — so it draws a ring at the card radius and
     /// nothing else, and the panel takes it away after a beat.
@@ -817,7 +823,7 @@ private struct iOSListKanbanColumn: View {
                     ForEach(tasks) { task in
                         // Scoped to one list already — the same reason `iOSTaskListRow` drops its
                         // container, and the same knob macOS's `KanbanCard` uses.
-                        iOSBoardTaskCard(task: task, showsContainerChip: false)
+                        iOSBoardTaskCard(task: task, showsContainerChip: false, todayKey: todayKey)
                             // The source half of [[T-8183]]: the payload the Calendar Board's card
                             // and the task row already offer (`TaskDragPayload`), not a board-own
                             // spelling. Outside the card, after its context menu, as both of those
@@ -910,7 +916,7 @@ private struct iOSListKanbanColumn: View {
                             // The same card the open half draws, at the same width and with the
                             // same container chip suppressed -- a finished card is not a different
                             // kind of card, which is the Mac's position too.
-                            iOSBoardTaskCard(task: task, showsContainerChip: false)
+                            iOSBoardTaskCard(task: task, showsContainerChip: false, todayKey: todayKey)
                                 .draggable(TaskDragPayload.string(for: task.id))
                         }
                     }

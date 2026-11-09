@@ -377,8 +377,20 @@ struct iOSListEditorSheet: View {
                     }
 
                     // Lives here rather than under "Columns", where it read as a column setting:
-                    // `hideDueDateIfEmpty` is about the *task* rows in this list.
-                    Toggle(CadenceListVocabularyCopy.hideEmptyTaskDueDatesToggle, isOn: $hideEmptyDueDates)
+                    // `hideDueDateIfEmpty` is about the *cards*, not the columns. [[T-14582]]: its
+                    // only reader is the Mac board card's empty "Due" token -- this device's board
+                    // card draws no empty token (its tokens are labels, not pickers), and no task
+                    // row reads it anywhere. Offered here because the field set is one union on
+                    // both platforms ([[T-8562]]) and the flag syncs; the caption says where it acts.
+                    Toggle(isOn: $hideEmptyDueDates) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(CadenceListVocabularyCopy.hideEmptyTaskDueDatesToggle)
+                            Text(CadenceListVocabularyCopy.hideEmptyTaskDueDatesTouchCaption)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.dim)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                     // The column half of the same pair. It sits beside its sibling rather than
                     // under "Columns" so the two read as one choice with two halves.
                     Toggle(CadenceListVocabularyCopy.hideEmptyColumnDueDatesToggle, isOn: $hideEmptySectionDueDates)

@@ -332,7 +332,7 @@ struct CadenceColumnWindDownSurfaceTests {
         // then the project's), which this line used to read.
         let editor = try strippingComments(sourceFile("Cadence/iOS/iOSListEditorViews.swift"))
         #expect(editor.contains("private struct iOSSectionDraftRow: View"))
-        #expect(editor.contains("Toggle(CadenceListVocabularyCopy.hideEmptyTaskDueDatesToggle"))
+        #expect(editor.contains("Text(CadenceListVocabularyCopy.hideEmptyTaskDueDatesToggle)"))
         #expect(editor.contains("lifecycle: iOSSectionRowLifecycle?"))
         // The Default column is gated out of the wind-down, for the reason the model test above
         // pins. Asserted as live code, so deleting the guard is a failure here as well as a

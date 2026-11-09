@@ -114,7 +114,8 @@ struct CadenceListPagesObservedDayTests {
         let hosts: [(path: String, needle: String, count: Int)] = [
             ("Cadence/iOS/iOSTaskCollectionPage.swift", "todayKey: observedDay.todayKey,\n", 2),
             ("Cadence/iOS/iOSTaskCollectionPage.swift", "todayKey: todayKey,\n", 3),
-            ("Cadence/iOS/iOSListDetailView.swift", "todayKey: observedDay.todayKey", 4),
+            // Five since [[T-14581]]: the board panel takes the page's day for its cards too.
+            ("Cadence/iOS/iOSListDetailView.swift", "todayKey: observedDay.todayKey", 5),
             ("Cadence/iOS/iOSListSupportViews.swift", "showsContainer: false, todayKey: todayKey)", 1),
             ("Cadence/iOS/iOSTodayTaskSections.swift", "dayAlreadyStatedBySurface: todayKey,\n                    todayKey: todayKey,", 1),
             ("Cadence/iOS/iOSTodayTaskSections.swift", "dayAlreadyStatedBySurface: todayKey,\n                todayKey: todayKey,", 1),
@@ -167,6 +168,72 @@ struct CadenceListPagesObservedDayTests {
         // the card hands its HOST's observed day to the shared descriptor and never reads the clock.
         #expect(card.contains("dayAlreadyStatedBySurface: dayAlreadyStatedBySurface,\n                todayKey: todayKey\n"))
         #expect(!card.contains("DateFormatters.todayKey()"))
+    }
+
+    /// **[[T-14581]] -- the touch board card, which neither [[T-5012]] nor [[T-14341]] reached.**
+    /// `iOSBoardTaskCard` called the shared chip builder without a day, so its clock default
+    /// answered the due chip's red and the do chip's amber/red -- and the card's inputs are the
+    /// same on both sides of midnight, so a list board or the Calendar Board left open overnight
+    /// kept yesterday's emphasis. It takes the day with no default now, as `KanbanCard` does, and
+    /// all four of its builds hand down their host's observed day.
+    @Test func theTouchBoardCardTakesTheDayWithNoDefaultAndEveryHostHandsItsObservedDay() throws {
+        let cards = try Self.code("Cadence/iOS/iOSBoardCards.swift")
+        let card = try #require(CadenceSourceScan.declarationBody("struct iOSBoardTaskCard: View", in: cards))
+        #expect(card.contains("let todayKey: String\n"))
+        #expect(!card.contains("let todayKey: String ="))
+        #expect(!card.contains("DateFormatters.todayKey()"))
+        #expect(card.contains("dateChipsArePickers: false,\n                todayKey: todayKey\n"))
+
+        // The list board: the page hands its observed day to the panel, the panel to every column,
+        // the column to both of its card builds (open and finished).
+        let support = try Self.code("Cadence/iOS/iOSListSupportViews.swift")
+        let panel = try #require(CadenceSourceScan.declarationBody("struct iOSListKanbanPanel: View", in: support))
+        #expect(panel.contains("let todayKey: String\n"))
+        #expect(panel.contains("todayKey: todayKey,\n"))
+        let column = try #require(CadenceSourceScan.declarationBody("private struct iOSListKanbanColumn: View", in: support))
+        #expect(column.contains("let todayKey: String\n"))
+        #expect(CadenceSourceScan.matchCount(#"iOSBoardTaskCard\("#, in: column) == 2)
+        #expect(CadenceSourceScan.matchCount(
+            #"iOSBoardTaskCard\(task: task, showsContainerChip: false, todayKey: todayKey\)"#, in: column
+        ) == 2)
+        let page = try Self.code("Cadence/iOS/iOSListDetailView.swift")
+        let call = try #require(page.range(of: "iOSListKanbanPanel("), "the list page draws no board")
+        #expect(page[call.upperBound...].prefix(1_500).contains("todayKey: observedDay.todayKey,"))
+
+        // The Calendar Board's day column, both builds (lane and finished footer), with the
+        // column's observed day.
+        let board = try Self.code("Cadence/iOS/iOSCalendarBoardView.swift")
+        let day = try #require(CadenceSourceScan.declarationBody("private struct iOSCalendarBoardDayColumn: View", in: board))
+        #expect(CadenceSourceScan.matchCount(#"iOSBoardTaskCard\("#, in: day) == 2)
+        #expect(CadenceSourceScan.matchCount(
+            #"iOSBoardTaskCard\(\s*task: task,\s*dayAlreadyStatedBySurface: dateKey,\s*todayKey: todayKey\s*\)"#, in: day
+        ) == 2)
+
+        // And no other build of the card anywhere in the iOS tree.
+        #expect(CadenceSourceScan.matchCount(#"iOSBoardTaskCard\("#, in: support + board) == 4)
+    }
+
+    /// The chips the touch card draws, with `dateChipsArePickers: false` as it passes it, answer
+    /// against the HANDED day: a task due on the literal day is neutral that day and urgent the
+    /// next, and a task planned for it is amber that day and red the next.
+    @Test func theTouchCardsChipsTurnWithTheHandedDay() {
+        let due = task(due: "2019-03-05")
+        func dueEmphasis(_ today: String) -> CadenceBoardCardChip.Emphasis? {
+            CadenceBoardCardMetadata.chips(
+                for: due, showsContainer: false, dateChipsArePickers: false, todayKey: today
+            ).first { $0.kind == .dueDate }?.emphasis
+        }
+        #expect(dueEmphasis("2019-03-05") == .neutral)
+        #expect(dueEmphasis("2019-03-06") == .urgent)
+
+        let planned = task(scheduled: "2019-03-05")
+        func doEmphasis(_ today: String) -> CadenceBoardCardChip.Emphasis? {
+            CadenceBoardCardMetadata.chips(
+                for: planned, showsContainer: false, dateChipsArePickers: false, todayKey: today
+            ).first { $0.kind == .doDate }?.emphasis
+        }
+        #expect(doEmphasis("2019-03-05") == .attention)
+        #expect(doEmphasis("2019-03-06") == .urgent)
     }
 
     // MARK: - The hosts hand their observed day down

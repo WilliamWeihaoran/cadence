@@ -238,6 +238,13 @@ struct iOSNotesView: View {
             loadCoreNotes()
             selectDefaultNote()
         }
+        // [[T-14583]]: the standing notes above are made for `selectedDayKey`, which deliberately
+        // does not move at midnight, so the Today and Week tabs pinned an observed day whose note
+        // nobody made. The turn makes the new period's notes; it selects nothing and leaves
+        // `selectedDayKey` where the user put it.
+        .onChange(of: observedDay) { _, _ in
+            _ = CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: modelContext, dayKey: observedDay.todayKey)
+        }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             loadCoreNotes()
