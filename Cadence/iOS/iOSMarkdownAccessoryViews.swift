@@ -275,20 +275,19 @@ private struct iOSMarkdownTaskReferenceRow: View {
         return TaskTitleSupport.displayTitle(trimmed)
     }
 
+    /// [[T-14412]]: the shared `[[` task subtitle the Mac menu and the inline strip draw, with this
+    /// row's do/due date as its detail (whether the other two should carry it is [[T-14423]]).
     private var subtitle: String {
-        var parts: [String] = []
-        if !task.containerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            parts.append(task.containerName)
-        }
+        MarkdownReferenceCompletionSupport.taskSubtitle(for: task, detail: dateDetail)
+    }
+
+    private var dateDetail: String? {
         if !task.scheduledDate.isEmpty {
-            parts.append("Do \(CadenceTaskPresentationSupport.scheduledDateLabel(for: task))")
+            return "Do \(CadenceTaskPresentationSupport.scheduledDateLabel(for: task))"
         } else if !task.dueDate.isEmpty {
-            parts.append("Due \(CadenceTaskPresentationSupport.dueDateLabel(for: task))")
+            return "Due \(CadenceTaskPresentationSupport.dueDateLabel(for: task))"
         }
-        if task.isDone {
-            parts.append("Completed")
-        }
-        return parts.isEmpty ? "Inbox" : parts.joined(separator: " · ")
+        return nil
     }
 
     var body: some View {

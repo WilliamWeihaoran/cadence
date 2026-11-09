@@ -126,13 +126,19 @@ nonisolated enum MarkdownReferenceCompletionSupport {
     /// merely reorder the menu — it changed *which tasks were offered* between one keystroke and the
     /// next. `order` is per-container and these candidates come from every list, so equal `order`
     /// is the normal case rather than the edge one; `TaskOrdering.fallbackPrecedes` closes it.
-    nonisolated static func candidateTasks(from tasks: [AppTask], query: String) -> [AppTask] {
+    ///
+    /// Main-actor since [[T-14412]]: it matches `taskListLabel`, which reads the main-actor list
+    /// title rule; every caller is a view or a main-actor test.
+    @MainActor static func candidateTasks(from tasks: [AppTask], query: String) -> [AppTask] {
         tasks
             .filter { !$0.isCancelled }
             .filter {
                 matches($0.title, query: query)
                     || matches($0.notes, query: query)
                     || matches($0.containerName, query: query)
+                    // The list as the subtitle below names it ([[T-14412]]), so "inbox" finds a
+                    // listless task and "untitled area" a blank-named list's, as on the Mac menu.
+                    || matches(taskListLabel(for: $0), query: query)
             }
             .sorted { lhs, rhs in
                 if lhs.isDone != rhs.isDone { return !lhs.isDone && rhs.isDone }
@@ -143,6 +149,26 @@ nonisolated enum MarkdownReferenceCompletionSupport {
                 if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
                 return TaskOrdering.fallbackPrecedes(lhs, rhs)
             }
+    }
+
+    /// The list a `[[` task completion names: [[T-11892]]'s rule, `CadenceBoardCardMetadata.listTitle`
+    /// -- the list's display title ("Untitled Area" for a blank name), "Inbox" only when the task is
+    /// in no list. This is also the part of the subtitle a query matches; the status is not, so
+    /// typing "completed" does not list every finished task.
+    @MainActor static func taskListLabel(for task: AppTask) -> String {
+        CadenceBoardCardMetadata.listTitle(for: task)
+    }
+
+    /// The second line of a task in a `[[` completion, one spelling for all three surfaces that draw
+    /// it -- the Mac menu, the iOS inline strip and the iOS picker sheet ([[T-14412]]; one app on two
+    /// platforms, [[T-8201]]). They had said "Todo"/"Done" (the raw status), "Task"/"Completed" and
+    /// "Inbox" for one listless task. The list label, then `detail` when a surface has one (the
+    /// sheet's do/due date), then "Completed" for a finished task, joined by " · ".
+    @MainActor static func taskSubtitle(for task: AppTask, detail: String? = nil) -> String {
+        var parts = [taskListLabel(for: task)]
+        if let detail, !detail.isEmpty { parts.append(detail) }
+        if task.isDone { parts.append("Completed") }
+        return parts.joined(separator: " · ")
     }
 
     nonisolated private static func isValidToken(_ token: String) -> Bool {

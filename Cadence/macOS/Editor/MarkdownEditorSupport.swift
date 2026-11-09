@@ -19,6 +19,11 @@ struct MarkdownReferenceSuggestion: Identifiable, Hashable {
     /// still finds the note whose row now says `Oct 30`. Equal to `title` for a task.
     let matchTitle: String
     let subtitle: String
+    /// What a typed query is matched against besides the titles. A note's kind label, the same as
+    /// `subtitle`; a task's list label only, without the " · Completed" status ([[T-14412]]), so
+    /// "completed" does not list every finished task -- and "todo", which the raw status once
+    /// matched, lists none.
+    let matchSubtitle: String
     /// Written into the text. Built from `displayTitle`, never from `title`.
     let markdown: String
 
@@ -31,18 +36,20 @@ struct MarkdownReferenceSuggestion: Identifiable, Hashable {
         query.isEmpty
             || title.localizedCaseInsensitiveContains(query)
             || matchTitle.localizedCaseInsensitiveContains(query)
-            || subtitle.localizedCaseInsensitiveContains(query)
+            || matchSubtitle.localizedCaseInsensitiveContains(query)
     }
 
     static func note(_ note: Note) -> MarkdownReferenceSuggestion {
-        MarkdownReferenceSuggestion(
+        // [[T-8691]]: the shared kind label, so an event note reads "Event note" as it does on
+        // iOS's `[[` strip, not the retired tab name `rawValue.capitalized` gave ("Meeting").
+        let kindLabel = NoteReferencePanelSupport.noteKindLabel(note.kind)
+        return MarkdownReferenceSuggestion(
             kind: .note,
             targetID: note.id,
             title: NoteReferencePanelSupport.searchTitle(note),
             matchTitle: note.displayTitle,
-            // [[T-8691]]: the shared kind label, so an event note reads "Event note" as it does
-            // on iOS's `[[` strip, not the retired tab name `rawValue.capitalized` gave ("Meeting").
-            subtitle: NoteReferencePanelSupport.noteKindLabel(note.kind),
+            subtitle: kindLabel,
+            matchSubtitle: kindLabel,
             markdown: NoteReferenceParser.noteReferenceMarkdown(for: note)
         )
     }
@@ -53,7 +60,10 @@ struct MarkdownReferenceSuggestion: Identifiable, Hashable {
             targetID: task.id,
             title: TaskTitleSupport.displayTitle(task.title),
             matchTitle: TaskTitleSupport.displayTitle(task.title),
-            subtitle: task.containerName.isEmpty ? task.status.rawValue.capitalized : task.containerName,
+            // [[T-14412]]: the shared subtitle the iOS strip and sheet draw, not the raw status
+            // word ("Todo") for a task in no list.
+            subtitle: MarkdownReferenceCompletionSupport.taskSubtitle(for: task),
+            matchSubtitle: MarkdownReferenceCompletionSupport.taskListLabel(for: task),
             markdown: NoteReferenceParser.taskReferenceMarkdown(for: task)
         )
     }

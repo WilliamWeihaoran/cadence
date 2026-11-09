@@ -541,11 +541,11 @@ struct iOSMarkdownEditingSurface: View {
                 .prefix(MarkdownReferenceCompletionSupport.inlineShortlistLimit)
                 .map { task in
                     let title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let subtitle = task.containerName.trimmingCharacters(in: .whitespacesAndNewlines)
                     return iOSMarkdownReferenceCompletionChoice(
                         id: "task-\(task.id.uuidString)",
                         title: TaskTitleSupport.displayTitle(title),
-                        subtitle: subtitle.isEmpty ? (task.isDone ? "Completed" : "Task") : subtitle,
+                        // [[T-14412]]: the subtitle the Mac menu and the picker sheet draw.
+                        subtitle: MarkdownReferenceCompletionSupport.taskSubtitle(for: task),
                         systemImage: task.isDone ? "checkmark.circle.fill" : "checkmark.circle",
                         tint: task.isDone ? Theme.green : Theme.blue,
                         markdown: NoteReferenceParser.taskReferenceMarkdown(for: task)

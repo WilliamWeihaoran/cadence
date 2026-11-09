@@ -901,6 +901,83 @@ struct CadenceNoteReferenceDisplayTitleTests {
         #endif
     }
 
+    /// [[T-14412]]: a task's second line in a `[[` completion is one spelling on all three surfaces
+    /// -- the Mac menu said "Todo"/"Done", the iOS strip "Task"/"Completed" and the iOS sheet
+    /// "Inbox" for the same listless task. [[T-11892]]'s rule: the list's display title, "Inbox"
+    /// only when the task is in no list, then " · Completed" when done.
+    @Test func aTaskSuggestionNamesItsListOrTheInboxThenWhetherItIsDone() {
+        let context = Context(name: "Work")
+        let loose = AppTask(title: "Loose end")
+        #expect(MarkdownReferenceCompletionSupport.taskSubtitle(for: loose) == "Inbox")
+
+        let looseDone = AppTask(title: "Finished")
+        looseDone.status = .done
+        #expect(MarkdownReferenceCompletionSupport.taskSubtitle(for: looseDone) == "Inbox · Completed")
+
+        let filed = AppTask(title: "Draft")
+        filed.area = Area(name: "Documents", context: context)
+        #expect(MarkdownReferenceCompletionSupport.taskSubtitle(for: filed) == "Documents")
+        filed.status = .done
+        #expect(MarkdownReferenceCompletionSupport.taskSubtitle(for: filed) == "Documents · Completed")
+
+        // A blank-named list is not the Inbox ([[T-11892]]).
+        let blank = AppTask(title: "Blank")
+        blank.area = Area(name: "  ", context: context)
+        #expect(MarkdownReferenceCompletionSupport.taskSubtitle(for: blank) == "Untitled Area")
+
+        // The sheet's date sits between the list and the status.
+        #expect(MarkdownReferenceCompletionSupport.taskSubtitle(for: looseDone, detail: "Do Today")
+            == "Inbox · Do Today · Completed")
+        #expect(MarkdownReferenceCompletionSupport.taskSubtitle(for: loose, detail: "") == "Inbox")
+    }
+
+    /// What a query matches: the list label, never the status. "todo" used to match every open
+    /// listless task on the Mac, because the raw status word was its subtitle and the subtitle was
+    /// searched; "inbox" now finds them on both platforms.
+    @Test func aTaskSuggestionMatchesItsListAndNotItsStatus() {
+        let loose = AppTask(title: "Loose end")
+        let done = AppTask(title: "Finished")
+        done.status = .done
+        let filed = AppTask(title: "Draft")
+        filed.area = Area(name: "Documents", context: Context(name: "Work"))
+        let tasks = [loose, done, filed]
+
+        let inbox = MarkdownReferenceCompletionSupport.candidateTasks(from: tasks, query: "inbox")
+        #expect(Set(inbox.map(\.id)) == [loose.id, done.id])
+        #expect(MarkdownReferenceCompletionSupport.candidateTasks(from: tasks, query: "documents").map(\.id) == [filed.id])
+
+        #if os(macOS)
+        let suggestions = tasks.map(MarkdownReferenceSuggestion.task)
+        for (task, suggestion) in zip(tasks, suggestions) {
+            #expect(suggestion.subtitle == MarkdownReferenceCompletionSupport.taskSubtitle(for: task))
+        }
+        #expect(suggestions[0].subtitle == "Inbox")
+        #expect(suggestions.filter { $0.matches(query: "inbox") }.map(\.targetID) == [loose.id, done.id])
+        #expect(suggestions.filter { $0.matches(query: "documents") }.map(\.targetID) == [filed.id])
+        #expect(!suggestions.contains { $0.matches(query: "todo") })
+        #expect(!suggestions.contains { $0.matches(query: "completed") })
+        #endif
+    }
+
+    /// The two iOS rows are `#if os(iOS)` and invisible to this target, so they are read from source:
+    /// both call the shared subtitle, and none of the three old spellings survives.
+    @Test func everyTaskSuggestionSurfaceDrawsTheSharedSubtitle() throws {
+        let mac = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Editor/MarkdownEditorSupport.swift"))
+        #expect(!mac.contains("status.rawValue.capitalized"))
+        #expect(mac.contains("subtitle: MarkdownReferenceCompletionSupport.taskSubtitle(for: task)"))
+
+        let stripFile = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownEditingSurface.swift")
+        #expect(CadenceSourceScan.codeOnly(stripFile).contains("subtitle: MarkdownReferenceCompletionSupport.taskSubtitle(for: task)"))
+        #expect(!stripFile.contains("task.isDone ? \"Completed\" : \"Task\""))
+
+        let sheetFile = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownAccessoryViews.swift")
+        let sheetRow = try #require(CadenceSourceScan.declarationBody(
+            "private struct iOSMarkdownTaskReferenceRow: View", in: sheetFile
+        ))
+        #expect(sheetRow.contains("MarkdownReferenceCompletionSupport.taskSubtitle(for: task, detail: dateDetail)"))
+        #expect(!sheetRow.contains("parts.isEmpty ? \"Inbox\""))
+    }
+
     /// The Mac chips and picker filter, and the three iOS views, are checked in source: `Cadence/iOS/`
     /// is invisible to this macOS target, and the Mac strip is a view with no seam to call.
     @Test func everyReferenceSurfaceDrawsSearchTitle() throws {
