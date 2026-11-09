@@ -837,6 +837,49 @@ struct AppStoreReviewReadinessTests {
         #expect(entitlements["com.apple.developer.aps-environment"] == nil)
     }
 
+    /// **T-3152.** The owner decided the widget extension gets its own iCloud entitlement so it can
+    /// export its own writes, and it must be the app's container, not merely *a* container: Xcode's
+    /// capability editor once wrote the services key with an EMPTY container list, which signs and
+    /// gives the extension nothing to export to. So this pins the container by name, and then
+    /// asserts both keys equal both app entitlements files' values, so the widget and the app
+    /// cannot drift apart. The widget signs from one file for both platforms (no
+    /// `[sdk=iphone*]` override), which the wiring check pins, so this one file covers iOS and macOS.
+    @Test func widgetExtensionCarriesTheAppsICloudContainerByName() throws {
+        let widget = try plistDictionary(at: "CadenceWidgets/CadenceWidgets.entitlements")
+        let macOSApp = try plistDictionary(at: "Cadence/Cadence.entitlements")
+        let iOSApp = try plistDictionary(at: "Cadence/Cadence-iOS.entitlements")
+        let project = try textFile(at: "Cadence.xcodeproj/project.pbxproj")
+
+        let containersKey = "com.apple.developer.icloud-container-identifiers"
+        let servicesKey = "com.apple.developer.icloud-services"
+
+        let widgetContainers = widget[containersKey] as? [String]
+        #expect(
+            widgetContainers?.contains("iCloud.com.haoranwei.Cadence") == true,
+            "the widget extension does not carry the app's iCloud container by name"
+        )
+        #expect(widget[servicesKey] as? [String] == ["CloudKit"])
+
+        // The relation: the widget's iCloud keys are the app's, on both platforms.
+        for (name, app) in [("macOS", macOSApp), ("iOS", iOSApp)] {
+            let appContainers = app[containersKey] as? [String]
+            #expect(appContainers?.isEmpty == false, "the \(name) app entitlements carry no iCloud container")
+            #expect(
+                widgetContainers == appContainers,
+                "the widget's iCloud containers \(widgetContainers ?? []) differ from the \(name) app's \(appContainers ?? [])"
+            )
+            #expect(
+                widget[servicesKey] as? [String] == app[servicesKey] as? [String],
+                "the widget's iCloud services differ from the \(name) app's"
+            )
+        }
+
+        // One file signs the widget on both platforms, in both configurations.
+        let wiring = "CODE_SIGN_ENTITLEMENTS = CadenceWidgets/CadenceWidgets.entitlements;"
+        #expect(project.components(separatedBy: wiring).count - 1 == 2)
+        #expect(!project.contains("\"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]\" = \"CadenceWidgets/"))
+    }
+
     /// **T-1309.** `Cadence.entitlements` was one file naming both platforms' build configurations
     /// and it carried `com.apple.developer.aps-environment` — the macOS spelling. iOS spells the
     /// same capability as a bare `aps-environment`, so every signed iPhone and iPad build shipped
