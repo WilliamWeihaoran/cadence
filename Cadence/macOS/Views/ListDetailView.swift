@@ -120,7 +120,7 @@ private struct ListDetailView: View {
         ListDetailChromeView(
             area: area,
             project: project,
-            tab: $tab,
+            tab: pickedTab,
             showEdit: $showEdit,
             showArchivedKanbanColumns: $showArchivedKanbanColumns,
             kanbanSortField: $kanbanSortField,
@@ -143,11 +143,9 @@ private struct ListDetailView: View {
                 onDisappearAction: removeKeyMonitor,
                 onNavigationChange: applyPendingNavigationIfNeeded
             ))
-            .modifier(ListDetailTabAndKanbanPersistenceModifier(
-                tab: $tab,
+            .modifier(ListDetailKanbanPersistenceModifier(
                 kanbanSortField: $kanbanSortField,
                 kanbanSortDirection: $kanbanSortDirection,
-                tabDefaultsKey: tabDefaultsKey,
                 kanbanUDKey: kanbanUDKey
             ))
             .modifier(ListDetailTaskPreferencePersistenceModifier(
@@ -156,6 +154,26 @@ private struct ListDetailView: View {
                 taskGroupingMode: $taskGroupingMode,
                 taskUDKeyPrefix: taskUDKeyPrefix
             ))
+    }
+
+    /// **The tab bar's binding: a pick made on this list, remembered as this list's page**
+    /// ([[T-14281]]).
+    ///
+    /// The tab used to be written to the list's key by an `onChange(of: tab)`, which also fired
+    /// for `restoreRememberedTab()`'s own write. So a list opened for the first time while the
+    /// Settings "Default page" was Kanban saved Kanban as its page -- a page nobody picked on it --
+    /// and when the default later moved to Notes, every list ever opened kept opening on Kanban,
+    /// against the setting's own subtitle ("Used when a list does not have a saved page") and
+    /// against iOS, whose `pageBinding` writes on a tap only. Only a pick writes now: a tab click
+    /// (this binding) and Cmd-Shift-[ / ] (`moveTab`). The restore and a navigation request's
+    /// page are what the list OPENS on, not a pick, as iOS's `initialPage` seed is never written.
+    private var pickedTab: Binding<ListDetailPage> {
+        Binding(get: { tab }, set: { pickTab($0) })
+    }
+
+    private func pickTab(_ page: ListDetailPage) {
+        tab = page
+        CadenceDefaults.store.set(page.rawValue, forKey: tabDefaultsKey)
     }
 
     private func restoreRememberedTab() {
@@ -215,7 +233,7 @@ private struct ListDetailView: View {
         let tabs = ListDetailPage.allCases
         guard let currentIndex = tabs.firstIndex(of: tab), !tabs.isEmpty else { return }
         let nextIndex = (currentIndex + delta + tabs.count) % tabs.count
-        tab = tabs[nextIndex]
+        pickTab(tabs[nextIndex])
     }
 }
 
@@ -386,19 +404,16 @@ private struct ListDetailLifecycleModifier: ViewModifier {
     }
 }
 
-private struct ListDetailTabAndKanbanPersistenceModifier: ViewModifier {
-    @Binding var tab: ListDetailPage
+/// The board's Sort / Order. The tab is not persisted here any more: an `onChange` cannot tell a
+/// pick from the restore, so it is written where it is picked (`ListDetailView.pickTab`, [[T-14281]]).
+private struct ListDetailKanbanPersistenceModifier: ViewModifier {
     @Binding var kanbanSortField: TaskSortField
     @Binding var kanbanSortDirection: TaskSortDirection
 
-    let tabDefaultsKey: String
     let kanbanUDKey: String
 
     func body(content: Content) -> some View {
         content
-            .onChange(of: tab) { _, newValue in
-                CadenceDefaults.store.set(newValue.rawValue, forKey: tabDefaultsKey)
-            }
             .onChange(of: kanbanSortField) { _, value in
                 CadenceDefaults.store.set(value.rawValue, forKey: ListDetailSortControls.sortFieldKey(kanbanUDKey))
             }

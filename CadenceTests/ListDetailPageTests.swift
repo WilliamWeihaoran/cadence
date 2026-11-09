@@ -115,6 +115,47 @@ struct ListDetailPageTests {
         #expect(!key.contains("listDetailTab."), "macOS spells the remembered-tab key inline again")
     }
 
+    // MARK: - T-14281: opening a list saved the default as its page
+
+    /// The Mac wrote the tab to the list's key from an `onChange(of: tab)`, which fired for the
+    /// restore's own write too: a list opened while Settings' "Default page" was Kanban saved
+    /// Kanban, so moving the default later never reached it. Only a pick may write -- the tab
+    /// bar's binding and Cmd-Shift-[ / ] -- as on iOS, whose `pageBinding` writes on a tap only.
+    @Test("macOS saves a list's page only when one is picked on it")
+    func macOSSavesThePageOnlyOnAPick() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListDetailView.swift")
+        let source = CadenceSourceScan.strippingComments(raw)
+        #expect(source != raw, "the comment stripper never fired, so this read prose as code")
+
+        let write = "CadenceDefaults.store.set(page.rawValue, forKey: tabDefaultsKey)"
+        let pick = try #require(
+            CadenceSourceScan.functionBody(named: "pickTab", in: source),
+            "pickTab(_:) is gone or its braces do not balance"
+        )
+        #expect(pick.contains(write), "non-vacuity: the pick no longer saves the page. got: \(pick)")
+        #expect(source.contains("tab: pickedTab,"), "the tab bar is handed a binding that does not save the pick")
+
+        let move = try #require(CadenceSourceScan.functionBody(named: "moveTab", in: source))
+        #expect(move.contains("pickTab("), "Cmd-Shift-[ / ] moves the tab without saving it. got: \(move)")
+
+        // Needle self-check, then the regression itself: any observer of `tab` writes on the
+        // restore as well as on a pick, because it cannot tell them apart.
+        #expect(CadenceSourceScan.matchCount("\\.onChange\\(of: tab\\b", in: ".onChange(of: tab) { _, v in") == 1)
+        #expect(CadenceSourceScan.matchCount("\\.onChange\\(of: tab\\b", in: ".onChange(of: tabDefaultsKey)") == 0)
+        #expect(
+            CadenceSourceScan.matchCount("\\.onChange\\(of: tab\\b", in: source) == 0,
+            "the tab is persisted by an observer again, which saves the restored default as a pick"
+        )
+        #expect(
+            CadenceSourceScan.matchCount("\\.set\\([^)\\n]*forKey: tabDefaultsKey", in: source) == 1,
+            "the list's page is written somewhere other than pickTab(_:)"
+        )
+        for name in ["restoreRememberedTab", "applyPendingNavigationIfNeeded"] {
+            let body = try #require(CadenceSourceScan.functionBody(named: name, in: source), "\(name) is gone")
+            #expect(!body.contains("CadenceDefaults.store.set"), "\(name) saves the page it opens on")
+        }
+    }
+
     // MARK: - T-7032: iPad kept the previous list's tab
 
     /// The exact iPad report: Links picked on list A, the sidebar moves to list B — which remembers
