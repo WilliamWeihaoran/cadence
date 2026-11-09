@@ -347,6 +347,11 @@ extension CadenceTaskMutationSupport {
     /// `CadenceInPlaceEditFlush` rather than left to a bare `try?`. The iOS detail sheet's time
     /// picker used to write through this via a plain `Binding<Int>` setter and close over whatever
     /// the swallowed save did.
+    ///
+    /// **[[T-14235]]: capped at `CadenceScheduleDraft.lastTaskStartMinute` (23:59), the inspector's
+    /// cap since [[T-14233]].** It was 1425, the last QUARTER-hour, while the Mac Kanban card's
+    /// `CadenceTimeRoller` steps in five minutes, so a picked 11:50 or 11:55 PM saved as 11:45 PM.
+    /// The note embed's 15-minute Stepper bounds itself at 1425 and never reaches the cap.
     @discardableResult
     static func setScheduledTime(
         _ startMin: Int,
@@ -354,7 +359,7 @@ extension CadenceTaskMutationSupport {
         modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
-        task.scheduledStartMin = min(max(0, startMin), 1425)
+        task.scheduledStartMin = min(max(0, startMin), CadenceScheduleDraft.lastTaskStartMinute)
         return CadenceInPlaceEditFlush.flush(in: modelContext, commit: commit)
     }
 

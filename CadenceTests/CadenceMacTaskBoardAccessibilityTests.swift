@@ -175,6 +175,25 @@ struct CadenceMacTaskBoardAccessibilityTests {
         #expect(reconciles == 1, "the start-time write skipped the wind-down reconcile (T-362)")
     }
 
+    /// [[T-14235]]: the card's roller steps in five minutes, and the write capped at 1425 (the last
+    /// quarter-hour), so a picked 11:50 or 11:55 PM landed as 11:45 PM.
+    @Test func theCardsLastFiveMinuteStartsLandAsPicked() throws {
+        let context = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let task = AppTask(title: "Late")
+        task.scheduledDate = "2026-03-01"
+        task.scheduledStartMin = 9 * 60
+        context.insert(task)
+        try context.save()
+
+        #expect(KanbanCardStateSupport.commitStartMinute(23 * 60 + 50, for: task, in: context, reconciler: .inert))
+        #expect(task.scheduledStartMin == 23 * 60 + 50, "a picked 11:50 PM was saved earlier")
+        #expect(KanbanCardStateSupport.commitStartMinute(23 * 60 + 55, for: task, in: context, reconciler: .inert))
+        #expect(task.scheduledStartMin == 23 * 60 + 55, "a picked 11:55 PM was saved earlier")
+        // The day's last minute is still the ceiling.
+        #expect(KanbanCardStateSupport.commitStartMinute(24 * 60, for: task, in: context, reconciler: .inert))
+        #expect(task.scheduledStartMin == CadenceScheduleDraft.lastTaskStartMinute)
+    }
+
     // MARK: T-7084
 
     /// [[T-12791]] took the tab's hand-rolled row, and the status label T-7084 hung on its glyph,
