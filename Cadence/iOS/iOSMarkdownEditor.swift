@@ -292,6 +292,9 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         /// proposes around it — see `MarkdownProgrammaticEditSupport` for the measurement that made
         /// this necessary and for why the smart-punctuation traits are not the lever.
         var pendingProgrammaticEdit: MarkdownProgrammaticEdit?
+        /// Set across the ordered-list renumbering's own write, so the delegate callback it raises
+        /// does not renumber, publish and restyle a second time inside the pass that asked for it.
+        private var isRenumberingOrderedList = false
 
         /// The task panel open inside this note, if any ([[T-1481]]); see
         /// `iOSMarkdownInlineTaskPanelSupport`.
@@ -395,10 +398,13 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         }
 
         func textViewDidChange(_ textView: UITextView) {
-            guard !isApplyingStyle, !isApplyingTableEdit else { return }
-            let updatedText = textView.text ?? ""
+            guard !isApplyingStyle, !isApplyingTableEdit, !isRenumberingOrderedList else { return }
+            var updatedText = textView.text ?? ""
             if applyTypingTransformIfNeeded(to: textView, text: updatedText) {
                 return
+            }
+            if renumberOrderedListMarkersIfNeeded(in: textView, text: updatedText) {
+                updatedText = textView.text ?? ""
             }
             publishSelectedRange(from: textView)
             if parent.text != updatedText {
@@ -702,6 +708,30 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                 selection: textView.selectedRange
             )
             apply(.insertMarkdown(insertion), to: textView)
+            return true
+        }
+
+        /// Renumbers the note's ordered lists after an edit, as the Mac does from `textDidChange`
+        /// ([[T-14683]]): without it, Return inside `1. a` / `2. b` left two items numbered 2 on
+        /// an iPhone or iPad and the same edit on a Mac did not.
+        ///
+        /// The rule is the shared `MarkdownListSupport.normalizedOrderedListMarkers`; only the
+        /// write is this platform's. It goes through `replaceProgrammatically` with the smallest
+        /// range that changed, so it lands on the view's undo manager in the same event as the
+        /// keystroke that caused it. It stands down while the keyboard is composing marked text
+        /// and while undo or redo is replaying, so it never rewrites a document UIKit is mid-way
+        /// through restoring.
+        private func renumberOrderedListMarkersIfNeeded(in textView: UITextView, text: String) -> Bool {
+            guard textView.markedTextRange == nil,
+                  textView.undoManager?.isUndoing != true,
+                  textView.undoManager?.isRedoing != true else { return false }
+            let result = MarkdownListSupport.normalizedOrderedListMarkers(in: text, selection: textView.selectedRange)
+            guard let edit = MarkdownProgrammaticEditSupport.minimalEdit(from: text, to: result.text) else { return false }
+
+            isRenumberingOrderedList = true
+            defer { isRenumberingOrderedList = false }
+            guard replaceProgrammatically(edit.range, with: edit.replacement, in: textView) else { return false }
+            textView.selectedRange = clamped(result.selection, in: textView.textStorage)
             return true
         }
 

@@ -322,6 +322,109 @@ struct MarkdownListSupportTests {
         #expect(result.text == "    a. deep\n1. top\n        i. deeper\n    a. back")
     }
 
+    /// [[T-14682]]: a bullet or checkbox sub-item under a numbered item is part of that item, so
+    /// the numbering around it carries on. Every case is already correctly numbered, so the
+    /// expected answer is "unchanged" — the bug rewrote the item after the sub-item to `1.`.
+    @Test func aNestedBulletOrCheckboxDoesNotRestartTheNumberingAroundIt() {
+        for text in [
+            "1. Step\n    - detail\n2. Next",
+            "1. Step\n    • detail\n    • more\n2. Next\n3. Last",
+            "1. Step\n    - [ ] todo\n    - [x] done\n2. Next",
+            "1. Step\n    a. sub\n        - deep detail\n    b. sub two\n2. Next",
+            "1. Step\n    - detail\n        i. deeper\n2. Next"
+        ] {
+            let result = MarkdownListSupport.normalizedOrderedListMarkers(
+                in: text,
+                selection: NSRange(location: 0, length: 0)
+            )
+            #expect(result.text == text, "\(text)")
+        }
+    }
+
+    /// The pinned behaviour [[T-14682]] keeps: a bullet at the ordered run's own level is a
+    /// different list, and the numbered list after it starts again.
+    @Test func aBulletAtTheOrderedLevelStillEndsTheRun() {
+        let topLevel = MarkdownListSupport.normalizedOrderedListMarkers(
+            in: "1. one\n2. two\n- aside\n7. fresh",
+            selection: NSRange(location: 0, length: 0)
+        )
+        #expect(topLevel.text == "1. one\n2. two\n- aside\n1. fresh")
+
+        // A bullet at level 1 ends the level-1 sublist but not the level-0 run it sits in.
+        let nested = MarkdownListSupport.normalizedOrderedListMarkers(
+            in: "1. one\n    a. sub\n    - aside\n    c. sub again\n5. two",
+            selection: NSRange(location: 0, length: 0)
+        )
+        #expect(nested.text == "1. one\n    a. sub\n    - aside\n    a. sub again\n2. two")
+    }
+
+    /// [[T-14683]]: the iOS editor applies the renumbering as one small write rather than the
+    /// whole note. Applying the edit has to reproduce the renumbered text exactly, and the range
+    /// has to be the markers that changed, not the document.
+    @Test func theRenumberingIsWrittenAsTheSmallestEditThatProducesIt() throws {
+        let text = "1. a\n2. new\n2. b\n2. c"
+        let renumbered = MarkdownListSupport.normalizedOrderedListMarkers(
+            in: text,
+            selection: NSRange(location: 0, length: 0)
+        ).text
+        #expect(renumbered == "1. a\n2. new\n3. b\n4. c")
+
+        let edit = try #require(MarkdownProgrammaticEditSupport.minimalEdit(from: text, to: renumbered))
+        #expect(edit.range == NSRange(location: ("1. a\n2. new\n" as NSString).length, length: 6))
+        #expect(edit.replacement == "3. b\n4")
+        #expect((text as NSString).replacingCharacters(in: edit.range, with: edit.replacement) == renumbered)
+    }
+
+    @Test func theSmallestEditHandlesEqualTextRepeatsAndSurrogatePairs() throws {
+        #expect(MarkdownProgrammaticEditSupport.minimalEdit(from: "same", to: "same") == nil)
+
+        for (original, updated) in [
+            ("aa", "aaa"), ("aaa", "aa"), ("", "x"), ("x", ""),
+            ("9. 😀", "1. 😀"), ("a😀b", "a😃b"), ("😀😀", "😀😃😀")
+        ] {
+            let edit = try #require(MarkdownProgrammaticEditSupport.minimalEdit(from: original, to: updated))
+            let applied = (original as NSString).replacingCharacters(in: edit.range, with: edit.replacement)
+            #expect(applied == updated, "\(original) -> \(updated)")
+            #expect(NSMaxRange(edit.range) <= (original as NSString).length)
+
+            // An NSString round trip forgives a lone surrogate half, so `applied` alone cannot see
+            // a cut pair: the edit's own ends and its replacement are checked directly.
+            let units = Array(original.utf16)
+            for boundary in [edit.range.location, NSMaxRange(edit.range)] where boundary < units.count {
+                #expect(!UTF16.isTrailSurrogate(units[boundary]), "\(original) -> \(updated) cuts a pair at \(boundary)")
+            }
+            let replacementUnits = Array(edit.replacement.utf16)
+            #expect(
+                Array(String(decoding: replacementUnits, as: UTF16.self).utf16) == replacementUnits,
+                "\(original) -> \(updated) writes a lone surrogate half"
+            )
+        }
+    }
+
+    /// [[T-14683]]'s wiring. `Cadence/iOS/` is entirely inside `#if os(iOS)` and this target builds
+    /// for macOS, so the coordinator cannot be driven here; the source is read instead.
+    @Test func theIOSEditorRenumbersOrderedListsThroughItsUndoableWrite() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownEditor.swift")
+        )
+        let didChange = try cadenceFunctionBody("func textViewDidChange(_ textView: UITextView)", in: source)
+        let transform = try #require(didChange.range(of: "applyTypingTransformIfNeeded("))
+        let renumber = try #require(
+            didChange.range(of: "renumberOrderedListMarkersIfNeeded("),
+            "textViewDidChange no longer renumbers ordered lists"
+        )
+        let publish = try #require(didChange.range(of: "parent.text = updatedText"))
+        #expect(transform.lowerBound < renumber.lowerBound)
+        #expect(renumber.lowerBound < publish.lowerBound, "the renumbered text has to be the text published")
+
+        let body = try cadenceFunctionBody("private func renumberOrderedListMarkersIfNeeded(", in: source)
+        #expect(body.contains("MarkdownListSupport.normalizedOrderedListMarkers("))
+        #expect(body.contains("MarkdownProgrammaticEditSupport.minimalEdit("))
+        #expect(body.contains("replaceProgrammatically(edit.range, with: edit.replacement, in: textView)"))
+        #expect(body.contains("markedTextRange == nil"))
+        #expect(!body.contains("textView.text ="))
+    }
+
     @Test func keepsTheCaretWhereItSitsWhenAnEarlierMarkerShrinks() {
         let text = "10. one\ntail"
         let caret = ("10. one\nta" as NSString).length

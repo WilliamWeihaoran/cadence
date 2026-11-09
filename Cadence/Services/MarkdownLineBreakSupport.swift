@@ -45,10 +45,17 @@ nonisolated enum MarkdownLineBreakSupport {
 
         let contentAfterPrefix = String(line.dropFirst(prefixMatch.prefix.count)).trimmingCharacters(in: .whitespaces)
         if contentAfterPrefix.isEmpty {
+            // Return on an empty item leaves the list. When a line follows, `lineRange` carries
+            // this line's own terminator, so the replacement `"\n"` IS the emptied line and the
+            // caret belongs at its start: `+ 1` put it at the start of the next line, and the next
+            // keystroke landed in front of that line's text ([[T-14681]]). Only at the end of the
+            // note, where the line has no terminator, does the replacement open a fresh line after
+            // it for the caret to go to.
+            let lineIsTerminated = text.substring(with: lineRange).last?.isNewline == true
             return MarkdownLineBreakMutation(
                 replacementRange: lineRange,
                 replacement: "\n",
-                selection: NSRange(location: lineRange.location + 1, length: 0)
+                selection: NSRange(location: lineRange.location + (lineIsTerminated ? 0 : 1), length: 0)
             )
         }
 

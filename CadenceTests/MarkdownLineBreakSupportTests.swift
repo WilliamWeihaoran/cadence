@@ -56,6 +56,27 @@ struct MarkdownLineBreakSupportTests {
 
         #expect(mutation.replacementRange == NSRange(location: 7, length: 3))
         #expect(mutation.replacement == "\n")
+        // The caret stays on the emptied line, not at the `A` of `After` ([[T-14681]]): typing
+        // after the Return has to write a new line between the list and what follows it.
+        #expect(mutation.selection == NSRange(location: 7, length: 0))
+
+        let edited = (markdown as NSString).replacingCharacters(in: mutation.replacementRange, with: mutation.replacement)
+        let typed = (edited as NSString).replacingCharacters(in: mutation.selection, with: "x")
+        #expect(typed == "Before\nx\nAfter")
+    }
+
+    /// The other half of [[T-14681]]: with nothing after the empty item there is no terminator in
+    /// the replaced range, so the replacement opens a fresh line and the caret goes onto it.
+    @Test func exitsAnEmptyListLineAtTheEndOfTheNoteOntoAFreshLine() throws {
+        let markdown = "Before\n• "
+
+        let mutation = try #require(MarkdownLineBreakSupport.mutation(
+            in: markdown,
+            selection: NSRange(location: (markdown as NSString).length, length: 0)
+        ))
+
+        #expect(mutation.replacementRange == NSRange(location: 7, length: 2))
+        #expect(mutation.replacement == "\n")
         #expect(mutation.selection == NSRange(location: 8, length: 0))
     }
 

@@ -101,11 +101,24 @@ nonisolated enum MarkdownListSupport {
         var changed = false
 
         for line in originalLines {
-            guard let match = listPrefixMatch(in: line), match.kind == .ordered else {
+            guard let match = listPrefixMatch(in: line) else {
                 rebuiltLines.append(line)
-                // Any non-ordered line ends the run, so the next one starts at 1 again.
+                // A line that is not a list item at all ends the run, so the next one starts at 1.
                 counters.removeAll()
                 previousOrderedLevel = nil
+                continue
+            }
+
+            guard match.kind == .ordered else {
+                rebuiltLines.append(line)
+                // A bullet or checkbox item ends only the ordered runs at its own level and
+                // deeper. Nested under a numbered item it is that item's sub-item, and the numbered
+                // run around it carries on: `1. Step` / `    - detail` / `2. Next` used to read the
+                // bullet as the end of the list and rewrite `2.` to `1.` ([[T-14682]]). At the
+                // left margin the filter keeps nothing, which is the old full reset.
+                let level = orderedLevel(forIndentation: match.indentation)
+                counters = counters.filter { $0.key < level }
+                previousOrderedLevel = counters.keys.max()
                 continue
             }
 

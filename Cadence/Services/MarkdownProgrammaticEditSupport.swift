@@ -65,4 +65,42 @@ nonisolated enum MarkdownProgrammaticEditSupport {
         guard let pending else { return true }
         return range == pending.range && replacement == pending.replacement
     }
+
+    /// The smallest single write that turns `original` into `updated`, or nil when they are equal.
+    ///
+    /// A whole-document normalization (the ordered-list renumbering, [[T-14683]]) answers with a
+    /// new document, but the iOS editor writes through `replace(_:withText:)`, and replacing the
+    /// whole note would hand UIKit's punctuation pass and the undo record the entire text for a
+    /// change of one digit. The common UTF-16 prefix and suffix are trimmed off, and the suffix is
+    /// never allowed to overlap the prefix, so a repeated run such as "aa" to "aaa" still answers
+    /// with a range inside both strings.
+    static func minimalEdit(from original: String, to updated: String) -> MarkdownProgrammaticEdit? {
+        guard original != updated else { return nil }
+        let old = Array(original.utf16)
+        let new = Array(updated.utf16)
+
+        var prefix = 0
+        let shorter = min(old.count, new.count)
+        while prefix < shorter, old[prefix] == new[prefix] {
+            prefix += 1
+        }
+        var suffix = 0
+        while suffix < shorter - prefix, old[old.count - 1 - suffix] == new[new.count - 1 - suffix] {
+            suffix += 1
+        }
+        // Never cut a surrogate pair: the replacement becomes a Swift `String`, and a lone half
+        // would be repaired to U+FFFD on the way into the note.
+        if prefix > 0, UTF16.isLeadSurrogate(old[prefix - 1]) {
+            prefix -= 1
+        }
+        if suffix > 0, UTF16.isTrailSurrogate(old[old.count - suffix]) {
+            suffix -= 1
+        }
+
+        let replacement = String(utf16CodeUnits: Array(new[prefix..<(new.count - suffix)]), count: new.count - suffix - prefix)
+        return MarkdownProgrammaticEdit(
+            range: NSRange(location: prefix, length: old.count - suffix - prefix),
+            replacement: replacement
+        )
+    }
 }
