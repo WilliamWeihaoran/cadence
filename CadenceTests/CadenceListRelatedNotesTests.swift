@@ -187,10 +187,10 @@ struct CadenceListRelatedNotesTests {
         )
         #expect(!bar.contains("maxVisibleTags"))
         #expect(bar.contains("private var visibleTags: [Tag] { tags }"))
-        let iPad = CadenceSourceScan.strippingComments(
+        let iPadTab = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListNotesView.swift")
         )
-        #expect(!iPad.contains(".filter { !$0.isArchived }"), "the iPad tab re-spells the archived rule")
+        #expect(!iPadTab.contains(".filter { !$0.isArchived }"), "the iPad tab re-spells the archived rule")
     }
 
     // MARK: - Both tabs read it
