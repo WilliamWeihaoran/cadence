@@ -451,7 +451,9 @@ struct iOSSettingsView: View {
     }
 
     private var activeTaskCount: Int {
-        CadenceTaskQuerySupport.openTaskCount(from: tasks)
+        // [[T-14291]]: open work in active lists, the Tasks page's own number — not every open
+        // task in the store, which counted work filed in a done or archived list as active.
+        CadenceTaskQuerySupport.activeTaskCount(from: tasks)
     }
 
     private var completedTaskCount: Int {

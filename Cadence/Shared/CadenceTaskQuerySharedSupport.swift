@@ -33,6 +33,17 @@ nonisolated extension CadenceTaskQuerySupport {
         }
     }
 
+    /// Open work in still-active lists — the number All Tasks' header and the sidebar's Tasks row
+    /// show, and the one the iOS Settings **Active tasks** tile states ([[T-14291]]).
+    ///
+    /// That tile read `openTaskCount(from:)` over every task in the store, so an open task filed in
+    /// a done, paused, cancelled or archived area or project counted as "active" on the same grid whose
+    /// Areas and Projects tiles count only active lists — and Settings said a larger number than
+    /// the Tasks page beside it. One function for both is what keeps them saying the same thing.
+    static func activeTaskCount(from tasks: [AppTask]) -> Int {
+        openTaskCount(from: tasks.filter(\.isInActiveContainer))
+    }
+
     static func completedTaskCount(from tasks: [AppTask]) -> Int {
         tasks.reduce(into: 0) { count, task in
             if task.isDone { count += 1 }
@@ -113,7 +124,7 @@ nonisolated extension CadenceTaskQuerySupport {
     ) -> Int {
         switch scope {
         case .all:
-            return openTaskCount(from: tasks.filter(\.isInActiveContainer))
+            return activeTaskCount(from: tasks)
         case .inbox:
             return openTaskCount(from: inboxTasks(from: tasks)) + (drawsReminders ? reminderCount : 0)
         }
