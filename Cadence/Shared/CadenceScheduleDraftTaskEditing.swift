@@ -22,6 +22,12 @@ extension CadenceScheduleDraft {
     /// falls back to.
     static let untimedTaskFallbackStartMinute = allDayEventFallbackStartMinute
 
+    /// The latest start a saved task's time can name: 23:59, the last minute that is still on the
+    /// day. One figure for the read in `init(editing:)` and the write in
+    /// `CadenceTaskEditDraftCommit.apply` ([[T-14233]]), so a time the draft opened with is the
+    /// time Save writes back.
+    static let lastTaskStartMinute = 24 * 60 - 1
+
     /// A draft over a task that **already exists**.
     ///
     /// The section is read through the container's own section list, the normalization the
@@ -56,7 +62,7 @@ extension CadenceScheduleDraft {
 
         let hasTime = task.scheduledStartMin >= 0 && !task.scheduledDate.isEmpty
         isAllDay = !hasTime
-        startMin = hasTime ? min(task.scheduledStartMin, 24 * 60 - 1) : Self.untimedTaskFallbackStartMinute
+        startMin = hasTime ? min(task.scheduledStartMin, Self.lastTaskStartMinute) : Self.untimedTaskFallbackStartMinute
         endMin = min(24 * 60, startMin + max(Self.minimumDurationMinutes, estimateMinutes))
     }
 
@@ -164,9 +170,13 @@ enum CadenceTaskEditDraftCommit {
         task.estimatedMinutes = draft.estimateMinutes
         task.dueDate = draft.dueDateKey
         task.scheduledDate = draft.startDateKey
-        // `setScheduledTime`'s clamp: the last quarter-hour that still starts on the day.
+        // [[T-14233]]: capped where the draft's own read caps it, not at `setScheduledTime`'s
+        // 1425. That was the last QUARTER-hour, and the panel's Start roller steps in five minutes
+        // ([[T-3171]]), so a picked 11:50 or 11:55 PM saved as 11:45 PM -- and a task already at
+        // 23:50 (a five-minute block dragged to the end of the timeline) moved to 23:45 on any
+        // unrelated Save, a rename included, against "read exactly, write once" above.
         let minute = draft.scheduledStartMin
-        task.scheduledStartMin = minute < 0 ? -1 : min(minute, 1425)
+        task.scheduledStartMin = minute < 0 ? -1 : min(minute, CadenceScheduleDraft.lastTaskStartMinute)
 
         let sectionName = CadenceTaskMutationSupport.normalizedSectionName(draft.sectionName, area: area, project: project)
         if CadenceTaskMutationSupport.isAlreadyInContainer(task, area: area, project: project) {

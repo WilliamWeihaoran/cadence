@@ -614,9 +614,16 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         // `max(estimatedMinutes, 30)` is the spelling `AppTask.timelineDurationMinutes` documents
         // as rejected: it cannot tell "no estimate" from "a deliberate short estimate", so it grew
         // a real 10-minute occurrence into a half-hour block, label and overlap footprint.
-        // `timelineDurationMinutes` keeps 10 at 10, keeps unset (0) at the 30-minute default, and
-        // keeps a dirty sub-5 positive at the 5-minute floor every write path already enforces.
-        nextTask.estimatedMinutes = task.timelineDurationMinutes
+        // `timelineDurationMinutes` keeps 10 at 10 and keeps a dirty sub-5 positive at the 5-minute
+        // floor every write path already enforces.
+        //
+        // **[[T-14231]]: None stays None.** `0` is the Estimate row's None since [[T-6581]] — a
+        // value the user chooses, which every composer stores as itself and every inspector reads
+        // back as "No estimate". Copying `timelineDurationMinutes` resolved it to its 30-minute
+        // *drawing* default, so a repeating task created with no estimate came back from its first
+        // completion estimated at 30m, and stayed so for the rest of the series. The successor
+        // still DRAWS 30 minutes tall, because `timelineDurationMinutes` reads its `0` that way.
+        nextTask.estimatedMinutes = task.estimatedMinutes > 0 ? task.timelineDurationMinutes : 0
         nextTask.sectionName = task.sectionName
         // The successor takes the predecessor's slot in a hand-ordered list (T-6112). Left at the
         // model's default `0`, it sorted among a list's first rows on every completion, so a daily

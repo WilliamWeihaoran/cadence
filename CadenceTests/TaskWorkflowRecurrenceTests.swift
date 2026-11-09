@@ -381,7 +381,8 @@ struct TaskWorkflowRecurrenceTests {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
 
-        // Zero is the only value that means "unset"; it resolves to the 30-minute default.
+        // Zero is the only value that means "unset" -- the Estimate row's None ([[T-6581]]). The
+        // successor stores it as None and draws it at the 30-minute default ([[T-14231]]).
         let unset = makeRecurringTask(title: "No estimate", scheduledDate: "2026-08-04")
         unset.estimatedMinutes = 0
         // A positive estimate below the floor is still the user's answer: it lands on 5, not 30.
@@ -400,7 +401,8 @@ struct TaskWorkflowRecurrenceTests {
             Issue.record("Expected both recurring tasks to spawn a next occurrence")
             return
         }
-        #expect(unsetNext.estimatedMinutes == AppTask.defaultTimelineDurationMinutes)
+        #expect(unsetNext.estimatedMinutes == 0)
+        #expect(CadenceTaskPresentationSupport.estimateValueLabel(minutes: unsetNext.estimatedMinutes) == "No estimate")
         #expect(unsetNext.timelineDurationMinutes == 30)
         #expect(subFloorNext.estimatedMinutes == AppTask.minimumTimelineDurationMinutes)
         #expect(subFloorNext.timelineDurationMinutes == 5)

@@ -1018,6 +1018,42 @@ struct CadenceScheduleDraftTaskEditingTests {
         #expect(stored.title == "Ship the fix")
     }
 
+    /// [[T-14233]]: the last five-minute starts of the day survive Save. The write capped the start
+    /// at 1425, the last QUARTER-hour, while the Start roller steps in five minutes and the draft
+    /// reads up to 23:59 -- so a picked 11:55 PM saved as 11:45 PM, and a task already at 23:50
+    /// moved to 23:45 when it was only renamed.
+    @Test("A start in the day's last quarter-hour is saved as picked, and a rename keeps one")
+    func aLateStartIsSavedAsPicked() throws {
+        let (container, context) = try store()
+        let area = Area(name: "Work")
+        context.insert(area)
+        let task = try filedTask(in: context, area: area)
+        task.estimatedMinutes = 5
+        try context.save()
+
+        var picked = CadenceScheduleDraft(editing: task)
+        picked.moveStart(toMinute: 23 * 60 + 55)
+        #expect(picked.scheduledStartMin == 23 * 60 + 55, "the roller's own value did not reach the draft")
+        #expect(CadenceTaskEditDraftCommit.save(
+            picked, opened: CadenceScheduleDraft(editing: task), to: task, area: area, project: nil,
+            allTasks: [task], scope: .thisTask, in: context, reconciler: .inert
+        ))
+        let afterPick = try #require(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(afterPick.scheduledStartMin == 23 * 60 + 55, "a picked 11:55 PM was saved earlier")
+
+        task.scheduledStartMin = 23 * 60 + 50
+        try context.save()
+        var renamed = CadenceScheduleDraft(editing: task)
+        renamed.title = "Ship the fix tonight"
+        #expect(CadenceTaskEditDraftCommit.save(
+            renamed, opened: CadenceScheduleDraft(editing: task), to: task, area: area, project: nil,
+            allTasks: [task], scope: .thisTask, in: context, reconciler: .inert
+        ))
+        let afterRename = try #require(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(afterRename.title == "Ship the fix tonight")
+        #expect(afterRename.scheduledStartMin == 23 * 60 + 50, "a rename moved the task's time")
+    }
+
     /// Every drafted field reaches the store in the one commit, a list move included.
     @Test("A saved draft writes every field it holds")
     func aSavedDraftWritesEveryFieldItHolds() throws {
