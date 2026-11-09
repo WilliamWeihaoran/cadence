@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import SwiftUI
 
 enum MarkdownTaskEmbedHitTarget: Equatable {
     case checkbox
@@ -19,24 +20,8 @@ enum MarkdownTaskEmbedDrawing {
         let label: String
         let color: NSColor
         let field: MarkdownTaskEmbedField
-        /// Chips render left to right but are budgeted by importance, so a card that cannot fit
-        /// every chip drops the least useful one instead of whatever happens to sit last in the
-        /// row. Lower wins. A due date always outranks the rest — it must never be the chip that
-        /// disappears, because a hidden chip is also an unhittable one.
+        /// `CadenceTaskEmbedChipRow.Importance`: lower wins when the card cannot fit every chip.
         let importance: Int
-    }
-
-    private enum ChipImportance {
-        static let dueDate = 1
-        static let container = 2
-        static let scheduledDate = 3
-        static let priority = 4
-        static let status = 5
-        static let recurrence = 6
-        static let section = 7
-        static let emptyDueDate = 8
-        static let emptyScheduledDate = 9
-        static let estimate = 10
     }
 
     private struct ChipRect {
@@ -121,7 +106,7 @@ enum MarkdownTaskEmbedDrawing {
         cardPath.stroke()
 
         let stripRect = NSRect(x: cardRect.minX, y: cardRect.minY + 5, width: 4, height: cardRect.height - 10)
-        let stripColor = task.isMissing ? MarkdownStylist.dimColor : priorityColor(task.priorityRaw, fallback: task.containerColorHex)
+        let stripColor = task.isMissing ? MarkdownStylist.dimColor : stripColor(for: task)
         stripColor.withAlphaComponent(task.isMissing ? 0.48 : 0.9).setFill()
         NSBezierPath(roundedRect: stripRect, xRadius: 2, yRadius: 2).fill()
 
@@ -243,140 +228,59 @@ enum MarkdownTaskEmbedDrawing {
     }
 
     /// Picks which chips survive a narrow card by importance, then hands the survivors back in
-    /// display order. Both drawing and hit testing go through here, so a chip is never visible
-    /// without being clickable or clickable without being visible.
+    /// display order -- the rule `CadenceTaskEmbedChipRow.keptIndices` shared with the iOS card.
+    /// Both drawing and hit testing go through here, so a chip is never visible without being
+    /// clickable or clickable without being visible.
     private static func keptChipIndices(chips: [Chip], widths: [CGFloat], available: CGFloat) -> [Int] {
-        var kept: [Int] = []
-        var used: CGFloat = 0
-        for index in rankedChipIndices(chips) {
-            guard !kept.isEmpty else {
-                // The most important chip always lays out; an extremely narrow card truncates
-                // its label rather than dropping the chip entirely.
-                kept.append(index)
-                used = min(widths[index], available)
-                continue
-            }
-            let next = used + 6 + widths[index]
-            guard next <= available else { continue }
-            kept.append(index)
-            used = next
-        }
-        return kept.sorted()
-    }
-
-    /// Stable importance ranking; equal importance keeps display order.
-    private static func rankedChipIndices(_ chips: [Chip]) -> [Int] {
-        chips.indices.sorted {
-            chips[$0].importance == chips[$1].importance
-                ? $0 < $1
-                : chips[$0].importance < chips[$1].importance
-        }
+        CadenceTaskEmbedChipRow.keptIndices(importances: chips.map(\.importance), widths: widths, available: available, gap: 6)
     }
 
     private static func chipWidth(_ chip: Chip) -> CGFloat {
         min(max(42, chip.label.size(withAttributes: chipAttributes).width + 18), 128)
     }
 
-    /// [[T-14321]]: the Do / Due urgency is `CadenceTaskEmbedDateTone`, the rule this card always
-    /// drew, now shared with the iOS card so the two cannot disagree about a date's hue.
-    private static func color(for tone: CadenceTaskEmbedDateTone) -> NSColor {
-        switch tone {
-        case .neutral: return MarkdownStylist.dimColor
-        case .today: return MarkdownStylist.highlightAccentColor
-        case .overdue: return MarkdownStylist.redColor
+    /// [[T-14324]]: the row -- order, words, hues, importance -- is `CadenceTaskEmbedChipRow`'s,
+    /// shared with the iOS card under [[T-8201]]. What is this card's own is the placeholder an
+    /// empty Do, Due or estimate draws: its chips are click targets that edit the field under a
+    /// pointer, so an empty field still needs one; the iOS card is a single touch target and
+    /// leaves the chip out.
+    private static func displayChips(for task: MarkdownTaskEmbedRenderInfo) -> [Chip] {
+        CadenceTaskEmbedChipRow.slots(for: task).map { slot in
+            Chip(
+                label: slot.title ?? placeholder(for: slot.field),
+                color: nsColor(for: slot.tone),
+                field: slot.field,
+                importance: slot.importance
+            )
         }
     }
 
-    private static func displayChips(for task: MarkdownTaskEmbedRenderInfo) -> [Chip] {
-        if task.isMissing {
-            return [Chip(label: "Missing", color: MarkdownStylist.redColor, field: .status, importance: ChipImportance.status)]
-        }
+    /// Every chip the card offers before width drops any, as (field, words): the seam the
+    /// cross-platform row test reads, since the drawing itself cannot be unit-painted.
+    static func offeredChips(for task: MarkdownTaskEmbedRenderInfo) -> [(field: MarkdownTaskEmbedField, label: String)] {
+        displayChips(for: task).map { ($0.field, $0.label) }
+    }
 
-        var chips: [Chip] = []
-        let status = TaskStatus(rawValue: task.statusRaw) ?? .todo
-        let statusColor: NSColor
-        switch status {
-        case .todo, .inProgress:
-            statusColor = MarkdownStylist.dimColor
-        case .done:
-            statusColor = MarkdownStylist.greenColor
-        case .cancelled:
-            statusColor = MarkdownStylist.dimColor
-        }
+    /// The card's left strip: the priority chip's hue, or the list's colour when there is none.
+    private static func stripColor(for task: MarkdownTaskEmbedRenderInfo) -> NSColor {
+        let priority = TaskPriority(rawValue: task.priorityRaw) ?? .none
+        return priority == .none ? NSColor(hex: task.containerColorHex) : nsColor(for: .priority(priority))
+    }
 
-        // **`.inProgress` draws no chip, exactly as `.todo` draws none** ([[T-5015]] (b), owner
-        // decision 2026-10-24). It had the blue chip above until then. `drawsStatusChip` is where
-        // the two statuses are made equal rather than an inline `!= .todo`, because this file asks
-        // the question in two places (`statusLabel` below is the other) and the embed reads a
-        // *snapshot* `statusRaw`: a card rendered from an index written before
-        // `CadenceInProgressStatusRetirement` ran can still carry "inprogress", and it must draw
-        // like the plain to-do the store now holds rather than reviving a retired state.
-        if CadenceInProgressStatusRetirement.drawsStatusChip(status) {
-            chips.append(Chip(
-                label: statusLabel(task.statusRaw),
-                color: statusColor,
-                field: .status,
-                importance: ChipImportance.status
-            ))
+    /// The empty field's name on its click target.
+    private static func placeholder(for field: MarkdownTaskEmbedField) -> String {
+        switch field {
+        case .scheduledDate: return "No do date"
+        case .dueDate: return "No due date"
+        case .estimate: return "No estimate"
+        default: return ""
         }
-        if (TaskPriority(rawValue: task.priorityRaw) ?? .none) != .none {
-            chips.append(Chip(
-                label: priorityLabel(task.priorityRaw),
-                color: priorityColor(task.priorityRaw, fallback: task.containerColorHex),
-                field: .priority,
-                importance: ChipImportance.priority
-            ))
-        }
+    }
 
-        let container = task.containerName.trimmingCharacters(in: .whitespacesAndNewlines)
-        chips.append(Chip(
-            label: container.isEmpty ? "Inbox" : container,
-            color: container.isEmpty ? MarkdownStylist.dimColor : NSColor(hex: task.containerColorHex),
-            field: .container,
-            importance: ChipImportance.container
-        ))
-
-        let section = task.sectionName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !section.isEmpty, section.caseInsensitiveCompare(TaskSectionDefaults.defaultName) != .orderedSame {
-            chips.append(Chip(
-                label: section,
-                color: MarkdownStylist.dimColor,
-                field: .section,
-                importance: ChipImportance.section
-            ))
-        }
-
-        let todayKey = DateFormatters.todayKey()
-        let scheduledColor = color(for: CadenceTaskEmbedDateTone.doDate(of: task, todayKey: todayKey))
-        chips.append(Chip(
-            label: scheduledLabel(for: task),
-            color: scheduledColor,
-            field: .scheduledDate,
-            importance: task.scheduledDate.isEmpty ? ChipImportance.emptyScheduledDate : ChipImportance.scheduledDate
-        ))
-        let dueColor = color(for: CadenceTaskEmbedDateTone.dueDate(of: task, todayKey: todayKey))
-        chips.append(Chip(
-            label: dueLabel(for: task),
-            color: dueColor,
-            field: .dueDate,
-            importance: task.dueDate.isEmpty ? ChipImportance.emptyDueDate : ChipImportance.dueDate
-        ))
-        chips.append(Chip(
-            label: estimateLabel(for: task),
-            color: MarkdownStylist.blueColor,
-            field: .estimate,
-            importance: ChipImportance.estimate
-        ))
-
-        if let recurrence = TaskRecurrenceRule(rawValue: task.recurrenceRaw), recurrence != .none {
-            chips.append(Chip(
-                label: recurrence.label,
-                color: MarkdownStylist.greenColor,
-                field: .recurrence,
-                importance: ChipImportance.recurrence
-            ))
-        }
-        return chips
+    /// The shared tone's `Color`, resolved into sRGB for AppKit drawing as `Theme`'s own bridges do.
+    private static func nsColor(for tone: CadenceTaskEmbedChipTone) -> NSColor {
+        let resolved = NSColor(tone.color)
+        return resolved.usingColorSpace(.sRGB) ?? resolved
     }
 
     private static func preferredCardWidth(for task: MarkdownTaskEmbedRenderInfo, maxWidth: CGFloat) -> CGFloat {
@@ -389,7 +293,7 @@ enum MarkdownTaskEmbedDrawing {
         // Budget the most important chips, not the first few in display order — otherwise the
         // card is sized for metadata the layout is willing to drop and starves the due chip.
         let budget = task.hasSubtasks ? 4 : 5
-        let budgeted = rankedChipIndices(chips).prefix(budget)
+        let budgeted = CadenceTaskEmbedChipRow.rankedIndices(importances: chips.map(\.importance)).prefix(budget)
         let chipWidths = budgeted
             .map { chipWidth(chips[$0]) }
             .reduce(CGFloat(0), +)
@@ -575,56 +479,6 @@ enum MarkdownTaskEmbedDrawing {
             attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
         }
         return attrs
-    }
-
-    private static func priorityColor(_ raw: String, fallback: String) -> NSColor {
-        switch TaskPriority(rawValue: raw) ?? .none {
-        case .high:
-            return MarkdownStylist.redColor
-        case .medium:
-            return MarkdownStylist.highlightAccentColor
-        case .low:
-            return MarkdownStylist.blueColor
-        case .none:
-            return NSColor(hex: fallback)
-        }
-    }
-
-    /// Only reached for a status `drawsStatusChip` admits, so `.todo` and `.inProgress` share the
-    /// unreachable arm rather than `.inProgress` keeping the "In progress" string it had before
-    /// [[T-5015]] (b) — a label nothing can draw is a label that comes back the next time someone
-    /// relaxes the predicate above.
-    private static func statusLabel(_ raw: String) -> String {
-        switch TaskStatus(rawValue: raw) ?? .todo {
-        case .todo, .inProgress:
-            return "Todo"
-        case .done:
-            return "Done"
-        case .cancelled:
-            return "Canceled"
-        }
-    }
-
-    private static func priorityLabel(_ raw: String) -> String {
-        let priority = TaskPriority(rawValue: raw) ?? .none
-        return priority == .none ? "No priority" : priority.label
-    }
-
-    private static func scheduledLabel(for task: MarkdownTaskEmbedRenderInfo) -> String {
-        guard !task.scheduledDate.isEmpty else { return "No do date" }
-        let date = DateFormatters.relativeDate(from: task.scheduledDate)
-        guard task.scheduledStartMin >= 0 else { return "Do \(date)" }
-        return "\(date) \(TimeFormatters.timeString(from: task.scheduledStartMin))"
-    }
-
-    private static func dueLabel(for task: MarkdownTaskEmbedRenderInfo) -> String {
-        task.dueDate.isEmpty ? "No due date" : "Due \(DateFormatters.relativeDate(from: task.dueDate))"
-    }
-
-    /// [[T-14322]]: the words are `CadenceTaskEmbedEstimateLabel`'s, shared with the iOS card; the
-    /// empty field's name is this card's own, because its chip is the click target that sets it.
-    private static func estimateLabel(for task: MarkdownTaskEmbedRenderInfo) -> String {
-        CadenceTaskEmbedEstimateLabel.label(for: task) ?? "No estimate"
     }
 }
 #endif

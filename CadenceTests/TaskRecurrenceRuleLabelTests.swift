@@ -46,7 +46,8 @@ struct TaskRecurrenceRuleLabelTests {
                 "Cadence/iOS/iOSTaskRowActionViews.swift",
                 #"Label(task.recurrenceRule == .none ? "Repeat" : "Repeat: \(task.recurrenceRule.label)", systemImage: "repeat")"#
             ),
-            ("Cadence/macOS/Editor/MarkdownTaskEmbedDrawingSupport.swift", "label: recurrence.label,"),
+            // [[T-14324]]: both task-embed cards read the repeat chip from the shared row.
+            ("Cadence/Shared/CadenceTaskEmbedTouchChips.swift", "title: recurrence.label,"),
             (
                 "Cadence/macOS/Views/FocusSidebarSupportViews.swift",
                 "FocusStatusChip(title: task.recurrenceRule.label, color: Theme.blue, icon: TaskRecurrenceRule.repeatSymbol)"

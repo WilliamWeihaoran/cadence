@@ -154,24 +154,34 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
         NSString(string: task.title).draw(in: rect, withAttributes: attributes)
     }
 
+    /// [[T-14324]]: which chips survive a narrow card is `CadenceTaskEmbedChipRow.keptIndices`,
+    /// the Mac card's rule -- by importance, so the due date is never the chip that falls off the
+    /// end of a 393pt row -- laid out in display order, as the Mac card lays out its own.
     private func drawMetadata(width: CGFloat) {
-        var x: CGFloat = 44
-        let y: CGFloat = 38
-        for chip in chips {
-            let chipWidth = min(chip.width, max(58, width - x - 12))
-            guard chipWidth > 36 else { break }
-            drawChip(chip.title, tint: chip.tint, rect: CGRect(x: x, y: y, width: chipWidth, height: 18))
+        let row = chips
+        let contentMinX: CGFloat = 44
+        let contentMaxX = width - 12
+        let kept = CadenceTaskEmbedChipRow.keptIndices(
+            importances: row.map(\.importance),
+            widths: row.map(\.width),
+            available: max(0, contentMaxX - contentMinX),
+            gap: 6
+        )
+        var x = contentMinX
+        for index in kept {
+            let chipWidth = min(row[index].width, contentMaxX - x)
+            guard chipWidth > 0 else { break }
+            drawChip(row[index].title, tint: row[index].tint, rect: CGRect(x: x, y: 38, width: chipWidth, height: 18))
             x += chipWidth + 6
-            if x > width - 54 { break }
         }
     }
 
-    /// [[T-9271]]: the row is `CadenceTaskEmbedTouchChips`', shared with Focus's read-only copy of
-    /// this card; only the measuring is this file's.
-    private var chips: [(title: String, tint: UIColor, width: CGFloat)] {
+    /// The row is `CadenceTaskEmbedTouchChips`' ([[T-9271]], [[T-14324]]); only the measuring is
+    /// this file's.
+    private var chips: [(title: String, tint: UIColor, width: CGFloat, importance: Int)] {
         CadenceTaskEmbedTouchChips.chips(for: task).map { chip in
             let width = min(150, max(44, ceil(chip.title.size(withAttributes: chipAttributes).width) + 16))
-            return (chip.title, UIColor(chip.tint), width)
+            return (chip.title, UIColor(chip.tint), width, chip.importance)
         }
     }
 

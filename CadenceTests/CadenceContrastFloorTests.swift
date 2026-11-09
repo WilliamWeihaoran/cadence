@@ -229,9 +229,11 @@ struct CadenceContrastFloorTests {
         )
     }
 
-    /// The one other reader of the marker-highlight hue (`MarkdownTaskEmbedDrawingSupport`'s
-    /// scheduled/priority chips) reads the raw accent, not the text-legible composite — reading
-    /// `highlightFillColor` there would silently wash the chip tint out toward `Theme.bg`.
+    /// The one other reader of the marker-highlight hue (the task-embed card's today Do chip)
+    /// reads the raw accent, not the text-legible composite — reading the fill there would
+    /// silently wash the chip tint out toward `Theme.bg`. Since [[T-14324]] both cards take chip
+    /// hues from the shared `CadenceTaskEmbedChipTone`, so the Mac drawing names neither, and the
+    /// medium-priority chip that was the second reader takes `Theme.priorityColor`'s amber.
     @Test func theTaskEmbedChipsReadTheRawAccentNotTheComposite() throws {
         let drawing = try t853Source("Cadence/macOS/Editor/MarkdownTaskEmbedDrawingSupport.swift")
         #expect(
@@ -239,9 +241,12 @@ struct CadenceContrastFloorTests {
             "MarkdownTaskEmbedDrawingSupport now reads the pre-composited fill for a non-text-background use"
         )
         #expect(
-            CadenceSourceScan.matchCount(#"\bhighlightAccentColor\b"#, in: drawing) == 2,
-            "expected exactly the two known chip/priority call sites"
+            CadenceSourceScan.matchCount(#"\bhighlightAccentColor\b"#, in: drawing) == 0,
+            "the Mac card picks a chip hue of its own again instead of the shared tone"
         )
+        let shared = try t853Source("Cadence/Shared/CadenceTaskEmbedTouchChips.swift")
+        #expect(CadenceSourceScan.matchCount(#"\bmarkerHighlightFill\b"#, in: shared) == 0)
+        #expect(shared.contains("case .today: return Theme.markerHighlightAccent"))
     }
 
     // MARK: - White on a saturated fill
