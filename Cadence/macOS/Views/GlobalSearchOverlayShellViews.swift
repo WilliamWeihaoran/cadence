@@ -3,7 +3,6 @@ import SwiftUI
 
 struct GlobalSearchSectionsList: View {
     let sections: [GlobalSearchVisibleSection]
-    let query: String
     /// Completed tasks the query matches that the Completed filter holds back ([[T-6971]]).
     var withheldCompletedTaskCount: Int = 0
     let highlightedResultID: String?
@@ -14,7 +13,7 @@ struct GlobalSearchSectionsList: View {
 
     var body: some View {
         if sections.isEmpty {
-            GlobalSearchEmptyState(query: query, withheldCompletedTaskCount: withheldCompletedTaskCount)
+            GlobalSearchEmptyState(withheldCompletedTaskCount: withheldCompletedTaskCount)
         } else {
             // [[T-8063]]: the palette is a fixed 760x620 card and `onMoveCommand` only rewrites
             // `highlightedResultID`, so Down walked the highlight off the bottom edge within about

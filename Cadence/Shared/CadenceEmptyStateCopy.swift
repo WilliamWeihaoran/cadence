@@ -150,12 +150,12 @@ nonisolated enum CadenceEmptyStateCopy {
     /// **T-5013(b).** iOS Search with an empty query on a narrowed scope. `resultSection` draws
     /// nothing for an empty array and the "No results" panel is gated on `isSearching`, so
     /// choosing Notes / Lists / Events with nothing to suggest — a new store, or no events in
-    /// the window — left the scope picker sitting over blank space. macOS's
-    /// `GlobalSearchEmptyState` has had an idle state for exactly this since it was written.
+    /// the window — left the scope picker sitting over blank space. Idle, the Mac palette always
+    /// lists its commands and pages, so it never reaches the same blank ([[T-14191]] deleted its
+    /// unreachable idle panel).
     ///
-    /// macOS says "Start typing to search or run a command" over a whole panel; this is the
-    /// one-line form, because the phone draws it inline under a scope picker rather than in a
-    /// panel of its own. It names the scope when the user has narrowed to one, since the blank
+    /// One line rather than a panel, because the phone draws it inline under a scope picker. It
+    /// names the scope when the user has narrowed to one, since the blank
     /// they are looking at is scope-shaped — they have just picked a kind of thing, and the
     /// surface should say which.
     static func searchIdleTitle(scopeNoun: String?) -> String {

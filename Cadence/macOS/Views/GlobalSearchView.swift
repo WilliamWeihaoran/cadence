@@ -123,7 +123,6 @@ struct GlobalSearchOverlay: View {
 
                 GlobalSearchHighlightList(
                     sections: sections,
-                    query: query,
                     withheldCompletedTaskCount: withheldCompletedTaskCount,
                     highlightedResultID: $highlightedResultID,
                     hoverGate: $hoverGate,
@@ -268,7 +267,6 @@ struct GlobalSearchOverlay: View {
 /// while deriving its sections. Keyboard and submit callbacks still share the same binding.
 struct GlobalSearchHighlightList: View {
     let sections: [GlobalSearchVisibleSection]
-    let query: String
     var withheldCompletedTaskCount: Int = 0
     @Binding var highlightedResultID: String?
     @Binding var hoverGate: GlobalSearchHoverGate
@@ -278,7 +276,6 @@ struct GlobalSearchHighlightList: View {
     var body: some View {
         GlobalSearchSectionsList(
             sections: sections,
-            query: query,
             withheldCompletedTaskCount: withheldCompletedTaskCount,
             highlightedResultID: highlightedResultID,
             onSelect: onSelect,

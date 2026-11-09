@@ -386,8 +386,8 @@ struct iOSSearchView: View {
             // window -- left the scope picker sitting over blank space.
             //
             // A line, not the panel: the panel's 220pt and its "try a tag or section name" advice
-            // are answers to a *failed* search, and nothing has been searched yet. The Mac answers
-            // the same idle state in `GlobalSearchEmptyState`, which has always had one.
+            // are answers to a *failed* search, and nothing has been searched yet. The Mac palette
+            // never reaches this state: idle, it always lists its commands and pages ([[T-14191]]).
             //
             // `calendarAccessCardReplacesNoResults` is honoured here for the same reason the panel
             // honours it ([[T-6113]]): on the Events scope with access off, the access card is the

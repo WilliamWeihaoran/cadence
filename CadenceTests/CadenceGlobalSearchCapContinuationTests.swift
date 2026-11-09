@@ -434,38 +434,44 @@ struct CadenceGlobalSearchCapContinuationTests {
         #expect(!sections.contains { $0.category == .tasks })
 
         let count = GlobalSearchIndexSupport.withheldCompletedTaskMatchCount(tasks: finished, query: "roadmap", includingCompleted: false)
-        #expect(GlobalSearchEmptyState.subtitle(query: "roadmap", withheldCompletedTaskCount: count)
+        #expect(GlobalSearchEmptyState.subtitle(withheldCompletedTaskCount: count)
             == "2 completed tasks match. Turn on Completed to show them.")
-        #expect(GlobalSearchEmptyState.subtitle(query: "roadmap", withheldCompletedTaskCount: 1)
+        #expect(GlobalSearchEmptyState.subtitle(withheldCompletedTaskCount: 1)
             == "1 completed task matches. Turn on Completed to show it.")
 
-        let ordinary = GlobalSearchEmptyState.subtitle(query: "roadmap", withheldCompletedTaskCount: 0)
+        let ordinary = GlobalSearchEmptyState.subtitle(withheldCompletedTaskCount: 0)
         #expect(!ordinary.contains("Completed"))
         #expect(!ordinary.contains("cleaner"))
     }
 
-    /// **[[T-7205]] (b) and (c).** A failed search is titled "No results" -- the literal iOS Search's
+    /// **[[T-7205]] (b).** A failed search is titled "No results" -- the literal iOS Search's
     /// panel carries, pinned there by `theIOSNoResultsPanelSaysWhenCompletedHoldsMatchesBack` --
-    /// not "No matches found"; and the idle sentence that lists what the palette shows names notes,
-    /// two of its sections.
-    @Test func emptyStateTitleMatchesIOSAndTheIdleLineNamesNotes() throws {
-        #expect(GlobalSearchEmptyState.title(query: "roadmap") == "No results")
-        #expect(GlobalSearchEmptyState.title(query: "") == "Start typing to search or run a command")
+    /// not "No matches found".
+    @Test func emptyStateTitleMatchesIOS() throws {
+        #expect(GlobalSearchEmptyState.title == "No results")
         let ios = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchView.swift"))
-        #expect(ios.contains("title: \"\(GlobalSearchEmptyState.title(query: "roadmap"))\""))
-
-        let idle = GlobalSearchEmptyState.subtitle(query: "", withheldCompletedTaskCount: 0)
-        #expect(idle == "Pages, lists, tasks, events, notes, and quick commands all show up here.")
+        #expect(ios.contains("title: \"\(GlobalSearchEmptyState.title)\""))
 
         let view = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GlobalSearchSupportViews.swift"))
-        #expect(view.contains("Text(Self.title(query: query))"), "the empty state draws a title of its own again")
+        #expect(view.contains("Text(Self.title)"), "the empty state draws a title of its own again")
+    }
+
+    /// **[[T-14191]]: the palette is never empty idle, which is why the empty state has no idle
+    /// branch.** A blank query matches every command and page, so the sections the overlay draws
+    /// are non-empty on a store with nothing in it, and `GlobalSearchSectionsList` never reaches
+    /// `GlobalSearchEmptyState` before the user types.
+    @Test func theIdlePaletteListsCommandsAndPagesOnAnEmptyStore() {
+        let idle = sections(tasks: [], notes: [], query: "", includesCompleted: false)
+        #expect(idle.contains { $0.category == .commands && !$0.results.isEmpty }, "an idle palette lists no commands")
+        #expect(idle.contains { $0.category == .pages && !$0.results.isEmpty }, "an idle palette lists no pages")
+        #expect(!GlobalSearchDataSupport.visibleSections(from: idle, expandedCategories: []).isEmpty)
     }
 
     /// Declared and reached: the overlay must hand the count down to the empty state, or the hint
     /// is a sentence nothing ever draws.
     @Test func overlayPassesTheWithheldCountToTheEmptyState() throws {
         let shell = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GlobalSearchOverlayShellViews.swift"))
-        #expect(shell.contains("GlobalSearchEmptyState(query: query, withheldCompletedTaskCount: withheldCompletedTaskCount)"))
+        #expect(shell.contains("GlobalSearchEmptyState(withheldCompletedTaskCount: withheldCompletedTaskCount)"))
         let view = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GlobalSearchView.swift"))
         #expect(CadenceSourceScan.matchCount("withheldCompletedTaskCount: withheldCompletedTaskCount", in: view) == 2)
         #expect(view.contains("GlobalSearchIndexSupport.withheldCompletedTaskMatchCount("))

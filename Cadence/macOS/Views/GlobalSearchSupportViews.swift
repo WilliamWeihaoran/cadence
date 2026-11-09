@@ -506,8 +506,16 @@ struct GlobalSearchCompletedFilterToggle: View {
     }
 }
 
+/// The palette's "No results" panel.
+///
+/// **[[T-14191]]: a failed search only.** It also had an idle branch -- "Start typing to search or
+/// run a command" over "Pages, lists, tasks, events, notes, and quick commands all show up here."
+/// -- that no user could see: with nothing typed every command and page matches
+/// (`CadenceSearchMatcher.matchScore` scores a blank query 1), so `GlobalSearchSectionsList` is
+/// never empty while idle and never reaches this view. The idle palette's answer is its own
+/// suggestions, as iOS Search's is ([[T-8201]]); the branch was deleted rather than redrawn as a
+/// header over them, which would describe the surface the user is already on.
 struct GlobalSearchEmptyState: View {
-    let query: String
     /// Completed tasks this query matches that the Completed filter is holding back
     /// (`GlobalSearchIndexSupport.withheldCompletedTaskMatchCount`).
     var withheldCompletedTaskCount: Int = 0
@@ -516,12 +524,7 @@ struct GlobalSearchEmptyState: View {
     /// are finished tasks used to read "No matches found" and advise a "cleaner title", which is
     /// false: the tasks exist and one click on the filter beside the field shows them. The
     /// subtitle now says how many are held back and names that control.
-    static func subtitle(query: String, withheldCompletedTaskCount: Int) -> String {
-        if query.isEmpty {
-            // [[T-7205]] (c): notes and event notes are two of the palette's sections, and the
-            // sentence that lists what shows up here left them out.
-            return "Pages, lists, tasks, events, notes, and quick commands all show up here."
-        }
+    static func subtitle(withheldCompletedTaskCount: Int) -> String {
         // The sentence is shared with iOS Search's "No results" panel ([[T-6975]]).
         return CadenceEmptyStateCopy.searchWithheldCompletedTasks(count: withheldCompletedTaskCount)
             ?? "Try a different title or list name, or a command like New Task."
@@ -530,19 +533,17 @@ struct GlobalSearchEmptyState: View {
     /// [[T-7205]] (b): a failed search is titled "No results", the title iOS Search's panel reads
     /// over the same failure. It said "No matches found" here; nothing about a pointer or a
     /// palette makes one failure deserve two names ([[T-8201]]).
-    static func title(query: String) -> String {
-        query.isEmpty ? "Start typing to search or run a command" : "No results"
-    }
+    static let title = "No results"
 
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: "command")
                 .font(.system(size: 28, weight: .semibold))
                 .foregroundStyle(Theme.dim.opacity(0.8))
-            Text(Self.title(query: query))
+            Text(Self.title)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.text)
-            Text(Self.subtitle(query: query, withheldCompletedTaskCount: withheldCompletedTaskCount))
+            Text(Self.subtitle(withheldCompletedTaskCount: withheldCompletedTaskCount))
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.dim)
         }

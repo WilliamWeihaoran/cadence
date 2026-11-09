@@ -987,7 +987,7 @@ struct CadenceSearchCandidateSupportTests {
             == "1 completed task matches. Turn on Completed to show it.")
         #expect(CadenceEmptyStateCopy.searchWithheldCompletedTasks(count: 3)
             == "3 completed tasks match. Turn on Completed to show them.")
-        #expect(GlobalSearchEmptyState.subtitle(query: "ship", withheldCompletedTaskCount: 3)
+        #expect(GlobalSearchEmptyState.subtitle(withheldCompletedTaskCount: 3)
             == CadenceEmptyStateCopy.searchWithheldCompletedTasks(count: 3))
     }
 

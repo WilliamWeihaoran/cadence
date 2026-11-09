@@ -61,7 +61,7 @@ struct CadenceOverdueRailEmptyLineTests {
 ///
 /// `resultSection` draws nothing for an empty array and the "No results" panel is gated on
 /// `isSearching`, so narrowing to Notes / Lists / Events with nothing to suggest left the picker
-/// sitting on nothing. macOS's `GlobalSearchEmptyState` has had an idle state for exactly this.
+/// sitting on nothing. The Mac palette is never empty idle, so it has no counterpart ([[T-14191]]).
 ///
 /// This half was written on 2026-10-24, backed out because `iOSSearchView.swift` was fenced, and
 /// re-applied once the fence was withdrawn at `741a9366` -- the job it was held for never started.

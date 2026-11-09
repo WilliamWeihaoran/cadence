@@ -179,6 +179,8 @@ private struct CodexSearchDerivationHost: View {
     @State private var highlightedResultID: String?
 
     private var sections: [GlobalSearchVisibleSection] {
+        // Sections are derived from the query, as the overlay's are, so a query change re-derives.
+        _ = probe.query
         probe.derivations += 1
         return []
     }
@@ -186,9 +188,9 @@ private struct CodexSearchDerivationHost: View {
     var body: some View {
         Group {
             if isolated {
-                GlobalSearchHighlightList(sections: sections, query: probe.query, highlightedResultID: $highlightedResultID, hoverGate: .constant(GlobalSearchHoverGate()), onSelect: { _ in }, onReveal: { _ in })
+                GlobalSearchHighlightList(sections: sections, highlightedResultID: $highlightedResultID, hoverGate: .constant(GlobalSearchHoverGate()), onSelect: { _ in }, onReveal: { _ in })
             } else {
-                GlobalSearchSectionsList(sections: sections, query: probe.query, highlightedResultID: highlightedResultID, onSelect: { _ in }, onHover: { highlightedResultID = $0 }, onReveal: { _ in })
+                GlobalSearchSectionsList(sections: sections, highlightedResultID: highlightedResultID, onSelect: { _ in }, onHover: { highlightedResultID = $0 }, onReveal: { _ in })
             }
         }
         .onAppear { probe.selection = $highlightedResultID }
