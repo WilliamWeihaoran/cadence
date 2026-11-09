@@ -633,6 +633,7 @@ jobs:
             CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
             CODE_SIGN_ENTITLEMENTS=.github/ci.entitlements \
+            -only-testing:CadenceTests/iOSMarkdownBackspaceListPrefixTests \
             -only-testing:CadenceTests/iOSMarkdownEditorFlushTests \
             -only-testing:CadenceTests/iOSMarkdownInlineTaskPanelEffectTests \
             -only-testing:CadenceTests/iOSMarkdownTaskEmbedSubtaskOverflowTests \

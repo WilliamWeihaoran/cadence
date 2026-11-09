@@ -536,7 +536,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             }
 
             if replacement.isEmpty,
-               deleteListPrefixIfNeeded(range: range, in: textView) {
+               deleteListPrefixIfNeeded(range: range, replacement: replacement, in: textView) {
                 return false
             }
 
@@ -623,10 +623,18 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             return true
         }
 
-        private func deleteListPrefixIfNeeded(range: NSRange, in textView: UITextView) -> Bool {
-            guard let mutation = MarkdownBackspaceSupport.listPrefixMutation(
+        /// [[T-14722]]: UIKit proposes Backspace as the character it deletes, `(n-1, 1)`, with the
+        /// caret still at `n`; the list-prefix rule is asked about that caret, as the Mac asks it
+        /// from `deleteBackward:`. Passing the proposal straight through meant the rule's caret
+        /// guard refused every real Backspace on iOS.
+        private func deleteListPrefixIfNeeded(range: NSRange, replacement: String, in textView: UITextView) -> Bool {
+            guard let caret = MarkdownBackspaceSupport.backspaceCaret(
+                forProposedDeletion: range,
+                replacement: replacement,
+                currentSelection: textView.selectedRange
+            ), let mutation = MarkdownBackspaceSupport.listPrefixMutation(
                 in: textView.text ?? "",
-                selection: range
+                selection: caret
             ) else {
                 return false
             }

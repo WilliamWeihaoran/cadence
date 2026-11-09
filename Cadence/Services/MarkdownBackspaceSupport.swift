@@ -7,6 +7,29 @@ nonisolated struct MarkdownBackspaceMutation: Equatable {
 }
 
 nonisolated enum MarkdownBackspaceSupport {
+    /// [[T-14722]]: the caret a text view's *proposed* deletion is a Backspace from, or nil.
+    ///
+    /// UIKit does not ask its delegate about Backspace with the caret; it proposes the character
+    /// being deleted, `(n-1, 1)`, while the selection is still the caret at `n`. AppKit's
+    /// `deleteBackward:` hands the Mac the caret itself. `listPrefixMutation` reasons about a
+    /// caret and refuses any range, so iOS fed it the proposal and the list-prefix rule never
+    /// fired there. This turns a single-character backward deletion back into the caret it came
+    /// from, so both platforms ask the same question. A forward delete (caret at the proposal's
+    /// start), a ranged selection, a multi-character proposal or a typed replacement is not a
+    /// Backspace from a caret and answers nil.
+    static func backspaceCaret(
+        forProposedDeletion range: NSRange,
+        replacement: String,
+        currentSelection: NSRange
+    ) -> NSRange? {
+        guard replacement.isEmpty,
+              range.location != NSNotFound,
+              range.length == 1,
+              currentSelection.length == 0,
+              currentSelection.location == NSMaxRange(range) else { return nil }
+        return NSRange(location: NSMaxRange(range), length: 0)
+    }
+
     static func listPrefixMutation(in text: String, selection: NSRange) -> MarkdownBackspaceMutation? {
         let nsText = text as NSString
         guard selection.length == 0, nsText.length > 0 else { return nil }

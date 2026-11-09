@@ -1731,6 +1731,8 @@ struct CadenceTestTargetHygieneTests {
     /// A condition this reader cannot evaluate is reported, never passed, so a new directive
     /// spelling gets a decision instead of a blind spot.
     static let deliberatelyIOSOnlyTestFiles: Set<String> = [
+        // [[T-14722]]: the delegate's Backspace list-prefix rule, driven through a real coordinator.
+        "CadenceTests/iOSMarkdownBackspaceListPrefixTests.swift",
         "CadenceTests/iOSMarkdownEditorFlushTests.swift",
         "CadenceTests/iOSMarkdownInlineTaskPanelEffectTests.swift",
         "CadenceTests/iOSMarkdownTaskEmbedSubtaskOverflowTests.swift",

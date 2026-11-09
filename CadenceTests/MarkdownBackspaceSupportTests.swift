@@ -95,4 +95,62 @@ struct MarkdownBackspaceSupportTests {
 
         #expect(mutation == nil)
     }
+
+    /// [[T-14722]]: UIKit proposes a Backspace as the character it deletes, `(n-1, 1)`, with the
+    /// caret still at `n`. That proposal is a Backspace from the caret at `n`; nothing else is.
+    @Test func aSingleCharacterBackwardProposalIsTheBackspaceFromTheCaretAfterIt() {
+        let caret = MarkdownBackspaceSupport.backspaceCaret(
+            forProposedDeletion: NSRange(location: 1, length: 1),
+            replacement: "",
+            currentSelection: NSRange(location: 2, length: 0)
+        )
+        #expect(caret == NSRange(location: 2, length: 0))
+
+        // A forward delete proposes the character AFTER the caret: caret at the proposal's start.
+        #expect(MarkdownBackspaceSupport.backspaceCaret(
+            forProposedDeletion: NSRange(location: 2, length: 1),
+            replacement: "",
+            currentSelection: NSRange(location: 2, length: 0)
+        ) == nil)
+        // Deleting a selection is not a Backspace from a caret.
+        #expect(MarkdownBackspaceSupport.backspaceCaret(
+            forProposedDeletion: NSRange(location: 0, length: 2),
+            replacement: "",
+            currentSelection: NSRange(location: 0, length: 2)
+        ) == nil)
+        #expect(MarkdownBackspaceSupport.backspaceCaret(
+            forProposedDeletion: NSRange(location: 1, length: 1),
+            replacement: "",
+            currentSelection: NSRange(location: 1, length: 1)
+        ) == nil)
+        // Typing over a character is not a deletion.
+        #expect(MarkdownBackspaceSupport.backspaceCaret(
+            forProposedDeletion: NSRange(location: 1, length: 1),
+            replacement: "x",
+            currentSelection: NSRange(location: 2, length: 0)
+        ) == nil)
+    }
+
+    /// [[T-14722]], end to end on the shared half: the proposal UIKit sends for Backspace right
+    /// after an empty bullet's marker reaches the list-prefix rule as the caret, and the whole
+    /// marker goes, as it does from the Mac's `deleteBackward:`. The raw proposal alone is refused,
+    /// which is the defect the translation exists for.
+    @Test func backspaceProposedAfterAnEmptyBulletsMarkerRemovesTheWholeMarker() throws {
+        let markdown = "- first\n- "
+        let caretLocation = (markdown as NSString).length
+        let proposal = NSRange(location: caretLocation - 1, length: 1)
+        #expect(
+            MarkdownBackspaceSupport.listPrefixMutation(in: markdown, selection: proposal) == nil,
+            "non-vacuity: the raw proposal is a range, which the caret rule refuses"
+        )
+
+        let caret = try #require(MarkdownBackspaceSupport.backspaceCaret(
+            forProposedDeletion: proposal,
+            replacement: "",
+            currentSelection: NSRange(location: caretLocation, length: 0)
+        ))
+        let mutation = try #require(MarkdownBackspaceSupport.listPrefixMutation(in: markdown, selection: caret))
+        #expect(mutation.replacementRange == NSRange(location: ("- first\n" as NSString).length, length: 2))
+        #expect(mutation.selection == NSRange(location: ("- first\n" as NSString).length, length: 0))
+    }
 }
