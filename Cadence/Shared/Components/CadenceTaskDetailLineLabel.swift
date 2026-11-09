@@ -18,11 +18,14 @@ struct CadenceTaskDetailLineLabel: View {
         self.fontSize = fontSize
     }
 
-    init(task: AppTask, fallback: String, fontSize: CGFloat = 10) {
+    /// `todayKey` is the host's observed day and has **no default** ([[T-14351]]): a row built from
+    /// the same task on both sides of midnight is not rebuilt, so a clock read here kept a due
+    /// segment saying "Today" in grey after the deadline had passed.
+    init(task: AppTask, todayKey: String, fallback: String, fontSize: CGFloat = 10) {
         self.init(
             parts: CadenceFocusSupport.sidebarDetailParts(
                 for: task,
-                todayKey: DateFormatters.todayKey(),
+                todayKey: todayKey,
                 fallback: fallback
             ),
             fontSize: fontSize

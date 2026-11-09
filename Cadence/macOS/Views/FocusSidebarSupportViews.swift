@@ -29,6 +29,8 @@ private struct FocusStatusChip: View {
 
 private struct FocusSidebarShell<SessionSummary: View>: View {
     let nextTasks: [AppTask]
+    /// The Focus page's observed day, for each Next-up row's due segment ([[T-14351]]).
+    let todayKey: String
     let onSelectTask: (AppTask) -> Void
     @ViewBuilder let sessionSummary: () -> SessionSummary
 
@@ -53,7 +55,7 @@ private struct FocusSidebarShell<SessionSummary: View>: View {
                     } else {
                         VStack(spacing: 7) {
                             ForEach(nextTasks) { nextTask in
-                                FocusSidebarTaskRow(task: nextTask) {
+                                FocusSidebarTaskRow(task: nextTask, todayKey: todayKey) {
                                     onSelectTask(nextTask)
                                 }
                             }
@@ -88,6 +90,7 @@ struct FocusSidebar: View {
     /// read "Ready" (and "done") beside a card saying "Running" or "Paused".
     let phase: CadenceFocusTimerPhase
     let nextTasks: [AppTask]
+    let todayKey: String
     let onSelectTask: (AppTask) -> Void
 
     /// The card's own rule: the task's accent while running, dim otherwise. Never completed-green.
@@ -96,7 +99,7 @@ struct FocusSidebar: View {
     }
 
     var body: some View {
-        FocusSidebarShell(nextTasks: nextTasks, onSelectTask: onSelectTask) {
+        FocusSidebarShell(nextTasks: nextTasks, todayKey: todayKey, onSelectTask: onSelectTask) {
             HStack(spacing: 8) {
                 FocusStatusChip(title: phase.label, color: phaseTint, icon: phase.systemImage)
                 if task.isRecurring {
@@ -109,6 +112,9 @@ struct FocusSidebar: View {
 
 struct FocusSidebarTaskRow: View {
     let task: AppTask
+    /// The host's observed day ([[T-14351]]). **No default**: the row's inputs are the same on
+    /// both sides of midnight, so a row that read the clock kept yesterday's "Today" on its due.
+    let todayKey: String
     let action: () -> Void
     @State private var isHovered = false
 
@@ -130,7 +136,7 @@ struct FocusSidebarTaskRow: View {
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
 
-                    CadenceTaskDetailLineLabel(task: task, fallback: Self.detailFallback)
+                    CadenceTaskDetailLineLabel(task: task, todayKey: todayKey, fallback: Self.detailFallback)
                 }
 
                 Spacer(minLength: 8)
@@ -157,7 +163,7 @@ struct FocusSidebarTaskRow: View {
         // "Next up" row announced the same three words. The sentence stays as the tooltip.
         .accessibilityLabel(CadenceFocusSupport.focusTaskControlLabel(title: title))
         .accessibilityValue(
-            CadenceFocusSupport.sidebarDetail(for: task, todayKey: DateFormatters.todayKey(), fallback: Self.detailFallback)
+            CadenceFocusSupport.sidebarDetail(for: task, todayKey: todayKey, fallback: Self.detailFallback)
         )
         .help("Focus this task")
         .onHover { isHovered = $0 }

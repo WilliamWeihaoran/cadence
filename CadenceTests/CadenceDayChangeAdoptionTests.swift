@@ -56,6 +56,14 @@ struct CadenceDayChangeAdoptionTests {
         ("Cadence/iOS/iOSTaskCollectionPage.swift", "struct iOSTaskCollectionPage: View"),
         // [[T-13561]]: a list's touch Tasks tab took the Mac's Group control too, By Date included.
         ("Cadence/iOS/iOSListDetailView.swift", "struct iOSListDetailView: View"),
+        // [[T-14351]]: both Focus pages, whose ready list and due words are scored against today
+        // and whose idle screens draw nothing else that changes at midnight.
+        ("Cadence/macOS/Views/FocusView.swift", "struct FocusView: View"),
+        ("Cadence/iOS/iOSFocusView.swift", "struct iOSFocusView: View"),
+        // [[T-14352]]: a note's linked-task chips, whose due words and red are measured against
+        // today while every input the strip is handed is the same on both sides of midnight.
+        ("Cadence/macOS/Views/NoteReferenceSupportViews.swift", "struct NoteReferenceStrip: View"),
+        ("Cadence/iOS/iOSMarkdownAccessoryViews.swift", "struct iOSNoteReferencePanel: View"),
     ]
 
     private static let install = ".cadenceTracksDayChanges($observedDay)"

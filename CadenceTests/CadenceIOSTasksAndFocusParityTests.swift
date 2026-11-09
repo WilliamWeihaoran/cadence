@@ -166,7 +166,7 @@ struct CadenceFocusPickRowDetailTests {
         let mac = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusPickerSupportViews.swift")
         )
-        #expect(mac.contains("CadenceTaskDetailLineLabel(task: task, fallback: CadenceFocusSupport.pickRowFallback, fontSize: 11)"))
+        #expect(mac.contains("CadenceTaskDetailLineLabel(task: task, todayKey: todayKey, fallback: CadenceFocusSupport.pickRowFallback, fontSize: 11)"))
     }
 }
 

@@ -18,9 +18,20 @@ struct NoteReferenceStrip: View {
     /// both hosts hand it to the `TaskDetailPopover` their `[[task:…]]` links already raise.
     let onOpenTask: (AppTask) -> Void
 
-    private var todayKey: String { DateFormatters.todayKey() }
+    /// [[T-14352]]: the strip observes its own day. Its inputs -- the note's links -- are the same
+    /// on both sides of midnight, so a note left open overnight kept a linked task's "Today" chip
+    /// in grey after the deadline had passed. iOS's `iOSNoteReferencePanel` holds the same observer.
+    @State private var observedDay = CadenceObservedDay()
+
+    private var todayKey: String { observedDay.todayKey }
 
     var body: some View {
+        strip
+            .cadenceTracksDayChanges($observedDay)
+    }
+
+    @ViewBuilder
+    private var strip: some View {
         if linkedNotes.isEmpty && linkedTasks.isEmpty && backlinks.isEmpty {
             EmptyView()
         } else {

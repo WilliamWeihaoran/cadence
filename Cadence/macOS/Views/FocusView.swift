@@ -39,11 +39,16 @@ struct FocusView: View {
             guard focusManager.isRunning else { return }
             displayTick = instant
         }
+        .cadenceTracksDayChanges($observedDay)
     }
 
-    private var todayKey: String {
-        DateFormatters.todayKey()
-    }
+    /// [[T-14351]]: the Focus page's own observed day. Nothing it is handed changes at midnight --
+    /// the idle picker's ticker runs only while a session does -- so a Mac left on Focus overnight
+    /// kept offering yesterday's "ready" list, scored against yesterday's key, until something
+    /// else redrew it. Every other page host observes its day the same way.
+    @State private var observedDay = CadenceObservedDay()
+
+    private var todayKey: String { observedDay.todayKey }
 
     private var readyTasks: [AppTask] {
         FocusSessionSupport.readyTasks(from: allTasks, todayKey: todayKey)
@@ -101,6 +106,7 @@ struct FocusView: View {
                             task: task,
                             phase: phase,
                             nextTasks: Array(readyTasks.filter { $0.id != task.id }.prefix(4)),
+                            todayKey: todayKey,
                             onSelectTask: { task in reportingFocusFailure { try focusManager.startFocus(task: task, in: modelContext) } }
                         )
                         .frame(
@@ -195,6 +201,7 @@ struct FocusView: View {
                         searchText: $idleSearchText,
                         items: focusPickerItems,
                         readyCount: readyTasks.count,
+                        todayKey: todayKey,
                         onSelectTask: { task in reportingFocusFailure { try focusManager.startFocus(task: task, in: modelContext) } }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

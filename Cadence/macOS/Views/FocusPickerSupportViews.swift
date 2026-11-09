@@ -14,6 +14,8 @@ struct FocusPickSessionCard: View {
     let items: [FocusPickItem]
     /// Every ready task, before the unfiltered cap ([[T-8012]]): the summary names this total.
     let readyCount: Int
+    /// The Focus page's observed day, for each row's due segment ([[T-14351]]).
+    let todayKey: String
     let onSelectTask: (AppTask) -> Void
     @FocusState private var searchFieldFocused: Bool
 
@@ -56,7 +58,7 @@ struct FocusPickSessionCard: View {
                         emptyState
                     } else {
                         ForEach(items) { item in
-                            FocusPickItemRow(item: item) {
+                            FocusPickItemRow(item: item, todayKey: todayKey) {
                                 switch item {
                                 case .task(let task):
                                     onSelectTask(task)
@@ -144,6 +146,7 @@ struct FocusPickSessionCard: View {
 
 private struct FocusPickItemRow: View {
     let item: FocusPickItem
+    let todayKey: String
     let action: () -> Void
     @State private var isHovered = false
 
@@ -213,7 +216,7 @@ private struct FocusPickItemRow: View {
     private var detailLine: some View {
         switch item {
         case .task(let task):
-            CadenceTaskDetailLineLabel(task: task, fallback: CadenceFocusSupport.pickRowFallback, fontSize: 11)
+            CadenceTaskDetailLineLabel(task: task, todayKey: todayKey, fallback: CadenceFocusSupport.pickRowFallback, fontSize: 11)
         }
     }
 

@@ -36,7 +36,12 @@ struct iOSFocusView: View {
     /// its buffer back on focus loss, so this is the handle that releases it.
     @State private var isTaskNotesFocused = false
 
-    private var todayKey: String { DateFormatters.todayKey() }
+    /// [[T-14351]]: the Focus screen's own observed day, as the Mac's `FocusView` holds. Nothing
+    /// this screen is handed changes at midnight, so a Focus screen left standing overnight kept
+    /// yesterday's ready list and its "Today" due words until something else redrew it.
+    @State private var observedDay = CadenceObservedDay()
+
+    private var todayKey: String { observedDay.todayKey }
 
     private var readyTasks: [AppTask] {
         CadenceFocusSupport.readyTasks(from: allTasks, todayKey: todayKey)
@@ -145,6 +150,7 @@ struct iOSFocusView: View {
         }
         .background(Theme.bg.ignoresSafeArea())
         .iOSHidesCompactNavigationBar()
+        .cadenceTracksDayChanges($observedDay)
         .onAppear {
             // [[T-6001]]: a session the process did not survive comes back before anything else
             // decides what this screen is pointing at. It runs *first* so a handoff arriving in

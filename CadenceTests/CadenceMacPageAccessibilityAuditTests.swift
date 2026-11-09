@@ -243,16 +243,33 @@ struct CadenceMacPageAccessibilityAuditTests {
     /// same three words. Each names the task it starts now, with its detail line as the value.
     @Test func aNextUpRowNamesTheTaskItStarts() {
         let task = AppTask(title: "Write report")
-        let nodes = allNodes(in: FocusSidebarTaskRow(task: task, action: {}), size: NSSize(width: 340, height: 80))
+        let nodes = allNodes(in: FocusSidebarTaskRow(task: task, todayKey: "2026-11-09", action: {}), size: NSSize(width: 340, height: 80))
         let row = nodes.filter { $0.role == Self.buttonRole }
         #expect(row.count == 1, "non-vacuity: the row is not one button on the tree: \(nodes)")
         #expect(row.first?.label == CadenceFocusSupport.focusTaskControlLabel(title: "Write report"), "\(row)")
         #expect(row.first?.label == "Focus Write report", "\(row)")
         #expect(
-            row.first?.value == CadenceFocusSupport.sidebarDetail(for: task, todayKey: DateFormatters.todayKey()),
+            row.first?.value == CadenceFocusSupport.sidebarDetail(for: task, todayKey: "2026-11-09"),
             "the row's detail line is not its value: \(row)"
         )
         #expect(nodes.contains { $0.label == "Focus this task" } == false, "\(nodes)")
+    }
+
+    /// [[T-14351]]: a Next-up row measures its due against the day its host hands it, not the
+    /// clock. The same task drawn under two days must say two different things -- a row that read
+    /// the clock would say the same thing under both, whatever day this test runs on.
+    @Test func aNextUpRowReadsItsDueAgainstTheHandedDay() {
+        let task = AppTask(title: "Write report")
+        task.dueDate = "2026-11-09"
+        func value(on todayKey: String) -> String? {
+            allNodes(in: FocusSidebarTaskRow(task: task, todayKey: todayKey, action: {}), size: NSSize(width: 340, height: 80))
+                .first { $0.role == Self.buttonRole }?.value
+        }
+        let onTheDay = value(on: "2026-11-09")
+        let dayAfter = value(on: "2026-11-10")
+        #expect(onTheDay == CadenceFocusSupport.sidebarDetail(for: task, todayKey: "2026-11-09"), "\(String(describing: onTheDay))")
+        #expect(dayAfter == CadenceFocusSupport.sidebarDetail(for: task, todayKey: "2026-11-10"), "\(String(describing: dayAfter))")
+        #expect(onTheDay != dayAfter, "non-vacuity: the two days must word the due differently")
     }
 
     /// The Log Session popover printed `task.title` raw, so an untitled task's popover had an empty
