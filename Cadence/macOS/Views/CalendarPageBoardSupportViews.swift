@@ -305,6 +305,9 @@ struct CalendarPageBoardView: View {
     @State private var isEchoingSelectedDate = false
     @State private var isProgrammaticScroll = false
     @State private var windowStartDate: Date?
+    /// Each day column's Completed fold and inline composer, keyed by the day rather than held by
+    /// the column slot, which changes date whenever `windowStartDate` moves ([[T-14601]]).
+    @State private var dayDisclosures = CalendarBoardDayDisclosures()
     /// Which rail the user has opened while the pane is too narrow to keep both open. One at a
     /// time, so the fixed side never costs more than one expanded rail plus one strip — the whole
     /// point of the gate. Ignored above `CadenceCalendarBoardLayout.expandedRailsMinimumWidth`.
@@ -449,7 +452,15 @@ struct CalendarPageBoardView: View {
                             areas: areas,
                             projects: projects,
                             add: addBehavior(for: .day(dateKey)),
-                            onDropTaskOnDay: { task in handleDayColumnDrop(task, on: dateKey) }
+                            onDropTaskOnDay: { task in handleDayColumnDrop(task, on: dateKey) },
+                            isCompletedExpanded: Binding(
+                                get: { dayDisclosures.isCompletedExpanded(dateKey) },
+                                set: { dayDisclosures.setCompletedExpanded($0, for: dateKey) }
+                            ),
+                            isComposing: Binding(
+                                get: { dayDisclosures.isComposing(dateKey) },
+                                set: { dayDisclosures.setComposing($0, for: dateKey) }
+                            )
                         )
                         .frame(width: Self.columnWidth)
                         .id(dayIndex)

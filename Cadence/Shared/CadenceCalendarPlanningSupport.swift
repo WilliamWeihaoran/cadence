@@ -55,6 +55,43 @@ enum CalendarBoardAddAction: Equatable {
     case presentCreateSheet
 }
 
+/// A day column's own disclosure state -- its expanded "Completed" fold and, on the Mac, its open
+/// inline composer -- keyed by the **day**, held by the board ([[T-14601]]).
+///
+/// Both boards lay their columns out as `ForEach(0..<renderDays)` over a render window whose start
+/// moves (a date jump re-anchors it, midnight re-floors it, a long scroll recenters it), so a column
+/// view is a SLOT: the same index is a different day afterwards. Per-day state kept as `@State` on
+/// the column stayed with the slot, and an open fold or composer moved onto whichever day slid
+/// into it. Owning it here, by date key, makes it travel with its day.
+struct CalendarBoardDayDisclosures: Equatable {
+    private(set) var expandedCompletedDateKeys: Set<String> = []
+    private(set) var composingDateKeys: Set<String> = []
+
+    func isCompletedExpanded(_ dateKey: String) -> Bool {
+        expandedCompletedDateKeys.contains(dateKey)
+    }
+
+    mutating func setCompletedExpanded(_ expanded: Bool, for dateKey: String) {
+        if expanded {
+            expandedCompletedDateKeys.insert(dateKey)
+        } else {
+            expandedCompletedDateKeys.remove(dateKey)
+        }
+    }
+
+    func isComposing(_ dateKey: String) -> Bool {
+        composingDateKeys.contains(dateKey)
+    }
+
+    mutating func setComposing(_ composing: Bool, for dateKey: String) {
+        if composing {
+            composingDateKeys.insert(dateKey)
+        } else {
+            composingDateKeys.remove(dateKey)
+        }
+    }
+}
+
 enum CalendarBoardPlannerSupport {
     static let visibleDayCount = 7
     static let defaultRenderDayCount = 3650

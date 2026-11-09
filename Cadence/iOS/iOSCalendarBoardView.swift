@@ -39,6 +39,9 @@ struct iOSCalendarBoardPlanner: View {
     /// nothing it is told about where it is scrolled — see the switch in `board(columnWidth:)`.
     @State private var didConfirmInitialColumn = false
     @State private var windowStartDate: Date?
+    /// Each day column's Completed fold, keyed by the day rather than held by the column slot,
+    /// which changes date whenever `alignWindow(to:)` re-anchors the window ([[T-14601]]).
+    @State private var dayDisclosures = CalendarBoardDayDisclosures()
     @State private var selectedEvent: iOSCalendarEventSelection?
     @State private var dropFailureNotice: String?
 
@@ -127,7 +130,11 @@ struct iOSCalendarBoardPlanner: View {
                         emptyDayText: emptyDayText,
                         onOpenEvent: { selectedEvent = iOSCalendarEventSelection(event: $0) },
                         onAddTask: { onAddItem(dateKey) },
-                        onDropTaskOnDay: { task in schedule(task, on: dateKey) }
+                        onDropTaskOnDay: { task in schedule(task, on: dateKey) },
+                        isCompletedExpanded: Binding(
+                            get: { dayDisclosures.isCompletedExpanded(dateKey) },
+                            set: { dayDisclosures.setCompletedExpanded($0, for: dateKey) }
+                        )
                     )
                     .frame(width: columnWidth)
                     .id(dayIndex)
@@ -280,8 +287,16 @@ private struct iOSCalendarBoardDayColumn: View {
 
     // No `horizontalSizeClass`. It was declared here and read by nothing: the column draws one way
     // at every width, and has since its "today" treatment collapsed into `CadenceBoardColumnHeader`.
+    /// Owned by the board, keyed by `dateKey` ([[T-14601]]): this view is a column SLOT whose date
+    /// changes when the board re-anchors its window, so `@State` here left an open fold on whichever
+    /// day moved into the slot. See `CalendarBoardDayDisclosures`.
+    @Binding var isCompletedExpanded: Bool
+
     @State private var isDropTargeted = false
-    @State private var isCompletedCollapsed = true
+
+    private var isCompletedCollapsed: Bool {
+        !isCompletedExpanded
+    }
 
     private var isToday: Bool {
         dateKey == todayKey
@@ -419,7 +434,7 @@ private struct iOSCalendarBoardDayColumn: View {
             VStack(alignment: .leading, spacing: 8) {
                 Button {
                     withAnimation(.snappy(duration: 0.16)) {
-                        isCompletedCollapsed.toggle()
+                        isCompletedExpanded.toggle()
                     }
                 } label: {
                     // [[T-9835]]: the Mac's Completed row, through the one shared view -- the green

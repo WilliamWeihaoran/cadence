@@ -24,11 +24,15 @@ struct CalendarBoardDayColumn: View {
     /// reverted at the next launch, the [[T-566]] shape the rail drop had until [[T-1952]].
     let onDropTaskOnDay: (AppTask) -> Bool
 
+    /// Owned by the board, keyed by `dateKey` ([[T-14601]]): this view is a column SLOT whose date
+    /// changes when the board slides its render window, so `@State` here would leave an open fold
+    /// or composer on whichever day moved into the slot. See `CalendarBoardDayDisclosures`.
+    @Binding var isCompletedExpanded: Bool
+    @Binding var isComposing: Bool
+
     @Environment(HoveredKanbanColumnManager.self) private var hoveredKanbanColumnManager
     @State private var isDropTargeted = false
-    @State private var isCompletedCollapsed = true
     @State private var isHovered = false
-    @State private var isComposing = false
 
     nonisolated private var coordinateSpaceName: String { "calendarBoardDayColumn-\(dayIndex)" }
 
@@ -150,13 +154,13 @@ struct CalendarBoardDayColumn: View {
     private var completedFooter: some View {
         if !completedTasks.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                KanbanCompletedTasksToggle(count: completedTasks.count, isExpanded: !isCompletedCollapsed) {
+                KanbanCompletedTasksToggle(count: completedTasks.count, isExpanded: isCompletedExpanded) {
                     withAnimation(.snappy(duration: 0.16)) {
-                        isCompletedCollapsed.toggle()
+                        isCompletedExpanded.toggle()
                     }
                 }
 
-                if !isCompletedCollapsed {
+                if isCompletedExpanded {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(completedTasks.sorted { lhs, rhs in
                             CalendarBoardPlannerSupport.boardTaskSort(lhs, rhs)
