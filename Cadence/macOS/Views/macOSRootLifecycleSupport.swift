@@ -53,40 +53,73 @@ enum macOSRootLifecycleSupport {
         removeKeyMonitor()
     }
 
+    /// **[[T-14432]]: leaving Focus undoes Focus's own hide, and only that.**
+    ///
+    /// `columnVisibility` is one value that two writers share: a running Focus session hides the
+    /// sidebar (`handleFocusRunningChange`, `handleFocusNavigationRequest`) and so does the user
+    /// (Cmd+O, the corner toggle, through `toggleSidebar`). This used to restore `.all` on every
+    /// change to a page other than Focus, which could not tell the two apart and so brought back a
+    /// sidebar the user had hidden on any navigation at all. `focusHidSidebar` records whether the
+    /// hide standing now is Focus's; it is set only by a hide that actually changed something, and
+    /// cleared by a user toggle, which takes the sidebar back.
     static func handleSelectionChange(
         newValue: SidebarItem?,
-        columnVisibility: inout NavigationSplitViewVisibility
+        columnVisibility: inout NavigationSplitViewVisibility,
+        focusHidSidebar: inout Bool
     ) {
-        if newValue != .focus {
-            withAnimation(.easeInOut(duration: 0.25)) {
-                columnVisibility = .all
-            }
+        guard newValue != .focus, focusHidSidebar else { return }
+        focusHidSidebar = false
+        withAnimation(.easeInOut(duration: 0.25)) {
+            columnVisibility = .all
         }
     }
 
     static func handleFocusRunningChange(
         isRunning: Bool,
         selection: SidebarItem?,
-        columnVisibility: inout NavigationSplitViewVisibility
+        columnVisibility: inout NavigationSplitViewVisibility,
+        focusHidSidebar: inout Bool
     ) {
         if isRunning && selection == .focus {
-            withAnimation(.easeInOut(duration: 0.25)) {
-                columnVisibility = .detailOnly
-            }
+            hideSidebarForFocus(columnVisibility: &columnVisibility, focusHidSidebar: &focusHidSidebar)
         }
     }
 
     static func handleFocusNavigationRequest(
         focusManager: FocusManager,
         selection: inout SidebarItem?,
-        columnVisibility: inout NavigationSplitViewVisibility
+        columnVisibility: inout NavigationSplitViewVisibility,
+        focusHidSidebar: inout Bool
     ) {
         if focusManager.wantsNavToFocus {
             selection = .focus
-            withAnimation(.easeInOut(duration: 0.25)) {
-                columnVisibility = .detailOnly
-            }
+            hideSidebarForFocus(columnVisibility: &columnVisibility, focusHidSidebar: &focusHidSidebar)
             focusManager.wantsNavToFocus = false
+        }
+    }
+
+    /// The user's Cmd+O / corner toggle. Whatever was hidden, the user owns the sidebar now, so a
+    /// later page change leaves it where they put it.
+    static func toggleSidebar(
+        columnVisibility: inout NavigationSplitViewVisibility,
+        focusHidSidebar: inout Bool
+    ) {
+        focusHidSidebar = false
+        withAnimation(.easeInOut(duration: 0.22)) {
+            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+        }
+    }
+
+    /// A sidebar the user had already hidden stays theirs: Focus hiding it again changes nothing,
+    /// so leaving Focus must not show it.
+    private static func hideSidebarForFocus(
+        columnVisibility: inout NavigationSplitViewVisibility,
+        focusHidSidebar: inout Bool
+    ) {
+        guard columnVisibility != .detailOnly else { return }
+        focusHidSidebar = true
+        withAnimation(.easeInOut(duration: 0.25)) {
+            columnVisibility = .detailOnly
         }
     }
 

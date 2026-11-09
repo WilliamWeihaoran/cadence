@@ -37,6 +37,8 @@ extension SidebarItem {
 struct macOSRootView: View {
     @State private var selection: SidebarItem? = SidebarItem.launchSelection()
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    /// [[T-14432]]: whether the standing hide is Focus's own, so leaving Focus undoes only that.
+    @State private var focusHidSidebar = false
     @Environment(\.scenePhase) private var scenePhase
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
     @Environment(FocusManager.self) private var focusManager
@@ -189,21 +191,24 @@ struct macOSRootView: View {
         .onChange(of: selection) { _, newValue in
             macOSRootLifecycleSupport.handleSelectionChange(
                 newValue: newValue,
-                columnVisibility: &columnVisibility
+                columnVisibility: &columnVisibility,
+                focusHidSidebar: &focusHidSidebar
             )
         }
         .onChange(of: focusManager.isRunning) { _, isRunning in
             macOSRootLifecycleSupport.handleFocusRunningChange(
                 isRunning: isRunning,
                 selection: selection,
-                columnVisibility: &columnVisibility
+                columnVisibility: &columnVisibility,
+                focusHidSidebar: &focusHidSidebar
             )
         }
         .onChange(of: focusManager.wantsNavToFocus) {
             macOSRootLifecycleSupport.handleFocusNavigationRequest(
                 focusManager: focusManager,
                 selection: &selection,
-                columnVisibility: &columnVisibility
+                columnVisibility: &columnVisibility,
+                focusHidSidebar: &focusHidSidebar
             )
         }
         .onChange(of: listNavigationManager.request?.token) { _, _ in
@@ -261,9 +266,10 @@ struct macOSRootView: View {
     }
 
     private func toggleSidebarVisibility() {
-        withAnimation(.easeInOut(duration: 0.22)) {
-            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
-        }
+        macOSRootLifecycleSupport.toggleSidebar(
+            columnVisibility: &columnVisibility,
+            focusHidSidebar: &focusHidSidebar
+        )
     }
 
     private func handleSearchSelection(_ result: GlobalSearchResult) {
