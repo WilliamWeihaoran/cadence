@@ -31,7 +31,19 @@ nonisolated enum TagSupport {
         let collapsed = folded
             .replacingOccurrences(of: "[^a-z0-9]+", with: "-", options: .regularExpression)
             .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
-        return collapsed.isEmpty ? "tag" : collapsed
+        guard collapsed.isEmpty else { return collapsed }
+        // **A name written in another script is its own tag ([[T-14761]]).** The ASCII collapse
+        // above leaves nothing of `工作`, `学习` or `Работа`, and every such name used to fall back
+        // to the one slug `"tag"` — so they were all the same tag: the second could not be created
+        // in Settings ("already exists"), typing it in a task's tag picker attached the first, and
+        // a note's frontmatter resolved it to the first. Only that empty case moves to a script-
+        // preserving slug (letters, marks and digits in any script, as `CadenceSearchMatcher`
+        // already reads them, [[T-3099]]); every name with an ASCII letter or digit keeps the slug
+        // it always had, so no stored slug outside the collapsed case changes meaning.
+        let scriptPreserving = folded
+            .replacingOccurrences(of: "[^\\p{L}\\p{M}\\p{N}]+", with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return scriptPreserving.isEmpty ? "tag" : scriptPreserving
     }
 
     nonisolated static func displayName(for value: String) -> String {
@@ -438,16 +450,36 @@ nonisolated enum TagSupport {
     ///
     /// An inline tag body is `[A-Za-z0-9][A-Za-z0-9_-]*` and nothing else, so a display name with
     /// a space, an accent or punctuation in it cannot be written into prose as-is: `#Day Job`
-    /// parses as `#Day`, which is a *third* tag rather than the renamed one. The slug is always a
-    /// legal body and always slugs back to itself, so it is what gets written in that case; a name
-    /// that is already a legal body is written as the user typed it, capitals and all, because
-    /// `slug(for:)` folds case and `#Job` and `#job` are the same tag.
+    /// parses as `#Day`, which is a *third* tag rather than the renamed one. The slug always slugs
+    /// back to itself, so it is what gets written in that case; a name that is already a legal
+    /// body is written as the user typed it, capitals and all, because `slug(for:)` folds case and
+    /// `#Job` and `#job` are the same tag.
+    ///
+    /// **The slug is a legal body except for a name with no ASCII letter or digit** ([[T-14761]]):
+    /// `工作` slugs to `工作`, which the inline grammar cannot read. Such a tag has no inline
+    /// spelling at all -- `canBeMentionedInline` is how the `#` picker asks -- and [[T-14763]]
+    /// holds the owner's call on whether the grammar should learn other scripts.
     nonisolated static func inlineTagBody(for name: String) -> String {
         let display = displayName(for: name)
-        if display.range(of: #"^[A-Za-z0-9][A-Za-z0-9_-]*$"#, options: .regularExpression) != nil {
+        if isLegalInlineTagBody(display) {
             return display
         }
         return slug(for: display)
+    }
+
+    /// Whether an inline `#mention` can name `tag` at all, so the note editor's `#` picker does not
+    /// offer a tag its choice would write as text no sweep resolves back ([[T-14761]]).
+    ///
+    /// Asked of `stableSlug` rather than the stored slug, because a row stored before T-14761 as
+    /// `"tag"` under the name `工作` is the `工作` tag now: offering it would write `#tag`, which
+    /// resolves to a different tag (or mints one).
+    static func canBeMentionedInline(_ tag: Tag) -> Bool {
+        isLegalInlineTagBody(stableSlug(for: tag))
+    }
+
+    /// `MarkdownMetadataParser.inlineTagPattern`'s body, anchored to the whole string.
+    nonisolated private static func isLegalInlineTagBody(_ value: String) -> Bool {
+        value.range(of: #"^[A-Za-z0-9][A-Za-z0-9_-]*$"#, options: .regularExpression) != nil
     }
 
     /// **How many of `tag`'s notes mention it INLINE in their prose**, and so would be left behind
@@ -549,10 +581,11 @@ nonisolated enum TagSupport {
         guard !display.isEmpty else { return .unusableName }
 
         let candidateSlug = slug(for: display)
-        if let match = sorted(tags.filter { $0.isArchived && $0.slug == candidateSlug }).first {
+        // `stableSlug`, not the stored `slug`, for the reason `tagsBySlug` gives ([[T-14761]]).
+        if let match = sorted(tags.filter { $0.isArchived && stableSlug(for: $0) == candidateSlug }).first {
             return .archived(match)
         }
-        if let match = sorted(tags.filter { !$0.isArchived && $0.slug == candidateSlug }).first {
+        if let match = sorted(tags.filter { !$0.isArchived && stableSlug(for: $0) == candidateSlug }).first {
             return .duplicate(match)
         }
 
@@ -560,10 +593,20 @@ nonisolated enum TagSupport {
         return .creatable(displayName: display, slug: candidateSlug)
     }
 
+    /// Keyed by `stableSlug`, the identity `deduplicateTags` already groups by ([[T-14761]]).
+    ///
+    /// For every row a current build wrote the two are the same string. They differ only for a row
+    /// stored before [[T-14761]] whose name had no ASCII letter or digit -- `工作` stored as
+    /// `"tag"` -- and keying such a row by its stored slug would make its own name stop resolving
+    /// to it now that `slug(for: "工作")` is `"工作"`: the next note sync would mint a second
+    /// `工作` beside it. `stableSlug` re-derives that one case from the name.
     fileprivate static func tagsBySlug(_ tags: [Tag]) -> [String: Tag] {
         var result: [String: Tag] = [:]
-        for tag in sorted(tags) where result[tag.slug] == nil {
-            result[tag.slug] = tag
+        for tag in sorted(tags) {
+            let key = stableSlug(for: tag)
+            if result[key] == nil {
+                result[key] = tag
+            }
         }
         return result
     }

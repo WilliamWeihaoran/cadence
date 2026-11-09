@@ -28,7 +28,12 @@ struct MarkdownTagSuggestion: Identifiable, Hashable {
 
     /// Every tag the picker may offer, one per slug.
     static func suggestions(from tags: [Tag]) -> [MarkdownTagSuggestion] {
-        TagSupport.uniqueBySlug(tags).map { MarkdownTagSuggestion.tag($0) }
+        // A tag the inline grammar cannot spell is not offered ([[T-14761]]): choosing `工作` here
+        // would write `#工作`, which no sweep reads back as a tag. It is still reachable from the
+        // task and note tag pickers, which do not write prose.
+        TagSupport.uniqueBySlug(tags)
+            .filter { TagSupport.canBeMentionedInline($0) }
+            .map { MarkdownTagSuggestion.tag($0) }
     }
 }
 
