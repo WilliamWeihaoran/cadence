@@ -490,9 +490,9 @@ struct iOSNotesView: View {
     private func listRow(for note: Note) -> some View {
         switch activeTab {
         case .today:
-            DailyNoteListRow(note: note, isSelected: isSelected(note), metrics: listMetrics)
+            DailyNoteListRow(note: note, isSelected: isSelected(note), todayKey: observedDay.todayKey, metrics: listMetrics)
         case .week:
-            WeeklyNoteListRow(note: note, isSelected: isSelected(note), metrics: listMetrics)
+            WeeklyNoteListRow(note: note, isSelected: isSelected(note), todayKey: observedDay.todayKey, metrics: listMetrics)
         case .notepad:
             NotepadNoteListRow(note: note, isSelected: isSelected(note), metrics: listMetrics)
         case .events:

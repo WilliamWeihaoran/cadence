@@ -174,7 +174,7 @@ private struct DailyNotesPage: View {
                         dateKey: { $0.dateKey }
                     ) { note in
                         NoteListRowButton(action: { selectedNoteID = note.id }) {
-                            DailyNoteListRow(note: note, isSelected: selectedNoteID == note.id)
+                            DailyNoteListRow(note: note, isSelected: selectedNoteID == note.id, todayKey: observedDay.todayKey)
                         }
                     }
                 }
@@ -307,7 +307,7 @@ private struct WeeklyNotesPage: View {
                         dateKey: { NotesListGrouping.weekStartDateKey(forWeekKey: $0.weekKey) }
                     ) { note in
                         NoteListRowButton(action: { selectedNoteID = note.id }) {
-                            WeeklyNoteListRow(note: note, isSelected: selectedNoteID == note.id)
+                            WeeklyNoteListRow(note: note, isSelected: selectedNoteID == note.id, todayKey: observedDay.todayKey)
                         }
                     }
                 }

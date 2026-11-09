@@ -954,9 +954,14 @@ enum NoteRowText {
 struct DailyNoteListRow: View {
     let note: Note
     let isSelected: Bool
+    /// The host page's observed day ([[T-14411]]), required and with no default, the way
+    /// `TaskNoteListRow` takes it ([[T-8535]]). Read from the clock here, the row's inputs were the
+    /// same on both sides of midnight, so SwiftUI never re-ran this body and yesterday's row kept
+    /// saying "Today" until something else redrew it.
+    let todayKey: String
     var metrics: CadenceNotesListMetrics = .desktop
 
-    private var isToday: Bool { note.dateKey == DateFormatters.todayKey() }
+    var isToday: Bool { note.dateKey == todayKey }
 
     var body: some View {
         NoteListDayRow(
@@ -979,9 +984,14 @@ struct DailyNoteListRow: View {
 struct WeeklyNoteListRow: View {
     let note: Note
     let isSelected: Bool
+    /// The host page's observed day, as `DailyNoteListRow.todayKey` ([[T-14411]]); the week is
+    /// derived from it the way the hosts derive the week they filter by.
+    let todayKey: String
     var metrics: CadenceNotesListMetrics = .desktop
 
-    private var isThisWeek: Bool { note.weekKey == DateFormatters.currentWeekKey() }
+    var isThisWeek: Bool {
+        note.weekKey == DateFormatters.weekKey(from: DateFormatters.date(from: todayKey) ?? Date())
+    }
 
     /// Weekly notes file under the month of the week they start in, so the leading slot carries
     /// that week's first day and the numbers still form a column.

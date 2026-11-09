@@ -248,5 +248,50 @@ struct CadenceListPagesObservedDayTests {
         #expect(listed.contains("NotesListVisibility.dailyNotes(notesForActiveTab, todayKey: todayKey)"))
         #expect(!listed.contains("currentWeekKey()"))
     }
+
+    /// [[T-14411]]: the daily and weekly rows say "Today" / "This Week" against the day they are
+    /// HANDED, never the clock. Every key here is a literal years away from the real date, so a
+    /// row that read `DateFormatters.todayKey()` / `currentWeekKey()` instead answers wrongly on
+    /// both sides of the pair.
+    @Test func theDailyAndWeeklyNoteRowsAnswerAgainstTheHandedDay() {
+        let note = Note(kind: .daily, title: "2019-03-05", dateKey: "2019-03-05")
+        #expect(DailyNoteListRow(note: note, isSelected: false, todayKey: "2019-03-05").isToday)
+        #expect(!DailyNoteListRow(note: note, isSelected: false, todayKey: "2019-03-06").isToday)
+
+        let weekKey = DateFormatters.weekKey(from: DateFormatters.date(from: "2019-03-05")!)
+        let weekly = Note(kind: .weekly, title: weekKey, weekKey: weekKey)
+        // Any day of that week names it; the next Monday's week does not.
+        #expect(WeeklyNoteListRow(note: weekly, isSelected: false, todayKey: "2019-03-05").isThisWeek)
+        #expect(WeeklyNoteListRow(note: weekly, isSelected: false, todayKey: "2019-03-07").isThisWeek)
+        let nextWeek = DateFormatters.date(from: "2019-03-05")!.addingTimeInterval(7 * 86_400)
+        #expect(!WeeklyNoteListRow(
+            note: weekly, isSelected: false, todayKey: DateFormatters.dateKey(from: nextWeek)
+        ).isThisWeek)
+    }
+
+    /// ...and every host hands them its observed day: the two Mac pages and the iOS list, at all
+    /// four call sites, with no clock read left in either row.
+    @Test func theNotesListRowsTakeTheHostsObservedDay() throws {
+        let support = try Self.code("Cadence/Shared/CadenceNotesListSupport.swift")
+        let daily = try #require(CadenceSourceScan.declarationBody("struct DailyNoteListRow: View", in: support))
+        let weekly = try #require(CadenceSourceScan.declarationBody("struct WeeklyNoteListRow: View", in: support))
+        for row in [daily, weekly] {
+            #expect(row.contains("let todayKey: String"))
+            #expect(!row.contains("DateFormatters.todayKey()"))
+            #expect(!row.contains("currentWeekKey()"))
+        }
+
+        let mac = try Self.code("Cadence/macOS/Views/NotesView.swift")
+        let dailyPage = try #require(CadenceSourceScan.declarationBody("private struct DailyNotesPage: View", in: mac))
+        #expect(dailyPage.contains("DailyNoteListRow(note: note, isSelected: selectedNoteID == note.id, todayKey: observedDay.todayKey)"))
+        let weeklyPage = try #require(CadenceSourceScan.declarationBody("private struct WeeklyNotesPage: View", in: mac))
+        #expect(weeklyPage.contains("WeeklyNoteListRow(note: note, isSelected: selectedNoteID == note.id, todayKey: observedDay.todayKey)"))
+
+        let ios = try #require(CadenceSourceScan.declarationBody(
+            "struct iOSNotesView: View", in: try Self.code("Cadence/iOS/iOSNotesView.swift")
+        ))
+        #expect(ios.contains("DailyNoteListRow(note: note, isSelected: isSelected(note), todayKey: observedDay.todayKey,"))
+        #expect(ios.contains("WeeklyNoteListRow(note: note, isSelected: isSelected(note), todayKey: observedDay.todayKey,"))
+    }
 }
 #endif
