@@ -30,6 +30,18 @@ nonisolated enum CadenceCompactTab: String, CaseIterable, Identifiable, Hashable
         CadenceCompactTab(rawValue: rawValue) ?? defaultTab
     }
 
+    /// What a tap on a bar item does ([[T-14542]]). A tap on another tab selects it; a tap on the
+    /// tab already showing pops that tab's stack back to its root, as the system tab bar does. The
+    /// compact shell draws its own bar rather than a `TabView`, so it inherited neither behaviour,
+    /// and its select action wrote the same value back -- a pushed Today or list stayed put and the
+    /// page's own back control was the only way home.
+    ///
+    /// The other tabs' stacks are left alone either way: switching tabs still lands you where you
+    /// were, which is the shell's standing promise (`iOSCompactRootShell`).
+    static func selecting(_ tab: CadenceCompactTab, current: CadenceCompactTab) -> CadenceCompactTabSelection {
+        tab == current ? .popToRoot(tab) : .select(tab)
+    }
+
     var title: String {
         switch self {
         case .tasks: return "Tasks"
@@ -144,6 +156,14 @@ extension CadenceCompactTab {
         .filter { $0.compactTab == .tasks }
         .flatMap { $0 == .allTasks ? [CadenceFeatureDestination.allTasks, .inbox] : [$0] }
     }
+}
+
+/// The answer `CadenceCompactTab.selecting(_:current:)` gives a bar tap.
+nonisolated enum CadenceCompactTabSelection: Equatable {
+    /// Show this tab, keeping whatever its stack already holds.
+    case select(CadenceCompactTab)
+    /// This tab is already showing: empty its stack.
+    case popToRoot(CadenceCompactTab)
 }
 
 /// The three slices of work the Tasks tab holds.

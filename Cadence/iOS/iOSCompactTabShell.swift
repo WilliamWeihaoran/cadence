@@ -114,7 +114,16 @@ struct iOSCompactRootShell: View {
 
             iOSCompactTabBar(
                 selection: selectedTab,
-                onSelect: { selectedTab = $0 },
+                // A tap on the tab already showing pops it to its root ([[T-14542]]); see
+                // `CadenceCompactTab.selecting(_:current:)`.
+                onSelect: { tab in
+                    switch CadenceCompactTab.selecting(tab, current: selectedTab) {
+                    case .select(let tab):
+                        selectedTab = tab
+                    case .popToRoot(let tab):
+                        paths[tab] = NavigationPath()
+                    }
+                },
                 captureInteraction: captureInteraction
             )
         }

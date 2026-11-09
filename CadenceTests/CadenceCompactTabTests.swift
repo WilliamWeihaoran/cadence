@@ -27,6 +27,28 @@ struct CadenceCompactTabTests {
         }
     }
 
+    // MARK: - Re-tapping the selected tab ([[T-14542]])
+
+    @Test func tappingAnotherTabSelectsItAndTappingTheShownTabPopsItToRoot() {
+        for current in CadenceCompactTab.allCases {
+            for tab in CadenceCompactTab.allCases {
+                let expected: CadenceCompactTabSelection = tab == current ? .popToRoot(tab) : .select(tab)
+                #expect(CadenceCompactTab.selecting(tab, current: current) == expected, "\(tab) on \(current)")
+            }
+        }
+    }
+
+    /// The bar draws its own items rather than a `TabView`, so the pop is only real if the shell's
+    /// select action routes through the helper and empties that tab's path.
+    @Test func theCompactBarRoutesEveryTapThroughTheSelectionHelper() throws {
+        let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCompactTabShell.swift"))
+        let shell = try #require(CadenceSourceScan.declarationBody("struct iOSCompactRootShell: View", in: source))
+        #expect(!shell.contains("onSelect: { selectedTab = $0 }"))
+        #expect(CadenceSourceScan.matchCount(#"CadenceCompactTab\.selecting\(tab, current: selectedTab\)"#, in: shell) == 1)
+        #expect(CadenceSourceScan.matchCount(#"case \.popToRoot\(let tab\):\s+paths\[tab\] = NavigationPath\(\)"#, in: shell) == 1)
+        #expect(CadenceSourceScan.matchCount(#"case \.select\(let tab\):\s+selectedTab = tab"#, in: shell) == 1)
+    }
+
     /// The one that would have caught a screen going dark: a destination that is neither a tab root
     /// nor listed somewhere that pushes it has no door at all once the Home grid is gone.
     ///

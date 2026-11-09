@@ -65,6 +65,13 @@ struct iOSTodayTaskSections: View {
     let layout: CadenceTodayLayout
     let taskGroups: [CadenceTodayTaskGroup]
     let completedTasks: [AppTask]
+    /// The page's observed day ([[T-14541]]), handed down as `content.todayKey` by both hosts. It
+    /// used to be a computed `DateFormatters.todayKey()` read here, on the grounds that it could
+    /// only ever be today's key -- but this view's other inputs are the same on both sides of
+    /// midnight, so SwiftUI kept the old body and every row kept yesterday's "Today" chip and
+    /// do-date emphasis. A parameter the host's day observer changes is what makes the body re-run.
+    /// It is the rows' `todayKey:` and their `dayAlreadyStatedBySurface:` -- see `iOSTaskRow`.
+    let todayKey: String
     /// Whether the day's finished work is **unfolded** — no longer whether it is on the page at
     /// all. Since the owner's *"show the completed today section (which is always folded until i
     /// unfold it) on the bottom of the list"* the section is always there and this bit is its
@@ -88,13 +95,6 @@ struct iOSTodayTaskSections: View {
         .metrics(layout: layout)
     }
 
-    /// Derived here rather than taken as a parameter, the same way `iOSSchedulePanel` derives it:
-    /// both hosts of this view already compute their own from `DateFormatters.todayKey()`, and a
-    /// sixth parameter that can only ever be handed today's key is a parameter that can be handed
-    /// the wrong one. It exists for `dayAlreadyStatedBySurface` — see `iOSTaskRow`.
-    private var todayKey: String {
-        DateFormatters.todayKey()
-    }
 
     /// The readable-column cap belongs to the **host**, not to this view: it has to hold the page
     /// header and the options bar as well, or a narrow iPad pane would cap the rows at 520 and let

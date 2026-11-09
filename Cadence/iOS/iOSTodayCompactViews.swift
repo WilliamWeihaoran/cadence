@@ -6,6 +6,9 @@ struct iOSCompactTodayView: View {
     var showsHeader = true
     let completedTodayTasks: [AppTask]
     let todayTaskGroups: [CadenceTodayTaskGroup]
+    /// The page's observed day ([[T-14541]]): the header's date eyebrow and the rows' day are both
+    /// read from it, never from the clock, so a Today left open overnight turns with the page.
+    let todayKey: String
     /// Today's rollover banner, or `nil` when there is nothing to roll. Forwarded straight to
     /// `iOSTodayTaskSections`, which is where both widths draw it — this host does not decide
     /// anything about it.
@@ -82,7 +85,7 @@ struct iOSCompactTodayView: View {
     private var header: some View {
         iOSCompactBackActionReader { onBack in
             iOSCompactPageHeader(
-                eyebrow: DateFormatters.longDate.string(from: Date()),
+                eyebrow: DateFormatters.date(from: todayKey).map(DateFormatters.longDate.string(from:)) ?? todayKey,
                 title: "Today",
                 color: Theme.amber,
                 count: summary.activeCount,
@@ -117,6 +120,7 @@ struct iOSCompactTodayView: View {
             layout: .compact,
             taskGroups: todayTaskGroups,
             completedTasks: completedTodayTasks,
+            todayKey: todayKey,
             showsCompleted: $showCompleted,
             collapsedGroupIDs: $collapsedGroupIDs,
             rolloverNotice: rolloverNotice,
@@ -128,6 +132,7 @@ struct iOSCompactTodayView: View {
             layout: .compact,
             taskGroups: todayTaskGroups,
             completedTasks: completedTodayTasks,
+            todayKey: todayKey,
             showsCompleted: $showCompleted,
             collapsedGroupIDs: $collapsedGroupIDs,
             rolloverNotice: rolloverNotice

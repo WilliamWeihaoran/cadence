@@ -128,6 +128,36 @@ struct CadenceListPagesObservedDayTests {
         }
     }
 
+    /// [[T-14541]]: the iOS Today's two children read the clock themselves -- the phone header's
+    /// date eyebrow formatted `Date()` and the sections view computed `DateFormatters.todayKey()`
+    /// for every row -- while every other input they take is the same on both sides of midnight,
+    /// so SwiftUI kept their old bodies and Today kept yesterday's date and "Today" chips after the
+    /// page's own day observer had turned. Both take the page's `content.todayKey` now.
+    @Test func theIOSTodayChildrenTakeThePagesDayAndReadNoClock() throws {
+        let sections = try Self.code("Cadence/iOS/iOSTodayTaskSections.swift")
+        let compact = try Self.code("Cadence/iOS/iOSTodayCompactViews.swift")
+        for (path, source) in [("iOSTodayTaskSections", sections), ("iOSTodayCompactViews", compact)] {
+            #expect(!source.contains("DateFormatters.todayKey()"), "\(path)")
+            #expect(!source.contains("Date()"), "\(path)")
+        }
+        let sectionsView = try #require(CadenceSourceScan.declarationBody("struct iOSTodayTaskSections: View", in: sections))
+        #expect(sectionsView.contains("let todayKey: String\n"))
+        let compactView = try #require(CadenceSourceScan.declarationBody("struct iOSCompactTodayView: View", in: compact))
+        #expect(compactView.contains("let todayKey: String\n"))
+        #expect(compactView.contains("eyebrow: DateFormatters.date(from: todayKey)"))
+        // The compact view hands its key to both of its sections builds (DEBUG and release).
+        #expect(compactView.components(separatedBy: "completedTasks: completedTodayTasks,\n            todayKey: todayKey,\n").count - 1 == 2)
+
+        // Both hosts hand the page's observed day: the two-pane sections (DEBUG and release) and
+        // the compact host's two `iOSCompactTodayView` builds.
+        let page = try Self.code("Cadence/iOS/iOSTodayView.swift")
+        #expect(page.components(separatedBy: "completedTasks: content.completedTasks,\n            todayKey: content.todayKey,\n").count - 1 == 2)
+        let host = try #require(CadenceSourceScan.declarationBody("struct iOSCompactTodayHost: View, Equatable", in: page))
+        #expect(host.components(separatedBy: "todayTaskGroups: content.taskGroups,\n            todayKey: content.todayKey,\n").count - 1 == 2)
+        // And the host's `==` still compares the content that carries that key.
+        #expect(host.contains("lhs.content == rhs.content"))
+    }
+
     @Test func theKanbanCardHandsTheDayToItsChips() throws {
         let source = try Self.code("Cadence/macOS/Views/KanbanCardView.swift")
         let card = try #require(CadenceSourceScan.declarationBody("struct KanbanCard: View", in: source))
