@@ -431,6 +431,14 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         }
     }
 
+    /// **[[T-14731]]: turning repeat off also drops the series' end.** An end condition on a task
+    /// that no longer repeats is meaningless, and left behind it re-arms the moment a rule is
+    /// picked again: the task editor's save already cleared it (`CadenceTaskEditDraftCommit.apply`),
+    /// but every row door -- the Mac row's Repeat menu and chip popover, the note embed card, the
+    /// iOS row menu -- writes only through here, so Never-then-Weekly from a row silently restored
+    /// an old "After 5" or a passed "Until" date, and a series whose bound was already reached
+    /// spawned nothing on its next completion while its row still wore the repeat glyph. Cleared
+    /// here, on the same targets the rule reaches, so every door agrees with the editor.
     static func applyRecurrenceRule(
         _ rule: TaskRecurrenceRule,
         to task: AppTask,
@@ -444,6 +452,9 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
             target.recurrenceRule = rule
             if rule == .none {
                 target.recurrenceSpawnedTaskID = nil
+                target.recurrenceEndMode = .never
+                target.recurrenceEndDate = ""
+                target.recurrenceEndCount = 0
             }
         }
     }
