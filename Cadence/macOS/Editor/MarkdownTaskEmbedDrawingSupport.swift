@@ -277,19 +277,14 @@ enum MarkdownTaskEmbedDrawing {
         min(max(42, chip.label.size(withAttributes: chipAttributes).width + 18), 128)
     }
 
-    private static func isOverdue(_ task: MarkdownTaskEmbedRenderInfo) -> Bool {
-        guard !task.dueDate.isEmpty, !task.isDone else { return false }
-        return task.dueDate < DateFormatters.todayKey()
-    }
-
-    private static func isOverdo(_ task: MarkdownTaskEmbedRenderInfo) -> Bool {
-        guard !task.scheduledDate.isEmpty, !task.isDone else { return false }
-        return (DateFormatters.dayOffset(from: task.scheduledDate) ?? 0) < 0
-    }
-
-    private static func isDoToday(_ task: MarkdownTaskEmbedRenderInfo) -> Bool {
-        guard !task.scheduledDate.isEmpty, !task.isDone else { return false }
-        return task.scheduledDate == DateFormatters.todayKey()
+    /// [[T-14321]]: the Do / Due urgency is `CadenceTaskEmbedDateTone`, the rule this card always
+    /// drew, now shared with the iOS card so the two cannot disagree about a date's hue.
+    private static func color(for tone: CadenceTaskEmbedDateTone) -> NSColor {
+        switch tone {
+        case .neutral: return MarkdownStylist.dimColor
+        case .today: return MarkdownStylist.highlightAccentColor
+        case .overdue: return MarkdownStylist.redColor
+        }
     }
 
     private static func displayChips(for task: MarkdownTaskEmbedRenderInfo) -> [Chip] {
@@ -351,16 +346,15 @@ enum MarkdownTaskEmbedDrawing {
             ))
         }
 
-        let scheduledColor: NSColor = isOverdo(task)
-            ? MarkdownStylist.redColor
-            : (isDoToday(task) ? MarkdownStylist.highlightAccentColor : MarkdownStylist.dimColor)
+        let todayKey = DateFormatters.todayKey()
+        let scheduledColor = color(for: CadenceTaskEmbedDateTone.doDate(of: task, todayKey: todayKey))
         chips.append(Chip(
             label: scheduledLabel(for: task),
             color: scheduledColor,
             field: .scheduledDate,
             importance: task.scheduledDate.isEmpty ? ChipImportance.emptyScheduledDate : ChipImportance.scheduledDate
         ))
-        let dueColor: NSColor = isOverdue(task) ? MarkdownStylist.redColor : MarkdownStylist.dimColor
+        let dueColor = color(for: CadenceTaskEmbedDateTone.dueDate(of: task, todayKey: todayKey))
         chips.append(Chip(
             label: dueLabel(for: task),
             color: dueColor,
@@ -627,19 +621,10 @@ enum MarkdownTaskEmbedDrawing {
         task.dueDate.isEmpty ? "No due date" : "Due \(DateFormatters.relativeDate(from: task.dueDate))"
     }
 
+    /// [[T-14322]]: the words are `CadenceTaskEmbedEstimateLabel`'s, shared with the iOS card; the
+    /// empty field's name is this card's own, because its chip is the click target that sets it.
     private static func estimateLabel(for task: MarkdownTaskEmbedRenderInfo) -> String {
-        if task.actualMinutes > 0 {
-            return TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: task.estimatedMinutes)
-        }
-        return task.estimatedMinutes > 0 ? durationLabel(task.estimatedMinutes) : "No estimate"
-    }
-
-    /// Same chip can show either this or `TimeFormatters.durationLabel` depending on whether
-    /// actual minutes are logged, so both have to come from the shared formatter — otherwise
-    /// one control flips between "1h 30m/2h" and "1.5h".
-    private static func durationLabel(_ minutes: Int) -> String {
-        guard minutes > 0 else { return "-" }
-        return CadenceTaskPresentationSupport.estimateLabel(minutes: minutes)
+        CadenceTaskEmbedEstimateLabel.label(for: task) ?? "No estimate"
     }
 }
 #endif
