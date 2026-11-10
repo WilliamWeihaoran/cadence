@@ -26,11 +26,10 @@ struct iOSRootView: View {
     /// Read for two things, and neither is an observation: resolving a `.task` deep link to a real
     /// row before navigating, and handing a context to `CadenceUITestSupport.prepareAppState` on
     /// appear (T-2075). Both are fetches or writes by id, not a `@Query` — nothing here observes
-    /// tasks.
+    /// tasks. The scene-phase reconcile reads its container and its unsaved state ([[T-15462]]).
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
-    @Query private var allTasksForNotifications: [AppTask]
     @State private var selection: iOSSidebarItem? = .today
     /// One `NavigationPath` per compact tab, so switching tabs preserves where you were. Each is
     /// type-erased — see `iOSCompactTabPaths`.
@@ -241,11 +240,18 @@ struct iOSRootView: View {
                 }
                 return
             }
-            // Leaving active still sees this process's pending edits. Returning uses a fresh
-            // read above, because the root's query can hold pre-widget versions of these models.
+            // [[T-15462]]: leaving active reads fresh too. The flush above has committed this
+            // process's edits, and a root `@Query` here held pre-widget models for the session, so
+            // a widget completion's reminder was re-armed on every backgrounding. Read now, before
+            // the `Task`, so the read is ordered after the flush; a failed read reconciles nothing.
             // This fixes notification input only; it deliberately does not replace the UI context.
-            let tasks = allTasksForNotifications
-            Task { await NotificationManager.shared.reconcile(tasks: tasks) }
+            guard let input = try? CadenceLeavingActiveNotificationInput(sceneContext: modelContext) else {
+                return
+            }
+            Task {
+                await NotificationManager.shared.reconcile(tasks: input.tasks)
+                withExtendedLifetime(input) {}
+            }
         }
     }
 

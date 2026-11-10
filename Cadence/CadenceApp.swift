@@ -18,6 +18,39 @@ struct CadenceForegroundNotificationSnapshot {
     }
 }
 
+/// The leaving-active reconcile's read, on both platforms ([[T-15461]], [[T-15462]]).
+///
+/// The scene's own context can hold models registered before another process wrote — a widget
+/// completion on iOS, an MCP write on macOS, or (after `refreshAppData()`'s swap) the window's
+/// retired original context — and a reconcile over those re-arms a reminder the foreground pass
+/// just withdrew. So this reads a fresh `CadenceForegroundNotificationSnapshot` whenever the
+/// scene's context has nothing unsaved: the store then holds everything this process wrote.
+/// Only when edits are still pending (a failed commit) does it read the scene's context, so
+/// those edits are never dropped from the diff. A failed read throws; it never yields `[]`.
+@MainActor
+struct CadenceLeavingActiveNotificationInput {
+    /// Whichever context `tasks` is registered in. Keep it alive until the reconcile has read them.
+    let context: ModelContext
+    let tasks: [AppTask]
+
+    init(
+        sceneContext: ModelContext,
+        fetch: ((ModelContext) throws -> [AppTask])? = nil
+    ) throws {
+        if sceneContext.hasChanges {
+            self.tasks = try fetch?(sceneContext) ?? sceneContext.fetch(FetchDescriptor<AppTask>())
+            self.context = sceneContext
+            return
+        }
+        let snapshot = try CadenceForegroundNotificationSnapshot(
+            container: sceneContext.container,
+            fetch: fetch
+        )
+        self.tasks = snapshot.tasks
+        self.context = snapshot.context
+    }
+}
+
 /// The identifier the app's one `WindowGroup` carries, so macOS's "New Window" item has a scene
 /// to open ([[T-5953]]).
 ///

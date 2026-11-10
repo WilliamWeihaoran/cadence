@@ -51,7 +51,83 @@ struct CadenceCodexRefreshRegressionTests {
         #expect(!active.contains("tasks: []"))
         #expect(!active.contains(".id("))
         #expect(!active.contains("modelContext ="))
-        #expect(scene.contains("let tasks = allTasksForNotifications"), "Leaving active still includes pending in-process edits")
+        // [[T-15462]] re-briefed this pin: leaving active used to read the root's notification
+        // task query, which held pre-widget models, and re-armed a widget-completed reminder.
+        #expect(!scene.contains("allTasksForNotifications"))
+        let leaving = try #require(scene.range(of: "try? CadenceLeavingActiveNotificationInput(sceneContext: modelContext)"))
+        let flush = try #require(scene.range(of: "flushPendingEditorContentOnLeavingActive("))
+        #expect(flush.upperBound <= leaving.lowerBound, "the read must follow the flush that commits pending edits")
+        #expect(scene.contains("await NotificationManager.shared.reconcile(tasks: input.tasks)"))
+        #expect(!source.contains("@Query private var allTasksForNotifications"))
+    }
+
+    /// [[T-15461]] / [[T-15462]]: the leaving-active read must not reuse the scene context's
+    /// registered models when another context over the same container has committed since.
+    @Test func leavingActiveInputReadsTheOtherContextsCommittedCompletion() throws {
+        let container = try CadenceTestStore.container()
+        let scene = ModelContext(container)
+        let task = AppTask(title: "Widget completion")
+        scene.insert(task)
+        try scene.save()
+        let writer = ModelContext(container)
+        let changed = try #require(writer.fetch(FetchDescriptor<AppTask>()).first)
+        changed.statusRaw = "done"
+        try writer.save()
+        #expect(task.statusRaw == "todo", "non-vacuity: the scene's registered model must be stale")
+        #expect(!scene.hasChanges)
+        let input = try CadenceLeavingActiveNotificationInput(sceneContext: scene)
+        let read = try #require(input.tasks.first)
+        #expect(input.tasks.count == 1)
+        #expect(read.id == task.id)
+        #expect(read.statusRaw == "done")
+        #expect(input.context !== scene)
+    }
+
+    /// A commit that failed leaves edits pending; dropping them from the diff would withdraw a
+    /// reminder the user just set, so the scene's own context is read instead.
+    @Test func leavingActiveInputKeepsTheSceneContextsUnsavedEdits() throws {
+        let container = try CadenceTestStore.container()
+        let scene = ModelContext(container)
+        scene.autosaveEnabled = false
+        let pending = AppTask(title: "Unsaved edit")
+        scene.insert(pending)
+        #expect(scene.hasChanges)
+        let input = try CadenceLeavingActiveNotificationInput(sceneContext: scene)
+        #expect(input.tasks.map(\.id) == [pending.id])
+        #expect(input.context === scene)
+    }
+
+    @Test func leavingActiveInputPropagatesFetchFailureOnBothPaths() throws {
+        enum FetchFailure: Error { case refused }
+        let container = try CadenceTestStore.container()
+        let clean = ModelContext(container)
+        #expect(throws: FetchFailure.self) {
+            try CadenceLeavingActiveNotificationInput(sceneContext: clean, fetch: { _ in throw FetchFailure.refused })
+        }
+        let dirty = ModelContext(container)
+        dirty.autosaveEnabled = false
+        dirty.insert(AppTask(title: "Pending"))
+        #expect(throws: FetchFailure.self) {
+            try CadenceLeavingActiveNotificationInput(sceneContext: dirty, fetch: { _ in throw FetchFailure.refused })
+        }
+    }
+
+    /// [[T-15461]]: the macOS observer reads through the context the window uses, on both arms.
+    @Test func macOSNotificationObserverReadsTheWindowsCurrentContextFresh() throws {
+        let source = try readCode("Cadence/macOS/macOSRootView.swift")
+        #expect(source.contains(".background { NotificationReconcileObserver(sceneContext: currentModelContext) }"))
+        let observer = try #require(CadenceSourceScan.declarationBody(
+            "private struct NotificationReconcileObserver: View", in: source
+        ))
+        #expect(!observer.contains("@Query"), "a query here resolves against the window's original context")
+        #expect(observer.contains("let sceneContext: ModelContext"))
+        let scene = try #require(CadenceSourceScan.declarationBody(".onChange(of: scenePhase)", in: observer))
+        let active = try #require(CadenceSourceScan.declarationBody("if phase == .active", in: scene))
+        #expect(active.contains("try? CadenceForegroundNotificationSnapshot(container: container)"))
+        #expect(active.contains("await NotificationManager.shared.reconcile(tasks: snapshot.tasks)"))
+        #expect(scene.contains("try? CadenceLeavingActiveNotificationInput(sceneContext: sceneContext)"))
+        #expect(scene.contains("await NotificationManager.shared.reconcile(tasks: input.tasks)"))
+        #expect(!scene.contains("tasks: []"))
     }
 
     @Test func codexCompactNavigationBindingsProjectThroughWritableKeyPaths() throws {

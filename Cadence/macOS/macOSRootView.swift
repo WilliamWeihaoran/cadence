@@ -122,9 +122,11 @@ struct macOSRootView: View {
             Text(CadencePendingChangePersistence.editFailureNotice)
         }
         .modelContext(currentModelContext)
-        // Attached *after* `.modelContext(...)` on purpose: like the `@Query`s it replaces, the
-        // observer must resolve against the inherited context, not `currentModelContext`.
-        .background { NotificationReconcileObserver() }
+        // [[T-15461]]: handed `currentModelContext`, the context this window actually reads and
+        // writes. It used to resolve a `@Query` against the inherited original context, which
+        // `refreshAppData()` exists to replace, so leaving active re-armed a reminder an MCP write
+        // had withdrawn.
+        .background { NotificationReconcileObserver(sceneContext: currentModelContext) }
         // T-345, attached here for the same reason and after the same `.modelContext(...)`: the
         // root selection can name an area or project that has since been deleted, and nothing else
         // in this view watches for that.
@@ -169,7 +171,7 @@ struct macOSRootView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             // The leaving-active half of this (widget reload + notification reconcile) lives in
-            // `NotificationReconcileObserver` so its two unbounded `@Query`s stay off the root.
+            // `NotificationReconcileObserver`, which fetches on demand rather than observing.
             guard phase == .active else { return }
             if hasPendingExternalDataRefresh || mcpRefreshCoordinator.shouldRefreshForCurrentMarker() {
                 scheduleAppDataRefreshIfPossible()
@@ -374,16 +376,23 @@ struct macOSRootView: View {
     }
 }
 
-/// Owns the unbounded `@Query` the notification reconcile needs, so it sits on a leaf view
-/// rendered in `.background { }` instead of on `macOSRootView` itself — the same shape as
+/// The scene-phase checkpoint for the notification reconcile, on a leaf view rendered in
+/// `.background { }` instead of on `macOSRootView` itself — the same shape as
 /// `HoverFreezeObserver`.
+///
+/// **No `@Query` ([[T-15461]]).** It owned one, resolved against the window's original context;
+/// after `refreshAppData()` swapped in a replacement, that context's registered rows predated
+/// every out-of-process write, and the leaving-active reconcile re-added what the fresh pass had
+/// withdrawn. Both arms now read a fresh context over the store, as iOS does: becoming active
+/// through `CadenceForegroundNotificationSnapshot`, leaving through
+/// `CadenceLeavingActiveNotificationInput`, which keeps `sceneContext`'s unsaved edits in the diff.
 ///
 /// **The `@Query private var allHabits: [Habit]` beside it is gone ([[T-2081]]).** It existed only
 /// to feed `reconcile(tasks:habits:)`, which no longer takes habits; leaving the query would have
 /// kept this view re-rendering on every habit change to compute nothing.
 private struct NotificationReconcileObserver: View {
     @Environment(\.scenePhase) private var scenePhase
-    @Query private var allTasks: [AppTask]
+    let sceneContext: ModelContext
 
     var body: some View {
         Color.clear
@@ -404,8 +413,25 @@ private struct NotificationReconcileObserver: View {
                 // widget extension's ([[T-306]]), and the one that matters most, a CloudKit import
                 // that landed a delete or a completion from another device while this app was away.
                 // The widget reload stays on the leaving arm: it is about what this process wrote.
-                let tasks = allTasks
-                Task { await NotificationManager.shared.reconcile(tasks: tasks) }
+                // Either read failing reconciles nothing: an empty list cancels every request.
+                if phase == .active {
+                    let container = sceneContext.container
+                    Task {
+                        guard let snapshot = try? CadenceForegroundNotificationSnapshot(container: container) else {
+                            return
+                        }
+                        await NotificationManager.shared.reconcile(tasks: snapshot.tasks)
+                        withExtendedLifetime(snapshot) {}
+                    }
+                    return
+                }
+                guard let input = try? CadenceLeavingActiveNotificationInput(sceneContext: sceneContext) else {
+                    return
+                }
+                Task {
+                    await NotificationManager.shared.reconcile(tasks: input.tasks)
+                    withExtendedLifetime(input) {}
+                }
             }
     }
 }
