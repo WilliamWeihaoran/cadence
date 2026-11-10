@@ -316,6 +316,152 @@ struct CadenceColumnWindDownSurfaceTests {
         #expect(column.components(separatedBy: "TaskContainerLifecycleService.completeRemainingActiveTasks(").count - 1 == 1)
     }
 
+    // MARK: - T-15661 / T-15662: the Mac column settles and asks as the iPad does
+
+    // `KanbanSectionStateSupport` and `KanbanColumnWindDown` are macOS-only; the iOS leg compiles
+    // this bundle too, so the value tests are fenced and the source-reading one below is not.
+    #if os(macOS)
+
+    /// [[T-15661]]. A column the iPad completed stays on the board (`windDownColumn(.complete)`
+    /// writes `isCompleted` alone), so a card can be added to it afterwards. Archiving that column
+    /// on the Mac used to skip the cancel because the column was completed, leaving the card open
+    /// under a column the board no longer draws; the iPad's archive of the same column cancels it.
+    /// The decision is the one `saveSection` and `toggleSectionArchive` both read, composed here
+    /// with the settle they run on it.
+    @Test func archivingACompletedColumnOnTheMacCancelsTheCardAddedSince() throws {
+        let context = ModelContext(try container())
+        let addedSince = task("added since", section: "Doing")
+        let area = board([addedSince], in: context)
+        area.sectionConfigs = area.sectionConfigs.map { config in
+            var config = config
+            if config.name == "Doing" { config.isCompleted = true }
+            return config
+        }
+        try context.save()
+
+        let before = try #require(area.sectionConfigs.first { $0.name == "Doing" })
+        #expect(before.isCompleted && !before.isArchived)
+        var archived = before
+        archived.isArchived = true
+
+        // It asks first, promising the card the settle below cancels.
+        let request = try #require(KanbanColumnWindDown.archiveRequest(for: before, area: area, project: nil))
+        #expect(request.summary.openTasks == 1)
+
+        let settle = KanbanSectionStateSupport.windDownOutcome(from: before, to: archived)
+        #expect(settle == .cancelled)
+        if settle == .cancelled {
+            TaskContainerLifecycleService.cancelRemainingActiveTasks(in: before, area: area, project: nil, in: context)
+        }
+        #expect(addedSince.isCancelled)
+    }
+
+    /// The other arms of the same rule: entering completion marks done, and so does the countdown's
+    /// write of both flags at once; unarchiving (which clears `isCompleted` too) and an unchanged
+    /// column settle nothing.
+    @Test func theMacColumnSettleDecisionMatchesEachTransition() {
+        let open = TaskSectionConfig(name: "Doing")
+        var completed = open
+        completed.isCompleted = true
+        var completedAndArchived = completed
+        completedAndArchived.isArchived = true
+        var archived = open
+        archived.isArchived = true
+
+        #expect(KanbanSectionStateSupport.windDownOutcome(from: open, to: completed) == .done)
+        #expect(KanbanSectionStateSupport.windDownOutcome(from: open, to: completedAndArchived) == .done)
+        #expect(KanbanSectionStateSupport.windDownOutcome(from: open, to: archived) == .cancelled)
+        #expect(KanbanSectionStateSupport.windDownOutcome(from: completed, to: completedAndArchived) == .cancelled)
+        #expect(KanbanSectionStateSupport.windDownOutcome(from: archived, to: open) == nil)
+        #expect(KanbanSectionStateSupport.windDownOutcome(from: completedAndArchived, to: open) == nil)
+        #expect(KanbanSectionStateSupport.windDownOutcome(from: open, to: open) == nil)
+    }
+
+    /// [[T-15662]]. Archive Column and Complete Column ask first when, and only when, there is open
+    /// work to settle -- `requiresConfirmation`, the rule the iPad's editor and the Mac sidebar
+    /// follow -- and say the count in the sidebar's sentence.
+    @Test func theMacColumnAsksBeforeSettlingOpenWorkAndOnlyThen() throws {
+        let context = ModelContext(try container())
+        let one = task("one", section: "Doing")
+        let two = task("two", section: "Doing", status: .inProgress)
+        let finished = task("finished", section: "Later", status: .done)
+        let area = board([one, two, finished], in: context)
+        try context.save()
+
+        let doing = try #require(area.sectionConfigs.first { $0.name == "Doing" })
+        let later = try #require(area.sectionConfigs.first { $0.name == "Later" })
+        let defaultColumn = try #require(area.sectionConfigs.first { $0.isDefault })
+
+        let archive = try #require(KanbanColumnWindDown.archiveRequest(for: doing, area: area, project: nil))
+        #expect(archive.outcome == .cancelled)
+        #expect(archive.confirmationTitle == "Archive Column?")
+        #expect(archive.confirmationMessage == "2 open tasks will be canceled. Unarchiving the column later does not reopen them.")
+
+        let complete = try #require(
+            KanbanColumnWindDown.completionRequest(for: doing, isPendingCompletion: false, area: area, project: nil)
+        )
+        #expect(complete.outcome == .done)
+        #expect(complete.actionTitle == "Complete Column")
+        #expect(complete.confirmationMessage == "2 open tasks will be marked done. Reopening the column later does not reopen them.")
+
+        // Nothing open: one click, as before.
+        #expect(KanbanColumnWindDown.archiveRequest(for: later, area: area, project: nil) == nil)
+        #expect(KanbanColumnWindDown.completionRequest(for: later, isPendingCompletion: false, area: area, project: nil) == nil)
+
+        // The reverse transitions and the countdown's cancel settle nothing, so they ask nothing.
+        var doingCompleted = doing
+        doingCompleted.isCompleted = true
+        var doingArchived = doing
+        doingArchived.isArchived = true
+        #expect(KanbanColumnWindDown.completionRequest(for: doingCompleted, isPendingCompletion: false, area: area, project: nil) == nil)
+        #expect(KanbanColumnWindDown.completionRequest(for: doing, isPendingCompletion: true, area: area, project: nil) == nil)
+        #expect(KanbanColumnWindDown.completionRequest(for: doingArchived, isPendingCompletion: false, area: area, project: nil) == nil)
+        #expect(KanbanColumnWindDown.archiveRequest(for: doingArchived, area: area, project: nil) == nil)
+
+        // A completed column with open work asks before archiving ([[T-15661]]).
+        #expect(KanbanColumnWindDown.archiveRequest(for: doingCompleted, area: area, project: nil)?.summary.openTasks == 2)
+
+        // Default has no lifecycle, whatever is open in it.
+        let unfiled = task("unfiled", section: "")
+        unfiled.area = area
+        context.insert(unfiled)
+        area.tasks = (area.tasks ?? []) + [unfiled]
+        #expect(KanbanColumnWindDown.archiveRequest(for: defaultColumn, area: area, project: nil) == nil)
+        #expect(KanbanColumnWindDown.completionRequest(for: defaultColumn, isPendingCompletion: false, area: area, project: nil) == nil)
+    }
+
+    #endif
+
+    /// The wiring half: every route into the two wind-downs asks through the request, the settle
+    /// decision is the shared one in both write paths, and the `isCompleted` exemption is gone.
+    @Test func everyMacColumnWindDownRouteAsksAndBothWritesReadTheSharedDecision() throws {
+        let column = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanSectionColumnView.swift"))
+
+        #expect(column.contains("onToggleCompletion: requestSectionCompletion,"), "the header glyph completes without asking")
+        #expect(column.contains("onToggleArchive: requestSectionArchive,"), "the popover's Archive Column archives without asking")
+        let fromEditor = try #require(CadenceSourceScan.functionBody(named: "toggleCompletionFromEditor", in: column))
+        #expect(fromEditor.contains("requestSectionCompletion()"), "the popover's Complete Column completes without asking")
+        #expect(
+            CadenceSourceScan.matchCount(#"hoveredSectionManager\.beginHovering\(id: section\.id\) \{\s*requestSectionCompletion\(\)"#, in: column) == 1,
+            "Cmd+Return completes without asking"
+        )
+        // The toggles are reached from the request (nothing to ask) and the confirmation, only.
+        #expect(column.components(separatedBy: "toggleSectionCompletion()").count - 1 == 3)
+        #expect(column.components(separatedBy: "toggleSectionArchive()").count - 1 == 3)
+        #expect(column.components(separatedBy: ".confirmationDialog(").count - 1 == 1)
+
+        for name in ["saveSection", "toggleSectionArchive"] {
+            let body = try #require(CadenceSourceScan.functionBody(named: name, in: column))
+            #expect(body.contains("KanbanSectionStateSupport.windDownOutcome(from:"), "\(name)() decides its settle on its own")
+            #expect(!body.contains("isCompleted && !"), "\(name)() exempts a completed column again")
+            #expect(!body.contains("!config.isCompleted"), "\(name)() exempts a completed column again")
+        }
+
+        // One sentence for the sidebar and the column.
+        let sidebar = try strippingComments(sourceFile("Cadence/macOS/Views/SidebarComponents.swift"))
+        #expect(sidebar.contains("summary.confirmationMessage(containerNoun:"))
+    }
+
     /// Without this, every zero and every absence assertion above could be passing because the
     /// reader returned an empty string, or because the scan was pointed at the wrong folder.
     @Test func theSourceScanActuallyReadsTheseFilesInColumnWindDownSurface() throws {

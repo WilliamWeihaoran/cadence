@@ -385,6 +385,18 @@ struct CadenceContainerWindDownSummary: Equatable, Sendable {
         return "\(openTasks) open \(openTasks == 1 ? "task" : "tasks") will be \(outcome.settledPhrase)"
     }
 
+    /// The Mac confirmation's message: the count, then that the settle outlives the container's own
+    /// reversal ([[T-12941]]). One sentence for every Mac wind-down that asks -- the sidebar's area
+    /// and project (`SidebarListWindDown`) and the board's column (`KanbanColumnWindDown`,
+    /// [[T-15662]]) -- so a column cannot come to promise something the list does not. Read only
+    /// where `requiresConfirmation`, so the count is never nil there; the empty string is for the
+    /// case nothing asks.
+    func confirmationMessage(containerNoun noun: String) -> String {
+        guard let settled = settledLine else { return "" }
+        let reversal = outcome == .done ? "Reopening" : "Unarchiving"
+        return "\(settled). \(reversal) the \(noun) later does not reopen them."
+    }
+
     /// An area, in whichever direction it is being wound down.
     ///
     /// The `outcome` is a required argument rather than a defaulted `.cancelled`, and the reason is

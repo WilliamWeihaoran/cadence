@@ -520,9 +520,7 @@ struct SidebarListWindDown: Identifiable {
     /// leave the sentence out ([[T-8201]]). Asked only when `summary.requiresConfirmation`, so the
     /// count is never nil where this is read.
     var confirmationMessage: String {
-        guard let settled = summary.settledLine else { return "" }
-        let reversal = outcome == .done ? "Reopening" : "Unarchiving"
-        return "\(settled). \(reversal) the \(noun.lowercased()) later does not reopen them."
+        summary.confirmationMessage(containerNoun: noun.lowercased())
     }
 
     /// The settle's own array, counted before the fact -- the iPad's confirmation counts the same.

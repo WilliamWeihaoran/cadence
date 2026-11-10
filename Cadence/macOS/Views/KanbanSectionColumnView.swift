@@ -97,6 +97,9 @@ struct ListSectionKanbanColumn: View {
     /// the user asked it to say, and only the sequence on screen disagrees. Reusing the failure
     /// sentence would say something untrue in the app's own failure colour.
     @State private var reorderOffScreenNotice: String?
+    /// The Archive Column / Complete Column confirmation on screen, or `nil` ([[T-15662]]). Asked
+    /// only when the column has open work to settle -- see `KanbanColumnWindDown`.
+    @State private var pendingWindDown: KanbanColumnWindDown?
     /// Both halves come from one call, so they cannot disagree about what "over" means. See
     /// `KanbanBoardSupport.columnHalves` for why this is not `isDone` (T-381 / T-399).
     private var columnHalves: (active: [AppTask], completed: [AppTask]) {
@@ -218,13 +221,28 @@ struct ListSectionKanbanColumn: View {
                 // through (T-268). An archived column registers nothing either ([[T-13101]]).
                 if CadenceBoardColumnLifecycleOffer.offersCompletionToggle(section) {
                     hoveredSectionManager.beginHovering(id: section.id) {
-                        toggleSectionCompletion()
+                        requestSectionCompletion()
                     }
                 }
             } else {
                 hoveredKanbanColumnManager.endHovering(id: sectionHoverID)
                 hoveredSectionManager.endHovering(id: section.id)
             }
+        }
+        // [[T-15662]]: the sidebar's list confirmation, in the sidebar's words, over a column.
+        .confirmationDialog(
+            pendingWindDown?.confirmationTitle ?? "",
+            isPresented: Binding(
+                get: { pendingWindDown != nil },
+                set: { if !$0 { pendingWindDown = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingWindDown
+        ) { target in
+            Button(target.actionTitle) { confirmWindDown(target) }
+            Button("Cancel", role: .cancel) { pendingWindDown = nil }
+        } message: { target in
+            Text(target.confirmationMessage)
         }
     }
 
@@ -257,7 +275,7 @@ struct ListSectionKanbanColumn: View {
             offScreenNotice: reorderOffScreenNotice,
             showHeaderDueDatePicker: $showHeaderDueDatePicker,
             showEditor: $showEditor,
-            onToggleCompletion: toggleSectionCompletion,
+            onToggleCompletion: requestSectionCompletion,
             onOpenDueDatePicker: openHeaderDueDatePicker,
             onOpenEditor: openSectionEditor,
             onHoverChanged: { hovering in
@@ -514,7 +532,7 @@ struct ListSectionKanbanColumn: View {
             onDueDateChanged: { _ = commitSectionEdits() },
             onClearDate: { _ = clearSectionDueDate() },
             onToggleCompletion: toggleCompletionFromEditor,
-            onToggleArchive: toggleSectionArchive,
+            onToggleArchive: requestSectionArchive,
             onDelete: {
                 deleteConfirmationManager.present(
                     title: CadenceSectionEditingSupport.columnDeleteConfirmationTitle,
@@ -862,10 +880,13 @@ struct ListSectionKanbanColumn: View {
         let current = currentSection()
         let undo = editSnapshot(settling: updatedSection)
         KanbanSectionStateSupport.saveSection(updatedSection: updatedSection, area: area, project: project)
-        if updatedSection.isCompleted && current?.isCompleted != true {
+        switch KanbanSectionStateSupport.windDownOutcome(from: current, to: updatedSection) {
+        case .done:
             TaskContainerLifecycleService.completeRemainingActiveTasks(in: updatedSection, area: area, project: project, in: modelContext)
-        } else if updatedSection.isArchived && !updatedSection.isCompleted && current?.isArchived != true {
+        case .cancelled:
             TaskContainerLifecycleService.cancelRemainingActiveTasks(in: updatedSection, area: area, project: project, in: modelContext)
+        case nil:
+            break
         }
         do {
             try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: { undo?.restore() })
@@ -917,6 +938,63 @@ struct ListSectionKanbanColumn: View {
         return nil
     }
 
+    /// Every route into Complete Column -- the header glyph, Cmd+Return over the column and the
+    /// popover button -- and the confirmation it asks first when there is open work to mark done
+    /// ([[T-15662]]). Reopening, cancelling a countdown and an empty column ask nothing and go
+    /// straight to `toggleSectionCompletion`, as the iPad's list editor does.
+    private func requestSectionCompletion() {
+        guard let target = KanbanColumnWindDown.completionRequest(
+            for: section,
+            isPendingCompletion: isPendingCompletion,
+            area: area,
+            project: project
+        ) else {
+            toggleSectionCompletion()
+            return
+        }
+        askToWindDown(target)
+    }
+
+    /// The popover's Archive Column, asked first when there is open work to cancel ([[T-15662]]);
+    /// Unarchive and an empty column go straight to `toggleSectionArchive`.
+    private func requestSectionArchive() {
+        guard let target = KanbanColumnWindDown.archiveRequest(for: section, area: area, project: project) else {
+            toggleSectionArchive()
+            return
+        }
+        askToWindDown(target)
+    }
+
+    /// The confirmation is drawn over the column, not inside the popover: a popover presenting a
+    /// sheet from inside itself is a presentation knot ([[T-8201]]). So the popover closes first
+    /// and the dialog follows on the next main-actor turn, once the popover's dismissal has been
+    /// handed to AppKit. A refused write after the confirmation is reported on the column header,
+    /// through `columnFailureNotice`, which is the surface T-646 built for a refusal that arrives
+    /// once the popover is gone.
+    private func askToWindDown(_ target: KanbanColumnWindDown) {
+        guard showEditor else {
+            pendingWindDown = target
+            return
+        }
+        showEditor = false
+        Task { @MainActor in pendingWindDown = target }
+    }
+
+    /// The confirmed wind-down, re-asked against the column as it is now: a column completed or
+    /// archived from another device while the dialog was up must not be toggled back by the
+    /// confirmation meant to wind it down.
+    private func confirmWindDown(_ target: KanbanColumnWindDown) {
+        pendingWindDown = nil
+        switch target.outcome {
+        case .done:
+            guard !section.isCompleted, !isPendingCompletion else { return }
+            toggleSectionCompletion()
+        case .cancelled:
+            guard !section.isArchived else { return }
+            toggleSectionArchive()
+        }
+    }
+
     /// The editor's Archive / Unarchive button, and the popover now closes only once the store has
     /// taken it (T-632).
     ///
@@ -926,16 +1004,17 @@ struct ListSectionKanbanColumn: View {
     /// stays open on the column that did not move.
     private func toggleSectionArchive() {
         let undo = editSnapshot(settling: section)
-        var shouldCancelActiveTasks = false
+        var settle: CadenceWindDownOutcome?
         updateSection { config in
-            let willArchive = !config.isArchived
+            let before = config
             config.isArchived.toggle()
-            shouldCancelActiveTasks = willArchive && !config.isCompleted
             if !config.isArchived {
                 config.isCompleted = false
             }
+            // [[T-15661]]: no `isCompleted` exemption -- see `windDownOutcome`.
+            settle = KanbanSectionStateSupport.windDownOutcome(from: before, to: config)
         }
-        if shouldCancelActiveTasks {
+        if settle == .cancelled {
             TaskContainerLifecycleService.cancelRemainingActiveTasks(in: section, area: area, project: project, in: modelContext)
         }
         do {
@@ -957,7 +1036,7 @@ struct ListSectionKanbanColumn: View {
     /// while a completion has nothing to have failed at yet by the time this returns. One flag
     /// covers both: it is set only when a commit was actually attempted and refused.
     private func toggleCompletionFromEditor() {
-        toggleSectionCompletion()
+        requestSectionCompletion()
         guard saveFailureNotice == nil else { return }
         showEditor = false
     }

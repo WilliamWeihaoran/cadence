@@ -227,5 +227,98 @@ enum KanbanSectionStateSupport {
             edited: current.map { $0.uuid == updatedSection.uuid ? updatedSection : $0 }
         )
     }
+
+    /// The settle a column write performs, decided from the column before and after it -- the one
+    /// rule `saveSection` and `toggleSectionArchive` both read ([[T-15661]]).
+    ///
+    /// Entering completion marks the open work done; entering archive cancels it. **Archive is not
+    /// gated on `isCompleted`, as on iOS** (`ModelContext.windDownColumn`): a completed column's
+    /// work is normally settled already, so the cancel walks nothing, but a card added to a
+    /// completed column afterwards is open -- and a Mac archive that skipped it left that card open
+    /// under a column the board no longer draws, still surfacing on Today, while the iPad's archive
+    /// of the same column cancelled it. No pointer, touch or width constraint decides which
+    /// ([[T-8201]]). Completion leads when one write enters both, which is what the completion
+    /// countdown writes (`isCompleted` and `isArchived` together): the work is finished, not
+    /// abandoned.
+    static func windDownOutcome(
+        from current: TaskSectionConfig?,
+        to updated: TaskSectionConfig
+    ) -> CadenceWindDownOutcome? {
+        if updated.isCompleted && current?.isCompleted != true { return .done }
+        if updated.isArchived && current?.isArchived != true { return .cancelled }
+        return nil
+    }
+}
+
+/// A Mac kanban column about to be wound down -- Archive Column or Complete Column -- and the
+/// confirmation it asks first ([[T-15662]]).
+///
+/// The iPad's list editor has asked since T-247 (`iOSColumnWindDownTarget`, presented through
+/// `iOSWindDownConfirmationSheet`), and the Mac's own sidebar Archive / Complete asks with the same
+/// count (`SidebarListWindDown`); the column popover settled every open card in one click. The
+/// container differs -- a system confirmation over the column rather than a detented sheet, the
+/// presentation each platform has -- but the question is the same one, asked by the same rule:
+/// only when `CadenceContainerWindDownSummary.requiresConfirmation`, so an empty column stays one
+/// click, and with the count from that summary, the settle's own array.
+///
+/// The entering transitions only. Unarchive and Reopen settle nothing, and a click during the
+/// completion countdown cancels it, so none of the three asks: the two factories answer `nil` and
+/// the column performs the toggle directly.
+struct KanbanColumnWindDown: Identifiable {
+    let section: TaskSectionConfig
+    let area: Area?
+    let project: Project?
+    let outcome: CadenceWindDownOutcome
+
+    var id: String {
+        "\(section.uuid)-\(outcome.rawValue)"
+    }
+
+    /// The popover button's own words, so the confirmation's button says what was clicked.
+    var actionTitle: String {
+        outcome == .done ? "Complete Column" : "Archive Column"
+    }
+
+    var confirmationTitle: String { "\(actionTitle)?" }
+
+    /// The count, then that the settle outlives the column's own reversal -- the sentence the
+    /// sidebar's list confirmation says, from the same summary.
+    var confirmationMessage: String {
+        summary.confirmationMessage(containerNoun: "column")
+    }
+
+    /// Counted on the column **as the model holds it**, never the popover's rename draft: the walk
+    /// matches `resolvedSectionName` against `section.name`.
+    var summary: CadenceContainerWindDownSummary {
+        .forColumn(section, area: area, project: project, outcome: outcome)
+    }
+
+    /// The confirmation a Complete Column click asks, or `nil` when it asks nothing: a column that
+    /// is completed (the click reopens it), mid-countdown (the click cancels it), offered no
+    /// completion at all (Default, an archived column), or with nothing open to mark done.
+    static func completionRequest(
+        for section: TaskSectionConfig,
+        isPendingCompletion: Bool,
+        area: Area?,
+        project: Project?
+    ) -> Self? {
+        guard !section.isCompleted, !isPendingCompletion,
+              CadenceBoardColumnLifecycleOffer.offersCompletionToggle(section) else { return nil }
+        let target = Self(section: section, area: area, project: project, outcome: .done)
+        return target.summary.requiresConfirmation ? target : nil
+    }
+
+    /// The confirmation an Archive Column click asks, or `nil`: an archived column (the click
+    /// unarchives it), Default (which has no lifecycle), or nothing open to cancel. A completed
+    /// column with a card added since asks, because archiving it cancels that card ([[T-15661]]).
+    static func archiveRequest(
+        for section: TaskSectionConfig,
+        area: Area?,
+        project: Project?
+    ) -> Self? {
+        guard !section.isArchived, section.supportsLifecycle else { return nil }
+        let target = Self(section: section, area: area, project: project, outcome: .cancelled)
+        return target.summary.requiresConfirmation ? target : nil
+    }
 }
 #endif
