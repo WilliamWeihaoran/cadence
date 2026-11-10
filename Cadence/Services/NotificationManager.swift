@@ -213,6 +213,19 @@ final class NotificationManager: NSObject {
             centre.removePending(withIdentifiers: diff.identifiersToRemove)
         }
 
+        // [[T-15464]]: a reminder that already FIRED is not pending, so the diff above never sees
+        // it; withdraw the delivered ones whose task is now done or cancelled.
+        let settledTaskIDs = Set(tasks.filter { $0.status == .done || $0.status == .cancelled }.map(\.id))
+        if !settledTaskIDs.isEmpty {
+            let deliveredToRemove = NotificationReconcileDiff.deliveredIdentifiersToRemove(
+                delivered: await centre.deliveredIdentifiers(),
+                settledTaskIDs: settledTaskIDs
+            )
+            if !deliveredToRemove.isEmpty {
+                centre.removeDelivered(withIdentifiers: deliveredToRemove)
+            }
+        }
+
         lastReconcileRegistrationFailures = await Self.register(diff.requestsToAdd) { osRequest in
             try await self.centre.add(osRequest)
         }
@@ -266,12 +279,17 @@ final class NotificationManager: NSObject {
 
     /// Cancels a specific set of tasks' pending notifications directly — cheaper than a full
     /// reconcile when the caller already knows exactly which tasks were removed (e.g. deletion).
+    ///
+    /// **[[T-15464]]: the delivered copies go too.** A reminder that already fired would otherwise
+    /// sit in Notification Center naming a task that no longer exists. The same identifiers, so
+    /// nothing outside these tasks' two reminders is touched.
     func cancel(taskIDs: [UUID]) async {
         guard centreIsInjected || !Self.isTestEnvironment, !taskIDs.isEmpty else { return }
         let identifiers = taskIDs.flatMap {
             [NotificationIdentifiers.taskStart(taskID: $0), NotificationIdentifiers.taskDue(taskID: $0)]
         }
         centre.removePending(withIdentifiers: identifiers)
+        centre.removeDelivered(withIdentifiers: identifiers)
     }
 
     /// Cancels a specific set of habits' pending reminder notifications directly.
@@ -417,7 +435,8 @@ struct CadenceLiveNotificationPurgeCentre: CadencePendingNotificationPurgeCentre
 }
 
 /// **[[T-3113]].** The notification-centre calls `NotificationManager`'s side-effecting entry points
-/// make — the purge's two, plus the authorization read, the authorization request and `add`.
+/// make — the purge's two, plus the authorization read, the authorization request, `add`, and the
+/// delivered-reminder read and removal ([[T-15464]]).
 ///
 /// Narrow on purpose, like the purge protocol it extends: it names exactly what the manager calls
 /// so a fake can record each call, and nothing the manager does not.
@@ -426,6 +445,10 @@ protocol CadenceNotificationCentre: CadencePendingNotificationPurgeCentre {
     func authorizationStatus() async -> UNAuthorizationStatus
     func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool
     func add(_ request: UNNotificationRequest) async throws
+    /// [[T-15464]]: the identifiers of the reminders already shown in Notification Center.
+    func deliveredIdentifiers() async -> [String]
+    /// [[T-15464]]: withdraws already-shown reminders from Notification Center.
+    func removeDelivered(withIdentifiers identifiers: [String])
 }
 
 /// The real centre behind `NotificationManager.shared` ([[T-3113]]).
@@ -453,6 +476,14 @@ private struct CadenceSystemNotificationCentre: CadenceNotificationCentre {
 
     func add(_ request: UNNotificationRequest) async throws {
         try await UNUserNotificationCenter.current().add(request)
+    }
+
+    func deliveredIdentifiers() async -> [String] {
+        await UNUserNotificationCenter.current().deliveredNotifications().map(\.request.identifier)
+    }
+
+    func removeDelivered(withIdentifiers identifiers: [String]) {
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
     }
 }
 

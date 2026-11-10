@@ -252,6 +252,30 @@ struct TaskNotesEmbedHandlersTests {
         #expect(committing.embeddedTaskFailureNotice == nil)
     }
 
+    /// **[[T-15463]].** A landed rename reconciles, so a pending reminder is re-added under the
+    /// new title; a refused one, which puts the title back, does not.
+    @Test func aLandedRenameReconcilesAndARefusedOneDoesNot() throws {
+        let (_, modelContext) = try context()
+        let owner = try seededTask("Owner", in: modelContext)
+        let embedded = try seededTask("Embedded", in: modelContext)
+        let scope = scope([owner, embedded], owner: owner, modelContext)
+        var reconciledTitles: [String] = []
+        let recorder = CadenceWindDownReconciler { _ in reconciledTitles.append(embedded.title) }
+
+        let refusing = TaskNotesEmbedHandlers(
+            hoverIDPrefix: "test-",
+            commit: { _ in throw CommitRefused() },
+            reconciler: recorder
+        )
+        refusing.renameEmbeddedTask(id: embedded.id, title: "Refused", in: scope)
+        #expect(embedded.title == "Embedded")
+        #expect(reconciledTitles.isEmpty, "a refused rename reconciled")
+
+        let committing = TaskNotesEmbedHandlers(hoverIDPrefix: "test-", reconciler: recorder)
+        committing.renameEmbeddedTask(id: embedded.id, title: "Renamed", in: scope)
+        #expect(reconciledTitles == ["Renamed"], "a landed rename did not reconcile once, after the title moved")
+    }
+
     // MARK: - [[T-6721]]: the two note-owned editors' host policy
 
     /// `NotePanel`'s core notes file a new card into the Inbox, default section.

@@ -104,6 +104,10 @@ final class TaskNotesEmbedHandlers {
     /// How every card edit and card creation commits. A parameter only so a test can refuse the
     /// commit; the hosts take the default.
     @ObservationIgnored private let commit: (ModelContext) throws -> Void
+    /// The notification reconcile a landed rename runs ([[T-15463]]). `nil` is
+    /// `CadenceWindDownReconciler.default` — live in the app, inert in a test host; a test that
+    /// cares injects one that records.
+    @ObservationIgnored private let reconciler: CadenceWindDownReconciler?
 
     /// The card circle's deferred completion ([[T-8395]]): the shared manager's walk, repainted
     /// while it fills and rebuilt when it settles.
@@ -114,10 +118,12 @@ final class TaskNotesEmbedHandlers {
     init(
         hoverIDPrefix: String,
         commit: @escaping (ModelContext) throws -> Void = { try $0.save() },
-        completionDriver: CadenceTaskEmbedCompletionDriver? = nil
+        completionDriver: CadenceTaskEmbedCompletionDriver? = nil,
+        reconciler: CadenceWindDownReconciler? = nil
     ) {
         self.hoverIDPrefix = hoverIDPrefix
         self.commit = commit
+        self.reconciler = reconciler
         let completionDriver = completionDriver ?? CadenceTaskEmbedCompletionDriver()
         self.completionDriver = completionDriver
         completionDriver.repaint = { [weak self] in self?.repaintEmbeddedTaskCircle(id: $0) }
@@ -301,6 +307,12 @@ final class TaskNotesEmbedHandlers {
     }
 
     /// See `toggleEmbeddedSubtask` — the same claim, about the card's title rather than its ticks.
+    ///
+    /// **[[T-15463]]: a landed rename reconciles.** A pending "Starting now" / "Due today" request
+    /// carries the title it was scheduled with, and only a reconcile re-adds it, so without this
+    /// the banner fired under the old name — while every sibling edit from the same card (the
+    /// status popover, the task panel's Save) already reconciled. A refused rename puts the title
+    /// back, so there is nothing to re-read and it does not reconcile.
     func renameEmbeddedTask(id: UUID, title: String, in scope: TaskNotesEmbedScope) {
         guard let embeddedTask = embeddedTask(id: id, in: scope) else { return }
         guard CadenceNoteTaskEmbedEditing.rename(embeddedTask, to: title, in: scope.modelContext, commit: commit) else {
@@ -308,6 +320,7 @@ final class TaskNotesEmbedHandlers {
             return
         }
         embeddedTaskFailureNotice = nil
+        (reconciler ?? .default).run(in: scope.modelContext)
         refreshEmbeddedTask(embeddedTask)
     }
 

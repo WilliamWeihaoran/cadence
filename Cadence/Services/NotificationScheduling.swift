@@ -195,6 +195,30 @@ nonisolated struct NotificationReconcileDiff: Equatable {
             requestsToAdd: scheduled.sorted { $0.identifier < $1.identifier }
         )
     }
+
+    /// **[[T-15464]].** The already-DELIVERED task reminders a reconcile withdraws from
+    /// Notification Center: those naming a task that has since been completed or cancelled.
+    ///
+    /// `identifiersToRemove` above cannot carry these. A task reminder is one-shot, so once it has
+    /// fired it is no longer pending, and a diff over the pending queue never sees it -- the 09:00
+    /// "Due today" for a task finished at 09:05 is exactly the banner that diff misses. So the
+    /// withdrawal keys on the delivered list and on the settled tasks the pass was handed.
+    ///
+    /// **Only tasks the pass holds and knows are settled.** A delivered reminder whose task is
+    /// absent from `tasks` is left alone: a deletion withdraws its own reminders through
+    /// `NotificationManager.cancel(taskIDs:)`, and "absent" is also what a task not yet imported
+    /// looks like mid-sync ([[T-3046]]), where removing a banner would lose something real. A
+    /// habit or another app's identifier names no task and is never touched.
+    static func deliveredIdentifiersToRemove(
+        delivered: [String],
+        settledTaskIDs: Set<UUID>
+    ) -> [String] {
+        delivered.filter { identifier in
+            guard let taskID = NotificationIdentifiers.taskID(fromIdentifier: identifier) else { return false }
+            return settledTaskIDs.contains(taskID)
+        }
+        .sorted()
+    }
 }
 
 nonisolated enum TaskNotificationPlanner {

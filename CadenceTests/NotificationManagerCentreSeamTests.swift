@@ -30,11 +30,27 @@ struct NotificationManagerCentreSeamTests {
         private(set) var added: [String] = []
         private(set) var statusReads = 0
         private(set) var requestedOptions: [UNAuthorizationOptions] = []
+        /// What Notification Center is showing ([[T-15464]]).
+        private(set) var delivered: [String]
+        private(set) var removeDeliveredCalls: [[String]] = []
 
-        init(status: UNAuthorizationStatus = .authorized, grantsRequest: Bool = false, pending: [String] = []) {
+        init(
+            status: UNAuthorizationStatus = .authorized,
+            grantsRequest: Bool = false,
+            pending: [String] = [],
+            delivered: [String] = []
+        ) {
             self.status = status
             self.grantsRequest = grantsRequest
             self.pending = pending
+            self.delivered = delivered
+        }
+
+        func deliveredIdentifiers() async -> [String] { delivered }
+
+        func removeDelivered(withIdentifiers identifiers: [String]) {
+            removeDeliveredCalls.append(identifiers)
+            delivered.removeAll { identifiers.contains($0) }
         }
 
         func authorizationStatus() async -> UNAuthorizationStatus {
@@ -313,6 +329,58 @@ struct NotificationManagerCentreSeamTests {
             #expect(!manager.isDenied, "non-vacuity: the cached flag starts stale, so the status must be re-read")
             #expect(await manager.requestAuthorizationOrOpenSettings(), "an earlier refusal did not route to Settings")
             #expect(alreadyDenied.requestedOptions.isEmpty, "a refusal the OS will not re-prompt was asked again")
+        }
+    }
+
+    // MARK: - [[T-15464]]: reminders that already fired
+
+    /// A fired reminder is no longer pending, so only the delivered list can withdraw it. A pass
+    /// takes down exactly the shown reminders of the tasks it holds as done or cancelled, and
+    /// leaves an open task's, an absent task's, a habit's and another app's on screen.
+    @Test func reconcileWithdrawsTheDeliveredRemindersOfSettledTasksOnly() async throws {
+        let done = dueTask("Finished at 09:05")
+        done.status = .done
+        let cancelled = dueTask("Called off")
+        cancelled.status = .cancelled
+        let open = dueTask("Still open")
+        let absent = UUID()
+        let doneShown = [NotificationIdentifiers.taskStart(taskID: done.id), NotificationIdentifiers.taskDue(taskID: done.id)]
+        let cancelledShown = NotificationIdentifiers.taskDue(taskID: cancelled.id)
+        let kept = [
+            NotificationIdentifiers.taskDue(taskID: open.id),
+            NotificationIdentifiers.taskDue(taskID: absent),
+            NotificationIdentifiers.habitReminder(habitID: done.id),
+            foreign,
+        ]
+        let centre = FakeCentre(delivered: doneShown + [cancelledShown] + kept)
+
+        try await withManager(centre) { manager in
+            await manager.reconcile(tasks: [done, cancelled, open])
+
+            #expect(centre.removeDeliveredCalls.count == 1)
+            #expect(
+                Set(centre.removeDeliveredCalls.flatMap { $0 }) == Set(doneShown + [cancelledShown]),
+                "reconcile withdrew \(centre.removeDeliveredCalls) instead of exactly the settled tasks' shown reminders"
+            )
+            #expect(Set(centre.delivered) == Set(kept))
+
+            // Nothing settled left on screen: no empty call reaches the centre.
+            await manager.reconcile(tasks: [done, cancelled, open])
+            #expect(centre.removeDeliveredCalls.count == 1, "a pass with nothing to withdraw still reached the centre")
+        }
+    }
+
+    /// A delete withdraws the shown copies of the deleted tasks' two reminders as well as the
+    /// pending ones, and nothing of any other task's.
+    @Test func cancelTaskIDsAlsoWithdrawsTheDeliveredRemindersOfTheGivenTasks() async throws {
+        let (a, b) = (UUID(), UUID())
+        let ids = { (id: UUID) in [NotificationIdentifiers.taskStart(taskID: id), NotificationIdentifiers.taskDue(taskID: id)] }
+        let centre = FakeCentre(delivered: ids(a) + ids(b) + [foreign])
+
+        try await withManager(centre) { manager in
+            await manager.cancel(taskIDs: [a])
+            #expect(Set(centre.removeDeliveredCalls.flatMap { $0 }) == Set(ids(a)))
+            #expect(Set(centre.delivered) == Set(ids(b) + [foreign]))
         }
     }
 
