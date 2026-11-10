@@ -183,3 +183,48 @@ import Foundation
         return cleaned
     }
 }
+
+/// Which tasks a list's change of owner re-points, and what each one is re-pointed to — the one
+/// spelling both the app's list editors and the MCP `update_container` arm use ([[T-14843]]).
+///
+/// It lives in `Models/`, beside `Project.resolvedContext`, because `CadenceTaskMutationSupport`
+/// cannot join `CadenceMCPServer`'s Sources phase and this file already does. The app reaches it
+/// through `CadenceTaskMutationSupport.inheritedContextTargets` / `reassignInheritedContext`, which
+/// delegate here; the rules ([[T-293]], [[T-340]]) are written out there.
+enum CadenceInheritedTaskContext {
+    /// The context a task filed in `area` / `project` takes.
+    static func context(area: Area?, project: Project?) -> Context? {
+        if let area { return area.context }
+        if let project { return project.resolvedContext }
+        return nil
+    }
+
+    /// Exactly the tasks `reassign(in:area:project:)` writes for this list, so an undo can
+    /// snapshot the same set: the list's own tasks and, for an area, the tasks of every child
+    /// project with no context of its own.
+    static func targets(area: Area? = nil, project: Project? = nil) -> [AppTask] {
+        var targets = area?.tasks ?? []
+        targets += project?.tasks ?? []
+        guard let area else { return targets }
+        for child in area.projects ?? [] where child.context == nil {
+            targets += child.tasks ?? []
+        }
+        return targets
+    }
+
+    /// Re-points the denormalised `AppTask.context` of `tasks`, and for an area the tasks of its
+    /// context-less child projects, each from `child.resolvedContext`.
+    static func reassign(in tasks: [AppTask], area: Area? = nil, project: Project? = nil) {
+        let context = context(area: area, project: project)
+        for task in tasks {
+            task.context = context
+        }
+
+        guard let area else { return }
+        for child in area.projects ?? [] where child.context == nil {
+            for task in child.tasks ?? [] {
+                task.context = child.resolvedContext
+            }
+        }
+    }
+}

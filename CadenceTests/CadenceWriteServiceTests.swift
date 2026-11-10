@@ -2627,6 +2627,149 @@ struct CadenceWriteServiceTests {
         #expect(task.sectionName == "Build")
     }
 
+    // MARK: - T-14843: update_container re-points the tasks a list carries
+
+    /// An area `A` in `Work` holding a context-less project `P` with a task, a task filed in `A`
+    /// itself, and a project `Own` that names its own context.
+    private struct OwnerFixture {
+        let work: Context
+        let home: Context
+        let areaA: Area
+        let homeArea: Area
+        let project: Project
+        let ownProject: Project
+        let projectTask: AppTask
+        let areaTask: AppTask
+        let ownTask: AppTask
+    }
+
+    private func makeOwnerFixture(_ fixture: Fixture) throws -> OwnerFixture {
+        let work = fixture.context
+        let home = Context(name: "Home")
+        let side = Context(name: "Side")
+        let areaA = Area(name: "A", context: work)
+        let homeArea = Area(name: "Household", context: home)
+        let project = Project(name: "P", area: areaA)
+        let ownProject = Project(name: "Own", context: side, area: areaA)
+        let projectTask = AppTask(title: "t")
+        projectTask.project = project
+        projectTask.context = work
+        let areaTask = AppTask(title: "filed in A")
+        areaTask.area = areaA
+        areaTask.context = work
+        let ownTask = AppTask(title: "own")
+        ownTask.project = ownProject
+        ownTask.context = side
+        fixture.modelContext.insert(home)
+        fixture.modelContext.insert(side)
+        fixture.modelContext.insert(areaA)
+        fixture.modelContext.insert(homeArea)
+        fixture.modelContext.insert(project)
+        fixture.modelContext.insert(ownProject)
+        for task in [projectTask, areaTask, ownTask] { fixture.modelContext.insert(task) }
+        try fixture.modelContext.save()
+        return OwnerFixture(
+            work: work, home: home, areaA: areaA, homeArea: homeArea, project: project,
+            ownProject: ownProject, projectTask: projectTask, areaTask: areaTask, ownTask: ownTask
+        )
+    }
+
+    /// [[T-14843]]'s steps: moving a context-less project into an area in `Home` moves its task
+    /// into `Home` — in the store, not only the context.
+    @Test func movingAProjectToAnotherAreaRePointsItsTasksContext() throws {
+        let fixture = try Fixture()
+        let f = try makeOwnerFixture(fixture)
+
+        _ = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "project",
+            containerId: f.project.id.uuidString,
+            areaId: f.homeArea.id.uuidString
+        ))
+
+        let stored = try #require(try ModelContext(fixture.container).fetch(FetchDescriptor<AppTask>()).first { $0.id == f.projectTask.id })
+        #expect(stored.context?.id == f.home.id, "the task stayed on its old context")
+        #expect(f.areaTask.context?.id == f.work.id, "a task outside the moved list was re-pointed")
+    }
+
+    /// The project's own `contextId` and `clearContext` legs.
+    @Test func changingAProjectsContextRePointsItsTasks() throws {
+        let fixture = try Fixture()
+        let f = try makeOwnerFixture(fixture)
+
+        _ = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "project",
+            containerId: f.project.id.uuidString,
+            contextId: f.home.id.uuidString
+        ))
+        #expect(f.projectTask.context?.id == f.home.id)
+
+        // Clearing its own context falls back to the area's, `Project.resolvedContext`.
+        _ = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "project",
+            containerId: f.project.id.uuidString,
+            clearContext: true
+        ))
+        #expect(f.projectTask.context?.id == f.work.id)
+    }
+
+    /// An area's context reaches its own tasks and the tasks of its context-less projects
+    /// ([[T-340]]), and not a project that names its own context.
+    @Test func changingAnAreasContextRePointsBothLevelsOfItsTasks() throws {
+        let fixture = try Fixture()
+        let f = try makeOwnerFixture(fixture)
+
+        _ = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "area",
+            containerId: f.areaA.id.uuidString,
+            contextId: f.home.id.uuidString
+        ))
+
+        let stored = try ModelContext(fixture.container).fetch(FetchDescriptor<AppTask>())
+        let byID = Dictionary(uniqueKeysWithValues: stored.map { ($0.id, $0.context?.id) })
+        #expect(byID[f.areaTask.id] == f.home.id)
+        #expect(byID[f.projectTask.id] == f.home.id)
+        #expect(byID[f.ownTask.id] != f.home.id, "a project with its own context was re-pointed")
+    }
+
+    /// A rename is not a change of owner and touches no task.
+    @Test func aRenameLeavesTheTasksContextAlone() throws {
+        let fixture = try Fixture()
+        let f = try makeOwnerFixture(fixture)
+        // A drifted copy the rename must not quietly rewrite.
+        f.projectTask.context = f.home
+        try fixture.modelContext.save()
+
+        _ = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "project",
+            containerId: f.project.id.uuidString,
+            name: "P renamed"
+        ))
+        #expect(f.projectTask.context?.id == f.home.id)
+    }
+
+    /// A refused commit puts every re-pointed task's context back beside the list's own fields.
+    @Test func aRefusedOwnerChangePutsTheTasksContextBack() throws {
+        let fixture = try Fixture()
+        let f = try makeOwnerFixture(fixture)
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.updateContainer(options: .init(
+                containerKind: "area",
+                containerId: f.areaA.id.uuidString,
+                contextId: f.home.id.uuidString
+            ))
+        }
+
+        #expect(f.areaA.context?.id == f.work.id)
+        #expect(f.areaTask.context?.id == f.work.id)
+        #expect(f.projectTask.context?.id == f.work.id)
+    }
+
     @MainActor
     private final class Fixture {
         let container: ModelContainer

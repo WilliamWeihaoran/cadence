@@ -1001,6 +1001,21 @@ final class CadenceWriteService {
         // answer for the rearrangement.
         let previousOrders = (placement ?? []).map { (row: $0.row, order: currentOrder(of: $0.row)) }
 
+        // [[T-14843]]: `AppTask.context` is a denormalised copy of its list's context, so a call
+        // that changes which context a list resolves to must re-point the tasks already in it — the
+        // [[T-293]] / [[T-340]] rule the app's list editors apply. The set and the rule are the
+        // app's own (`CadenceInheritedTaskContext`), captured here so a refused commit puts every
+        // task's context back beside the list's fields.
+        let changesOwner = newContext != nil || options.clearContext || newArea != nil || options.clearArea
+        let reassignedTasks: [AppTask]
+        switch resolved {
+        case .area(let area):
+            reassignedTasks = changesOwner ? CadenceInheritedTaskContext.targets(area: area) : []
+        case .project(let project):
+            reassignedTasks = changesOwner ? CadenceInheritedTaskContext.targets(project: project) : []
+        }
+        let previousTaskContexts = reassignedTasks.map { (task: $0, context: $0.context) }
+
         let containerID: UUID
         let snapshot: CadenceMCPContainerFieldSnapshot
         let finalName: String
@@ -1058,7 +1073,19 @@ final class CadenceWriteService {
             }
         }
 
+        if changesOwner {
+            switch resolved {
+            case .area(let area):
+                CadenceInheritedTaskContext.reassign(in: reassignedTasks, area: area)
+            case .project(let project):
+                CadenceInheritedTaskContext.reassign(in: reassignedTasks, project: project)
+            }
+        }
+
         try saveNotifyAndAudit([.containerFields(kind: kind, id: containerID, summary: "Updated \(kind): \(finalName)")]) {
+            for entry in previousTaskContexts {
+                entry.task.context = entry.context
+            }
             for entry in previousOrders {
                 switch entry.row {
                 case .area(let area): area.order = entry.order

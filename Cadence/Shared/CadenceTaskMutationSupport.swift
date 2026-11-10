@@ -580,9 +580,7 @@ extension CadenceTaskMutationSupport {
     /// `Project.resolvedContext`, which is where the "own context, else the area's" rule is
     /// spelled; nothing here re-types it.
     static func inheritedContext(area: Area?, project: Project?) -> Context? {
-        if let area { return area.context }
-        if let project { return project.resolvedContext }
-        return nil
+        CadenceInheritedTaskContext.context(area: area, project: project)
     }
 
     /// **Exactly the tasks `reassignInheritedContext` writes**, for the list it would be given.
@@ -592,14 +590,11 @@ extension CadenceTaskMutationSupport {
     /// of every child project that has no context of its own. Deriving it at the call site is how
     /// that half gets missed, so it is derived here and the pairing is pinned by
     /// `CadenceContextlessListSurfaceTests.reassigningAnInheritedContextWritesExactlyTheTargetsItAnnounces`.
+    ///
+    /// The set itself is spelled in `CadenceInheritedTaskContext` (`Models/Project.swift`), which
+    /// the MCP target also compiles, so `update_container` re-points the same tasks ([[T-14843]]).
     static func inheritedContextTargets(area: Area? = nil, project: Project? = nil) -> [AppTask] {
-        var targets = area?.tasks ?? []
-        targets += project?.tasks ?? []
-        guard let area else { return targets }
-        for child in area.projects ?? [] where child.context == nil {
-            targets += child.tasks ?? []
-        }
-        return targets
+        CadenceInheritedTaskContext.targets(area: area, project: project)
     }
 
     /// The reassignment over its own targets, for a caller that has no reason to name a narrower
@@ -633,18 +628,10 @@ extension CadenceTaskMutationSupport {
     /// area's change does not reach them. Each cascaded task is re-derived from
     /// `child.resolvedContext` rather than from the `context` computed above, so the fallback stays
     /// spelled in exactly one place.
+    ///
+    /// Spelled in `CadenceInheritedTaskContext.reassign`, shared with the MCP target ([[T-14843]]).
     static func reassignInheritedContext(in tasks: [AppTask], area: Area? = nil, project: Project? = nil) {
-        let context = inheritedContext(area: area, project: project)
-        for task in tasks {
-            task.context = context
-        }
-
-        guard let area else { return }
-        for child in area.projects ?? [] where child.context == nil {
-            for task in child.tasks ?? [] {
-                task.context = child.resolvedContext
-            }
-        }
+        CadenceInheritedTaskContext.reassign(in: tasks, area: area, project: project)
     }
 
     /// Moves a task into a list and commits it, answering whether the store took the move.
