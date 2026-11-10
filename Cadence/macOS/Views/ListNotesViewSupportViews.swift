@@ -69,53 +69,8 @@ struct ListNotesSearchField: View {
 
 // MARK: - Collapsible Section
 
-struct CollapsibleNoteSection<Content: View>: View {
-    let title: String
-    let count: Int
-    @Binding var isCollapsed: Bool
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Button {
-                isCollapsed.toggle()
-            } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .frame(width: 12)
-                    // `Theme.muted` rather than the eyebrow's default `Theme.dim`: this header is
-                    // a *control* — the whole row toggles the section — so it sits a step brighter
-                    // than the inert eyebrows around it.
-                    SectionEyebrowLabel(text: title, tint: Theme.muted)
-                    Spacer()
-                    Text("\(count)")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Theme.surfaceElevated.opacity(0.75))
-                        .clipShape(Capsule())
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .contentShape(Rectangle())
-            }
-            // `.plain`: the highlight below is the one hover layer ([[T-9465]]).
-            .buttonStyle(.plain)
-            .cadenceHoverHighlight(
-                cornerRadius: Theme.radiusControlCompact,
-                fillColor: Theme.surfaceElevated.opacity(0.55),
-                strokeColor: Theme.borderSubtle.opacity(0.8)
-            )
-
-            if !isCollapsed {
-                content
-            }
-        }
-    }
-}
+// `CollapsibleNoteSection` is shared now: `Shared/CadenceListNotesSections.swift`, which iOS's
+// list Notes tab draws too ([[T-15433]]).
 
 // MARK: - List Note Row + Menu
 

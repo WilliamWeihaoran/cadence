@@ -60,8 +60,9 @@ struct CadenceCodexFunctionalParityTests {
         }
         let list = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/Views/ListNotesView.swift")
         let section = try #require(CadenceSourceScan.declarationBody("private var eventNoteSection: some View", in: list))
-        #expect(section.contains("title: CadenceNotesTabVocabulary.events.columnTitle,"))
-        #expect(section.contains("count: filteredEventNotes.count,"))
+        // [[T-15433]]: the heading's title and count come from the shared section model.
+        #expect(CadenceListNotesSection.events.title == CadenceNotesTabVocabulary.events.columnTitle)
+        #expect(section.contains("CadenceListNotesSectionHeading.heading(.events, count: filteredEventNotes.count)"))
         #expect(section.contains("isCollapsed: $isEventNotesCollapsed"))
         #expect(section.contains("ListEventNoteSectionRows("))
     }

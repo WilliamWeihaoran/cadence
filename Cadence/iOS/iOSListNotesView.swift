@@ -44,6 +44,10 @@ struct iOSListNotesView: View {
     @State private var searchText = ""
     @FocusState private var isSearchFocused: Bool
     @State private var selectedTagFilterSlugs: Set<String> = []
+    // [[T-15433]]: the Mac's fold, per section, held the way `ListNotesView` holds it.
+    @State private var isListNotesCollapsed = false
+    @State private var isEventNotesCollapsed = false
+    @State private var isTaskNotesCollapsed = false
     /// An event note opened from the column. A sheet, as everywhere else on iOS an event note opens.
     @State private var selectedEventNote: Note?
 
@@ -109,8 +113,12 @@ struct iOSListNotesView: View {
         CadenceListRelatedNotes.taskNotes(for: area, project: project, in: allTasks)
     }
 
+    private var filteredListNotes: [Note] {
+        filtered(listNotes)
+    }
+
     private var filteredGroups: [CadenceNoteFolderGroup] {
-        CadenceNoteFolderGrouping.groups(for: filtered(listNotes))
+        CadenceNoteFolderGrouping.groups(for: filteredListNotes)
     }
 
     private var filteredEventNotes: [Note] {
@@ -407,9 +415,7 @@ struct iOSListNotesView: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: metrics.groupSpacing) {
-                        NoteFolderGroupList(groups: filteredGroups, metrics: metrics) { note in
-                            noteRow(note)
-                        }
+                        listNoteSection
                         eventNoteSection
                         taskNoteSection
                     }
@@ -422,20 +428,33 @@ struct iOSListNotesView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// The list's own notes, in their folders, under the Mac's "Notes" heading ([[T-15433]]).
+    @ViewBuilder
+    private var listNoteSection: some View {
+        if let heading = CadenceListNotesSectionHeading.heading(.notes, count: filteredListNotes.count) {
+            CollapsibleNoteSection(heading: heading, metrics: metrics, isCollapsed: $isListNotesCollapsed) {
+                NoteFolderGroupList(groups: filteredGroups, metrics: metrics) { note in
+                    noteRow(note)
+                }
+            }
+        }
+    }
+
     /// The linked calendar's upcoming event notes, under the Events tab's own word.
     @ViewBuilder
     private var eventNoteSection: some View {
-        if !filteredEventNotes.isEmpty {
-            VStack(alignment: .leading, spacing: metrics.rowSpacing) {
-                relatedSectionHeader(CadenceNotesTabVocabulary.events.columnTitle)
-                ForEach(filteredEventNotes) { note in
-                    Button {
-                        selectedEventNote = note
-                    } label: {
-                        // No month header above this section, so the row spells its own date out.
-                        MeetingNoteListRow(note: note, isSelected: false, showsDate: true, metrics: metrics)
+        if let heading = CadenceListNotesSectionHeading.heading(.events, count: filteredEventNotes.count) {
+            CollapsibleNoteSection(heading: heading, metrics: metrics, isCollapsed: $isEventNotesCollapsed) {
+                VStack(alignment: .leading, spacing: metrics.rowSpacing) {
+                    ForEach(filteredEventNotes) { note in
+                        Button {
+                            selectedEventNote = note
+                        } label: {
+                            // No month header above this section, so the row spells its own date out.
+                            MeetingNoteListRow(note: note, isSelected: false, showsDate: true, metrics: metrics)
+                        }
+                        .buttonStyle(.iosPressable)
                     }
-                    .buttonStyle(.iosPressable)
                 }
             }
         }
@@ -445,34 +464,26 @@ struct iOSListNotesView: View {
     /// notes are edited — the inspector host, never a sheet the row owns.
     @ViewBuilder
     private var taskNoteSection: some View {
-        if !filteredTaskNotes.isEmpty {
-            VStack(alignment: .leading, spacing: metrics.rowSpacing) {
-                relatedSectionHeader("Task Notes")
-                ForEach(filteredTaskNotes) { task in
-                    Button {
-                        taskInspector(task)
-                    } label: {
-                        // The Mac's row ([[T-8535]]): done circle, title, due-first second line.
-                        TaskNoteListRow(
-                            task: task,
-                            isSelected: false,
-                            todayKey: observedDay.todayKey,
-                            metrics: metrics
-                        )
+        if let heading = CadenceListNotesSectionHeading.heading(.taskNotes, count: filteredTaskNotes.count) {
+            CollapsibleNoteSection(heading: heading, metrics: metrics, isCollapsed: $isTaskNotesCollapsed) {
+                VStack(alignment: .leading, spacing: metrics.rowSpacing) {
+                    ForEach(filteredTaskNotes) { task in
+                        Button {
+                            taskInspector(task)
+                        } label: {
+                            // The Mac's row ([[T-8535]]): done circle, title, due-first second line.
+                            TaskNoteListRow(
+                                task: task,
+                                isSelected: false,
+                                todayKey: observedDay.todayKey,
+                                metrics: metrics
+                            )
+                        }
+                        .buttonStyle(.iosPressable)
                     }
-                    .buttonStyle(.iosPressable)
                 }
             }
         }
-    }
-
-    private func relatedSectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: metrics.headerLabelSize, weight: .semibold))
-            .foregroundStyle(Theme.dim)
-            .lineLimit(1)
-            .padding(.horizontal, metrics.headerHorizontalPadding)
-            .accessibilityAddTraits(.isHeader)
     }
 
     private func noteRow(_ note: Note) -> some View {

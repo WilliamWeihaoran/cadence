@@ -223,8 +223,11 @@ struct CadenceListRelatedNotesTests {
         // Declared once and drawn once each: a declared-but-undrawn section is the pre-fix tree.
         #expect(code.components(separatedBy: "eventNoteSection").count - 1 == 2)
         #expect(code.components(separatedBy: "taskNoteSection").count - 1 == 2)
-        #expect(code.contains("\"Task Notes\""))
-        #expect(code.contains("CadenceNotesTabVocabulary.events.columnTitle"))
+        // [[T-15433]]: the headings are the shared section's, with the Mac's count and fold.
+        #expect(code.contains("CadenceListNotesSectionHeading.heading(.taskNotes, count: filteredTaskNotes.count)"))
+        #expect(code.contains("CadenceListNotesSectionHeading.heading(.events, count: filteredEventNotes.count)"))
+        #expect(CadenceListNotesSection.taskNotes.title == "Task Notes")
+        #expect(CadenceListNotesSection.events.title == CadenceNotesTabVocabulary.events.columnTitle)
         #expect(code.contains("@Environment(\\.iOSTaskInspector)"))
         #expect(code.contains("taskInspector(task)"))
         #expect(code.contains("iOSEventNoteEditorSheet("))

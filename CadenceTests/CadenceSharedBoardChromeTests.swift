@@ -938,7 +938,10 @@ struct CadenceSectionEyebrowConvergenceTests {
             "Cadence/macOS/Views/FocusSidebarSupportViews.swift": 1,
             "Cadence/macOS/Views/GlobalSearchOverlayShellViews.swift": 1,
             "Cadence/macOS/Views/ListDetailSupportViews.swift": 1,
-            "Cadence/macOS/Views/ListNotesViewSupportViews.swift": 1,
+            // Zero since [[T-15433]] moved `CollapsibleNoteSection` into Shared, where iOS's list
+            // Notes tab draws it too; the eyebrow went with it, so the count moved, not vanished.
+            "Cadence/macOS/Views/ListNotesViewSupportViews.swift": 0,
+            "Cadence/Shared/CadenceListNotesSections.swift": 1,
             "Cadence/macOS/Views/NoteReferenceSupportViews.swift": 1,
             "Cadence/macOS/Views/SchedulePanelShellViews.swift": 1,
             // Zero since T-286, and still a count rather than a deletion. This pane drew an

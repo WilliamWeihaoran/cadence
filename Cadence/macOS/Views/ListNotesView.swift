@@ -286,12 +286,8 @@ struct ListNotesView: View {
 
     @ViewBuilder
     private var listNoteSection: some View {
-        if !filteredListNoteGroups.isEmpty {
-            CollapsibleNoteSection(
-                title: "Notes",
-                count: filteredListNotes.count,
-                isCollapsed: $isListNotesCollapsed
-            ) {
+        if let heading = CadenceListNotesSectionHeading.heading(.notes, count: filteredListNotes.count) {
+            CollapsibleNoteSection(heading: heading, isCollapsed: $isListNotesCollapsed) {
                 NoteFolderGroupList(groups: filteredListNoteGroups) { note in
                     ListNoteFolderRow(
                         note: note,
@@ -310,12 +306,8 @@ struct ListNotesView: View {
 
     @ViewBuilder
     private var eventNoteSection: some View {
-        if !filteredEventNotes.isEmpty {
-            CollapsibleNoteSection(
-                title: CadenceNotesTabVocabulary.events.columnTitle,
-                count: filteredEventNotes.count,
-                isCollapsed: $isEventNotesCollapsed
-            ) {
+        if let heading = CadenceListNotesSectionHeading.heading(.events, count: filteredEventNotes.count) {
+            CollapsibleNoteSection(heading: heading, isCollapsed: $isEventNotesCollapsed) {
                 ListEventNoteSectionRows(
                     notes: filteredEventNotes,
                     selectedNoteID: selectedEventNoteID,
@@ -327,14 +319,10 @@ struct ListNotesView: View {
 
     @ViewBuilder
     private var taskNoteSection: some View {
-        if !filteredTaskNotes.isEmpty {
+        if let heading = CadenceListNotesSectionHeading.heading(.taskNotes, count: filteredTaskNotes.count) {
             // Read here, in this page's body pass, not inside the section's content closure.
             let todayKey = observedDay.todayKey
-            CollapsibleNoteSection(
-                title: "Task Notes",
-                count: filteredTaskNotes.count,
-                isCollapsed: $isTaskNotesCollapsed
-            ) {
+            CollapsibleNoteSection(heading: heading, isCollapsed: $isTaskNotesCollapsed) {
                 ListTaskNoteSectionRows(
                     tasks: filteredTaskNotes,
                     todayKey: todayKey,
