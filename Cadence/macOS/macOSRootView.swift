@@ -420,7 +420,7 @@ private struct NotificationReconcileObserver: View {
                         guard let snapshot = try? CadenceForegroundNotificationSnapshot(container: container) else {
                             return
                         }
-                        await NotificationManager.shared.reconcile(tasks: snapshot.tasks)
+                        await NotificationManager.shared.reconcile(tasks: snapshot.tasks, completeStore: snapshot.completeStore)
                         withExtendedLifetime(snapshot) {}
                     }
                     return
@@ -429,7 +429,7 @@ private struct NotificationReconcileObserver: View {
                     return
                 }
                 Task {
-                    await NotificationManager.shared.reconcile(tasks: input.tasks)
+                    await NotificationManager.shared.reconcile(tasks: input.tasks, completeStore: input.completeStore)
                     withExtendedLifetime(input) {}
                 }
             }

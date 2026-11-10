@@ -26,6 +26,14 @@ struct CadenceCodexRefreshRegressionTests {
         #expect(read.statusRaw == "done")
         #expect(read.modelContext === snapshot.context)
         #expect(snapshot.context !== original)
+        // [[T-15486]]: the unfiltered read is the one that proves completeness.
+        #expect(snapshot.completeStore == NotificationCompleteStoreRead(
+            storeIdentity: ObjectIdentifier(container), taskIDs: [task.id]
+        ))
+        let injected = try CadenceForegroundNotificationSnapshot(container: container, fetch: { context in
+            try context.fetch(FetchDescriptor<AppTask>())
+        })
+        #expect(injected.completeStore == nil, "an injected fetch may filter, so it proves nothing")
     }
 
     @Test func codexForegroundSnapshotPropagatesFetchFailureInsteadOfReturningNoTasks() throws {
@@ -44,7 +52,7 @@ struct CadenceCodexRefreshRegressionTests {
         let active = try #require(CadenceSourceScan.declarationBody("if phase == .active", in: scene))
         #expect(active.contains("let container = modelContext.container"))
         #expect(active.contains("try CadenceForegroundNotificationSnapshot(container: container)"))
-        let reconcile = try #require(active.range(of: "await NotificationManager.shared.reconcile(tasks: snapshot.tasks)"))
+        let reconcile = try #require(active.range(of: "await NotificationManager.shared.reconcile(tasks: snapshot.tasks, completeStore: snapshot.completeStore)"))
         let lifetime = try #require(active.range(of: "withExtendedLifetime(snapshot) {}"))
         #expect(reconcile.upperBound <= lifetime.lowerBound)
         #expect(!active.contains("allTasksForNotifications"))
@@ -57,7 +65,7 @@ struct CadenceCodexRefreshRegressionTests {
         let leaving = try #require(scene.range(of: "try? CadenceLeavingActiveNotificationInput(sceneContext: modelContext)"))
         let flush = try #require(scene.range(of: "flushPendingEditorContentOnLeavingActive("))
         #expect(flush.upperBound <= leaving.lowerBound, "the read must follow the flush that commits pending edits")
-        #expect(scene.contains("await NotificationManager.shared.reconcile(tasks: input.tasks)"))
+        #expect(scene.contains("await NotificationManager.shared.reconcile(tasks: input.tasks, completeStore: input.completeStore)"))
         #expect(!source.contains("@Query private var allTasksForNotifications"))
     }
 
@@ -81,6 +89,7 @@ struct CadenceCodexRefreshRegressionTests {
         #expect(read.id == task.id)
         #expect(read.statusRaw == "done")
         #expect(input.context !== scene)
+        #expect(input.completeStore?.taskIDs == [task.id], "[[T-15486]]: the fresh path carries the proof")
     }
 
     /// A commit that failed leaves edits pending; dropping them from the diff would withdraw a
@@ -95,6 +104,7 @@ struct CadenceCodexRefreshRegressionTests {
         let input = try CadenceLeavingActiveNotificationInput(sceneContext: scene)
         #expect(input.tasks.map(\.id) == [pending.id])
         #expect(input.context === scene)
+        #expect(input.completeStore == nil, "[[T-15486]]: unsaved deletes may roll back, so this read proves nothing")
     }
 
     @Test func leavingActiveInputPropagatesFetchFailureOnBothPaths() throws {
@@ -124,9 +134,9 @@ struct CadenceCodexRefreshRegressionTests {
         let scene = try #require(CadenceSourceScan.declarationBody(".onChange(of: scenePhase)", in: observer))
         let active = try #require(CadenceSourceScan.declarationBody("if phase == .active", in: scene))
         #expect(active.contains("try? CadenceForegroundNotificationSnapshot(container: container)"))
-        #expect(active.contains("await NotificationManager.shared.reconcile(tasks: snapshot.tasks)"))
+        #expect(active.contains("await NotificationManager.shared.reconcile(tasks: snapshot.tasks, completeStore: snapshot.completeStore)"))
         #expect(scene.contains("try? CadenceLeavingActiveNotificationInput(sceneContext: sceneContext)"))
-        #expect(scene.contains("await NotificationManager.shared.reconcile(tasks: input.tasks)"))
+        #expect(scene.contains("await NotificationManager.shared.reconcile(tasks: input.tasks, completeStore: input.completeStore)"))
         #expect(!scene.contains("tasks: []"))
     }
 

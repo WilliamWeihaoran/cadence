@@ -204,11 +204,12 @@ nonisolated struct NotificationReconcileDiff: Equatable {
     /// "Due today" for a task finished at 09:05 is exactly the banner that diff misses. So the
     /// withdrawal keys on the delivered list and on the settled tasks the pass was handed.
     ///
-    /// **Only tasks the pass holds and knows are settled.** A delivered reminder whose task is
-    /// absent from `tasks` is left alone: a deletion withdraws its own reminders through
-    /// `NotificationManager.cancel(taskIDs:)`, and "absent" is also what a task not yet imported
-    /// looks like mid-sync ([[T-3046]]), where removing a banner would lose something real. A
-    /// habit or another app's identifier names no task and is never touched.
+    /// **Only tasks the pass holds and knows are settled, or has proved deleted.** A delivered
+    /// reminder whose task is merely absent from `tasks` is left alone: "absent" is also what a
+    /// task not yet imported looks like mid-sync ([[T-3046]]), where removing a banner would lose
+    /// something real. A task counts as deleted only through `provenDeletedTaskIDs` ([[T-15486]]),
+    /// and the caller adds those ids to `settledTaskIDs`. A habit or another app's identifier names
+    /// no task and is never touched.
     static func deliveredIdentifiersToRemove(
         delivered: [String],
         settledTaskIDs: Set<UUID>
@@ -219,6 +220,36 @@ nonisolated struct NotificationReconcileDiff: Equatable {
         }
         .sorted()
     }
+
+    /// **[[T-15486]].** The tasks a reconcile may treat as DELETED: present in the previous
+    /// complete read of this same store and absent from this one.
+    ///
+    /// Absence alone proves nothing -- a pass handed a partial list, or a store still importing,
+    /// lacks tasks that exist. Absence *after presence* in the same store does: a row this process
+    /// has already read cannot be "not yet imported", so the only way it leaves a complete read is
+    /// a delete (this process's, or one CloudKit imported from another device). A different store
+    /// (the empty recovery store [[T-3042]] opens, a restore) proves nothing, so it yields nothing;
+    /// so does a first read, or a pass that was not a complete read at all.
+    static func provenDeletedTaskIDs(
+        previous: NotificationCompleteStoreRead?,
+        current: NotificationCompleteStoreRead?
+    ) -> Set<UUID> {
+        guard let previous, let current, previous.storeIdentity == current.storeIdentity else { return [] }
+        return previous.taskIDs.subtracting(current.taskIDs)
+    }
+}
+
+/// **[[T-15486]].** Evidence that a reconcile's `tasks` is EVERY task in one store: an unfiltered
+/// fetch through a fresh context over that store's container, with nothing unsaved in between.
+///
+/// Only `CadenceForegroundNotificationSnapshot` builds one, and only for its default fetch. It is
+/// the one thing that lets a reconcile read a missing task as a deleted one
+/// (`NotificationReconcileDiff.provenDeletedTaskIDs`). `storeIdentity` is the container's
+/// `ObjectIdentifier`: the app opens one container for its lifetime, so equal identities mean the
+/// same store, and a store opened afresh (a recovery store, a test's) never matches.
+nonisolated struct NotificationCompleteStoreRead: Equatable, Sendable {
+    let storeIdentity: ObjectIdentifier
+    let taskIDs: Set<UUID>
 }
 
 nonisolated enum TaskNotificationPlanner {

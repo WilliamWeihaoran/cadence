@@ -231,7 +231,7 @@ struct iOSRootView: View {
                 Task {
                     do {
                         let snapshot = try CadenceForegroundNotificationSnapshot(container: container)
-                        await NotificationManager.shared.reconcile(tasks: snapshot.tasks)
+                        await NotificationManager.shared.reconcile(tasks: snapshot.tasks, completeStore: snapshot.completeStore)
                         withExtendedLifetime(snapshot) {}
                     } catch {
                         // An empty list cancels every request. A failed read must leave them alone.
@@ -249,7 +249,7 @@ struct iOSRootView: View {
                 return
             }
             Task {
-                await NotificationManager.shared.reconcile(tasks: input.tasks)
+                await NotificationManager.shared.reconcile(tasks: input.tasks, completeStore: input.completeStore)
                 withExtendedLifetime(input) {}
             }
         }

@@ -6,6 +6,9 @@ import SwiftData
 struct CadenceForegroundNotificationSnapshot {
     let context: ModelContext
     let tasks: [AppTask]
+    /// [[T-15486]]: set only for the default, unfiltered fetch -- the one read that is every task in
+    /// the store. An injected `fetch` may filter, so it proves nothing.
+    let completeStore: NotificationCompleteStoreRead?
 
     init(
         container: ModelContainer,
@@ -13,8 +16,12 @@ struct CadenceForegroundNotificationSnapshot {
     ) throws {
         let context = ModelContext(container)
         context.autosaveEnabled = false
-        self.tasks = try fetch?(context) ?? context.fetch(FetchDescriptor<AppTask>())
+        let tasks = try fetch?(context) ?? context.fetch(FetchDescriptor<AppTask>())
+        self.tasks = tasks
         self.context = context
+        self.completeStore = fetch == nil
+            ? NotificationCompleteStoreRead(storeIdentity: ObjectIdentifier(container), taskIDs: Set(tasks.map(\.id)))
+            : nil
     }
 }
 
@@ -32,6 +39,9 @@ struct CadenceLeavingActiveNotificationInput {
     /// Whichever context `tasks` is registered in. Keep it alive until the reconcile has read them.
     let context: ModelContext
     let tasks: [AppTask]
+    /// [[T-15486]]: the fresh read's proof of completeness; `nil` on the unsaved-edits path, whose
+    /// pending deletes may yet be rolled back.
+    let completeStore: NotificationCompleteStoreRead?
 
     init(
         sceneContext: ModelContext,
@@ -40,6 +50,7 @@ struct CadenceLeavingActiveNotificationInput {
         if sceneContext.hasChanges {
             self.tasks = try fetch?(sceneContext) ?? sceneContext.fetch(FetchDescriptor<AppTask>())
             self.context = sceneContext
+            self.completeStore = nil
             return
         }
         let snapshot = try CadenceForegroundNotificationSnapshot(
@@ -48,6 +59,7 @@ struct CadenceLeavingActiveNotificationInput {
         )
         self.tasks = snapshot.tasks
         self.context = snapshot.context
+        self.completeStore = snapshot.completeStore
     }
 }
 

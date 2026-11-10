@@ -33,6 +33,13 @@ final class NotificationManager: NSObject {
     /// renders it; it exists so "scheduled" and "the OS refused it" stop being the same silence.
     private(set) var lastReconcileRegistrationFailures: [NotificationRegistrationFailure] = []
 
+    /// **[[T-15486]].** The last complete read of the store a reconcile was handed, so the next one
+    /// can tell a deleted task from one that is merely missing. In memory only: a relaunch starts
+    /// with no proof, and a reminder whose task was deleted while the app was not running stays
+    /// (filed as [[T-15516]]).
+    @ObservationIgnored
+    private var lastCompleteStoreRead: NotificationCompleteStoreRead?
+
     private static let logger = Logger(subsystem: "com.haoranwei.Cadence", category: "Notifications")
 
     // `lazy` is deliberate: a plain stored-property initializer runs before `super.init()`,
@@ -152,8 +159,16 @@ final class NotificationManager: NSObject {
     /// permanently absent from `plan.all` while still being `isManaged`, so this diff removes one
     /// on every pass — which is the sweep `CadenceRetiredHabitReminderPurge` exists to not have to
     /// wait for.
+    ///
+    /// **`completeStore` ([[T-15486]])** is passed only by a pass whose `tasks` is a complete read
+    /// of the store (`CadenceForegroundNotificationSnapshot.completeStore`). Against the previous
+    /// such read of the same store it proves which tasks were deleted -- including a delete
+    /// CloudKit synced from another device, where no `cancel(taskIDs:)` runs here -- and their
+    /// already-delivered reminders are withdrawn. Every other pass leaves `nil` and withdraws
+    /// nothing for a missing task.
     func reconcile(
         tasks: [AppTask],
+        completeStore: NotificationCompleteStoreRead? = nil,
         dueReminderHour: Int = 9,
         dueReminderMinute: Int = 0
     ) async {
@@ -214,8 +229,16 @@ final class NotificationManager: NSObject {
         }
 
         // [[T-15464]]: a reminder that already FIRED is not pending, so the diff above never sees
-        // it; withdraw the delivered ones whose task is now done or cancelled.
+        // it; withdraw the delivered ones whose task is now done or cancelled -- or, [[T-15486]],
+        // proved deleted by two complete reads of the same store. A partial pass neither proves
+        // nor replaces the last complete read.
+        let provenDeleted = NotificationReconcileDiff.provenDeletedTaskIDs(
+            previous: lastCompleteStoreRead,
+            current: completeStore
+        )
+        if let completeStore { lastCompleteStoreRead = completeStore }
         let settledTaskIDs = Set(tasks.filter { $0.status == .done || $0.status == .cancelled }.map(\.id))
+            .union(provenDeleted)
         if !settledTaskIDs.isEmpty {
             let deliveredToRemove = NotificationReconcileDiff.deliveredIdentifiersToRemove(
                 delivered: await centre.deliveredIdentifiers(),

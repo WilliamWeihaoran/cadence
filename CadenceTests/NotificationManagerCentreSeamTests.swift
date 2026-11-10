@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import SwiftData
 import UserNotifications
 @testable import Cadence
 
@@ -368,6 +369,91 @@ struct NotificationManagerCentreSeamTests {
             await manager.reconcile(tasks: [done, cancelled, open])
             #expect(centre.removeDeliveredCalls.count == 1, "a pass with nothing to withdraw still reached the centre")
         }
+    }
+
+    // MARK: - [[T-15486]]: a fired reminder whose task was deleted where no cancel ran
+
+    private func shown(_ id: UUID) -> [String] {
+        [NotificationIdentifiers.taskStart(taskID: id), NotificationIdentifiers.taskDue(taskID: id)]
+    }
+
+    /// A delete that reaches the store without `cancel(taskIDs:)` -- one CloudKit imported from
+    /// another device -- is proved by two complete reads of the same store: the task was in the
+    /// first and is gone from the second. Its shown reminders go; a kept task's, a never-seen
+    /// task's, and another app's stay.
+    @Test func reconcileWithdrawsTheDeliveredRemindersOfATaskTwoCompleteReadsProveDeleted() async throws {
+        let container = try CadenceTestStore.container()
+        let writer = ModelContext(container)
+        let kept = AppTask(title: "Kept")
+        let deleted = AppTask(title: "Deleted on another device")
+        writer.insert(kept)
+        writer.insert(deleted)
+        try writer.save()
+        let (keptID, deletedID, neverSeen) = (kept.id, deleted.id, UUID())
+        let centre = FakeCentre(delivered: shown(keptID) + shown(deletedID) + shown(neverSeen) + [foreign])
+
+        try await withManager(centre) { manager in
+            let first = try CadenceForegroundNotificationSnapshot(container: container)
+            #expect(first.completeStore != nil, "non-vacuity: the default fetch must prove completeness")
+            await manager.reconcile(tasks: first.tasks, completeStore: first.completeStore)
+            #expect(centre.removeDeliveredCalls.isEmpty, "a first complete read proved a deletion it never saw")
+
+            writer.delete(deleted)
+            try writer.save()
+            // A partial pass in between proves nothing and must not erase the first read.
+            await manager.reconcile(tasks: [])
+            #expect(centre.removeDeliveredCalls.isEmpty, "a pass with no complete read withdrew a reminder")
+            let second = try CadenceForegroundNotificationSnapshot(container: container)
+            #expect(second.tasks.map(\.id) == [keptID])
+            await manager.reconcile(tasks: second.tasks, completeStore: second.completeStore)
+
+            #expect(centre.removeDeliveredCalls.count == 1)
+            #expect(Set(centre.removeDeliveredCalls.flatMap { $0 }) == Set(shown(deletedID)))
+            #expect(Set(centre.delivered) == Set(shown(keptID) + shown(neverSeen) + [foreign]))
+        }
+    }
+
+    /// Absence without proof withdraws nothing: a pass handed no complete read (a partial list),
+    /// a complete read of a DIFFERENT store (the empty recovery store, a restore), and a partial
+    /// pass in between does not erase the last complete read.
+    @Test func aMissingTaskIsNeverWithdrawnWithoutTwoCompleteReadsOfOneStore() async throws {
+        let container = try CadenceTestStore.container()
+        let writer = ModelContext(container)
+        let task = AppTask(title: "Merely not loaded")
+        writer.insert(task)
+        try writer.save()
+        let taskID = task.id
+        let centre = FakeCentre(delivered: shown(taskID))
+
+        try await withManager(centre) { manager in
+            let first = try CadenceForegroundNotificationSnapshot(container: container)
+            await manager.reconcile(tasks: first.tasks, completeStore: first.completeStore)
+
+            // A partial pass that lacks the task proves nothing.
+            await manager.reconcile(tasks: [])
+            #expect(centre.removeDeliveredCalls.isEmpty, "a pass with no complete read withdrew a missing task's reminder")
+
+            // A complete read of another store proves nothing either.
+            let other = try CadenceForegroundNotificationSnapshot(container: try CadenceTestStore.container())
+            #expect(other.tasks.isEmpty)
+            await manager.reconcile(tasks: other.tasks, completeStore: other.completeStore)
+            #expect(centre.removeDeliveredCalls.isEmpty, "a different store's read proved a deletion")
+            #expect(Set(centre.delivered) == Set(shown(taskID)))
+        }
+    }
+
+    /// The pure rule: present-then-absent in one store, nothing across stores or without a read.
+    @Test func provenDeletedTaskIDsNeedsTwoReadsOfTheSameStore() throws {
+        let (a, b) = (try CadenceTestStore.container(), try CadenceTestStore.container())
+        let (x, y) = (UUID(), UUID())
+        let read = { (c: AnyObject, ids: Set<UUID>) in
+            NotificationCompleteStoreRead(storeIdentity: ObjectIdentifier(c), taskIDs: ids)
+        }
+        #expect(NotificationReconcileDiff.provenDeletedTaskIDs(previous: read(a, [x, y]), current: read(a, [x])) == [y])
+        #expect(NotificationReconcileDiff.provenDeletedTaskIDs(previous: read(a, [x, y]), current: read(b, [])).isEmpty)
+        #expect(NotificationReconcileDiff.provenDeletedTaskIDs(previous: nil, current: read(a, [])).isEmpty)
+        #expect(NotificationReconcileDiff.provenDeletedTaskIDs(previous: read(a, [x]), current: nil).isEmpty)
+        withExtendedLifetime((a, b)) {}
     }
 
     /// A delete withdraws the shown copies of the deleted tasks' two reminders as well as the
