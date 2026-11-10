@@ -1328,9 +1328,15 @@ final class CadenceReadService {
         case area(Area)
         case project(Project)
 
+        /// The tasks the app lists on this container's page. **A task holding both an area and a
+        /// project is the project's** ([[T-15431]], [[T-15434]]): the area edge still reaches it,
+        /// so the area case drops it here, or the summary counts it under both lists while the app
+        /// shows it on one. This target does not compile `Shared/`, so the rule is restated rather
+        /// than calling `CadenceTaskQuerySupport.listedTasks(for:)`;
+        /// `CadenceAreaProjectFilingCountTests` holds the two to the same answer.
         var tasks: [AppTask] {
             switch self {
-            case .area(let area): return area.tasks ?? []
+            case .area(let area): return (area.tasks ?? []).filter { $0.project == nil }
             case .project(let project): return project.tasks ?? []
             }
         }

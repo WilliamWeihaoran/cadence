@@ -88,4 +88,29 @@ struct CadenceAreaProjectFilingCountTests {
         #expect(body.contains("CadenceTaskQuerySupport.listedTasks(for: area)"), "got: \(body)")
         #expect(!body.contains("area?.tasks"), "the Mac area page reads the raw relationship again")
     }
+    /// [[T-15434]]: the MCP container summary is a separate target that cannot call
+    /// `CadenceTaskQuerySupport`, so it restates the rule; this holds the two to one answer over the
+    /// dual-filed fixture, for both the area and the project.
+    @Test func theMCPContainerSummaryCountsLikeTheApp() throws {
+        let f = try fixture()
+        let service = CadenceReadService(context: f.context, performsMigrations: false)
+        let areaSummary = try service.containerSummary(kind: "area", id: f.area.id.uuidString)
+        let projectSummary = try service.containerSummary(kind: "project", id: f.project.id.uuidString)
+        // Non-vacuity: the area edge really reaches the dual-filed task.
+        #expect((f.area.tasks ?? []).count == 2)
+        #expect(areaSummary.activeTaskCount == CadenceTaskQuerySupport.openTaskCount(for: f.area))
+        #expect(areaSummary.activeTaskCount == 1)
+        #expect(projectSummary.activeTaskCount == CadenceTaskQuerySupport.openTaskCount(for: f.project))
+        #expect(projectSummary.activeTaskCount == 2)
+    }
+
+    /// The same container edge feeds `list_tasks`' container filter, so an area-scoped listing
+    /// names exactly what the area page lists.
+    @Test func theMCPAreaTaskListingMatchesTheAreaPage() throws {
+        let f = try fixture()
+        let service = CadenceReadService(context: f.context, performsMigrations: false)
+        let page = try service.listTasks(options: CadenceTaskListOptions(containerKind: "area", containerId: f.area.id.uuidString))
+        #expect(page.items.map(\.title) == CadenceTaskQuerySupport.listedTasks(for: f.area).map(\.title))
+        #expect(page.items.map(\.title) == ["Area only"])
+    }
 }
