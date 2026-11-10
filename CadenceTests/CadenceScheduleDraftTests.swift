@@ -829,6 +829,52 @@ struct CadenceScheduleDraftEventEditingTests {
         }
     }
 
+    /// [[T-15632]]. The Start roller carries the length on an event that crosses a midnight, as it
+    /// always did on a one-day event: the end moves by the same minute delta, over another midnight
+    /// if it has to. It used to move the start alone, so 10 PM-1 AM rolled to 11 PM saved as two
+    /// hours and rolled to 8 PM as five. The last case spans New York's spring-forward day, whose
+    /// 23 hours must not shorten the two-day span the end is counted across.
+    @Test("The Start roller keeps a midnight-crossing event's length")
+    func theStartRollerKeepsAMultiDayEventsLength() throws {
+        let calendar = try newYork()
+        let cases: [(start: Date, end: Date, to: Int, endKey: String, endMin: Int)] = [
+            // 10 PM -> 1 AM rolled later: the end crosses into 2 AM the next day.
+            (try instant("2026-06-15", 22 * 60, calendar), try instant("2026-06-16", 60, calendar), 23 * 60, "2026-06-16", 2 * 60),
+            // Rolled earlier: the whole event lands back on the one day.
+            (try instant("2026-06-15", 22 * 60, calendar), try instant("2026-06-16", 60, calendar), 20 * 60, "2026-06-15", 23 * 60),
+            // Rolled to 9 PM: a midnight end, spelled as minute 1440 of the start day.
+            (try instant("2026-06-15", 22 * 60, calendar), try instant("2026-06-16", 60, calendar), 21 * 60, "2026-06-15", 24 * 60),
+            // Two midnights, across the 23-hour 2026-03-08.
+            (try instant("2026-03-07", 22 * 60, calendar), try instant("2026-03-09", 60, calendar), 23 * 60, "2026-03-09", 2 * 60),
+        ]
+        let units: Set<Calendar.Component> = [.day, .hour, .minute]
+        for item in cases {
+            var draft = editing(start: item.start, end: item.end, calendar)
+            #expect(draft.spansMultipleDays)
+            let opened = try #require(draft.eventDateRange(calendar: calendar))
+            draft.moveStart(toMinute: item.to, calendar: calendar)
+            #expect(draft.startMin == item.to)
+            #expect(draft.startDateKey == DateFormatters.dateKey(from: item.start, calendar: calendar))
+            #expect(draft.endDateKey == item.endKey, "rolled to \(item.to): the end day did not follow")
+            #expect(draft.endMin == item.endMin, "rolled to \(item.to): the end minute did not follow")
+            let moved = try #require(draft.eventDateRange(calendar: calendar))
+            #expect(
+                calendar.dateComponents(units, from: moved.start, to: moved.end)
+                    == calendar.dateComponents(units, from: opened.start, to: opened.end),
+                "rolled to \(item.to): the event's length changed"
+            )
+        }
+
+        // A one-day event is unchanged: the length carries, clamped to the end of the drawn day.
+        var oneDay = editing(start: try instant("2026-06-15", 9 * 60, calendar), end: try instant("2026-06-15", 10 * 60, calendar), calendar)
+        oneDay.moveStart(toMinute: 11 * 60, calendar: calendar)
+        #expect(oneDay.endDateKey == oneDay.startDateKey)
+        #expect(oneDay.startMin == 11 * 60 && oneDay.endMin == 12 * 60)
+        oneDay.moveStart(toMinute: 23 * 60 + 30, calendar: calendar)
+        #expect(oneDay.endDateKey == oneDay.startDateKey)
+        #expect(oneDay.endMin == CadenceScheduleSupport.calendarEndHour * 60)
+    }
+
     /// Both ends are wall-clock readings. On 2026-03-08 New York skips 02:00–02:59: a start chosen
     /// at 02:30 opens at 03:00, as every start in the app does (T-3119), and an End chosen at 03:00
     /// after a 01:00 start is 03:00 on the wall — one elapsed hour — not the 04:00 that adding the

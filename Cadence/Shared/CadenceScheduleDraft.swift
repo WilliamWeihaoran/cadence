@@ -470,11 +470,53 @@ struct CadenceScheduleDraft: Equatable {
     /// `rollerGridMinutes` precisely so a time like 4:05 can be reached; snapping it to the 15-minute
     /// touch grid here turned a picked 4:05 into 4:00 with nothing on screen to say so. The macOS
     /// editor this panel replaced took any typed minute, so the coarser grid was a regression there.
-    mutating func moveStart(toMinute minute: Int) {
-        let length = durationMinutes
-        startMin = Self.snapped(minute, grid: Self.rollerGridMinutes)
-        guard !spansMultipleDays else { return }
-        endMin = min(CadenceScheduleSupport.calendarEndHour * 60, startMin + length)
+    ///
+    /// **Across a midnight the length carries too** ([[T-15632]]). The roller moves the start
+    /// within its own day, so the end moves by the same minute delta, which can carry it over
+    /// another midnight in either direction: 10 PM-1 AM rolled to 11 PM is 11 PM-2 AM, rolled to
+    /// 8 PM is 8-11 PM on the one day. The length is the wall-clock one -- days counted in the
+    /// storage calendar, like `moveStartDay(to:)`, so a transition day cannot shorten it -- and
+    /// an end landing on a midnight is spelled as minute 1440 of the day before, as the event
+    /// initialiser reads one. The drag handles keep refusing a multi-day block; this is the
+    /// roller's writer, not theirs.
+    mutating func moveStart(toMinute minute: Int, calendar: Calendar = .current) {
+        guard spansMultipleDays,
+              let span = Self.daysBetween(startDateKey, endDateKey, calendar: calendar) else {
+            let length = durationMinutes
+            startMin = Self.snapped(minute, grid: Self.rollerGridMinutes)
+            endMin = min(CadenceScheduleSupport.calendarEndHour * 60, startMin + length)
+            return
+        }
+        let newStart = Self.snapped(minute, grid: Self.rollerGridMinutes)
+        let minutesPerDay = 24 * 60
+        // The end as a minute counted from the start day's midnight, moved by the start's delta.
+        let movedEnd = span * minutesPerDay + endMin + (newStart - startMin)
+        // Never before the start: a multi-day block is at least as long as the minute grid allows.
+        let end = max(newStart + Self.rollerGridMinutes, movedEnd)
+        // A midnight end reads as minute 1440 of the day before, never minute 0 of the next.
+        let endDayOffset = (end - 1) / minutesPerDay
+        guard let endKey = Self.dateKey(startDateKey, plusDays: endDayOffset, calendar: calendar) else { return }
+        startMin = newStart
+        endDateKey = endKey
+        endMin = end - endDayOffset * minutesPerDay
+    }
+
+    /// Whole calendar days from one key to another, counted in the storage calendar so a 23- or
+    /// 25-hour transition day still counts as one. Shared by the two writers that move an end day
+    /// with its start: `moveStartDay(to:)` and `moveStart(toMinute:)`.
+    private static func daysBetween(_ fromKey: String, _ toKey: String, calendar: Calendar) -> Int? {
+        let storage = DateFormatters.storageCalendar(inheritingTimeZoneFrom: calendar)
+        guard let from = DateFormatters.date(from: fromKey, in: calendar),
+              let to = DateFormatters.date(from: toKey, in: calendar) else { return nil }
+        return storage.dateComponents([.day], from: from, to: to).day
+    }
+
+    /// `key` moved by `days` calendar days, in the storage calendar. See `daysBetween`.
+    private static func dateKey(_ key: String, plusDays days: Int, calendar: Calendar) -> String? {
+        let storage = DateFormatters.storageCalendar(inheritingTimeZoneFrom: calendar)
+        guard let day = DateFormatters.date(from: key, in: calendar),
+              let moved = storage.date(byAdding: .day, value: days, to: day) else { return nil }
+        return DateFormatters.dateKey(from: moved, calendar: calendar)
     }
 
     /// What the panel's **End** time writes, on a block of one day or of several.
@@ -528,13 +570,9 @@ struct CadenceScheduleDraft: Equatable {
     /// day between the two keys cannot shorten it. `keepEndAfterStart()` still runs after, for a
     /// key that cannot be parsed.
     mutating func moveStartDay(to newKey: String, calendar: Calendar = .current) {
-        let storage = DateFormatters.storageCalendar(inheritingTimeZoneFrom: calendar)
-        if let oldStart = DateFormatters.date(from: startDateKey, in: calendar),
-           let oldEnd = DateFormatters.date(from: endDateKey, in: calendar),
-           let newStart = DateFormatters.date(from: newKey, in: calendar),
-           let span = storage.dateComponents([.day], from: oldStart, to: oldEnd).day,
-           let newEnd = storage.date(byAdding: .day, value: max(0, span), to: newStart) {
-            endDateKey = DateFormatters.dateKey(from: newEnd, calendar: calendar)
+        if let span = Self.daysBetween(startDateKey, endDateKey, calendar: calendar),
+           let newEnd = Self.dateKey(newKey, plusDays: max(0, span), calendar: calendar) {
+            endDateKey = newEnd
         }
         startDateKey = newKey
         keepEndAfterStart()
