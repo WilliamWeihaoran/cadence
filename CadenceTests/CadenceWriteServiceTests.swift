@@ -2627,6 +2627,153 @@ struct CadenceWriteServiceTests {
         #expect(task.sectionName == "Build")
     }
 
+    // MARK: - T-14852: reopen_task takes back the untouched successor
+
+    /// A live daily occurrence dated in the past, so completing it takes the catch-up path.
+    private func makeDailyOccurrence(in fixture: Fixture, subtaskTitle: String? = nil) throws -> AppTask {
+        let task = AppTask(title: "Water the plants")
+        task.recurrenceRule = .daily
+        task.scheduledDate = "2026-10-25"
+        task.dueDate = "2026-10-25"
+        fixture.modelContext.insert(task)
+        if let subtaskTitle {
+            let subtask = Subtask(title: subtaskTitle)
+            subtask.parentTask = task
+            task.subtasks = [subtask]
+            fixture.modelContext.insert(subtask)
+        }
+        try fixture.modelContext.save()
+        return task
+    }
+
+    /// [[T-14852]], the defect itself: complete, reopen, and the series has one open occurrence
+    /// again with no dangling link — in the store, not only the context — and completing once more
+    /// spawns a fresh successor. The successor's copied subtask goes with it.
+    @Test func reopeningACompletedOccurrenceTakesBackItsUntouchedSuccessor() throws {
+        let auditURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cadence-mcp-reopen-successor-\(UUID().uuidString)")
+            .appendingPathExtension("log")
+        defer { try? FileManager.default.removeItem(at: auditURL) }
+        let fixture = try Fixture(auditLogger: CadenceMCPAuditLogger(logURL: auditURL))
+        let task = try makeDailyOccurrence(in: fixture, subtaskTitle: "Fill the can")
+
+        let completed = try fixture.writeService.completeTask(taskID: task.id.uuidString)
+        let firstID = try #require(completed.spawnedRecurringTask?.summary.id)
+        #expect(try fixture.modelContext.fetch(FetchDescriptor<AppTask>()).count == 2)
+        #expect(try fixture.modelContext.fetch(FetchDescriptor<Subtask>()).count == 2)
+
+        let reopened = try fixture.writeService.reopenTask(taskID: task.id.uuidString)
+        #expect(reopened.summary.status == "todo")
+        #expect(task.recurrenceSpawnedTaskID == nil, "the link survived, so the next completion cannot spawn")
+
+        let readback = ModelContext(fixture.container)
+        let stored = try readback.fetch(FetchDescriptor<AppTask>())
+        #expect(stored.map(\.id) == [task.id], "the series still has two open occurrences")
+        #expect(stored.first?.recurrenceSpawnedTaskIDRaw == "")
+        #expect(try readback.fetch(FetchDescriptor<Subtask>()).map(\.title) == ["Fill the can"])
+
+        let entries = try readAuditEntries(from: auditURL)
+        #expect(entries.map(\.tool) == ["complete_task", "complete_task", "reopen_task", "reopen_task"])
+        #expect(entries.last?.entityId == firstID)
+
+        let again = try fixture.writeService.completeTask(taskID: task.id.uuidString)
+        let secondID = try #require(again.spawnedRecurringTask?.summary.id)
+        #expect(secondID != firstID)
+    }
+
+    /// A cancellation advances the series too (T-202), so reopening a cancelled occurrence takes
+    /// its successor back the same way.
+    @Test func reopeningACancelledOccurrenceTakesBackItsUntouchedSuccessor() throws {
+        let fixture = try Fixture()
+        let task = try makeDailyOccurrence(in: fixture)
+
+        _ = try fixture.writeService.cancelTask(taskID: task.id.uuidString)
+        #expect(task.recurrenceSpawnedTaskID != nil)
+        _ = try fixture.writeService.reopenTask(taskID: task.id.uuidString)
+
+        #expect(try fixture.modelContext.fetch(FetchDescriptor<AppTask>()).map(\.id) == [task.id])
+        #expect(task.recurrenceSpawnedTaskID == nil)
+    }
+
+    /// A successor someone has edited is not the spawn's copy any more: both rows and the link
+    /// stay, exactly as the app's reopen leaves them.
+    @Test func reopeningKeepsASuccessorThatHasBeenEdited() throws {
+        let fixture = try Fixture()
+        let task = try makeDailyOccurrence(in: fixture)
+
+        let completed = try fixture.writeService.completeTask(taskID: task.id.uuidString)
+        let successorID = try #require(completed.spawnedRecurringTask?.summary.id)
+        _ = try fixture.writeService.updateTask(options: .init(taskId: successorID, notes: "Use rain water"))
+
+        _ = try fixture.writeService.reopenTask(taskID: task.id.uuidString)
+
+        #expect(try fixture.modelContext.fetch(FetchDescriptor<AppTask>()).count == 2)
+        #expect(task.recurrenceSpawnedTaskID?.uuidString == successorID)
+    }
+
+    /// A refused commit leaves what the caller was looking at: the occurrence settled, its
+    /// successor and the successor's subtask present, the link intact, and nothing pending.
+    @Test func aRefusedReopenLeavesTheOccurrenceSettledAndItsSuccessorInPlace() throws {
+        let fixture = try Fixture()
+        let task = try makeDailyOccurrence(in: fixture, subtaskTitle: "Fill the can")
+        let completed = try fixture.writeService.completeTask(taskID: task.id.uuidString)
+        let successorID = try #require(completed.spawnedRecurringTask?.summary.id)
+        let completedAt = try #require(task.completedAt)
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.reopenTask(taskID: task.id.uuidString)
+        }
+
+        #expect(task.status == .done)
+        #expect(task.completedAt == completedAt)
+        #expect(task.recurrenceSpawnedTaskID?.uuidString == successorID)
+        #expect(try fixture.modelContext.fetch(FetchDescriptor<AppTask>()).count == 2)
+        #expect(try fixture.modelContext.fetch(FetchDescriptor<Subtask>()).count == 2)
+        #expect(!fixture.modelContext.hasChanges, "the refused reopen left a change pending")
+    }
+
+    /// **The two surfaces agree.** The delete is spelled twice — the app's through
+    /// `CadenceTaskMutationSupport.deleteTasks`, this target's by hand, because that core cannot
+    /// join `CadenceMCPServer` — so the same series reopened through each must end in the same
+    /// state: the same rows, the same link, the same subtasks.
+    @Test func mcpReopenAndTheAppsReopenLeaveTheSeriesInTheSameState() throws {
+        func endState(viaMCP: Bool) throws -> (titles: [String], link: String, subtasks: Int, status: String) {
+            let fixture = try Fixture()
+            let task = try makeDailyOccurrence(in: fixture, subtaskTitle: "Fill the can")
+            _ = try fixture.writeService.completeTask(taskID: task.id.uuidString)
+            if viaMCP {
+                _ = try fixture.writeService.reopenTask(taskID: task.id.uuidString)
+            } else {
+                try CadenceTaskMutationSupport.setStatus(
+                    .todo,
+                    for: task,
+                    modelContext: fixture.modelContext,
+                    widgetEffects: CadenceTaskReopenWidgetEffects { _ in }
+                )
+            }
+            let readback = ModelContext(fixture.container)
+            let tasks = try readback.fetch(FetchDescriptor<AppTask>())
+            return (
+                tasks.map(\.title).sorted(),
+                tasks.map(\.recurrenceSpawnedTaskIDRaw).joined(),
+                try readback.fetch(FetchDescriptor<Subtask>()).count,
+                tasks.map(\.statusRaw).sorted().joined(separator: ",")
+            )
+        }
+        let mcp = try endState(viaMCP: true)
+        let app = try endState(viaMCP: false)
+        #expect(mcp.titles == app.titles)
+        #expect(mcp.titles.count == 1)
+        #expect(mcp.link == app.link)
+        #expect(mcp.subtasks == app.subtasks)
+        #expect(mcp.status == app.status)
+    }
+
     // MARK: - T-14843: update_container re-points the tasks a list carries
 
     /// An area `A` in `Work` holding a context-less project `P` with a task, a task filed in `A`

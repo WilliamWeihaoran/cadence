@@ -1745,14 +1745,80 @@ final class CadenceWriteService {
         )
     }
 
+    /// Reopen a task, and take back the successor its settle spawned while that copy is untouched.
+    ///
+    /// **[[T-14852]]: the app's [[T-14824]] rule, on this surface.** Before this, reopening a
+    /// settled occurrence of a repeating task wrote two fields and stopped, so the series had two
+    /// open occurrences and the predecessor's `recurrenceSpawnedTaskID` kept pointing at the copy,
+    /// so completing it again spawned nothing. The *decision* is the app's own, not a copy:
+    /// `CadenceTaskRecurrenceWorkflowSupport.untouchedSpawnedSuccessor` (a successor anyone has
+    /// edited, ticked or worked on answers `nil` and both rows and the link are left alone).
+    ///
+    /// **The delete is spelled here, not taken from `CadenceTaskMutationSupport.deleteTasks`**,
+    /// which this target cannot compile (it reaches `NotificationManager`; see
+    /// `CadenceUpdateContextOptions`). It is the two parts of that core an untouched successor can
+    /// need: its subtasks go with it, and every row that recorded it as its
+    /// `recurrenceSpawnedTaskID` is cleared — an untouched copy has no successor of its own, so
+    /// clearing is exactly what `deleteTasks`' re-pointing walk does there.
+    /// `CadenceWriteServiceTests.mcpReopenAndTheAppsReopenLeaveTheSeriesInTheSameState` pins the
+    /// two surfaces to the same end state.
+    ///
+    /// **One commit, one undo.** A refused commit runs the in-place restores first and then rolls
+    /// the delete back — `CadencePendingChangePersistence.commitCascade`'s order — so the
+    /// occurrence stays settled, its successor present and the link intact.
     func reopenTask(taskID: String) throws -> CadenceTaskDetail {
         let task = try findTask(taskID)
         if task.completedAt != nil || task.status != .todo {
+            let successor = (task.isDone || task.isCancelled)
+                ? CadenceTaskRecurrenceWorkflowSupport.untouchedSpawnedSuccessor(of: task, in: context)
+                : nil
             let snapshot = CadenceMCPTaskFieldSnapshot(task)
             task.completedAt = nil
             task.status = .todo
-            try saveNotifyAndAudit([.task(tool: "reopen_task", id: task.id, summary: "Reopened task: \(task.title)")]) {
-                snapshot.restore()
+            var auditEntries: [PendingAuditEntry] = [
+                .task(tool: "reopen_task", id: task.id, summary: "Reopened task: \(task.title)")
+            ]
+            if let successor {
+                let successorID = successor.id
+                let pointers = try fetchTasks().filter { $0.recurrenceSpawnedTaskID == successorID }
+                let previousPointers = pointers.map { (row: $0, raw: $0.recurrenceSpawnedTaskIDRaw) }
+                for row in pointers {
+                    row.recurrenceSpawnedTaskID = nil
+                }
+                // Selected by `parentTask`, as `deleteTasks` selects them, not through the array.
+                let subtasks = try context.fetch(FetchDescriptor<Subtask>())
+                    .filter { $0.parentTask?.id == successorID }
+                for subtask in subtasks {
+                    subtask.parentTask = nil
+                    context.delete(subtask)
+                }
+                context.delete(successor)
+                auditEntries.append(.task(
+                    tool: "reopen_task",
+                    id: successorID,
+                    summary: "Removed untouched recurring successor of: \(task.title)"
+                ))
+                let undo = {
+                    for entry in previousPointers {
+                        entry.row.recurrenceSpawnedTaskIDRaw = entry.raw
+                    }
+                    snapshot.restore()
+                }
+                try CadencePendingChangePersistence.commitDelete(
+                    in: context,
+                    commit: { try CadencePendingChangePersistence.commitEdit(in: $0, commit: self.commit, undo: undo) },
+                    refusing: false
+                )
+                if notifiesExternalWrites {
+                    CadenceModelContainerFactory.notifyExternalWrite()
+                }
+                for entry in auditEntries {
+                    recordAudit(entry)
+                }
+            } else {
+                try saveNotifyAndAudit(auditEntries) {
+                    snapshot.restore()
+                }
             }
         }
         return try readService.getTask(taskID: task.id.uuidString)
