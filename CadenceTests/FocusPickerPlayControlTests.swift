@@ -309,12 +309,15 @@ struct FocusSessionSwitchCommitTests {
 
         #expect(code.contains("TaskBundle") == false)
         #expect(code.contains("private var selectedSubject: CadenceFocusSubject?"))
-        // Three: the two switch paths, and `.onDisappear` — which since [[T-15548]] banks nothing
+        // Four: the two switch paths, `.onDisappear` — which since [[T-15548]] banks nothing
         // and only hands the subject to `CadenceFocusSessionOwner` to watch, where it used to end
-        // the session through `endSession(leaving:…)`. The count is still exact — a fourth
-        // `leaving: selectedSubject` means a commit was added somewhere unaccounted for.
-        #expect(code.components(separatedBy: "leaving: selectedSubject").count - 1 == 3)
+        // the session through `endSession(leaving:…)` — and, since [[T-15572]], the session
+        // header's close, which banks through the owner's `endSession(leaving:in:)`. The count is
+        // still exact — a fifth `leaving: selectedSubject` means a commit was added somewhere
+        // unaccounted for.
+        #expect(code.components(separatedBy: "leaving: selectedSubject").count - 1 == 4)
         #expect(code.components(separatedBy: "screenDidDisappear(leaving: selectedSubject)").count - 1 == 1)
+        #expect(code.components(separatedBy: "session.endSession(leaving: selectedSubject, in: modelContext)").count - 1 == 1)
         #expect(code.components(separatedBy: "CadenceFocusSupport.endSession(").count - 1 == 0)
         // And the task-shaped overload is not used on this screen: the subject type is the one
         // door, which is what keeps a second commit shape from appearing beside it.

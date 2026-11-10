@@ -50,8 +50,37 @@ final class CadenceFocusSessionOwner {
         self.clock = clock
     }
 
-    private var hasLiveSession: Bool {
+    /// Whether there is a clock to bank: running, or paused over a reading. What the session
+    /// header's close control ([[T-15572]]) is drawn on.
+    var hasLiveSession: Bool {
         timerState.isRunning || timerState.accumulatedSeconds > 0
+    }
+
+    // MARK: - [[T-15572]]: the session header's close
+
+    /// **The Mac's one-tap "bank and end", on iOS** — `FocusManager.endSession(in:)`, which the Mac
+    /// session header's close button calls. The elapsed seconds are banked against `subject` by the
+    /// shared `CadenceFocusSupport.endSession` (rounded to the nearest minute; under one writes
+    /// nothing), then the clock is reset, the subject released and the persisted record cleared,
+    /// so the screen falls back to the head of the ready list at 00:00. No confirmation, as on the
+    /// Mac: nothing is thrown away — Discard is the control that does that.
+    ///
+    /// **Throws, and ends nothing over a refusal** (T-654's rule, the Mac's too): the clock,
+    /// subject and record are left exactly as they were so the session is still there to retry.
+    func endSession(
+        leaving subject: CadenceFocusSubject?,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        timerState = try CadenceFocusSupport.endSession(
+            leaving: subject,
+            state: timerState,
+            modelContext: modelContext,
+            now: clock(),
+            commit: commit
+        )
+        selectedTarget = nil
+        CadenceFocusSessionPersistence.clear(in: defaults)
     }
 
     // MARK: - The screen coming and going

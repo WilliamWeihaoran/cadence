@@ -548,10 +548,26 @@ struct iOSFocusView: View {
         @ViewBuilder chips: () -> Chips
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.system(size: isCompact ? 22 : 25, weight: .bold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(3)
+            HStack(alignment: .top, spacing: 12) {
+                Text(title)
+                    .font(.system(size: isCompact ? 22 : 25, weight: .bold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                // [[T-15572]]: the Mac `FocusSurfaceHeader`'s ✕, the one-tap "bank and end". Drawn
+                // only over a clock with something on it: with nothing to bank there is no session
+                // to end, and the screen would only fall back to the same head-of-list subject.
+                if session.hasLiveSession {
+                    iOSIconButton(
+                        systemImage: "xmark",
+                        accessibilityLabel: CadenceFocusSupport.closeSessionControlLabel,
+                        plateSize: 32,
+                        iconSize: 12,
+                        action: endSession
+                    )
+                }
+            }
 
             // Wraps rather than squeezing (T-7087). Up to five chips — list, priority, "Due …",
             // estimate, recurrence — ride this row, and on a 393pt iPhone the detail pane leaves it
@@ -931,6 +947,18 @@ struct iOSFocusView: View {
 
     private func resetTimer() {
         timerState.reset()
+    }
+
+    /// **The session header's close** ([[T-15572]]): bank the elapsed minutes against the subject
+    /// and end the session, as the Mac's ✕ calls `FocusManager.endSession(in:)`. A refused bank is
+    /// named through the settle-failure notice and ends nothing, so the clock is still there to
+    /// retry -- the Mac's `reportingFocusFailure` rule.
+    private func endSession() {
+        do {
+            try session.endSession(leaving: selectedSubject, in: modelContext)
+        } catch {
+            CadenceTaskSettleFailureCenter.shared.record()
+        }
     }
 
     /// **What the Log Session form's confirm button does** ([[T-8732]]).

@@ -35,7 +35,7 @@ private struct FocusSurfaceHeader<Metadata: View>: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.cadencePlain(.circle))
-            .cadenceControlLabel("Close focus session")
+            .cadenceControlLabel(CadenceFocusSupport.closeSessionControlLabel)
         }
         .padding(.leading, 24)
         .padding(.trailing, 18)

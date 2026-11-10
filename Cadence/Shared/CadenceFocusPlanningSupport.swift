@@ -507,6 +507,10 @@ enum CadenceFocusSupport {
     /// does: it opens this form, where completing is a toggle.
     static let logFormControlLabel = "Log session"
 
+    /// **The accessible name of the session header's close control**, on both platforms: the Mac's
+    /// `FocusSurfaceHeader` button and, since [[T-15572]], iOS's. It banks and ends the session.
+    static let closeSessionControlLabel = "Close focus session"
+
     /// The hour/minute pair the Log Session form pre-fills from the stopwatch.
     ///
     /// Goes through `minutes(fromElapsedSeconds:)` -- the one place that turns elapsed seconds into

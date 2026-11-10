@@ -12,6 +12,7 @@ import Testing
 @Suite
 struct CadenceFocusSessionOwnerTests {
     private let epoch = Date(timeIntervalSince1970: 9_000_000)
+    private struct CommitRefused: Error {}
 
     private final class Clock {
         var now: Date
@@ -176,5 +177,73 @@ struct CadenceFocusSessionOwnerTests {
 
             #expect(CadenceFocusSessionPersistence.read(from: defaults) == record)
         }
+    }
+
+    // MARK: - [[T-15572]]: the session header's close
+
+    /// The Mac's ✕ (`FocusManager.endSession(in:)`) on iOS: one tap banks the elapsed minutes
+    /// against the subject — rounded, through the shared `CadenceFocusSupport.endSession` — and
+    /// ends the session: clock at zero and stopped, subject released, the record on disk gone.
+    @Test func closingTheSessionBanksTheElapsedMinutesAndEndsIt() async throws {
+        try await withSuite { defaults in
+            let (task, project, context) = try makeTask("Draft the memo")
+            let clock = Clock(epoch)
+            let owner = CadenceFocusSessionOwner(defaults: defaults, clock: { clock.now })
+            startSession(on: task, owner: owner, clock: clock, defaults: defaults)
+            #expect(owner.hasLiveSession)
+
+            clock.now = epoch.addingTimeInterval(25 * 60 + 20)
+            try owner.endSession(leaving: .task(task), in: context)
+
+            #expect(task.actualMinutes == 25)
+            #expect(project.loggedMinutes == 25)
+            #expect(!owner.timerState.isRunning)
+            #expect(owner.timerState.elapsedSeconds(now: clock.now) == 0)
+            #expect(!owner.hasLiveSession, "the close control is still drawn after the session ended")
+            #expect(owner.selectedTarget == nil)
+            #expect(CadenceFocusSessionPersistence.read(from: defaults) == nil)
+        }
+    }
+
+    /// A refused bank ends nothing (T-654, the Mac's rule): the clock is still running against the
+    /// same subject with its reading, and the record is still there, so the close can be retried.
+    @Test func aRefusedCloseLeavesTheSessionRunningToRetry() async throws {
+        try await withSuite { defaults in
+            let (task, _, context) = try makeTask("Draft the memo")
+            let clock = Clock(epoch)
+            let owner = CadenceFocusSessionOwner(defaults: defaults, clock: { clock.now })
+            startSession(on: task, owner: owner, clock: clock, defaults: defaults)
+
+            clock.now = epoch.addingTimeInterval(10 * 60)
+            #expect(throws: CommitRefused.self) {
+                try owner.endSession(leaving: .task(task), in: context, commit: { _ in throw CommitRefused() })
+            }
+
+            #expect(task.actualMinutes == 0)
+            #expect(owner.timerState.isRunning)
+            #expect(owner.timerState.elapsedSeconds(now: clock.now) == 10 * 60)
+            #expect(owner.selectedTarget == .task(task.id))
+            #expect(CadenceFocusSessionPersistence.read(from: defaults)?.taskID == task.id)
+        }
+    }
+
+    /// The control itself, read out of both platforms' sources: iOS's session header draws a close
+    /// under the Mac's label, and it calls the owner's `endSession` with the screen's subject, the
+    /// way the Mac header's `onClose` calls `focusManager.endSession(in:)`.
+    @Test func bothSessionHeadersCarryTheCloseUnderOneLabel() throws {
+        let ios = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFocusView.swift"))
+        let header = try #require(CadenceSourceScan.declarationBody("private func sessionHeader<", in: ios))
+        #expect(header.contains("accessibilityLabel: CadenceFocusSupport.closeSessionControlLabel"))
+        #expect(header.contains("action: endSession"))
+        let close = try #require(CadenceSourceScan.declarationBody("private func endSession()", in: ios))
+        #expect(close.contains("try session.endSession(leaving: selectedSubject, in: modelContext)"))
+        #expect(close.contains("CadenceTaskSettleFailureCenter.shared.record()"))
+
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusChromeSupportViews.swift")
+        )
+        #expect(mac.contains(".cadenceControlLabel(CadenceFocusSupport.closeSessionControlLabel)"))
+        let macView = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusView.swift")
+        #expect(macView.contains("onClose: { reportingFocusFailure { try focusManager.endSession(in: modelContext) } }"))
     }
 }
