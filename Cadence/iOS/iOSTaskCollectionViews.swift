@@ -32,16 +32,19 @@ struct iOSAllTasksView: View {
     @AppStorage(CadencePreferenceKeys.iosAllTasksShowCompleted) private var showCompleted = false
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
 
+    /// **The Mac's scope, not the whole store** ([[T-15101]]): a task inside a completed or
+    /// archived list draws no row here, which is what the header badge and Settings' Active tasks
+    /// tile already counted.
     private var activeTasks: [AppTask] {
         CadenceTaskQuerySupport.activeTasks(
-            from: allTasks,
+            from: CadenceTaskQuerySupport.allTasksScope(from: allTasks),
             sortField: sortField,
             sortDirection: sortDirection
         )
     }
 
     private var completedTasks: [AppTask] {
-        CadenceTaskQuerySupport.completedTasks(from: allTasks)
+        CadenceTaskQuerySupport.completedTasks(from: CadenceTaskQuerySupport.allTasksScope(from: allTasks))
     }
 
     var body: some View {

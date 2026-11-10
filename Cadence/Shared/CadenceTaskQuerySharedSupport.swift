@@ -41,7 +41,19 @@ nonisolated extension CadenceTaskQuerySupport {
     /// Areas and Projects tiles count only active lists — and Settings said a larger number than
     /// the Tasks page beside it. One function for both is what keeps them saying the same thing.
     static func activeTaskCount(from tasks: [AppTask]) -> Int {
-        openTaskCount(from: tasks.filter(\.isInActiveContainer))
+        openTaskCount(from: allTasksScope(from: tasks))
+    }
+
+    /// The tasks the **All Tasks** page draws rows for, open and finished, on both platforms
+    /// ([[T-15101]]): everything in a still-active list, plus the Inbox.
+    ///
+    /// macOS's `TasksListView` scoped its rows with `filter(\.isInActiveContainer)` while iOS's
+    /// `iOSAllTasksView` read the whole store, so a task un-ticked inside a completed project drew
+    /// a fourth open row under a header badge of 3 on iPhone and was absent on the Mac. That
+    /// difference answers no hardware or input constraint ([[T-8201]]); the rows, the header count
+    /// and the Settings Active tasks tile all read this one scope now.
+    static func allTasksScope(from tasks: [AppTask]) -> [AppTask] {
+        tasks.filter(\.isInActiveContainer)
     }
 
     static func completedTaskCount(from tasks: [AppTask]) -> Int {

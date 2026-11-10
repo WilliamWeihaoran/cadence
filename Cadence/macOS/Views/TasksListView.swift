@@ -94,7 +94,7 @@ struct TasksListView: View {
     /// container — so the two filters compose rather than compete.
     private var visibleTaskUniverse: [AppTask] {
         switch scope {
-        case .all: return allTasks.filter(\.isInActiveContainer)
+        case .all: return CadenceTaskQuerySupport.allTasksScope(from: allTasks)
         case .inbox: return CadenceTaskQuerySupport.inboxTasks(from: allTasks)
         }
     }
