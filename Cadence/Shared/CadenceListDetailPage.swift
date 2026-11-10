@@ -244,6 +244,20 @@ enum ListDetailKanbanBoard {
         return byColumn
     }
 
+    /// **Every card a list board drop may name: the open cards AND the finished ones behind each
+    /// column's Completed toggle** ([[T-15620]]).
+    ///
+    /// [[T-9837]] gave the iOS column the Mac's Completed footer and made its finished cards
+    /// `.draggable`, but the board still checked a payload against the OPEN cards only, so a
+    /// finished card lifted, was carried to another column, and snapped back with nothing written.
+    /// The Mac's `ListSectionKanbanColumn` checks against the list's whole task set
+    /// (`universeTasks`, finished cards included), so the same drag moves the card there. Being
+    /// able to lift a card is not a hardware or input reason for refusing to set it down
+    /// ([[T-8201]]).
+    static func droppableCards(open: [AppTask], finished: [AppTask]) -> [AppTask] {
+        open + finished
+    }
+
     /// **Which configured columns the list board draws, on both platforms** ([[T-8565]]).
     ///
     /// The Mac's Kanban tab has a "Show Archived" pill (`showArchivedKanbanColumns`) that swaps the

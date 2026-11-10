@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import Cadence
 
@@ -167,5 +168,61 @@ struct iOSListBoardCompletedColumnTests {
         let scrollerEnd = try #require(column.range(of: ".scrollIndicators(.hidden)"))
         #expect(footer.upperBound < scrollerEnd.lowerBound,
                 "the footer is pinned outside the scroller, competing with the cards for the column's height")
+    }
+
+    // MARK: - [[T-15620]]: a finished card set down on another column moves there
+
+    /// **A finished card is a card the board's drop accepts.** [[T-9837]] made the finished cards
+    /// behind the Completed toggle `.draggable`, but the board checked the payload against its OPEN
+    /// cards only, so the card lifted, was carried over, and snapped back with nothing written --
+    /// while the Mac's section column, which checks against the list's whole task set, moves it.
+    ///
+    /// *Failing-first:* `droppableCards` returning `open` alone answers `false` here and leaves the
+    /// card in "Doing".
+    @Test func aFinishedCardDroppedOnAnotherColumnMovesThere() throws {
+        let modelContext = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let open = task("still open", section: "Doing", status: .todo)
+        let finished = task("shipped", section: "Doing", status: .done)
+        modelContext.insert(open)
+        modelContext.insert(finished)
+        try modelContext.save()
+
+        let board = ListDetailKanbanBoard.droppableCards(open: [open], finished: [finished])
+        #expect(board.count == 2, "the drop's card set leaves out one half of the board")
+        let landed = CadenceKanbanCardDrop.drop(
+            [TaskDragPayload.string(for: finished.id)],
+            intoColumn: "Backlog",
+            columnTasks: [],
+            among: board,
+            spanning: [open, finished],
+            ofList: CadenceTaskDropSupport.containerKey(for: .inbox),
+            in: modelContext
+        )
+        #expect(landed, "a finished card set down on another column is refused")
+        #expect(finished.sectionName == "Backlog", "the finished card snapped back to its old column")
+        #expect(finished.status == .done, "moving a finished card reopened it")
+    }
+
+    /// **The iOS board hands its drop that set**, and the finished cards it is about are still
+    /// draggable -- otherwise the behavioural test above proves a helper nothing calls.
+    ///
+    /// *Failing-first:* restoring `among: tasks,` in `iOSListKanbanPanel` fails here.
+    @Test func theIOSBoardDropAcceptsItsFinishedCards() throws {
+        let code = try boardSource()
+        let panel = try #require(
+            CadenceSourceScan.declarationBody("struct iOSListKanbanPanel: View", in: code),
+            "the iOS list board panel is gone"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"among: ListDetailKanbanBoard\.droppableCards\(\s*open: tasks,\s*finished: completedTasks\s*\)"#,
+                in: panel
+            ) == 1,
+            "the board checks a dropped card against its open cards only, so a finished card snaps back"
+        )
+        let column = try column(in: code)
+        let footer = try #require(column.range(of: "ForEach(completedTasks) { task in"), "the footer draws no finished cards")
+        #expect(column[footer.upperBound...].contains(".draggable(TaskDragPayload.string(for: task.id))"),
+                "non-vacuity: the finished cards are no longer draggable, so there is nothing to accept")
     }
 }

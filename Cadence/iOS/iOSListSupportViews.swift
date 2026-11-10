@@ -623,7 +623,12 @@ struct iOSListKanbanPanel: View {
                                             intoColumn: column.title,
                                             before: target,
                                             columnTasks: column.tasks,
-                                            among: tasks,
+                                            // [[T-15620]]: the finished cards too -- they are
+                                            // draggable behind the Completed toggle, as on the Mac.
+                                            among: ListDetailKanbanBoard.droppableCards(
+                                                open: tasks,
+                                                finished: completedTasks
+                                            ),
                                             spanning: spanTasks ?? tasks,
                                             ofList: CadenceTaskDropSupport.containerKey(for: container),
                                             in: modelContext
