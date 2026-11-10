@@ -6,7 +6,8 @@ import Foundation
 /// a word that never changed, while the panel had no way to reach any day but today. Both problems
 /// have the same fix: the title becomes the date, and it *is* the control that changes it. Daily
 /// reads `Aug 17`, Weekly reads `Aug 17–23`, and the two tabs with no date of their own (Notepad,
-/// Event Notes) fall back to the word.
+/// Event Notes) fall back to the word. A note's own title — the editor header on the Mac, the
+/// editor cover on iOS — is `noteTitle(for:)`, one builder for both platforms ([[T-15493]]).
 ///
 /// Lives in `Shared/` rather than beside the view because `Cadence/iOS/` sits inside `#if os(iOS)`
 /// and is invisible to the macOS-built test target — the arithmetic here is the part worth pinning.
@@ -27,12 +28,57 @@ enum CadenceNoteDateNavigation {
     ) -> String? {
         switch tab {
         case .today:
+            // [[T-15493]]: the short form, not `noteTitle`'s "Monday, August 17", because of the
+            // phone's row width. This label shares one 390pt row with four tabs and sometimes a
+            // back control, which leaves it about 84pt (`iOSDateJumpTitleMetrics.inline`); "Aug 17"
+            // fits there and "Monday, August 17" (about twice that) would truncate to a date with
+            // no day in it. Everywhere a note's date is the whole title — the Mac editor header,
+            // the iOS editor cover — reads the long form through `noteTitle`.
             return dayLabel(forDayKey: dayKey, now: now)
         case .week:
             return weekRangeLabel(forDayKey: dayKey, now: now, calendar: calendar)
         case .notepad, .events:
             return nil
         }
+    }
+
+    /// **The title a daily or weekly note carries on both platforms** ([[T-15493]]), or `nil` for a
+    /// kind with no date of its own, or a key that does not parse — the caller falls back to
+    /// `Note.displayTitle`, as the Mac editor header always has.
+    ///
+    /// Daily: the long day, `"Monday, August 17"` (`DateFormatters.absoluteLongDay`, with a year
+    /// outside `now`'s). Weekly: the range, `"Aug 17–23"` (`weekRangeLabel`), on both platforms.
+    /// The Mac used to say `"Week of Aug 17"` and iOS the range: not a shorter spelling of the same
+    /// thing but a different reading, one that never states the week's end. Under [[T-8201]] a
+    /// platform difference has to answer to the hardware, and that one answered to nothing.
+    ///
+    /// Callers: the macOS editor header (`NoteEditorPane.headerTitle`) and the iOS editor cover
+    /// (`iOSNotesView.coverTitle`). The iOS Notes header's date button does not call this; see
+    /// `title(for:dayKey:)` for the width reason its daily label is short.
+    nonisolated static func noteTitle(
+        kind: NoteKind,
+        dateKey: String,
+        weekKey: String,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String? {
+        switch kind {
+        case .daily:
+            guard let date = DateFormatters.date(from: dateKey) else { return nil }
+            return DateFormatters.absoluteLongDay(date, relativeTo: now)
+        case .weekly:
+            // Through the Monday, because `weekRangeLabel` takes a day key and, given one that does
+            // not parse, falls back to today's week — which would name a malformed key as a real one.
+            guard let monday = DateFormatters.weekStartDate(forWeekKey: weekKey, calendar: calendar) else { return nil }
+            return weekRangeLabel(forDayKey: DateFormatters.dateKey(from: monday), now: now, calendar: calendar)
+        case .meeting, .permanent, .list:
+            return nil
+        }
+    }
+
+    /// `noteTitle(kind:dateKey:weekKey:now:calendar:)` for a stored note.
+    static func noteTitle(for note: Note, now: Date = Date(), calendar: Calendar = .current) -> String? {
+        noteTitle(kind: note.kind, dateKey: note.dateKey, weekKey: note.weekKey, now: now, calendar: calendar)
     }
 
     /// `"Aug 17"`, or `"Aug 17, 2025"` outside `now`'s year. Returns the key itself if it does not

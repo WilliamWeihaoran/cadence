@@ -654,10 +654,14 @@ struct iOSNotesView: View {
         }
     }
 
+    /// The Mac editor header's title for the same note ([[T-15493]]): "Monday, August 17" and
+    /// "Aug 17–23". The cover's navigation bar has the row to itself, so the width reason the
+    /// Notes header's date button gives for "Aug 17" (`CadenceNoteDateNavigation.title`) does not
+    /// apply here.
     private func coverTitle(for note: Note) -> String {
         switch activeTab {
         case .today, .week:
-            return CadenceNoteDateNavigation.title(for: activeTab, dayKey: listDateKey(for: note)) ?? note.displayTitle
+            return CadenceNoteDateNavigation.noteTitle(for: note) ?? note.displayTitle
         case .notepad, .events:
             return note.displayTitle
         }

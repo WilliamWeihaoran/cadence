@@ -62,6 +62,55 @@ struct CadenceNoteDateNavigationTests {
         #expect(CadenceCalendarDateTitleSupport.label(for: nextJanuary, format: .day, now: midJanuary) == "Jan 5")
     }
 
+    // MARK: - One note title on both platforms (T-15493)
+
+    /// [[T-15493]]: the same note fed to the builder each platform's editor reads. The Mac header
+    /// said "Week of Aug 17" and iOS "Aug 17–23"; the range wins on both, because it states the end.
+    /// A daily note is the long day on both. The iOS Notes header's date button keeps "Aug 17" for
+    /// the phone row's width, and must still name the same day and the same week.
+    @Test func dailyAndWeeklyNotesReadTheSameOnBothPlatforms() throws {
+        let daily = Note(kind: .daily, title: midWeekMonday, dateKey: midWeekMonday)
+        let weekly = Note(kind: .weekly, title: "2026-W34", weekKey: "2026-W34")
+
+        #expect(CadenceNoteDateNavigation.noteTitle(for: daily, now: now) == "Monday, August 17")
+        #expect(CadenceNoteDateNavigation.noteTitle(for: weekly, now: now) == "Aug 17–23")
+        // The iOS header's week button and the editor title for the same week are one string.
+        #expect(CadenceNoteDateNavigation.noteTitle(for: weekly, now: now)
+            == CadenceNoteDateNavigation.title(for: .week, dayKey: midWeekMonday, now: now))
+        // Its day button is the short spelling of the same day, not another day.
+        #expect(CadenceNoteDateNavigation.title(for: .today, dayKey: midWeekMonday, now: now) == "Aug 17")
+
+        // Outside the reference year the year rides along on both forms ([[T-6431]], [[T-6432]]).
+        let lastYearDaily = Note(kind: .daily, dateKey: "2025-08-18")
+        let lastYearWeekly = Note(kind: .weekly, weekKey: "2025-W34")
+        #expect(CadenceNoteDateNavigation.noteTitle(for: lastYearDaily, now: now) == "Monday, August 18, 2025")
+        #expect(CadenceNoteDateNavigation.noteTitle(for: lastYearWeekly, now: now) == "Aug 18–24, 2025")
+
+        // Undated kinds and malformed keys answer nil, and each caller falls back to displayTitle.
+        #expect(CadenceNoteDateNavigation.noteTitle(for: Note(kind: .permanent, title: "Pad"), now: now) == nil)
+        #expect(CadenceNoteDateNavigation.noteTitle(for: Note(kind: .weekly, weekKey: "not-a-week"), now: now) == nil)
+        #expect(CadenceNoteDateNavigation.noteTitle(for: Note(kind: .daily, dateKey: "not-a-date"), now: now) == nil)
+    }
+
+    /// Both editors call that one builder, so the strings above are what each platform draws. The
+    /// iOS half is in `#if os(iOS)` and cannot run here; its source is read instead.
+    @Test func bothEditorsTitleANoteThroughTheOneBuilder() throws {
+        let mac = try #require(CadenceSourceScan.declarationBody(
+            "private var headerTitle: String",
+            in: CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/NoteEditorPane.swift"))
+        ))
+        let iOS = try #require(CadenceSourceScan.declarationBody(
+            "private func coverTitle(for note: Note) -> String",
+            in: CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSNotesView.swift"))
+        ))
+        for (platform, body) in [("macOS", mac), ("iOS", iOS)] {
+            #expect(body.contains("CadenceNoteDateNavigation.noteTitle(for: note"), "\(platform) editor title skips the shared builder")
+            #expect(!body.contains("weekLabel("), "\(platform) editor title reads \"Week of\" again")
+            #expect(!body.contains("absoluteLongDay("), "\(platform) editor title spells the day itself")
+            #expect(!body.contains("CadenceNoteDateNavigation.title("), "\(platform) editor title uses the header's short form")
+        }
+    }
+
     /// The two undated tabs return `nil` rather than a string, so the host supplies its own
     /// constant word. Returning "Notes" here would put the fallback in the wrong layer.
     @Test func undatedTabsHaveNoDateTitle() {

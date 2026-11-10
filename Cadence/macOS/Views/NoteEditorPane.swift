@@ -127,17 +127,11 @@ struct NoteEditorPane: View {
     }
 
     private var headerTitle: String {
-        switch note.kind {
-        case .daily:
-            guard let date = DateFormatters.date(from: note.dateKey) else { return note.displayTitle }
-            // Year only outside this year ([[T-6432]]): the list's month heading is the only other
-            // year on the page, and it scrolls away from the open note.
-            return DateFormatters.absoluteLongDay(date, relativeTo: Date())
-        case .weekly:
-            return DateFormatters.weekLabel(from: note.weekKey, relativeTo: Date())
-        default:
-            return note.displayTitle
-        }
+        // The same builder the iOS editor cover reads ([[T-15493]]): "Monday, August 17" for a
+        // daily note, "Aug 17–23" for a weekly one. Year only outside this year ([[T-6432]]): the
+        // list's month heading is the only other year on the page, and it scrolls away from the
+        // open note.
+        CadenceNoteDateNavigation.noteTitle(for: note, now: Date()) ?? note.displayTitle
     }
 
     private var referenceNotes: [Note] {
