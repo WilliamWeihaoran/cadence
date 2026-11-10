@@ -740,7 +740,7 @@ struct CadenceFirstLaunchEmptyStoreTests {
         for path in [
             "Cadence/macOS/Views/TagPickerSupportViews.swift",
             "Cadence/iOS/iOSTaskDetailComponents.swift",
-            "Cadence/iOS/iOSCreateTaskSheetSupportViews.swift",
+            "Cadence/Shared/Components/CadenceTaskComposerMarkerSuggestions.swift",
         ] {
             let code = try read(path)
             #expect(code.count > 400, "non-vacuity: \(path) read as \(code.count) characters")

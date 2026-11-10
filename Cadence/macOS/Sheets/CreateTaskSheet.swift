@@ -142,7 +142,7 @@ struct CreateTaskSheet: View {
     @ViewBuilder
     private var markerSuggestions: some View {
         if draft.kind == .task, let shortcut = TaskTitleSupport.containerShortcut(in: draft.title) {
-            iOSTaskComposerMarkerSuggestions(
+            CadenceTaskComposerMarkerSuggestions(
                 kind: .list, shortcut: shortcut, areas: areas, projects: projects, allTags: tags,
                 onPickContainer: { selection in
                     draft.title = CadenceTaskComposerSupport.title(removingShortcut: shortcut)
@@ -151,7 +151,7 @@ struct CreateTaskSheet: View {
                 }, onPickTag: { _ in }, onCreateTag: { _ in }
             )
         } else if draft.kind == .task, let shortcut = TaskTitleSupport.tagShortcut(in: draft.title) {
-            iOSTaskComposerMarkerSuggestions(
+            CadenceTaskComposerMarkerSuggestions(
                 kind: .tag, shortcut: shortcut, areas: areas, projects: projects, allTags: tags,
                 onPickContainer: { _ in },
                 onPickTag: { tag in

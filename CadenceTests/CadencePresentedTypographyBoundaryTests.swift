@@ -75,7 +75,7 @@ struct CadencePresentedTypographyBoundaryTests {
 
     private static let convertedWorkflowFiles = [
         "Cadence/iOS/iOSCreateTaskSheet.swift",
-        "Cadence/iOS/iOSCreateTaskSheetSupportViews.swift",
+        "Cadence/Shared/Components/CadenceTaskComposerMarkerSuggestions.swift",
         "Cadence/iOS/iOSTaskDetailSheet.swift",
         "Cadence/iOS/iOSTaskDetailSheetSections.swift",
         "Cadence/iOS/iOSTaskDetailComponents.swift",

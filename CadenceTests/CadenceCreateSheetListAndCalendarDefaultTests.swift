@@ -67,7 +67,7 @@ struct CadenceCreateSheetListAndCalendarDefaultTests {
         #expect(names.contains(CadenceTitleNormalization.defaultProjectName))
     }
 
-    private static let markerSuggestionsPath = "Cadence/iOS/iOSCreateTaskSheetSupportViews.swift"
+    private static let markerSuggestionsPath = "Cadence/Shared/Components/CadenceTaskComposerMarkerSuggestions.swift"
 
     private func code(_ path: String) throws -> String {
         let raw = try CadenceSourceScan.sourceFile(path)
@@ -79,7 +79,7 @@ struct CadenceCreateSheetListAndCalendarDefaultTests {
     /// are pinned by source: it titles and matches through the picker's fallback.
     @Test func theIOSTildeSuggestionsTitleAndMatchThroughThePickerFallback() throws {
         let source = try code(Self.markerSuggestionsPath)
-        #expect(CadenceSourceScan.matchCount(#"struct iOSTaskComposerMarkerSuggestions"#, in: source) == 1)
+        #expect(CadenceSourceScan.matchCount(#"struct CadenceTaskComposerMarkerSuggestions"#, in: source) == 1)
         #expect(
             CadenceSourceScan.matchCount(#"matchesQuery\(CadenceAreaPickerSupport\.title\(for: \$0\)"#, in: source) == 1,
             "the area suggestions match the raw name, not the one drawn"

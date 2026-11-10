@@ -62,7 +62,7 @@ nonisolated enum TagPickerPlaceholder: Equatable {
 
 // MARK: - The iOS capture sheet's `#` strip
 
-/// The decisions behind `iOSTaskComposerMarkerSuggestions`' tag half, here rather than in the view
+/// The decisions behind `CadenceTaskComposerMarkerSuggestions`' tag half, here rather than in the view
 /// because everything under `Cadence/iOS/` is invisible to `CadenceTests` ([[T-9231]]).
 extension CadenceTaskComposerSupport {
     /// The catalogue a `#` strip picks from: unarchived, one tag per slug.

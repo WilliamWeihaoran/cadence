@@ -253,7 +253,7 @@ struct CadenceTagPickerQueryTests {
     /// Both capture sheets hand the strip an Unarchive action that commits through the shared
     /// helper; the strip draws it in place of Create. Source shape, because the sheets are views.
     @Test func bothCaptureSheetsWireTheStripsUnarchiveChip() throws {
-        let strip = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCreateTaskSheetSupportViews.swift"))
+        let strip = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceTaskComposerMarkerSuggestions.swift"))
         #expect(strip.contains("CadenceTaskComposerSupport.canCreateSuggestedTag(query: shortcut.query, allTags: allTags)"))
         #expect(strip.contains("onUnarchiveTag(archivedTagMatch)"))
         for path in ["Cadence/iOS/iOSCreateTaskSheet.swift", "Cadence/macOS/Sheets/CreateTaskSheet.swift"] {

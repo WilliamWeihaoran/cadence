@@ -397,7 +397,7 @@ struct CadenceR67ParityTests {
         )
         #expect(tilde.map(\.icon) == create.map(\.systemImage))
         for path in [
-            "Cadence/iOS/iOSCreateTaskSheetSupportViews.swift",
+            "Cadence/Shared/Components/CadenceTaskComposerMarkerSuggestions.swift",
             "Cadence/iOS/iOSChoicePicker.swift",
             "Cadence/macOS/Views/ContainerPickerSupportViews.swift"
         ] {
@@ -467,7 +467,7 @@ struct CadenceR67ParityTests {
         let chooserKinds: [String: [String]] = [
             "Cadence/Shared/CadenceScheduleDraftChoices.swift": ["inbox", "area", "project"],
             "Cadence/Shared/Components/CadenceTaskInlinePanel.swift": ["inbox", "area", "project"],
-            "Cadence/iOS/iOSCreateTaskSheetSupportViews.swift": ["inbox", "area", "project"],
+            "Cadence/Shared/Components/CadenceTaskComposerMarkerSuggestions.swift": ["inbox", "area", "project"],
             "Cadence/iOS/iOSChoicePicker.swift": ["inbox", "area", "project"],
             "Cadence/iOS/iOSTaskRowActionViews.swift": ["inbox", "area", "project"],
             "Cadence/macOS/Views/ContainerPickerSupportViews.swift": ["inbox", "area", "project"],

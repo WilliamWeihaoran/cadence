@@ -2,11 +2,11 @@ import SwiftData
 import SwiftUI
 
 // Capture's inline title-marker suggestions; fields and pickers live in CadenceSchedulePanel.
-// Compiled on both platforms since [[T-13792]]: the Mac's Cmd+N composer hosts the same capture
-// card and draws this same strip under its title. Only the touch hit area and press style below
-// are iOS's own.
+// Drawn on both platforms since [[T-13792]]: the Mac's Cmd+N composer hosts the same capture
+// card and draws this same strip under its title, so it lives in Shared under a platform-neutral
+// name ([[T-13812]]). Only the touch hit area and press style below are iOS's own.
 
-enum iOSTaskComposerMarkerKind {
+enum CadenceTaskComposerMarkerKind {
     case list
     case tag
 }
@@ -18,8 +18,8 @@ enum iOSTaskComposerMarkerKind {
 /// Accepting one consumes the marker and its query out of the title
 /// (`CadenceTaskComposerSupport.title(removingShortcut:)`); ignoring it and carrying on typing
 /// leaves the text alone, so `~` is never a trap.
-struct iOSTaskComposerMarkerSuggestions: View {
-    let kind: iOSTaskComposerMarkerKind
+struct CadenceTaskComposerMarkerSuggestions: View {
+    let kind: CadenceTaskComposerMarkerKind
     let shortcut: TaskTitleInlineShortcut
     /// Every list. A suggestion strip is a picker, so it narrows to the active ones itself through
     /// `CadenceTaskComposerSupport.pickable*` — the sheet hands every control the same two arrays
