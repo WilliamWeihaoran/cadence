@@ -22,8 +22,14 @@ struct CadenceFocusTimerState: Hashable {
     var startedAt: Date?
     var accumulatedSeconds = 0
 
+    /// **[[T-15546]]: a reading taken before the run started counts nothing for the run.** The
+    /// Mac's `FocusView` reads this at its last `displayTick`, which only moves while the clock
+    /// runs, so the first frame after ▶ is drawn at an instant BEFORE `startedAt`: a resume after a
+    /// ten-minute pause read ten minutes short, and a session started from the picker read a
+    /// negative "-3:-5", until the next tick. The open stretch is clamped at zero, never the total,
+    /// so the banked seconds always stand.
     func elapsedSeconds(now: Date = Date()) -> Int {
-        accumulatedSeconds + (isRunning ? Int(now.timeIntervalSince(startedAt ?? now)) : 0)
+        accumulatedSeconds + (isRunning ? max(0, Int(now.timeIntervalSince(startedAt ?? now))) : 0)
     }
 
     mutating func toggle(now: Date = Date()) {

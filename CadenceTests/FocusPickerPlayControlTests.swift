@@ -85,6 +85,25 @@ struct FocusPickerPlayControlTests {
         #expect(switched.elapsedSeconds(now: epoch) == 0)
     }
 
+    /// T-15546: the Mac draws the clock at its last display tick, which stands still while the
+    /// clock is paused, so the first frame after ▶ reads at an instant before the run began. That
+    /// reading is the banked seconds, never fewer: not ten minutes short after a ten-minute pause,
+    /// and never below zero for a session started from the picker.
+    @Test func aReadingTakenBeforeTheRunStartedCountsNothingForTheRun() {
+        var resumed = CadenceFocusTimerState()
+        resumed.accumulatedSeconds = 300
+        resumed.toggle(now: epoch.addingTimeInterval(600))
+
+        #expect(resumed.elapsedSeconds(now: epoch) == 300)
+        #expect(resumed.elapsedSeconds(now: epoch.addingTimeInterval(610)) == 310)
+
+        var fresh = CadenceFocusTimerState()
+        fresh.toggle(now: epoch.addingTimeInterval(185))
+
+        #expect(fresh.elapsedSeconds(now: epoch) == 0)
+        #expect(CadenceFocusSupport.clockDisplay(elapsedSeconds: fresh.elapsedSeconds(now: epoch)) == "00:00")
+    }
+
     /// Nothing selected yet is the cold-start case: the first row tapped becomes the session.
     @Test func tappingPlayWithNothingSelectedStartsFromZero() {
         let next = CadenceFocusSupport.timerState(
