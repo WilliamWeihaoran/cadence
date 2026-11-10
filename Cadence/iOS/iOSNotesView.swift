@@ -1305,7 +1305,9 @@ struct iOSNotesDateTitle: View {
                 nowTitle: tab == .week ? "This week" : "Today",
                 accessibilityLabel: tab == .week
                     ? "Week of \(label). Choose a week"
-                    : "\(label). Choose a date"
+                    : "\(label). Choose a date",
+                // [[T-15492]]: Monday-first rows on Weekly, so the row tapped is the week opened.
+                pickerCalendar: CadenceNoteDateNavigation.pickerCalendar(for: tab)
             )
         } else {
             // 17 either way, unlike the date: "Notes" fits at any width, and the two never appear

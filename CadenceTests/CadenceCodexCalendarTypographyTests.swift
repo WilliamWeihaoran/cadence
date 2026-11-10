@@ -159,7 +159,7 @@ struct CadenceCodexCalendarTypographyTests {
         let dateJump = try read("Cadence/iOS/iOSDateJumpTitle.swift")
         let datePanel = try #require(CadenceSourceScan.declarationBody("private struct iOSDateJumpPopover: View", in: dateJump))
         #expect(datePanel.contains(".cadenceScaledTypography()"))
-        #expect(datePanel.contains("MonthCalendarPanel(selection: $selection, viewMonth: $viewMonth, isOpen: $isOpen, inlineStyle: true)"))
+        #expect(datePanel.contains("MonthCalendarPanel(selection: $selection, viewMonth: $viewMonth, isOpen: $isOpen, inlineStyle: true, calendar: calendar)"))
         #expect(CadenceDateSelectionMetrics.usesDateRows(at: .accessibility5, availableWidth: 280))
         let eventEditor = try read("Cadence/iOS/iOSCalendarEventEditSheet.swift")
         let noteSheet = try #require(CadenceSourceScan.declarationBody(".sheet(item: $presentedEventNote)", in: eventEditor))

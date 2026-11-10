@@ -54,6 +54,9 @@ struct iOSDateJumpTitle: View {
     /// The inverse — what a picked day means for the bound value. Picking any day of August in
     /// Month scrolls the grid to August's first row, not to the week that day falls in.
     var anchor: (Date) -> Date = { Calendar.current.startOfDay(for: $0) }
+    /// The calendar the popover's month grid is laid out in. Notes' Weekly tab passes a
+    /// Monday-first one so each row is the ISO week a tap opens ([[T-15492]]).
+    var pickerCalendar: Calendar = .current
 
     @State private var isOpen = false
     @State private var viewMonth = Date()
@@ -100,6 +103,7 @@ struct iOSDateJumpTitle: View {
                 isOpen: $isOpen,
                 isAtNow: isAtNow,
                 nowTitle: nowTitle,
+                calendar: pickerCalendar,
                 onNow: { date = anchor(Date()) }
             )
             // Same reason `CadenceDatePicker` sets it: compact width would otherwise promote a
@@ -177,6 +181,7 @@ private struct iOSDateJumpPopover: View {
     @Binding var isOpen: Bool
     let isAtNow: Bool
     let nowTitle: String
+    let calendar: Calendar
     let onNow: () -> Void
 
     var body: some View {
@@ -207,7 +212,7 @@ private struct iOSDateJumpPopover: View {
             // it the panel pins itself to 256pt and paints its own `surfaceElevated` inside a
             // container the popover had sized differently — the weekday row drew above the panel's
             // rounded top and the next month's heading spilled past its bottom corner.
-            MonthCalendarPanel(selection: $selection, viewMonth: $viewMonth, isOpen: $isOpen, inlineStyle: true)
+            MonthCalendarPanel(selection: $selection, viewMonth: $viewMonth, isOpen: $isOpen, inlineStyle: true, calendar: calendar)
                 // The panel leads with its weekday row and no inset of its own, which sat flush
                 // against the popover's rounded top edge.
                 .padding(.top, 10)

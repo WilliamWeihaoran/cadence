@@ -302,7 +302,9 @@ private struct WeeklyNotesPage: View {
             VStack(spacing: 0) {
                 // The picker takes a day, not a week: weeks have no handle you can point at, and
                 // "the week containing this date" is how anyone actually locates one.
-                NotesListHeader(title: NotesView.NotesPage.weekly.vocabulary.columnTitle, onPickDate: openNote(forDate:))
+                // [[T-15492]]: Monday-first rows, so the row tapped is the ISO week opened.
+                NotesListHeader(title: NotesView.NotesPage.weekly.vocabulary.columnTitle, onPickDate: openNote(forDate:),
+                                pickerCalendar: CadenceNoteDateNavigation.pickerCalendar(for: .week))
 
                 if let createFailureNotice {
                     CadenceInlineFailureNotice(text: createFailureNotice)
@@ -737,6 +739,8 @@ private struct NotesListHeader: View {
     /// header carries a date picker instead; a notepad note has no date to reach, so the only way
     /// to make one is to say so.
     var onCreate: (() -> Void)? = nil
+    /// The date picker's grid calendar. Weekly passes a Monday-first one ([[T-15492]]).
+    var pickerCalendar: Calendar = .current
 
     var body: some View {
         HStack {
@@ -745,7 +749,7 @@ private struct NotesListHeader: View {
                 .foregroundStyle(Theme.text)
             Spacer()
             if let onPickDate {
-                NotesDateJumpButton(onPick: onPickDate)
+                NotesDateJumpButton(calendar: pickerCalendar, onPick: onPickDate)
             }
             if let onCreate {
                 CadenceQuietPillButton(state: .quiet, action: onCreate) {
@@ -773,6 +777,7 @@ private struct NotesListHeader: View {
 /// and selects it. The note stays out of the list until it has something in it, which is the point:
 /// the list is an index of days you wrote on, and this is how you write on a new one.
 private struct NotesDateJumpButton: View {
+    var calendar: Calendar = .current
     let onPick: (Date) -> Void
 
     @State private var isOpen = false
@@ -798,7 +803,8 @@ private struct NotesDateJumpButton: View {
                     }
                 ),
                 viewMonth: $viewMonth,
-                isOpen: $isOpen
+                isOpen: $isOpen,
+                calendar: calendar
             )
         }
     }

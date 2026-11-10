@@ -211,9 +211,13 @@ struct MonthCalendarPanel: View {
     /// `false` when the field has no date yet and `selection` is only where the grid opens
     /// ([[T-9211]]). See `CadenceDateSelectionState`.
     var hasSelection: Bool = true
+    /// The calendar the grid is laid out in. `.current` everywhere except the weekly-note pickers,
+    /// which pass `CadenceNoteDateNavigation.pickerCalendar(for: .week)` so each row is exactly
+    /// one ISO week -- the week a tap on any day in it opens ([[T-15492]]).
+    var calendar: Calendar = .current
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    private let cal = Calendar.current
+    private var cal: Calendar { calendar }
     // Was a hard-coded Sunday-first array, which disagreed with the iOS month grid's ordering in
     // every Monday-first region. Both grids now read one function.
     private var dayNames: [String] {
@@ -434,6 +438,12 @@ struct MonthCalendarPanel: View {
     }
 
     private func calendarDays(for month: Date) -> [Date?] {
+        Self.gridDays(for: month, calendar: cal)
+    }
+
+    /// The month's cells in grid order: leading blanks up to the calendar's own first weekday,
+    /// the days, then trailing blanks to a whole row. Every run of seven is one row as drawn.
+    static func gridDays(for month: Date, calendar cal: Calendar) -> [Date?] {
         var comps = cal.dateComponents([.year, .month], from: month)
         comps.day = 1
         guard let firstOfMonth = cal.date(from: comps) else { return [] }

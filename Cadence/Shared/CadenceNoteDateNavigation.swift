@@ -121,6 +121,27 @@ enum CadenceNoteDateNavigation {
         }
     }
 
+    /// The calendar the tab's date picker lays its month grid out in ([[T-15492]]).
+    ///
+    /// Weekly notes are ISO weeks, Monday to Sunday, and stay that way: `Note.weekKey` is
+    /// persisted and synced, and habit and goal weeks agree with it. The picker grid followed the
+    /// system first weekday, so on a Sunday-first (US) device each row ran Sun-Sat and straddled
+    /// two ISO weeks -- tapping the row's Sunday opened the week that Sunday *closes*, the row
+    /// above. On Weekly the grid is laid out Monday-first so the row you tap is the week that
+    /// opens. Only `firstWeekday` changes -- it is all a month grid's row breaks read; the time
+    /// zone and locale stay the base calendar's, so "today" and the day cells are the same days
+    /// `weekKey` reads.
+    /// Daily keeps the system week start, as Calendar does.
+    static func pickerCalendar(
+        for tab: CadenceNotesTabVocabulary,
+        base: Calendar = .current
+    ) -> Calendar {
+        guard tab == .week else { return base }
+        var calendar = base
+        calendar.firstWeekday = 2
+        return calendar
+    }
+
     /// The ISO week key the day falls in. Falls back to *that day's* week via `Date()` only when the
     /// key is unparseable.
     static func weekKey(forDayKey dayKey: String) -> String {

@@ -154,4 +154,54 @@ struct CadenceNoteDateNavigationTests {
             #expect(CadenceNoteDateNavigation.weekKey(forDayKey: day) == DateFormatters.weekKey(from: date!))
         }
     }
+
+    // MARK: - [[T-15492]] the weekly picker's rows are ISO weeks
+
+    /// A Sunday-first (US) calendar, pinned so the run's own locale and zone cannot decide it.
+    private var usCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "en_US")
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        calendar.firstWeekday = 1
+        return calendar
+    }
+
+    /// How many drawn rows of `month`'s picker grid hold days from more than one ISO week.
+    private func rowsSpanningTwoWeekKeys(month: String, pickerCalendar: Calendar) -> Int {
+        var monthDate = DateComponents()
+        let parts = month.split(separator: "-").compactMap { Int($0) }
+        monthDate.year = parts[0]
+        monthDate.month = parts[1]
+        monthDate.day = 15
+        let days = MonthCalendarPanel.gridDays(for: usCalendar.date(from: monthDate)!, calendar: pickerCalendar)
+        #expect(days.count % 7 == 0)
+        return stride(from: 0, to: days.count, by: 7).filter { start in
+            let keys = Set(days[start..<start + 7].compactMap { $0 }.map {
+                DateFormatters.weekKey(from: $0, calendar: usCalendar)
+            })
+            return keys.count > 1
+        }.count
+    }
+
+    /// On a Sunday-first device the weekly picker's grid was Sun-Sat, so every full row straddled
+    /// two ISO weeks and tapping its Sunday opened the week above. Laid out in the weekly picker's
+    /// calendar, every row is exactly one week key across a year of months; the daily picker keeps
+    /// the system's Sunday-first rows, which is what makes the first count non-vacuous.
+    @Test func weeklyPickerRowsAreEachExactlyOneISOWeek() {
+        let weekly = CadenceNoteDateNavigation.pickerCalendar(for: .week, base: usCalendar)
+        let daily = CadenceNoteDateNavigation.pickerCalendar(for: .today, base: usCalendar)
+        #expect(daily.firstWeekday == 1)
+        #expect(weekly.timeZone == usCalendar.timeZone)
+        let months = (1...12).map { String(format: "2026-%02d", $0) }
+        #expect(months.map { rowsSpanningTwoWeekKeys(month: $0, pickerCalendar: daily) }.reduce(0, +) > 0)
+        #expect(months.map { rowsSpanningTwoWeekKeys(month: $0, pickerCalendar: weekly) }.reduce(0, +) == 0)
+    }
+
+    /// The grid's first column is Monday on Weekly, so the heading row the panel reads from the
+    /// same calendar starts "Mo" -- headings and cells cannot disagree.
+    @Test func weeklyPickerHeadingsStartOnMonday() {
+        let weekly = CadenceNoteDateNavigation.pickerCalendar(for: .week, base: usCalendar)
+        #expect(CadenceScheduleSupport.weekdaySymbols(calendar: weekly, width: .compact).first == "Mo")
+        #expect(CadenceScheduleSupport.weekdaySymbols(calendar: usCalendar, width: .compact).first == "Su")
+    }
 }
