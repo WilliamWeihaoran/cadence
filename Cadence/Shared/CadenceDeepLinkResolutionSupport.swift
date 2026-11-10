@@ -32,6 +32,11 @@ enum CadenceDeepLinkResolutionSupport {
         case todayVisible
         /// The task exists and Today does not list it — done, cancelled, or dated for another day.
         case outsideToday
+        /// The task is today's work, but it is planned for a day gone by and the rollover banner
+        /// is up, so Today lists it **inside the banner's offer** — a title, not a row — and
+        /// withholds it from the grouped list ([[T-15311]]). Nothing on the page can consume an
+        /// arm for it, so the link opens Today, where the banner names it, and disarms.
+        case heldInRolloverOffer
     }
 
     struct TaskLinkResolution: Equatable {
@@ -68,11 +73,47 @@ enum CadenceDeepLinkResolutionSupport {
     /// Whether Today would list this task, asked of the predicate Today actually runs rather than
     /// re-spelled here. `activeTodayTasks` is the one that decides — a second copy of "not done,
     /// not cancelled, due or do-dated today or earlier" is exactly the drift this ticket is about.
+    ///
+    /// Membership alone, deliberately: this says whether the task is today's work.
+    /// `todayDrawsRow` below is the stricter question the arm depends on.
     static func todayShows(_ task: AppTask, todayKey: String) -> Bool {
         !CadenceTaskQuerySupport.activeTodayTasks(
             from: [task],
             todayKey: todayKey,
             sortMode: .listOrder
+        ).isEmpty
+    }
+
+    /// Whether Today draws this task as a **row** — the only thing that consumes `pendingTaskID`.
+    ///
+    /// **[[T-15311]].** `todayShows` was the whole gate, and it is one step short of what both
+    /// Todays draw: while the rollover banner is up, `CadenceTodayRolloverSupport.groupedTasks`
+    /// withholds every past-do task from the grouped list, and the banner lists those tasks as
+    /// plain titles. So a widget or reminder tap on a leftover — exactly the task the Today
+    /// widget ranks first, and the one its small tile's whole surface links to — opened Today,
+    /// opened nothing, and **left the id armed**, to fire later on whatever screen next drew that
+    /// row (the banner dismissed, the roll confirmed, All Tasks): the T-368 shape again.
+    ///
+    /// Asked through the same three calls both hosts make, over this one task. That is exact, not
+    /// an approximation: `isNoticeVisible` reads a *count* of past-do tasks, and when this task is
+    /// one, the store's count is at least one too — so the banner is up for it exactly when it is
+    /// up at all.
+    static func todayDrawsRow(_ task: AppTask, todayKey: String, rolloverDismissedDateKey: String) -> Bool {
+        let active = CadenceTaskQuerySupport.activeTodayTasks(
+            from: [task],
+            todayKey: todayKey,
+            sortMode: .listOrder
+        )
+        let pastDo = CadenceTodayRolloverSupport.pastDoTasks(from: [task], todayKey: todayKey)
+        let noticeVisible = CadenceTodayRolloverSupport.isNoticeVisible(
+            pastDoTaskCount: pastDo.count,
+            dismissedDateKey: rolloverDismissedDateKey,
+            todayKey: todayKey
+        )
+        return !CadenceTodayRolloverSupport.groupedTasks(
+            from: active,
+            withholding: pastDo,
+            isNoticeVisible: noticeVisible
         ).isEmpty
     }
 
@@ -87,7 +128,15 @@ enum CadenceDeepLinkResolutionSupport {
     ///
     /// A missing task keeps Today, which is where a bare `cadence://today` goes: the link named a
     /// task that is gone, and All Tasks would be a page opened to show a row that is not on it.
-    static func resolveTaskLink(id: UUID, task: AppTask?, todayKey: String) -> TaskLinkResolution {
+    ///
+    /// `rolloverDismissedDateKey` is the stored "Not Now" day both Todays read
+    /// (`CadenceTodayRolloverSupport.dismissedDateStorageKey`); see `todayDrawsRow`.
+    static func resolveTaskLink(
+        id: UUID,
+        task: AppTask?,
+        todayKey: String,
+        rolloverDismissedDateKey: String
+    ) -> TaskLinkResolution {
         guard let task else {
             return TaskLinkResolution(outcome: .missing, destination: .today, pendingTaskID: nil)
         }
@@ -104,6 +153,12 @@ enum CadenceDeepLinkResolutionSupport {
                 // reveal cannot come to disagree with what the section contains.
                 revealedCompletedTaskID: CadenceTaskQuerySupport.isFinishedTask(task) ? id : nil
             )
+        }
+        // Today, not All Tasks: the banner at the top of Today names this task and offers the
+        // one action that applies to it, so the page the link opens does show it. Disarmed,
+        // because nothing there is a row that could consume the arm.
+        guard todayDrawsRow(task, todayKey: todayKey, rolloverDismissedDateKey: rolloverDismissedDateKey) else {
+            return TaskLinkResolution(outcome: .heldInRolloverOffer, destination: .today, pendingTaskID: nil)
         }
         return TaskLinkResolution(outcome: .todayVisible, destination: .today, pendingTaskID: id)
     }
@@ -180,13 +235,18 @@ extension CadenceDeepLinkManager {
     func resolvedDestination(
         for deepLink: CadenceDeepLink,
         modelContext: ModelContext,
-        todayKey: String = DateFormatters.todayKey()
+        todayKey: String = DateFormatters.todayKey(),
+        // The store both Todays' `@AppStorage` resolves against (`defaultAppStorage`).
+        rolloverDismissedDateKey: String = CadenceDefaults.store.string(
+            forKey: CadenceTodayRolloverSupport.dismissedDateStorageKey
+        ) ?? ""
     ) -> CadenceFeatureDestination {
         guard case .task(let id) = deepLink else { return deepLink.featureDestination }
         let resolution = CadenceDeepLinkResolutionSupport.resolveTaskLink(
             id: id,
             task: CadenceDeepLinkResolutionSupport.task(with: id, in: modelContext),
-            todayKey: todayKey
+            todayKey: todayKey,
+            rolloverDismissedDateKey: rolloverDismissedDateKey
         )
         // Only this link's own arm is touched. A newer link that landed between `handle(_:)` and
         // here owns `pendingTaskID`, and disarming it would be the same bug pointed the other way.

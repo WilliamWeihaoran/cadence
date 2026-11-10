@@ -97,7 +97,8 @@ struct CadenceDeepLinkTests {
         let resolution = CadenceDeepLinkResolutionSupport.resolveTaskLink(
             id: missingID,
             task: nil,
-            todayKey: todayKey
+            todayKey: todayKey,
+            rolloverDismissedDateKey: ""
         )
         #expect(resolution.outcome == .missing)
         #expect(resolution.destination == .today)
@@ -160,7 +161,8 @@ struct CadenceDeepLinkTests {
         let resolution = CadenceDeepLinkResolutionSupport.resolveTaskLink(
             id: laterTask.id,
             task: laterTask,
-            todayKey: todayKey
+            todayKey: todayKey,
+            rolloverDismissedDateKey: ""
         )
         #expect(resolution.outcome == .outsideToday)
         #expect(resolution.pendingTaskID == nil)
@@ -192,6 +194,106 @@ struct CadenceDeepLinkTests {
         // The row-level clear, unchanged and still the thing that ends a successful link.
         manager.clearPendingTask(task.id)
         #expect(manager.pendingTaskID == nil)
+    }
+
+    // MARK: - T-15311: a leftover the rollover banner is holding has no row to consume the arm
+
+    /// A task planned for yesterday and never done is today's work, so the Today widget lists it
+    /// (first, by rank) and `todayShows` admits it — but while the rollover banner is up both
+    /// Todays withhold it from the grouped list and the banner names it as a plain title. The link
+    /// must open Today (where the banner is) and must NOT stay armed, or it fires later on
+    /// whatever screen next draws that row.
+    @Test func aLeftoverHeldInTheRolloverOfferOpensTodayDisarmed() throws {
+        let (modelContext, todayKey) = try makeStore()
+        let manager = resetManager()
+
+        let leftover = AppTask(title: "Planned yesterday")
+        leftover.scheduledDate = "2000-01-01"
+        modelContext.insert(leftover)
+        try modelContext.save()
+
+        #expect(CadenceDeepLinkResolutionSupport.todayShows(leftover, todayKey: todayKey))
+        #expect(
+            CadenceDeepLinkResolutionSupport.todayDrawsRow(
+                leftover, todayKey: todayKey, rolloverDismissedDateKey: ""
+            ) == false
+        )
+
+        manager.handle(try #require(URL(string: "cadence://task/\(leftover.id.uuidString)")))
+        #expect(manager.pendingTaskID == leftover.id)
+        let destination = manager.resolvedDestination(
+            for: .task(leftover.id),
+            modelContext: modelContext,
+            todayKey: todayKey,
+            rolloverDismissedDateKey: ""
+        )
+        #expect(destination == .today)
+        #expect(manager.pendingTaskID == nil)
+
+        let resolution = CadenceDeepLinkResolutionSupport.resolveTaskLink(
+            id: leftover.id,
+            task: leftover,
+            todayKey: todayKey,
+            rolloverDismissedDateKey: ""
+        )
+        #expect(resolution.outcome == .heldInRolloverOffer)
+        #expect(resolution.pendingTaskID == nil)
+        #expect(resolution.revealedCompletedTaskID == nil)
+    }
+
+    /// The other half, which must keep working: once the banner is dismissed for today ("Not
+    /// Now"), the leftover is back in its list's group as a real row, so the link arms it.
+    @Test func aLeftoverAfterTheBannerIsDismissedTodayStaysArmedForItsRow() throws {
+        let (modelContext, todayKey) = try makeStore()
+        let manager = resetManager()
+
+        let leftover = AppTask(title: "Planned yesterday")
+        leftover.scheduledDate = "2000-01-01"
+        modelContext.insert(leftover)
+        try modelContext.save()
+
+        let dismissed = CadenceTodayRolloverSupport.dismissedDateKey(dismissingOn: todayKey)
+        manager.handle(try #require(URL(string: "cadence://task/\(leftover.id.uuidString)")))
+        let destination = manager.resolvedDestination(
+            for: .task(leftover.id),
+            modelContext: modelContext,
+            todayKey: todayKey,
+            rolloverDismissedDateKey: dismissed
+        )
+        #expect(destination == .today)
+        #expect(manager.pendingTaskID == leftover.id)
+        #expect(
+            CadenceDeepLinkResolutionSupport.resolveTaskLink(
+                id: leftover.id,
+                task: leftover,
+                todayKey: todayKey,
+                rolloverDismissedDateKey: dismissed
+            ).outcome == .todayVisible
+        )
+        manager.pendingTaskID = nil
+    }
+
+    /// The banner holds back past-DO work only. A task that is merely overdue (past due date,
+    /// no do date) is never in the offer, so it keeps its row and its arm with the banner up.
+    @Test func anOverdueTaskWithNoDoDateIsNotHeldByTheBanner() throws {
+        let (modelContext, todayKey) = try makeStore()
+        let manager = resetManager()
+
+        let overdue = AppTask(title: "Due last week")
+        overdue.dueDate = "2000-01-01"
+        modelContext.insert(overdue)
+        try modelContext.save()
+
+        manager.handle(try #require(URL(string: "cadence://task/\(overdue.id.uuidString)")))
+        let destination = manager.resolvedDestination(
+            for: .task(overdue.id),
+            modelContext: modelContext,
+            todayKey: todayKey,
+            rolloverDismissedDateKey: ""
+        )
+        #expect(destination == .today)
+        #expect(manager.pendingTaskID == overdue.id)
+        manager.pendingTaskID = nil
     }
 
     /// Resolution never disarms an id it does not own. A second link landing between `handle(_:)`
@@ -357,7 +459,8 @@ struct CadenceDeepLinkGrammarAndRevealTests {
         let resolution = CadenceDeepLinkResolutionSupport.resolveTaskLink(
             id: task.id,
             task: task,
-            todayKey: todayKey
+            todayKey: todayKey,
+            rolloverDismissedDateKey: ""
         )
         #expect(resolution.outcome == .outsideToday)
         #expect(resolution.revealedCompletedTaskID == task.id)
@@ -375,7 +478,8 @@ struct CadenceDeepLinkGrammarAndRevealTests {
         let resolution = CadenceDeepLinkResolutionSupport.resolveTaskLink(
             id: cancelled.id,
             task: cancelled,
-            todayKey: todayKey
+            todayKey: todayKey,
+            rolloverDismissedDateKey: ""
         )
         #expect(resolution.destination == .allTasks)
         #expect(resolution.revealedCompletedTaskID == cancelled.id)
@@ -400,7 +504,8 @@ struct CadenceDeepLinkGrammarAndRevealTests {
         let resolution = CadenceDeepLinkResolutionSupport.resolveTaskLink(
             id: later.id,
             task: later,
-            todayKey: todayKey
+            todayKey: todayKey,
+            rolloverDismissedDateKey: ""
         )
         #expect(resolution.outcome == .outsideToday)
         #expect(resolution.revealedCompletedTaskID == nil)
