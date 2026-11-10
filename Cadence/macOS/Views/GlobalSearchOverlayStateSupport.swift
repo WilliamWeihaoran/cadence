@@ -81,7 +81,11 @@ enum GlobalSearchOverlayStateSupport {
         }
 
         let workItem = DispatchWorkItem {
-            let matchedEvents = calendarManager.searchEvents(matching: query)
+            let matchedEvents = calendarManager.searchEvents(
+                matching: query,
+                pastDays: CadenceCalendarEventSearchSupport.windowPastDays,
+                futureDays: CadenceCalendarEventSearchSupport.windowFutureDays
+            )
             DispatchQueue.main.async {
                 updateResults(GlobalSearchDataSupport.eventResults(from: matchedEvents, query: query))
             }

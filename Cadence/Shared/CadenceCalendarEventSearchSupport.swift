@@ -50,8 +50,18 @@ nonisolated enum CadenceCalendarEventSearchSupport {
         CadenceSearchMatcher.matchScore(query: query, fields: searchFields(for: event)) != nil
     }
 
+    /// **[[T-15554]]: the one window both `searchEvents` callers ask for, idle or searching.**
+    ///
+    /// iOS Search asked for `0` back / `30` ahead with nothing typed while Cmd+K asked for the
+    /// managers' `60` / `365` defaults, so a quiet month read "nothing coming up" on the phone and
+    /// listed the next events on the Mac over the same calendars ([[T-8201]]). The idle list is
+    /// already narrowed by `isUpcoming` below, so asking for the past costs nothing it shows.
+    /// Both managers' defaults, iOS Search and Cmd+K all read these two constants.
+    static let windowPastDays = 60
+    static let windowFutureDays = 365
+
     /// An empty query means "what is coming up", not "everything in the window" — the window
-    /// reaches 60 days into the past, which is not a useful thing to list unprompted.
+    /// reaches `windowPastDays` into the past, which is not a useful thing to list unprompted.
     static func isUpcoming(_ event: EKEvent, now: Date) -> Bool {
         (event.endDate ?? now) >= now
     }

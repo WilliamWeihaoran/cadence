@@ -292,4 +292,47 @@ struct CadenceCalendarEventSearchSupportTests {
         #expect(CadenceSourceScan.matchCount(#"calendarItemIdentifier"#, in: "event.calendarItemIdentifier") == 1)
         #expect(CadenceSourceScan.matchCount(#"calendarItemIdentifier"#, in: "event.eventIdentifier") == 0)
     }
+
+    // MARK: - [[T-15554]] one window, idle or searching, on both platforms
+
+    /// iOS Search asked `pastDays: isSearching ? 60 : 0, futureDays: isSearching ? 365 : 30`
+    /// while Cmd+K took the managers' 60 / 365 defaults, so with nothing typed the phone looked a
+    /// month ahead and the Mac a year. Both callers are views behind an authorized EventKit store,
+    /// so what is pinned is that each one passes the shared window and nothing else.
+    @Test func iOSSearchAndCmdKAskForTheSameSharedEventWindow() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let iOS = try read("Cadence/iOS/iOSSearchView.swift")
+        let iOSRefresh = try #require(CadenceSourceScan.declarationBody("private func refreshCalendarSearchEvents()", in: iOS))
+        let mac = try read("Cadence/macOS/Views/GlobalSearchOverlayStateSupport.swift")
+
+        for (surface, body) in [("iOS Search", iOSRefresh), ("Cmd+K", mac)] {
+            #expect(body.contains("searchEvents("), "\(surface) no longer asks searchEvents")
+            #expect(body.contains("pastDays: CadenceCalendarEventSearchSupport.windowPastDays"),
+                    "\(surface) does not pass the shared past window")
+            #expect(body.contains("futureDays: CadenceCalendarEventSearchSupport.windowFutureDays"),
+                    "\(surface) does not pass the shared future window")
+            #expect(CadenceSourceScan.matchCount(#"(pastDays|futureDays):\s*[^C\s]"#, in: body) == 0,
+                    "\(surface) spells its own event window")
+        }
+        #expect(CadenceSourceScan.matchCount(#"isSearching\s*\?"#, in: iOSRefresh) == 0,
+                "iOS Search's idle request differs from its searching one again")
+
+        // Both managers default to the same constants, so a caller that omits them still agrees.
+        for path in ["Cadence/iOS/iOSCalendarManager.swift", "Cadence/macOS/Services/CalendarManager.swift"] {
+            let source = try read(path)
+            #expect(source.contains("pastDays: Int = CadenceCalendarEventSearchSupport.windowPastDays"), "\(path)")
+            #expect(source.contains("futureDays: Int = CadenceCalendarEventSearchSupport.windowFutureDays"), "\(path)")
+        }
+        // The idle list is the upcoming slice, so the window must reach further ahead than a month.
+        #expect(CadenceCalendarEventSearchSupport.windowFutureDays > 30)
+    }
+
+    /// Without this the `== 0` needles above are true of any text at all.
+    @Test func theEventWindowScanNeedlesAreNotVacuous() {
+        #expect(CadenceSourceScan.matchCount(#"(pastDays|futureDays):\s*[^C\s]"#,
+                                             in: "pastDays: isSearching ? 60 : 0, futureDays: 30") == 2)
+        #expect(CadenceSourceScan.matchCount(#"(pastDays|futureDays):\s*[^C\s]"#,
+                                             in: "pastDays: CadenceCalendarEventSearchSupport.windowPastDays") == 0)
+        #expect(CadenceSourceScan.matchCount(#"isSearching\s*\?"#, in: "isSearching ? 365 : 30") == 1)
+    }
 }

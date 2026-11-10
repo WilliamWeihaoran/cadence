@@ -506,7 +506,11 @@ final class CalendarManager {
     /// Every event in the window, all-day included. The window and the filter are the *same* on
     /// both platforms — see `CadenceCalendarEventSearchSupport`, which owns the matching rule and
     /// records why the all-day exclusion that used to live here was a bug rather than an intent.
-    func searchEvents(matching query: String, pastDays: Int = 60, futureDays: Int = 365) -> [EKEvent] {
+    func searchEvents(
+        matching query: String,
+        pastDays: Int = CadenceCalendarEventSearchSupport.windowPastDays,
+        futureDays: Int = CadenceCalendarEventSearchSupport.windowFutureDays
+    ) -> [EKEvent] {
         CadenceCalendarEventSearchSupport.results(
             from: windowEvents(pastDays: pastDays, futureDays: futureDays),
             query: query
@@ -519,7 +523,10 @@ final class CalendarManager {
     /// It used to ask for the window by searching it with an empty query, which is the branch
     /// that keeps only what has not ended yet — so a past event was findable and not openable.
     /// See `CadenceCalendarEventSearchSupport.event(from:identifier:)`.
-    func windowEvents(pastDays: Int = 60, futureDays: Int = 365) -> [EKEvent] {
+    func windowEvents(
+        pastDays: Int = CadenceCalendarEventSearchSupport.windowPastDays,
+        futureDays: Int = CadenceCalendarEventSearchSupport.windowFutureDays
+    ) -> [EKEvent] {
         guard isAuthorized else { return [] }
         let calendars = availableCalendars
         guard !calendars.isEmpty else { return [] }

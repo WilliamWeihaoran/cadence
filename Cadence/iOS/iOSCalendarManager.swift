@@ -150,7 +150,11 @@ final class iOSCalendarManager {
 
     /// Every event in the window, all-day included. The window and the filter are the *same* on
     /// both platforms — see `CadenceCalendarEventSearchSupport`, which owns the matching rule.
-    func searchEvents(matching query: String, pastDays: Int = 60, futureDays: Int = 365) -> [EKEvent] {
+    func searchEvents(
+        matching query: String,
+        pastDays: Int = CadenceCalendarEventSearchSupport.windowPastDays,
+        futureDays: Int = CadenceCalendarEventSearchSupport.windowFutureDays
+    ) -> [EKEvent] {
         guard isAuthorized, !availableCalendars.isEmpty else { return [] }
 
         let now = Date()

@@ -212,12 +212,14 @@ enum CadenceBoardCardMetadata {
     /// blank-named area or project was labelled "Inbox" -- beside that list's own glyph, over a
     /// picker whose checked row said "Untitled Area" -- and a whitespace-only name drew a blank
     /// chip. The picker rule (`CadencePickerSupport.title(for:)`) is the one the Mac task row's
-    /// `ContainerPickerBadge`, the sidebar and Cmd+K already read ([[T-7202]], [[T-8102]]). Area
-    /// before project, the precedence `containerName` itself uses. The iOS task row's chip reads
-    /// this too, so the two chips cannot drift again.
+    /// `ContainerPickerBadge`, the sidebar and Cmd+K already read ([[T-7202]], [[T-8102]]).
+    /// **Project before area** ([[T-15553]]), the precedence `containerName`, `containerColor`
+    /// and this chip's icon use and the filing rule itself: it read the area first, so a
+    /// dual-filed task's chip drew the project's glyph beside the area's name. The iOS task row's
+    /// chip reads this too, so the two chips cannot drift again.
     static func listTitle(for task: AppTask) -> String {
-        if let area = task.area { return CadenceAreaPickerSupport.title(for: area) }
         if let project = task.project { return CadenceProjectPickerSupport.title(for: project) }
+        if let area = task.area { return CadenceAreaPickerSupport.title(for: area) }
         return inboxLabel
     }
 

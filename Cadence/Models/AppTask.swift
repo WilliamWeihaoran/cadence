@@ -416,12 +416,19 @@ nonisolated enum CadenceTodayStanding: Int, CaseIterable, Hashable {
         return scheduledStartMin + timelineDurationMinutes
     }
 
+    /// The name of the list this task is filed under. **Project before area** ([[T-15553]]) --
+    /// the filing rule of `CadenceTaskQuerySupport.tasks(for:project:in:)` and `listGroupKey(for:)`
+    /// ([[T-15431]], [[T-13853]]). A row holding both is a sync-merge / import / repair state
+    /// `TaskCreationService` never writes, and it is drawn, counted and opened as the project's;
+    /// reading the area first named one list while a pick opened the other.
     var containerName: String {
-        area?.name ?? project?.name ?? ""
+        project?.name ?? area?.name ?? ""
     }
 
+    /// The colour of the list `containerName` names -- the same precedence, so a dot and its label
+    /// cannot belong to two lists.
     var containerColor: String {
-        area?.colorHex ?? project?.colorHex ?? "#6b7a99"
+        project?.colorHex ?? area?.colorHex ?? "#6b7a99"
     }
 
     var resolvedSectionName: String {

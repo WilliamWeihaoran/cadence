@@ -782,8 +782,8 @@ struct iOSSearchView: View {
 
         calendarSearchEvents = calendarManager.searchEvents(
             matching: trimmedQuery,
-            pastDays: isSearching ? 60 : 0,
-            futureDays: isSearching ? 365 : 30
+            pastDays: CadenceCalendarEventSearchSupport.windowPastDays,
+            futureDays: CadenceCalendarEventSearchSupport.windowFutureDays
         )
     }
 

@@ -384,11 +384,13 @@ enum CadenceTaskComposerSupport {
     /// and what a picker opened on an existing task has to be told so `selectable(_:selectedID:)`
     /// can keep the row for where that task already is (T-514, T-534).
     ///
-    /// A task cannot hold both: every writer that sets one nils the other, so the order the two are
-    /// tested in is not load-bearing.
+    /// **Project before area** ([[T-15553]]). Every writer that sets one nils the other, but a
+    /// sync merge, an import or a repair can still leave a row holding both ([[T-15431]]), and
+    /// such a row is filed under the project -- so the picker badge on the Mac task row names the
+    /// list `AppTask.containerName` does and the row is drawn in.
     static func container(of task: AppTask) -> TaskContainerSelection {
-        if let area = task.area { return .area(area.id) }
         if let project = task.project { return .project(project.id) }
+        if let area = task.area { return .area(area.id) }
         return .inbox
     }
 

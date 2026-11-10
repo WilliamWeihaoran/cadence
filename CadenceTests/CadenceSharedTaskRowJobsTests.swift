@@ -140,8 +140,10 @@ struct CadenceSharedTaskRowJobsTests {
         #expect(chipText(project: " \t ") == CadenceTitleNormalization.defaultProjectName)
         #expect(chipText(area: "  Work ") == "Work")
         #expect(chipText(project: "Launch") == "Launch")
-        // Area before project, the precedence `AppTask.containerName` uses.
-        #expect(chipText(area: "", project: "Launch") == CadenceTitleNormalization.defaultAreaName)
+        // Project before area, the precedence `AppTask.containerName` and the filing rule use
+        // ([[T-15553]]); a blank-named project is still named "Untitled Project".
+        #expect(chipText(area: "", project: "Launch") == "Launch")
+        #expect(chipText(area: "Work", project: "") == CadenceTitleNormalization.defaultProjectName)
         #expect(chipText() == CadenceBoardCardMetadata.inboxLabel)
     }
 
