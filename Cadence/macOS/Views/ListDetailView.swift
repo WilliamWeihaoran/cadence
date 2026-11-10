@@ -256,7 +256,11 @@ private struct ListDetailChromeView: View {
 
     private var name: String { area?.name ?? project?.name ?? "" }
     private var colorHex: String { area?.colorHex ?? project?.colorHex ?? Theme.blueHex }
-    private var tasks: [AppTask] { area?.tasks ?? project?.tasks ?? [] }
+    /// An area's own tasks exclude any also filed under a project ([[T-15431]]).
+    private var tasks: [AppTask] {
+        if let area { return CadenceTaskQuerySupport.listedTasks(for: area) }
+        return project?.tasks ?? []
+    }
     private var allowsSectionEditing: Bool { area != nil || project != nil }
     private var editableHoverID: String {
         "list-detail-\(area?.id.uuidString ?? project?.id.uuidString ?? "unknown")"

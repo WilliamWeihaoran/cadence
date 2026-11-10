@@ -97,9 +97,16 @@ nonisolated extension CadenceTaskQuerySupport {
         count > 0 ? count : nil
     }
 
+    /// The tasks a list's own page draws. **An area's are the tasks filed under it and under no
+    /// project** ([[T-15431]]): a row holding both an `area` and a `project` — the state a
+    /// field-wise sync merge of two moves, an import or a repair leaves, since `TaskCreationService`
+    /// never writes it — belongs to the project, the "project before area" rule of
+    /// `listGroupKey(for:)`, `isInActiveContainer` and the Mac Tasks board ([[T-13853]]). Matching
+    /// `area` alone drew such a task on both list pages and counted it under both sidebar rows,
+    /// while Today, All Tasks and the board filed it under the project only.
     static func tasks(for area: Area?, project: Project?, in tasks: [AppTask]) -> [AppTask] {
         if let area {
-            return tasks.filter { $0.area?.id == area.id }
+            return tasks.filter { $0.area?.id == area.id && $0.project == nil }
         }
         if let project {
             return tasks.filter { $0.project?.id == project.id }
@@ -107,8 +114,14 @@ nonisolated extension CadenceTaskQuerySupport {
         return []
     }
 
+    /// `area.tasks` under the same rule — the relationship-backed form, for the callers that hold
+    /// the area rather than the whole store (the Mac list page, every area row's count).
+    static func listedTasks(for area: Area) -> [AppTask] {
+        (area.tasks ?? []).filter { $0.project == nil }
+    }
+
     static func openTaskCount(for area: Area) -> Int {
-        openTaskCount(from: area.tasks ?? [])
+        openTaskCount(from: listedTasks(for: area))
     }
 
     static func openTaskCount(for project: Project) -> Int {
