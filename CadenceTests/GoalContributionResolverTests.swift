@@ -446,7 +446,7 @@ struct GoalContributionResolverTests {
     @Test func goalRecentFiguresCountTheSameSevenDays() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
-        let calendar = Calendar.current
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
         let today = try #require(DateFormatters.date(from: "2026-04-30"))
         let now = try #require(calendar.date(byAdding: .hour, value: 12, to: today))
         let daySix = try #require(calendar.date(byAdding: .day, value: -6, to: today))
