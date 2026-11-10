@@ -90,7 +90,7 @@ struct iOSSyncSettingsSection: View {
                     // draws (T-7942). Beside the button the pair needed ~375 pt in a ~329 pt card on
                     // a 393 pt iPhone, so the stamp wrapped or the button's label truncated.
                     if let lastChecked = probe.lastChecked {
-                        Text("Last checked \(lastChecked.formatted(date: .abbreviated, time: .shortened))")
+                        Text(CadenceSyncActivityStamp.lastCheckedLine(for: lastChecked, now: Date()))
                             .cadenceFont(.metadata, base: 11, weight: .regular)
                             .foregroundStyle(Theme.dim)
                     }

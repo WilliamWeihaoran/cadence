@@ -1043,7 +1043,8 @@ struct CadenceSharedTaskRowJobsTests {
         let macRow = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
         #expect(macRow.contains("if datePlan.drawsDoDateChip {"))
         let iOSRow = try strippingComments(sourceFile("Cadence/iOS/iOSTaskViews.swift"))
-        #expect(iOSRow.contains("if datePlan.drawsDueDateChip, let dueUrgency {"))
+        // [[T-15491]]: the guard also binds the chip's words from the one due-date builder.
+        #expect(iOSRow.contains("if datePlan.drawsDueDateChip, let dueUrgency,"))
     }
 
     /// [[T-7984]]: no Mac row drops its do-date pill for a whole section. `.todayGrouped` did, and

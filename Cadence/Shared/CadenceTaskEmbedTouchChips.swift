@@ -121,7 +121,8 @@ nonisolated enum CadenceTaskEmbedChipRow {
         ))
         slots.append(CadenceTaskEmbedChipSlot(
             field: .dueDate,
-            title: task.dueDate.isEmpty ? nil : "Due \(DateFormatters.relativeDate(from: task.dueDate, relativeTo: referenceDate))",
+            // [[T-15491]]: the one due-date vocabulary, the words the Mac reference chip draws.
+            title: CadenceWidgetDateSupport.dueLabel(for: task.dueDate, todayKey: todayKey),
             tone: .date(CadenceTaskEmbedDateTone.dueDate(of: task, todayKey: todayKey)),
             importance: task.dueDate.isEmpty ? Importance.emptyDueDate : Importance.dueDate
         ))

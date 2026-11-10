@@ -79,7 +79,7 @@ struct SettingsSyncSection: View {
             }
 
             if let lastChecked = probe.lastChecked {
-                Text("Last checked \(lastChecked.formatted(date: .abbreviated, time: .shortened))")
+                Text(CadenceSyncActivityStamp.lastCheckedLine(for: lastChecked, now: Date()))
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.dim)
             }

@@ -326,11 +326,14 @@ struct iOSTaskRow: View {
                 //
                 // Date only: `AppTask.dueDate` is a `yyyy-MM-dd` key and there is no due-*time*
                 // field anywhere in the model to draw.
-                if datePlan.drawsDueDateChip, let dueUrgency {
+                // [[T-15491]]: the one due-date vocabulary ("Overdue Nov 9" / "Due today"),
+                // against the row's observed day.
+                if datePlan.drawsDueDateChip, let dueUrgency,
+                   let dueTitle = CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: todayKey) {
                     iOSTaskRowDateChip(
                         task: task,
                         field: .dueDate,
-                        title: CadenceTaskPresentationSupport.dueDateLabel(for: task),
+                        title: dueTitle,
                         tint: dueUrgency == .overdue ? Theme.red : Theme.dim
                     )
                     .fixedSize(horizontal: true, vertical: false)

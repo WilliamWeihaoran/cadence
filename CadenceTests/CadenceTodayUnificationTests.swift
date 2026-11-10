@@ -552,7 +552,8 @@ struct CadenceTodayUnificationTests {
         )
 
         // The deadline is on the title line and nowhere else on the row.
-        #expect(summary.contains("if datePlan.drawsDueDateChip, let dueUrgency {"))
+        // [[T-15491]]: the guard also binds the chip's words from the one due-date builder.
+        #expect(summary.contains("if datePlan.drawsDueDateChip, let dueUrgency,"))
         #expect(summary.contains("field: .dueDate"))
         #expect(!badges.contains("drawsDueDateChip"),
                 "the due chip moved to the title line; drawing it here too states the deadline twice")

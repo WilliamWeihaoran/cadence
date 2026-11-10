@@ -312,6 +312,21 @@ nonisolated enum CadenceSyncActivityStamp {
         default: return "\(days) days ago"
         }
     }
+
+    /// Settings' "Last checked" line under the iCloud status card, on both platforms
+    /// ([[T-15494]]): "Last checked 9:41 AM", "Last checked yesterday 4:02 PM", "Last checked 4
+    /// days ago" — spelled by `string(for:now:)`, like the "Last import" / "Last export" row right
+    /// below it. It was `Date.formatted(date: .abbreviated, time: .shortened)`, which put a full
+    /// "Nov 10, 2026 at 9:41 AM" (the probe runs on every Settings visit, so almost always today)
+    /// above "Last import 9:41 AM", and followed the host region's date order.
+    static func lastCheckedLine(
+        for date: Date,
+        now: Date,
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> String {
+        "Last checked \(string(for: date, now: now, calendar: calendar, locale: locale))"
+    }
 }
 
 // MARK: - T-3041: the cold import, said outside Settings

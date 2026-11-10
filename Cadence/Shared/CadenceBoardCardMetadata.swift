@@ -188,7 +188,8 @@ enum CadenceBoardCardMetadata {
         return CadenceBoardCardChip(
             kind: .dueDate,
             icon: dueDateIcon,
-            text: DateFormatters.relativeDate(from: task.dueDate),
+            // [[T-15491]]: the one due-date vocabulary, against the card's own `todayKey`.
+            text: CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: todayKey) ?? task.dueDate,
             listColorHex: nil,
             emphasis: task.isOverdue(todayKey: todayKey) ? .urgent : .neutral
         )

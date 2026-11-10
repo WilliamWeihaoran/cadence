@@ -680,7 +680,8 @@ struct CadenceSyncActivitySurfaceParityTests {
             CadenceSourceScan.declarationBody("struct iOSSyncSettingsSection", in: file),
             "struct iOSSyncSettingsSection is gone from \(path)"
         )
-        #expect(section.contains(#"Text("Last checked"#), "the iOS iCloud card no longer draws its stamp")
+        // [[T-15494]]: the stamp's words are `CadenceSyncActivityStamp.lastCheckedLine`'s now.
+        #expect(section.contains("Text(CadenceSyncActivityStamp.lastCheckedLine("), "the iOS iCloud card no longer draws its stamp")
 
         var stackBodies: [String] = []
         var cursor = section.startIndex
@@ -693,7 +694,7 @@ struct CadenceSyncActivitySurfaceParityTests {
         let buttonRows = stackBodies.filter { $0.contains(#"title: "Check iCloud Status""#) }
         #expect(!buttonRows.isEmpty, "no HStack in \(path) holds the Check iCloud Status button; \(stackBodies.count) read")
         for row in buttonRows {
-            #expect(!row.contains("Last checked"), "the Last checked stamp is back beside the button in \(path)")
+            #expect(!row.contains("lastCheckedLine"), "the Last checked stamp is back beside the button in \(path)")
         }
     }
 

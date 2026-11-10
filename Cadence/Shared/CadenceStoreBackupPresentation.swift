@@ -56,7 +56,8 @@ enum CadenceStoreBackupPresentation {
     static let listedBackupLimit = 16
 
     static func rowTitle(_ backup: StoreBackupSnapshot) -> String {
-        backup.createdAt.formatted(date: .abbreviated, time: .shortened)
+        // [[T-15494]]: the pinned pieces, not the host region's `Date.formatted`.
+        DateFormatters.dateTimeStamp(backup.createdAt)
     }
 
     static func rowDetail(_ backup: StoreBackupSnapshot) -> String {

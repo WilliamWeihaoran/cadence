@@ -1587,7 +1587,8 @@ struct UnmanagedStoreDirectory: Identifiable, Hashable {
     var displayDetail: String {
         var parts = [kind.label, displaySize]
         if let lastModified {
-            parts.append("last written \(lastModified.formatted(date: .abbreviated, time: .omitted))")
+            // [[T-15494]]: the pinned `fullShortDate`, not the host region's `Date.formatted`.
+            parts.append("last written \(DateFormatters.fullShortDate.string(from: lastModified))")
         }
         return parts.joined(separator: " • ")
     }

@@ -121,7 +121,7 @@ struct CadenceTasksPanelMetricsTests {
         let dueChip = try #require(
             CadenceSourceScan.declarationBody("private var dueDateBadgeList: some View", in: row)
         )
-        #expect(dueChip.contains("Text(DateFormatters.relativeDate(from: task.dueDate))"))
+        #expect(dueChip.contains("Text(dueDateLabel)"))
         #expect(dueChip.contains(".lineLimit(1)"))
     }
 

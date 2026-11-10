@@ -808,9 +808,9 @@ struct iOSSearchView: View {
     }
 
     /// Carried beside `detail` rather than inside it — see `iOSSearchResult.dueLabel`.
+    /// [[T-15491]]: the builder's words carry their own "Due" / "Overdue".
     private func taskDueLabel(_ task: AppTask) -> String? {
-        guard !task.dueDate.isEmpty else { return nil }
-        return "Due \(CadenceTaskPresentationSupport.dueDateLabel(for: task))"
+        CadenceTaskPresentationSupport.dueDateLabel(for: task)
     }
 
     /// The shared ranking list Cmd+K reads too ([[T-12803]]); this view supplies only its row's

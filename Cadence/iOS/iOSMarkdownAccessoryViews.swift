@@ -284,10 +284,9 @@ private struct iOSMarkdownTaskReferenceRow: View {
     private var dateDetail: String? {
         if !task.scheduledDate.isEmpty {
             return "Do \(CadenceTaskPresentationSupport.scheduledDateLabel(for: task))"
-        } else if !task.dueDate.isEmpty {
-            return "Due \(CadenceTaskPresentationSupport.dueDateLabel(for: task))"
         }
-        return nil
+        // [[T-15491]]: "Overdue Nov 9" / "Due today", the reference pill's own words.
+        return CadenceTaskPresentationSupport.dueDateLabel(for: task)
     }
 
     var body: some View {

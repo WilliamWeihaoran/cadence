@@ -242,7 +242,8 @@ struct CadenceControlAccessibilityLabelTests {
         // inspectors still read it — so nothing is deleted out from under another surface.
         for (label, value) in [
             ("CadenceTaskControlAccessibility.doDate", "DateFormatters.relativeDate(from: task.scheduledDate)"),
-            ("CadenceTaskControlAccessibility.dueDate", "DateFormatters.relativeDate(from: task.dueDate)"),
+            // [[T-15491]]: the due chip's value is its drawn words, the one due-date vocabulary.
+            ("CadenceTaskControlAccessibility.dueDate", "dueDateLabel"),
         ] {
             #expect(row.contains(".accessibilityLabel(\(label))"), "\(label) is not set on the row")
             #expect(row.contains(".accessibilityValue(\(value))"), "\(label) states no value")

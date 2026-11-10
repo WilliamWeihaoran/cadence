@@ -371,6 +371,19 @@ nonisolated enum DateFormatters {
         return fullShortDate.string(from: date)
     }
 
+    /// "Nov 10, 2026 at 9:41 AM" (or "... at 09:41" on a 24-hour clock) — a full instant in the
+    /// pinned pieces: `fullShortDate` for the day and `TimeFormatters.timeString` for the time.
+    ///
+    /// [[T-15494]]: the store-backup rows and the event-notes conflict labels used
+    /// `Date.formatted(date: .abbreviated, time: .shortened)`, which follows the host region — an
+    /// en_GB Mac read "10 Nov 2026 at 09:41" and a de_DE one "10.11.2026, 09:41" beside "Nov 10"
+    /// everywhere else — and renders en_US with a NARROW NO-BREAK SPACE before AM/PM, which
+    /// `timeString` avoids on purpose. Same-year dates keep the year: these name a stored instant,
+    /// not a near day. The clock time is read in `Calendar.current`, the zone `fullShortDate` uses.
+    static func dateTimeStamp(_ date: Date, locale: Locale = .current) -> String {
+        "\(fullShortDate.string(from: date)) at \(TimeFormatters.timeString(of: date, locale: locale))"
+    }
+
     /// `CadenceNoteDateNavigation.dayLabel`'s body: `"Aug 17"`, `"Aug 17, 2025"` outside `now`'s
     /// year, the key itself when it does not parse. Here rather than there because
     /// `CadenceMCPServer` compiles this file and search names notes through it ([[T-7205]]).
@@ -553,6 +566,12 @@ nonisolated enum TimeFormatters {
         let h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h)
         let ampm = h < 12 ? "AM" : "PM"
         return m == 0 ? "\(h12) \(ampm)" : String(format: "%d:%02d %@", h12, m, ampm)
+    }
+
+    /// `timeString(from:locale:)` for an instant: its hour and minute in `calendar` ([[T-15494]]).
+    static func timeString(of date: Date, calendar: Calendar = .current, locale: Locale = .current) -> String {
+        let minutes = calendar.component(.hour, from: date) * 60 + calendar.component(.minute, from: date)
+        return timeString(from: minutes, locale: locale)
     }
 
     /// The month-chip spelling of `timeString`: 75 → "1:15a", 780 → "1p", or "13:00" unchanged on a

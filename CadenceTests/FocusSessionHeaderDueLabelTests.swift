@@ -15,25 +15,25 @@ struct FocusSessionHeaderDueLabelTests {
         #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "", todayKey: today) == nil)
     }
 
-    @Test func aDueDateReadsDueAndTheRelativeDay() {
-        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2026-08-09", todayKey: today) == "Due Today")
-        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2026-08-10", todayKey: today) == "Due Tomorrow")
-        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2026-08-08", todayKey: today) == "Due Yesterday")
-        // The words are `DateFormatters.relativeDate`'s, so the two cannot drift apart.
-        let reference = DateFormatters.date(from: today)!
+    /// [[T-15491]]: the header speaks the one due-date vocabulary, `dueLabel`'s, not "Due " +
+    /// `DateFormatters.relativeDate` ("Due Today" / "Due Yesterday").
+    @Test func aDueDateReadsTheOneDueDateVocabulary() {
+        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2026-08-09", todayKey: today) == "Due today")
+        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2026-08-10", todayKey: today) == "Due tomorrow")
+        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2026-08-08", todayKey: today) == "Overdue Aug 8")
         #expect(
             CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2026-09-30", todayKey: today)
-                == "Due \(DateFormatters.relativeDate(from: "2026-09-30", relativeTo: reference))"
+                == CadenceFocusSupport.dueLabel(forDueDateKey: "2026-09-30", todayKey: today)
         )
     }
 
     /// **[[T-14353]].** The words follow the observed day handed in, never the clock: a session
-    /// running across midnight turns "Due Today" into "Due Yesterday" when the page's day turns.
+    /// running across midnight turns "Due today" into "Overdue Mar 4" when the page's day turns.
     @Test func theWordsFollowTheObservedDayNotTheClock() {
         let clockToday = DateFormatters.todayKey()
         #expect(clockToday != "2001-03-04", "non-vacuity: the clock must not be on the observed day")
-        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2001-03-04", todayKey: "2001-03-04") == "Due Today")
-        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2001-03-04", todayKey: "2001-03-05") == "Due Yesterday")
+        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2001-03-04", todayKey: "2001-03-04") == "Due today")
+        #expect(CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: "2001-03-04", todayKey: "2001-03-05") == "Overdue Mar 4")
     }
 
     /// iOS's header is behind `#if os(iOS)`, so its wiring is read as source.

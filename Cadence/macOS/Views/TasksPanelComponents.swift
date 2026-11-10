@@ -505,7 +505,9 @@ struct MacTaskRow: View {
                 // its width with a hidden `Text("Tomorrow")` and pins it with `.fixedSize` — and
                 // this chip had neither, so `51 days ago` wrapped onto three lines (`51` / `days` /
                 // `ago`) and took three lines of row height with it.
-                Text(DateFormatters.relativeDate(from: task.dueDate))
+                // [[T-15491]]: the one due-date vocabulary ("Overdue Nov 9" / "Due today"), the
+                // words this task's timeline block beside the row already says.
+                Text(dueDateLabel)
                     .font(.system(size: metrics.secondaryFontSize, weight: .medium))
                     .foregroundStyle(isOverdue ? Theme.red : Theme.dim.opacity(0.68))
                     .lineLimit(1)
@@ -521,7 +523,7 @@ struct MacTaskRow: View {
         .buttonStyle(.plain)
         .padding(.trailing, metrics.contentSpacing)
         .accessibilityLabel(CadenceTaskControlAccessibility.dueDate)
-        .accessibilityValue(DateFormatters.relativeDate(from: task.dueDate))
+        .accessibilityValue(dueDateLabel)
         // The chip's *box*, so a UI test can read the height the wrap took. The label above names
         // the control and the value reads the date; neither says how tall it came out.
         .accessibilityIdentifier(CadenceAccessibilityIdentifiers.taskRowDueChip(title: task.title))
@@ -703,6 +705,12 @@ struct MacTaskRow: View {
 
     // These were byte-identical re-implementations of the kanban card's copies, which is how the
     // row and the card were free to answer "is this overdue" differently. One definition each.
+    /// The due chip's words, against the row's observed day ([[T-15491]]). Only read where the
+    /// row has already decided to draw a due chip, so the empty fallback is never drawn.
+    private var dueDateLabel: String {
+        CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: todayKey) ?? ""
+    }
+
     private var isOverdue: Bool {
         KanbanCardComputedSupport.isOverdue(task: task, todayKey: todayKey)
     }

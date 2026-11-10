@@ -547,8 +547,15 @@ enum CadenceTaskPresentationSupport {
         DateFormatters.relativeDate(from: task.scheduledDate)
     }
 
-    static func dueDateLabel(for task: AppTask) -> String {
-        DateFormatters.relativeDate(from: task.dueDate)
+    /// The task's due date in Cadence's one due-date vocabulary ([[T-15491]]): "Overdue Nov 9",
+    /// "Due today", "Due tomorrow", "Due Nov 14" — `nil` when there is no due date. Forwards to
+    /// `CadenceWidgetDateSupport.dueLabel(for:todayKey:)`, the builder the timeline blocks, the
+    /// widgets and the note reference chips already read. The words carry their own "Due" /
+    /// "Overdue", so no caller prefixes one: the rows, Cmd+K, iOS search and the `[[` picker used to
+    /// draw `DateFormatters.relativeDate` ("Yesterday", "Due Today") beside a timeline block that
+    /// said "Overdue Nov 9" for the same task.
+    static func dueDateLabel(for task: AppTask, todayKey: String = DateFormatters.todayKey()) -> String? {
+        CadenceWidgetDateSupport.dueLabel(for: task.dueDate, todayKey: todayKey)
     }
 
     /// Which date chips a row draws for `task`. See `CadenceTaskRowDatePlan` for why the merged

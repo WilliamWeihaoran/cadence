@@ -213,19 +213,20 @@ enum CadenceFocusSupport {
         CadenceWidgetDateSupport.dueLabel(for: key, todayKey: todayKey)
     }
 
-    /// The due-date chip in a **Focus session header**, on both platforms (T-7016): "Due " and
-    /// `DateFormatters.relativeDate`, the words macOS's `FocusSessionHeader` has always drawn.
-    /// `nil` when the task has no due date, so the chip is absent rather than empty. iOS's
-    /// `selectedTaskHeader` drew container, priority and estimate and never the deadline; both
-    /// headers now read this one builder so the two cannot word the same date differently.
+    /// The due-date chip in a **Focus session header**, on both platforms (T-7016). `nil` when the
+    /// task has no due date, so the chip is absent rather than empty. iOS's `selectedTaskHeader`
+    /// drew container, priority and estimate and never the deadline; both headers now read this
+    /// one builder so the two cannot word the same date differently.
+    ///
+    /// [[T-15491]]: the words are `dueLabel`'s ("Overdue Nov 9" / "Due today" / "Due tomorrow" /
+    /// "Due Nov 14"), not "Due " + `DateFormatters.relativeDate`. The header said "Due Today" and
+    /// "Due Yesterday" above a timeline block that said "Due today" and "Overdue Nov 9".
     ///
     /// [[T-14353]]: `todayKey` is the host page's observed day (`CadenceObservedDay`), with no clock
     /// default. The old `relativeTo: Date()` default let a session running across midnight keep
     /// "Due Today" while the overdue tint beside it, which already read the observed day, turned.
     static func sessionHeaderDueLabel(forDueDateKey key: String, todayKey: String) -> String? {
-        guard !key.isEmpty else { return nil }
-        let referenceDate = DateFormatters.date(from: todayKey) ?? Date()
-        return "Due \(DateFormatters.relativeDate(from: key, relativeTo: referenceDate))"
+        dueLabel(forDueDateKey: key, todayKey: todayKey)
     }
 
     /// The recurrence fact in a **Focus session header**, on both platforms ([[T-11211]] (b)):

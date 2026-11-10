@@ -113,13 +113,14 @@ struct CadenceTaskEmbedTouchChipsTests {
         #expect(tint(of: "Due ", task(dueDate: "2026-11-09")) == Theme.dim)
         #expect(tint(of: "Due ", task(dueDate: "2026-12-20")) == Theme.dim)
         #expect(tint(of: "Due ", task(dueDate: "2026-11-08")) == Theme.dim)
-        #expect(tint(of: "Due ", task(dueDate: "2026-11-07")) == Theme.red)
+        // [[T-15491]]: a passed due date reads "Overdue Nov 7", the one due-date vocabulary.
+        #expect(tint(of: "Overdue ", task(dueDate: "2026-11-07")) == Theme.red)
     }
 
     /// Work already done is not late, whatever its due date says.
     @Test func aFinishedTasksPastDueDateIsNotRed() {
         let done = task(statusRaw: TaskStatus.done.rawValue, isDone: true, dueDate: "2026-11-01")
-        #expect(tint(of: "Due ", done) == Theme.dim)
+        #expect(tint(of: "Overdue ", done) == Theme.dim)
     }
 
     /// Do: red once passed, the highlight accent on the day, dim ahead -- never a flat blue.

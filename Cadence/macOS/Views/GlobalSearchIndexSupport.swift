@@ -298,7 +298,7 @@ enum GlobalSearchIndexSupport {
             .filter { CadenceTaskSearchSupport.isSearchable($0, includingCompleted: includingCompleted) }
 
         guard CadenceListSearchSupport.isSearching(query) else {
-            return CadenceSearchIdleSuggestions.tasks(base, today: today).map { taskResult(for: $0) }
+            return CadenceSearchIdleSuggestions.tasks(base, today: today).map { taskResult(for: $0, todayKey: today) }
         }
 
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
@@ -306,12 +306,12 @@ enum GlobalSearchIndexSupport {
             guard let score = CadenceSearchMatcher.matchScore(
                 query: preparedQuery, fields: CadenceTaskSearchSupport.searchFields(for: task)
             ) else { return nil }
-            return (taskResult(for: task), score)
+            return (taskResult(for: task, todayKey: today), score)
         })
     }
 
     /// One palette task row.
-    static func taskResult(for task: AppTask) -> GlobalSearchResult {
+    static func taskResult(for task: AppTask, todayKey: String = DateFormatters.todayKey()) -> GlobalSearchResult {
         let container = CadenceTaskSearchSupport.containerLabel(for: task)
         let tags = task.sortedTags
 
@@ -319,7 +319,8 @@ enum GlobalSearchIndexSupport {
             container,
             tags.isEmpty ? nil : tags.map(\.name).joined(separator: ", "),
             task.scheduledDate.isEmpty ? nil : "Do \(DateFormatters.relativeDate(from: task.scheduledDate))",
-            task.dueDate.isEmpty ? nil : "Due \(DateFormatters.relativeDate(from: task.dueDate))",
+            // [[T-15491]]: the one due-date vocabulary, "Overdue Nov 9" / "Due today".
+            CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: todayKey),
             task.isDone ? "Completed" : "Active"
         ].compactMap { $0 }
 

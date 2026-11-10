@@ -264,8 +264,9 @@ nonisolated enum CadenceEventNotesMerge {
     }
 
     /// How rule (3) prints a time. English-only for v1, like the rest of the copy.
+    /// [[T-15494]]: built from the pinned pieces, so it does not follow the host region.
     static func conflictDateText(_ date: Date) -> String {
-        date.formatted(date: .abbreviated, time: .shortened)
+        DateFormatters.dateTimeStamp(date)
     }
 
     /// Rule (3)'s labels, one per side, worded from where each sits relative to the divider.
