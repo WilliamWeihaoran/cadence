@@ -615,7 +615,9 @@ struct CadenceTimeZoneIndependenceTests {
 
     /// Every `@Test` that derives a calendar day from `Date()`, by file. Shrinks only.
     static let bareNowLedger: [String: Int] = [
-        "CadenceTests/CadenceReadServiceTests.swift": 1,
+        // 2 since T-15302's `listHabitsNamesTheUnitItsStreakIsCountedIn` (T-15400): `listHabits`
+        // takes no `now`, so a streak test must place completions against the real current week.
+        "CadenceTests/CadenceReadServiceTests.swift": 2,
         "CadenceTests/CadenceRegularPaneLayoutTests.swift": 1,
         "CadenceTests/CadenceTaskComposerLayoutTests.swift": 1,
         "CadenceTests/CadenceTaskComposerSupportTests.swift": 2,
