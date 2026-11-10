@@ -21,6 +21,10 @@ struct iOSRootView: View {
     /// T-266. "Focus this" from a task row or a block sheet lands here as a `CadenceFocusHandoff`;
     /// this view is the only thing that can answer it, because navigation state lives here.
     @Environment(CadenceFocusHandoffCenter.self) private var focusHandoffCenter
+    /// [[T-15548]]: told when the scene leaves and regains the foreground, here rather than on the
+    /// Focus screen, because the session outlives that screen and a backgrounding with it gone
+    /// still has to be noted ([[T-6223]]).
+    @Environment(CadenceFocusSessionOwner.self) private var focusSession
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// Read for two things, and neither is an observation: resolving a `.task` deep link to a real
@@ -225,6 +229,12 @@ struct iOSRootView: View {
             TaskCompletionAnimationManager.shared.settleAllPending(onLeaving: phase)
             if phase != .active {
                 CadenceWidgetRefreshCenter.reloadAllWidgets()
+            }
+            // [[T-15548]]: the Focus session notes the gap here, so it is noted with Focus gone too.
+            switch phase {
+            case .background: focusSession.leaveForeground()
+            case .active: focusSession.returnToForeground()
+            default: break
             }
             if phase == .active {
                 let container = modelContext.container

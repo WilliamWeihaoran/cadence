@@ -171,34 +171,47 @@ struct CadenceFocusSessionPersistenceTests {
         #expect(view.contains("CadenceFocusSessionPersistence.write(record)"))
     }
 
-    /// T-654's rule, said in this ticket's store: the record is cleared only where the commit
-    /// landed, so a refused bank leaves the session there to retry.
-    @Test func theRecordIsClearedInsideTheDoBlockNotTheCatch() throws {
+    /// **[[T-15548]].** The screen's disappearance used to bank and clear the session, so leaving
+    /// Focus put the clock back at 00:00 while the Mac's survives a page change ([[T-1103]]). It
+    /// now hands the owner the subject to watch and banks nothing — the behaviour itself is
+    /// asserted on `CadenceFocusSessionOwner` in `CadenceFocusSessionOwnerTests`; this pins the
+    /// view to calling it rather than to a body of its own.
+    @Test func leavingTheFocusScreenHandsTheSessionToItsOwnerAndBanksNothing() throws {
         let view = try #require(
             CadenceSourceScan.declarationBody("struct iOSFocusView", in: try Self.focusView())
         )
-        let clear = try #require(view.range(of: "CadenceFocusSessionPersistence.clear()"))
-        let afterClear = view[clear.upperBound...]
-        let nextCatch = try #require(afterClear.range(of: "} catch {"))
-        let nextRecord = afterClear.range(of: "CadenceTaskSettleFailureCenter.shared.record()")
-        // The failure record comes after the `catch` that follows the clear — i.e. the clear is
-        // on the success side of it.
-        #expect(nextRecord != nil && nextRecord!.lowerBound > nextCatch.lowerBound)
+        let disappear = try #require(view.range(of: ".onDisappear {"))
+        let handler = String(view[disappear.lowerBound...].prefix(200))
+        #expect(handler.contains("session.screenDidDisappear(leaving: selectedSubject)"))
+        #expect(!handler.contains("endSession"))
+        #expect(!handler.contains("CadenceFocusSessionPersistence.clear"))
+        #expect(view.contains("session.screenDidAppear()"))
+        // The clock and the subject are the owner's, not this screen's `@State`.
+        #expect(!view.contains("@State private var timerState"))
+        #expect(!view.contains("@State private var selectedTarget"))
+        #expect(view.contains("get { session.timerState }"))
     }
 
-    /// [[T-6001]] persists; it must not have grown a second banking path. `endSession` stays the
-    /// only writer of minutes on this screen, and the declined option (b) must not reappear.
-    /// [[T-6223]] gave the screen a `scenePhase` handler, so the pin is now said about that
-    /// handler: it notes an instant and applies the absence rule, and banks nothing.
-    @Test func theScreenStillBanksThroughEndSessionAloneAndNotOnBackground() throws {
+    /// [[T-6001]] persists; it must not have grown a second banking path, and the declined option
+    /// (b) must not reappear. [[T-6223]]'s `scenePhase` handling moved to the session owner with
+    /// [[T-15548]], driven by the root view, so the pin is said about the owner's two foreground
+    /// methods: they note an instant and apply the absence rule, and bank nothing.
+    @Test func theScreenNoLongerBanksOnLeavingAndTheForegroundHandlerBanksNothing() throws {
         let view = try Self.focusView()
-        #expect(view.contains("CadenceFocusSupport.endSession("))
-        #expect(view.components(separatedBy: "CadenceFocusSupport.endSession(").count == 2)
-        let phase = try #require(view.range(of: ".onChange(of: scenePhase)"))
-        let handler = String(view[phase.lowerBound...].prefix(700))
-        #expect(!handler.contains("endSession"))
-        #expect(!handler.contains("commitElapsed"))
-        #expect(!handler.contains("modelContext"))
+        #expect(!view.contains("CadenceFocusSupport.endSession("))
+        #expect(!view.contains(".onChange(of: scenePhase)"))
+        let owner = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceFocusSessionOwner.swift")
+        )
+        for name in ["leaveForeground", "returnToForeground"] {
+            let body = try #require(CadenceSourceScan.functionBody(named: name, in: owner))
+            #expect(!body.contains("endSession"))
+            #expect(!body.contains("commitElapsed"))
+            #expect(!body.contains("modelContext"))
+        }
+        let root = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootView.swift"))
+        #expect(root.contains("case .background: focusSession.leaveForeground()"))
+        #expect(root.contains("case .active: focusSession.returnToForeground()"))
     }
 
     // MARK: - [[T-6223]]: a gap past the threshold comes back paused
@@ -348,12 +361,15 @@ struct CadenceFocusSessionPersistenceTests {
         let sleep = try #require(CadenceSourceScan.functionBody(named: "handleSystemWillSleep", in: manager))
         #expect(sleep.contains("CadenceFocusAbsenceRule.frozen(timerState, at: clock())"))
 
-        let view = try Self.focusView()
-        let phase = try #require(view.range(of: ".onChange(of: scenePhase)"))
-        let handler = String(view[phase.lowerBound...].prefix(700))
-        #expect(handler.contains("lastSeenAt = Date()"))
-        #expect(handler.contains("CadenceFocusAbsenceRule.afterAbsence("))
-        #expect(view.contains("lastSeenAt: lastSeenAt"))
+        // [[T-15548]]: the iOS half now lives on the session owner, so it runs with Focus gone.
+        let owner = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceFocusSessionOwner.swift")
+        )
+        let leave = try #require(CadenceSourceScan.functionBody(named: "leaveForeground", in: owner))
+        #expect(leave.contains("lastSeenAt = clock()"))
+        let back = try #require(CadenceSourceScan.functionBody(named: "returnToForeground", in: owner))
+        #expect(back.contains("CadenceFocusAbsenceRule.afterAbsence("))
+        #expect(try Self.focusView().contains("lastSeenAt: lastSeenAt"))
     }
 
 }

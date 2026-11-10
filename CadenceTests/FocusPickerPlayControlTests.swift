@@ -309,12 +309,13 @@ struct FocusSessionSwitchCommitTests {
 
         #expect(code.contains("TaskBundle") == false)
         #expect(code.contains("private var selectedSubject: CadenceFocusSubject?"))
-        // Three since T-266, and the third is a different act rather than a third switch path:
-        // `.onDisappear` ends the session outright through `endSession(leaving:…)`, which the two
-        // switch paths reach only via `commitElapsed`'s identity guard. The count is still exact —
-        // a fourth `leaving: selectedSubject` means a commit was added somewhere unaccounted for.
+        // Three: the two switch paths, and `.onDisappear` — which since [[T-15548]] banks nothing
+        // and only hands the subject to `CadenceFocusSessionOwner` to watch, where it used to end
+        // the session through `endSession(leaving:…)`. The count is still exact — a fourth
+        // `leaving: selectedSubject` means a commit was added somewhere unaccounted for.
         #expect(code.components(separatedBy: "leaving: selectedSubject").count - 1 == 3)
-        #expect(code.components(separatedBy: "CadenceFocusSupport.endSession(").count - 1 == 1)
+        #expect(code.components(separatedBy: "screenDidDisappear(leaving: selectedSubject)").count - 1 == 1)
+        #expect(code.components(separatedBy: "CadenceFocusSupport.endSession(").count - 1 == 0)
         // And the task-shaped overload is not used on this screen: the subject type is the one
         // door, which is what keeps a second commit shape from appearing beside it.
         #expect(code.components(separatedBy: "leaving: selectedTask,").count - 1 == 0)
@@ -494,8 +495,9 @@ struct FocusHandoffTests {
         #expect(task.actualMinutes == 0)
     }
 
-    /// Leaving with nothing loaded banks nothing and must not crash on the way through — the
-    /// `onDisappear` that calls this fires on every exit, including one from an empty screen.
+    /// Leaving with nothing loaded banks nothing and must not crash on the way through. (The
+    /// `onDisappear` that called this on every exit went with [[T-15548]]; the rule still holds
+    /// for `releaseIfSettled`, which reaches it.)
     @Test func endingWithNoSubjectBanksNothing() throws {
         let container = try makeContainer()
         let context = ModelContext(container)

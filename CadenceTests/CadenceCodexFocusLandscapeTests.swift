@@ -27,7 +27,9 @@ struct CadenceCodexFocusLandscapeTests {
     @Test func codexLandscapeUsesTheExistingOwnerAndTransportWithoutAnotherPresentation() throws {
         let source = try CadenceSourceScan.strippedSourceReader()("Cadence/iOS/iOSFocusView.swift")
         #expect(source.contains("struct iOSFocusView: View"))
-        #expect(source.components(separatedBy: "@State private var timerState").count - 1 == 1)
+        // [[T-15548]]: one clock, and it is the session owner's, read through one accessor.
+        #expect(source.components(separatedBy: "private var timerState: CadenceFocusTimerState").count - 1 == 1)
+        #expect(source.components(separatedBy: "@State private var timerState").count - 1 == 0)
         let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: source))
         #expect(body.contains("GeometryReader { geometry in"))
         #expect(body.contains("if CadenceFocusLayout.usesLandscapeLayout(width: geometry.size.width, height: geometry.size.height)"))

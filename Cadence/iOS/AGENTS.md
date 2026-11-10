@@ -87,7 +87,9 @@ iOS enters Focus by handing over a target, not by un-guarding macOS `FocusManage
 - `iOSFocusView.accept(_:)` adopts the target only.
 - A handoff is not a play tap; requesting focus should not pause the current subject by accident.
 - Use `CadenceFocusTarget`, not a bare `UUID`.
-- Leaving Focus must commit elapsed time through the shared support path.
+- Switching subject must commit elapsed time through the shared support path.
+- Leaving the Focus screen ends nothing (T-15548): the session lives in `CadenceFocusSessionOwner`,
+  as the Mac's lives in `FocusManager.shared`; the screen reads it, never `@State`.
 
 ## Today
 

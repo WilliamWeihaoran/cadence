@@ -192,6 +192,8 @@ struct CadenceApp: App {
                     // one-slot inbox a distant surface drops a navigation request into. iOS only —
                     // macOS says this with `FocusManager.startFocus(…)`, which it already has.
                     .environment(CadenceFocusHandoffCenter.shared)
+                    // [[T-15548]]: the session itself, so leaving the Focus screen does not end it.
+                    .environment(CadenceFocusSessionOwner.shared)
                     .environment(AISettingsManager.shared)
                     // [[T-8736]]: Settings → Account and the shared data reset read it on iOS too.
                     .environment(AppleAccountManager.shared)

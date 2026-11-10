@@ -6,20 +6,28 @@ struct iOSFocusView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.scenePhase) private var scenePhase
     /// The inbox a "Focus this" tap from a task row arrives in. This screen is the only thing
     /// that adopts one, because this screen is where the clock lives.
     @Environment(CadenceFocusHandoffCenter.self) private var focusHandoffCenter
+    /// **[[T-15548]].** The session this screen shows — its subject, its clock and its last
+    /// sighting — held for the app, so leaving the screen does not end it, as leaving the Mac's
+    /// Focus page does not end `FocusManager.shared`'s.
+    @Environment(CadenceFocusSessionOwner.self) private var session
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @State private var selectedTarget: CadenceFocusTarget?
+    private var selectedTarget: CadenceFocusTarget? {
+        get { session.selectedTarget }
+        nonmutating set { session.selectedTarget = newValue }
+    }
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
-    @State private var timerState = CadenceFocusTimerState()
-    /// **[[T-6223].** When the app last left the foreground with this screen standing, `nil` while
-    /// it is in front. It rides in the persisted record, so a resume after eviction can measure
-    /// the gap, and is read back on return so a suspended-not-evicted app measures the same one.
-    @State private var lastSeenAt: Date?
+    private var timerState: CadenceFocusTimerState {
+        get { session.timerState }
+        nonmutating set { session.timerState = newValue }
+    }
+    /// **[[T-6223].** Stamped and cleared by `CadenceFocusSessionOwner` from the root view's
+    /// scene-phase handler, so a backgrounding is noted whether or not this screen is standing.
+    private var lastSeenAt: Date? { session.lastSeenAt }
     /// A refused write from the focus note's checklist circle or an embed card's subtask tick
     /// ([[T-6412]]). Both put the store back, so the circle simply does not move; this is the
     /// sentence that says why. Bare, not dismissable: the retry is the same tap, and the next
@@ -125,7 +133,7 @@ struct iOSFocusView: View {
     /// Stated against `selectedItem`, not `selectedTarget`, because that is the subject
     /// `selectedSubject` banks — with nothing explicitly picked the session runs against the head
     /// of the list, and persisting the `nil` target would write a session nothing would come back
-    /// to while `onDisappear` banked one that did.
+    /// to while the clock went on running against one that did.
     private var sessionRecord: CadenceFocusSessionRecord? {
         CadenceFocusSessionPersistence.record(
             target: selectedItem?.target,
@@ -152,11 +160,15 @@ struct iOSFocusView: View {
         .iOSHidesCompactNavigationBar()
         .cadenceTracksDayChanges($observedDay)
         .onAppear {
+            session.screenDidAppear()
             // [[T-6001]]: a session the process did not survive comes back before anything else
             // decides what this screen is pointing at. It runs *first* so a handoff arriving in
             // the same breath leaves it the way a handoff always leaves a running session —
             // through `accept(_:)`, which banks the outgoing subject rather than dropping it.
             restorePersistedSession()
+            // [[T-15548]]: a subject finished while this screen was gone, in a way the owner's
+            // status watch could not see, is released on the way back in rather than timed on.
+            if selectedSubjectIsSettled { releaseSettledSubject() }
             if let handoff = focusHandoffCenter.pending {
                 accept(handoff)
             } else if selectedTarget == nil, let first = pickItems.first {
@@ -175,25 +187,6 @@ struct iOSFocusView: View {
         .onChange(of: selectedSubjectIsSettled) { _, settled in
             if settled { releaseSettledSubject() }
         }
-        // [[T-6223]]: leaving the foreground only *notes the instant*; it banks nothing, because
-        // a glance at another app is not the end of a session ([[T-6001]] declined that). Coming
-        // back applies the same absence rule a cold resume does, so an app iOS merely suspended
-        // overnight does not credit the night either.
-        .onChange(of: scenePhase) { _, phase in
-            switch phase {
-            case .background:
-                lastSeenAt = Date()
-            case .active:
-                timerState = CadenceFocusAbsenceRule.afterAbsence(
-                    timerState,
-                    lastSeenAt: lastSeenAt,
-                    now: Date()
-                )
-                lastSeenAt = nil
-            default:
-                break
-            }
-        }
         // The screen may already be standing when the request is made — the compact shell keeps a
         // visited tab's stack alive behind the one on screen — so arriving is not the only way a
         // handoff lands. `onAppear` covers the cold route (More has never been visited, or was
@@ -204,32 +197,14 @@ struct iOSFocusView: View {
                 accept(handoff)
             }
         }
-        // Leaving the screen banks what the session earned, the same act macOS calls
-        // `FocusManager.endSession()`. Without it, backing out of Focus threw the minutes away —
-        // and a route *into* Focus from a task row makes backing straight out of it the common
-        // case rather than a rare one. A tab switch is not a disappear here: the compact shell
-        // keeps every visited tab in the hierarchy at zero opacity, so this fires on a genuine pop
-        // or a sidebar change, which are the two ways the session's state is actually destroyed.
-        //
-        // **Catches now (T-654).** `endSession` commits and can refuse; there is nothing left to do
-        // on this exit than name the refusal, because the view is already leaving. `timerState` is
-        // left exactly where it was — `endSession` never reset it before the throw — so the session
-        // is still there, un-cleared, if the screen is visited again.
+        // **[[T-15548]]: leaving the screen ends nothing.** This used to bank and clear the session
+        // here, so backing out of Focus or picking another sidebar destination put the clock back
+        // at 00:00 while the Mac's survives the same steps ([[T-1103]]). The session lives in
+        // `CadenceFocusSessionOwner` now; it is told the screen has gone only so it can watch the
+        // subject for being finished elsewhere, which `.onChange(of: selectedSubjectIsSettled)`
+        // above can no longer see.
         .onDisappear {
-            do {
-                timerState = try CadenceFocusSupport.endSession(
-                    leaving: selectedSubject,
-                    state: timerState,
-                    modelContext: modelContext
-                )
-                // [[T-6001]]: banked, so there is nothing left to resume. **Only on the way the
-                // commit actually landed** — over a refusal `timerState` is left where it was and
-                // the record with it, so the session is still there to retry, which is the whole
-                // of T-654's rule said in the store this ticket adds.
-                CadenceFocusSessionPersistence.clear()
-            } catch {
-                CadenceTaskSettleFailureCenter.shared.record()
-            }
+            session.screenDidDisappear(leaving: selectedSubject)
         }
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,
