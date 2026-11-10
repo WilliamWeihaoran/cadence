@@ -997,28 +997,48 @@ private func strippingSwiftComments(_ source: String) -> String {
 /// the wordmark a header.
 struct CadenceIPadSidebarVoiceOverTests {
     @Test func aListRowLabelNamesItsCountAndItsDueDate() {
-        // A fixed instant: a bare `Date()` here grows the clock ledger (T-8680).
-        let reference = Date(timeIntervalSince1970: 1_800_000_000)
-        let key = DateFormatters.dateKey(from: reference)
-        let day = DateFormatters.relativeDate(from: key, relativeTo: reference)
+        // Literal keys: a bare `Date()` here grows the clock ledger (T-8680).
+        let today = "2026-11-10"
         let count = CadenceSidebarLayout.listCount(openTaskCount: 3)
+        let head = "\(CadenceSidebarLayout.rowAccessibilityLabel("Work", count: count)), \(CadenceTaskControlAccessibility.dueDate)"
 
+        // [[T-15502]]: the spoken date is the drawn badge's words, the tasks' due vocabulary.
         #expect(
             CadenceSidebarLayout.listRowAccessibilityLabel(
-                "Work", openTaskCount: 3, dueDateKey: key, relativeTo: reference
-            ) == "\(CadenceSidebarLayout.rowAccessibilityLabel("Work", count: count)), \(CadenceTaskControlAccessibility.dueDate), \(day)"
+                "Work", openTaskCount: 3, dueDateKey: today, todayKey: today
+            ) == "\(head), Due today"
+        )
+        #expect(
+            CadenceSidebarLayout.listRowAccessibilityLabel(
+                "Work", openTaskCount: 3, dueDateKey: "2026-11-09", todayKey: today
+            ) == "\(head), Overdue Nov 9"
         )
         // The count half is the nav rows' own rule, not a second spelling of it.
         #expect(
-            CadenceSidebarLayout.listRowAccessibilityLabel("Work", openTaskCount: 3, dueDateKey: nil)
+            CadenceSidebarLayout.listRowAccessibilityLabel("Work", openTaskCount: 3, dueDateKey: nil, todayKey: today)
                 == CadenceSidebarLayout.rowAccessibilityLabel("Work", count: count)
         )
-        #expect(CadenceSidebarLayout.listRowAccessibilityLabel("Work", openTaskCount: 3, dueDateKey: nil) != "Work")
+        #expect(CadenceSidebarLayout.listRowAccessibilityLabel("Work", openTaskCount: 3, dueDateKey: nil, todayKey: today) != "Work")
     }
 
     @Test func aListRowWithNothingToCountOrDateIsJustItsName() {
-        #expect(CadenceSidebarLayout.listRowAccessibilityLabel("Work", openTaskCount: 0, dueDateKey: nil) == "Work")
-        #expect(CadenceSidebarLayout.listRowAccessibilityLabel("Work", openTaskCount: 0, dueDateKey: "") == "Work")
+        #expect(CadenceSidebarLayout.listRowAccessibilityLabel("Work", openTaskCount: 0, dueDateKey: nil, todayKey: "2026-11-10") == "Work")
+        #expect(CadenceSidebarLayout.listRowAccessibilityLabel("Work", openTaskCount: 0, dueDateKey: "", todayKey: "2026-11-10") == "Work")
+    }
+
+    /// **[[T-15502]].** A list's or project's due badge reads like a task's: one deadline on one
+    /// screen in one vocabulary, against the observed day handed in.
+    @Test func aListDueBadgeSpeaksTheTasksDueVocabulary() {
+        let today = "2026-11-10"
+        #expect(CadenceSidebarLayout.listDueDateLabel("2026-11-09", todayKey: today) == "Overdue Nov 9")
+        #expect(CadenceSidebarLayout.listDueDateLabel(today, todayKey: today) == "Due today")
+        #expect(CadenceSidebarLayout.listDueDateLabel("2026-11-11", todayKey: today) == "Due tomorrow")
+        #expect(CadenceSidebarLayout.listDueDateLabel("2026-11-14", todayKey: today) == "Due Nov 14")
+        // The same words a task due that day draws, from the one builder.
+        for key in ["2026-11-09", today, "2026-11-11", "2026-11-14"] {
+            #expect(CadenceSidebarLayout.listDueDateLabel(key, todayKey: today)
+                    == CadenceWidgetDateSupport.dueLabel(for: key, todayKey: today))
+        }
     }
 
     @Test func theIPadListRowSpeaksTheSharedLabel() throws {
@@ -1034,6 +1054,9 @@ struct CadenceIPadSidebarVoiceOverTests {
             "the iPad's list row is back to announcing the bare list name"
         )
         #expect(!row.contains(".accessibilityLabel(displayName)"), "the bare-name label came back")
+        // [[T-15502]]: the spoken date turns with the drawn one, at the row's observed day.
+        #expect(row.contains("dueDateKey: item.dueDateKey,\n                todayKey: todayKey"),
+                "the iPad row's spoken due date no longer reads its observed day")
     }
 
     @Test func theIPadSidebarHeaderHidesTheMarkAndHeadsTheColumn() throws {

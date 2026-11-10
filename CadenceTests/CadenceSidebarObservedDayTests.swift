@@ -40,6 +40,9 @@ struct CadenceSidebarObservedDayTests {
         let row = try #require(CadenceSourceScan.declarationBody("struct SidebarListRow: View", in: source))
         #expect(row.contains("CadenceSidebarLayout.listDueDateIsPast(key, todayKey: observedDay.todayKey)"))
         #expect(!row.contains("DateFormatters.todayKey()"))
+        // [[T-15502]]: the drawn date and the value VoiceOver reads are one spelling.
+        #expect(row.contains("Text(CadenceSidebarLayout.listDueDateLabel(key, todayKey: observedDay.todayKey))"))
+        #expect(row.contains(".accessibilityValue(CadenceSidebarLayout.listDueDateLabel(key, todayKey: observedDay.todayKey))"))
     }
 
     // MARK: - The flag's glyph
@@ -61,7 +64,9 @@ struct CadenceSidebarObservedDayTests {
             )
             // Non-vacuity: the glyph and the date are both still drawn here.
             #expect(badge.contains("Image(systemName:"), "\(path): the badge lost its glyph")
-            #expect(badge.contains("Text(DateFormatters.relativeDate(from: key))"), "\(path): the badge lost its date")
+            // [[T-15502]]: the date is the tasks' due vocabulary, against the row's observed day.
+            #expect(badge.contains("Text(CadenceSidebarLayout.listDueDateLabel(key, todayKey:"), "\(path): the badge lost its date")
+            #expect(!badge.contains("relativeDate("), "\(path): the badge words its date with relativeDate again")
             #expect(badge.contains("listDueDateIsPast(key, todayKey:"), "\(path): the tint no longer reads the rule")
             let tinted = badge.components(separatedBy: ".foregroundStyle(dueTint)").count - 1
             #expect(tinted == 2, "\(path): \(tinted) of the badge's two marks read the shared tint")

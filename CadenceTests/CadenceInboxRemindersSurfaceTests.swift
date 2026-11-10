@@ -929,15 +929,33 @@ struct CadenceInboxRemindersSurfaceTests {
     }
 
     /// **[[T-14354]].** The badge's words and tint are measured against the observed day handed
-    /// in, never the clock: a reminder due on the observed day is "Today" amber, and the same
-    /// reminder once that day turns is "Yesterday" red, whatever the clock says.
+    /// in, never the clock: a reminder due on the observed day is "Due today" amber, and the same
+    /// reminder once that day turns is "Overdue Mar 4" red, whatever the clock says. (The words are
+    /// the tasks' due vocabulary since [[T-15502]]; they were "Today" / "Yesterday".)
     @Test func theReminderDueBadgeFollowsTheObservedDayNotTheClock() {
         #expect(DateFormatters.todayKey() != "2001-03-04", "non-vacuity: the clock must not be on the observed day")
-        #expect(AppleReminderRowPresentation.dueLabel(forDueDateKey: "2001-03-04", todayKey: "2001-03-04") == "Today")
+        #expect(AppleReminderRowPresentation.dueLabel(forDueDateKey: "2001-03-04", todayKey: "2001-03-04") == "Due today")
         #expect(AppleReminderRowPresentation.dueTint(forDueDateKey: "2001-03-04", todayKey: "2001-03-04") == Theme.amber)
-        #expect(AppleReminderRowPresentation.dueLabel(forDueDateKey: "2001-03-04", todayKey: "2001-03-05") == "Yesterday")
+        #expect(AppleReminderRowPresentation.dueLabel(forDueDateKey: "2001-03-04", todayKey: "2001-03-05") == "Overdue Mar 4")
         #expect(AppleReminderRowPresentation.dueTint(forDueDateKey: "2001-03-04", todayKey: "2001-03-05") == Theme.red)
         #expect(AppleReminderRowPresentation.dueTint(forDueDateKey: "2001-03-04", todayKey: "2001-03-03") == Theme.dim)
+    }
+
+    /// **[[T-15502]].** A reminder's due badge reads like the Cadence task beside it in the Inbox:
+    /// `CadenceWidgetDateSupport.dueLabel`'s four forms, from that one builder.
+    @Test func theReminderDueBadgeSpeaksTheTasksDueVocabulary() {
+        let today = "2026-11-10"
+        let expected = [
+            "2026-11-09": "Overdue Nov 9",
+            today: "Due today",
+            "2026-11-11": "Due tomorrow",
+            "2026-11-14": "Due Nov 14",
+        ]
+        for (key, words) in expected {
+            #expect(AppleReminderRowPresentation.dueLabel(forDueDateKey: key, todayKey: today) == words, "\(key)")
+            #expect(AppleReminderRowPresentation.dueLabel(forDueDateKey: key, todayKey: today)
+                    == CadenceWidgetDateSupport.dueLabel(for: key, todayKey: today), "\(key)")
+        }
     }
 
     /// **[[T-14354]].** Both rows word and tint the badge through the observed-day helpers, with

@@ -307,18 +307,32 @@ extension CadenceSidebarLayout {
     /// The row draws all three, but the count is `CadenceSidebarCountLabel`, which is
     /// `accessibilityHidden`, and the iPad row hides its read-only flag too, so the row's label is
     /// the only place either can be heard — the nav rows' T-1445 argument, one row type down. The
-    /// due-date half is the Mac row's own pair, `CadenceTaskControlAccessibility.dueDate` and the
-    /// relative day, in the order VoiceOver reads that pair there.
+    /// due-date half is the Mac row's own pair, `CadenceTaskControlAccessibility.dueDate` and
+    /// `listDueDateLabel`, in the order VoiceOver reads that pair there.
+    ///
+    /// [[T-15502]]: `todayKey` is the row's observed day, with no clock default, so the spoken date
+    /// turns at the same midnight as the drawn one.
     static func listRowAccessibilityLabel(
         _ name: String,
         openTaskCount: Int,
         dueDateKey: String?,
-        relativeTo referenceDate: Date = Date()
+        todayKey: String
     ) -> String {
         let label = rowAccessibilityLabel(name, count: listCount(openTaskCount: openTaskCount))
         guard let dueDateKey, !dueDateKey.isEmpty else { return label }
-        let day = DateFormatters.relativeDate(from: dueDateKey, relativeTo: referenceDate)
+        let day = listDueDateLabel(dueDateKey, todayKey: todayKey)
         return "\(label), \(CadenceTaskControlAccessibility.dueDate), \(day)"
+    }
+
+    /// An area/project row's due badge, on the Mac and iPad sidebars and in the iPad row's spoken
+    /// label: Cadence's one due-date vocabulary ("Overdue Nov 9" / "Due today" / "Due tomorrow" /
+    /// "Due Nov 14"), `CadenceWidgetDateSupport.dueLabel`.
+    ///
+    /// [[T-15502]]: it was `DateFormatters.relativeDate` ("Yesterday" / "Today"), so a project due
+    /// today said "Today" in the sidebar beside its own tasks saying "Due today" ([[T-15491]]).
+    /// Only reached with a non-empty key; the raw key is the fallback rather than an empty badge.
+    static func listDueDateLabel(_ dueDateKey: String, todayKey: String) -> String {
+        CadenceWidgetDateSupport.dueLabel(for: dueDateKey, todayKey: todayKey) ?? dueDateKey
     }
 
     /// The count for one area/project row. Always neutral — a list is a place, not a deadline.

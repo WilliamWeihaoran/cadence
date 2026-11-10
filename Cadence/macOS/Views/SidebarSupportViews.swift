@@ -442,7 +442,8 @@ struct SidebarListRow: View {
                 Image(systemName: "flag.fill")
                     .font(.system(size: SidebarMetrics.listDueDateIconSize, weight: .semibold))
                     .foregroundStyle(dueTint)
-                Text(DateFormatters.relativeDate(from: key))
+                // [[T-15502]]: "Overdue Nov 9" / "Due today", the words its tasks' chips say.
+                Text(CadenceSidebarLayout.listDueDateLabel(key, todayKey: observedDay.todayKey))
                     .font(.system(size: SidebarMetrics.listDueDateFontSize, weight: .semibold))
                     .foregroundStyle(dueTint)
                     .lineLimit(1)
@@ -452,7 +453,7 @@ struct SidebarListRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(CadenceTaskControlAccessibility.dueDate)
-        .accessibilityValue(DateFormatters.relativeDate(from: key))
+        .accessibilityValue(CadenceSidebarLayout.listDueDateLabel(key, todayKey: observedDay.todayKey))
         .help("Set due date")
         .popover(isPresented: $showDueDatePicker) {
             // [[T-14192]]: the popover's selection is read from `key` -- the list's stored due

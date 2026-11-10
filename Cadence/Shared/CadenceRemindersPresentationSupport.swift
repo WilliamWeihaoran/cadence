@@ -326,8 +326,14 @@ enum AppleReminderRowPresentation {
     /// (`CadenceObservedDay`) rather than the clock. Both rows read this and `dueTint(forDueDateKey:
     /// todayKey:)`; before, each called `relativeDate(from:)` / `dayOffset(from:)` with their
     /// `Date()` defaults, so the badge stayed "Today" amber past midnight until EventKit refetched.
+    ///
+    /// [[T-15502]]: the words are Cadence's one due-date vocabulary,
+    /// `CadenceWidgetDateSupport.dueLabel` ("Overdue Nov 9" / "Due today" / "Due tomorrow" /
+    /// "Due Nov 14"), not `DateFormatters.relativeDate` ("Yesterday" / "Today"): a reminder sits in the Inbox beside
+    /// Cadence tasks whose chips say "Due today" ([[T-15491]]). The raw key is the fallback for an
+    /// empty one, which no row hands in.
     static func dueLabel(forDueDateKey key: String, todayKey: String) -> String {
-        DateFormatters.relativeDate(from: key, relativeTo: referenceDate(forTodayKey: todayKey))
+        CadenceWidgetDateSupport.dueLabel(for: key, todayKey: todayKey) ?? key
     }
 
     /// [[T-14354]]: `dueTint(dayOffset:)` for a due-date key, against the observed day.

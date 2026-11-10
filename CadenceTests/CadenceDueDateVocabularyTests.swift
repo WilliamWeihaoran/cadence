@@ -113,6 +113,24 @@ struct CadenceDueDateVocabularyTests {
             #expect(!source.contains("relativeDate(from: key, relativeTo: referenceDate))\""), "\(path) spells the Focus header the old way")
         }
     }
+
+    /// **[[T-15502]]:** the list/project sidebar badges, the Apple Reminders row badge and the
+    /// board column's due line speak the same vocabulary, so none of their files may word a date
+    /// with `DateFormatters.relativeDate` ("Yesterday" / "Today") any more.
+    @Test func listReminderAndColumnBadgesNoLongerSpellRelativeDate() throws {
+        let files = [
+            "Cadence/macOS/Views/SidebarSupportViews.swift": "CadenceSidebarLayout.listDueDateLabel(",
+            "Cadence/iOS/iOSRootSidebar.swift": "CadenceSidebarLayout.listDueDateLabel(",
+            "Cadence/Shared/CadenceSidebarLayout.swift": "CadenceWidgetDateSupport.dueLabel(",
+            "Cadence/Shared/CadenceRemindersPresentationSupport.swift": "CadenceWidgetDateSupport.dueLabel(",
+            "Cadence/Shared/Components/CadenceBoardColumnHeader.swift": "CadenceWidgetDateSupport.dueLabel(",
+        ]
+        for (path, needle) in files {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(source.contains(needle), "\(path) no longer reads the one due-date builder")
+            #expect(!source.contains("relativeDate("), "\(path) words a due badge with relativeDate again")
+        }
+    }
 }
 
 /// **[[T-15494]]: Settings' "Last checked" stamp and four `Date.formatted` sites.**

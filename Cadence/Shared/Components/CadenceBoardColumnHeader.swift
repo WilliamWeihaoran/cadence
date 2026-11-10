@@ -164,7 +164,8 @@ nonisolated struct CadenceBoardColumnDueDatePlan: Equatable, Sendable {
     /// Distinguishes "shows a date" from "shows the empty placeholder", which is what the flag glyph
     /// and its tint key off.
     let hasDueDate: Bool
-    /// The text of the line: a relative date, or `emptyLabel`.
+    /// The text of the line: Cadence's one due-date vocabulary ("Overdue Nov 9" / "Due today" /
+    /// "Due tomorrow" / "Due Nov 14", [[T-15502]]), or `emptyLabel`.
     let label: String
     /// Past due and not settled. A completed column is never overdue — the date it missed stopped
     /// mattering when the column wound down.
@@ -181,15 +182,18 @@ nonisolated struct CadenceBoardColumnDueDatePlan: Equatable, Sendable {
         relativeTo referenceDate: Date = Date()
     ) -> CadenceBoardColumnDueDatePlan {
         let hasDueDate = !dueDate.isEmpty
+        let todayKey = DateFormatters.dateKey(from: referenceDate)
         return CadenceBoardColumnDueDatePlan(
             isVisible: hasDueDate || !hideWhenEmpty,
             hasDueDate: hasDueDate,
+            // [[T-15502]]: `dueLabel`, the words the column's own task cards say ([[T-15491]]),
+            // not `DateFormatters.relativeDate` ("Yesterday" / "Today").
             label: hasDueDate
-                ? DateFormatters.relativeDate(from: dueDate, relativeTo: referenceDate)
+                ? CadenceWidgetDateSupport.dueLabel(for: dueDate, todayKey: todayKey) ?? dueDate
                 : emptyLabel,
             isOverdue: hasDueDate
                 && !isCompleted
-                && dueDate < DateFormatters.dateKey(from: referenceDate)
+                && dueDate < todayKey
         )
     }
 }

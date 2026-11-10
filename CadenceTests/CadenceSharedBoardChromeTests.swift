@@ -722,7 +722,8 @@ struct CadenceSharedBoardChromeTests {
     /// not dates. This is the case T-331 is actually about: set on iPhone, stored, never drawn.
     @Test func aColumnWithADueDateShowsItWhicheverWayTheHideFlagIsSet() throws {
         let reference = try #require(DateFormatters.date(from: "2026-08-26"))
-        let expected = DateFormatters.relativeDate(from: "2026-09-02", relativeTo: reference)
+        // [[T-15502]]: the tasks' due vocabulary, not `DateFormatters.relativeDate`.
+        let expected = "Due Sep 2"
 
         for hideWhenEmpty in [true, false] {
             let plan = CadenceBoardColumnDueDatePlan.plan(
@@ -735,6 +736,26 @@ struct CadenceSharedBoardChromeTests {
             #expect(plan.hasDueDate)
             #expect(plan.label == expected)
             #expect(plan.label != "No due date")
+        }
+    }
+
+    /// **[[T-15502]].** A column's deadline reads like its own task cards' ([[T-15491]]): the four
+    /// forms of `CadenceWidgetDateSupport.dueLabel`, from that one builder, against the day the
+    /// plan is handed.
+    @Test func aColumnDueDateSpeaksTheTasksDueVocabulary() throws {
+        let reference = try #require(DateFormatters.date(from: "2026-11-10"))
+        let expected = [
+            "2026-11-09": "Overdue Nov 9",
+            "2026-11-10": "Due today",
+            "2026-11-11": "Due tomorrow",
+            "2026-11-14": "Due Nov 14",
+        ]
+        for (key, words) in expected {
+            let plan = CadenceBoardColumnDueDatePlan.plan(
+                dueDate: key, hideWhenEmpty: false, isCompleted: false, relativeTo: reference
+            )
+            #expect(plan.label == words, "\(key)")
+            #expect(plan.label == CadenceWidgetDateSupport.dueLabel(for: key, todayKey: "2026-11-10"), "\(key)")
         }
     }
 

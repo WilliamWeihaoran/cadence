@@ -1321,7 +1321,8 @@ struct iOSSidebarListRow: View {
             CadenceSidebarLayout.listRowAccessibilityLabel(
                 displayName,
                 openTaskCount: item.openTaskCount,
-                dueDateKey: item.dueDateKey
+                dueDateKey: item.dueDateKey,
+                todayKey: todayKey
             )
         )
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -1362,7 +1363,8 @@ struct iOSSidebarListRow: View {
             Image(systemName: "flag.fill")
                 .font(.system(size: iOSSidebarMetrics.listDueDateIconSize, weight: .semibold))
                 .foregroundStyle(dueTint)
-            Text(DateFormatters.relativeDate(from: key))
+            // [[T-15502]]: "Overdue Nov 9" / "Due today", the Mac row's words.
+            Text(CadenceSidebarLayout.listDueDateLabel(key, todayKey: todayKey))
                 .font(.system(size: iOSSidebarMetrics.listDueDateFontSize, weight: .semibold))
                 .foregroundStyle(dueTint)
                 .lineLimit(1)
