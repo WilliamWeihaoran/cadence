@@ -500,6 +500,20 @@ empty_run_diagnostic() {
 # ever matched two of the three patterns at once, `loose - a - b` goes NEGATIVE and the banner
 # prints nonsense, while a set difference cannot.
 SWIFT_ERROR_PATTERN='\.swift:[0-9]+:[0-9]+: error:'
+# --- and the same blind spot on the ERROR side (T-15270) ---------------------------------------
+# T-1516 fixed the macro-expansion spelling for warnings and left errors on the `.swift:` anchor
+# alone, so a compile that failed INSIDE a macro expansion printed `compile errors: 0` beside a
+# real exit 65 -- seen 2026-11-10 on a nested `#require(try #require(x).y)`. The exit code stayed
+# honest; the banner pointed triage away from the compiler. MEASURED 2026-11-09 on Xcode 27 with
+# `xcrun swiftc -typecheck` of that nested probe: the primary line is
+#
+#   macro expansion #require:1:26: error: recursive expansion of macro 'require(_:_:sourceLocation:)'
+#
+# and the only other `error:` line in the block is the caret continuation inside the `+---` box
+# (`|  |   `- error: ...`), which carries no `name:LINE:COL:` and so is not counted again -- one per
+# diagnostic, the same rule MACRO_WARNING_PATTERN keeps. Same `[^ :]+` class, for the same
+# freestanding-`#` / attached-`@` reason given above.
+MACRO_ERROR_PATTERN='macro expansion [^ :]+:[0-9]+:[0-9]+: error:'
 SWIFT_WARNING_PATTERN='\.swift:[0-9]+:[0-9]+: warning:'
 MACRO_WARNING_PATTERN='macro expansion [^ :]+:[0-9]+:[0-9]+: warning:'
 CONTINUATION_WARNING_PATTERN='`- warning:'
@@ -596,7 +610,8 @@ diagnostic_report() {  # $1 = log. Returns $WARNING_GATE_EXIT when the baseline 
   # T-1971: the build phase, or the whole log when nothing says the tests ever started.
   local -i scan after_phase
   scan=$(build_phase_line_count "$log")
-  errors=$(build_phase_of "$log" $scan | grep -cE "$SWIFT_ERROR_PATTERN" 2>/dev/null | tr -d ' ')
+  # T-15270: one count over both anchored error spellings, as `warnings` is below.
+  errors=$(build_phase_of "$log" $scan | grep -cE "$SWIFT_ERROR_PATTERN|$MACRO_ERROR_PATTERN" 2>/dev/null | tr -d ' ')
   sourced=$(build_phase_of "$log" $scan | grep -cE "$SWIFT_WARNING_PATTERN" 2>/dev/null | tr -d ' ')
   macroed=$(build_phase_of "$log" $scan | grep -cE "$MACRO_WARNING_PATTERN" 2>/dev/null | tr -d ' ')
   # What the old whole-log reading would have added, kept so it can be REPORTED rather than dropped.
@@ -3344,6 +3359,37 @@ selftest_only_testing() {
   run_counters "$ws/attached-macro.log"
   check "an ATTACHED macro spells itself \`@name\`, and that spelling is counted too" \
     $( [[ "$dout" == *"warnings:        1"* ]] && print 1 || print 0 ) "$dout"
+  # --- T-15270: the same blind spot on the ERROR side --------------------------------------------
+  # Verbatim out of `xcrun swiftc -typecheck` of a nested `#require(try #require(b).v)` probe on this
+  # Mac, 2026-11-09 (Xcode 27), path shortened to `/repo/`. Two `error:` lines, ONE diagnostic: the
+  # primary `macro expansion #require:1:26: error:` and its caret continuation inside the `+---` box.
+  # The control is the same block with the primary line removed -- it must read 0, which is what
+  # proves the count came from the anchored line and not from the continuation's bare `error:`.
+  macro_error_block=(
+    '`- /repo/CadenceTests/Probe.swift:5:44: note: expanded code originates here'
+    '5 |     let x = try #require(try #require(b).v)'
+    '  |                 `- note: in expansion of macro '"'"'require'"'"' here'
+    '  +--- macro expansion #require ----------------------------------------'
+    '  |1 | Testing.__checkValue(try #require(b).v,expression: .__fromSyntaxNode("try #require(b).v"),comments: [],isRequired: true,sourceLocation: Testing.SourceLocation.__here()).__required()'
+    '  |  |                          `- error: recursive expansion of macro '"'"'require(_:_:sourceLocation:)'"'"''
+    '  +---------------------------------------------------------------------'
+  )
+  print -rl -- \
+    "SwiftCompile normal arm64 /repo/CadenceTests/Probe.swift (in target 'CadenceTests' from project 'Cadence')" \
+    "macro expansion #require:1:26: error: recursive expansion of macro 'require(_:_:sourceLocation:)'" \
+    "${macro_error_block[@]}" \
+    > "$ws/macro-error.log"
+  print -rl -- \
+    "SwiftCompile normal arm64 /repo/CadenceTests/Probe.swift (in target 'CadenceTests' from project 'Cadence')" \
+    "${macro_error_block[@]}" \
+    > "$ws/macro-error-continuation-only.log"
+  run_counters "$ws/macro-error.log"
+  check "a macro-expansion ERROR is counted, though it has no \`.swift:N:C:\` prefix (T-15270)" \
+    $( [[ "$dout" == *"compile errors:  1"* ]] && print 1 || print 0 ) "$dout"
+  run_counters "$ws/macro-error-continuation-only.log"
+  check "…and its caret continuation alone counts NOTHING, so one diagnostic is one error" \
+    $( [[ "$dout" == *"compile errors:  0"* ]] && print 1 || print 0 ) "$dout"
+
   # The half that makes all of the above worth anything: widening the first pattern would have
   # passed every check in this section and turned every link and asset notice into a red build.
   run_counters "$ws/toolnoise.log"
@@ -6317,7 +6363,7 @@ else
     say ""
     say "!! IOS-LEG-FAILED: the primary run was green and the iOS build of the SAME tree exited"
     say "   $IOS_STATUS (T-1956). A macOS build compiles none of \`#if os(iOS)\`; this is what it hid:"
-    grep -E "$SWIFT_ERROR_PATTERN|^error:|\*\* BUILD FAILED" "$IOS_LOG" 2>/dev/null | head -20 | sed 's/^/     /'
+    grep -E "$SWIFT_ERROR_PATTERN|$MACRO_ERROR_PATTERN|^error:|\*\* BUILD FAILED" "$IOS_LOG" 2>/dev/null | head -20 | sed 's/^/     /'
     say "   Read the rest in $IOS_LOG."
     (( STATUS == 0 )) && STATUS=$IOS_LEG_EXIT
   elif (( IOS_GATE != 0 )); then
