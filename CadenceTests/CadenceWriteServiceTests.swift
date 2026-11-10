@@ -2774,6 +2774,49 @@ struct CadenceWriteServiceTests {
         #expect(mcp.status == app.status)
     }
 
+    /// [[T-15221]]: the successor an MCP reopen deletes leaves no reminder behind once the app
+    /// adopts the write. The MCP process cannot reach `NotificationManager`, so nothing cancels the
+    /// successor's reminder at delete time; what drops it is the app's next reconcile over the
+    /// store it reads back (`macOSRootView.refreshAppData` on the marker, either root's scene-phase
+    /// checkpoint), because `NotificationReconcileDiff` removes every managed pending identifier no
+    /// stored task plans. Driven through a fake centre — no real notification is touched.
+    @Test func theAppsNextReconcileDropsTheReminderOfASuccessorAnMCPReopenDeleted() async throws {
+        let fixture = try Fixture()
+        let task = AppTask(title: "Water the plants")
+        task.recurrenceRule = .daily
+        task.scheduledDate = "2099-06-10"
+        task.dueDate = "2099-06-10"
+        fixture.modelContext.insert(task)
+        try fixture.modelContext.save()
+
+        let completed = try fixture.writeService.completeTask(taskID: task.id.uuidString)
+        let successorRaw = try #require(completed.spawnedRecurringTask?.summary.id)
+        let successorID = try #require(UUID(uuidString: successorRaw))
+        let successorDue = NotificationIdentifiers.taskDue(taskID: successorID)
+        let centre = NotificationManagerCentreSeamTests.FakeCentre()
+
+        try await withTemporaryDefaults(
+            "cadence.tests.mcp-reopen-orphan-reminder",
+            opening: { UserDefaults(suiteName: $0) }
+        ) { defaults in
+            defaults.set(true, forKey: NotificationManager.notificationsEnabledDefaultsKey)
+            let manager = NotificationManager(centre: centre, defaults: defaults)
+
+            // The app scheduled the successor's reminder while it existed.
+            await manager.reconcile(tasks: try ModelContext(fixture.container).fetch(FetchDescriptor<AppTask>()))
+            #expect(centre.pending.contains(successorDue), "the fixture never scheduled the successor's reminder")
+
+            _ = try fixture.writeService.reopenTask(taskID: task.id.uuidString)
+            let stored = try ModelContext(fixture.container).fetch(FetchDescriptor<AppTask>())
+            #expect(stored.map(\.id) == [task.id], "the reopen did not take the successor back")
+
+            await manager.reconcile(tasks: stored)
+            #expect(centre.removed.contains(successorDue), "the deleted successor's reminder was not cancelled")
+            #expect(!centre.pending.contains { NotificationIdentifiers.taskID(fromIdentifier: $0) == successorID })
+            #expect(centre.pending.contains(NotificationIdentifiers.taskDue(taskID: task.id)))
+        }
+    }
+
     // MARK: - T-14843: update_container re-points the tasks a list carries
 
     /// An area `A` in `Work` holding a context-less project `P` with a task, a task filed in `A`

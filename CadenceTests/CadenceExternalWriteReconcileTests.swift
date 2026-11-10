@@ -214,6 +214,25 @@ struct CadenceExternalWriteReconcileTests {
         #expect(writeService.contains("CadenceModelContainerFactory.notifyExternalWrite()"))
     }
 
+    /// [[T-15221]]. `reopenTask`'s successor-deleting branch commits through
+    /// `commitDelete` rather than `saveNotifyAndAudit`, so it posts the marker itself; without
+    /// that post the app never reconciles, and the deleted successor's reminder still fires. The
+    /// file-wide check above passes on `saveNotifyAndAudit`'s own post, so this one is scoped to the
+    /// function and requires both commit paths in it to announce themselves.
+    @Test func theMCPReopenThatDeletesASuccessorStillPostsTheMarker() throws {
+        let writeService = strippingComments(
+            try sourceFile("Cadence/Services/MCPReadOnly/CadenceWriteService.swift")
+        )
+        let body = try cadenceFunctionBody("func reopenTask(taskID: String)", in: writeService)
+        let delete = try #require(body.range(of: "CadencePendingChangePersistence.commitDelete"))
+        let post = try #require(
+            body.range(of: "CadenceModelContainerFactory.notifyExternalWrite()"),
+            "the successor-deleting reopen no longer posts the marker, so the app keeps its reminder"
+        )
+        #expect(delete.lowerBound < post.lowerBound)
+        #expect(body.contains("saveNotifyAndAudit"))
+    }
+
     /// **The app side of the contract.** `refreshAppData()` is a private method on a SwiftUI view,
     /// so the reconcile it now runs has no symbol a test can call; scoping the scan to that one
     /// function body is what keeps it from passing on an unrelated line elsewhere in a 300-line
