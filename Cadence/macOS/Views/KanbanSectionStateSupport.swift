@@ -65,6 +65,9 @@ enum KanbanSectionStateSupport {
         universeTasks.filter { task in
             guard task.resolvedSectionName.caseInsensitiveCompare(oldName) == .orderedSame else { return false }
             if area != nil, task.area?.id != area?.id { return false }
+            // [[T-15531]]: on an area's board, a task that also holds a project is the project's
+            // card ([[T-15431]]); renaming or deleting the area's column must not re-file it.
+            if area != nil, project == nil, task.project != nil { return false }
             if project != nil, task.project?.id != project?.id { return false }
             return true
         }

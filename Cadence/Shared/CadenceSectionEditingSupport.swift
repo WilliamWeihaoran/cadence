@@ -242,4 +242,28 @@ enum CadenceSectionEditingSupport {
         }
         return moved
     }
+
+    /// **The list editor's column edit, re-filing only the cards on this list's board ([[T-15531]]).**
+    ///
+    /// On an area that is `CadenceTaskQuerySupport.listedTasks(for:)`, not the raw `area.tasks`
+    /// edge: a task holding both an area and a project is the project's ([[T-15431]]) and sits on
+    /// the project's board, so renaming or deleting an area column must leave its `sectionName`
+    /// alone -- the in-app twin of the MCP fix in [[T-15512]]. The inherited-context cascade is a
+    /// different walk and still reaches every task on the edge.
+    @discardableResult
+    static func refileColumnCards(
+        base: [TaskSectionConfig],
+        merged: [TaskSectionConfig],
+        area: Area?,
+        project: Project?
+    ) -> Int {
+        let cards: [AppTask]
+        if let area {
+            cards = CadenceTaskQuerySupport.listedTasks(for: area)
+        } else {
+            cards = project?.tasks ?? []
+        }
+        let moves = CadenceSectionConfigMerge.sectionNameMoves(base: base, merged: merged)
+        return applySectionNameChanges(renames: moves.renames, removedNames: moves.removedNames, to: cards)
+    }
 }

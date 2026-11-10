@@ -143,4 +143,80 @@ struct CadenceAreaProjectFilingCountTests {
         #expect(areaOnly.sectionName == "Done")
         #expect(both.sectionName == "Doing")
     }
+
+    /// [[T-15531]]: the iOS list editor's Save re-files the cards of a renamed column through
+    /// `refileColumnCards`. On an area that must be the cards on the area's board -- the
+    /// dual-filed task is the project's, and renaming the area's column must not move it.
+    @Test func theListEditorsAreaColumnRenameLeavesADualFiledTasksSectionAlone() throws {
+        let f = try fixture()
+        let doing = TaskSectionConfig(name: "Doing")
+        var renamed = doing
+        renamed.name = "Done"
+        let areaOnly = try #require(f.tasks.first { $0.title == "Area only" })
+        let both = try #require(f.tasks.first { $0.title == "Both" })
+        areaOnly.sectionName = "Doing"
+        both.sectionName = "Doing"
+
+        let moved = CadenceSectionEditingSupport.refileColumnCards(
+            base: [doing],
+            merged: [renamed],
+            area: f.area,
+            project: nil
+        )
+
+        // Non-vacuity: the area's own card did move, so the rename really re-filed cards.
+        #expect(moved == 1)
+        #expect(areaOnly.sectionName == "Done")
+        #expect(both.sectionName == "Doing")
+    }
+
+    /// [[T-15531]]: the project arm still reaches the dual-filed task -- it is the project's card.
+    @Test func theListEditorsProjectColumnRenameMovesTheDualFiledTask() throws {
+        let f = try fixture()
+        let doing = TaskSectionConfig(name: "Doing")
+        var renamed = doing
+        renamed.name = "Done"
+        let both = try #require(f.tasks.first { $0.title == "Both" })
+        both.sectionName = "Doing"
+
+        CadenceSectionEditingSupport.refileColumnCards(base: [doing], merged: [renamed], area: nil, project: f.project)
+
+        #expect(both.sectionName == "Done")
+    }
+
+#if os(macOS)
+    /// [[T-15531]]: the Mac board column's rename and delete re-file `tasksMoving`'s cards. On an
+    /// area's board that walk must skip the dual-filed task, which sits on the project's board.
+    @Test func theMacAreaColumnMoveSkipsADualFiledTask() throws {
+        let f = try fixture()
+        for task in f.tasks { task.sectionName = "Doing" }
+
+        let moving = KanbanSectionStateSupport.tasksMoving(
+            universeTasks: f.tasks,
+            area: f.area,
+            project: nil,
+            from: "Doing"
+        )
+        // Non-vacuity: the walk is not empty -- the area's own card is in it.
+        #expect(moving.map(\.title) == ["Area only"])
+
+        KanbanSectionStateSupport.moveTasks(
+            universeTasks: f.tasks,
+            area: f.area,
+            project: nil,
+            from: "Doing",
+            to: "Done"
+        )
+        let both = try #require(f.tasks.first { $0.title == "Both" })
+        #expect(both.sectionName == "Doing")
+        // The project's board still owns it.
+        let projectMoving = KanbanSectionStateSupport.tasksMoving(
+            universeTasks: f.tasks,
+            area: nil,
+            project: f.project,
+            from: "Doing"
+        )
+        #expect(Set(projectMoving.map(\.title)) == ["Project only", "Both"])
+    }
+#endif
 }

@@ -298,7 +298,10 @@ struct CadenceTaskContextInheritanceTests {
         #expect(stripped.count == raw.count)
 
         let reassign = try #require(CadenceSourceScan.functionBody(named: "reassignTasks", in: stripped))
-        #expect(reassign.contains("CadenceSectionEditingSupport.applySectionNameChanges("))
+        // [[T-15531]]: the column moves go through the shared helper that walks the area's
+        // listed tasks, not the raw edge `reassignTasks` is handed for the context cascade.
+        #expect(reassign.contains("CadenceSectionEditingSupport.refileColumnCards("))
+        #expect(!reassign.contains("applySectionNameChanges("))
         #expect(reassign.contains("CadenceTaskMutationSupport.reassignInheritedContext(in: tasks, area: area, project: project)"))
 
         let save = try #require(CadenceSourceScan.functionBody(named: "save", in: stripped))

@@ -995,11 +995,13 @@ struct iOSListEditorSheet: View {
     /// shared rule can re-derive it; omitting it silently restores that bug.
     private func reassignTasks(in tasks: [AppTask], area: Area? = nil, project: Project? = nil) {
         let surviving = area?.sectionConfigs ?? project?.sectionConfigs ?? normalizedSectionConfigs
-        let moves = CadenceSectionConfigMerge.sectionNameMoves(base: originalSectionConfigs, merged: surviving)
-        CadenceSectionEditingSupport.applySectionNameChanges(
-            renames: moves.renames,
-            removedNames: moves.removedNames,
-            to: tasks
+        // [[T-15531]]: the column moves reach only the cards on this list's board -- an area's
+        // dual-filed task is the project's -- while the context cascade below walks every task.
+        CadenceSectionEditingSupport.refileColumnCards(
+            base: originalSectionConfigs,
+            merged: surviving,
+            area: area,
+            project: project
         )
         CadenceTaskMutationSupport.reassignInheritedContext(in: tasks, area: area, project: project)
     }
