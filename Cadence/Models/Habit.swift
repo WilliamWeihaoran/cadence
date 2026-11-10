@@ -420,10 +420,16 @@ import Foundation
     /// weeks — 24+ check-ins — rendered as "8d streak" and read as weaker than a ten-day daily
     /// habit. The unit is a property of the frequency, so it is answered once, here, next to the
     /// walk that produces the number.
+    ///
+    /// A `.monthly` habit is due on one day a month, so the day-based walk steps one *month* per
+    /// count: three kept months is `currentStreak == 3`, which read as "3 day streak" while this
+    /// answered `.days` for it ([[T-15381]]). `.daysOfWeek` stays `.days` — each count there is
+    /// one kept scheduled day.
     var streakUnit: HabitStreakUnit {
         switch frequencyType {
         case .timesPerWeek: return .weeks
-        case .daily, .daysOfWeek, .monthly: return .days
+        case .monthly: return .months
+        case .daily, .daysOfWeek: return .days
         }
     }
 }
@@ -437,12 +443,14 @@ import Foundation
 nonisolated enum HabitStreakUnit: String {
     case days
     case weeks
+    case months
 
-    /// The compact metric-tile spelling: `8d` / `8w`.
+    /// The compact metric-tile spelling: `8d` / `8w` / `8mo`.
     func shortLabel(_ count: Int) -> String {
         switch self {
         case .days: return "\(count)d"
         case .weeks: return "\(count)w"
+        case .months: return "\(count)mo"
         }
     }
 
@@ -451,6 +459,7 @@ nonisolated enum HabitStreakUnit: String {
         switch self {
         case .days: return "\(count) day streak"
         case .weeks: return "\(count) week streak"
+        case .months: return "\(count) month streak"
         }
     }
 }

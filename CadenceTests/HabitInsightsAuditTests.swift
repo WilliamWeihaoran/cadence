@@ -587,12 +587,14 @@ struct HabitInsightsAuditTests {
         #expect(makeHabit(frequency: .timesPerWeek, targetCount: 3).streakUnit == .weeks)
         #expect(makeHabit(frequency: .daily).streakUnit == .days)
         #expect(makeHabit(frequency: .daysOfWeek, days: [1, 3, 5]).streakUnit == .days)
-        #expect(makeHabit(frequency: .monthly, days: [1]).streakUnit == .days)
+        #expect(makeHabit(frequency: .monthly, days: [1]).streakUnit == .months)
 
         #expect(HabitStreakUnit.days.shortLabel(8) == "8d")
         #expect(HabitStreakUnit.weeks.shortLabel(8) == "8w")
         #expect(HabitStreakUnit.days.phrase(8) == "8 day streak")
         #expect(HabitStreakUnit.weeks.phrase(8) == "8 week streak")
+        #expect(HabitStreakUnit.months.shortLabel(8) == "8mo")
+        #expect(HabitStreakUnit.months.phrase(8) == "8 month streak")
 
         // And the unit has to match the number actually produced: eight satisfied weeks of a
         // 3x/week habit is "8w", not "8d".
@@ -613,6 +615,26 @@ struct HabitInsightsAuditTests {
         let asOf = try #require(DateFormatters.date(from: "2026-06-19"))
         #expect(habit.currentStreak(asOf: asOf, calendar: calendar) == 8)
         #expect(habit.streakUnit.shortLabel(habit.currentStreak(asOf: asOf, calendar: calendar)) == "8w")
+    }
+
+    /// T-15381: a `.monthly` habit is due one day a month, so its streak steps one MONTH per count;
+    /// three kept months is a streak of 3 and used to be labelled "3 day streak" / "3d". The count
+    /// and the unit are asserted together, because the unit is only wrong relative to the number
+    /// the walk actually produced.
+    @Test func aMonthlyHabitCountsItsStreakInMonths() throws {
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
+        let habit = makeHabit(frequency: .monthly, days: [15])
+        complete(habit, ["2026-03-15", "2026-04-15", "2026-05-15"])
+
+        let asOf = try #require(DateFormatters.date(from: "2026-05-20"))
+        let streak = habit.currentStreak(asOf: asOf, calendar: calendar)
+        #expect(streak == 3)
+        #expect(habit.streakUnit.phrase(streak) == "3 month streak")
+        #expect(habit.streakUnit.shortLabel(streak) == "3mo")
+        // Control: a daily habit with the same three check-ins is a different number in days.
+        let daily = makeHabit(frequency: .daily)
+        complete(daily, ["2026-05-18", "2026-05-19", "2026-05-20"])
+        #expect(daily.streakUnit.phrase(daily.currentStreak(asOf: asOf, calendar: calendar)) == "3 day streak")
     }
 
     /// The grid should end on the week containing today, not run arbitrarily far past it.

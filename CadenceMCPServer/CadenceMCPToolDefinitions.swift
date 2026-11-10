@@ -125,7 +125,10 @@ enum CadenceMCPToolDefinitions {
     // counts weeks for a `timesPerWeek` habit and days for every other frequency, and the bare
     // number let a client report eight kept weeks as an eight-day streak. Additive -- no key moved
     // or dropped -- but it edits a pinned DTO field set, which this surface versions.
-    private static let serverVersion = "0.17.0"
+    // 0.17.1 widens that key's value domain by one spelling, `"months"`, for a `monthly` habit,
+    // whose streak steps one month per count and was labelled `"days"` ([[T-15381]]). No key
+    // moved, appeared or dropped, so a patch bump.
+    private static let serverVersion = "0.17.1"
     private static let writeToolNames: Set<String> = [
         "create_context",
         "create_container",

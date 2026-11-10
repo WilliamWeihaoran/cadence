@@ -327,13 +327,27 @@ struct CadenceReadServiceTests {
         fixture.modelContext.insert(HabitCompletion(date: DateFormatters.todayKey(), habit: daily))
         try fixture.modelContext.save()
 
+        // T-15381: a monthly habit's streak steps one month per count. Due on today's day of the
+        // month and checked in today, so its streak is at least 1 whichever day the suite runs.
+        let monthly = Habit(title: "Row regatta", context: fixture.context)
+        monthly.frequencyType = .monthly
+        // The day of the month read off the same key the check-in below is filed under, so the
+        // two cannot disagree and no ambient calendar or bare clock read is added here.
+        monthly.frequencyDays = [try #require(Int(DateFormatters.todayKey().suffix(2)))]
+        fixture.modelContext.insert(monthly)
+        fixture.modelContext.insert(HabitCompletion(date: DateFormatters.todayKey(), habit: monthly))
+        try fixture.modelContext.save()
+
         let items = try fixture.service.listHabits(options: .init(query: "Row")).items
         let weeklyItem = try #require(items.first { $0.id == weekly.id.uuidString })
         let dailyItem = try #require(items.first { $0.id == daily.id.uuidString })
+        let monthlyItem = try #require(items.first { $0.id == monthly.id.uuidString })
         #expect(weeklyItem.currentStreak == 2)
         #expect(weeklyItem.streakUnit == "weeks")
         #expect(dailyItem.currentStreak == 1)
         #expect(dailyItem.streakUnit == "days")
+        #expect(monthlyItem.currentStreak == 1)
+        #expect(monthlyItem.streakUnit == "months")
     }
 
     /// T-15301: two devices checking one habit in on one day mint two rows that both survive the

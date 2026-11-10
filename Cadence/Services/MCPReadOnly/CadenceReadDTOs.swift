@@ -446,9 +446,10 @@ nonisolated struct CadenceHabitSummary: Codable, Sendable {
     let contextName: String?
     let goal: CadenceGoalRef?
     let currentStreak: Int
-    /// What `currentStreak` counts in: `"days"`, or `"weeks"` for a `timesPerWeek` habit
-    /// (`HabitStreakUnit`). Without it a client read eight kept weeks as an eight-day streak
-    /// ([[T-15302]]) — the defect `4c63084e` fixed in the search subtitle and left here.
+    /// What `currentStreak` counts in: `"days"`, `"weeks"` for a `timesPerWeek` habit, or
+    /// `"months"` for a `monthly` one ([[T-15381]]) (`HabitStreakUnit`). Without it a client read
+    /// eight kept weeks as an eight-day streak ([[T-15302]]) — the defect `4c63084e` fixed in the
+    /// search subtitle and left here.
     let streakUnit: String
     /// Days checked in on record: one per habit-day, through the same collapse `currentStreak`
     /// uses, so a day two devices both recorded is one check-in, not two ([[T-15301]], [[T-359]]).
