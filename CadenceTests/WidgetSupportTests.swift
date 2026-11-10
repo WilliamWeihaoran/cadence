@@ -293,6 +293,39 @@ struct WidgetSupportTests {
         #expect(CadenceSourceScan.matchCount(#"unavailableSnapshot\(\s*\)"#, in: code) == 0)
     }
 
+    /// **[[T-15331]], seen in a recorded iPad frame.** The large Calendar tile in its unavailable
+    /// state drew a bold `0` and `0 overdue` / `0 upcoming` above "Calendar widget needs Cadence",
+    /// beside a Today tile that already drew a dash ([[T-12332]]). The snapshot spells the figure,
+    /// and a readable-but-empty span still prints its genuine zero.
+    @Test func anUnavailableCalendarTileDoesNotClaimTheSpanIsEmpty() {
+        let unavailable = CadenceCalendarWidgetSupport.unavailableSnapshot()
+        let span = CadenceCalendarWidgetVisibleSpan(days: unavailable.days)
+        #expect(span.totalCount == 0)
+        #expect(unavailable.headerCountLabel(for: span) == "—")
+
+        let empty = CadenceCalendarWidgetSupport.snapshot(from: [], today: Date(timeIntervalSince1970: 2_000), dayCount: 3)
+        #expect(empty.state == .empty)
+        #expect(empty.headerCountLabel(for: CadenceCalendarWidgetVisibleSpan(days: empty.days)) == "0")
+    }
+
+    /// The widget file is not in the test target, so this pins the two draws [[T-15331]] changed:
+    /// the header reads the snapshot's label (never the bare span total), and `headerBadges`
+    /// answers the unavailable state with exactly one `unavailable` badge before any count badge.
+    @Test func theCalendarTileDrawsTheDashAndOneUnavailableBadge() throws {
+        // Comments stripped, string literals KEPT: both checks read a literal.
+        let source = try CadenceSourceScan.sourceFile("CadenceWidgets/CalendarSnapshotWidget.swift")
+        let header = try #require(CadenceSourceScan.declarationBody("private var header: some View", in: source))
+        #expect(CadenceSourceScan.matchCount(#"Text\(\s*entry\.snapshot\.headerCountLabel\(\s*for:\s*visibleSpan\s*\)\s*\)"#, in: header) == 1)
+        #expect(CadenceSourceScan.matchCount(#"totalCount"#, in: header) == 0)
+
+        let badges = try #require(CadenceSourceScan.declarationBody("private var headerBadges", in: source))
+        let unavailableGuard = #"if\s+entry\.snapshot\.isUnavailable\s*\{\s*return\s*\[\s*WidgetHeaderBadge\(\s*text:\s*"unavailable",[^\]]*\]\s*\}"#
+        #expect(CadenceSourceScan.matchCount(unavailableGuard, in: badges) == 1)
+        let guardAt = try #require(badges.range(of: unavailableGuard, options: .regularExpression))
+        let firstCount = try #require(badges.range(of: "overdue\", tint:"))
+        #expect(guardAt.lowerBound < firstCount.lowerBound)
+    }
+
     /// And a readable store still prints its number, including a genuine zero — "0 today" is a
     /// true and useful thing for the tile to say once the extension can actually see the store,
     /// which is the distinction the dash exists to keep.
@@ -666,7 +699,9 @@ struct WidgetSupportTests {
         ))
         #expect(CadenceSourceScan.matchCount("entry\\.snapshot\\.days", in: widget) == 1)
         #expect(CadenceSourceScan.matchCount("visibleSpan\\.days", in: widget) == 4)
-        #expect(widget.contains("Text(\"\\(visibleSpan.totalCount)\")"))
+        // [[T-15331]]: the header total still reads the span, through the snapshot's label so the
+        // unavailable tile draws a dash.
+        #expect(widget.contains("Text(entry.snapshot.headerCountLabel(for: visibleSpan))"))
         #expect(widget.contains("let upcomingCount = visibleSpan.totalCount"))
         #expect(!widget.contains("leadingDayCount"))
     }

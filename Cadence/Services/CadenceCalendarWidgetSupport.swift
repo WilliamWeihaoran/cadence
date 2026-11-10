@@ -39,6 +39,15 @@ nonisolated struct CadenceCalendarWidgetSnapshot: Hashable {
     var isUnavailable: Bool {
         state == .unavailable
     }
+
+    /// The bold figure beside "Calendar" in the widget header -- an em dash when the store could
+    /// not be read, never a number ([[T-15331]]). `unavailableSnapshot()` has no days, so the span
+    /// total is a manufactured zero, and the tile printed it above "Calendar widget needs Cadence"
+    /// -- the defect [[T-12332]] fixed on the Today tile, fixed the same way. The span is the
+    /// family's own (T-5881), so the caller passes it rather than this summing all 14 days.
+    func headerCountLabel(for span: CadenceCalendarWidgetVisibleSpan) -> String {
+        isUnavailable ? "—" : "\(span.totalCount)"
+    }
 }
 
 /// The stretch of days one widget family actually draws, and every figure it shows beside them

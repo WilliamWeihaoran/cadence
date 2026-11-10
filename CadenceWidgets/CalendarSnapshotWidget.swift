@@ -271,7 +271,9 @@ struct CalendarSnapshotWidgetView: View {
                     badgeRow
                 }
                 Spacer(minLength: 8)
-                Text("\(visibleSpan.totalCount)")
+                // [[T-15331]]: the snapshot's own string, so the unavailable tile draws a dash
+                // rather than asserting "0" above "Calendar widget needs Cadence".
+                Text(entry.snapshot.headerCountLabel(for: visibleSpan))
                     .font(
                         .system(
                             size: usesInlineHeaderBadges ? scale.titleSize : scale.countSize,
@@ -530,8 +532,16 @@ struct CalendarSnapshotWidgetView: View {
         let upcomingCount = visibleSpan.totalCount
 
         // No badge line at `systemSmall`: the tile has no 23pt for it (see `smallLayout`, T-7163).
+        // That holds in the unavailable state too -- the dash in the header and the state card's
+        // own title carry it there.
         if widgetFamily == .systemSmall {
             return []
+        }
+
+        // [[T-15331]]: one `unavailable` badge in place of the counts, as the Today tile draws
+        // ([[T-12332]]). `0 overdue` / `0 upcoming` were zeros the extension never read.
+        if entry.snapshot.isUnavailable {
+            return [WidgetHeaderBadge(text: "unavailable", tint: Theme.amber)]
         }
 
         if widgetFamily == .systemMedium {
