@@ -474,8 +474,11 @@ enum GlobalSearchIndexSupport {
                 .joined(separator: " • ")
             let tagText = CadenceSearchTagSupport.text(for: note.sortedTags)
             let content = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
+            // [[T-15551]]: the storage key stays a match field, as it is for the Notes rows below
+            // and for the same event note in iOS Search -- neither row line spells `2026-11-10`.
             guard let score = CadenceSearchMatcher.matchScore(
-                query: preparedQuery, fields: [title, content, dateLabel, tagText]
+                query: preparedQuery,
+                fields: [title, content, dateLabel, tagText] + NoteReferencePanelSupport.searchKeyFields(note)
             ) else { return nil }
             let row = GlobalSearchResult(
                 id: CadenceSearchIdentity.eventNote(note.id),

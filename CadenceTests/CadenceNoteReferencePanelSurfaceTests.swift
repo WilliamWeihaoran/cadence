@@ -403,6 +403,22 @@ struct CadenceNoteReferencePanelSurfaceTests {
         #expect(!search.contains("title: note.displayTitle,"))
     }
 
+    /// **[[T-15551]]: Cmd+K's Event Notes section matches the key too.** iOS Search scores both note
+    /// sections through one builder that carries `searchKeyFields`; the palette's Notes rows did,
+    /// its Event Notes rows did not, so `2026-10-26` found the event note on the phone and nothing
+    /// on the Mac. Neither row line spells the key, which is why it has to be a field.
+    @Test func cmdKFindsAnEventNoteByItsStorageKey() {
+        #if os(macOS)
+        let event = Note(kind: .meeting, title: "Standup", eventDateKey: "2026-10-26")
+        let other = Note(kind: .meeting, title: "Retro", eventDateKey: "2027-03-14")
+        let byKey = GlobalSearchIndexSupport.eventNoteResults(
+            notes: [event, other], query: "2026-10-26", taskTitles: [:], relativeTo: Self.datedNow
+        )
+        #expect(byKey.map(\.title) == ["Standup"])
+        #expect(byKey.allSatisfy { !$0.title.contains("2026-") && !$0.subtitle.contains("2026-") })
+        #endif
+    }
+
     /// **The live bug of the three, asserted as the property it violated rather than as a string.**
     /// The markdown note picker's row returned a bare `dateKey` for `.daily` and a bare `weekKey`
     /// for `.weekly`. `NoteMigrationService.dailyNote` creates every daily note with
