@@ -456,8 +456,8 @@ private extension CadenceMCPToolContractTests {
         ]),
         DTOFieldSpec(structName: "CadenceHabitSummary", expectedFields: [
             "id", "title", "icon", "colorHex", "frequencyType", "frequencyDays", "targetCount",
-            "order", "contextId", "contextName", "goal", "currentStreak", "completionCount",
-            "completedToday", "createdAt",
+            "order", "contextId", "contextName", "goal", "currentStreak", "streakUnit",
+            "completionCount", "completedToday", "createdAt",
         ]),
         DTOFieldSpec(structName: "CadenceSavedLinkSummary", expectedFields: [
             "id", "title", "url", "container", "order", "createdAt",

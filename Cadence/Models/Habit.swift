@@ -430,7 +430,11 @@ import Foundation
 
 /// What a habit streak is counted in. Lives in `Habit.swift` rather than `HabitInsights.swift`
 /// because the MCP server target compiles the former and not the latter.
-nonisolated enum HabitStreakUnit {
+///
+/// `String`-backed because the raw value is a wire value: `list_habits` ships it as
+/// `CadenceHabitSummary.streakUnit` beside `currentStreak` ([[T-15302]]), so a client reading
+/// `currentStreak: 8` is told whether that is eight days or eight weeks instead of guessing.
+nonisolated enum HabitStreakUnit: String {
     case days
     case weeks
 

@@ -304,6 +304,61 @@ struct CadenceReadServiceTests {
         #expect(dailySubtitle == "Work - 2 day streak")
     }
 
+    /// T-15302: `list_habits` ships `currentStreak` as a bare number, and for a `timesPerWeek`
+    /// habit that number is weeks. The subtitle above learned the unit in `4c63084e`; the DTO a
+    /// client actually reads did not, so it carries `streakUnit` beside the number. Both
+    /// frequencies are asserted so a field hardcoded to either spelling fails one of them.
+    @Test func listHabitsNamesTheUnitItsStreakIsCountedIn() throws {
+        let fixture = try Fixture()
+        let isoCalendar = Habit.isoWeekCalendar()
+        let currentWeekStart = try #require(isoCalendar.dateInterval(of: .weekOfYear, for: Date())?.start)
+
+        let weekly = Habit(title: "Row erg", context: fixture.context)
+        weekly.frequencyType = .timesPerWeek
+        weekly.targetCount = 1
+        fixture.modelContext.insert(weekly)
+        for weeksBack in 1...2 {
+            let weekStart = try #require(isoCalendar.date(byAdding: .day, value: -7 * weeksBack, to: currentWeekStart))
+            fixture.modelContext.insert(HabitCompletion(date: DateFormatters.dateKey(from: weekStart, calendar: isoCalendar), habit: weekly))
+        }
+        let daily = Habit(title: "Row stretch", context: fixture.context)
+        daily.frequencyType = .daily
+        fixture.modelContext.insert(daily)
+        fixture.modelContext.insert(HabitCompletion(date: DateFormatters.todayKey(), habit: daily))
+        try fixture.modelContext.save()
+
+        let items = try fixture.service.listHabits(options: .init(query: "Row")).items
+        let weeklyItem = try #require(items.first { $0.id == weekly.id.uuidString })
+        let dailyItem = try #require(items.first { $0.id == daily.id.uuidString })
+        #expect(weeklyItem.currentStreak == 2)
+        #expect(weeklyItem.streakUnit == "weeks")
+        #expect(dailyItem.currentStreak == 1)
+        #expect(dailyItem.streakUnit == "days")
+    }
+
+    /// T-15301: two devices checking one habit in on one day mint two rows that both survive the
+    /// CloudKit merge, and since T-2077 nothing deletes the spare. `completionCount` counted rows,
+    /// so the duplicated day read as two check-ins while `currentStreak` beside it read one.
+    @Test func listHabitsCountsADuplicatedHabitDayAsOneCheckIn() throws {
+        let fixture = try Fixture()
+        let habit = Habit(title: "Journal", context: fixture.context)
+        habit.frequencyType = .daily
+        fixture.modelContext.insert(habit)
+        // 2026-03-09 recorded by two devices; 2026-03-10 recorded once; 2026-03-11 is one row an
+        // archive import restored with `count` 3 -- still one check-in day, not three.
+        for key in ["2026-03-09", "2026-03-09", "2026-03-10"] {
+            fixture.modelContext.insert(HabitCompletion(date: key, habit: habit))
+        }
+        let restored = HabitCompletion(date: "2026-03-11", habit: habit)
+        restored.count = 3
+        fixture.modelContext.insert(restored)
+        try fixture.modelContext.save()
+        #expect((habit.completions ?? []).count == 4, "fixture premise: four rows on record")
+
+        let item = try #require(try fixture.service.listHabits(options: .init(query: "Journal")).items.first)
+        #expect(item.completionCount == 3, "one per checked-in day: neither the duplicate row nor a restored count of 3 adds a day")
+    }
+
     @Test func invalidEnumsAndPartialContainerFiltersThrow() throws {
         let fixture = try Fixture()
 

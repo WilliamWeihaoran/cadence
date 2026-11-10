@@ -1169,7 +1169,14 @@ final class CadenceReadService {
             contextName: habit.context?.name,
             goal: habit.goal.map(goalRef),
             currentStreak: habit.currentStreak,
-            completionCount: (habit.completions ?? []).count,
+            streakUnit: habit.streakUnit.rawValue,
+            // Not `completions.count`: a CloudKit merge keeps both rows when two devices check one
+            // habit in on one day, and nothing deletes the spare since [[T-2077]] retired the
+            // repair, so the raw row count double-counted that day ([[T-15301]]). One per checked-in
+            // date, keyed by the same collapse every streak walk uses. Deliberately not the SUM of
+            // the collapsed counts: an archive import restores a row's `count`, and a single row of
+            // 3 is one check-in day, which is all the old row count ever meant.
+            completionCount: habit.completionCountsByDate().count,
             completedToday: (habit.completions ?? []).contains { $0.date == today },
             createdAt: format(habit.createdAt)
         )

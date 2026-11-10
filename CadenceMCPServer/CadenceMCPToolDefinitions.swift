@@ -121,7 +121,11 @@ enum CadenceMCPToolDefinitions {
     // to keep opening; a later build drops the entity once no device can hold a record. Until
     // then, `PersistenceController.performStartupMaintenance` retires any rows it finds, pushing
     // each block's day and time down onto its members first so none of them loses its slot.
-    private static let serverVersion = "0.16.0"
+    // 0.17.0 adds one response key, `CadenceHabitSummary.streakUnit` ([[T-15302]]): `currentStreak`
+    // counts weeks for a `timesPerWeek` habit and days for every other frequency, and the bare
+    // number let a client report eight kept weeks as an eight-day streak. Additive -- no key moved
+    // or dropped -- but it edits a pinned DTO field set, which this surface versions.
+    private static let serverVersion = "0.17.0"
     private static let writeToolNames: Set<String> = [
         "create_context",
         "create_container",
