@@ -516,6 +516,30 @@ struct CadenceScheduleDraft: Equatable {
         endMin = min(CadenceScheduleSupport.calendarEndHour * 60, startMin + Self.minimumDurationMinutes)
     }
 
+    /// What an event's **Starts** date writes ([[T-15630]]): the start moves to `newKey` and the
+    /// end day moves **by the same number of days**, so the event keeps its length — what Apple
+    /// Calendar's own Starts picker does.
+    ///
+    /// The panel used to write `startDateKey` alone and lean on `keepEndAfterStart()`. That rule
+    /// only catches an end that lands *before* the start, so the two directions failed differently:
+    /// a 9-10 AM meeting moved two days EARLIER kept its old end day and was saved as a 49-hour,
+    /// three-day event; a 10 PM-1 AM event moved one day LATER collapsed onto one day and was
+    /// saved as fifteen minutes. The day span is counted in the storage calendar, so a transition
+    /// day between the two keys cannot shorten it. `keepEndAfterStart()` still runs after, for a
+    /// key that cannot be parsed.
+    mutating func moveStartDay(to newKey: String, calendar: Calendar = .current) {
+        let storage = DateFormatters.storageCalendar(inheritingTimeZoneFrom: calendar)
+        if let oldStart = DateFormatters.date(from: startDateKey, in: calendar),
+           let oldEnd = DateFormatters.date(from: endDateKey, in: calendar),
+           let newStart = DateFormatters.date(from: newKey, in: calendar),
+           let span = storage.dateComponents([.day], from: oldStart, to: oldEnd).day,
+           let newEnd = storage.date(byAdding: .day, value: max(0, span), to: newStart) {
+            endDateKey = DateFormatters.dateKey(from: newEnd, calendar: calendar)
+        }
+        startDateKey = newKey
+        keepEndAfterStart()
+    }
+
     // MARK: Writing an event
 
     /// The draft's two `Date`s, as EventKit needs them — all-day, same-day timed, and one that

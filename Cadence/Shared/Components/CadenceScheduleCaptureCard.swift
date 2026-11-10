@@ -1032,10 +1032,13 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
         }, set: { date in
             let key = DateFormatters.dateKey(from: date)
             if field == .dueDate { draft.dueDateKey = key }
-            else {
+            else if draft.kind == .task {
                 draft.startDateKey = key
-                if draft.kind == .task { draft.endDateKey = key }
+                draft.endDateKey = key
                 draft.keepEndAfterStart()
+            } else {
+                // [[T-15630]]: an event's end day travels with its start, as in the panel.
+                draft.moveStartDay(to: key)
             }
         })
     }

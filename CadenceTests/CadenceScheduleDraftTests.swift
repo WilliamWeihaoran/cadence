@@ -785,6 +785,50 @@ struct CadenceScheduleDraftEventEditingTests {
         #expect(draft.endDateKey == draft.startDateKey)
     }
 
+    /// [[T-15630]]. The Starts date moves the whole event, as Apple Calendar's does: the end day
+    /// travels by the same number of days, so the length the user opened is the length saved.
+    /// Writing the start key alone stretched a meeting moved earlier into a multi-day event and
+    /// collapsed a midnight-crossing one moved later to fifteen minutes. The span is counted across
+    /// New York's spring-forward day, so a 23-hour day between the keys cannot shorten it.
+    @Test("Moving an event's start day carries its end day and keeps its length")
+    func movingTheStartDayKeepsTheEventsLength() throws {
+        let calendar = try newYork()
+        let cases: [(start: Date, end: Date, isAllDay: Bool, to: String, endKey: String)] = [
+            // A one-hour meeting, moved two days earlier and three days later.
+            (try instant("2026-06-15", 9 * 60, calendar), try instant("2026-06-15", 10 * 60, calendar), false, "2026-06-13", "2026-06-13"),
+            (try instant("2026-06-15", 9 * 60, calendar), try instant("2026-06-15", 10 * 60, calendar), false, "2026-06-18", "2026-06-18"),
+            // 10 PM -> 1 AM, moved one day later and one earlier.
+            (try instant("2026-06-15", 22 * 60, calendar), try instant("2026-06-16", 60, calendar), false, "2026-06-16", "2026-06-17"),
+            (try instant("2026-06-15", 22 * 60, calendar), try instant("2026-06-16", 60, calendar), false, "2026-06-14", "2026-06-15"),
+            // A three-day all-day event (the 5th-7th, exclusive end on the 8th), moved across the DST change.
+            (try instant("2026-03-05", 0, calendar), try instant("2026-03-08", 0, calendar), true, "2026-03-07", "2026-03-09"),
+        ]
+        for item in cases {
+            var draft = editing(start: item.start, end: item.end, isAllDay: item.isAllDay, calendar)
+            let opened = try #require(draft.eventDateRange(calendar: calendar))
+            draft.moveStartDay(to: item.to, calendar: calendar)
+            #expect(draft.startDateKey == item.to)
+            #expect(draft.endDateKey == item.endKey, "moved to \(item.to): the end day did not travel with the start")
+            let moved = try #require(draft.eventDateRange(calendar: calendar))
+            // Calendrical, so midnight to midnight across the 23-hour day still reads 3 days 0 h.
+            let units: Set<Calendar.Component> = [.day, .hour, .minute]
+            #expect(
+                calendar.dateComponents(units, from: moved.start, to: moved.end)
+                    == calendar.dateComponents(units, from: opened.start, to: opened.end),
+                "moved to \(item.to): the event's length changed"
+            )
+        }
+
+        // Both Starts pickers write through it: the panel's and the iOS capture card's.
+        for path in ["Cadence/Shared/Components/CadenceSchedulePanel.swift", "Cadence/Shared/Components/CadenceScheduleCaptureCard.swift"] {
+            let raw = try CadenceSourceScan.sourceFile(path)
+            #expect(raw.count > 1_000, "\(path) read as \(raw.count) characters")
+            let stripped = CadenceSourceScan.strippingComments(raw)
+            #expect(stripped != raw && stripped.count == raw.count)
+            #expect(CadenceSourceScan.matchCount(#"draft\.moveStartDay\(to:"#, in: stripped) == 1, "\(path) no longer moves the start day through moveStartDay")
+        }
+    }
+
     /// Both ends are wall-clock readings. On 2026-03-08 New York skips 02:00–02:59: a start chosen
     /// at 02:30 opens at 03:00, as every start in the app does (T-3119), and an End chosen at 03:00
     /// after a 01:00 start is 03:00 on the wall — one elapsed hour — not the 04:00 that adding the

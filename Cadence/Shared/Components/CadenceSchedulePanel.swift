@@ -957,12 +957,9 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         Binding(
             get: { DateFormatters.date(from: draft.startDateKey) ?? Date() },
             set: { newDay in
-                let key = DateFormatters.dateKey(from: newDay)
-                draft.startDateKey = key
-                // An end day can never precede the start it was measured from. Dragging the start
-                // past the end carries the end with it rather than producing a block that finishes
-                // before it begins — the same non-inversion rule the block's edge handles obey.
-                draft.keepEndAfterStart()
+                // [[T-15630]]: the end day travels with the start, so a moved event keeps its
+                // length in either direction -- see `CadenceScheduleDraft.moveStartDay(to:)`.
+                draft.moveStartDay(to: DateFormatters.dateKey(from: newDay))
             }
         )
     }
