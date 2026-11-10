@@ -1203,12 +1203,13 @@ final class CadenceReadService {
         return nil
     }
 
+    /// Project before area ([[T-15561]]), the list this file's own search subtitle already names.
     private func taskContainer(_ task: AppTask) -> CadenceContainerRef? {
-        if let area = task.area {
-            return containerRef(area)
-        }
         if let project = task.project {
             return containerRef(project)
+        }
+        if let area = task.filedArea {
+            return containerRef(area)
         }
         return nil
     }

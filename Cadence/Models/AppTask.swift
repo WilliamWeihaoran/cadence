@@ -431,6 +431,17 @@ nonisolated enum CadenceTodayStanding: Int, CaseIterable, Hashable {
         project?.colorHex ?? area?.colorHex ?? "#6b7a99"
     }
 
+    /// The area this task is **filed** under: its `area` only when it has no `project`
+    /// ([[T-15561]]). The placement half of `containerName`'s rule -- a dual-filed row belongs to
+    /// the project ([[T-15553]], [[T-15431]]) -- for the readers that resolve a task's list as a
+    /// value rather than a name: the schedule draft's list token and section, the composer
+    /// picker's selection, and both MCP services' container. Read `project` first and this second
+    /// and the order of the checks no longer decides anything. Here, in `Models/`, because the
+    /// `CadenceMCPServer` target compiles this file and not the composer support.
+    var filedArea: Area? {
+        project == nil ? area : nil
+    }
+
     var resolvedSectionName: String {
         let trimmed = sectionName.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? TaskSectionDefaults.defaultName : trimmed

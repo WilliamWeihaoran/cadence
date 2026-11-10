@@ -2371,9 +2371,11 @@ final class CadenceWriteService {
         return names.first ?? TaskSectionDefaults.defaultName
     }
 
+    /// Project before area ([[T-15561]]): a dual-filed task's sections are its project's, the
+    /// list the app files and draws it in.
     private func currentContainer(for task: AppTask) -> CadenceResolvedContainer? {
-        if let area = task.area { return .area(area) }
         if let project = task.project { return .project(project) }
+        if let area = task.filedArea { return .area(area) }
         return nil
     }
 

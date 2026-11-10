@@ -81,6 +81,58 @@ struct CadenceDualFiledTaskListPrecedenceTests {
         #expect(CadenceTaskComposerSupport.container(of: s.task) == .project(s.project.id))
     }
 
+    // MARK: - [[T-15561]]: the placement readers
+
+    /// Gives the two lists disjoint columns and files the task under one only the PROJECT has, in
+    /// the wrong case -- so an area-first reader normalises it to the area's column (or rejects
+    /// it) and a project-first one answers the project's spelling.
+    private func seedWithColumns() throws -> Seed {
+        let s = try seed()
+        s.area.sectionNames = ["Errands"]
+        s.project.sectionNames = ["Planning", "Build"]
+        s.task.sectionName = "build"
+        try s.context.save()
+        return s
+    }
+
+    @Test func theFiledAreaOfADualFiledTaskIsNone() throws {
+        let s = try seed()
+        #expect(s.task.filedArea == nil)
+        let inArea = AppTask(title: "Water plants")
+        inArea.area = s.area
+        #expect(inArea.filedArea?.id == s.area.id)
+    }
+
+    /// The schedule panel opens a dual-filed task on its project's list and column, so Save
+    /// cannot re-file it under the area.
+    @Test func theScheduleDraftOpensOnTheProjectAndItsColumn() throws {
+        let s = try seedWithColumns()
+        let draft = CadenceScheduleDraft(editing: s.task)
+        #expect(draft.listToken == CadenceTaskComposerSupport.token(for: .project(s.project.id)))
+        #expect(CadenceScheduleDraft.containerToken(of: s.task) == draft.listToken)
+        #expect(draft.sectionName == "Build", "the draft opened on column \(draft.sectionName)")
+    }
+
+    /// `update_task` with only a section matches it against the PROJECT's columns.
+    @Test func theMCPWriteServiceMatchesASectionAgainstTheProjectsColumns() throws {
+        let s = try seedWithColumns()
+        let write = CadenceWriteService(context: s.context, preparesStore: false)
+        let detail = try write.updateTask(options: .init(taskId: s.task.id.uuidString, sectionName: "build"))
+        #expect(detail.summary.sectionName == "Build")
+        #expect(s.task.project?.id == s.project.id)
+    }
+
+    /// `get_task` reports the project as the task's container -- the list its search subtitle names.
+    @Test func theMCPReadServiceReportsTheProjectAsTheContainer() throws {
+        let s = try seed()
+        let read = CadenceReadService(context: s.context, performsMigrations: false)
+        let detail = try read.getTask(taskID: s.task.id.uuidString)
+        let container = try #require(detail.summary.container)
+        #expect(container.kind == "project")
+        #expect(container.id == s.project.id.uuidString)
+        #expect(container.name == "Kitchen Reno")
+    }
+
     /// A single-list task is unchanged by the precedence — the area-only and project-only halves.
     @Test func aTaskInOneListStillNamesThatList() {
         let area = Area(name: "Home", colorHex: "#aa3311", icon: "house.fill")

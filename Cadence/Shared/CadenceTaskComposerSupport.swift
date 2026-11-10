@@ -390,7 +390,7 @@ enum CadenceTaskComposerSupport {
     /// list `AppTask.containerName` does and the row is drawn in.
     static func container(of task: AppTask) -> TaskContainerSelection {
         if let project = task.project { return .project(project.id) }
-        if let area = task.area { return .area(area.id) }
+        if let area = task.filedArea { return .area(area.id) }
         return .inbox
     }
 

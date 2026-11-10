@@ -44,7 +44,7 @@ extension CadenceScheduleDraft {
         listToken = Self.containerToken(of: task)
         sectionName = CadenceTaskMutationSupport.normalizedSectionName(
             task.resolvedSectionName,
-            area: task.area,
+            area: task.filedArea,
             project: task.project
         )
         estimateMinutes = max(0, task.estimatedMinutes)
@@ -66,15 +66,11 @@ extension CadenceScheduleDraft {
         endMin = min(24 * 60, startMin + max(Self.minimumDurationMinutes, estimateMinutes))
     }
 
-    /// `CadenceTaskComposerSupport`'s token for the list the task is **actually** in.
+    /// `CadenceTaskComposerSupport`'s token for the list the task is **actually** in -- the
+    /// picker's own `container(of:)`, so a dual-filed task opens on its project ([[T-15561]]) and
+    /// Save cannot re-file it under the area the rest of the app does not show it in.
     static func containerToken(of task: AppTask) -> String {
-        if let area = task.area {
-            return CadenceTaskComposerSupport.token(for: .area(area.id))
-        }
-        if let project = task.project {
-            return CadenceTaskComposerSupport.token(for: .project(project.id))
-        }
-        return CadenceTaskComposerSupport.token(for: .inbox)
+        CadenceTaskComposerSupport.token(for: CadenceTaskComposerSupport.container(of: task))
     }
 
     /// Whether the series' rule or its end condition moved — the one edit that reaches beyond this
