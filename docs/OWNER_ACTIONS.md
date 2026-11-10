@@ -280,8 +280,9 @@ naming round.
 **Build 25: DONE.** It went to internal TestFlight, macOS and iOS, on 2026-10-27. That date is
 your word, recorded in `docs/SESSION_HANDOFF.md`; the upload happens in Organizer and nothing in
 the tree records it. Everything below is restated for **the next upload**, which must carry a
-`CURRENT_PROJECT_VERSION` **above 25**. Re-read 2026-10-28: the tree still reads 25 on the app and
-widget targets, so the bump is the first step of that upload and has not been taken.
+`CURRENT_PROJECT_VERSION` **above 25**. **Taken 2026-11-10: the app and widget targets now read `CURRENT_PROJECT_VERSION = 26`** (four
+lines, two configurations each; the test bundles stay at 24 and the MCP server at 1, none of which
+ships). The remaining upload steps are yours and are listed below.
 
 Not a tenth item and not a tenth ticket — there are still nine. Item 3 ends at "the certificate
 exists", and the upload is the step after it. No document in this repository describes that step:
@@ -309,7 +310,26 @@ internal TestFlight build is neither. This section is the gap, checked against H
 - **Internal TestFlight needs no Beta App Review, no nutrition label and no test information.**
   That is why item 8 is marked "public release only" — it is, and nothing about the internal RC
   changes it.
-- **No new CloudKit schema obligation.** This is the one that would have been expensive to miss:
+- **BUILD 26 OWES A CLOUDKIT SCHEMA DEPLOY — redone 2026-11-10, and the answer changed.** The
+  measurement below is build 25's and it no longer holds. At build 26's HEAD: `CadenceSchema.swift`
+  is still byte-identical and there are still **24 `@Model` types**, but `Note` gained **three new
+  stored properties** since 2026-10-27 — `eventNotesMergedAt: Date? = nil`,
+  `eventNotesMergedNativeHash: String = ""` and `eventNotesMergedContentHash: String = ""`
+  (`Cadence/Models/Note.swift:66-73`, owned by `CadenceEventNotesMerge`). `Note.swift`'s own comment
+  states the rule: a new field on a **deployed** record type is owed a Console deploy before a build
+  carrying it ships.
+  **This is the exact shape the readiness document says is most dangerous**: new optional/defaulted
+  properties on a live type, which are invisible to the deployment diff because they exist in
+  neither environment until a debug build materialises them. Do not read a short diff as "nothing
+  owed". So, before uploading build 26:
+    1. Run a **debug** build and exercise an event note, so SwiftData materialises the three columns
+       in Development.
+    2. Press **Deploy Schema Changes** in the CloudKit Console.
+    3. **Verify Production's `CD_Note` field count** against the model's stored properties — count
+       them, do not trust an empty diff.
+  Skipping this risks aborting mirroring for the **whole store** on TestFlight, not just for notes.
+
+- **(Build 25's answer, kept for the reasoning only.) No new CloudKit schema obligation.** This is the one that would have been expensive to miss:
   a TestFlight build talks to the **Production** CloudKit environment, and a record type or field
   that exists only in Development can abort mirroring for the whole store. The readiness document
   carries that rule with a measurement dated 2026-10-20 and says in terms "redo it, do not re-read
