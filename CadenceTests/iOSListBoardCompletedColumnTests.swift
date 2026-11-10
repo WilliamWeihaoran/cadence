@@ -222,7 +222,110 @@ struct iOSListBoardCompletedColumnTests {
         )
         let column = try column(in: code)
         let footer = try #require(column.range(of: "ForEach(completedTasks) { task in"), "the footer draws no finished cards")
-        #expect(column[footer.upperBound...].contains(".draggable(TaskDragPayload.string(for: task.id))"),
+        // Since [[T-15622]] the footer draws the column's one card builder, which carries the drag.
+        #expect(column[footer.upperBound...].prefix(1_200).contains("boardCard(task)"),
+                "non-vacuity: the finished cards no longer draw the column's draggable card")
+        let card = try boardCard(in: column)
+        #expect(card.contains(".draggable(TaskDragPayload.string(for: task.id))"),
                 "non-vacuity: the finished cards are no longer draggable, so there is nothing to accept")
+    }
+
+    // MARK: - [[T-15622]]: a card dropped on a finished card lands in front of it
+
+    private func boardCard(in column: String) throws -> String {
+        try #require(
+            CadenceSourceScan.declarationBody("private func boardCard(_ task: AppTask) -> some View", in: column),
+            "the column's one card builder is gone"
+        )
+    }
+
+    /// **A card set down on a finished card goes in front of it**, as on the Mac, whose
+    /// `ListSectionKanbanColumn.moveTask` orders among the column's whole `tasks`, finished cards
+    /// included. `drop` finds a `before:` target only in `columnTasks`; handed the open half alone it
+    /// cannot find a finished target and files the card at the column's end.
+    ///
+    /// *Failing-first:* `dropColumnCards` returning `open` alone puts the moved card AFTER the
+    /// finished one it was dropped on.
+    @Test func aCardDroppedOnAFinishedCardLandsInFrontOfIt() throws {
+        let modelContext = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let open = task("still open", section: "Doing", status: .todo)
+        let finished = task("shipped", section: "Doing", status: .done)
+        let moving = task("carried over", section: "Backlog", status: .todo)
+        for (index, item) in [open, finished, moving].enumerated() {
+            item.order = index
+            modelContext.insert(item)
+        }
+        try modelContext.save()
+
+        let columnCards = ListDetailKanbanBoard.dropColumnCards(open: [open], finished: [finished])
+        #expect(columnCards.count == 2, "the column's drop order leaves out one half of the column")
+        let landed = CadenceKanbanCardDrop.drop(
+            [TaskDragPayload.string(for: moving.id)],
+            intoColumn: "Doing",
+            before: finished,
+            columnTasks: columnCards,
+            among: ListDetailKanbanBoard.droppableCards(open: [open, moving], finished: [finished]),
+            spanning: [open, finished, moving],
+            ofList: CadenceTaskDropSupport.containerKey(for: .inbox),
+            in: modelContext
+        )
+        #expect(landed, "a card set down on a finished card is refused")
+        #expect(moving.sectionName == "Doing", "the card did not move to the finished card's column")
+        #expect(moving.order < finished.order,
+                "the card landed after the finished card it was dropped on, at the column's end")
+        #expect(open.order < moving.order, "the card jumped in front of the open card above the drop")
+        #expect(finished.status == .done, "a drop on a finished card reopened it")
+    }
+
+    /// **Both stacks draw the one card builder, it is a drop target with the insertion line, and
+    /// the board orders a drop among the column's finished cards too.** Without the first half the
+    /// test above proves a helper the finished cards never reach.
+    ///
+    /// *Failing-first:* restoring the footer's bare `iOSBoardTaskCard(...).draggable(...)` fails the
+    /// call count; restoring `columnTasks: column.tasks,` fails the panel half.
+    @Test func theFinishedCardsAreDropTargetsWithTheInsertionLine() throws {
+        let code = try boardSource()
+        let column = try column(in: code)
+        #expect(CadenceSourceScan.matchCount(#"boardCard\(task\)"#, in: column) == 2,
+                "the open stack and the Completed footer do not both draw the column's one card")
+        let footer = try #require(column.range(of: "ForEach(completedTasks) { task in"))
+        #expect(column[footer.upperBound...].prefix(1_200).contains("boardCard(task)"),
+                "the Completed footer draws a card that takes no drop")
+        let card = try boardCard(in: column)
+        #expect(CadenceSourceScan.matchCount(#"onDropCard\(items, task\)"#, in: card) == 1,
+                "the card is not a drop-before target")
+        #expect(card.contains("if dropTargetTaskID == task.id {") && card.contains(".frame(height: 2)"),
+                "the card draws no insertion line while a card is held over it")
+
+        let panel = try #require(
+            CadenceSourceScan.declarationBody("struct iOSListKanbanPanel: View", in: code),
+            "the iOS list board panel is gone"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"columnTasks: ListDetailKanbanBoard\.dropColumnCards\(\s*open: column\.tasks,\s*finished: finished\[column\.title\] \?\? \[\]\s*\)"#,
+                in: panel
+            ) == 1,
+            "the board orders a drop among the column's open cards only, so a drop on a finished card goes to the end"
+        )
+    }
+
+    /// **The Mac's finished cards draw the insertion line too.** They were drop targets already
+    /// but passed no `showsDropIndicator`, so the line the open cards draw never showed on them;
+    /// one app, so both platforms' finished cards say where a drop lands ([[T-8201]]).
+    ///
+    /// *Failing-first:* dropping `showsDropIndicator:` from `completedTaskCards` fails here.
+    @Test func theMacFinishedCardsDrawTheInsertionLineToo() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/KanbanSectionColumnView.swift")
+        )
+        let cards = try #require(
+            CadenceSourceScan.declarationBody("private func completedTaskCards(tasks: [AppTask]) -> some View", in: source),
+            "the Mac section column's finished cards are gone"
+        )
+        #expect(cards.contains("KanbanDraggableCard("), "non-vacuity: the finished cards are not the draggable card")
+        #expect(cards.contains("showsDropIndicator: dragOverTaskID == task.id,"),
+                "the Mac's finished cards draw no insertion line")
+        #expect(cards.contains("onDropBefore:"), "the Mac's finished cards take no drop")
     }
 }

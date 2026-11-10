@@ -332,9 +332,20 @@ struct ListSectionKanbanColumn: View {
     private func completedTaskCards(tasks: [AppTask]) -> some View {
         VStack(spacing: 6) {
             ForEach(tasks) { task in
-                KanbanDraggableCard(task: task, todayKey: todayKey) { items in
-                    handleTaskDrop(items: items, before: task)
-                }
+                // [[T-15622]]: the insertion line the open cards draw, so a finished card that
+                // takes a drop says where it lands, as the iOS board's finished cards now do.
+                KanbanDraggableCard(
+                    task: task,
+                    todayKey: todayKey,
+                    showsDropIndicator: dragOverTaskID == task.id,
+                    onDropTargetedChanged: { isOver in
+                        if isOver { dragOverTaskID = task.id }
+                        else if dragOverTaskID == task.id { dragOverTaskID = nil }
+                    },
+                    onDropBefore: { items in
+                        handleTaskDrop(items: items, before: task)
+                    }
+                )
             }
         }
         .transition(

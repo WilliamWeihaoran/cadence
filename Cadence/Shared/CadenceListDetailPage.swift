@@ -258,6 +258,19 @@ enum ListDetailKanbanBoard {
         open + finished
     }
 
+    /// **The cards a drop into one column is ordered among: the column's open cards AND its
+    /// finished ones** ([[T-15622]]).
+    ///
+    /// `CadenceKanbanCardDrop.drop` puts a card dropped `before:` a target in front of that target
+    /// only if the target is in `columnTasks`; a target it cannot find sends the card to the end.
+    /// The iOS board handed it the column's OPEN cards, so once a finished card behind the Completed
+    /// toggle took a drop, the card would still land at the column's end. The Mac's
+    /// `ListSectionKanbanColumn.moveTask` orders among the column's whole `tasks`, finished cards
+    /// included, so a card dropped on a finished one lands in front of it there ([[T-8201]]).
+    static func dropColumnCards(open: [AppTask], finished: [AppTask]) -> [AppTask] {
+        open + finished
+    }
+
     /// **Which configured columns the list board draws, on both platforms** ([[T-8565]]).
     ///
     /// The Mac's Kanban tab has a "Show Archived" pill (`showArchivedKanbanColumns`) that swaps the

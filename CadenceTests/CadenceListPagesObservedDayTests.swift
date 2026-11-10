@@ -185,17 +185,20 @@ struct CadenceListPagesObservedDayTests {
         #expect(card.contains("dateChipsArePickers: false,\n                todayKey: todayKey\n"))
 
         // The list board: the page hands its observed day to the panel, the panel to every column,
-        // the column to both of its card builds (open and finished).
+        // the column to its one card build, which both stacks (open and finished) draw since
+        // [[T-15622]].
         let support = try Self.code("Cadence/iOS/iOSListSupportViews.swift")
         let panel = try #require(CadenceSourceScan.declarationBody("struct iOSListKanbanPanel: View", in: support))
         #expect(panel.contains("let todayKey: String\n"))
         #expect(panel.contains("todayKey: todayKey,\n"))
         let column = try #require(CadenceSourceScan.declarationBody("private struct iOSListKanbanColumn: View", in: support))
         #expect(column.contains("let todayKey: String\n"))
-        #expect(CadenceSourceScan.matchCount(#"iOSBoardTaskCard\("#, in: column) == 2)
+        #expect(CadenceSourceScan.matchCount(#"iOSBoardTaskCard\("#, in: column) == 1)
         #expect(CadenceSourceScan.matchCount(
             #"iOSBoardTaskCard\(task: task, showsContainerChip: false, todayKey: todayKey\)"#, in: column
-        ) == 2)
+        ) == 1)
+        #expect(CadenceSourceScan.matchCount(#"boardCard\(task\)"#, in: column) == 2,
+                "the open and finished stacks no longer both draw the column's one card build")
         let page = try Self.code("Cadence/iOS/iOSListDetailView.swift")
         let call = try #require(page.range(of: "iOSListKanbanPanel("), "the list page draws no board")
         #expect(page[call.upperBound...].prefix(1_500).contains("todayKey: observedDay.todayKey,"))
@@ -210,7 +213,7 @@ struct CadenceListPagesObservedDayTests {
         ) == 2)
 
         // And no other build of the card anywhere in the iOS tree.
-        #expect(CadenceSourceScan.matchCount(#"iOSBoardTaskCard\("#, in: support + board) == 4)
+        #expect(CadenceSourceScan.matchCount(#"iOSBoardTaskCard\("#, in: support + board) == 3)
     }
 
     /// The chips the touch card draws, with `dateChipsArePickers: false` as it passes it, answer

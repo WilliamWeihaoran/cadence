@@ -622,7 +622,12 @@ struct iOSListKanbanPanel: View {
                                             items,
                                             intoColumn: column.title,
                                             before: target,
-                                            columnTasks: column.tasks,
+                                            // [[T-15622]]: the column's finished cards too, so a
+                                            // card dropped on one lands in front of it.
+                                            columnTasks: ListDetailKanbanBoard.dropColumnCards(
+                                                open: column.tasks,
+                                                finished: finished[column.title] ?? []
+                                            ),
                                             // [[T-15620]]: the finished cards too -- they are
                                             // draggable behind the Completed toggle, as on the Mac.
                                             among: ListDetailKanbanBoard.droppableCards(
@@ -826,30 +831,7 @@ private struct iOSListKanbanColumn: View {
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(tasks) { task in
-                        // Scoped to one list already — the same reason `iOSTaskListRow` drops its
-                        // container, and the same knob macOS's `KanbanCard` uses.
-                        iOSBoardTaskCard(task: task, showsContainerChip: false, todayKey: todayKey)
-                            // The source half of [[T-8183]]: the payload the Calendar Board's card
-                            // and the task row already offer (`TaskDragPayload`), not a board-own
-                            // spelling. Outside the card, after its context menu, as both of those
-                            // put it — see `iOSBoardTaskCard`'s note on how the two share a press.
-                            .draggable(TaskDragPayload.string(for: task.id))
-                            // [[T-8271]]: the card is a drop target too, so a card set down on it
-                            // lands in front of it — macOS's `onDropBefore`, through the same write.
-                            .overlay(alignment: .top) {
-                                if dropTargetTaskID == task.id {
-                                    Rectangle()
-                                        .fill(Theme.blue)
-                                        .frame(height: 2)
-                                        .allowsHitTesting(false)
-                                }
-                            }
-                            .dropDestination(for: String.self) { items, _ in
-                                onDropCard(items, task)
-                            } isTargeted: { isOver in
-                                if isOver { dropTargetTaskID = task.id }
-                                else if dropTargetTaskID == task.id { dropTargetTaskID = nil }
-                            }
+                        boardCard(task)
                     }
 
                     // **Inside the scroller, after the cards** ([[T-9611]] settled that for the
@@ -883,6 +865,38 @@ private struct iOSListKanbanColumn: View {
         .dropDestination(for: String.self) { items, _ in
             onDropCard(items, nil)
         } isTargeted: { isCardDropTargeted = $0 }
+    }
+
+    /// **One card, for both stacks: the open cards and the finished ones behind the Completed
+    /// toggle** ([[T-15622]]). The finished half drew the card and its drag only, so a card set down
+    /// on a finished one fell through to the column body and went to the column's end, where every
+    /// Mac finished card is `KanbanDraggableCard` with `onDropBefore`. One builder rather than a
+    /// second copy of the chain below, so the two stacks cannot drift apart again.
+    private func boardCard(_ task: AppTask) -> some View {
+        // Scoped to one list already — the same reason `iOSTaskListRow` drops its
+        // container, and the same knob macOS's `KanbanCard` uses.
+        iOSBoardTaskCard(task: task, showsContainerChip: false, todayKey: todayKey)
+            // The source half of [[T-8183]]: the payload the Calendar Board's card
+            // and the task row already offer (`TaskDragPayload`), not a board-own
+            // spelling. Outside the card, after its context menu, as both of those
+            // put it — see `iOSBoardTaskCard`'s note on how the two share a press.
+            .draggable(TaskDragPayload.string(for: task.id))
+            // [[T-8271]]: the card is a drop target too, so a card set down on it
+            // lands in front of it — macOS's `onDropBefore`, through the same write.
+            .overlay(alignment: .top) {
+                if dropTargetTaskID == task.id {
+                    Rectangle()
+                        .fill(Theme.blue)
+                        .frame(height: 2)
+                        .allowsHitTesting(false)
+                }
+            }
+            .dropDestination(for: String.self) { items, _ in
+                onDropCard(items, task)
+            } isTargeted: { isOver in
+                if isOver { dropTargetTaskID = task.id }
+                else if dropTargetTaskID == task.id { dropTargetTaskID = nil }
+            }
     }
 
     /// **The "Completed N" row this column closes with** ([[T-9837]]).
@@ -920,9 +934,10 @@ private struct iOSListKanbanColumn: View {
                         ForEach(completedTasks) { task in
                             // The same card the open half draws, at the same width and with the
                             // same container chip suppressed -- a finished card is not a different
-                            // kind of card, which is the Mac's position too.
-                            iOSBoardTaskCard(task: task, showsContainerChip: false, todayKey: todayKey)
-                                .draggable(TaskDragPayload.string(for: task.id))
+                            // kind of card, which is the Mac's position too. [[T-15622]]: and the
+                            // same drop target with the same insertion line, as every Mac finished
+                            // card is (`completedTaskCards`' `KanbanDraggableCard`).
+                            boardCard(task)
                         }
                     }
                     .transition(.opacity.combined(with: .move(edge: .top)))
