@@ -245,11 +245,16 @@ enum CadenceSectionEditingSupport {
 
     /// **The list editor's column edit, re-filing only the cards on this list's board ([[T-15531]]).**
     ///
-    /// On an area that is `CadenceTaskQuerySupport.listedTasks(for:)`, not the raw `area.tasks`
-    /// edge: a task holding both an area and a project is the project's ([[T-15431]]) and sits on
-    /// the project's board, so renaming or deleting an area column must leave its `sectionName`
-    /// alone -- the in-app twin of the MCP fix in [[T-15512]]. The inherited-context cascade is a
-    /// different walk and still reaches every task on the edge.
+    /// On an area that is the rule `CadenceTaskQuerySupport.listedTasks(for:)` names, not the raw
+    /// `area.tasks` edge: a task holding both an area and a project is the project's ([[T-15431]])
+    /// and sits on the project's board, so renaming or deleting an area column must leave its
+    /// `sectionName` alone -- the in-app twin of the MCP fix in [[T-15512]]. The inherited-context
+    /// cascade is a different walk and still reaches every task on the edge.
+    ///
+    /// The rule is restated rather than called ([[T-15565]]): this file is compiled into the
+    /// `CadenceMCPServer` target, which does not compile `CadenceTaskQuerySupport` -- the same
+    /// restatement `CadenceReadService`/`CadenceWriteService` make ([[T-15434]]). The T-15531 tests
+    /// in `CadenceAreaProjectFilingCountTests` hold it to the shared rule's answer.
     @discardableResult
     static func refileColumnCards(
         base: [TaskSectionConfig],
@@ -259,7 +264,7 @@ enum CadenceSectionEditingSupport {
     ) -> Int {
         let cards: [AppTask]
         if let area {
-            cards = CadenceTaskQuerySupport.listedTasks(for: area)
+            cards = (area.tasks ?? []).filter { $0.project == nil }
         } else {
             cards = project?.tasks ?? []
         }
