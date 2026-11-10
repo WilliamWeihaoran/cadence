@@ -415,6 +415,12 @@ struct CadenceNoteFolderSurfaceTests {
             "Cadence/Shared/CadenceListNoteFiling.swift:3",
             // `self.folderPath = folderPath` in the initializer.
             "Cadence/Models/Note.swift:1",
+            // [[T-13993]]: Move Note's two list moves (`NoteActionSupport.move(_:toArea:)` and
+            // `toProject:`) each write the arrival path and restore the raw previous one on a
+            // refused commit. Neither can route through `fileWithoutCommitting` — that door is
+            // pinned to the importer alone — and `arrivalFolderPath` only ever returns the bytes
+            // the note already had or the root, so no un-normalized NEW path enters the store.
+            "Cadence/Shared/CadenceNoteMoveSupport.swift:4",
             // T-3131: `matchedNoteDiffers` normalizes the ARCHIVE RECORD's folder (a value copy,
             // never the model) through `CadenceNoteFolderPath.normalized`, so a re-import compares
             // equal to what filing stored. Still the one normalizer; no model write.
