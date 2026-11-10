@@ -212,8 +212,29 @@ nonisolated enum DateFormatters {
     /// build and in any launch that does not ask for it, so this is `Date()` everywhere but a
     /// Debug UI-test launch carrying `CADENCE_UI_TEST_TODAY` ([[T-15200]]).
     static func todayKey() -> String {
-        let now = Date()
-        return ymd.string(from: CadenceTodayOverride.live?.shifted(now) ?? now)
+        ymd.string(from: now())
+    }
+
+    /// The app's "now": `realNow` moved by the UI-test today override, so a "today" reader that
+    /// needs a `Date` rather than a key agrees with `todayKey()` under the override ([[T-15231]]).
+    /// `Date()` everywhere `CadenceTodayOverride.live` is `nil` -- every Release build and every
+    /// unarmed launch. The parameters exist for tests; callers pass none.
+    static func now(
+        override: CadenceTodayOverride? = CadenceTodayOverride.live,
+        realNow: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Date {
+        override?.shifted(realNow, calendar: calendar) ?? realNow
+    }
+
+    /// The start of the app's "today" in `calendar` -- `now()`'s day, so it is `todayKey()`'s day
+    /// as a `Date` ([[T-15231]]).
+    static func today(
+        override: CadenceTodayOverride? = CadenceTodayOverride.live,
+        realNow: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Date {
+        calendar.startOfDay(for: now(override: override, realNow: realNow, calendar: calendar))
     }
 
     /// Converts a `Date` to a `yyyy-MM-dd` storage key
@@ -647,9 +668,11 @@ nonisolated enum TimeFormatters {
 /// as at a real midnight. On the simulator:
 /// `xcrun simctl spawn <udid> notifyutil -p com.haoranwei.Cadence.uitest.advanceToday`.
 ///
-/// **Scope.** Only `DateFormatters.todayKey()` (and so `CadenceObservedDay`, which reads it) is
-/// shifted. Code that reads `Date()` / `Calendar.isDateInToday` / `startOfDay(for: Date())` directly
-/// is not, and the widget and MCP processes never see the variable.
+/// **Scope.** Only `DateFormatters.todayKey()` (and so `CadenceObservedDay`, which reads it),
+/// `DateFormatters.now()` and `DateFormatters.today()` are shifted; the iOS Today page and its
+/// schedule pane read the latter two ([[T-15231]]). Code that reads `Date()` /
+/// `Calendar.isDateInToday` / `startOfDay(for: Date())` directly is not, and the widget and MCP
+/// processes never see the variable.
 ///
 /// **Shipping.** The live instance is built only under `#if DEBUG`; the Release branch is a
 /// literal `nil`, and `requestedOffsetDays` refuses when `compiledIn` is false. Archive builds

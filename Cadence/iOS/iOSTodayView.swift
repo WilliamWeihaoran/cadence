@@ -322,7 +322,7 @@ struct iOSTodayView: View {
     private func todayTaskColumn(_ content: CadenceTodayListContent) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             iPadTodayTaskHeader(
-                day: Date(),
+                day: DateFormatters.now(),
                 title: "Today",
                 summary: content.summary,
                 sortMode: sortModeBinding

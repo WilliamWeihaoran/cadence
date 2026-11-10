@@ -54,8 +54,9 @@ struct iOSSchedulePanel: View {
         observedDay.todayKey
     }
 
+    /// `todayKey`'s day as a `Date`, read through the same today override ([[T-15231]]).
     private var today: Date {
-        Calendar.current.startOfDay(for: Date())
+        DateFormatters.today()
     }
 
     /// **Read, not re-derived.** These are the identical calls `iOSCalendarView` makes for the same

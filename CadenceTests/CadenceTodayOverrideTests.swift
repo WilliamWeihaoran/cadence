@@ -117,6 +117,56 @@ struct CadenceTodayOverrideTests {
         #expect(override.offsetDays == 1)
     }
 
+    // MARK: - now() / today() (T-15231)
+
+    /// The `Date`-shaped readers move by exactly the override's days, keep the time of day, and
+    /// land on the same day `todayKey()`'s formula does; with no override they are the real clock.
+    @Test func nowAndTodayMoveByTheOverrideAndAgreeWithTheKey() {
+        let override = CadenceTodayOverride(offsetDays: 3, center: NotificationCenter())
+        let now = DateFormatters.now(override: override, realNow: Self.lateEvening, calendar: Self.utc)
+        #expect(DateFormatters.dateKey(from: now, calendar: Self.utc) == "2026-11-12")
+        #expect(now == Self.utc.date(byAdding: .day, value: 3, to: Self.lateEvening))
+
+        let today = DateFormatters.today(override: override, realNow: Self.lateEvening, calendar: Self.utc)
+        #expect(today == Self.utc.startOfDay(for: now))
+        #expect(DateFormatters.dateKey(from: today, calendar: Self.utc) == "2026-11-12")
+
+        override.advance()
+        #expect(DateFormatters.dateKey(
+            from: DateFormatters.today(override: override, realNow: Self.lateEvening, calendar: Self.utc), calendar: Self.utc
+        ) == "2026-11-13")
+
+        // Unarmed: the real clock, untouched.
+        #expect(DateFormatters.now(override: nil, realNow: Self.lateEvening, calendar: Self.utc) == Self.lateEvening)
+        #expect(DateFormatters.today(override: nil, realNow: Self.lateEvening, calendar: Self.utc)
+            == Self.utc.startOfDay(for: Self.lateEvening))
+    }
+
+    /// This test host is unarmed, so the defaulted `now()` is the real clock -- which is what
+    /// keeps every other suite that reaches it unshifted. A relation, not a figure: it sits between
+    /// two real reads. (`today()` is `now()`'s day; the driven test above pins that.)
+    @Test func theDefaultedNowIsTheRealClockInAnUnarmedProcess() {
+        let before = Date()
+        let now = DateFormatters.now()
+        let after = Date()
+        #expect(before <= now && now <= after)
+    }
+
+    /// The on-path adopters: the iOS Today page's header day and its schedule pane's grid day read
+    /// the helpers, not the raw clock, so under the override they show the shifted day the task
+    /// list (`todayKey`) already shows.
+    @Test func theIOSTodayPageAndSchedulePaneReadTheOverriddenDay() throws {
+        let pane = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift"))
+        let todayBody = try #require(CadenceSourceScan.declarationBody("private var today: Date", in: pane))
+        #expect(todayBody.contains("DateFormatters.today()"))
+        #expect(todayBody.contains("Date()") == false)
+
+        let page = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodayView.swift"))
+        let column = try #require(CadenceSourceScan.functionBody(named: "todayTaskColumn", in: page))
+        #expect(column.contains("day: DateFormatters.now()"))
+        #expect(CadenceSourceScan.matchCount(#"day: Date\(\)"#, in: page) == 0)
+    }
+
     // MARK: - The shipping fence
 
     private static let formattersPath = "Cadence/Shared/DateFormatters.swift"
@@ -140,7 +190,13 @@ struct CadenceTodayOverrideTests {
         #expect(CadenceSourceScan.matchCount(#"guard compiledIn,"#, in: code) == 1)
 
         let todayKey = try #require(CadenceSourceScan.functionBody(named: "todayKey", in: code))
-        #expect(todayKey.contains("CadenceTodayOverride.live?.shifted(now) ?? now"), "todayKey() no longer reads through the override")
+        #expect(todayKey.contains("ymd.string(from: now())"), "todayKey() no longer reads through now()")
+        #expect(CadenceSourceScan.matchCount(
+            #"static func now\(\s*override: CadenceTodayOverride\? = CadenceTodayOverride\.live,"#, in: code
+        ) == 1, "now() must default to the live override")
+        #expect(CadenceSourceScan.matchCount(
+            #"static func today\(\s*override: CadenceTodayOverride\? = CadenceTodayOverride\.live,"#, in: code
+        ) == 1, "today() must default to the live override")
 
         // Regex self-check: the needle matches the fenced shape and not an unfenced one.
         let fenced = "static var isCompiledIn: Bool {\n#if DEBUG\nreturn true\n#else\nreturn false\n#endif\n}"
