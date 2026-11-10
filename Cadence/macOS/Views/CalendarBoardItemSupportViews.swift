@@ -104,9 +104,17 @@ struct CalendarBoardEventCard: View {
 
     private var label: some View {
         HStack(alignment: .top, spacing: 10) {
+            // [[T-14151]]: the same floor as `iOSCalendarBoardEventCard`'s glyph, read against
+            // this card's plate in its current hover / selection state.
             Image(systemName: item.isAllDay ? "calendar" : "clock")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(tint)
+                .foregroundStyle(
+                    CadenceCalendarEventStyle.boardCardGlyphColor(
+                        for: tint,
+                        isSelected: showPopover,
+                        isActive: isHovered
+                    )
+                )
                 .padding(.top, 1)
 
             VStack(alignment: .leading, spacing: 7) {
@@ -120,14 +128,18 @@ struct CalendarBoardEventCard: View {
                         title: subtitle,
                         systemImage: item.isAllDay ? "sun.max" : "clock",
                         tint: tint,
-                        cardCornerRadius: cornerRadius
+                        cardCornerRadius: cornerRadius,
+                        isCardSelected: showPopover,
+                        isCardActive: isHovered
                     )
                     if item.isRecurringSeriesMember {
                         CadenceBoardMetadataChip(
                             title: "Repeats",
                             systemImage: "repeat",
                             tint: tint,
-                            cardCornerRadius: cornerRadius
+                            cardCornerRadius: cornerRadius,
+                            isCardSelected: showPopover,
+                            isCardActive: isHovered
                         )
                     }
                 }

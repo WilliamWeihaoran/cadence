@@ -796,6 +796,174 @@ enum CadenceCalendarEventStyle {
         isActive ? 0.18 : 0.11
     }
 
+    // MARK: - Board card ink ([[T-14151]])
+
+    /// Contrast the Calendar Board event card's chip **label** is floored to against its own pill.
+    /// Text, so it owes 4.5:1; the 0.1 over it is `railTitleContrastTarget`'s rounding margin,
+    /// smaller because this is a floor that most calendars never reach rather than a target every
+    /// calendar is solved onto.
+    static let boardChipLabelContrastFloor: Double = 4.6
+
+    /// Contrast the card's leading clock / calendar glyph is floored to against the card plate.
+    /// A glyph, so it owes the 3:1 non-text bar; 3.2 for the same margin `railTertiaryContrastTarget`
+    /// keeps.
+    static let boardGlyphContrastFloor: Double = 3.2
+
+    /// What a board column paints under its cards on both platforms: `Theme.bg`. The iOS lane's
+    /// today / drop-target gradient is at most a 10% wash at the top edge and is not modelled.
+    static var boardBackdrop: Color { Theme.bg }
+
+    /// Relative luminance of the board event card's plate — `Theme.surfaceElevated` at
+    /// `surfaceOpacity` over `boardBackdrop`, then the calendar's own colour at `tintOpacity` — in
+    /// the plain sRGB composite SwiftUI draws. `isActive` is the Mac's hover, and selection is
+    /// active too, exactly as `CalendarBoardEventCard.cardBackground` reads the two ladders.
+    static func boardCardPlateLuminance(
+        for calendarColor: Color,
+        isSelected: Bool = false,
+        isActive: Bool = false
+    ) -> Double {
+        luminance(of: boardCardPlate(for: calendarColor, isSelected: isSelected, isActive: isActive))
+    }
+
+    /// The chip's pill: the card plate with the chip's own `chipTintOpacity` wash of the calendar
+    /// colour on top. This is what `CadenceBoardMetadataChip`'s label is read against.
+    static func boardChipPillLuminance(
+        for calendarColor: Color,
+        isSelected: Bool = false,
+        isActive: Bool = false
+    ) -> Double {
+        let plate = boardCardPlate(for: calendarColor, isSelected: isSelected, isActive: isActive)
+        return luminance(of: composite(srgb(of: calendarColor), alpha: chipTintOpacity(), over: plate))
+    }
+
+    /// The chip's ink — glyph and label in one colour, which the chip's own doc says why — **in
+    /// the calendar's hue**, lifted only as far as `boardChipLabelContrastFloor` against the pill.
+    ///
+    /// The pill wash keeps the raw colour; only the ink moves. It drew the raw colour until
+    /// [[T-14151]], so `#3d0000` put its time range on its own pill at about 1.1:1 and `#0000ff`
+    /// at about 2:1 — the hue's information without the words.
+    static func boardChipLabelColor(
+        for calendarColor: Color,
+        isSelected: Bool = false,
+        isActive: Bool = false
+    ) -> Color {
+        legibleTint(
+            for: calendarColor,
+            againstLuminance: boardChipPillLuminance(for: calendarColor, isSelected: isSelected, isActive: isActive),
+            ratio: boardChipLabelContrastFloor
+        )
+    }
+
+    /// The card's leading clock / calendar glyph, floored to `boardGlyphContrastFloor` against the
+    /// card plate it sits on.
+    static func boardCardGlyphColor(
+        for calendarColor: Color,
+        isSelected: Bool = false,
+        isActive: Bool = false
+    ) -> Color {
+        legibleTint(
+            for: calendarColor,
+            againstLuminance: boardCardPlateLuminance(for: calendarColor, isSelected: isSelected, isActive: isActive),
+            ratio: boardGlyphContrastFloor
+        )
+    }
+
+    /// `calendarColor` when it already clears `ratio` against `background`; otherwise the same hue
+    /// solved just to `ratio`, **in whichever direction the background leaves room for** — lighter
+    /// over a dark surface through `solvedTint` (brightness first, then saturation toward white),
+    /// darker over a light one through brightness alone, which can always reach it.
+    ///
+    /// A floor, not a target: a calendar colour that is already legible comes back untouched, so a
+    /// bright calendar keeps exactly the chroma it chose. The app ships one dark neutral ramp
+    /// (`Theme.preferredColorScheme`), so the darkening branch has no caller today; it exists so
+    /// the rule is correct against any surface it is handed rather than only against this one.
+    static func legibleTint(for calendarColor: Color, againstLuminance background: Double, ratio: Double) -> Color {
+        let own = luminance(of: srgb(of: calendarColor))
+        if contrastRatio(own, background) >= ratio { return calendarColor }
+
+        let lighter = (ratio * (background + 0.05)) - 0.05
+        let darker = ((background + 0.05) / ratio) - 0.05
+        if lighter <= 1, darker < 0 || own >= background {
+            return solvedTint(for: calendarColor, saturationScale: 1.0, luminance: lighter)
+        }
+        let source = hsb(of: calendarColor)
+        return Color(
+            hue: source.hue,
+            saturation: source.saturation,
+            brightness: darkenedBrightness(hue: source.hue, saturation: source.saturation, luminance: max(darker, 0))
+        )
+    }
+
+    /// WCAG 2.x contrast between two relative luminances, either way round.
+    static func contrastRatio(_ first: Double, _ second: Double) -> Double {
+        (max(first, second) + 0.05) / (min(first, second) + 0.05)
+    }
+
+    private static func boardCardPlate(
+        for calendarColor: Color,
+        isSelected: Bool,
+        isActive: Bool
+    ) -> (red: Double, green: Double, blue: Double) {
+        let surface = composite(
+            srgb(of: Theme.surfaceElevated),
+            alpha: surfaceOpacity(isActive: isActive || isSelected),
+            over: srgb(of: boardBackdrop)
+        )
+        return composite(
+            srgb(of: calendarColor),
+            alpha: tintOpacity(isSelected: isSelected, isActive: isActive),
+            over: surface
+        )
+    }
+
+    /// `solvedBrightness`, but returning the end of the bracket known to be *at or below* the
+    /// target — the darkening branch is spending its result against a floor from the other side.
+    private static func darkenedBrightness(hue: Double, saturation: Double, luminance target: Double) -> Double {
+        var low = 0.0
+        var high = 1.0
+        for _ in 0..<20 {
+            let mid = (low + high) / 2
+            if relativeLuminance(hue: hue, saturation: saturation, brightness: mid) > target {
+                high = mid
+            } else {
+                low = mid
+            }
+        }
+        return low
+    }
+
+    private static func composite(
+        _ top: (red: Double, green: Double, blue: Double),
+        alpha: Double,
+        over under: (red: Double, green: Double, blue: Double)
+    ) -> (red: Double, green: Double, blue: Double) {
+        (
+            top.red * alpha + under.red * (1 - alpha),
+            top.green * alpha + under.green * (1 - alpha),
+            top.blue * alpha + under.blue * (1 - alpha)
+        )
+    }
+
+    private static func luminance(of components: (red: Double, green: Double, blue: Double)) -> Double {
+        (0.2126 * linearized(components.red))
+            + (0.7152 * linearized(components.green))
+            + (0.0722 * linearized(components.blue))
+    }
+
+    private static func srgb(of color: Color) -> (red: Double, green: Double, blue: Double) {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        #if canImport(AppKit)
+        let source = NSColor(color).usingColorSpace(.sRGB) ?? NSColor(color)
+        source.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        #elseif canImport(UIKit)
+        UIColor(color).getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        #endif
+        return (Double(red), Double(green), Double(blue))
+    }
+
     // MARK: - Luminance solve
 
     /// Keeps the hue, scales the saturation, and picks the brightness whose sRGB relative luminance

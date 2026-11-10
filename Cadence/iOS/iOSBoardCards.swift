@@ -130,9 +130,11 @@ struct iOSCalendarBoardEventCard: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
+            // [[T-14151]]: the hue, floored to the 3:1 a glyph owes against this card's plate; the
+            // chips below floor their own ink the same way against their pills.
             Image(systemName: item.isAllDay ? "calendar" : "clock")
                 .cadenceFont(.rowTitle, base: 13, weight: .semibold)
-                .foregroundStyle(item.color)
+                .foregroundStyle(CadenceCalendarEventStyle.boardCardGlyphColor(for: item.color))
                 .padding(.top, 1)
 
             VStack(alignment: .leading, spacing: 8) {

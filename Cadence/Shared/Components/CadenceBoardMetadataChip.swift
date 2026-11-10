@@ -49,15 +49,21 @@ nonisolated struct CadenceBoardMetadataChipMetrics: Sendable {
     }
 }
 
-/// The board card's read-only metadata chip: a glyph and a label, both in the chip's own tint, over
-/// a wash of the same colour.
+/// The board card's read-only metadata chip: a glyph and a label in one ink, over a wash of the
+/// chip's tint.
+///
+/// **The wash is the raw tint; the ink is the tint floored to legibility** ([[T-14151]]). Both drew
+/// the raw calendar colour until then, so a `#3d0000` calendar put its time range on its own pill at
+/// about 1.1:1. The ink is now `CadenceCalendarEventStyle.boardChipLabelColor(for:isSelected:isActive:)`
+/// — the same hue, lifted only as far as `boardChipLabelContrastFloor` against the pill it sits on,
+/// and left exactly as chosen for a calendar that already clears it.
 ///
 /// Deliberately **not** a task card's metadata: an event or a bundle has no completion circle, no list
 /// and no estimate, and cannot be edited field-by-field from the card, so its chips stay read-only
 /// and carry the calendar's own colour. It borrows the task chip's geometry — same padding, same
 /// icon and label sizes — so the two read as one family without pretending an event is a task.
 ///
-/// The tint applies to the glyph *and* the label rather than to the glyph alone, because a tinted
+/// The ink applies to the glyph *and* the label rather than to the glyph alone, because a tinted
 /// glyph beside grey text on a grey pill made every chip read as disabled. Both platforms had
 /// already learned that separately, which is exactly how you end up with two of these.
 ///
@@ -73,6 +79,10 @@ struct CadenceBoardMetadataChip: View {
     /// The corner radius of the card this chip is drawn inside. The chip derives its own from it —
     /// see `CadenceBoardMetadataChipMetrics.cornerRadius(inCardOfRadius:)`.
     let cardCornerRadius: CGFloat
+    /// The card's interaction state, because the pill's luminance is the card plate's plus the
+    /// chip's wash, and the Mac card's plate brightens on hover and selection. iOS has neither.
+    var isCardSelected = false
+    var isCardActive = false
     // Always its own width. A `fillsWidth` option stretched it to its container for the iOS task
     // chips' two-column `LazyVGrid`; [[T-8181]] replaced that grid with Ledger tokens, which left
     // the iOS board event card's two chips in an `HStack` as its only callers -- each stretched
@@ -94,7 +104,13 @@ struct CadenceBoardMetadataChip: View {
                 .minimumScaleFactor(wraps ? 1 : CadenceBoardMetadataChipMetrics.minimumScale)
                 .fixedSize(horizontal: false, vertical: wraps)
         }
-        .foregroundStyle(tint)
+        .foregroundStyle(
+            CadenceCalendarEventStyle.boardChipLabelColor(
+                for: tint,
+                isSelected: isCardSelected,
+                isActive: isCardActive
+            )
+        )
         .padding(.horizontal, CadenceBoardMetadataChipMetrics.horizontalPadding)
         .padding(.vertical, CadenceBoardMetadataChipMetrics.verticalPadding)
         .background(tint.opacity(CadenceCalendarEventStyle.chipTintOpacity()))
