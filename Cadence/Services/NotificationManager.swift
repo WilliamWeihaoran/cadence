@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import OSLog
+import SwiftData
 import UserNotifications
 
 /// Thin adapter over `UNUserNotificationCenter`, modeled on `CalendarManager`'s shape:
@@ -34,11 +35,20 @@ final class NotificationManager: NSObject {
     private(set) var lastReconcileRegistrationFailures: [NotificationRegistrationFailure] = []
 
     /// **[[T-15486]].** The last complete read of the store a reconcile was handed, so the next one
-    /// can tell a deleted task from one that is merely missing. In memory only: a relaunch starts
-    /// with no proof, and a reminder whose task was deleted while the app was not running stays
-    /// (filed as [[T-15516]]).
+    /// can tell a deleted task from one that is merely missing. Within one process; the first read
+    /// after a launch falls back to the durable record below.
     @ObservationIgnored
     private var lastCompleteStoreRead: NotificationCompleteStoreRead?
+
+    /// **[[T-15516]].** Where `reconcile` stores the last complete read across a relaunch.
+    static let lastCompleteStoreReadDefaultsKey = "cadence.notifications.lastCompleteStoreRead"
+
+    /// **[[T-15516]].** The durable identity of the store a complete read came from, or `nil` when
+    /// it has none worth trusting across a launch. For `shared` that is the app's one container's
+    /// store file (`NotificationStoreFileIdentity`), and nothing for any other container; a test
+    /// manager answers `nil` unless the test hands it a resolver over its own temp store.
+    @ObservationIgnored
+    private let durableStoreIdentity: @MainActor (ObjectIdentifier) -> String?
 
     private static let logger = Logger(subsystem: "com.haoranwei.Cadence", category: "Notifications")
 
@@ -73,6 +83,11 @@ final class NotificationManager: NSObject {
         centre = CadenceSystemNotificationCentre()
         centreIsInjected = false
         defaults = CadenceDefaults.store
+        durableStoreIdentity = { identity in
+            guard let container = PersistenceController.shared.container,
+                  ObjectIdentifier(container) == identity else { return nil }
+            return NotificationStoreFileIdentity.of(container)
+        }
         super.init()
         guard !Self.isTestEnvironment else { return }
         center.delegate = self
@@ -83,10 +98,15 @@ final class NotificationManager: NSObject {
     ///
     /// It sets no delegate and starts no initial authorization read, so nothing runs that the test
     /// did not call. Not for production: the app has exactly one manager, `shared`.
-    init(centre: any CadenceNotificationCentre, defaults: UserDefaults) {
+    init(
+        centre: any CadenceNotificationCentre,
+        defaults: UserDefaults,
+        durableStoreIdentity: @escaping @MainActor (ObjectIdentifier) -> String? = { _ in nil }
+    ) {
         self.centre = centre
         centreIsInjected = true
         self.defaults = defaults
+        self.durableStoreIdentity = durableStoreIdentity
         super.init()
     }
 
@@ -165,7 +185,8 @@ final class NotificationManager: NSObject {
     /// such read of the same store it proves which tasks were deleted -- including a delete
     /// CloudKit synced from another device, where no `cancel(taskIDs:)` runs here -- and their
     /// already-delivered reminders are withdrawn. Every other pass leaves `nil` and withdraws
-    /// nothing for a missing task.
+    /// nothing for a missing task. Since [[T-15516]] the first such read of a launch is compared
+    /// with the one an earlier launch stored, when both name the same store file.
     func reconcile(
         tasks: [AppTask],
         completeStore: NotificationCompleteStoreRead? = nil,
@@ -232,11 +253,26 @@ final class NotificationManager: NSObject {
         // it; withdraw the delivered ones whose task is now done or cancelled -- or, [[T-15486]],
         // proved deleted by two complete reads of the same store. A partial pass neither proves
         // nor replaces the last complete read.
-        let provenDeleted = NotificationReconcileDiff.provenDeletedTaskIDs(
-            previous: lastCompleteStoreRead,
-            current: completeStore
-        )
+        //
+        // [[T-15516]]: the first complete read of a launch has no in-memory predecessor, so it is
+        // compared with the one an earlier launch stored -- and only when both name the same store
+        // file. The current read replaces the stored one whenever it has a file identity.
+        let durableRead = completeStore.flatMap { read in
+            durableStoreIdentity(read.storeIdentity).map {
+                NotificationDurableCompleteStoreRead(storeFileIdentity: $0, taskIDs: read.taskIDs)
+            }
+        }
+        let provenDeleted = lastCompleteStoreRead == nil
+            ? NotificationReconcileDiff.provenDeletedTaskIDs(
+                previous: Self.storedCompleteStoreRead(defaults: defaults),
+                current: durableRead
+            )
+            : NotificationReconcileDiff.provenDeletedTaskIDs(
+                previous: lastCompleteStoreRead,
+                current: completeStore
+            )
         if let completeStore { lastCompleteStoreRead = completeStore }
+        if let durableRead { Self.store(durableRead, defaults: defaults) }
         let settledTaskIDs = Set(tasks.filter { $0.status == .done || $0.status == .cancelled }.map(\.id))
             .union(provenDeleted)
         if !settledTaskIDs.isEmpty {
@@ -368,6 +404,23 @@ final class NotificationManager: NSObject {
         let managedIDs = pendingIdentifiers.filter(NotificationIdentifiers.isManaged)
         guard !managedIDs.isEmpty else { return }
         centre.removePending(withIdentifiers: managedIDs)
+    }
+
+    // MARK: - [[T-15516]]: the complete read, across a relaunch
+
+    static func storedCompleteStoreRead(defaults: UserDefaults) -> NotificationDurableCompleteStoreRead? {
+        defaults.data(forKey: lastCompleteStoreReadDefaultsKey).flatMap(NotificationDurableCompleteStoreRead.init(encoded:))
+    }
+
+    private static func store(_ read: NotificationDurableCompleteStoreRead, defaults: UserDefaults) {
+        guard let data = read.encoded, defaults.data(forKey: lastCompleteStoreReadDefaultsKey) != data else { return }
+        defaults.set(data, forKey: lastCompleteStoreReadDefaultsKey)
+    }
+
+    /// The privacy data reset's step ([[T-1404]]): which task ids a deleted store held is still a
+    /// record of it. Clears the stored read only; the next complete read writes a fresh one.
+    static func clearStoredCompleteStoreRead(defaults: UserDefaults = CadenceDefaults.store) {
+        defaults.removeObject(forKey: lastCompleteStoreReadDefaultsKey)
     }
 
     // MARK: - Helpers
@@ -515,4 +568,30 @@ private struct CadenceSystemNotificationCentre: CadenceNotificationCentre {
 nonisolated struct NotificationRegistrationFailure: Equatable, Sendable {
     let identifier: String
     let reason: String
+}
+
+/// **[[T-15516]].** The identity of the one store FILE a container opened, for a complete read that
+/// has to be recognised on a later launch.
+///
+/// The path, the file number and the creation date of the store file: equal across relaunches of
+/// the same file, and different for anything that replaces it -- a restore moves a staged copy into
+/// the store directory (`StoreBackupManager.performPendingRestoreIfNeeded`), a reset store
+/// directory is recreated, the recovery store is another file. `nil` -- so nothing is proved or
+/// stored -- for an in-memory store (no store file on disk), for anything that is not a regular
+/// file, for a container with more than one store, or when the file cannot be read.
+nonisolated enum NotificationStoreFileIdentity {
+    static func of(_ container: ModelContainer) -> String? {
+        let urls = container.configurations.map(\.url)
+        guard urls.count == 1, let url = urls.first else { return nil }
+        return of(storeURL: url)
+    }
+
+    static func of(storeURL url: URL, fileManager: FileManager = .default) -> String? {
+        guard url.isFileURL,
+              let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              let fileNumber = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value,
+              let created = attributes[.creationDate] as? Date else { return nil }
+        return "\(url.standardizedFileURL.path)|\(fileNumber)|\(created.timeIntervalSince1970)"
+    }
 }

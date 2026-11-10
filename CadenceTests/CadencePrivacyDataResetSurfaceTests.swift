@@ -263,6 +263,21 @@ struct CadencePrivacyDataResetSurfaceTests {
         }
     }
 
+    /// **[[T-15516]].** The reset's notification half beyond the pending queue: the task ids the last
+    /// complete read stored for the next launch are ids of the store being deleted.
+    @Test func clearingTheStoredCompleteStoreReadRemovesTheTaskIDs() throws {
+        try withTemporaryDefaults("cadence.tests.privacy-reset.complete-read") { defaults in
+            let record = NotificationDurableCompleteStoreRead(storeFileIdentity: "/store|1|2", taskIDs: [UUID()])
+            defaults.set(record.encoded, forKey: NotificationManager.lastCompleteStoreReadDefaultsKey)
+            #expect(NotificationManager.storedCompleteStoreRead(defaults: defaults) == record, "nothing stored to clear")
+
+            NotificationManager.clearStoredCompleteStoreRead(defaults: defaults)
+
+            #expect(NotificationManager.storedCompleteStoreRead(defaults: defaults) == nil,
+                    "the reset left the deleted store's task ids behind (T-15516)")
+        }
+    }
+
     /// **[[T-8736]]: the reset signs the Apple account out, on both platforms.** The sign-out was
     /// a line at the Mac's call site while `AppleAccountManager` was `#if os(macOS)`; it is a step
     /// of the shared sequence now, so the iOS Account section's Delete Account route clears the
@@ -1065,6 +1080,9 @@ struct CadencePrivacyDataResetSurfaceTests {
             // `clearingTheLaunchLedgerRemovesTheReportAndNotTheOptIn`; this is the pin that the
             // reset is the thing that calls it.
             "CadenceStartupCostLedger.clearStoredState()",
+            // [[T-15516]]: the stored complete read's task ids. Driven over a temporary suite in
+            // `clearingTheStoredCompleteStoreReadRemovesTheTaskIDs`.
+            "NotificationManager.clearStoredCompleteStoreRead()",
             "removeStoredBackups()",
             // [[T-8736]]: the Sign in with Apple profile, cleared on both platforms. Driven over a
             // temporary store in `clearingTheAppleAccountProfileSignsTheManagerOut`.

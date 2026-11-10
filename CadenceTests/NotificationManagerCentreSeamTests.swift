@@ -456,6 +456,173 @@ struct NotificationManagerCentreSeamTests {
         withExtendedLifetime((a, b)) {}
     }
 
+    // MARK: - [[T-15516]]: a delete imported while the app was not running
+
+    /// A store FILE in this test's own temp directory -- never the app's store -- opened as a
+    /// fresh container each call, which is what a relaunch is to `ObjectIdentifier`.
+    private func fileStore(_ url: URL) throws -> ModelContainer {
+        try ModelContainer(
+            for: CadenceSchema.schema,
+            configurations: [ModelConfiguration(schema: CadenceSchema.schema, url: url, cloudKitDatabase: .none)]
+        )
+    }
+
+    private func withTemporaryStoreDirectory(_ body: (URL) async throws -> Void) async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("NotificationManagerCentreSeamTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try await body(directory)
+    }
+
+    /// The resolver `shared` uses, minus its "is this the app's container" check: each test
+    /// container's own store file.
+    private func fileIdentity(of containers: [ModelContainer]) -> @MainActor (ObjectIdentifier) -> String? {
+        { identity in
+            containers.first { ObjectIdentifier($0) == identity }.flatMap(NotificationStoreFileIdentity.of)
+        }
+    }
+
+    /// The first complete read of a launch is compared with the one the previous launch stored:
+    /// a task in that read and gone from this one -- deleted on another device while the app was
+    /// not running -- has its fired reminders withdrawn; a kept task's and another app's stay.
+    @Test func aDeleteImportedBeforeTheNextLaunchIsProvedByTheStoredReadOfTheSameFile() async throws {
+        try await withTemporaryStoreDirectory { directory in
+            let url = directory.appendingPathComponent("relaunch.store")
+            let firstLaunch = try fileStore(url)
+            let writer = ModelContext(firstLaunch)
+            let kept = AppTask(title: "Kept")
+            let deleted = AppTask(title: "Deleted on another device")
+            writer.insert(kept)
+            writer.insert(deleted)
+            try writer.save()
+            let (keptID, deletedID) = (kept.id, deleted.id)
+            let centre = FakeCentre(delivered: shown(keptID) + shown(deletedID) + [foreign])
+
+            try await withTemporaryDefaults(
+                "cadence.tests.notification-centre-seam",
+                opening: { UserDefaults(suiteName: $0) }
+            ) { defaults in
+                defaults.set(true, forKey: NotificationManager.notificationsEnabledDefaultsKey)
+                let before = try CadenceForegroundNotificationSnapshot(container: firstLaunch)
+                await NotificationManager(centre: centre, defaults: defaults, durableStoreIdentity: fileIdentity(of: [firstLaunch]))
+                    .reconcile(tasks: before.tasks, completeStore: before.completeStore)
+                #expect(NotificationManager.storedCompleteStoreRead(defaults: defaults)?.taskIDs == [keptID, deletedID],
+                        "non-vacuity: the first launch stored its complete read")
+                #expect(centre.removeDeliveredCalls.isEmpty)
+
+                // The next launch: a new container over the same file, the import already applied.
+                let nextLaunch = try fileStore(url)
+                let importer = ModelContext(nextLaunch)
+                let gone = try importer.fetch(FetchDescriptor<AppTask>()).filter { $0.id == deletedID }
+                #expect(gone.count == 1)
+                gone.forEach(importer.delete)
+                try importer.save()
+                let after = try CadenceForegroundNotificationSnapshot(container: nextLaunch)
+                #expect(after.completeStore?.storeIdentity != before.completeStore?.storeIdentity,
+                        "the in-memory identity must differ, or this is T-15486's case again")
+                await NotificationManager(centre: centre, defaults: defaults, durableStoreIdentity: fileIdentity(of: [nextLaunch]))
+                    .reconcile(tasks: after.tasks, completeStore: after.completeStore)
+
+                #expect(Set(centre.removeDeliveredCalls.flatMap { $0 }) == Set(shown(deletedID)))
+                #expect(Set(centre.delivered) == Set(shown(keptID) + [foreign]))
+                #expect(NotificationManager.storedCompleteStoreRead(defaults: defaults)?.taskIDs == [keptID],
+                        "the next launch's read replaces the stored one")
+            }
+        }
+    }
+
+    /// A stored read of ANOTHER file proves nothing: the next launch opening the empty recovery
+    /// store, or a store with no file at all (the in-memory fallback), withdraws no reminder.
+    @Test func aStoredReadOfAnotherStoreFileProvesNothing() async throws {
+        try await withTemporaryStoreDirectory { directory in
+            let primary = try fileStore(directory.appendingPathComponent("default.store"))
+            let writer = ModelContext(primary)
+            let task = AppTask(title: "Still in the primary store")
+            writer.insert(task)
+            try writer.save()
+            let taskID = task.id
+            let centre = FakeCentre(delivered: shown(taskID))
+
+            try await withTemporaryDefaults(
+                "cadence.tests.notification-centre-seam",
+                opening: { UserDefaults(suiteName: $0) }
+            ) { defaults in
+                defaults.set(true, forKey: NotificationManager.notificationsEnabledDefaultsKey)
+                let first = try CadenceForegroundNotificationSnapshot(container: primary)
+                await NotificationManager(centre: centre, defaults: defaults, durableStoreIdentity: fileIdentity(of: [primary]))
+                    .reconcile(tasks: first.tasks, completeStore: first.completeStore)
+                let stored = try #require(NotificationManager.storedCompleteStoreRead(defaults: defaults))
+                #expect(stored.taskIDs == [taskID])
+
+                let recovery = try fileStore(directory.appendingPathComponent("recovery.store"))
+                let empty = try CadenceForegroundNotificationSnapshot(container: recovery)
+                #expect(empty.tasks.isEmpty)
+                await NotificationManager(centre: centre, defaults: defaults, durableStoreIdentity: fileIdentity(of: [recovery]))
+                    .reconcile(tasks: empty.tasks, completeStore: empty.completeStore)
+                #expect(centre.removeDeliveredCalls.isEmpty, "the recovery store's empty read proved a deletion")
+
+                let inMemory = try CadenceTestStore.container()
+                let none = try CadenceForegroundNotificationSnapshot(container: inMemory)
+                await NotificationManager(centre: centre, defaults: defaults, durableStoreIdentity: fileIdentity(of: [inMemory]))
+                    .reconcile(tasks: none.tasks, completeStore: none.completeStore)
+                #expect(centre.removeDeliveredCalls.isEmpty, "an in-memory store's read proved a deletion")
+                #expect(Set(centre.delivered) == Set(shown(taskID)))
+            }
+        }
+    }
+
+    /// The identity is the FILE, not the path: re-read unchanged, and unchanged by a write in
+    /// place; different once a copy is moved over it, which is what a restore does
+    /// (`StoreBackupManager.performPendingRestoreIfNeeded`). An in-memory store has none.
+    @Test func theStoreFileIdentityFollowsTheFileAcrossWritesAndChangesOnARestoreShapedSwap() async throws {
+        try await withTemporaryStoreDirectory { directory in
+            let url = directory.appendingPathComponent("default.store")
+            try Data("original".utf8).write(to: url)
+            let original = try #require(NotificationStoreFileIdentity.of(storeURL: url))
+            #expect(NotificationStoreFileIdentity.of(storeURL: url) == original)
+            let handle = try FileHandle(forWritingTo: url)
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data(" plus a row".utf8))
+            try handle.close()
+            #expect(NotificationStoreFileIdentity.of(storeURL: url) == original, "a write in place changed the identity")
+
+            let staged = directory.appendingPathComponent("staged.store")
+            try FileManager.default.copyItem(at: url, to: staged)
+            try FileManager.default.removeItem(at: url)
+            try FileManager.default.moveItem(at: staged, to: url)
+            let restored = try #require(NotificationStoreFileIdentity.of(storeURL: url))
+            #expect(restored != original, "a restored copy at the same path matched the original file")
+
+            #expect(NotificationStoreFileIdentity.of(storeURL: directory.appendingPathComponent("absent.store")) == nil)
+            #expect(NotificationStoreFileIdentity.of(storeURL: directory) == nil,
+                    "a directory has a file number and a creation date, but it is not a store file")
+            #expect(NotificationStoreFileIdentity.of(try CadenceTestStore.container()) == nil,
+                    "an in-memory store has no file to survive a launch")
+            let fileBacked = try fileStore(directory.appendingPathComponent("open.store"))
+            #expect(NotificationStoreFileIdentity.of(fileBacked) != nil, "non-vacuity: a store file has an identity")
+        }
+    }
+
+    /// The durable rule, and its encoding: same file proves, another file or no read does not; the
+    /// record round-trips and a damaged one reads as nothing.
+    @Test func durableProvenDeletedTaskIDsNeedsTheSameStoreFile() throws {
+        let (x, y) = (UUID(), UUID())
+        let read = { (file: String, ids: Set<UUID>) in
+            NotificationDurableCompleteStoreRead(storeFileIdentity: file, taskIDs: ids)
+        }
+        #expect(NotificationReconcileDiff.provenDeletedTaskIDs(previous: read("a", [x, y]), current: read("a", [x])) == [y])
+        #expect(NotificationReconcileDiff.provenDeletedTaskIDs(previous: read("a", [x, y]), current: read("b", [])).isEmpty)
+        #expect(NotificationReconcileDiff.provenDeletedTaskIDs(previous: nil, current: read("a", [])).isEmpty)
+        #expect(NotificationReconcileDiff.provenDeletedTaskIDs(previous: read("a", [x]), current: nil).isEmpty)
+
+        let record = read("/store|42|1.5", [x, y])
+        let data = try #require(record.encoded)
+        #expect(NotificationDurableCompleteStoreRead(encoded: data) == record)
+        #expect(read("s", [y, x]).encoded == read("s", [x, y]).encoded, "an unchanged read must encode to the same bytes")
+        #expect(NotificationDurableCompleteStoreRead(encoded: Data("not a record".utf8)) == nil)
+    }
+
     /// A delete withdraws the shown copies of the deleted tasks' two reminders as well as the
     /// pending ones, and nothing of any other task's.
     @Test func cancelTaskIDsAlsoWithdrawsTheDeliveredRemindersOfTheGivenTasks() async throws {

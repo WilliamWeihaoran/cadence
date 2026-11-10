@@ -237,6 +237,19 @@ nonisolated struct NotificationReconcileDiff: Equatable {
         guard let previous, let current, previous.storeIdentity == current.storeIdentity else { return [] }
         return previous.taskIDs.subtracting(current.taskIDs)
     }
+
+    /// **[[T-15516]].** The same rule across a relaunch: present in the complete read an EARLIER
+    /// launch recorded and absent from this one, and only when both reads name the same store
+    /// FILE (`NotificationDurableCompleteStoreRead.storeFileIdentity`). A restore installs a copy,
+    /// the recovery store is another file, and a reset store directory is recreated, so none of
+    /// them matches and none proves anything -- exactly as a different container does above.
+    static func provenDeletedTaskIDs(
+        previous: NotificationDurableCompleteStoreRead?,
+        current: NotificationDurableCompleteStoreRead?
+    ) -> Set<UUID> {
+        guard let previous, let current, previous.storeFileIdentity == current.storeFileIdentity else { return [] }
+        return previous.taskIDs.subtracting(current.taskIDs)
+    }
 }
 
 /// **[[T-15486]].** Evidence that a reconcile's `tasks` is EVERY task in one store: an unfiltered
@@ -250,6 +263,67 @@ nonisolated struct NotificationReconcileDiff: Equatable {
 nonisolated struct NotificationCompleteStoreRead: Equatable, Sendable {
     let storeIdentity: ObjectIdentifier
     let taskIDs: Set<UUID>
+}
+
+/// **[[T-15516]].** A complete read, kept across a relaunch: the task ids, and the identity of the
+/// one on-disk store file they were read from (`NotificationStoreFileIdentity`, in
+/// `NotificationManager.swift`, which also stores it).
+///
+/// [[T-15486]]'s `ObjectIdentifier` dies with the process, so the first read after a launch proved
+/// nothing and a task deleted while the app was not running -- a delete CloudKit imports at the
+/// next launch -- kept its fired reminder. The file identity is the path, the file number and the
+/// creation date of the store file itself: it survives a relaunch of the same file and changes for
+/// anything that puts different contents in its place (a restore moves a copy in; the recovery
+/// store and the in-memory fallback are other files or none). A row read from that file cannot be
+/// "not yet imported" on a later launch, because it is already on disk there.
+///
+/// The encoding holds ids and the identity only -- no title, no date -- and the privacy data reset
+/// clears it anyway (`NotificationManager.clearStoredCompleteStoreRead`), because a durable record
+/// of which rows a deleted store held is still something left behind ([[T-1404]]).
+nonisolated struct NotificationDurableCompleteStoreRead: Equatable, Sendable {
+    let storeFileIdentity: String
+    let taskIDs: Set<UUID>
+
+    private static let storeKey = "store"
+    private static let idsKey = "ids"
+
+    /// A binary property list: the identity, and the ids packed sixteen bytes each in sorted order
+    /// so an unchanged read encodes to the same bytes.
+    var encoded: Data? {
+        var packed = Data(capacity: taskIDs.count * 16)
+        for id in taskIDs.sorted(by: { $0.uuidString < $1.uuidString }) {
+            withUnsafeBytes(of: id.uuid) { packed.append(contentsOf: $0) }
+        }
+        return try? PropertyListSerialization.data(
+            fromPropertyList: [Self.storeKey: storeFileIdentity, Self.idsKey: packed] as [String: Any],
+            format: .binary,
+            options: 0
+        )
+    }
+
+    /// `nil` for anything that is not exactly what `encoded` writes, so a damaged record proves
+    /// nothing rather than something.
+    init?(encoded data: Data) {
+        guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+              let identity = plist[Self.storeKey] as? String, !identity.isEmpty,
+              let packed = plist[Self.idsKey] as? Data, packed.count % 16 == 0 else { return nil }
+        var ids = Set<UUID>()
+        var offset = packed.startIndex
+        while offset < packed.endIndex {
+            let bytes = [UInt8](packed[offset..<offset + 16])
+            ids.insert(UUID(uuid: (
+                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+                bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+            )))
+            offset += 16
+        }
+        self.init(storeFileIdentity: identity, taskIDs: ids)
+    }
+
+    init(storeFileIdentity: String, taskIDs: Set<UUID>) {
+        self.storeFileIdentity = storeFileIdentity
+        self.taskIDs = taskIDs
+    }
 }
 
 nonisolated enum TaskNotificationPlanner {

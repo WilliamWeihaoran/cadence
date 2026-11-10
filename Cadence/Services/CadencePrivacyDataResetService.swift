@@ -332,6 +332,10 @@ enum PrivacyDataResetService {
         // so no user text is in it and a reset that skipped it would still be a reset that left a
         // number describing the deleted store behind.
         CadenceStartupCostLedger.clearStoredState()
+        // [[T-15516]]: the last complete read's task ids, kept across launches so a delete imported
+        // at the next launch can withdraw its fired reminder. Ids only, but ids of the store this
+        // reset just emptied, so the reset takes them too; the next reconcile writes a fresh one.
+        NotificationManager.clearStoredCompleteStoreRead()
         // The pending restore and the failed-restore record are cleared inside the sweep's own
         // default step, `StoreBackupManager.deleteAllBackupsForDataReset`, before it deletes: the
         // plain `deleteAllBackups` spares the backup either names ([[T-3116]] (1)), so a reset that
