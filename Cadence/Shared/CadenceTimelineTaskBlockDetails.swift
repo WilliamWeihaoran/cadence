@@ -42,7 +42,7 @@ struct CadenceTimelineTaskBlockDetails: Equatable {
         let urgency = CadenceDueUrgency.evaluate(dueDateKey: dueDateKey, isDone: isDone, todayKey: todayKey)
         return CadenceTimelineTaskBlockDetails(
             durationLabel: duration == unknownDurationLabel ? nil : duration,
-            dueLabel: CadenceFocusSupport.dueLabel(forDueDateKey: dueDateKey, todayKey: todayKey),
+            dueLabel: CadenceFocusSupport.dueLabel(forDueDateKey: dueDateKey, todayKey: todayKey, isSettled: isDone),
             dueIsUrgent: urgency == .overdue || urgency == .dueToday
         )
     }

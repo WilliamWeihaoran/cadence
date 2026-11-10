@@ -28,12 +28,12 @@ struct CadenceDueDateVocabularyTests {
         return task
     }
 
-    private func embedInfo(dueDate: String) -> MarkdownTaskEmbedRenderInfo {
+    private func embedInfo(dueDate: String, isDone: Bool = false) -> MarkdownTaskEmbedRenderInfo {
         MarkdownTaskEmbedRenderInfo(
             id: UUID(), title: "T", statusRaw: TaskStatus.todo.rawValue, priorityRaw: TaskPriority.none.rawValue,
             sectionName: "", containerName: "", containerColorHex: "", dueDate: dueDate, scheduledDate: "",
             scheduledStartMin: -1, estimatedMinutes: 0, actualMinutes: 0,
-            recurrenceRaw: TaskRecurrenceRule.none.rawValue, isDone: false, isCancelled: false, isMissing: false,
+            recurrenceRaw: TaskRecurrenceRule.none.rawValue, isDone: isDone, isCancelled: false, isMissing: false,
             subtasks: []
         )
     }
@@ -72,6 +72,66 @@ struct CadenceDueDateVocabularyTests {
             let subtitle = GlobalSearchIndexSupport.taskResult(for: task, todayKey: Self.today).subtitle
             #expect(subtitle.components(separatedBy: " • ").contains(expected), "Cmd+K, \(key): \(subtitle)")
             #endif
+        }
+    }
+
+    /// **[[T-15522]]:** a settled item whose date has passed says "Due Nov 9" -- the date, with no
+    /// lateness claim -- because every surface's overdue predicate already calls it not late and
+    /// tints it neutral. Today, tomorrow and later read the same settled or not, and an open item's
+    /// past date still says "Overdue".
+    @Test func aSettledItemsPastDateMakesNoLatenessClaim() {
+        #expect(CadenceWidgetDateSupport.dueLabel(for: "2026-11-09", todayKey: Self.today, isSettled: true) == "Due Nov 9")
+        #expect(CadenceWidgetDateSupport.dueLabel(for: "2026-11-09", todayKey: Self.today) == "Overdue Nov 9")
+        for (key, expected) in Self.cases where key >= Self.today {
+            #expect(CadenceWidgetDateSupport.dueLabel(for: key, todayKey: Self.today, isSettled: true) == expected, "\(key)")
+        }
+        #expect(CadenceWidgetDateSupport.dueLabel(for: "", todayKey: Self.today, isSettled: true) == nil)
+    }
+
+    /// Every builder that reads a settled item hands it in: the done task's row chip, board card,
+    /// timeline block, Focus label and embed chip, and the completed board column. Each pairs the
+    /// words with its own overdue predicate, so the two cannot disagree again.
+    @Test func everySettledSurfaceSaysDueNotOverdue() throws {
+        let reference = try #require(DateFormatters.date(from: Self.today))
+        let past = "2026-11-09"
+        let done = task(dueDate: past)
+        done.status = .done
+        let open = task(dueDate: past)
+
+        #expect(!done.isOverdue(todayKey: Self.today), "non-vacuity: a done task is not overdue")
+        #expect(CadenceTaskPresentationSupport.dueDateLabel(for: done, todayKey: Self.today) == "Due Nov 9", "row chip")
+        #expect(CadenceTaskPresentationSupport.dueDateLabel(for: open, todayKey: Self.today) == "Overdue Nov 9", "open row chip")
+        let card = try #require(CadenceBoardCardMetadata.dueDateChip(for: done, todayKey: Self.today))
+        #expect(card.text == "Due Nov 9" && card.emphasis == .neutral, "board card")
+        #expect(CadenceBoardCardMetadata.dueDateChip(for: open, todayKey: Self.today)?.text == "Overdue Nov 9", "open board card")
+        let block = CadenceTimelineTaskBlockDetails.resolve(task: done, durationMinutes: 30, todayKey: Self.today)
+        #expect(block.dueLabel == "Due Nov 9" && !block.dueIsUrgent, "timeline block")
+        #expect(CadenceFocusSupport.dueLabel(forDueDateKey: past, todayKey: Self.today, isSettled: true) == "Due Nov 9", "Focus")
+        let embedDue = CadenceTaskEmbedChipRow.slots(for: embedInfo(dueDate: past, isDone: true), relativeTo: reference)
+            .first { $0.field == .dueDate }?.title
+        #expect(embedDue == "Due Nov 9", "embed chip")
+
+        let completed = CadenceBoardColumnDueDatePlan.plan(
+            dueDate: past, hideWhenEmpty: false, isCompleted: true, relativeTo: reference
+        )
+        #expect(completed.label == "Due Nov 9" && !completed.isOverdue, "completed column")
+        let running = CadenceBoardColumnDueDatePlan.plan(
+            dueDate: past, hideWhenEmpty: false, isCompleted: false, relativeTo: reference
+        )
+        #expect(running.label == "Overdue Nov 9" && running.isOverdue, "open column")
+    }
+
+    /// The three note-reference surfaces are a SwiftUI body each, so their wiring is read as source:
+    /// each hands the task's `isDone` to the label it pairs with `isOverdue`.
+    @Test func theNoteReferenceSurfacesHandInTheSettledState() throws {
+        let needle = "CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey, isSettled: task.isDone)"
+        for path in [
+            "Cadence/Shared/CadenceNoteFolderSupport.swift",
+            "Cadence/macOS/Views/NoteReferenceSupportViews.swift",
+            "Cadence/iOS/iOSMarkdownAccessoryViews.swift",
+        ] {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(source.contains(needle), "\(path) words a done task's due date without its settled state")
         }
     }
 

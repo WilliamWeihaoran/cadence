@@ -209,8 +209,9 @@ enum CadenceFocusSupport {
     /// `nonisolated` for widget timeline providers while this file's `DateFormatters` statics are
     /// main-actor isolated. Keeping a second copy here is what let the widget drift to a bare
     /// "Overdue" with no date on it.
-    static func dueLabel(forDueDateKey key: String, todayKey: String) -> String? {
-        CadenceWidgetDateSupport.dueLabel(for: key, todayKey: todayKey)
+    /// `isSettled` ([[T-15522]]): a done task's past date reads "Due Nov 9", not "Overdue".
+    static func dueLabel(forDueDateKey key: String, todayKey: String, isSettled: Bool = false) -> String? {
+        CadenceWidgetDateSupport.dueLabel(for: key, todayKey: todayKey, isSettled: isSettled)
     }
 
     /// The due-date chip in a **Focus session header**, on both platforms (T-7016). `nil` when the

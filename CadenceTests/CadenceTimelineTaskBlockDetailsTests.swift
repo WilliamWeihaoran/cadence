@@ -34,12 +34,14 @@ struct CadenceTimelineTaskBlockDetailsTests {
         #expect(!later.dueIsUrgent)
     }
 
-    /// A finished block stops shouting: `CadenceDueUrgency` collapses a done task to `.later`.
-    @Test func aFinishedOverdueTaskKeepsItsWordsButLeavesThePrimaryTier() {
+    /// A finished block stops shouting: `CadenceDueUrgency` collapses a done task to `.later`, and
+    /// [[T-15522]] its words stop claiming lateness too -- "Due Nov 5", not "Overdue Nov 5".
+    @Test func aFinishedOverdueTaskSaysDueAndLeavesThePrimaryTier() {
         let details = CadenceTimelineTaskBlockDetails.resolve(
             actualMinutes: 0, durationMinutes: 30, dueDateKey: "2026-11-05", isDone: true, todayKey: today
         )
-        #expect(details.dueLabel?.hasPrefix("Overdue ") == true)
+        #expect(details.dueLabel?.hasPrefix("Due ") == true)
+        #expect(details.dueLabel?.hasPrefix("Overdue ") == false)
         #expect(!details.dueIsUrgent)
     }
 

@@ -63,7 +63,7 @@ struct NoteReferenceStrip: View {
                                     icon: NoteReferencePanelSection.taskReferences.systemImage,
                                     title: TaskTitleSupport.displayTitle(task.title),
                                     tint: Theme.green,
-                                    dueLabel: CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey),
+                                    dueLabel: CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey, isSettled: task.isDone),
                                     isOverdue: task.isOverdue(todayKey: todayKey)
                                 )
                             }

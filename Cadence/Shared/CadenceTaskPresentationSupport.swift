@@ -554,8 +554,11 @@ enum CadenceTaskPresentationSupport {
     /// "Overdue", so no caller prefixes one: the rows, Cmd+K, iOS search and the `[[` picker used to
     /// draw `DateFormatters.relativeDate` ("Yesterday", "Due Today") beside a timeline block that
     /// said "Overdue Nov 9" for the same task.
+    ///
+    /// [[T-15522]]: settled is `isDone`, the same half `AppTask.isOverdue(todayKey:)` guards with,
+    /// so a done task's past date says "Due Nov 9" beside the neutral tint that predicate gives it.
     static func dueDateLabel(for task: AppTask, todayKey: String = DateFormatters.todayKey()) -> String? {
-        CadenceWidgetDateSupport.dueLabel(for: task.dueDate, todayKey: todayKey)
+        CadenceWidgetDateSupport.dueLabel(for: task.dueDate, todayKey: todayKey, isSettled: task.isDone)
     }
 
     /// Which date chips a row draws for `task`. See `CadenceTaskRowDatePlan` for why the merged

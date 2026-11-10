@@ -187,9 +187,10 @@ nonisolated struct CadenceBoardColumnDueDatePlan: Equatable, Sendable {
             isVisible: hasDueDate || !hideWhenEmpty,
             hasDueDate: hasDueDate,
             // [[T-15502]]: `dueLabel`, the words the column's own task cards say ([[T-15491]]),
-            // not `DateFormatters.relativeDate` ("Yesterday" / "Today").
+            // not `DateFormatters.relativeDate` ("Yesterday" / "Today"). [[T-15522]]: a completed
+            // column is settled, so its past date says "Due Nov 9", agreeing with `isOverdue` below.
             label: hasDueDate
-                ? CadenceWidgetDateSupport.dueLabel(for: dueDate, todayKey: todayKey) ?? dueDate
+                ? CadenceWidgetDateSupport.dueLabel(for: dueDate, todayKey: todayKey, isSettled: isCompleted) ?? dueDate
                 : emptyLabel,
             isOverdue: hasDueDate
                 && !isCompleted

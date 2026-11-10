@@ -555,13 +555,20 @@ nonisolated enum CadenceWidgetDateSupport {
     /// six-day cutoff, because weekday names repeat at seven days. Both are gone with the weekday
     /// names: the only relative word left is "tomorrow", which is an exact one-day offset and so
     /// needs no window.
-    nonisolated static func dueLabel(for dueDate: String, todayKey: String) -> String? {
+    ///
+    /// [[T-15522]]: `isSettled` is the caller's "this item is done" — a completed task, a
+    /// completed board column. A settled item whose date has passed reads "Due Nov 9", the date
+    /// with no lateness claim, because every surface's overdue predicate (`AppTask.isOverdue`, the
+    /// column plan's `isOverdue`) already says a finished item is not late and tints it neutral;
+    /// "Overdue Nov 9" in that neutral tint contradicted it. Open items are unchanged, and the
+    /// default keeps every caller that has no settled state (widgets, sidebar, reminders) as it was.
+    nonisolated static func dueLabel(for dueDate: String, todayKey: String, isSettled: Bool = false) -> String? {
         let key = dueDate.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return nil }
         if key == todayKey { return "Due today" }
 
         let day = dayLabel(fromKey: key, relativeTo: parsedDate(fromKey: todayKey) ?? Date())
-        if key < todayKey { return "Overdue \(day)" }
+        if key < todayKey { return isSettled ? "Due \(day)" : "Overdue \(day)" }
 
         if let today = parsedDate(fromKey: todayKey),
            let date = parsedDate(fromKey: key),

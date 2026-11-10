@@ -236,7 +236,7 @@ struct CadenceCodexRefreshRegressionTests {
         #expect(rendering.contains("CadenceTimelineTaskBlockDetails.resolve(task: task, durationMinutes: durationMinutes, todayKey: todayKey)"))
         let details = try read("Cadence/Shared/CadenceTimelineTaskBlockDetails.swift")
         #expect(details.contains("CadenceDueUrgency.evaluate(dueDateKey: dueDateKey, isDone: isDone, todayKey: todayKey)"))
-        #expect(details.contains("dueLabel(forDueDateKey: dueDateKey, todayKey: todayKey)"))
+        #expect(details.contains("dueLabel(forDueDateKey: dueDateKey, todayKey: todayKey, isSettled: isDone)"))
         let phone = try read("Cadence/iOS/iOSCalendarTimelineViews.swift")
         let phoneBlock = try #require(CadenceSourceScan.declarationBody("struct iOSTimelineTaskBlock: View", in: phone))
         #expect(phoneBlock.contains("CadenceTimelineTaskBlockDetails.resolve("))
