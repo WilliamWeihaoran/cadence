@@ -187,25 +187,29 @@ launches, T-13541), and `xcb.sh` refuses outright while an automation prompt is 
 
 ---
 
-## E. A real midnight — owner-only only until T-15200 lands
+## E. A midnight rollover — now AGENT work, not owner-only (T-15200)
 
 ### T-14342 — an iOS task row's date label re-tints at midnight
 
-This one is on the list for a different reason from everything above: not a key, a gesture or a
-permission, but because **nothing can move the app's idea of today**. Measured on 2026-11-10:
+This was here because nothing could move the app's idea of today: `simctl` has no clock
+subcommand, the simulator follows the host clock (off limits), and its Settings has no Date & Time
+pane. **[[T-15200]] added the lever, so this item and every future rollover sighting are ordinary
+agent work.** An owner who spots it on a real night can still tick it off.
 
-- `DateFormatters.todayKey()` is `ymd.string(from: Date())` with no explicit time zone and **no
-  env, launch-argument or fixture override anywhere in the tree**. `CadenceObservedDay.todayKey`
-  reads the real clock, and `significantTimeChangeNotification` only invalidates — posting it
-  cannot change what a row draws.
-- `simctl` has no date/time subcommand, and the simulator follows the **host** clock. Moving that
-  is a system setting that would also corrupt the sibling test host and CI parity, so no agent may.
-- The simulator's Settings has **no Date & Time pane** at all.
+The lever, Debug builds only (the Release/TestFlight binary compiles it out; pinned by
+`CadenceTodayOverrideTests`):
 
-So: leave the app open on a task list over a real midnight and watch the row re-tint. That is the
-only route an attended session has today.
+```sh
+# 1. launch armed: UI-test mode plus the day the app should believe it is
+export SIMCTL_CHILD_CADENCE_UI_TEST_MODE=1 SIMCTL_CHILD_CADENCE_UI_TEST_TODAY=2026-11-09
+./scripts/simulator-claim.sh launch <id> --apply      # after claim/env/install as usual
+# 2. cross midnight while the page stays on screen -- each post is one day on
+xcrun simctl spawn <udid> notifyutil -p com.haoranwei.Cadence.uitest.advanceToday
+```
 
-**It should not stay on this list.** T-15200 asks for a `CADENCE_UI_TEST_TODAY=YYYY-MM-DD` honoured
-under `CADENCE_UI_TEST_MODE` only. Once that lands, this item and every future midnight-rollover
-sighting become ordinary agent work — so check whether T-15200 is closed before you spend a night
-on this.
+What moves: `DateFormatters.todayKey()`, so everything that reads it, including
+`CadenceObservedDay` and every `cadenceTracksDayChanges` adopter, which the post also wakes (it
+posts `NSCalendarDayChanged`). What does NOT move: code that reads `Date()` directly, the widget
+process and the MCP server; [[T-15231]] lists those. UI-test mode also seeds the stock UI-test
+lists and suppresses notifications and EventKit, which a rollover sighting does not need.
+

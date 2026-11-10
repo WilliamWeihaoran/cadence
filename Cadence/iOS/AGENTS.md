@@ -160,6 +160,13 @@ that "does nothing" is not evidence until these are ruled out.
   the hardware keyboard belonging to the host Simulator.app, an Escape check -- or any modified key
   -- is a HUMAN sighting, not an agent one ([[T-11051]], [[T-13282]]).
 
+- **A midnight rollover is drivable** ([[T-15200]]). In a Debug build, launch with
+  `SIMCTL_CHILD_CADENCE_UI_TEST_MODE=1 SIMCTL_CHILD_CADENCE_UI_TEST_TODAY=yyyy-MM-dd` exported
+  before `simulator-claim.sh launch`, then each
+  `xcrun simctl spawn <udid> notifyutil -p com.haoranwei.Cadence.uitest.advanceToday` moves
+  `todayKey()` one day on and fires the day-change signal. Only `todayKey()` moves, not raw `Date()`
+  reads: `docs/OWNER_SIGHTINGS.md` section E.
+
 ## Reference Sections
 
 Search `../../docs/IOS_AGENTS_REFERENCE.md` for:

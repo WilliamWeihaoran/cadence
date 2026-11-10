@@ -58,6 +58,16 @@ nonisolated enum CadenceMaintenancePassOutcome: String, Hashable, CaseIterable {
     var changedStore: Bool { self == .changed }
 }
 
+/// **`CADENCE_UI_TEST_MODE=1`, asked from code that also compiles into the widgets and the MCP
+/// server** ([[T-15200]]). `CadenceTodayOverride` in `Cadence/Shared/DateFormatters.swift` needs the
+/// mode; spelling the literal there would make it a shared constant every app file re-types, for
+/// the reason the paragraph below gives, so the question lives here.
+nonisolated enum CadenceUITestModeGate {
+    static func isOn(in environment: [String: String]) -> Bool {
+        environment["CADENCE_UI_TEST_MODE"] == "1"
+    }
+}
+
 /// **`CADENCE_UI_TEST_REFUSE_COMMITS=1` — the switch that makes every pending-change commit refuse,
 /// in UI-test mode only ([[T-11512]]).** `CadencePendingChangePersistence` reads it once and throws
 /// `Refused` before a caller's `commit:` runs; the type there says why it must be a throw at that

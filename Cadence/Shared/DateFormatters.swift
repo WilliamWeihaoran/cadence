@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 // MARK: - Date Formatters
 // All DateFormatter instances live here as statics. Never create DateFormatter() inline elsewhere.
@@ -205,9 +206,14 @@ nonisolated enum DateFormatters {
 
     // MARK: - Convenience
 
-    /// Returns today's date as a `yyyy-MM-dd` storage key
+    /// Returns today's date as a `yyyy-MM-dd` storage key.
+    ///
+    /// The clock is read through `CadenceTodayOverride.live`, which is `nil` in every Release
+    /// build and in any launch that does not ask for it, so this is `Date()` everywhere but a
+    /// Debug UI-test launch carrying `CADENCE_UI_TEST_TODAY` ([[T-15200]]).
     static func todayKey() -> String {
-        ymd.string(from: Date())
+        let now = Date()
+        return ymd.string(from: CadenceTodayOverride.live?.shifted(now) ?? now)
     }
 
     /// Converts a `Date` to a `yyyy-MM-dd` storage key
@@ -599,5 +605,131 @@ nonisolated enum TimeFormatters {
         let actualLabel = durationLabel(minutes: actual, emptyPlaceholder: "-")
         let estimatedLabel = durationLabel(minutes: estimated, emptyPlaceholder: "-")
         return "\(actualLabel)/\(estimatedLabel)"
+    }
+}
+
+// MARK: - Today override (test/debug only)
+
+/// **A Debug-only lever that moves the app's idea of TODAY, so a midnight rollover can be driven on
+/// a simulator instead of waited for ([[T-15200]]).**
+///
+/// Nothing else can move it: `simctl` has no clock subcommand, the simulator follows the host clock
+/// (a system setting no agent may touch), and the simulator's Settings has no Date & Time pane.
+///
+/// **Arming.** A launch carrying BOTH `CADENCE_UI_TEST_MODE=1` (`CadenceUITestModeGate`) and
+/// `CADENCE_UI_TEST_TODAY=yyyy-MM-dd`, in a build compiled with `DEBUG`. The date is turned into a
+/// whole-day OFFSET from the real day at first read, so the app's "today" still rolls at the real
+/// midnight too -- it is the real clock moved by N days, not a frozen date.
+///
+/// **Advancing while running.** Each post of the Darwin notification
+/// `com.haoranwei.Cadence.uitest.advanceToday` moves the offset one day on and posts
+/// `NSCalendarDayChanged` on the default centre, which is one of `CadenceDayChangeSupport`'s
+/// signals -- so every `cadenceTracksDayChanges` adopter re-reads `todayKey` and redraws, exactly
+/// as at a real midnight. On the simulator:
+/// `xcrun simctl spawn <udid> notifyutil -p com.haoranwei.Cadence.uitest.advanceToday`.
+///
+/// **Scope.** Only `DateFormatters.todayKey()` (and so `CadenceObservedDay`, which reads it) is
+/// shifted. Code that reads `Date()` / `Calendar.isDateInToday` / `startOfDay(for: Date())` directly
+/// is not, and the widget and MCP processes never see the variable.
+///
+/// **Shipping.** The live instance is built only under `#if DEBUG`; the Release branch is a
+/// literal `nil`, and `requestedOffsetDays` refuses when `compiledIn` is false. Archive builds
+/// Release. Pinned by `CadenceTodayOverrideTests`.
+nonisolated final class CadenceTodayOverride: Sendable {
+    static let variable = "CADENCE_UI_TEST_TODAY"
+    static let advanceNotificationName = "com.haoranwei.Cadence.uitest.advanceToday"
+
+    /// Whether this binary may honour the override at all. `false` in every Release build.
+    static var isCompiledIn: Bool {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    /// The whole-day offset `environment` asks for, measured from `realNow`'s day in `calendar`.
+    /// `nil` -- not armed -- unless the binary is a Debug one, UI-test mode is on, and the value is
+    /// a well-formed `yyyy-MM-dd` key. Pure, so the gate is driven rather than launched.
+    static func requestedOffsetDays(
+        environment: [String: String],
+        realNow: Date,
+        calendar: Calendar,
+        compiledIn: Bool = isCompiledIn
+    ) -> Int? {
+        guard compiledIn,
+              CadenceUITestModeGate.isOn(in: environment),
+              let raw = environment[variable],
+              let target = DateFormatters.date(from: raw, in: calendar),
+              // Reject a key the parser only accepts leniently ("2026-13-40").
+              DateFormatters.dateKey(from: target, calendar: calendar) == raw
+        else { return nil }
+        let realStart = calendar.startOfDay(for: realNow)
+        return calendar.dateComponents([.day], from: realStart, to: target).day
+    }
+
+    /// The process-wide override, or `nil` -- which is what every Release build and every
+    /// unarmed launch gets. Built once, on the first `todayKey()` read.
+    static let live: CadenceTodayOverride? = {
+        #if DEBUG
+        guard let offset = requestedOffsetDays(
+            environment: ProcessInfo.processInfo.environment,
+            realNow: Date(),
+            calendar: .current
+        ) else { return nil }
+        let override = CadenceTodayOverride(offsetDays: offset, center: .default)
+        override.listen(forDarwinNotificationNamed: advanceNotificationName)
+        return override
+        #else
+        return nil
+        #endif
+    }()
+
+    private let launchOffsetDays: Int
+    private let advances = OSAllocatedUnfairLock(initialState: 0)
+    private let center: NotificationCenter
+
+    init(offsetDays: Int, center: NotificationCenter) {
+        launchOffsetDays = offsetDays
+        self.center = center
+    }
+
+    /// The launch offset plus every advance so far.
+    var offsetDays: Int { launchOffsetDays + advances.withLock { $0 } }
+
+    /// `date` moved by `offsetDays` whole days in `calendar`, keeping its time of day.
+    func shifted(_ date: Date, calendar: Calendar = .current) -> Date {
+        calendar.date(byAdding: .day, value: offsetDays, to: date) ?? date
+    }
+
+    /// One day on, then the same signal a real midnight sends.
+    func advance() {
+        advances.withLock { $0 += 1 }
+        center.post(name: .NSCalendarDayChanged, object: nil)
+    }
+
+    /// Calls `advance()` on every post of the Darwin notification `name`.
+    func listen(forDarwinNotificationNamed name: String) {
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(),
+            { _, observer, _, _, _ in
+                guard let observer else { return }
+                Unmanaged<CadenceTodayOverride>.fromOpaque(observer).takeUnretainedValue().advance()
+            },
+            name as CFString,
+            nil,
+            .deliverImmediately
+        )
+    }
+
+    /// Undoes `listen`. The live instance never calls it; a test must, before its instance dies.
+    func stopListening(forDarwinNotificationNamed name: String) {
+        CFNotificationCenterRemoveObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(),
+            CFNotificationName(name as CFString),
+            nil
+        )
     }
 }
