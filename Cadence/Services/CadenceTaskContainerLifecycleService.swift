@@ -228,8 +228,15 @@ enum TaskContainerLifecycleService {
         return result
     }
 
+    /// A column's cards are the ones **its board draws** ([[T-15660]]). On an area's board that is
+    /// `CadenceTaskQuerySupport.listedTasks(for:)`, not the raw `area.tasks` edge: a task holding
+    /// both an area and a project is the project's card ([[T-15431]]), so archiving or completing
+    /// the area's column used to settle a card sitting on the project's board -- and the iOS
+    /// confirmation counted it. The column move already walks the same set ([[T-15531]]). The area
+    /// and project *wind-downs* above still walk the raw edge, by decision: T-15431 kept them
+    /// reaching every row pointing at the container.
     private static func tasks(in section: TaskSectionConfig, area: Area?, project: Project?) -> [AppTask] {
-        let sourceTasks = area?.tasks ?? project?.tasks ?? []
+        let sourceTasks = area.map(CadenceTaskQuerySupport.listedTasks(for:)) ?? project?.tasks ?? []
         return sourceTasks.filter {
             $0.resolvedSectionName.caseInsensitiveCompare(section.name) == .orderedSame
         }

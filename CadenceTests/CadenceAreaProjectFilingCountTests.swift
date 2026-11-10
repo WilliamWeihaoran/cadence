@@ -184,6 +184,49 @@ struct CadenceAreaProjectFilingCountTests {
         #expect(both.sectionName == "Done")
     }
 
+    /// [[T-15660]]: archiving or completing an area's column settles the cards on the area's board
+    /// -- the confirmation counts them, the settle closes them -- and leaves the dual-filed task,
+    /// which is a card on the project's board, open.
+    @Test func anAreaColumnWindDownLeavesADualFiledTaskOpen() throws {
+        let f = try fixture()
+        for task in f.tasks { task.sectionName = "Doing" }
+        let doing = TaskSectionConfig(name: "Doing")
+        let areaOnly = try #require(f.tasks.first { $0.title == "Area only" })
+        let both = try #require(f.tasks.first { $0.title == "Both" })
+
+        let counted = CadenceContainerWindDownSummary.forColumn(doing, area: f.area, project: nil, outcome: .done)
+        #expect(counted.openTasks == 1)
+
+        TaskContainerLifecycleService.completeRemainingActiveTasks(
+            in: doing,
+            area: f.area,
+            project: nil,
+            in: f.context,
+            reconciler: .inert
+        )
+        // Non-vacuity: the area's own card really was settled.
+        #expect(areaOnly.status == .done)
+        #expect(both.status == .todo)
+    }
+
+    /// [[T-15660]]: the project's column still reaches the dual-filed task -- it is that board's card.
+    @Test func aProjectColumnWindDownSettlesTheDualFiledTask() throws {
+        let f = try fixture()
+        for task in f.tasks { task.sectionName = "Doing" }
+        let doing = TaskSectionConfig(name: "Doing")
+        let both = try #require(f.tasks.first { $0.title == "Both" })
+
+        #expect(CadenceContainerWindDownSummary.forColumn(doing, area: nil, project: f.project, outcome: .cancelled).openTasks == 2)
+        TaskContainerLifecycleService.cancelRemainingActiveTasks(
+            in: doing,
+            area: nil,
+            project: f.project,
+            in: f.context,
+            reconciler: .inert
+        )
+        #expect(both.status == .cancelled)
+    }
+
 #if os(macOS)
     /// [[T-15531]]: the Mac board column's rename and delete re-file `tasksMoving`'s cards. On an
     /// area's board that walk must skip the dual-filed task, which sits on the project's board.
