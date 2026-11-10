@@ -18,6 +18,8 @@ nonisolated struct GoalContributionSummary {
     /// to obtain the ids the union needs — a whole extra tree walk per active goal inside a widget
     /// timeline. The walk already computed them; carrying them out costs one array.
     let overdueTaskIDs: [UUID]
+    /// Contributing tasks whose `completedAt` falls in `GoalRecentWindow`: today and the six days
+    /// before it, seven calendar days in all — the same window as the habit tile's `last7DayCount`.
     let recentCompletedCount: Int
     let nextActionTitle: String?
     /// `yyyy-MM-dd` due date of the `nextActionTitle` task, `nil` when it has none. The next
@@ -64,6 +66,7 @@ nonisolated struct GoalHabitMomentumSummary {
     let dueTodayCount: Int
     let doneTodayCount: Int
     let thisWeekCount: Int
+    /// Completions on the days of `GoalRecentWindow`: today and the six days before it.
     let last7DayCount: Int
 
     var dueTodayLabel: String {
@@ -160,7 +163,7 @@ nonisolated enum GoalContributionResolver {
         let tasks = contributingTasks(for: goal)
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: now)
-        let recentStart = calendar.date(byAdding: .day, value: -7, to: today) ?? today
+        let recentStart = GoalRecentWindow.start(endingOn: today, calendar: calendar)
         let openTasks = tasks.filter { !$0.isDone }
 
         // Next Action is a suggestion to go do something, so it has to be something you can reach.
@@ -266,11 +269,9 @@ nonisolated enum GoalHabitMomentumResolver {
                 }
             }
 
-            for offset in 0..<7 {
-                guard let date = calendar.date(byAdding: .day, value: -offset, to: today) else { continue }
-                if keys.contains(DateFormatters.dateKey(from: date)) {
-                    last7Days += 1
-                }
+            for date in GoalRecentWindow.days(endingOn: today, calendar: calendar)
+            where keys.contains(DateFormatters.dateKey(from: date)) {
+                last7Days += 1
             }
 
             for offset in 0..<7 {
@@ -295,4 +296,23 @@ nonisolated enum GoalHabitMomentumResolver {
     // `CadenceMCPServer` target does not compile — but `isDue` moved into `Habit.swift`, which
     // that target *does* compile, so since then the copy has been pure drift risk. It is gone;
     // this resolver now asks the habit itself, and any change to due-ness reaches both surfaces.
+}
+
+/// The one "last seven days" both goal figures count over: today plus the six days before it.
+///
+/// **T-15549.** `GoalContributionResolver.summary` used to start its window at today minus seven
+/// days, so `recentCompletedCount` counted eight calendar days while `last7DayCount`, beside it in
+/// the same MCP `get_goal` payload, counted seven. Both resolvers now read this.
+nonisolated enum GoalRecentWindow {
+    static let dayCount = 7
+
+    /// The start of each day in the window, today first. `today` should already be a start of day.
+    static func days(endingOn today: Date, calendar: Calendar) -> [Date] {
+        (0..<dayCount).compactMap { calendar.date(byAdding: .day, value: -$0, to: today) }
+    }
+
+    /// The start of the oldest day in the window, for an instant comparison (`>=`).
+    static func start(endingOn today: Date, calendar: Calendar) -> Date {
+        calendar.date(byAdding: .day, value: -(dayCount - 1), to: today) ?? today
+    }
 }

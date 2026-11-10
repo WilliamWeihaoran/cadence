@@ -439,6 +439,48 @@ struct GoalContributionResolverTests {
         #expect(goal.progress == 0)
     }
 
+    /// T-15549: `recentCompletedCount` and `last7DayCount` share one window, today (day 0) plus
+    /// the six days before it. A task finished at the first instant of day 6 and a check-in on
+    /// day 6 are in; a task finished in the last minute of day 7 and a check-in on day 7 are out.
+    /// The task window used to start at day 7, which counted eight days.
+    @Test func goalRecentFiguresCountTheSameSevenDays() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let calendar = Calendar.current
+        let today = try #require(DateFormatters.date(from: "2026-04-30"))
+        let now = try #require(calendar.date(byAdding: .hour, value: 12, to: today))
+        let daySix = try #require(calendar.date(byAdding: .day, value: -6, to: today))
+        let daySeven = try #require(calendar.date(byAdding: .day, value: -7, to: today))
+
+        let goal = Goal(title: "Window")
+        let inWindow = AppTask(title: "Day six")
+        inWindow.goal = goal
+        inWindow.status = .done
+        inWindow.completedAt = daySix
+        let outOfWindow = AppTask(title: "Day seven")
+        outOfWindow.goal = goal
+        outOfWindow.status = .done
+        outOfWindow.completedAt = daySix.addingTimeInterval(-60)
+        let habit = Habit(title: "Walk", goal: goal)
+        habit.frequencyType = .daily
+
+        modelContext.insert(goal)
+        modelContext.insert(inWindow)
+        modelContext.insert(outOfWindow)
+        modelContext.insert(habit)
+        modelContext.insert(HabitCompletion(date: DateFormatters.dateKey(from: daySix), habit: habit))
+        modelContext.insert(HabitCompletion(date: DateFormatters.dateKey(from: daySeven), habit: habit))
+        try modelContext.save()
+
+        let contribution = GoalContributionResolver.summary(for: goal, now: now)
+        let momentum = GoalHabitMomentumResolver.summary(for: goal, now: now)
+
+        #expect(contribution.completedTasks == 2)
+        #expect(contribution.recentCompletedCount == 1)
+        #expect(momentum.last7DayCount == 1)
+        #expect(GoalRecentWindow.days(endingOn: today, calendar: calendar).count == 7)
+    }
+
     @Test func monthlyHabitDueDateClampsToLastDayOfShortMonth() {
         let habit = Habit(title: "Month end review")
         habit.frequencyType = .monthly

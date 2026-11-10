@@ -357,6 +357,7 @@ nonisolated struct CadenceGoalContributionSnapshot: Codable, Sendable {
     let linkedListCount: Int
     let focusMinutes: Int
     let overdueTaskCount: Int
+    /// Contributing tasks completed today or in the six days before it (`GoalRecentWindow`).
     let recentCompletedCount: Int
     let nextActionTitle: String?
     let progress: Double
@@ -367,6 +368,7 @@ nonisolated struct CadenceGoalHabitMomentumSnapshot: Codable, Sendable {
     let dueTodayCount: Int
     let doneTodayCount: Int
     let thisWeekCount: Int
+    /// Habit completions today or in the six days before it (`GoalRecentWindow`).
     let last7DayCount: Int
 }
 

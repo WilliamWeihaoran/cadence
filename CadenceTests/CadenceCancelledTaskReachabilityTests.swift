@@ -294,8 +294,8 @@ struct CadenceCancelledTaskReachabilityTests {
 
     /// The other "N done" a user reads is a goal's **Momentum** tile, and that one is
     /// `recentCompletedCount` — every contributing task whose `completedAt` falls in the last seven
-    /// days, with no `isDone` test of its own. So it looks like exactly the count this change should
-    /// have leaked into, and adding an `isDone` guard there is an edit that compiles, reads
+    /// days (`GoalRecentWindow`: today and the six before it), with no `isDone` test of its own. So
+    /// it looks like exactly the count this change should have leaked into, and adding an `isDone` guard there is an edit that compiles, reads
     /// plausibly and cannot be killed by any test: `GoalContributionResolver.contributingTasks`
     /// already ends in `.filter { !$0.isCancelled }`, so an abandoned task is not in the universe
     /// the momentum window is measured over in the first place. This test is what says so — mutate
