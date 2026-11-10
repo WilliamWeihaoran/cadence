@@ -238,6 +238,124 @@ struct CadenceNoteMoveParityTests {
         #expect(note.project == nil)
     }
 
+    // MARK: - Folder path on arrival (T-13993)
+
+    /// A folder is derived from the paths notes hold, so a move that carried `Meetings` across
+    /// minted a `Meetings` folder the destination never had. The note keeps its path only where
+    /// another list note in the destination already sits at it, compared normalized.
+    @Test func aMovedNoteKeepsItsFolderWhereTheDestinationAlreadyHasIt() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let home = Area(name: "Home")
+        let work = Area(name: "Work")
+        let launch = Project(name: "Launch")
+        let note = Note(kind: .list, title: "Plan")
+        let workResident = Note(kind: .list, title: "Standup")
+        let projectResident = Note(kind: .list, title: "Kickoff")
+        context.insert(home)
+        context.insert(work)
+        context.insert(launch)
+        for model in [note, workResident, projectResident] { context.insert(model) }
+        note.area = home
+        note.folderPath = "Meetings"
+        workResident.area = work
+        workResident.folderPath = "Meetings"
+        projectResident.project = launch
+        projectResident.folderPath = " Meetings / "
+        try context.save()
+
+        try NoteActionSupport.move(note, toArea: work, modelContext: context)
+        #expect(note.folderPath == "Meetings", "the area already had the folder, and the move dropped it")
+
+        try NoteActionSupport.move(note, toProject: launch, modelContext: context)
+        #expect(note.folderPath == "Meetings", "the project's resident holds the same path un-normalized")
+
+        let noteID = note.id
+        let reader = ModelContext(container)
+        let stored = try #require(try reader.fetch(FetchDescriptor<Note>(predicate: #Predicate { $0.id == noteID })).first)
+        #expect(stored.folderPath == "Meetings")
+    }
+
+    /// Where no other list note in the destination sits at the path, the note lands at the root:
+    /// a different folder, a root resident, or a non-list note at that path does not count.
+    @Test func aMovedNoteLandsAtTheRootWhereTheDestinationLacksItsFolder() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let home = Area(name: "Home")
+        let work = Area(name: "Work")
+        let launch = Project(name: "Launch")
+        let note = Note(kind: .list, title: "Plan")
+        let otherFolder = Note(kind: .list, title: "Budget")
+        let rootResident = Note(kind: .list, title: "Loose")
+        let dated = Note(kind: .daily, title: "Day")
+        let projectResident = Note(kind: .list, title: "Kickoff")
+        context.insert(home)
+        context.insert(work)
+        context.insert(launch)
+        for model in [note, otherFolder, rootResident, dated, projectResident] { context.insert(model) }
+        note.area = home
+        note.folderPath = "Meetings"
+        otherFolder.area = work
+        otherFolder.folderPath = "Admin"
+        rootResident.area = work
+        dated.area = work
+        dated.folderPath = "Meetings"
+        projectResident.project = launch
+        projectResident.folderPath = "Admin"
+        try context.save()
+
+        // Re-choosing the list it is already in is not an arrival, even as its folder's only note.
+        try NoteActionSupport.move(note, toArea: home, modelContext: context)
+        #expect(note.folderPath == "Meetings", "re-choosing the current list dropped the note's folder")
+
+        try NoteActionSupport.move(note, toArea: work, modelContext: context)
+        #expect(note.folderPath == CadenceNoteFolderPath.root, "the move minted a folder the area never had")
+
+        note.folderPath = "Meetings"
+        try context.save()
+        try NoteActionSupport.move(note, toProject: launch, modelContext: context)
+        #expect(note.folderPath == CadenceNoteFolderPath.root, "the move minted a folder the project never had")
+
+        note.folderPath = "Meetings"
+        try context.save()
+        try NoteActionSupport.move(note, toArea: nil, modelContext: context)
+        #expect(note.folderPath == CadenceNoteFolderPath.root, "No List has no folder to keep")
+
+        let noteID = note.id
+        let reader = ModelContext(container)
+        let stored = try #require(try reader.fetch(FetchDescriptor<Note>(predicate: #Predicate { $0.id == noteID })).first)
+        #expect(stored.folderPath == CadenceNoteFolderPath.root)
+    }
+
+    /// A refused move that would have rooted the note puts its folder back with its list.
+    @Test func aRefusedMoveRestoresTheNotesFolder() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let home = Area(name: "Home")
+        let work = Area(name: "Work")
+        let launch = Project(name: "Launch")
+        let note = Note(kind: .list, title: "Plan")
+        context.insert(home)
+        context.insert(work)
+        context.insert(launch)
+        context.insert(note)
+        note.area = home
+        note.folderPath = "Meetings"
+        try context.save()
+
+        #expect(throws: CommitRefused.self) {
+            try NoteActionSupport.move(note, toArea: work, modelContext: context) { _ in throw CommitRefused() }
+        }
+        #expect(note.folderPath == "Meetings", "the area move's undo left the note at the root")
+        #expect(note.area?.name == "Home")
+
+        #expect(throws: CommitRefused.self) {
+            try NoteActionSupport.move(note, toProject: launch, modelContext: context) { _ in throw CommitRefused() }
+        }
+        #expect(note.folderPath == "Meetings", "the project move's undo left the note at the root")
+        #expect(note.project == nil)
+    }
+
     // MARK: - Source shape: both platforms' chrome reach the same helpers
 
     /// The two note menus — the Mac popover and the iOS editor menu — offer Move Note through the

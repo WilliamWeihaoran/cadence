@@ -33,7 +33,9 @@ enum NoteActionSupport {
         let previousProject = note.project
         let previousUpdatedAt = note.updatedAt
         let previousOrder = note.order
+        let previousFolderPath = note.folderPath
         note.order = arrivalOrder(for: note, area: area, project: nil)
+        note.folderPath = arrivalFolderPath(for: note, area: area, project: nil)
         note.area = area
         note.project = nil
         note.updatedAt = Date()
@@ -42,10 +44,11 @@ enum NoteActionSupport {
             note.project = previousProject
             note.updatedAt = previousUpdatedAt
             note.order = previousOrder
+            note.folderPath = previousFolderPath
         }
     }
 
-    /// The project half of `move(_:toArea:modelContext:commit:)`, undoing the same four fields.
+    /// The project half of `move(_:toArea:modelContext:commit:)`, undoing the same five fields.
     ///
     /// Written out rather than routed through a shared private helper: a third declaration named
     /// `move` in this file would make every `declarationBody(named: "move")` reader ambiguous, and
@@ -60,7 +63,9 @@ enum NoteActionSupport {
         let previousProject = note.project
         let previousUpdatedAt = note.updatedAt
         let previousOrder = note.order
+        let previousFolderPath = note.folderPath
         note.order = arrivalOrder(for: note, area: nil, project: project)
+        note.folderPath = arrivalFolderPath(for: note, area: nil, project: project)
         note.area = nil
         note.project = project
         note.updatedAt = Date()
@@ -69,6 +74,7 @@ enum NoteActionSupport {
             note.project = previousProject
             note.updatedAt = previousUpdatedAt
             note.order = previousOrder
+            note.folderPath = previousFolderPath
         }
     }
 
@@ -91,6 +97,26 @@ enum NoteActionSupport {
         let residents = (area?.notes ?? project?.notes ?? [])
             .filter { $0.kind == .list && $0.id != note.id }
         return CadenceListNoteFiling.nextOrder(in: residents)
+    }
+
+    /// The `folderPath` a note takes on arriving in a list ([[T-13993]]).
+    ///
+    /// A folder is not a record: `CadenceNoteFolderGrouping.groups(for:)` draws one for any path a
+    /// note holds, so carrying `Meetings` across minted a `Meetings` folder in a destination that
+    /// never had one. The rule ([[T-15370]]): the note keeps its path only when some **other** list
+    /// note in the destination already sits at that same (normalized) path; otherwise it lands at
+    /// the destination's root. "No List" has no residents to match, so a note moved there lands at
+    /// the root too. Re-choosing the list it is already in is not an arrival and keeps the path.
+    /// Read **before** the note is repointed, as `arrivalOrder` is.
+    static func arrivalFolderPath(for note: Note, area: Area?, project: Project?) -> String {
+        let alreadyThere = (area != nil && note.area?.id == area?.id)
+            || (project != nil && note.project?.id == project?.id)
+        let path = CadenceNoteFolderPath.normalized(note.folderPath)
+        guard !alreadyThere, !path.isEmpty else { return note.folderPath }
+        let residents = (area?.notes ?? project?.notes ?? [])
+            .filter { $0.kind == .list && $0.id != note.id }
+        let destinationHasFolder = residents.contains { CadenceNoteFolderPath.normalized($0.folderPath) == path }
+        return destinationHasFolder ? note.folderPath : CadenceNoteFolderPath.root
     }
 }
 
