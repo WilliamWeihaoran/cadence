@@ -1174,7 +1174,11 @@ final class CadenceWriteService {
             container = area
             containerID = area.id
             containerName = area.name
-            tasks = area.tasks ?? []
+            // A task holding both an area and a project is the project's ([[T-15431]],
+            // [[T-15434]], [[T-15512]]): it is not on this area's board, so renaming an area
+            // column must not re-file it -- the same rule `CadenceReadService.ContainerModel.tasks`
+            // restates for the container summary.
+            tasks = (area.tasks ?? []).filter { $0.project == nil }
         case .project(let project):
             container = project
             containerID = project.id

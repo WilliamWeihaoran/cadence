@@ -113,4 +113,34 @@ struct CadenceAreaProjectFilingCountTests {
         #expect(page.items.map(\.title) == CadenceTaskQuerySupport.listedTasks(for: f.area).map(\.title))
         #expect(page.items.map(\.title) == ["Area only"])
     }
+
+    /// [[T-15512]]: `update_container_columns` re-files the cards a renamed column names, and on an
+    /// area it walks the area edge -- which still reaches the dual-filed task the app lists under
+    /// its project. Renaming the area's column must leave that task's `sectionName` alone, or the
+    /// rename moves a card on the project's board.
+    @Test func renamingAnAreaColumnLeavesADualFiledTasksSectionAlone() throws {
+        let f = try fixture()
+        let write = CadenceWriteService(context: f.context, preparesStore: false)
+        _ = try write.updateContainerColumns(options: .init(
+            containerKind: "area",
+            containerId: f.area.id.uuidString,
+            addColumns: ["Doing"]
+        ))
+        let areaOnly = try #require(f.tasks.first { $0.title == "Area only" })
+        let both = try #require(f.tasks.first { $0.title == "Both" })
+        areaOnly.sectionName = "Doing"
+        both.sectionName = "Doing"
+        try f.context.save()
+
+        _ = try write.updateContainerColumns(options: .init(
+            containerKind: "area",
+            containerId: f.area.id.uuidString,
+            columnName: "Doing",
+            newName: "Done"
+        ))
+
+        // Non-vacuity: the area's own card did move, so the rename really re-filed cards.
+        #expect(areaOnly.sectionName == "Done")
+        #expect(both.sectionName == "Doing")
+    }
 }
