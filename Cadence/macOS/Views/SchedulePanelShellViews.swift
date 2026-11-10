@@ -248,7 +248,7 @@ struct SchedulePanelTimelineViewport: View {
             // Block from both timelines and the parameters with it, so the canvas below is handed
             // tasks and events only: nothing on it can draw, select, open or accept a Block.
             TimelineDayCanvas(
-                date: Date(),
+                date: DateFormatters.now(),
                 dateKey: todayKey,
                 tasks: scheduledTasks,
                 allTasks: allTasks,

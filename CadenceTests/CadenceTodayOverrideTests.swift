@@ -167,6 +167,38 @@ struct CadenceTodayOverrideTests {
         #expect(CadenceSourceScan.matchCount(#"day: Date\(\)"#, in: page) == 0)
     }
 
+    /// [[T-15611]]: the Mac Today schedule pane is the same reader as the iOS one above, so under
+    /// the override its events, all-day band, canvas date, create fallbacks and current-hour scroll
+    /// read `DateFormatters.now()` and agree with the pane's own `todayKey`. Every file of the pane
+    /// is read for a raw `Date()`, so a site added later is caught too; the per-file adopter count
+    /// is the non-vacuity witness that the files read are the ones that hold the sites.
+    @Test func theMacTodaySchedulePaneReadsTheOverriddenDay() throws {
+        let adopters: [String: Int] = [
+            "SchedulePanel.swift": 4,
+            "SchedulePanelShellViews.swift": 1,
+            "SchedulePanelStateSupport.swift": 2,
+            "SchedulePanelComponents.swift": 0,
+            "SchedulePanelDataSupport.swift": 0,
+            "SchedulePanelInteractionSupport.swift": 0,
+            "SchedulePanelSupportViews.swift": 0,
+        ]
+        for (file, count) in adopters.sorted(by: { $0.key < $1.key }) {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/" + file))
+            #expect(CadenceSourceScan.matchCount(#"\bDate\(\)"#, in: code) == 0, "\(file) reads the real clock")
+            #expect(CadenceSourceScan.matchCount(#"DateFormatters\.now\(\)"#, in: code) == count, "\(file) adopter count moved")
+        }
+
+        let shell = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SchedulePanelShellViews.swift"))
+        #expect(CadenceSourceScan.matchCount(
+            #"TimelineDayCanvas\(\s*date: DateFormatters\.now\(\),\s*dateKey: todayKey,"#, in: shell
+        ) == 1, "the canvas date and its todayKey come from one clock")
+        let state = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SchedulePanelStateSupport.swift"))
+        for name in ["restoreScrollHour", "focusTargetHour"] {
+            let body = try #require(CadenceSourceScan.functionBody(named: name, in: state))
+            #expect(body.contains("Calendar.current.component(.hour, from: DateFormatters.now())"), "\(name) reads the real hour")
+        }
+    }
+
     // MARK: - The shipping fence
 
     private static let formattersPath = "Cadence/Shared/DateFormatters.swift"

@@ -656,8 +656,8 @@ struct iOSNotesView: View {
 
     /// The Mac editor header's title for the same note ([[T-15493]]): "Monday, August 17" and
     /// "Aug 17–23". The cover's navigation bar has the row to itself, so the width reason the
-    /// Notes header's date button gives for "Aug 17" (`CadenceNoteDateNavigation.title`) does not
-    /// apply here.
+    /// Notes header's date button can fall back to "Aug 17" for (`CadenceNoteDateNavigation.title`)
+    /// does not apply here.
     private func coverTitle(for note: Note) -> String {
         switch activeTab {
         case .today, .week:
@@ -1280,6 +1280,14 @@ struct iOSNotesDateTitle: View {
         CadenceNoteDateNavigation.title(for: tab, dayKey: dayKey)
     }
 
+    /// [[T-15527]]: "Monday, August 17", drawn instead of `label` wherever the row has room. The
+    /// row's width is the only reason Daily ever says "Aug 17" ([[T-8201]]), so the choice is
+    /// `iOSDateJumpTitle`'s `ViewThatFits` against the width offered -- the phone's 390pt row and
+    /// the 320pt Today inspector fall back to the short form, the iPad's Notes pane does not.
+    private var wideLabel: String? {
+        CadenceNoteDateNavigation.wideTitle(for: tab, dayKey: dayKey)
+    }
+
     /// The picker's selection, as a `Date`. `iOSDateJumpTitle` and `MonthCalendarPanel` speak
     /// `Date`; storage speaks `"yyyy-MM-dd"`. Converting in the binding rather than holding a second
     /// `@State` date is what keeps them from drifting apart — there is one source of truth and it is
@@ -1297,6 +1305,7 @@ struct iOSNotesDateTitle: View {
             iOSDateJumpTitle(
                 date: selection,
                 label: label,
+                wideLabel: wideLabel,
                 isAtNow: CadenceNoteDateNavigation.isCurrentPeriod(tab: tab, dayKey: dayKey),
                 // `.inline`, not the calendar's `.page`: this title shares a 390pt row with four
                 // tabs and sometimes a back control. See `iOSDateJumpTitleMetrics`.
@@ -1305,7 +1314,7 @@ struct iOSNotesDateTitle: View {
                 nowTitle: tab == .week ? "This week" : "Today",
                 accessibilityLabel: tab == .week
                     ? "Week of \(label). Choose a week"
-                    : "\(label). Choose a date",
+                    : "\(wideLabel ?? label). Choose a date",
                 // [[T-15492]]: Monday-first rows on Weekly, so the row tapped is the week opened.
                 pickerCalendar: CadenceNoteDateNavigation.pickerCalendar(for: tab)
             )

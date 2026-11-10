@@ -126,7 +126,7 @@ struct SchedulePanel: View {
         let _ = calendarManager.storeVersion  // subscribe to store change refreshes
         return SchedulePanelDataSupport.externalEventItems(
             calendarManager: calendarManager,
-            date: Date(),
+            date: DateFormatters.now(),
             cache: eventCache
         )
     }
@@ -137,7 +137,7 @@ struct SchedulePanel: View {
         let _ = calendarManager.storeVersion  // subscribe to store change refreshes
         return SchedulePanelDataSupport.allDayEvents(
             calendarManager: calendarManager,
-            date: Date(),
+            date: DateFormatters.now(),
             cache: eventCache
         )
     }
@@ -205,7 +205,7 @@ struct SchedulePanel: View {
                                     payload,
                                     startMin: startMin,
                                     dateKey: todayKey,
-                                    fallbackDate: Date(),
+                                    fallbackDate: DateFormatters.now(),
                                     eventCache: eventCache,
                                     calendarManager: calendarManager
                                 )
@@ -213,7 +213,7 @@ struct SchedulePanel: View {
                             // The draft's own day, not today's ([[T-3171]] (iv)): the panel's
                             // Starts row can move the event off the timeline it was dragged on.
                             onCreateEvent: { draft in
-                                calendarManager.createStandaloneEvent(draft, hostDay: Date())
+                                calendarManager.createStandaloneEvent(draft, hostDay: DateFormatters.now())
                             }
                         )
                     }

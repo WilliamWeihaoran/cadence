@@ -38,6 +38,12 @@ struct iOSDateJumpTitle: View {
     @Binding var date: Date
     /// Already formatted. See the note above on why this is a string rather than a closure.
     let label: String
+    /// [[T-15527]]: a longer reading of the same date, drawn instead of `label` whenever the row
+    /// has room for it -- Notes' Daily tab passes "Monday, August 17" beside its "Aug 17". The
+    /// short `label` is a width budget, not a style: under [[T-8201]] it is justified only where
+    /// the row cannot hold the long one, so the choice is made by `ViewThatFits` against the width
+    /// actually offered, never by platform or size class. `nil` draws `label` alone.
+    var wideLabel: String? = nil
     /// Drives the blue: without it a week in March is indistinguishable at a glance from this one,
     /// and on Notes you can write today's entry into a week-old page.
     let isAtNow: Bool
@@ -73,16 +79,18 @@ struct iOSDateJumpTitle: View {
             syncPicker()
             isOpen = true
         } label: {
-            HStack(spacing: 4) {
-                Text(label)
-                    .cadenceFont(.editorTitle, base: fontSize, weight: .bold)
-                    .foregroundStyle(isAtNow ? Theme.text : Theme.blue)
-                    .lineLimit(scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize) ? nil : 1)
-                    .minimumScaleFactor(scaling == .enabled && dynamicTypeSize > .large ? 1 : metrics.minimumScaleFactor)
-
-                Image(systemName: "chevron.down")
-                    .cadenceFont(.editorTitle, base: metrics.chevronSize, weight: .semibold)
-                    .foregroundStyle(isAtNow ? Theme.dim : Theme.blue)
+            Group {
+                if let wideLabel, wideLabel != label {
+                    // The long reading first: `ViewThatFits` takes the FIRST candidate whose ideal
+                    // width fits the offer, so it is drawn wherever it fits and the short one is the
+                    // fallback -- which, as the last candidate, may still give ground as before.
+                    ViewThatFits(in: .horizontal) {
+                        labelRow(wideLabel)
+                        labelRow(label)
+                    }
+                } else {
+                    labelRow(label)
+                }
             }
             // Deliberately **not** `.fixedSize()`: on Notes the tab strip holds the higher layout
             // priority, so if the row runs out of room the date is what gives ground. `fixedSize`
@@ -109,6 +117,20 @@ struct iOSDateJumpTitle: View {
             // Same reason `CadenceDatePicker` sets it: compact width would otherwise promote a
             // 256×294 calendar to a full-height sheet.
             .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    private func labelRow(_ text: String) -> some View {
+        HStack(spacing: 4) {
+            Text(text)
+                .cadenceFont(.editorTitle, base: fontSize, weight: .bold)
+                .foregroundStyle(isAtNow ? Theme.text : Theme.blue)
+                .lineLimit(scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize) ? nil : 1)
+                .minimumScaleFactor(scaling == .enabled && dynamicTypeSize > .large ? 1 : metrics.minimumScaleFactor)
+
+            Image(systemName: "chevron.down")
+                .cadenceFont(.editorTitle, base: metrics.chevronSize, weight: .semibold)
+                .foregroundStyle(isAtNow ? Theme.dim : Theme.blue)
         }
     }
 

@@ -5,7 +5,8 @@ import Foundation
 /// The title used to be the constant word "Notes" — a slot in a full header row spending itself on
 /// a word that never changed, while the panel had no way to reach any day but today. Both problems
 /// have the same fix: the title becomes the date, and it *is* the control that changes it. Daily
-/// reads `Aug 17`, Weekly reads `Aug 17–23`, and the two tabs with no date of their own (Notepad,
+/// reads `Monday, August 17` where the row has room and `Aug 17` where it does not ([[T-15527]]),
+/// Weekly reads `Aug 17–23`, and the two tabs with no date of their own (Notepad,
 /// Event Notes) fall back to the word. A note's own title — the editor header on the Mac, the
 /// editor cover on iOS — is `noteTitle(for:)`, one builder for both platforms ([[T-15493]]).
 ///
@@ -28,16 +29,40 @@ enum CadenceNoteDateNavigation {
     ) -> String? {
         switch tab {
         case .today:
-            // [[T-15493]]: the short form, not `noteTitle`'s "Monday, August 17", because of the
-            // phone's row width. This label shares one 390pt row with four tabs and sometimes a
-            // back control, which leaves it about 84pt (`iOSDateJumpTitleMetrics.inline`); "Aug 17"
+            // [[T-15493]]: the short form, the FALLBACK beside `wideTitle`'s "Monday, August 17".
+            // On the phone this label shares one 390pt row with four tabs and sometimes a back
+            // control, which leaves it about 84pt (`iOSDateJumpTitleMetrics.inline`); "Aug 17"
             // fits there and "Monday, August 17" (about twice that) would truncate to a date with
-            // no day in it. Everywhere a note's date is the whole title — the Mac editor header,
-            // the iOS editor cover — reads the long form through `noteTitle`.
+            // no day in it. Where the row has room -- the iPad's Notes pane -- the header draws the
+            // long form instead ([[T-15527]]); the choice is the width offered, not the platform.
             return dayLabel(forDayKey: dayKey, now: now)
         case .week:
             return weekRangeLabel(forDayKey: dayKey, now: now, calendar: calendar)
         case .notepad, .events:
+            return nil
+        }
+    }
+
+    /// [[T-15527]]: the long reading the Notes header's date button draws in place of
+    /// `title(for:dayKey:)` wherever its row has room for it, or `nil` when there is no longer
+    /// reading. Daily: `noteTitle`'s "Monday, August 17" -- so a header with the room titles the
+    /// day exactly as the note's own editor does. Weekly: `nil`, because the range already IS
+    /// `noteTitle`'s week reading and has no longer form. Undated tabs: `nil`.
+    ///
+    /// Under [[T-8201]] the short form answers one constraint, the row's width, so the header picks
+    /// between the two by the width it is offered (`iOSDateJumpTitle`'s `ViewThatFits`), never by
+    /// platform or size class: a 390pt phone and the 320pt Today inspector fall back, the iPad's
+    /// 646pt+ Notes pane does not.
+    static func wideTitle(
+        for tab: CadenceNotesTabVocabulary,
+        dayKey: String,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String? {
+        switch tab {
+        case .today:
+            return noteTitle(kind: .daily, dateKey: dayKey, weekKey: "", now: now, calendar: calendar)
+        case .week, .notepad, .events:
             return nil
         }
     }
@@ -53,8 +78,8 @@ enum CadenceNoteDateNavigation {
     /// platform difference has to answer to the hardware, and that one answered to nothing.
     ///
     /// Callers: the macOS editor header (`NoteEditorPane.headerTitle`) and the iOS editor cover
-    /// (`iOSNotesView.coverTitle`). The iOS Notes header's date button does not call this; see
-    /// `title(for:dayKey:)` for the width reason its daily label is short.
+    /// (`iOSNotesView.coverTitle`). The iOS Notes header's date button reaches it through
+    /// `wideTitle`, drawn where it fits; see `title(for:dayKey:)` for the width-bound short form.
     nonisolated static func noteTitle(
         kind: NoteKind,
         dateKey: String,

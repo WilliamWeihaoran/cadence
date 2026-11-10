@@ -92,6 +92,43 @@ struct CadenceNoteDateNavigationTests {
         #expect(CadenceNoteDateNavigation.noteTitle(for: Note(kind: .daily, dateKey: "not-a-date"), now: now) == nil)
     }
 
+    /// [[T-15527]]: the Notes header's Daily title is "Monday, August 17" wherever its row has room
+    /// -- the note's own editor title -- and "Aug 17" only as the width fallback. Weekly has no
+    /// longer reading (the range is already the editor's), and the undated tabs have none at all.
+    @Test func theDailyHeaderTitlePrefersTheEditorsLongFormWhereItFits() {
+        #expect(CadenceNoteDateNavigation.wideTitle(for: .today, dayKey: midWeekMonday, now: now) == "Monday, August 17")
+        #expect(CadenceNoteDateNavigation.wideTitle(for: .today, dayKey: midWeekMonday, now: now)
+            == CadenceNoteDateNavigation.noteTitle(for: Note(kind: .daily, dateKey: midWeekMonday), now: now))
+        #expect(CadenceNoteDateNavigation.wideTitle(for: .today, dayKey: "2025-08-18", now: now) == "Monday, August 18, 2025")
+        // The fallback is the same day, short.
+        #expect(CadenceNoteDateNavigation.title(for: .today, dayKey: midWeekMonday, now: now) == "Aug 17")
+        #expect(CadenceNoteDateNavigation.wideTitle(for: .week, dayKey: midWeekMonday, now: now) == nil)
+        #expect(CadenceNoteDateNavigation.wideTitle(for: .notepad, dayKey: midWeekMonday, now: now) == nil)
+        #expect(CadenceNoteDateNavigation.wideTitle(for: .events, dayKey: midWeekMonday, now: now) == nil)
+        // A malformed key has no long form; the header shows the short label's raw key instead.
+        #expect(CadenceNoteDateNavigation.wideTitle(for: .today, dayKey: "not-a-date", now: now) == nil)
+    }
+
+    /// The view half, read from source because `Cadence/iOS/` does not compile here. Under
+    /// [[T-8201]] the short form answers only the row's width, so the pick is a `ViewThatFits`
+    /// over the width offered -- long first, because it takes the FIRST candidate that fits --
+    /// and never a size-class or platform branch.
+    @Test func theNotesHeaderPicksTheDailyFormByTheWidthOffered() throws {
+        let control = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSDateJumpTitle.swift"))
+        let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: control))
+        let fits = try #require(CadenceSourceScan.declarationBody("ViewThatFits(in: .horizontal)", in: body),
+                                "the label no longer chooses by width")
+        let wide = try #require(fits.range(of: "labelRow(wideLabel)"))
+        let short = try #require(fits.range(of: "labelRow(label)"))
+        #expect(wide.lowerBound < short.lowerBound, "the short form is asked first, so the long one never draws")
+
+        let notes = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSNotesView.swift"))
+        let title = try #require(CadenceSourceScan.declarationBody("struct iOSNotesDateTitle: View", in: notes))
+        #expect(title.contains("CadenceNoteDateNavigation.wideTitle(for: tab, dayKey: dayKey)"))
+        #expect(title.contains("wideLabel: wideLabel,"), "the header does not hand the control its long form")
+        #expect(!title.contains("horizontalSizeClass"), "the form is chosen by size class, not by width")
+    }
+
     /// Both editors call that one builder, so the strings above are what each platform draws. The
     /// iOS half is in `#if os(iOS)` and cannot run here; its source is read instead.
     @Test func bothEditorsTitleANoteThroughTheOneBuilder() throws {

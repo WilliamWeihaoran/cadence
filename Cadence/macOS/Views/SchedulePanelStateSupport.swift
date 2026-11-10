@@ -9,13 +9,13 @@ enum SchedulePanelStateSupport {
     }
 
     static func restoreScrollHour(rememberedScrollHour: Int) -> Int {
-        let currentHour = Calendar.current.component(.hour, from: Date())
+        let currentHour = Calendar.current.component(.hour, from: DateFormatters.now())
         let fallbackHour = max(schedStartHour, currentHour - 1)
         return rememberedScrollHour >= schedStartHour ? rememberedScrollHour : fallbackHour
     }
 
     static func focusTargetHour() -> Int {
-        let currentHour = Calendar.current.component(.hour, from: Date())
+        let currentHour = Calendar.current.component(.hour, from: DateFormatters.now())
         return max(schedStartHour, min(currentHour - 1, schedEndHour - 1))
     }
 
