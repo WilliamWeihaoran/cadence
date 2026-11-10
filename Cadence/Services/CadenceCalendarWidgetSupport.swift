@@ -163,6 +163,32 @@ nonisolated enum CadenceCalendarWidgetSupport {
         )
     }
 
+    /// **A gallery or debug sample whose overdue figure and `Next up` come from its rows**
+    /// ([[T-15442]]). The gallery placeholder typed `overdueCount: 2` beside a `Next up` due today,
+    /// a pair no live tile can draw: `Next up` is `.first` of `todayTasks`, which ranks past-due
+    /// work first. Here the overdue count is the rows standing `.pastDue` -- the live
+    /// `!dueDate.isEmpty && dueDate < todayKey`, through the one rule -- and `Next up` is the first
+    /// row in `CadenceTodayWidgetSupport.sampleTodayRows`' ranking, so the two cannot disagree.
+    /// The day strip stays the caller's: it is a picture of a fortnight, not of these rows.
+    nonisolated static func sampleSnapshot(
+        days: [CadenceCalendarWidgetDay],
+        rows: [CadenceTodayWidgetTask],
+        today: Date
+    ) -> CadenceCalendarWidgetSnapshot {
+        let todayKey = CadenceWidgetDateSupport.dateKey(from: today)
+        let overdueCount = rows.filter { $0.todayStanding(todayKey: todayKey) == .pastDue }.count
+        let upcoming = CadenceTodayWidgetSupport.sampleTodayRows(rows, todayKey: todayKey).first
+        return CadenceCalendarWidgetSnapshot(
+            date: today,
+            state: .ready,
+            statusMessage: nil,
+            days: days,
+            overdueCount: overdueCount,
+            upcomingTitle: upcoming?.title,
+            upcomingDueDate: upcoming?.dueDate ?? ""
+        )
+    }
+
     nonisolated static let fullUnavailableMessage = "Open Cadence once to finish setting up shared widget data."
 
     nonisolated static func unavailableSnapshot(

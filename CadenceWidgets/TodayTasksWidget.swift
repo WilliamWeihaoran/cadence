@@ -124,16 +124,12 @@ struct TodayTasksWidgetProvider: TimelineProvider {
             ),
         ]
 
-        return CadenceTodayWidgetSnapshot(
-            date: Date(),
-            dateKey: todayKey,
-            state: .ready,
-            statusMessage: nil,
-            totalCount: placeholderTasks.count,
-            overdueCount: 1,
-            dueTodayCount: 2,
-            scheduledTodayCount: 5,
-            tasks: Array(placeholderTasks.prefix(snapshotLimit(for: family)))
+        // The counts and the row order come from the rows ([[T-15442]]); they were typed as
+        // 1 / 2 / 5 beside rows that are 0 / 2 / 6.
+        return CadenceTodayWidgetSupport.sampleSnapshot(
+            rows: placeholderTasks,
+            todayKey: todayKey,
+            limit: snapshotLimit(for: family)
         )
     }
 

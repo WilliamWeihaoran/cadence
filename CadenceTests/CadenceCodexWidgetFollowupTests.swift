@@ -260,7 +260,7 @@ struct CadenceCodexWidgetFollowupTests {
         let read = CadenceSourceScan.strippedSourceReader()
         let today = try read("CadenceWidgets/TodayTasksWidget.swift")
         let start = try #require(today.range(of: "private func placeholderSnapshot(for family: WidgetFamily)"))
-        let end = try #require(today.range(of: "return CadenceTodayWidgetSnapshot(", range: start.upperBound..<today.endIndex))
+        let end = try #require(today.range(of: "return CadenceTodayWidgetSupport.sampleSnapshot(", range: start.upperBound..<today.endIndex))
         let block = String(today[start.upperBound..<end.lowerBound])
         func values(_ key: String) -> [String] {
             let regex = try! NSRegularExpression(pattern: key + ": \"([^\"]*)\"")

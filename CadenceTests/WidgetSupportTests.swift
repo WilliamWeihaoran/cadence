@@ -335,6 +335,87 @@ struct WidgetSupportTests {
         #expect(empty.headerCountLabel == "0")
     }
 
+    /// [[T-15442]]: a gallery sample's counts are tallied from its rows by the live path's rule, so
+    /// the same rows as `AppTask`s and as sample rows give the same snapshot -- counts, total and
+    /// the drawn prefix in rank order -- and a row today has no claim on is dropped from both.
+    @Test func aGallerySampleCountsItsRowsAsTheLiveSnapshotDoes() {
+        let todayKey = "2026-05-11"
+        let fixtures: [(title: String, due: String, scheduled: String, priority: TaskPriority)] = [
+            ("planned", "", todayKey, .low),
+            ("due", todayKey, "", .high),
+            ("late plan", "", "2026-05-09", .none),
+            ("overdue", "2026-05-10", todayKey, .medium),
+            ("next week", "2026-05-18", "", .high),
+            ("planned 2", "", todayKey, .medium),
+        ]
+        let live = CadenceTodayWidgetSupport.snapshot(
+            from: fixtures.enumerated().map { offset, fixture in
+                let task = AppTask(title: fixture.title)
+                task.dueDate = fixture.due
+                task.scheduledDate = fixture.scheduled
+                task.priority = fixture.priority
+                task.order = offset
+                return task
+            },
+            todayKey: todayKey,
+            limit: 3
+        )
+        let sample = CadenceTodayWidgetSupport.sampleSnapshot(
+            rows: fixtures.map {
+                CadenceTodayWidgetTask(
+                    id: UUID(), title: $0.title, priorityRaw: $0.priority.rawValue,
+                    dueDate: $0.due, scheduledDate: $0.scheduled, containerName: ""
+                )
+            },
+            todayKey: todayKey,
+            limit: 3
+        )
+
+        #expect(sample.totalCount == 5)
+        #expect(sample.overdueCount == 1)
+        #expect(sample.dueTodayCount == 1)
+        #expect(sample.scheduledTodayCount == 3)
+        #expect(sample.overdueCount + sample.dueTodayCount + sample.scheduledTodayCount == sample.totalCount)
+        #expect(sample.tasks.map(\.title) == ["overdue", "late plan", "due"])
+        #expect(sample.totalCount == live.totalCount)
+        #expect(sample.overdueCount == live.overdueCount)
+        #expect(sample.dueTodayCount == live.dueTodayCount)
+        #expect(sample.scheduledTodayCount == live.scheduledTodayCount)
+        #expect(sample.tasks.map(\.title) == live.tasks.map(\.title))
+        #expect(sample.state == .ready)
+    }
+
+    /// [[T-15442]]: the Calendar sample's overdue figure and `Next up` come from one set of rows,
+    /// so a sample with nothing overdue names a due-today task and one with an overdue row names
+    /// that row -- never `2 overdue` beside a due-today `Next up`.
+    @Test func aCalendarGallerySampleNamesItsOverdueRowAsNextUp() {
+        let today = Date(timeIntervalSince1970: 1_778_457_600) // 2026-05-11 UTC; keyed below.
+        let todayKey = CadenceWidgetDateSupport.dateKey(from: today)
+        func row(_ title: String, due: String = "", scheduled: String = "", _ priority: TaskPriority = .none) -> CadenceTodayWidgetTask {
+            CadenceTodayWidgetTask(
+                id: UUID(), title: title, priorityRaw: priority.rawValue,
+                dueDate: due, scheduledDate: scheduled, containerName: ""
+            )
+        }
+        let calm = CadenceCalendarWidgetSupport.sampleSnapshot(
+            days: [],
+            rows: [row("planned", scheduled: todayKey, .high), row("due", due: todayKey)],
+            today: today
+        )
+        #expect(calm.overdueCount == 0)
+        #expect(calm.upcomingTitle == "due")
+        #expect(calm.upcomingDueDate == todayKey)
+
+        let late = CadenceCalendarWidgetSupport.sampleSnapshot(
+            days: [],
+            rows: [row("due", due: todayKey, .high), row("late", due: "2000-01-01"), row("later", due: "2000-01-02")],
+            today: today
+        )
+        #expect(late.overdueCount == 2)
+        #expect(late.upcomingTitle == "late")
+        #expect(late.upcomingDueDate < todayKey)
+    }
+
     @Test func completeTaskIntentMarksActiveTasksDoneAndLeavesOthersUntouched() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)

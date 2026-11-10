@@ -83,7 +83,7 @@ struct CadencePluralizationTests {
     }
 
     /// **T-4980.** Six more count strings were wrong at one, each now spelled by a formatter this
-    /// suite can call: the large Today widget's footer ("1 tasks in view"), iOS's "+N more"
+    /// suite can call: the extra-large Today widget's footer ("1 tasks in view", now "1 task today" -- [[T-15441]]), iOS's "+N more"
     /// subtask button for VoiceOver ("Show 1 more subtasks"), the iOS Markdown task embed's header
     /// ("0/1 subtasks"), the macOS goal card's list chip ("1 lists"), the capture card's
     /// after-count stepper ("1 occurrences"), and the macOS goal header's filtered count
@@ -93,11 +93,11 @@ struct CadencePluralizationTests {
             CadenceTodayWidgetSnapshot(
                 date: Date(), dateKey: "2026-10-22", state: .ready, statusMessage: nil,
                 totalCount: total, overdueCount: 0, dueTodayCount: 0, scheduledTodayCount: 0, tasks: []
-            ).tasksInViewLabel
+            ).tasksTodayLabel
         }
-        #expect(widget(0) == "0 tasks in view")
-        #expect(widget(1) == "1 task in view")
-        #expect(widget(2) == "2 tasks in view")
+        #expect(widget(0) == "0 tasks today")
+        #expect(widget(1) == "1 task today")
+        #expect(widget(2) == "2 tasks today")
 
         #expect(CadenceTaskPresentationSupport.moreSubtasksAccessibilityLabel(hidden: 1) == "Show 1 more subtask")
         #expect(CadenceTaskPresentationSupport.moreSubtasksAccessibilityLabel(hidden: 2) == "Show 2 more subtasks")
@@ -124,7 +124,7 @@ struct CadencePluralizationTests {
     /// The call sites the T-4980 formatters replaced read them, and the retired literals are gone.
     @Test func theT4980SitesReadTheirFormatters() throws {
         let cases: [(path: String, needle: String, retired: String)] = [
-            ("CadenceWidgets/TodayTasksWidgetView.swift", "Text(entry.snapshot.tasksInViewLabel)", "totalCount) tasks in view\")"),
+            ("CadenceWidgets/TodayTasksWidgetView.swift", "Text(entry.snapshot.tasksTodayLabel)", "totalCount) tasks in view\")"),
             ("Cadence/iOS/iOSTaskViews.swift", "CadenceTaskPresentationSupport.moreSubtasksAccessibilityLabel(hidden: hidden)", "more subtasks\")"),
             // `iOSMarkdownPreview.swift`'s `CadenceSubtaskProgress(…).label` site went with the file,
             // deleted as dead code in [[T-10900]].

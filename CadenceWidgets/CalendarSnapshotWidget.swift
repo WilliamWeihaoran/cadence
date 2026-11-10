@@ -62,15 +62,25 @@ struct CalendarSnapshotWidgetProvider: TimelineProvider {
             )
         }
 
-        return CadenceCalendarWidgetSnapshot(
-            date: today,
-            state: .ready,
-            statusMessage: nil,
-            days: days,
-            overdueCount: 2,
-            upcomingTitle: "Finish weekly planning review",
-            upcomingDueDate: CadenceWidgetDateSupport.dateKey(from: today)
-        )
+        // Today's rows behind the first cell's `1d 2p`. The overdue figure and `Next up` are
+        // derived from them, not typed beside them ([[T-15442]]).
+        let todayKey = CadenceWidgetDateSupport.dateKey(from: today)
+        let rows = [
+            CadenceTodayWidgetTask(
+                id: UUID(), title: "Finish weekly planning review", priorityRaw: TaskPriority.high.rawValue,
+                dueDate: todayKey, scheduledDate: "", containerName: "Planning"
+            ),
+            CadenceTodayWidgetTask(
+                id: UUID(), title: "Book dentist appointment", priorityRaw: TaskPriority.medium.rawValue,
+                dueDate: "", scheduledDate: todayKey, containerName: "Personal"
+            ),
+            CadenceTodayWidgetTask(
+                id: UUID(), title: "Pick up groceries", priorityRaw: TaskPriority.low.rawValue,
+                dueDate: "", scheduledDate: todayKey, containerName: "Errands"
+            ),
+        ]
+
+        return CadenceCalendarWidgetSupport.sampleSnapshot(days: days, rows: rows, today: today)
     }
 
     /// Instrumented for [[T-1366]]; see `TodayTasksWidgetProvider` for what the probe records and

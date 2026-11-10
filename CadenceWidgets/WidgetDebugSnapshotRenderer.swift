@@ -50,16 +50,12 @@ public enum CadenceWidgetDebugSnapshotRenderer {
             CadenceTodayWidgetTask(id: UUID(), title: "Check archive migration edge cases", priorityRaw: TaskPriority.medium.rawValue, dueDate: "", scheduledDate: todayKey, containerName: "QA"),
         ]
 
-        let todaySnapshot = CadenceTodayWidgetSnapshot(
-            date: todayDate,
-            dateKey: todayKey,
-            state: .ready,
-            statusMessage: nil,
-            totalCount: todayTasks.count,
-            overdueCount: 1,
-            dueTodayCount: 2,
-            scheduledTodayCount: 5,
-            tasks: todayTasks
+        // Counts derived from the rows, as the gallery placeholder's are ([[T-15442]]).
+        let todaySnapshot = CadenceTodayWidgetSupport.sampleSnapshot(
+            rows: todayTasks,
+            todayKey: todayKey,
+            limit: todayTasks.count,
+            date: todayDate
         )
 
         let calendarDays = (0..<14).compactMap { offset -> CadenceCalendarWidgetDay? in
@@ -79,13 +75,16 @@ public enum CadenceWidgetDebugSnapshotRenderer {
             )
         }
 
-        let calendarSnapshot = CadenceCalendarWidgetSnapshot(
-            date: todayDate,
-            state: .ready,
-            statusMessage: nil,
+        // Today's first cell is `1d 2p`; its due row is `Next up`, and nothing is overdue.
+        let calendarRows = [
+            CadenceTodayWidgetTask(id: UUID(), title: "Finish weekly planning review and prep tomorrow's opener", priorityRaw: TaskPriority.high.rawValue, dueDate: todayKey, scheduledDate: "", containerName: "Planning"),
+            CadenceTodayWidgetTask(id: UUID(), title: "Trim calendar overflow copy", priorityRaw: TaskPriority.medium.rawValue, dueDate: "", scheduledDate: todayKey, containerName: "Roadmap"),
+            CadenceTodayWidgetTask(id: UUID(), title: "Review calendar heat map density", priorityRaw: TaskPriority.low.rawValue, dueDate: "", scheduledDate: todayKey, containerName: "Planning"),
+        ]
+        let calendarSnapshot = CadenceCalendarWidgetSupport.sampleSnapshot(
             days: calendarDays,
-            overdueCount: 2,
-            upcomingTitle: "Finish weekly planning review and prep tomorrow's opener"
+            rows: calendarRows,
+            today: Calendar.current.startOfDay(for: todayDate)
         )
 
         let todayEntry = TodayTasksWidgetEntry(date: todayDate, snapshot: todaySnapshot)

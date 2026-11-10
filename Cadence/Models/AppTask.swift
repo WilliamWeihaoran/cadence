@@ -197,6 +197,18 @@ nonisolated enum CadenceTodayStanding: Int, CaseIterable, Hashable {
     /// The rank of a task today has no claim on: one past the last real standing, so
     /// `rank < notTodayRank` is the membership test in `Int` form.
     nonisolated static let notTodayRank = 4
+
+    /// The rule itself, over the two `yyyy-MM-dd` keys alone, so a row that is not an `AppTask` --
+    /// the widgets' gallery samples, `CadenceTodayWidgetTask` -- is placed by the same comparisons
+    /// rather than by a count someone typed beside it ([[T-15442]]). `AppTask.todayStanding` reads
+    /// this; its doc comment says why a due date is decided before a do date.
+    nonisolated static func of(dueDate: String, scheduledDate: String, todayKey: String) -> CadenceTodayStanding? {
+        if !dueDate.isEmpty && dueDate < todayKey { return .pastDue }
+        if dueDate == todayKey { return .dueToday }
+        if !scheduledDate.isEmpty && scheduledDate < todayKey { return .pastDo }
+        if scheduledDate == todayKey { return .doToday }
+        return nil
+    }
 }
 
 /// A concrete action item. Lives inside an Area, Project, Milestone, or as an inbox item.
@@ -474,11 +486,7 @@ nonisolated enum CadenceTodayStanding: Int, CaseIterable, Hashable {
     /// due today and planned for yesterday reads as due-today. That is the order `todayRank` and
     /// `dateBuckets` already had, and the one macOS's deleted local rank got backwards.
     nonisolated func todayStanding(todayKey: String) -> CadenceTodayStanding? {
-        if !dueDate.isEmpty && dueDate < todayKey { return .pastDue }
-        if dueDate == todayKey { return .dueToday }
-        if !scheduledDate.isEmpty && scheduledDate < todayKey { return .pastDo }
-        if scheduledDate == todayKey { return .doToday }
-        return nil
+        CadenceTodayStanding.of(dueDate: dueDate, scheduledDate: scheduledDate, todayKey: todayKey)
     }
 
     /// **The one membership test for Today**, on every surface that draws the day.

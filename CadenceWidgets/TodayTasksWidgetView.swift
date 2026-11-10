@@ -501,7 +501,7 @@ struct TodayTasksWidgetView: View {
 
     private func footerBar(label: String) -> some View {
         HStack(spacing: scale.compactSectionSpacing) {
-            Text(entry.snapshot.tasksInViewLabel)
+            Text(entry.snapshot.tasksTodayLabel)
                 .font(.system(size: scale.bodyFontSize, weight: .medium))
                 .foregroundStyle(Theme.muted)
             Spacer(minLength: 8)

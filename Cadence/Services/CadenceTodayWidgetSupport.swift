@@ -91,6 +91,39 @@ nonisolated struct CadenceTodayWidgetTask: Identifiable, Hashable {
     var deepLinkURL: URL {
         CadenceDeepLink.task(id).url
     }
+
+    /// The row's place in today's work by the same comparisons `AppTask.todayStanding` makes.
+    /// Only the gallery samples need it: a live row was already placed before it became one.
+    func todayStanding(todayKey: String) -> CadenceTodayStanding? {
+        CadenceTodayStanding.of(dueDate: dueDate, scheduledDate: scheduledDate, todayKey: todayKey)
+    }
+}
+
+/// The Today widget's three badge counts, tallied by standing. **One tally for the live snapshot
+/// and the gallery samples** ([[T-15442]]): the samples used to type `overdueCount: 1` beside
+/// eight rows none of which was overdue, so the gallery's first picture of the widget drew
+/// `1 overdue` above a due-today row.
+nonisolated struct CadenceTodayWidgetStandingCounts: Hashable {
+    private(set) var overdue = 0
+    private(set) var dueToday = 0
+    private(set) var planned = 0
+
+    /// Exhaustive on purpose: the three counts must add up to the rows counted, and before T-353
+    /// they did not -- a past-do task fell through all three branches, so a widget drawing one row
+    /// could read "0 overdue, 0 due, 0 planned" beside it.
+    mutating func add(_ standing: CadenceTodayStanding?) {
+        switch standing {
+        case .pastDue:
+            overdue += 1
+        case .dueToday:
+            dueToday += 1
+        case .pastDo, .doToday:
+            // Yesterday's plan is still planned work; "Planned" is the badge it belongs under.
+            planned += 1
+        case nil:
+            break // A row today has no claim on is not counted at all.
+        }
+    }
 }
 
 nonisolated struct CadenceTodayWidgetSnapshot: Hashable {
@@ -105,12 +138,16 @@ nonisolated struct CadenceTodayWidgetSnapshot: Hashable {
     let tasks: [CadenceTodayWidgetTask]
     var suppressionExpiresAt: Date? = nil
 
-    /// The large widget's footer count. **T-4980:** the view typed `"\(totalCount) tasks in view"`
-    /// and so said "1 tasks in view" on a day with one task. Spelled with its own ternary rather
-    /// than `CadencePluralization.phrase` because this file is compiled into the widget extension,
+    /// The extra-large widget's footer count -- `footerBar` is reached only from
+    /// `extraLargeLayout`. **T-4980:** the view typed `"\(totalCount) tasks in view"` and so said
+    /// "1 tasks in view" on a day with one task. **[[T-15441]]:** it also said "in view" of
+    /// `totalCount`, the whole day, two cards below a `Visible` tile counting the drawn prefix
+    /// (at most `todayTaskLimit`, 8), so a 12-task day read `Visible 8` and `12 tasks in view` on
+    /// one tile. The label now names what it counts. Spelled with its own ternary rather than
+    /// `CadencePluralization.phrase` because this file is compiled into the widget extension,
     /// which does not build that helper.
-    var tasksInViewLabel: String {
-        totalCount == 1 ? "1 task in view" : "\(totalCount) tasks in view"
+    var tasksTodayLabel: String {
+        totalCount == 1 ? "1 task today" : "\(totalCount) tasks today"
     }
 
     var todayURL: URL {
@@ -129,10 +166,10 @@ nonisolated struct CadenceTodayWidgetSnapshot: Hashable {
     /// directly above its own `unavailable` chip and "Widget needs Cadence". Zero is a fact about
     /// someone's day, and it was being asserted on the Home Screen at the one moment the extension
     /// has just said it cannot see their day — the same defect [[T-4980]] fixed in
-    /// `tasksInViewLabel`, and fixed the same way: the string is the snapshot's, so one place
+    /// `tasksTodayLabel`, and fixed the same way: the string is the snapshot's, so one place
     /// decides it and a test can read it without a view.
     ///
-    /// `tasksInViewLabel` needs no such guard — the large widget draws its footer only in the
+    /// `tasksTodayLabel` needs no such guard — the extra-large widget draws its footer only in the
     /// `.ready` arm, while all four families draw this header before they branch.
     var headerCountLabel: String {
         isUnavailable ? "—" : "\(totalCount)"
@@ -203,9 +240,7 @@ nonisolated enum CadenceTodayWidgetSupport {
     ) -> CadenceTodayWidgetSnapshot {
         let visibleLimit = max(limit, 0)
         var totalCount = 0
-        var overdueCount = 0
-        var dueTodayCount = 0
-        var scheduledTodayCount = 0
+        var counts = CadenceTodayWidgetStandingCounts()
         var visibleTasks: [CadenceTodayWidgetTask] = []
         visibleTasks.reserveCapacity(visibleLimit)
         var suppressionExpiresAt: Date?
@@ -218,21 +253,9 @@ nonisolated enum CadenceTodayWidgetSupport {
                 continue
             }
             totalCount += 1
-            // The badges read the shared standing rather than the dates a third time. Exhaustive
-            // on purpose: the three counts must add up to `totalCount`, and before T-353 they did
-            // not — a past-do task fell through all three branches, so a widget drawing one row
-            // could read "0 overdue, 0 due, 0 planned" beside it.
-            switch task.todayStanding(todayKey: todayKey) {
-            case .pastDue:
-                overdueCount += 1
-            case .dueToday:
-                dueTodayCount += 1
-            case .pastDo, .doToday:
-                // Yesterday's plan is still planned work; "Planned" is the badge it belongs under.
-                scheduledTodayCount += 1
-            case nil:
-                break // Unreachable: `todayTasks` drops anything with no standing.
-            }
+            // The badges read the shared standing rather than the dates a third time; `nil` is
+            // unreachable here, since `todayTasks` drops anything with no standing.
+            counts.add(task.todayStanding(todayKey: todayKey))
 
             if visibleTasks.count < visibleLimit {
                 visibleTasks.append(widgetTask(task))
@@ -247,11 +270,62 @@ nonisolated enum CadenceTodayWidgetSupport {
             state: state,
             statusMessage: nil,
             totalCount: totalCount,
-            overdueCount: overdueCount,
-            dueTodayCount: dueTodayCount,
-            scheduledTodayCount: scheduledTodayCount,
+            overdueCount: counts.overdue,
+            dueTodayCount: counts.dueToday,
+            scheduledTodayCount: counts.planned,
             tasks: visibleTasks,
             suppressionExpiresAt: suppressionExpiresAt
+        )
+    }
+
+    /// Sample rows in the order the live list would draw them: rows today has no claim on dropped,
+    /// then by standing and priority as `todayTasks` ranks. The sort is stable, so equal rows keep
+    /// the order they were written in -- the stand-in for `TaskOrdering`'s tie-break, which needs
+    /// an `AppTask`.
+    nonisolated static func sampleTodayRows(
+        _ rows: [CadenceTodayWidgetTask],
+        todayKey: String
+    ) -> [CadenceTodayWidgetTask] {
+        rows.enumerated()
+            .compactMap { offset, row -> (row: CadenceTodayWidgetTask, rank: Int, priorityRank: Int, offset: Int)? in
+                guard let standing = row.todayStanding(todayKey: todayKey) else { return nil }
+                return (row, standing.rawValue, (TaskPriority(rawValue: row.priorityRaw) ?? .none).rank, offset)
+            }
+            .sorted { lhs, rhs in
+                if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
+                if lhs.priorityRank != rhs.priorityRank { return lhs.priorityRank > rhs.priorityRank }
+                return lhs.offset < rhs.offset
+            }
+            .map(\.row)
+    }
+
+    /// **A gallery or debug sample built from its rows, never beside them** ([[T-15442]]). The
+    /// Today widget's gallery placeholder and the macOS debug renderer each typed
+    /// `overdueCount: 1, dueTodayCount: 2, scheduledTodayCount: 5` over eight rows that were 0 / 2
+    /// / 6, so the first picture of the widget showed overdue work it did not have. The total and
+    /// the three badges here are tallied from the rows by `CadenceTodayWidgetStandingCounts`, the
+    /// tally `snapshot(from:)` makes, and the drawn prefix is `limit` long as it is there.
+    nonisolated static func sampleSnapshot(
+        rows: [CadenceTodayWidgetTask],
+        todayKey: String,
+        limit: Int,
+        date: Date = Date()
+    ) -> CadenceTodayWidgetSnapshot {
+        let todayRows = sampleTodayRows(rows, todayKey: todayKey)
+        var counts = CadenceTodayWidgetStandingCounts()
+        for row in todayRows {
+            counts.add(row.todayStanding(todayKey: todayKey))
+        }
+        return CadenceTodayWidgetSnapshot(
+            date: date,
+            dateKey: todayKey,
+            state: todayRows.isEmpty ? .empty : .ready,
+            statusMessage: nil,
+            totalCount: todayRows.count,
+            overdueCount: counts.overdue,
+            dueTodayCount: counts.dueToday,
+            scheduledTodayCount: counts.planned,
+            tasks: Array(todayRows.prefix(max(limit, 0)))
         )
     }
 
