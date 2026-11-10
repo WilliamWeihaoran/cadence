@@ -411,8 +411,10 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         fields.recurrenceOccurrenceIndex = task.recurrenceOccurrenceIndex + 1
         fields.dueDate = dates.dueDate
         fields.scheduledDate = dates.scheduledDate
-        // `AppTask.scheduledStartMin`'s default, "-1 = not scheduled", when the spawn sets no date.
-        fields.scheduledStartMin = dates.scheduledDate.isEmpty ? -1 : task.scheduledStartMin
+        // The same one rule `makeNextRecurringTask` writes through, including
+        // `AppTask.scheduledStartMin`'s "-1 = not scheduled" default when the spawn set no date of
+        // its own to hang a time on.
+        fields.scheduledStartMin = dates.scheduledStartMin(inheritedFrom: task)
         return fields
     }
 
@@ -638,16 +640,45 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         }
     }
 
-    /// The dates the next occurrence would carry. Each date only advances if the predecessor
-    /// actually had one, matching the historical behavior.
+    /// The dates the next occurrence would carry. A date the predecessor had advances; a series
+    /// with **neither** date is given a do date by [[T-14823]] (see `plannedNextDates`).
     struct PlannedRecurrenceDates {
         var dueDate: String = ""
         var scheduledDate: String = ""
+        /// True when `scheduledDate` was **seeded** by [[T-14823]] — the predecessor had neither
+        /// date, so this day is new information rather than the predecessor's own do date moved
+        /// forward. It decides one thing, `scheduledStartMin(inheritedFrom:)`, and is read from
+        /// there by both the spawn and the reopen's reconstruction of it.
+        var scheduledDateIsSeeded: Bool = false
+
+        /// The start minute a successor carrying these dates takes from `task`.
+        ///
+        /// `-1` is `AppTask.scheduledStartMin`'s "not scheduled" default, and it is the answer in
+        /// both the cases where the successor's do date is not the predecessor's: there is no do
+        /// date at all, or [[T-14823]] seeded one. **A seeded do date carries no time**: a task
+        /// with no do date has no meaningful start minute — a positive one on such a row is a
+        /// leftover, not a plan — so inheriting it would conjure a timed block on a day the user
+        /// never scheduled. An inherited do date keeps the time the occurrence was planned at,
+        /// exactly as it always has.
+        ///
+        /// It lives on the value rather than at either call site because
+        /// `makeNextRecurringTask` and `spawnedSuccessorFields` must agree field for field: a
+        /// successor the reopen cannot recognise as the spawn's copy is one it refuses to take
+        /// back ([[T-14824]]).
+        func scheduledStartMin(inheritedFrom task: AppTask) -> Int {
+            guard !scheduledDate.isEmpty, !scheduledDateIsSeeded else { return -1 }
+            return task.scheduledStartMin
+        }
 
         /// The single date key that represents this occurrence for end-date purposes. Do date
         /// (`scheduledDate`) wins over due date because that's the same precedence
-        /// `recurrenceSortDateKey` already uses to decide "when is this occurrence". A dateless
-        /// occurrence is anchored to `now` — that's the day it would actually appear.
+        /// `recurrenceSortDateKey` already uses to decide "when is this occurrence".
+        ///
+        /// The `now` fallback is what a dateless occurrence used to be anchored to — the day it
+        /// would appear, because it carried no date of its own. Since [[T-14823]] a dateless
+        /// *recurring* series' successor carries a do date, so for the spawn path the first branch
+        /// answers and the end condition is asked about the day the successor really lands on.
+        /// The fallback is kept as the honest answer for a value that still has no date at all.
         func anchorKey(now: Date) -> String {
             if !scheduledDate.isEmpty { return scheduledDate }
             if !dueDate.isEmpty { return dueDate }
@@ -673,6 +704,25 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
                 recurrence: task.recurrenceRule,
                 anchorDay: { recurrenceAnchorDay(of: task, field: \.scheduledDate, in: context) }
             ) ?? task.scheduledDate
+        }
+        // **[[T-14823]]: a series with NEITHER date gets its successor a do date, one period after
+        // the completion day** (owner call, [[T-15000]]). Both branches above advance a date the
+        // predecessor already had, so an undated repeating task minted an equally undated
+        // successor: completing a daily Inbox task put an identical open copy straight back into
+        // the same list, tickable again at once, and the series never read as done for the day.
+        // A do date one period on sends the successor to Scheduled and brings it back on its day.
+        //
+        // It is the same arithmetic the dated path uses for a late completion — `shiftedDateKey`
+        // off the completion day — which is why this is one period from `todayKey` rather than a
+        // seeded date of today: the predecessor is being settled *now*, so "now" is the occurrence
+        // that is finishing and the next one is a period away.
+        //
+        // **Only a series with neither date reaches here.** A task with a due date or a do date
+        // took a branch above and is untouched by this.
+        if task.dueDate.isEmpty, task.scheduledDate.isEmpty,
+           let seeded = shiftedDateKey(todayKey, recurrence: task.recurrenceRule, anchorDay: nil) {
+            planned.scheduledDate = seeded
+            planned.scheduledDateIsSeeded = true
         }
         return planned
     }
@@ -721,7 +771,10 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         nextTask.dueDate = dates.dueDate
         if !dates.scheduledDate.isEmpty {
             nextTask.scheduledDate = dates.scheduledDate
-            nextTask.scheduledStartMin = task.scheduledStartMin
+            // One rule, stated on the value, so the reopen's `spawnedSuccessorFields` cannot drift
+            // from it: an inherited do date keeps the occurrence's time, a do date [[T-14823]]
+            // seeded onto a dateless series carries none.
+            nextTask.scheduledStartMin = dates.scheduledStartMin(inheritedFrom: task)
         }
 
         if let subtasks = task.subtasks {

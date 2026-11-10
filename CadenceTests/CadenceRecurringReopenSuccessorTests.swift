@@ -164,8 +164,10 @@ struct CadenceRecurringReopenSuccessorTests {
         #expect(try context.fetch(FetchDescriptor<Subtask>()).count == 2, "the copy's subtasks went with it and the predecessor's stayed")
     }
 
-    /// A dateless occurrence with no estimate: the copy's dates are empty and its start minute is
-    /// the model's "not scheduled" default, and None stays None (T-14231).
+    /// A dateless occurrence with no estimate. Since [[T-14823]] the copy is no longer dateless —
+    /// it carries a do date one period on — but it still carries no due date, no time (the
+    /// predecessor's stray start minute is a leftover, not a plan) and no estimate (None stays
+    /// None, T-14231). The reopen has to recognise that copy as the spawn's and take it back.
     @Test func aDatelessOccurrenceWithNoEstimateIsTakenBack() throws {
         let context = ModelContext(try makeContainer())
         let task = AppTask(title: "Stretch")
@@ -176,8 +178,10 @@ struct CadenceRecurringReopenSuccessorTests {
         try context.save()
 
         let successor = try tick(task, in: context)
-        #expect(successor.scheduledDate.isEmpty)
+        #expect(!successor.scheduledDate.isEmpty, "[[T-14823]]: an undated series' successor is dated")
+        #expect(successor.dueDate.isEmpty)
         #expect(successor.scheduledStartMin == -1)
+        #expect(successor.estimatedMinutes == 0)
 
         try CadenceTaskMutationSupport.setStatus(.todo, for: task, modelContext: context, widgetEffects: noWidgets)
 
