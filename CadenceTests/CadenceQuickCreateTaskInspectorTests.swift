@@ -40,6 +40,7 @@ struct CadenceQuickCreateTaskInspectorTests {
     private static let schedulingPath = "Cadence/macOS/Services/SchedulingService.swift"
     private static let calendarManagerPath = "Cadence/macOS/Services/CalendarManager.swift"
     private static let embedPopoverPath = "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift"
+    private static let schedulePanelPath = "Cadence/Shared/Components/CadenceSchedulePanel.swift"
 
     private func code(_ path: String) throws -> String {
         let raw = try cadenceTestSource(path)
@@ -184,6 +185,28 @@ struct CadenceQuickCreateTaskInspectorTests {
                 "a \(kind.title) moved to another day is still refused"
             )
         }
+    }
+
+    /// **[[T-15605]]: a task's day picked EARLIER in the panel's Do grid is still one day.** The
+    /// test above moves both keys by hand; the panel's Do grid moved `startDateKey` alone, so an
+    /// earlier day left `endDateKey` behind, the draft read as multi-day, and Create was refused
+    /// with "End it on <day>" -- an end the task panel has no control for. Driven through the
+    /// draft's `taskDoDate`, the property the panel's binding is, on a day before and after.
+    @Test func aDayPickedInTheDoGridKeepsTheTaskOnOneDay() throws {
+        for offset in [-3, -1, 1, 4] {
+            var draft = dragDraft()
+            let opened = try #require(DateFormatters.date(from: draft.startDateKey))
+            draft.taskDoDate = try #require(Calendar.current.date(byAdding: .day, value: offset, to: opened))
+            #expect(draft.startDateKey != "2026-05-01", "the Do grid did not move the day (offset \(offset))")
+            #expect(draft.endDateKey == draft.startDateKey, "offset \(offset): the end day stayed behind")
+            #expect(!draft.spansMultipleDays)
+            #expect(
+                QuickCreateChoicePopover.hostLimitNotice(for: draft) == nil,
+                "a task moved \(offset) days in the Do grid is refused as multi-day"
+            )
+        }
+        let panel = try code(Self.schedulePanelPath)
+        #expect(panel.contains("$draft.taskDoDate"), "the panel's Do grid no longer writes through taskDoDate")
     }
 
     /// The event value carries the panel's day, and `day(or:)` resolves **that** day rather than

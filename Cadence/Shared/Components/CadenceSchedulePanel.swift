@@ -927,11 +927,9 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         calendarChoices.first { $0.id == draft.calendarID }?.name ?? "Choose Calendar"
     }
 
+    /// [[T-15605]]: both keys move -- a task has one day. See `CadenceScheduleDraft.taskDoDate`.
     private var doDateBinding: Binding<Date> {
-        Binding(
-            get: { DateFormatters.date(from: draft.startDateKey) ?? Date() },
-            set: { draft.startDateKey = DateFormatters.dateKey(from: $0) }
-        )
+        $draft.taskDoDate
     }
 
     private var dueDateBinding: Binding<Date> {

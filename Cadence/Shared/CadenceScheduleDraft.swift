@@ -405,6 +405,23 @@ struct CadenceScheduleDraft: Equatable {
         )
     }
 
+    /// A task's **Do** day, as the schedule panel's Do grid reads and writes it ([[T-15605]]).
+    ///
+    /// A task has one day, so the write moves **both** keys, as the capture card's Do grid and
+    /// the Mac New Task sheet already did. The panel wrote `startDateKey` alone, so picking an
+    /// EARLIER day left `endDateKey` on the old one and the draft read as `spansMultipleDays`:
+    /// the Mac drag-create popover then refused Create with "End it on <day>" -- an end a task
+    /// panel has no control for -- and iOS's timeline draft lost its edge handles and stopped
+    /// following the estimate.
+    var taskDoDate: Date {
+        get { DateFormatters.date(from: startDateKey) ?? Date() }
+        set {
+            let key = DateFormatters.dateKey(from: newValue)
+            startDateKey = key
+            endDateKey = key
+        }
+    }
+
     /// The Do grid's **Clear**: the task leaves the calendar, and its time with it — a slot on no
     /// day is not a slot.
     mutating func clearDoDate() {
