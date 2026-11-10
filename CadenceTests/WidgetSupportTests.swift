@@ -783,8 +783,38 @@ struct WidgetSupportTests {
         // [[T-15331]]: the header total still reads the span, through the snapshot's label so the
         // unavailable tile draws a dash.
         #expect(widget.contains("Text(entry.snapshot.headerCountLabel(for: visibleSpan))"))
-        #expect(widget.contains("let upcomingCount = visibleSpan.totalCount"))
+        #expect(widget.contains("let upcomingCount = visibleSpan.taskCount"))
         #expect(!widget.contains("leadingDayCount"))
+    }
+
+    /// [[T-15443]]: a task planned on one day and due on another inside the span is one chip on
+    /// each day -- right for the cells -- but one task in the header figure and the `N upcoming`
+    /// badge, as the Today tile counts it.
+    @Test func calendarWidgetHeaderCountsATaskPlannedAndDueOnDifferentDaysOnce() throws {
+        let today = DateFormatters.date(from: "2026-05-11")!
+        let split = AppTask(title: "Planned Tue, due Fri")
+        split.scheduledDate = "2026-05-12"
+        split.dueDate = "2026-05-15"
+        let snapshot = CadenceCalendarWidgetSupport.snapshot(from: [split], today: today, dayCount: 14)
+        let span = CadenceCalendarWidgetVisibleSpan(days: Array(snapshot.days.prefix(CadenceWidgetFamilyLayout.large.calendarDayLimit)))
+
+        // The cells and the Due/Planned sums still count occurrences.
+        #expect(span.scheduledCount == 1)
+        #expect(span.dueCount == 1)
+        #expect(span.totalCount == 2)
+        // The header and badge count the task.
+        #expect(span.taskCount == 1)
+        #expect(snapshot.headerCountLabel(for: span) == "1")
+
+        // A sample strip has no rows behind its cells, so it keeps the cell sum.
+        let sample = CadenceCalendarWidgetVisibleSpan(days: snapshot.days.map {
+            CadenceCalendarWidgetDay(
+                dateKey: $0.dateKey, weekdayLabel: $0.weekdayLabel, dayNumberLabel: $0.dayNumberLabel,
+                dueCount: $0.dueCount, scheduledCount: $0.scheduledCount, totalCount: $0.totalCount,
+                isToday: $0.isToday
+            )
+        })
+        #expect(sample.taskCount == 2)
     }
 
     @Test func calendarWidgetNextUpNeverDrawsABlankTitle() throws {

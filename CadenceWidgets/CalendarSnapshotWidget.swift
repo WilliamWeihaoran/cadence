@@ -539,7 +539,7 @@ struct CalendarSnapshotWidgetView: View {
     private var headerBadges: [WidgetHeaderBadge] {
         let overdueTint = Theme.red
         let upcomingTint = Theme.blueLight
-        let upcomingCount = visibleSpan.totalCount
+        let upcomingCount = visibleSpan.taskCount
 
         // No badge line at `systemSmall`: the tile has no 23pt for it (see `smallLayout`, T-7163).
         // That holds in the unavailable state too -- the dash in the header and the state card's

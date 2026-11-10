@@ -15,6 +15,10 @@ nonisolated struct CadenceCalendarWidgetDay: Identifiable, Hashable {
     let scheduledCount: Int
     let totalCount: Int
     let isToday: Bool
+    /// The tasks behind this cell's `dueCount + scheduledCount`, so a span can count a task planned
+    /// on one day and due on another once ([[T-15443]]). `nil` for a gallery or debug sample,
+    /// whose cells are typed figures with no rows behind them.
+    var taskIDs: Set<UUID>? = nil
 
     var id: String { dateKey }
 }
@@ -46,7 +50,7 @@ nonisolated struct CadenceCalendarWidgetSnapshot: Hashable {
     /// -- the defect [[T-12332]] fixed on the Today tile, fixed the same way. The span is the
     /// family's own (T-5881), so the caller passes it rather than this summing all 14 days.
     func headerCountLabel(for span: CadenceCalendarWidgetVisibleSpan) -> String {
-        isUnavailable ? "—" : "\(span.totalCount)"
+        isUnavailable ? "—" : "\(span.taskCount)"
     }
 }
 
@@ -61,6 +65,20 @@ nonisolated struct CadenceCalendarWidgetVisibleSpan: Hashable {
     var scheduledCount: Int { days.reduce(0) { $0 + $1.scheduledCount } }
     var dueCount: Int { days.reduce(0) { $0 + $1.dueCount } }
     var totalCount: Int { days.reduce(0) { $0 + $1.totalCount } }
+
+    /// **How many tasks the span holds, which is not `totalCount`** ([[T-15443]]). The cells count
+    /// occurrences -- a task planned Tue and due Fri is `1p` on Tue and `1d` on Fri, right for the
+    /// cells -- so their sum counts that task twice. The header figure and the `N upcoming` badge
+    /// say how much work is coming, and count it once, as the Today tile does. Sample days carry
+    /// no ids and fall back to the cell sum.
+    var taskCount: Int {
+        var ids = Set<UUID>()
+        for day in days {
+            guard let dayIDs = day.taskIDs else { return totalCount }
+            ids.formUnion(dayIDs)
+        }
+        return ids.count
+    }
 }
 
 nonisolated enum CadenceCalendarWidgetSupport {
@@ -113,10 +131,12 @@ nonisolated enum CadenceCalendarWidgetSupport {
         let days = (0..<safeDayCount).compactMap { offset -> CadenceCalendarWidgetDay? in
             guard let date = calendar.date(byAdding: .day, value: offset, to: today) else { return nil }
             let dateKey = CadenceWidgetDateSupport.dateKey(from: date)
-            let dueCount = openTasks.filter { $0.dueDate == dateKey }.count
-            let scheduledOnlyCount = openTasks.filter {
+            let due = openTasks.filter { $0.dueDate == dateKey }
+            let scheduledOnly = openTasks.filter {
                 $0.scheduledDate == dateKey && $0.dueDate != dateKey
-            }.count
+            }
+            let dueCount = due.count
+            let scheduledOnlyCount = scheduledOnly.count
             return CadenceCalendarWidgetDay(
                 dateKey: dateKey,
                 weekdayLabel: CadenceWidgetDateSupport.weekdayLabel(from: date),
@@ -124,7 +144,8 @@ nonisolated enum CadenceCalendarWidgetSupport {
                 dueCount: dueCount,
                 scheduledCount: scheduledOnlyCount,
                 totalCount: dueCount + scheduledOnlyCount,
-                isToday: offset == 0
+                isToday: offset == 0,
+                taskIDs: Set((due + scheduledOnly).map(\.id))
             )
         }
 
