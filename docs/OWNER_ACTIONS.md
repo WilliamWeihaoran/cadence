@@ -322,8 +322,15 @@ internal TestFlight build is neither. This section is the gap, checked against H
   properties on a live type, which are invisible to the deployment diff because they exist in
   neither environment until a debug build materialises them. Do not read a short diff as "nothing
   owed". So, before uploading build 26:
-    1. Run a **debug** build and exercise an event note, so SwiftData materialises the three columns
-       in Development.
+    1. **Add the three fields to the Console's *Development* schema by hand** -- `CD_Note` gains
+       `CD_eventNotesMergedAt` (Date/Time), `CD_eventNotesMergedNativeHash` (String) and
+       `CD_eventNotesMergedContentHash` (String); copy the spelling of an existing `CD_Note` field.
+       **Running a debug build does NOT do this any more** ([[T-15750]]): since [[T-3013]]
+       (`e3f22b73`, 2026-10-07) a development-signed build opens the real store with CloudKit off
+       and says so in a startup banner, so it mirrors nothing and teaches Development nothing. That
+       guard is correct and must not be worked around -- do **not** force `APS_ENVIRONMENT=production`
+       on a Debug run to get past it, which is [[T-2053]]: it stamps the owner's real records as
+       already exported and keeps them off every other device.
     2. Press **Deploy Schema Changes** in the CloudKit Console.
     3. **Verify Production's `CD_Note` field count** against the model's stored properties — count
        them, do not trust an empty diff.

@@ -33,9 +33,15 @@ area.tasks = (area.tasks ?? []) + [task]
 
 ## A New `@Model` Needs A CloudKit Console Deploy
 
-SwiftData auto-creates a record type in the **Development** database as a debug build runs; the
-**Production** database gets it only when a human presses *Deploy Schema Changes* in the CloudKit
-Console. That is owner-only, and Production has been live since 2026-09-05.
+**A debug build no longer does half of this, and that is [[T-15750]].** SwiftData auto-created a
+record type in the **Development** database as a debug build ran -- until [[T-3013]] (`e3f22b73`,
+2026-10-07) made a development-signed build open the real store with `cloudKitDatabase: .none`.
+Since that commit **no debug build of this app mirrors anything**, so Development's schema is frozen
+at 2026-10-07 and running the app cannot teach it a new type or field. The **Production** database
+gets it only when a human presses *Deploy Schema Changes* in the CloudKit Console. That is
+owner-only, and Production has been live since 2026-09-05. Until [[T-15751]] lands an
+`initializeCloudKitSchema()` path, the only route is to add the type or field to the Console's
+Development schema **by hand** and then deploy.
 
 **The blast radius is the whole store, not the new type** (T-1294 / R49): a missing Production
 schema, a record **type** *or a* **field**, can abort mirroring for every type at once — so an

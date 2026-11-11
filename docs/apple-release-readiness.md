@@ -186,9 +186,10 @@ them rather than as standing claims.
   default empty) and `eventNotesMergedContentHash` (`String`, default empty).** The event note's synced
   merge baseline, the ONE schema change both owner decisions of 2026-10-31 accepted. Additive only;
   nothing else on `Note` moved. **This is the exact case the CloudKit row above warns is invisible to
-  the deployment diff** — new optional/defaulted fields on a live type — so: run a debug build that
-  saves a meeting note through the event editor, confirm Development's `CD_Note` gains the three
-  `CD_eventNotesMerged*` fields, press *Deploy Schema Changes*, and count Production's fields against
+  the deployment diff** — new optional/defaulted fields on a live type — so: **add the three
+  `CD_eventNotesMerged*` fields to Development by hand in the Console** ([[T-15750]] -- running a
+  debug build stopped doing it on 2026-10-07, when [[T-3013]] turned mirroring off for
+  development-signed builds), press *Deploy Schema Changes*, and count Production's fields against
   the model's stored properties **before distributing any TestFlight build at or after the commit that
   adds them**. Owner-only; nothing in the build will say so. Delete this bullet once verified.
 - **Was: no new CloudKit schema obligation since the 2026-10-02 deploy** (true until the bullet above). The deploy that discharged
