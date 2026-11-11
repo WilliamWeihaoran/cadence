@@ -66,6 +66,49 @@ struct EstimateRollerMetricsTests {
         #expect(EstimateRollerMetrics.maxMinutes == 1440)
     }
 
+    /// **[[T-16141]].** The minutes column offers only what `total` keeps beside the hour it sits
+    /// next to. It offered 0...55 at 24h, so "24h" + "30m" stayed on the wheel while the estimate
+    /// saved as 24h.
+    @Test
+    func theMinutesColumnOffersOnlyMinutesTheTotalKeeps() {
+        for hours in EstimateRollerMetrics.hourValues {
+            let offered = EstimateRollerMetrics.minuteValues(forHours: hours)
+            #expect(offered.isEmpty == false, "the minutes column is empty at \(hours)h")
+            for minutes in offered {
+                #expect(
+                    EstimateRollerMetrics.total(hours: hours, minutes: minutes) == hours * 60 + minutes,
+                    "\(hours)h \(minutes)m is offered and saves as something else"
+                )
+            }
+        }
+        #expect(EstimateRollerMetrics.minuteValues(forHours: 24) == [0])
+        #expect(EstimateRollerMetrics.minuteValues(forHours: 23) == EstimateRollerMetrics.minuteValues)
+        #expect(EstimateRollerMetrics.minuteValues(forHours: 0) == EstimateRollerMetrics.minuteValues)
+    }
+
+    /// **[[T-16141]].** Rolling the hours onto 24h takes the minutes with it to the step the column
+    /// still offers; any other hour leaves them where they were.
+    @Test
+    func rollingOntoTheLastHourTakesTheMinutesToAKeptStep() {
+        #expect(EstimateRollerMetrics.keptMinutes(30, forHours: 24) == 0)
+        #expect(EstimateRollerMetrics.keptMinutes(55, forHours: 24) == 0)
+        #expect(EstimateRollerMetrics.keptMinutes(0, forHours: 24) == 0)
+        #expect(EstimateRollerMetrics.keptMinutes(30, forHours: 23) == 30)
+        #expect(EstimateRollerMetrics.keptMinutes(55, forHours: 1) == 55)
+    }
+
+    /// **[[T-16141]].** The panel reads both rules: the minutes column is built from the hour beside
+    /// it, and a change of hour moves the minutes. The helpers alone fix nothing on screen.
+    @Test
+    func theRollerPanelBuildsItsMinutesColumnFromTheHour() throws {
+        let source = try CadenceSourceScan.strippedSourceReader()("Cadence/Shared/Components/EstimatePickerControl.swift")
+        #expect(source.contains("column(.hours, values: Self.hourValues"), "wrong file, or the panel moved")
+        #expect(source.contains("column(.minutes, values: EstimateRollerMetrics.minuteValues(forHours: hours)"))
+        #expect(source.contains("EstimateRollerMetrics.keptMinutes(minutes, forHours: newHours)"))
+        #expect(source.contains("if kept != minutes { minutes = kept }"))
+        #expect(!source.contains("column(.minutes, values: Self.minuteValues"))
+    }
+
     /// Seeding then reading back must be stable for any value the roller can express, or opening
     /// the picker twice would walk the estimate down five minutes a visit.
     @Test

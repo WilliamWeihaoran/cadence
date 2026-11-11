@@ -199,7 +199,6 @@ struct EstimatePickerPopoverContent: View {
     @FocusState private var focusedColumn: RollerColumn?
 
     private static let hourValues = EstimateRollerMetrics.hourValues
-    private static let minuteValues = EstimateRollerMetrics.minuteValues
     private static let presets = EstimateRollerMetrics.presets
 
     // The preset and footer plate heights used to be declared here. They are
@@ -245,7 +244,13 @@ struct EstimatePickerPopoverContent: View {
             try? await Task.sleep(for: .milliseconds(300))
             isSeeding = false
         }
-        .onChange(of: hours) { _, _ in rollerChanged() }
+        .onChange(of: hours) { _, newHours in
+            // [[T-16141]]: rolling onto 24h takes the minutes column to 0m with it, so the wheel
+            // never shows a minute the saved estimate dropped.
+            let kept = EstimateRollerMetrics.keptMinutes(minutes, forHours: newHours)
+            if kept != minutes { minutes = kept }
+            rollerChanged()
+        }
         .onChange(of: minutes) { _, _ in rollerChanged() }
         // **T-1431.** A popover dismissed by a click outside it while a column is still
         // decelerating would otherwise take the owed write with it: once the view is gone there is
@@ -295,7 +300,8 @@ struct EstimatePickerPopoverContent: View {
     private var rollers: some View {
         HStack(spacing: 8) {
             column(.hours, values: Self.hourValues, unit: "h", selection: $hours)
-            column(.minutes, values: Self.minuteValues, unit: "m", selection: $minutes)
+            // [[T-16141]]: only the minutes `total` keeps beside the current hour -- 0m alone at 24h.
+            column(.minutes, values: EstimateRollerMetrics.minuteValues(forHours: hours), unit: "m", selection: $minutes)
         }
     }
 
@@ -517,6 +523,24 @@ enum EstimateRollerMetrics {
     /// The value the two columns add up to, clamped the same way.
     static func total(hours: Int, minutes: Int) -> Int {
         min(max(0, hours * 60 + minutes), maxMinutes)
+    }
+
+    /// **[[T-16141]]: the minutes the column offers beside `hours` -- only the ones `total` keeps.**
+    ///
+    /// The minutes column carried 0...55 at every hour, so at 24h it offered 5m...55m that `total`
+    /// then clamped away: rolled to "24h" and "30m", the panel's heading read "24h", the estimate
+    /// saved as 24h, and the wheel went on showing 30m until the picker was reopened on 0m. At 24h
+    /// the column now carries 0m alone, and every other hour keeps all twelve steps.
+    static func minuteValues(forHours hours: Int) -> [Int] {
+        minuteValues.filter { hours * 60 + $0 <= maxMinutes }
+    }
+
+    /// The minutes the column moves to when `hours` changes under it: unchanged while `total`
+    /// keeps them, else the largest step it still keeps, which at 24h is 0m ([[T-16141]]).
+    static func keptMinutes(_ minutes: Int, forHours hours: Int) -> Int {
+        let offered = minuteValues(forHours: hours)
+        guard !offered.contains(minutes) else { return minutes }
+        return offered.last { $0 <= minutes } ?? offered.first ?? 0
     }
 
     /// One ↑/↓ press: move `delta` rows within `values` without wrapping, because a wheel that
