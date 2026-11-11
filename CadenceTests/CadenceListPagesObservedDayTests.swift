@@ -116,7 +116,8 @@ struct CadenceListPagesObservedDayTests {
             ("Cadence/iOS/iOSTaskCollectionPage.swift", "todayKey: todayKey,\n", 3),
             // Five since [[T-14581]]: the board panel takes the page's day for its cards too.
             ("Cadence/iOS/iOSListDetailView.swift", "todayKey: observedDay.todayKey", 5),
-            ("Cadence/iOS/iOSListSupportViews.swift", "showsContainer: false, todayKey: todayKey)", 1),
+            // Split one argument per line since `3bf97ddc` ([[T-16461]]); [[T-16504]].
+            ("Cadence/iOS/iOSListSupportViews.swift", "showsContainer: false,\n                            todayKey: todayKey\n", 1),
             ("Cadence/iOS/iOSTodayTaskSections.swift", "dayAlreadyStatedBySurface: todayKey,\n                    todayKey: todayKey,", 1),
             ("Cadence/iOS/iOSTodayTaskSections.swift", "dayAlreadyStatedBySurface: todayKey,\n                todayKey: todayKey,", 1),
             ("Cadence/iOS/iOSCalendarInspectorView.swift", "todayKey: todayKey)", 3),

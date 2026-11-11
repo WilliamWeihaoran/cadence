@@ -393,7 +393,7 @@ enum KanbanBoardSupport {
     /// header strip, the add row and the gaps reordered. A column payload over a card now goes to
     /// the same `onReorderBefore` the column body hands it to, so the column lands where it was
     /// let go wherever in the column that is.
-    enum SectionCardDrop: Equatable {
+    nonisolated enum SectionCardDrop: Equatable {
         /// A column was dropped: reorder it onto the column this card sits in.
         case reorderColumn(String)
         /// A card was dropped on another card: file it in front of that card.
