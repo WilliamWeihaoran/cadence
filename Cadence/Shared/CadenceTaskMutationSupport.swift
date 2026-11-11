@@ -720,7 +720,7 @@ extension CadenceTaskMutationSupport {
         // in `CadenceTaskRecurrenceWorkflowSupport.makeNextRecurringTask`. Both sides of the
         // inverse are written for the reason that function gives.
         let copiedSubtasks = (task.subtasks ?? [])
-            .sorted { $0.order < $1.order }
+            .subtaskSorted()
             .map { source -> Subtask in
                 let copy = Subtask(title: source.title)
                 copy.order = source.order

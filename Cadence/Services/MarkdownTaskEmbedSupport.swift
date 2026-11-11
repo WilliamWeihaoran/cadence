@@ -63,13 +63,10 @@ nonisolated struct MarkdownTaskEmbedRenderInfo: Hashable {
     }
 
     static func task(_ task: AppTask) -> MarkdownTaskEmbedRenderInfo {
+        // [[T-16341]]: the rows' and inspectors' order, which this card's own order-then-title
+        // closure was the first spelling of; the shared one adds the `id` that makes it total.
         let subtaskInfos = (task.subtasks ?? [])
-            .sorted {
-                if $0.order == $1.order {
-                    return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-                }
-                return $0.order < $1.order
-            }
+            .subtaskSorted()
             .map {
                 MarkdownTaskEmbedSubtaskRenderInfo(
                     id: $0.id,

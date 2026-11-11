@@ -73,7 +73,8 @@ struct iOSTaskDetailSheet: View {
     }
 
     private var sortedSubtasks: [Subtask] {
-        (task.subtasks ?? []).sorted { $0.order < $1.order }
+        // [[T-16341]]: the shared order, so a tied pair reads as the row and the Mac do.
+        (task.subtasks ?? []).subtaskSorted()
     }
 
     /// The token the draft holds, read through the one mapping that owns the prefix arithmetic.

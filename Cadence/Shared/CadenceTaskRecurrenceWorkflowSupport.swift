@@ -459,7 +459,7 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
             scheduledDate: task.scheduledDate,
             scheduledStartMin: task.scheduledStartMin,
             subtasks: (task.subtasks ?? [])
-                .sorted { $0.order < $1.order }
+                .subtaskSorted()
                 .map { CopiedSubtask(order: $0.order, title: $0.title) }
         )
     }
@@ -779,7 +779,7 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
 
         if let subtasks = task.subtasks {
             let copies = subtasks
-                .sorted { $0.order < $1.order }
+                .subtaskSorted()
                 .map { source -> Subtask in
                     let copy = Subtask(title: source.title)
                     copy.order = source.order

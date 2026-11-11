@@ -421,7 +421,8 @@ struct TaskDetailSubtasksSection: View {
     var body: some View {
         TaskInspectorRecessedGroup(verticalPadding: 6) {
             VStack(alignment: .leading, spacing: 2) {
-                let sortedSubtasks = (task.subtasks ?? []).sorted { $0.order < $1.order }
+                // [[T-16341]]: the shared order, so a tied pair reads as the row and iOS do.
+                let sortedSubtasks = (task.subtasks ?? []).subtaskSorted()
                 ForEach(sortedSubtasks) { subtask in
                     SubtaskRow(subtask: subtask, showDelete: true, editsTitle: true) {
                         onDeleteSubtask(subtask)

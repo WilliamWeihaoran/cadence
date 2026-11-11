@@ -457,7 +457,7 @@ enum CadenceTaskPresentationSupport {
     static func allUnfinishedSubtasks(for task: AppTask) -> [Subtask] {
         (task.subtasks ?? [])
             .filter { !$0.isDone }
-            .sorted { $0.order < $1.order }
+            .subtaskSorted()
     }
 
     /// How many unfinished subtasks the row is **not** showing, or `nil` when it is showing them

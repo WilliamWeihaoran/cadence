@@ -247,3 +247,34 @@ extension Array where Element == AppTask {
         sorted(by: TaskOrdering.completionPrecedes)
     }
 }
+
+// MARK: - Subtask ordering
+
+extension TaskOrdering {
+    /// A task's checklist order, on every surface that lists one ([[T-16341]]).
+    ///
+    /// `order` alone is not total for subtasks. From 2026-03-30 until `aaa0064d` both inspectors
+    /// numbered a new row `(task.subtasks ?? []).count`, so deleting a row and adding one gave the
+    /// new row the number the old last row still held; the duplicate-merge repair re-points a
+    /// copy's subtasks onto the survivor with their own numbers; two devices appending offline both
+    /// take `max + 1`. `task.subtasks` is an unordered to-many, so a tie fell back on whatever
+    /// arrangement the store handed over, and the rows, the Mac inspector and the iOS sheet each
+    /// sorted on `order` alone while the note embed card broke the tie on title. Title then `id`,
+    /// which is `CadenceMCPOrdering.precedes`' rule for the same rows, so an MCP client reads a
+    /// checklist in the order the screen draws it.
+    nonisolated static func subtaskPrecedes(_ lhs: Subtask, _ rhs: Subtask) -> Bool {
+        if lhs.order != rhs.order { return lhs.order < rhs.order }
+
+        let titleComparison = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+        if titleComparison != .orderedSame { return titleComparison == .orderedAscending }
+
+        return lhs.id.uuidString < rhs.id.uuidString
+    }
+}
+
+extension Array where Element == Subtask {
+    /// A checklist in display order. See `TaskOrdering.subtaskPrecedes`.
+    nonisolated func subtaskSorted() -> [Subtask] {
+        sorted(by: TaskOrdering.subtaskPrecedes)
+    }
+}
