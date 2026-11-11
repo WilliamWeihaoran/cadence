@@ -97,6 +97,43 @@ enum CadenceTodayRolloverSupport {
         pastDoTaskCount > 0 && dismissedDateKey != todayKey
     }
 
+    /// **The banner's rows, in the order Today's own list draws them ([[T-16281]]).**
+    ///
+    /// Both hosts handed the banner `pastDoTasks` as it came out of `@Query(sort: \AppTask.order)`
+    /// — and `order` is numbered **per list** (`CadenceTaskMutationSupport.nextContainerOrder`), so
+    /// the offer interleaved its lists (Work's first task, Home's first task, Work's second…) and two
+    /// lists' rows sharing one number came out in whatever order SwiftData returned them, which is
+    /// the partial order `CadenceTaskQuerySupport.sortTasks` documents as a defect. The rows the
+    /// banner withholds are then drawn under their lists' headings in sidebar order, so the same
+    /// tasks read in one order in the offer and another a tap later.
+    ///
+    /// Now they read in Today's own order: the list groups in sidebar order, Inbox first
+    /// (`todayListGroups`), and inside each list the day's rank and the page's sort mode
+    /// (`todaySortKeyOrder`, ending in the total `TaskOrdering.fallbackPrecedes`) — exactly the
+    /// order "Not Now" hands the same rows back to their groups in. It is the rows *as they stand*,
+    /// not as they will stand after the roll: rolling turns a plain leftover (`.pastDo`) into
+    /// `.doToday`, which moves it from ahead of a due-today row to behind it, and a banner that
+    /// pre-empted that would disagree with the page the moment it was dismissed instead.
+    ///
+    /// **Display only.** Withholding is a set and `rollOver` is order-insensitive, so both still
+    /// take `pastDoTasks` as it is; this is never a membership test — it returns exactly its input,
+    /// rearranged.
+    static func bannerRows(
+        _ pastDoTasks: [AppTask],
+        todayKey: String,
+        sortMode: CadenceTaskSortMode,
+        contexts: [Context]
+    ) -> [AppTask] {
+        let sorted = pastDoTasks.sorted { lhs, rhs in
+            switch CadenceTaskQuerySupport.todaySortKeyOrder(lhs, rhs, todayKey: todayKey, sortMode: sortMode) {
+            case .before: return true
+            case .after: return false
+            case .tie: return TaskOrdering.fallbackPrecedes(lhs, rhs)
+            }
+        }
+        return CadenceTaskQuerySupport.todayListGroups(from: sorted, contexts: contexts).flatMap(\.tasks)
+    }
+
     /// Today's tasks as the grouped list should show them while the banner is up: the offered tasks
     /// are withheld, because the banner is already listing them and a Past Do section under it
     /// would be the same rows twice.

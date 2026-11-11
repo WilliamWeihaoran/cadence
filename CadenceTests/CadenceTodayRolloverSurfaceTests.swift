@@ -367,6 +367,114 @@ struct CadenceTodayRolloverSurfaceTests {
         }
     }
 
+    // MARK: - The order of the offer (T-16281)
+
+    /// Two lists in two contexts, each holding leftovers whose per-list `order` numbers collide
+    /// and interleave — the state `nextContainerOrder` leaves — handed over in the query's
+    /// `order`-sorted sequence. The offer reads list by list in sidebar order (Inbox first), and
+    /// inside a list by Today's rank and then the sort mode, not by the raw `order`: "Pay the
+    /// invoice" holds Admin's lowest `order` but is due today, which ranks behind a plain leftover.
+    @Test func theBannerListsItsOfferListByListInTodaysOrder() throws {
+        let day = try leftoverDay()
+        let queryOrder = day.leftovers.sorted { $0.order < $1.order }
+        let expected = [
+            "Call the plumber",
+            "File receipts", "Draft the notes", "Pay the invoice",
+            "Buy milk", "Water the plants",
+        ]
+        #expect(queryOrder.map(\.title) != expected, "non-vacuity: the store's order is not Today's")
+        #expect(
+            queryOrder.prefix(3).contains { $0.title == "Buy milk" },
+            "non-vacuity: the store's order interleaves the lists"
+        )
+
+        let rows = CadenceTodayRolloverSupport.bannerRows(
+            queryOrder,
+            todayKey: day.today,
+            sortMode: .listOrder,
+            contexts: day.contexts
+        )
+
+        #expect(rows.map(\.title) == expected)
+    }
+
+    /// The offer is the same rows, only rearranged, and whatever order they arrive in it is the
+    /// order "Not Now" hands them back to Today's groups in — so dismissing the banner does not
+    /// reshuffle what it was just listing.
+    @Test func theBannerOrderIsTheOrderTheRowsTakeInTodaysGroups() throws {
+        let day = try leftoverDay()
+        for sortMode in CadenceTaskSortMode.allCases {
+            let inGroups = CadenceTaskQuerySupport.todayListGroups(
+                from: CadenceTodayRolloverSupport.groupedTasks(
+                    from: CadenceTaskQuerySupport.activeTodayTasks(
+                        from: day.leftovers,
+                        todayKey: day.today,
+                        sortMode: sortMode
+                    ),
+                    withholding: day.leftovers,
+                    isNoticeVisible: false
+                ),
+                contexts: day.contexts
+            ).flatMap(\.tasks)
+
+            for permutation in [day.leftovers, day.leftovers.reversed()] {
+                let rows = CadenceTodayRolloverSupport.bannerRows(
+                    permutation,
+                    todayKey: day.today,
+                    sortMode: sortMode,
+                    contexts: day.contexts
+                )
+                #expect(rows.count == day.leftovers.count)
+                #expect(Set(rows.map(\.id)) == Set(day.leftovers.map(\.id)))
+                #expect(rows.map(\.id) == inGroups.map(\.id), "\(sortMode)")
+            }
+        }
+    }
+
+    private struct LeftoverDay {
+        let modelContext: ModelContext
+        let contexts: [Context]
+        let leftovers: [AppTask]
+        let today = "2026-08-20"
+    }
+
+    private func leftoverDay() throws -> LeftoverDay {
+        let modelContext = ModelContext(try CadenceTestStore.container())
+        let work = Context(name: "Work")
+        work.order = 0
+        let home = Context(name: "Home")
+        home.order = 1
+        modelContext.insert(work)
+        modelContext.insert(home)
+        let admin = Area(name: "Admin", context: work)
+        admin.order = 0
+        let errands = Area(name: "Errands", context: home)
+        errands.order = 0
+        modelContext.insert(admin)
+        modelContext.insert(errands)
+
+        func leftover(_ title: String, order: Int, area: Area? = nil, due: String = "") -> AppTask {
+            let task = AppTask(title: title)
+            task.scheduledDate = "2026-08-19"
+            task.dueDate = due
+            task.area = area
+            task.order = order
+            modelContext.insert(task)
+            return task
+        }
+        let leftovers = [
+            // Due today: `.dueToday` ranks behind a plain leftover's `.pastDo`, whatever its `order`.
+            leftover("Pay the invoice", order: 0, area: admin, due: "2026-08-20"),
+            leftover("Buy milk", order: 0, area: errands),
+            leftover("Call the plumber", order: 0),
+            leftover("File receipts", order: 1, area: admin),
+            leftover("Water the plants", order: 1, area: errands),
+            leftover("Draft the notes", order: 2, area: admin),
+        ]
+        try modelContext.save()
+        return LeftoverDay(modelContext: modelContext, contexts: [work, home], leftovers: leftovers)
+    }
+
     // MARK: - Withholding
 
     @Test func theGroupedListWithholdsExactlyWhatTheBannerIsOffering() throws {
@@ -510,6 +618,9 @@ struct CadenceTodayRolloverSurfaceTests {
 
     @Test func iOSTodayReadsTheSharedRolloverDecision() throws {
         let host = try strippingComments(sourceFile("Cadence/iOS/iOSTodayView.swift"))
+        // [[T-16281]]: the offer the banner draws is ordered by the shared helper on this host too.
+        #expect(host.contains("CadenceTodayRolloverSupport.bannerRows("))
+        #expect(!host.contains("rolloverTasks: isRolloverNoticeVisible ? pastDoTasks : nil"))
         #expect(host.contains("CadenceTodayRolloverSupport.pastDoTasks("))
         #expect(host.contains("CadenceTodayRolloverSupport.isNoticeVisible("))
         #expect(host.contains("CadenceTodayRolloverSupport.groupedTasks("))
@@ -538,7 +649,9 @@ struct CadenceTodayRolloverSurfaceTests {
     @Test func macOSTodayDrawsTheSameSharedBanner() throws {
         let panel = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanel.swift"))
         #expect(panel.contains("CadenceTodayRolloverBanner("))
-        #expect(panel.contains("tasks: derived.overdoTasks,"))
+        // [[T-16281]]: the banner's rows in Today's order, not the store's.
+        #expect(!panel.contains("tasks: derived.overdoTasks,"))
+        #expect(panel.contains("tasks: CadenceTodayRolloverSupport.bannerRows("))
         #expect(panel.contains("style: .panelBand,"))
         #expect(panel.contains("CadenceTodayRolloverSupport.isNoticeVisible("))
         #expect(panel.contains("CadenceTodayRolloverSupport.rollOver("))

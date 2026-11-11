@@ -74,10 +74,19 @@ struct CadenceTodayUnificationTests {
         )
         // And both hand it the contexts the sidebar order is derived from. A host that passed `[]`
         // would fall back to alphabetical list groups on one platform while the other used sidebar
-        // order — the same day, two orders.
+        // order — the same day, two orders. **Two since [[T-16281]]:** the rollover banner's rows
+        // are ordered by `CadenceTodayRolloverSupport.bannerRows`, which groups through the same
+        // query and so takes the same contexts.
         try expectCallSites(
             of: "contexts: contexts",
-            at: ["Cadence/iOS/iOSTodayView.swift": 1]
+            at: ["Cadence/iOS/iOSTodayView.swift": 2]
+        )
+        try expectCallSites(
+            of: "CadenceTodayRolloverSupport.bannerRows(",
+            at: [
+                "Cadence/macOS/Views/TasksPanel.swift": 1,
+                "Cadence/iOS/iOSTodayView.swift": 1,
+            ]
         )
     }
 

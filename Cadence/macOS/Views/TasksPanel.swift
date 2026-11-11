@@ -273,7 +273,13 @@ struct TasksPanel: View {
         }
         if showsRollover {
             CadenceTodayRolloverBanner(
-                tasks: derived.overdoTasks,
+                // [[T-16281]]: in Today's own order, not the store's per-list `order`; see `bannerRows`.
+                tasks: CadenceTodayRolloverSupport.bannerRows(
+                    derived.overdoTasks,
+                    todayKey: todayKey,
+                    sortMode: activeSortMode,
+                    contexts: contexts
+                ),
                 style: .panelBand,
                 failureNotice: rolloverFailureNotice,
                 onRollOver: rollOverPastDoTasks,

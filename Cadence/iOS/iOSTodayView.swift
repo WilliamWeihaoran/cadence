@@ -115,7 +115,15 @@ struct iOSTodayView: View {
             todayKey: todayKey,
             taskGroups: todayTaskGroups,
             completedTasks: completedTodayTasks,
-            rolloverTasks: isRolloverNoticeVisible ? pastDoTasks : nil,
+            // [[T-16281]]: in Today's own order, not the store's per-list `order`; see `bannerRows`.
+            rolloverTasks: isRolloverNoticeVisible
+                ? CadenceTodayRolloverSupport.bannerRows(
+                    pastDoTasks,
+                    todayKey: todayKey,
+                    sortMode: sortMode,
+                    contexts: contexts
+                )
+                : nil,
             rolloverFailureNotice: rolloverFailureNotice,
             summary: todaySummary
         )
