@@ -344,6 +344,32 @@ struct CadenceNotesListSupportTests {
         #expect(NotesListVisibility.meetingNotes([undated, dated]).map(\.id) == [dated.id, undated.id])
     }
 
+    /// [[T-16261]]: two event notes on one day order by the event's start, later first -- the
+    /// order the list page's Events section reads -- not by which was edited last. The morning
+    /// note is edited last here, which used to put "9:00 AM" above "2:00 PM" on the Notes tab
+    /// while the list page put them the other way round.
+    @Test func eventNotesOnOneDayOrderByStartNotByLastEdit() throws {
+        let context = try makeContext()
+        let morning = Note(kind: .meeting, title: "Standup", content: "a")
+        morning.eventDateKey = "2026-08-11"
+        morning.eventStartMin = 9 * 60
+        morning.eventEndMin = 9 * 60 + 30
+        morning.calendarID = "cal"
+        morning.updatedAt = DateFormatters.date(from: "2026-08-12")!
+        let afternoon = Note(kind: .meeting, title: "Review", content: "b")
+        afternoon.eventDateKey = "2026-08-11"
+        afternoon.eventStartMin = 14 * 60
+        afternoon.eventEndMin = 15 * 60
+        afternoon.calendarID = "cal"
+        afternoon.updatedAt = DateFormatters.date(from: "2026-08-11")!
+        context.insert(morning)
+        context.insert(afternoon)
+
+        let tabOrder = NotesListVisibility.meetingNotes([morning, afternoon]).map(\.id)
+        #expect(tabOrder == [afternoon.id, morning.id])
+        #expect(tabOrder == CadenceEventNoteSupport.meetingNotes(forLinkedCalendarID: "cal", in: [morning, afternoon]).map(\.id))
+    }
+
     /// `NoteKind.meeting`'s raw value is persisted in `Note.kindRaw`; only the label reads "Event
     /// Notes". The tab the fold is filed under has to be that same case, or a folded Event Notes
     /// month would be filed under a kind nothing reads.

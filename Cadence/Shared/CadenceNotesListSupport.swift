@@ -600,13 +600,22 @@ enum NotesListVisibility {
     ///
     /// Sorted by the meeting's own day, not by last edit: the list is grouped under month headings,
     /// and an edit-ordered list would jump between months row to row.
+    ///
+    /// **Inside one day, by the event's start, later first** ([[T-16261]]) -- the order the list
+    /// page's Events section already reads (`CadenceEventNoteSupport.meetingNotes(forLinkedCalendarID:)`).
+    /// The tie used to fall straight to the last edit, so a day's rows, each showing its time range,
+    /// read "9:00 - 9:30 AM" above "2:00 - 3:00 PM" whenever the morning note was edited last, and
+    /// typing in a note moved its row past its neighbours. The last edit only breaks a tie between
+    /// two events that start at the same minute.
     static func meetingNotes(_ notes: [Note]) -> [Note] {
         notes
             .filter { $0.kind == .meeting }
             .sorted {
                 let left = meetingDayKey(for: $0)
                 let right = meetingDayKey(for: $1)
-                return left == right ? $0.updatedAt > $1.updatedAt : left > right
+                if left != right { return left > right }
+                if $0.eventStartMin != $1.eventStartMin { return $0.eventStartMin > $1.eventStartMin }
+                return $0.updatedAt > $1.updatedAt
             }
     }
 
