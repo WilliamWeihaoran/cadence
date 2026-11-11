@@ -185,7 +185,9 @@ struct ListSectionKanbanColumn: View {
         .animation(kanbanColumnStateAnimation, value: isBeingDragged)
         .animation(kanbanColumnStateAnimation, value: isTargeted)
         .overlay(alignment: .top) {
-            if isTargeted && isAnotherSectionBeingDragged {
+            // [[T-16500]]: over one of this column's cards the card is the drop target, not the
+            // column, and a column dropped there reorders the board -- so say so here too.
+            if (isTargeted || dragOverTaskID != nil) && isAnotherSectionBeingDragged {
                 RoundedRectangle(cornerRadius: 3)
                     .fill(columnColor.opacity(0.9))
                     .frame(height: 3)
@@ -196,8 +198,7 @@ struct ListSectionKanbanColumn: View {
         }
         .dropDestination(for: String.self) { items, _ in
             guard let payload = items.first else { return false }
-            if payload.hasPrefix(kanbanSectionDragPrefix) {
-                let movingName = String(payload.dropFirst(kanbanSectionDragPrefix.count))
+            if let movingName = KanbanBoardSupport.draggedColumnName(from: payload) {
                 // The board answers, not this column (T-870): the column order is a blob on the
                 // list, and a refused commit puts it back before this returns.
                 return onReorderBefore(movingName)
@@ -313,7 +314,7 @@ struct ListSectionKanbanColumn: View {
             KanbanDraggableCard(
                 task: task,
                 todayKey: todayKey,
-                showsDropIndicator: dragOverTaskID == task.id,
+                showsDropIndicator: showsCardInsertionLine(on: task),
                 onDropTargetedChanged: { isOver in
                     if isOver { dragOverTaskID = task.id }
                     else if dragOverTaskID == task.id { dragOverTaskID = nil }
@@ -355,7 +356,7 @@ struct ListSectionKanbanColumn: View {
                 KanbanDraggableCard(
                     task: task,
                     todayKey: todayKey,
-                    showsDropIndicator: dragOverTaskID == task.id,
+                    showsDropIndicator: showsCardInsertionLine(on: task),
                     onDropTargetedChanged: { isOver in
                         if isOver { dragOverTaskID = task.id }
                         else if dragOverTaskID == task.id { dragOverTaskID = nil }
@@ -374,12 +375,24 @@ struct ListSectionKanbanColumn: View {
         )
     }
 
+    /// The blue line a card draws over its top edge while a CARD is held over it. A held column
+    /// lands as a column, not in front of the card, so the card says nothing then ([[T-16500]]).
+    private func showsCardInsertionLine(on task: AppTask) -> Bool {
+        dragOverTaskID == task.id && !isBeingDragged && !isAnotherSectionBeingDragged
+    }
+
+    /// A drop on one of this column's cards, open or finished. [[T-16500]]: a column dragged by its
+    /// header and let go over a card reorders the columns, as it does over the header.
     private func handleTaskDrop(items: [String], before target: AppTask) -> Bool {
-        guard let payload = items.first,
-              let droppedID = KanbanBoardSupport.taskID(from: payload),
-              droppedID != target.id,
-              let droppedTask = universeTasks.first(where: { $0.id == droppedID }) else { return false }
-        return moveTask(droppedTask, before: target)
+        switch KanbanBoardSupport.sectionCardDrop(items, onto: target.id) {
+        case .reorderColumn(let movingName):
+            return onReorderBefore(movingName)
+        case .moveCard(let droppedID):
+            guard let droppedTask = universeTasks.first(where: { $0.id == droppedID }) else { return false }
+            return moveTask(droppedTask, before: target)
+        case .refuse:
+            return false
+        }
     }
 
     /// The list this board belongs to — the "where does this go" half that the column's composer

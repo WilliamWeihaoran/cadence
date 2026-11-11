@@ -325,8 +325,14 @@ struct iOSListBoardCompletedColumnTests {
             "the Mac section column's finished cards are gone"
         )
         #expect(cards.contains("KanbanDraggableCard("), "non-vacuity: the finished cards are not the draggable card")
-        #expect(cards.contains("showsDropIndicator: dragOverTaskID == task.id,"),
+        // [[T-16500]]: through the helper the open cards use, which keeps the line off while a
+        // COLUMN is held over a card (a column lands as a column, not in front of the card).
+        #expect(cards.contains("showsDropIndicator: showsCardInsertionLine(on: task),"),
                 "the Mac's finished cards draw no insertion line")
+        let line = try #require(
+            CadenceSourceScan.declarationBody("private func showsCardInsertionLine(on task: AppTask) -> Bool", in: source)
+        )
+        #expect(line.contains("dragOverTaskID == task.id"), "the insertion line no longer follows the held card")
         #expect(cards.contains("onDropBefore:"), "the Mac's finished cards take no drop")
     }
 }

@@ -81,4 +81,53 @@ struct KanbanColumnReorderTests {
         #expect(reordered(board, moving: "Doing", onto: "Missing") == board)
     }
 }
+/// **[[T-16500]]: a Mac Kanban column let go over another column's CARDS reorders the board.**
+///
+/// A section column's cards are drop targets nested inside the column's, and the innermost one
+/// under the pointer takes the drop. The card handler (`ListSectionKanbanColumn.handleTaskDrop`)
+/// parsed only card payloads, so a column dragged by its header and released over a card -- most
+/// of a filled column's height -- was refused: nothing moved, and the dragged column stayed faded,
+/// because only `onReorderBefore` clears the board's drag state.
+struct KanbanColumnDropOverCardTests {
+    private let target = UUID()
+
+    /// Red before the fix: a column payload over a card was `.refuse`.
+    @Test func aColumnDroppedOnACardReordersTheColumns() {
+        #expect(
+            KanbanBoardSupport.sectionCardDrop(["\(kanbanSectionDragPrefix)Doing"], onto: target)
+                == .reorderColumn("Doing")
+        )
+    }
+
+    /// The column payload is read the same way over a card and over the column body.
+    @Test func theCardAndTheColumnBodyReadTheSameColumnName() {
+        let payload = "\(kanbanSectionDragPrefix)In Review"
+        #expect(KanbanBoardSupport.draggedColumnName(from: payload) == "In Review")
+        #expect(KanbanBoardSupport.sectionCardDrop([payload], onto: target) == .reorderColumn("In Review"))
+        #expect(KanbanBoardSupport.draggedColumnName(from: UUID().uuidString) == nil)
+    }
+
+    /// Unchanged: a card still lands in front of the card it was dropped on, and a card dropped on
+    /// itself or an empty payload does nothing.
+    @Test func cardDropsAreUnchanged() {
+        let dropped = UUID()
+        #expect(KanbanBoardSupport.sectionCardDrop([TaskDragPayload.string(for: dropped)], onto: target) == .moveCard(dropped))
+        #expect(KanbanBoardSupport.sectionCardDrop([dropped.uuidString], onto: target) == .moveCard(dropped))
+        #expect(KanbanBoardSupport.sectionCardDrop([target.uuidString], onto: target) == .refuse)
+        #expect(KanbanBoardSupport.sectionCardDrop([], onto: target) == .refuse)
+        #expect(KanbanBoardSupport.sectionCardDrop(["not a payload"], onto: target) == .refuse)
+    }
+
+    /// The wiring: every card of a section column -- open and finished -- drops through
+    /// `handleTaskDrop`, and that hands a column payload to `onReorderBefore`.
+    @Test func theSectionColumnsCardDropHandsAColumnToTheBoardReorder() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/KanbanSectionColumnView.swift")
+        let body = try #require(CadenceSourceScan.declarationBody("private func handleTaskDrop(", in: source))
+        #expect(body.contains("KanbanBoardSupport.sectionCardDrop(items, onto: target.id)"))
+        #expect(body.contains("case .reorderColumn(let movingName):"))
+        #expect(body.contains("return onReorderBefore(movingName)"))
+        let cardDrops = source.components(separatedBy: "handleTaskDrop(items: items, before: task)").count - 1
+        #expect(cardDrops == 2, "the open cards and the finished cards: \(cardDrops)")
+    }
+}
 #endif

@@ -376,5 +376,39 @@ enum KanbanBoardSupport {
     static func taskID(from payload: String) -> UUID? {
         TaskDragPayload.taskID(from: payload)
     }
+
+    /// The column name a section-column drag carries, or `nil` when `payload` is not one.
+    static func draggedColumnName(from payload: String) -> String? {
+        guard payload.hasPrefix(kanbanSectionDragPrefix) else { return nil }
+        return String(payload.dropFirst(kanbanSectionDragPrefix.count))
+    }
+
+    /// What a drop **on a card** of a section column does ([[T-16500]]).
+    ///
+    /// A column's cards are drop targets of their own (`KanbanDraggableCard`), nested inside the
+    /// column's, and the innermost target under the pointer takes the drop. The card handler only
+    /// knew card payloads, so a COLUMN dragged by its header and let go over another column's
+    /// cards -- most of a column's height once it holds a few -- was refused: nothing moved, and the
+    /// dragged column stayed faded because only the column's own drop clears the drag. Only the
+    /// header strip, the add row and the gaps reordered. A column payload over a card now goes to
+    /// the same `onReorderBefore` the column body hands it to, so the column lands where it was
+    /// let go wherever in the column that is.
+    enum SectionCardDrop: Equatable {
+        /// A column was dropped: reorder it onto the column this card sits in.
+        case reorderColumn(String)
+        /// A card was dropped on another card: file it in front of that card.
+        case moveCard(UUID)
+        /// Nothing to do: an empty or unreadable payload, or a card dropped on itself.
+        case refuse
+    }
+
+    static func sectionCardDrop(_ items: [String], onto targetID: UUID) -> SectionCardDrop {
+        guard let payload = items.first else { return .refuse }
+        if let columnName = draggedColumnName(from: payload) {
+            return .reorderColumn(columnName)
+        }
+        guard let droppedID = taskID(from: payload), droppedID != targetID else { return .refuse }
+        return .moveCard(droppedID)
+    }
 }
 #endif
