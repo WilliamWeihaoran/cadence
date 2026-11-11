@@ -141,7 +141,7 @@ struct CadenceCodexKanbanRenderingTests {
         let source = try code("KanbanListColumnView.swift")
         let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: source))
         #expect(body.components(separatedBy: "unfrozenSortedTasks").count - 1 == 1)
-        #expect(body.contains("let displayTasks = applyFrozenTaskOrder(naturalTasks, frozen: frozenTasks)"))
+        #expect(body.contains("let displayTasks = applyFrozenTaskOrder(naturalTasks, frozen: frozenTasks, storeTasks: spanTasks)"))
         #expect(body.contains("return columnBody(tasks: displayTasks)"))
         #expect(body.contains("columnTaskIDs: Set(naturalTasks.map(\\.id))"))
         #expect(body.contains("capturedTasks: naturalTasks"))

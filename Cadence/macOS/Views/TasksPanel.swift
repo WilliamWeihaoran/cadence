@@ -138,7 +138,7 @@ struct TasksPanel: View {
     }
 
     private func applyFreeze(_ sorted: [AppTask]) -> [AppTask] {
-        applyFrozenTaskOrder(sorted, frozen: frozenTaskOrder)
+        applyFrozenTaskOrder(sorted, frozen: frozenTaskOrder, storeTasks: allTasks)
     }
 
     private var dropCoordinator: TasksPanelDropCoordinator {

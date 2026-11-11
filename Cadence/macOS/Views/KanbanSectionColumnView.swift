@@ -138,7 +138,7 @@ struct ListSectionKanbanColumn: View {
         // all three. Nothing about the *values* changes — same cards, same order, derived once.
         let halves = columnHalves
         let naturalActive = halves.active
-        let displayActive = applyFrozenTaskOrder(naturalActive, frozen: frozenTasks)
+        let displayActive = applyFrozenTaskOrder(naturalActive, frozen: frozenTasks, storeTasks: spanTasks)
         return columnBody(active: displayActive, completed: halves.completed)
             .background {
                 KanbanFreezeObserver(

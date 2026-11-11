@@ -286,7 +286,7 @@ struct TasksListView: View {
         // what had been blocking it was a real defect in the drop path rather than the census.
         let universe = visibleTaskUniverse
         let naturalTasks = naturalActiveTasks(in: universe)
-        let visibleTasks = applyFrozenTaskOrder(naturalTasks, frozen: frozenTaskOrder)
+        let visibleTasks = applyFrozenTaskOrder(naturalTasks, frozen: frozenTaskOrder, storeTasks: allTasks)
         let completedCount = completedTaskCount(in: universe)
         let visibleCompletedTasks = isCompletedCollapsed ? [] : completedTasks(in: universe)
         let coordinator = dropCoordinator(in: universe)

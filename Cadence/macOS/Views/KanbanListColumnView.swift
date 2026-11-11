@@ -57,7 +57,7 @@ struct TaskListKanbanColumn: View {
 
     var body: some View {
         let naturalTasks = unfrozenSortedTasks
-        let displayTasks = applyFrozenTaskOrder(naturalTasks, frozen: frozenTasks)
+        let displayTasks = applyFrozenTaskOrder(naturalTasks, frozen: frozenTasks, storeTasks: spanTasks)
         return columnBody(tasks: displayTasks)
             .background {
                 KanbanFreezeObserver(

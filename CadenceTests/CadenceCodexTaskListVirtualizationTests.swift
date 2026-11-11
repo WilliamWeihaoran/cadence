@@ -39,7 +39,7 @@ struct CadenceCodexTaskListVirtualizationTests {
         #expect(page.contains("onToggle: { toggleSection(section.id) }"))
         #expect(page.contains("isCompletedCollapsed = !revealsCompletedSection"))
         #expect(page.contains(".onChange(of: deepLinkManager.revealedCompletedTaskID)"))
-        #expect(page.contains("applyFrozenTaskOrder(naturalTasks, frozen: frozenTaskOrder)"))
+        #expect(page.contains("applyFrozenTaskOrder(naturalTasks, frozen: frozenTaskOrder, storeTasks: allTasks)"))
         #expect(page.contains("frozenGroups: .constant(nil)"))
         #expect(page.contains("scopeTasks: section.tasks"))
         #expect(!page.contains("pendingTaskID ="), "All Tasks must not arm an offscreen row's onAppear")

@@ -23,7 +23,7 @@ struct TaskSurfaceFreezeSupportTests {
         let a = task(title: "a", order: 0)
         let b = task(title: "b", order: 1)
 
-        let result = applyFrozenTaskOrder([a, b], frozen: nil)
+        let result = applyFrozenTaskOrder([a, b], frozen: nil, storeTasks: stored())
 
         #expect(result.map(\.title) == ["a", "b"])
     }
@@ -38,7 +38,7 @@ struct TaskSurfaceFreezeSupportTests {
         // The live/natural order now also includes a brand-new task c.
         let live = [a, b, c]
 
-        let result = applyFrozenTaskOrder(live, frozen: frozen)
+        let result = applyFrozenTaskOrder(live, frozen: frozen, storeTasks: stored())
 
         // Previously-visible rows keep their captured relative order; new rows are appended.
         #expect(result.map(\.title) == ["b", "a", "c"])
@@ -49,7 +49,7 @@ struct TaskSurfaceFreezeSupportTests {
         let b = task(title: "b", order: 1)
         b.status = .done
 
-        let result = applyFrozenTaskOrder([a], frozen: [a, b])
+        let result = applyFrozenTaskOrder([a], frozen: [a, b], storeTasks: stored())
 
         #expect(result.map(\.title) == ["a"])
     }
@@ -63,7 +63,7 @@ struct TaskSurfaceFreezeSupportTests {
         let b = task(title: "b", order: 1)
         b.status = .cancelled
 
-        let result = applyFrozenTaskOrder([a], frozen: [a, b])
+        let result = applyFrozenTaskOrder([a], frozen: [a, b], storeTasks: stored())
 
         #expect(result.map(\.title) == ["a"])
     }
@@ -77,7 +77,7 @@ struct TaskSurfaceFreezeSupportTests {
             let held = task(title: "held", order: 0)
             held.status = status
 
-            let result = applyFrozenTaskOrder([], frozen: [held])
+            let result = applyFrozenTaskOrder([], frozen: [held], storeTasks: stored())
             let isFinished = CadenceTaskQuerySupport.isFinishedTask(held)
 
             #expect(
@@ -95,7 +95,7 @@ struct TaskSurfaceFreezeSupportTests {
         let a = task(title: "a", order: 0)
         let b = task(title: "b", order: 1)
 
-        let result = applyFrozenTaskOrder([a, b], frozen: [a])
+        let result = applyFrozenTaskOrder([a, b], frozen: [a], storeTasks: stored())
 
         #expect(result.map(\.title) == ["a", "b"])
         #expect(result.count == 2)
@@ -119,10 +119,10 @@ struct TaskSurfaceFreezeSupportTests {
 
         context.delete(deleted)
         // Between the delete and its save the row reads `isDeleted`...
-        #expect(applyFrozenTaskOrder(live, frozen: frozen).map(\.title) == ["stays", "rescheduled"])
+        #expect(applyFrozenTaskOrder(live, frozen: frozen, storeTasks: stored()).map(\.title) == ["stays", "rescheduled"])
         try context.save()
         // ...and after it, no context. Either way it is gone from the page at once.
-        #expect(applyFrozenTaskOrder(live, frozen: frozen).map(\.title) == ["stays", "rescheduled"])
+        #expect(applyFrozenTaskOrder(live, frozen: frozen, storeTasks: stored()).map(\.title) == ["stays", "rescheduled"])
         // The list variant reads the same rule, so a list tab drops it too.
         #expect(applyFrozenListOrder(live, frozen: frozen).map(\.title) == ["stays"])
     }
@@ -142,6 +142,79 @@ struct TaskSurfaceFreezeSupportTests {
         try context.save()
         #expect(frozenRowLeftTheStore(doomed), "committed delete")
         #expect(!frozenRowLeftTheStore(kept))
+    }
+
+    // MARK: - A row deleted on another device leaves the freeze too ([[T-16572]])
+
+    /// Deletes `row` the way a CloudKit import does: in a different `ModelContext` over the same
+    /// container, saved there, so the main context's instance is never told.
+    private func deleteInAnotherContext(_ row: AppTask) throws {
+        let other = ModelContext(container)
+        let id = row.persistentModelID
+        let remote = try other.fetch(FetchDescriptor<AppTask>(predicate: #Predicate { $0.persistentModelID == id }))
+        #expect(remote.count == 1, "self-check: the other context sees the row")
+        for match in remote { other.delete(match) }
+        try other.save()
+    }
+
+    /// **The defect, on real models.** Today froze three rows; one was then rescheduled off the
+    /// page here and one deleted on another device, the pointer still on the page. The deleted row
+    /// reads as alive on this context's instance, so `frozenRowLeftTheStore` cannot see it; the
+    /// surface's store read can.
+    @Test func aRowDeletedInAnotherContextLeavesTheFreezeWhileARowThatStoppedMatchingStays() throws {
+        let context = container.mainContext
+        let stays = task(title: "stays", order: 0)
+        let rescheduled = task(title: "rescheduled", order: 1)
+        let remote = task(title: "deleted elsewhere", order: 2)
+        try context.save()
+        let frozen = [stays, rescheduled, remote]
+        let live = [stays]
+
+        try deleteInAnotherContext(remote)
+
+        // The premise: neither model signal fires for a delete saved in another context.
+        #expect(!frozenRowLeftTheStore(remote), "premise: the main context's instance still reads as alive")
+        #expect(!stored().contains { $0.title == "deleted elsewhere" }, "premise: the store read no longer has it")
+        #expect(stored().contains { $0.title == "rescheduled" }, "premise: a rescheduled row is still stored")
+
+        #expect(applyFrozenTaskOrder(live, frozen: frozen, storeTasks: stored()).map(\.title) == ["stays", "rescheduled"])
+    }
+
+    /// Membership is by the row, not its UUID: a CloudKit double insert can leave two rows sharing
+    /// an `id`, and deleting one of them on another device must not keep it drawn on the strength
+    /// of its surviving twin.
+    @Test func aDeletedRowsSurvivingUUIDTwinDoesNotKeepItInTheFreeze() throws {
+        let context = container.mainContext
+        let deleted = task(title: "deleted twin", order: 0)
+        let twin = task(title: "surviving twin", order: 1)
+        twin.id = deleted.id
+        try context.save()
+
+        try deleteInAnotherContext(deleted)
+        #expect(stored().map(\.title) == ["surviving twin"], "self-check: only the twin is stored")
+
+        #expect(applyFrozenTaskOrder([], frozen: [deleted], storeTasks: stored()).isEmpty)
+    }
+
+    /// The call sites: each surface hands the freeze its UNFILTERED store read. Its live array
+    /// would drop every row T-342 holds; nothing would drop the row deleted on another device.
+    @Test func everyFreezingSurfaceHandsTheFreezeItsStoreRead() throws {
+        let sites: [(file: String, call: String)] = [
+            ("TasksPanel.swift", "applyFrozenTaskOrder(sorted, frozen: frozenTaskOrder, storeTasks: allTasks)"),
+            ("TasksListView.swift", "applyFrozenTaskOrder(naturalTasks, frozen: frozenTaskOrder, storeTasks: allTasks)"),
+            ("KanbanListColumnView.swift", "applyFrozenTaskOrder(naturalTasks, frozen: frozenTasks, storeTasks: spanTasks)"),
+            ("KanbanSectionColumnView.swift", "applyFrozenTaskOrder(naturalActive, frozen: frozenTasks, storeTasks: spanTasks)"),
+        ]
+        for site in sites {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/\(site.file)"))
+            #expect(code.contains(site.call), "\(site.file) does not hand the freeze its store read")
+            #expect(code.components(separatedBy: "applyFrozenTaskOrder(").count - 1 == 1, "\(site.file) has another freeze call")
+        }
+        // The two `allTasks` are each page's unfiltered query, not a filtered copy.
+        for file in ["TasksPanel.swift", "TasksListView.swift"] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/\(file)"))
+            #expect(code.contains("@Query(sort: \\AppTask.order) private var allTasks: [AppTask]"), "\(file)")
+        }
     }
 
     // MARK: - applyFrozenListOrder (a list's own Tasks tab, [[T-16551]])
@@ -180,7 +253,7 @@ struct TaskSurfaceFreezeSupportTests {
         #expect(applyFrozenListOrder(liveRows(), frozen: frozen).map(\.title) == ["stays"])
         // The rule it departs from, on purpose: the shared freeze reinstates the row that left the
         // list -- and, since [[T-16552]], not the one that left the store.
-        #expect(applyFrozenTaskOrder(liveRows(), frozen: frozen).map(\.title) == ["stays", "moved"])
+        #expect(applyFrozenTaskOrder(liveRows(), frozen: frozen, storeTasks: stored()).map(\.title) == ["stays", "moved"])
     }
 
     /// What the freeze is for still holds: rows the list still has keep their captured order, and
@@ -435,14 +508,14 @@ struct TaskSurfaceFreezeSupportTests {
         // ...and the wider array the observer used to be handed is not.
         #expect(Set(derived.todayEligibleTasks.map(\.id)) == Set([pastDo.id, dueToday.id]))
 
-        let whileHovering = applyFrozenTaskOrder(drawn, frozen: derived.todayEligibleTasks)
+        let whileHovering = applyFrozenTaskOrder(drawn, frozen: derived.todayEligibleTasks, storeTasks: stored())
         #expect(
             whileHovering.map(\.id) == [pastDo.id, dueToday.id],
             "a freeze taken from `todayEligibleTasks` reinstates the withheld row — this is the flicker"
         )
 
         // Freezing what the page draws is inert, which is what a freeze is supposed to be.
-        let frozenOnTheDrawnRows = applyFrozenTaskOrder(drawn, frozen: drawn)
+        let frozenOnTheDrawnRows = applyFrozenTaskOrder(drawn, frozen: drawn, storeTasks: stored())
         #expect(frozenOnTheDrawnRows.map(\.id) == drawn.map(\.id))
     }
 
@@ -480,6 +553,12 @@ struct TaskSurfaceFreezeSupportTests {
     }
 
     // MARK: - Helpers
+
+    /// The surface's store read ([[T-16572]]): every task the main context still has, as the pages'
+    /// unfiltered `@Query` would hand `applyFrozenTaskOrder`.
+    private func stored() -> [AppTask] {
+        (try? container.mainContext.fetch(FetchDescriptor<AppTask>())) ?? []
+    }
 
     private func task(title: String, order: Int) -> AppTask {
         let task = AppTask(title: title)
