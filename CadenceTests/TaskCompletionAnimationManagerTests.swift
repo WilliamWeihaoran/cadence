@@ -116,6 +116,24 @@ struct TaskCompletionAnimationManagerTests {
         #expect(!manager.isPendingCancel(task))
     }
 
+    /// [[T-16530]]: the mirror of the test above, for Cmd+/ (`RootCommandActionSupport.handleCancellation`)
+    /// over a completed row. It started a cancellation fill whose window closed on nothing --
+    /// `wasSettledElsewhere` refuses to write `.cancelled` over done work -- so the key was dead
+    /// on a done task while Cmd+Return reopens a cancelled one. A settled task reopens, at once.
+    @Test func theCancelShortcutReopensADoneTaskRatherThanStartingADeadFill() {
+        let manager = TaskCompletionAnimationManager.shared
+        let task = AppTask(title: "a")
+        task.status = .done
+        task.completedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        defer { manager.cancelCancelPending(for: task.id) }
+
+        manager.toggleCancellation(for: task)
+
+        #expect(!manager.isPendingCancel(task), "a done task started a cancellation fill that can never write")
+        #expect(task.status == .todo)
+        #expect(task.completedAt == nil)
+    }
+
     // MARK: - T-357: the branch that has no injected context
 
     /// The manager's `modelContext` is injected on root appear, so the contextless branch is

@@ -64,6 +64,25 @@ struct CadenceTaskDuplicateSubtaskTests {
         #expect(try context.fetch(FetchDescriptor<AppTask>()).count == 1)
     }
 
+    /// [[T-16531]]: a copy of the list's last task sorts after it by `order`, not level with it.
+    /// The source was excluded from the siblings the next `order` is taken over -- the move rule,
+    /// where the task is leaving -- so the copy took the source's own `order`.
+    @Test func aDuplicateOfTheListsLastTaskTakesTheNextOrderNotTheSourcesOwn() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let first = AppTask(title: "First")
+        first.order = 0
+        let last = AppTask(title: "Last")
+        last.order = 1
+        context.insert(first)
+        context.insert(last)
+        try context.save()
+
+        let copy = try CadenceTaskMutationSupport.duplicate(last, allTasks: [first, last], modelContext: context)
+
+        #expect(copy.order == 2, "the copy tied with its source at order \(last.order)")
+    }
+
     @Test func aTaskWithNoChecklistDuplicatesWithNone() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)

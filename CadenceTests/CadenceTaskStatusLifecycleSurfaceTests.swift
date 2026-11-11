@@ -703,13 +703,14 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
     }
 
     /// The shared toggle is the one place the decision lives; the macOS animation manager defers to
-    /// the same predicate rather than keeping its own copy of the rule.
+    /// the same predicate rather than keeping its own copy of the rule. Two in the manager since
+    /// [[T-16530]]: `toggleCompletion` and `toggleCancellation` (Cmd+/) both reopen a settled task.
     @Test func bothToggleEntryPointsReadTheFinishedPredicate() throws {
         try expectOccurrences(
             of: "if CadenceTaskQuerySupport.isFinishedTask(task)",
             at: [
                 "Cadence/Shared/CadenceTaskMutationSupport.swift": 1,
-                "Cadence/Shared/TaskCompletionAnimationManager.swift": 1
+                "Cadence/Shared/TaskCompletionAnimationManager.swift": 2
             ]
         )
         try expectOccurrences(

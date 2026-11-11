@@ -705,7 +705,10 @@ extension CadenceTaskMutationSupport {
         duplicate.estimatedMinutes = task.estimatedMinutes
         duplicate.actualMinutes = 0
         duplicate.sectionName = task.resolvedSectionName
-        duplicate.order = nextOrderForSibling(of: task, in: allTasks)
+        // [[T-16531]]: the source is one of the copy's siblings, so it counts. Excluding it (the
+        // move rule, where the task is leaving) gave a copy of a list's last task the source's own
+        // `order`, and the two rows tied for every comparator that reads `order` alone.
+        duplicate.order = nextContainerOrder(excluding: duplicate, in: allTasks, area: task.area, project: task.project)
         duplicate.area = task.area
         duplicate.project = task.project
         duplicate.goal = task.goal
@@ -1495,10 +1498,6 @@ extension CadenceTaskMutationSupport {
             return candidate.area == nil && candidate.project == nil
         }
         return CadenceTaskQuerySupport.nextTaskOrder(in: siblings)
-    }
-
-    private static func nextOrderForSibling(of task: AppTask, in allTasks: [AppTask]) -> Int {
-        nextContainerOrder(excluding: task, in: allTasks, area: task.area, project: task.project)
     }
 }
 

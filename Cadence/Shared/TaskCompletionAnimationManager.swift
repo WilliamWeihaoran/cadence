@@ -178,8 +178,14 @@ final class TaskCompletionAnimationManager {
         return min(max(elapsed / CadenceTaskCompletionTiming.animationDuration, 0), 1)
     }
 
+    /// **[[T-16530]]: a settled task reopens, as `toggleCompletion` reopens one (T-344).** Cmd+/ over
+    /// a hovered row is the only caller that can reach a *done* task (`advanceCompletionControl`
+    /// asks only mid-fill). This used to test `isCancelled` alone, so a done task started a
+    /// cancellation fill that `windowClosed(onCancellationOf:)` then refused to write
+    /// (`wasSettledElsewhere`) — the key did nothing, while Cmd+Return over a cancelled task
+    /// reopened it. One rule for both keys: a settled task reopens.
     func toggleCancellation(for task: AppTask) {
-        if task.isCancelled {
+        if CadenceTaskQuerySupport.isFinishedTask(task) {
             cancelCancelPending(for: task.id)
             write(.restored, to: task)
             return
