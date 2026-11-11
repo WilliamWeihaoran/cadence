@@ -567,6 +567,9 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                 .help(field.title)
                 .accessibilityLabel("Set \(field.title)")
                 .accessibilityIdentifier("capture-set-\(field.rawValue)")
+                // [[T-16071]]: `.cadencePlain` never reads `isEnabled`, so the tint must say what
+                // `.disabled` does -- the [[T-16042]] treatment, from the same value.
+                .foregroundStyle(CadenceCaptureCommitButton.tint(isEnabled: !isReadOnly))
                 .disabled(isReadOnly)
             }
             if draft.kind == .task || fields.contains(.repeatRule) {
@@ -578,7 +581,13 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                         Button("Priority", systemImage: "exclamationmark") { open(.priority) }
                         Button("Estimate", systemImage: "clock") { open(.estimate) }
                     }
-                } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
+                } label: {
+                    // [[T-16071]]: a `Menu` is not styled by `.cadencePlain` and its label inherits
+                    // the card's root `Theme.text`, so nothing guaranteed it dims; the label is
+                    // tinted like the set buttons, from the value `.disabled` reads.
+                    Image(systemName: "ellipsis").frame(width: 44, height: 44)
+                        .foregroundStyle(CadenceCaptureCommitButton.tint(isEnabled: !isReadOnly))
+                }
                 .help("More capture options")
                 .accessibilityLabel("More capture options")
                 .accessibilityIdentifier("capture-more")

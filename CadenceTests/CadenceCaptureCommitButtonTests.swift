@@ -54,4 +54,28 @@ struct CadenceCaptureCommitButtonTests {
         #expect(card.contains(".foregroundStyle(CadenceCaptureCommitButton.tint(isEnabled: commitEnabled))"))
         #expect(card.contains(".disabled(!commitEnabled)"))
     }
+
+    /// **[[T-16071]], source shape.** On a read-only card the `capture-set-*` icon buttons and the
+    /// `capture-more` menu are `.disabled(isReadOnly)`; their tint reads the same value, so they
+    /// draw `Theme.dim` instead of the card's live `Theme.text`.
+    @Test("Read-only set-field buttons and the More menu are tinted from isReadOnly")
+    func readOnlySetFieldControlsAreTintedDim() throws {
+        let card = try CadenceCommitSurfaceScan.scanned(Self.cardPath)
+        let tint = ".foregroundStyle(CadenceCaptureCommitButton.tint(isEnabled: !isReadOnly))"
+        func block(after anchor: String, until end: String) -> String? {
+            guard let start = card.range(of: anchor),
+                  let stop = card.range(of: end, range: start.upperBound..<card.endIndex) else { return nil }
+            return String(card[start.lowerBound..<stop.upperBound])
+        }
+        let setButton = try #require(
+            block(after: ".accessibilityIdentifier(\"capture-set-", until: ".disabled(isReadOnly)"),
+            "the capture-set-* button no longer ends in .disabled(isReadOnly)"
+        )
+        #expect(setButton.contains(tint), "the set-field buttons draw Theme.text while disabled")
+        let moreMenu = try #require(
+            block(after: "Image(systemName: \"ellipsis\")", until: ".accessibilityIdentifier(\"capture-more\")"),
+            "the capture-more menu label moved"
+        )
+        #expect(moreMenu.contains(tint), "the More menu draws Theme.text while disabled")
+    }
 }
