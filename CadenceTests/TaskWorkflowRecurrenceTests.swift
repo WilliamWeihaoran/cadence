@@ -558,6 +558,45 @@ struct TaskWorkflowRecurrenceTests {
         #expect(daily.scheduled == "2026-11-10")
     }
 
+    // MARK: - 10c. A late completion keeps the do-to-due window (T-16603)
+
+    /// Weekly, to do on Monday 2026-11-02 and due Sunday 2026-11-08, ticked on Tuesday 2026-11-10.
+    /// Each date used to catch up on its own: the do date to Monday the 16th, the due date to
+    /// Sunday the 15th -- a deadline the day before the day it was planned for.
+    @Test func lateWeeklyCompletionKeepsTheDeadlineAfterTheDoDate() throws {
+        let next = try successorDates(rule: .weekly, dueDate: "2026-11-08", scheduledDate: "2026-11-02", completedOn: "2026-11-10")
+        #expect(next.scheduled == "2026-11-16")
+        #expect(next.due == "2026-11-22")
+        #expect(next.scheduled <= next.due)
+    }
+
+    /// Daily, done on the 10th and due the 12th: ticked inside the window (the 11th) or after it
+    /// (the 13th), the successor keeps its two days. The second used to collapse to one day for
+    /// both dates.
+    @Test func lateDailyCompletionKeepsATwoDayWindow() throws {
+        let inside = try successorDates(rule: .daily, dueDate: "2026-11-12", scheduledDate: "2026-11-10", completedOn: "2026-11-11")
+        #expect(inside.scheduled == "2026-11-12")
+        #expect(inside.due == "2026-11-14")
+        let after = try successorDates(rule: .daily, dueDate: "2026-11-12", scheduledDate: "2026-11-10", completedOn: "2026-11-13")
+        #expect(after.scheduled == "2026-11-14")
+        #expect(after.due == "2026-11-16")
+    }
+
+    /// Monthly, done on the 15th and due on the 31st, paid on Feb 20: the do date is two months
+    /// on and the deadline goes with it, to the anchored Mar 31 -- not Feb 28, ahead of Mar 15.
+    @Test func lateMonthlyCompletionKeepsTheDeadlineOnItsAnchorAfterTheDoDate() throws {
+        let next = try successorDates(rule: .monthly, dueDate: "2026-01-31", scheduledDate: "2026-01-15", completedOn: "2026-02-20")
+        #expect(next.scheduled == "2026-03-15")
+        #expect(next.due == "2026-03-31")
+    }
+
+    /// On time, nothing changes: one period each.
+    @Test func onTimeCompletionWithBothDatesStillMovesEachByOnePeriod() throws {
+        let next = try successorDates(rule: .weekly, dueDate: "2026-11-08", scheduledDate: "2026-11-02", completedOn: "2026-11-02")
+        #expect(next.scheduled == "2026-11-09")
+        #expect(next.due == "2026-11-15")
+    }
+
     // MARK: - 11. The next occurrence keeps the predecessor's place in a hand-ordered list (T-6112)
 
     /// An Inbox of five, the repeating task third. The successor used to keep `AppTask.order`'s

@@ -689,6 +689,11 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
     private static func plannedNextDates(for task: AppTask, in context: ModelContext, now: Date) -> PlannedRecurrenceDates {
         var planned = PlannedRecurrenceDates()
         let todayKey = DateFormatters.dateKey(from: now)
+        if let together = advancedTogether(task, todayKey: todayKey, in: context) {
+            planned.dueDate = together.dueDate
+            planned.scheduledDate = together.scheduledDate
+            return planned
+        }
         if !task.dueDate.isEmpty {
             planned.dueDate = nextRecurrenceDateKey(
                 from: task.dueDate,
@@ -725,6 +730,43 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
             planned.scheduledDateIsSeeded = true
         }
         return planned
+    }
+
+    /// **[[T-16603]]: a task planned on or before its deadline moves both dates by the same number
+    /// of periods**, so the successor keeps the predecessor's do-to-due window.
+    ///
+    /// Each date used to take its own catch-up ([[T-14821]]), and a late completion only advances
+    /// the dates that have gone by: a weekly task to do on Monday and due on Sunday, ticked on the
+    /// following Tuesday, came back to do on Monday the 16th and due on Sunday the 15th -- its
+    /// deadline the day *before* its do date, so the new occurrence was overdue on the day it was
+    /// planned for. A daily task done on the 10th and due on the 12th, ticked on the 13th, lost its
+    /// two-day window altogether. Moving both by the larger of the two counts keeps the window and
+    /// still puts both dates after today, the catch-up's reason for existing.
+    ///
+    /// Answers nothing -- the old per-date stepping -- when the task lacks either date, or its do
+    /// date is AFTER its deadline. That shape is not a window to keep: moving the deadline by the
+    /// do date's count would leave it still overdue, and moving the do date by the deadline's count
+    /// would push a stale daily task weeks out instead of tomorrow.
+    private static func advancedTogether(
+        _ task: AppTask,
+        todayKey: String,
+        in context: ModelContext
+    ) -> (dueDate: String, scheduledDate: String)? {
+        let recurrence = task.recurrenceRule
+        guard recurrence != .none,
+              !task.dueDate.isEmpty, !task.scheduledDate.isEmpty,
+              task.scheduledDate <= task.dueDate
+        else { return nil }
+        let dueAnchor = recurrenceAnchorDay(of: task, field: \.dueDate, in: context)
+        let doAnchor = recurrenceAnchorDay(of: task, field: \.scheduledDate, in: context)
+        guard let duePeriods = periodsPastToday(from: task.dueDate, todayKey: todayKey, recurrence: recurrence, anchorDay: dueAnchor),
+              let doPeriods = periodsPastToday(from: task.scheduledDate, todayKey: todayKey, recurrence: recurrence, anchorDay: doAnchor)
+        else { return nil }
+        let periods = max(duePeriods, doPeriods)
+        guard let due = shiftedDateKey(task.dueDate, recurrence: recurrence, anchorDay: dueAnchor, periods: periods),
+              let scheduled = shiftedDateKey(task.scheduledDate, recurrence: recurrence, anchorDay: doAnchor, periods: periods)
+        else { return nil }
+        return (due, scheduled)
     }
 
     private static func makeNextRecurringTask(from task: AppTask, dates: PlannedRecurrenceDates) -> AppTask {
@@ -850,8 +892,24 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         recurrence: TaskRecurrenceRule,
         anchorDay: Int?
     ) -> String? {
+        guard recurrence != .none else { return nil }
+        guard let periods = periodsPastToday(from: key, todayKey: todayKey, recurrence: recurrence, anchorDay: anchorDay)
+        else { return shiftedDateKey(todayKey, recurrence: recurrence, anchorDay: nil) }
+        return shiftedDateKey(key, recurrence: recurrence, anchorDay: anchorDay, periods: periods)
+    }
+
+    /// The fewest whole periods (at least one) that move `key` past `todayKey` on the series' own
+    /// schedule, or `nil` when the dates do not parse or the shift cannot advance -- the caller's
+    /// cue to fall back. A date not yet gone by answers `1`: an ordinary hop.
+    private static func periodsPastToday(
+        from key: String,
+        todayKey: String,
+        recurrence: TaskRecurrenceRule,
+        anchorDay: Int?
+    ) -> Int? {
+        guard key < todayKey else { return 1 }
         guard let start = DateFormatters.date(from: key), let today = DateFormatters.date(from: todayKey) else {
-            return shiftedDateKey(todayKey, recurrence: recurrence, anchorDay: nil)
+            return nil
         }
         let calendar = DateFormatters.storageCalendar(inheritingTimeZoneFrom: Calendar.current)
         let elapsed: Int
@@ -866,10 +924,10 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         for _ in 0..<4 {
             guard let candidate = shiftedDateKey(key, recurrence: recurrence, anchorDay: anchorDay, periods: periods)
             else { return nil }
-            if candidate > todayKey { return candidate }
+            if candidate > todayKey { return periods }
             periods += 1
         }
-        return shiftedDateKey(todayKey, recurrence: recurrence, anchorDay: nil)
+        return nil
     }
 
     /// One period forward. `.monthly` and `.yearly` land on `anchorDay` (or the key's own day when
