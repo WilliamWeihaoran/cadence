@@ -413,6 +413,52 @@ private final class FixedEventDaySource: CalendarEventDaySource {
         #expect(band.isDisjoint(with: canvas))
     }
 
+    // MARK: - [[T-15761]], completed due-only tasks in the iPad day inspector
+
+    /// The day inspector's Due section dropped a done task, so ticking one there removed it from
+    /// the pane, and a finished task due this day with no do date sat on the Month cell (and the
+    /// iPhone agenda) as a green check while the inspector for that same day omitted it. Due now
+    /// keeps done and drops cancelled, as the Timed and Do Date sections do, and every task the
+    /// Month cell files under a day by its due date is in that day's inspector.
+    @Test func theDayInspectorsDueSectionKeepsACompletedTaskAsTheMonthCellDoes() throws {
+        let context = ModelContext(try CadenceTestStore.container())
+        let key = DateFormatters.dateKey(from: Self.day)
+        let otherDay = try #require(Calendar.current.date(byAdding: .day, value: 3, to: Self.day))
+        let otherKey = DateFormatters.dateKey(from: otherDay)
+        func addDue(_ title: String, doDate: String = "", done: Bool = false, cancelled: Bool = false) -> AppTask {
+            let task = AppTask(title: title)
+            task.dueDate = key
+            task.scheduledDate = doDate
+            if done { task.status = .done }
+            if cancelled { task.status = .cancelled }
+            context.insert(task)
+            return task
+        }
+        let tasks = [
+            addDue("Open due"),
+            addDue("Finished due", done: true),
+            addDue("Dropped due", cancelled: true),
+            addDue("Finished, planned elsewhere", doDate: otherKey, done: true),
+            addDue("Planned here", doDate: key),
+        ]
+        // Non-vacuity: done and cancelled rows exist, and the do-dated-here row is excluded by the
+        // section's own rule rather than by status.
+        #expect(tasks.filter(\.isDone).count == 2)
+        #expect(tasks.filter(\.isCancelled).count == 1)
+
+        let due = Set(CadenceScheduleSupport.dueOnlyTasks(on: key, from: tasks).map(\.title))
+        #expect(due == ["Open due", "Finished due", "Finished, planned elsewhere"])
+
+        // Every task the Month cell files under this day for want of a do date is in the inspector.
+        let monthByDue = Set(
+            (CadenceScheduleSupport.monthTasksByDate(tasks)[key] ?? [])
+                .filter { $0.scheduledDate.isEmpty }
+                .map(\.title)
+        )
+        #expect(monthByDue == ["Open due", "Finished due"])
+        #expect(monthByDue.isSubset(of: due))
+    }
+
     // MARK: - The single-day pane's all-day strip (T-3163, the Today half)
 
     /// **The strip costs nothing on a day with nothing all-day on it, and grows with the chips it

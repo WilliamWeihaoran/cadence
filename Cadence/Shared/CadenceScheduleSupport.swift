@@ -443,11 +443,18 @@ enum CadenceScheduleSupport {
         itemsByDate[dateKey] ?? []
     }
 
+    /// The iPad day inspector's Due section: deadline on this day, do date elsewhere or none.
+    ///
+    /// **A done task stays ([[T-15761]])**, as [[T-8042]] ruled for the Do Date section beside it
+    /// and [[T-3164]] for the Timed one. With `!isDone` here a due-only task ticked in this section
+    /// vanished from the pane on the tap, and a finished task due this day with no do date was
+    /// drawn as a green-check chip on the Month cell above (`monthTasksByDate` falls back to the
+    /// due date and keeps done) while the inspector beside it said "Nothing scheduled" -- and the
+    /// iPhone's compact agenda, which reads `monthTasksByDate`, listed it. A cancelled task leaves.
     static func dueOnlyTasks(on dateKey: String, from tasks: [AppTask]) -> [AppTask] {
         CadenceTaskQuerySupport.sortedTasks(
             tasks.filter {
                 !$0.isCancelled &&
-                !$0.isDone &&
                 $0.dueDate == dateKey &&
                 $0.scheduledDate != dateKey
             },
