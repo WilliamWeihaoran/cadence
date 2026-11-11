@@ -337,7 +337,8 @@ functions or extension members: it narrows the window rather than closing it.
   description, colour, icon, filing, due date, **status/`isArchived`**, and — since [[T-1182]] — a
   **position** plus the two `hide*IfEmpty` flags. A position is a zero-based index into the
   destination bucket, not the stored number, and the arm renumbers that whole bucket densely;
-  re-filing alone still renumbers nothing. `linkedCalendarID` stays refused, on T-390's opacity and
+  re-filing alone renumbers no sibling and puts the moved list at the end of its new context
+  ([[T-16402]]). `linkedCalendarID` stays refused, on T-390's opacity and
   the absence of any picker here; the reasoning is on `CadenceUpdateContainerOptions`.
   **`create_link`, `create_tag`, `create_list_note`, `create_task_bundle` and `add_task_to_bundle`
   are the constructors outside the context/list/task triangle, and there is no kind left that this

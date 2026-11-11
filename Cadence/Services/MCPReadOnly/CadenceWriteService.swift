@@ -278,18 +278,15 @@ nonisolated struct CadenceUpdateContextOptions: Sendable {
 /// **Archiving is `status: "archived"`, and there is no delete**, for the reasons written out on
 /// `CadenceUpdateContextOptions` above.
 ///
-/// **`order` is still not recomputed when `contextId` moves the list, and it is now sayable**
-/// (T-1182). `createContainer` numbers a new row `max + 1` among its siblings because the model
-/// default of 0 would otherwise interleave it alphabetically; an existing list already carries a
-/// number the user's own ordering produced. Both app editors agree — `EditListSheet` and
-/// `iOSListEditorViews` assign `context` on a move and renumber only on create — and inventing a
-/// third behaviour for a caller who only asked to re-file would be worse than the gap. What T-1182
-/// measured is that the gap had no exit: `CadenceMCPOrdering.precedes` breaks an `order` tie on the
-/// *name*, so a list moved into a context where a sibling already holds its number interleaves
-/// alphabetically, and this surface could not say where it should have gone.
+/// **A move without `order` puts the list at the END of its new context** ([[T-16402]]): the
+/// number a list created there would take, `max + 1` among the lists already filed there, and the
+/// rule the app's list editors follow since [[T-16401]] (`CadenceSidebarLists.refile`). T-1182 had
+/// kept the old number because both editors then did; that number is a position in the section
+/// the list LEFT, so it usually collides with a destination row, and `CadenceMCPOrdering.precedes`
+/// breaks an `order` tie on the *name*. A call that leaves the list where it is writes no number.
 ///
-/// `order` is that exit, and it is **a zero-based position among the lists the call leaves in the
-/// destination context, not the stored number**. The stored numbers are max-plus-one allocations
+/// `order` says where else the list should go, and it is **a zero-based position among the lists
+/// the call leaves in the destination context, not the stored number**. The stored numbers are max-plus-one allocations
 /// with a gap wherever something was deleted, so a caller handed `[0, 2, 5]` cannot name "third"
 /// by arithmetic; and writing a raw number is how the tie gets created rather than resolved. The
 /// arm therefore renumbers the **whole destination bucket** densely from zero, which is the only
@@ -298,9 +295,9 @@ nonisolated struct CadenceUpdateContextOptions: Sendable {
 /// refused naming the range rather than clamped, `columnOrder`'s rule for a partial order.
 ///
 /// **The bucket the list left is not renumbered**, deliberately: the gap it leaves changes no
-/// sibling's relative position, and touching rows the caller did not name is the behaviour the
-/// paragraph above refuses. Areas and projects share one bucket per context and unfiled lists share
-/// their own — `nil == nil`, the rule `nextListOrder` spells.
+/// sibling's relative position, and touching rows the caller did not name is what a move without a
+/// position avoids by writing the moved list's number alone. Areas and projects share one bucket
+/// per context and unfiled lists share their own — `nil == nil`, the rule `nextListOrder` spells.
 ///
 /// **`linkedCalendarID` is refused, and that is the decision T-1182 asked for rather than an
 /// omission.** `Cadence/Models/AGENTS.md` records T-390: the field holds a bare
@@ -990,8 +987,19 @@ final class CadenceWriteService {
         } else {
             destinationContextID = contextID(of: resolved)
         }
-        let placement = try options.order.map {
-            try plannedListOrders(moving: resolved, into: destinationContextID, to: $0)
+        // [[T-16402]]: a move with no position goes to the END of the destination -- the number a
+        // list created there would take, `CadenceSidebarLists.refile`'s rule for the app editors
+        // ([[T-16401]]), which this target cannot compile. Keeping the old number collides with a
+        // destination row more often than not, and a collision drops the section to areas-first.
+        // Only the moved list is written, so the destination's own numbers are untouched; the
+        // number rides the same `previousOrders` undo a placement does.
+        let placement: [(row: CadenceResolvedContainer, order: Int)]?
+        if let position = options.order {
+            placement = try plannedListOrders(moving: resolved, into: destinationContextID, to: position)
+        } else if destinationContextID != contextID(of: resolved) {
+            placement = [(row: resolved, order: try nextListOrder(inContextWithID: destinationContextID))]
+        } else {
+            placement = nil
         }
         // The whole bucket, not the one list the caller named: a placement renumbers the siblings
         // it displaced, and no response of this call reports their new numbers. Restoring only the

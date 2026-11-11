@@ -160,7 +160,8 @@ are in `../plugins/cadence-mcp/AGENTS.md`.
   one** (T-799, T-1095, T-1120). `update_context` and `update_container` are the editors for
   everything that is not a task or a column: name, description, colour, icon, filing, due date,
   **status/`isArchived`**, and — since [[T-1182]] — a **position** (a zero-based index into the
-  destination bucket, which the arm renumbers densely; re-filing alone renumbers nothing) plus the
+  destination bucket, which the arm renumbers densely; re-filing alone puts the list last in its
+  new context, [[T-16402]]) plus the
   two `hide*IfEmpty` flags. `linkedCalendarID` stays refused, on T-390's opacity. `create_link`,
   `create_tag` and `create_list_note` are the constructors outside the context/list/task triangle;
   **nothing deletes anything**, refused with a measurement and settled rather than deferred

@@ -1899,20 +1899,26 @@ struct CadenceWriteServiceTests {
         #expect(message.contains("among the 1 context this call"))
     }
 
-    /// The half of T-1182 that is *not* a change: `update_container` still renumbers nothing when
-    /// the caller only asks to re-file, which is what `EditListSheet` and `iOSListEditorViews` both
-    /// do. Inventing a placement for a caller who did not ask for one is the behaviour the ticket
-    /// agrees should not exist.
-    @Test func refilingWithoutAPositionStillChangesNoOrderAtAll() throws {
+    /// [[T-16402]]: a list re-filed under another context without a position goes to the END of
+    /// its new section -- the number a list created there would take -- which is what the app's
+    /// list editors do since [[T-16401]] (`CadenceSidebarLists.refile`). T-1182 kept the old number
+    /// because both editors did; once they renumbered, keeping it here was the one surface left
+    /// writing a number a destination row usually already holds. The arriving list's 0 is the
+    /// resident's 0 on purpose: the collision the ticket names.
+    @Test func refilingWithoutAPositionPutsTheListAtTheEndOfItsNewContext() throws {
         let fixture = try Fixture()
         let home = try fixture.writeService.createContext(options: .init(name: "Home"))
-        _ = try fixture.writeService.createContainer(options: .init(
-            containerKind: "project", name: "Resident", contextId: home.context.id
+        let work = try fixture.writeService.createContext(options: .init(name: "Office"))
+        let resident = try fixture.writeService.createContainer(options: .init(
+            containerKind: "area", name: "Resident", contextId: home.context.id
+        ))
+        let neighbour = try fixture.writeService.createContainer(options: .init(
+            containerKind: "project", name: "Neighbour", contextId: home.context.id
         ))
         let arriving = try fixture.writeService.createContainer(options: .init(
-            containerKind: "project", name: "Arriving"
+            containerKind: "project", name: "Arriving", contextId: work.context.id
         ))
-        let before = arriving.container.order
+        #expect(arriving.container.order == resident.container.order, "non-vacuity: the carried number must collide")
 
         let moved = try fixture.writeService.updateContainer(options: .init(
             containerKind: "project",
@@ -1921,7 +1927,84 @@ struct CadenceWriteServiceTests {
         ))
 
         #expect(moved.container.contextId == home.context.id)
-        #expect(moved.container.order == before)
+        #expect(moved.container.order == neighbour.container.order + 1)
+        // The residents are not renumbered: only a position renumbers the destination bucket.
+        #expect(try fixture.readService.containerSummary(kind: "area", id: resident.container.id).container.order == resident.container.order)
+        #expect(try fixture.readService.containerSummary(kind: "project", id: neighbour.container.id).container.order == neighbour.container.order)
+    }
+
+    /// The unfiled bucket is a bucket (`nil == nil`), so `clearContext` numbers against it too.
+    @Test func unfilingWithoutAPositionPutsTheListAtTheEndOfTheUnfiledBucket() throws {
+        let fixture = try Fixture()
+        let home = try fixture.writeService.createContext(options: .init(name: "Home"))
+        let unfiled = try fixture.writeService.createContainer(options: .init(
+            containerKind: "area", name: "Already unfiled"
+        ))
+        let leaving = try fixture.writeService.createContainer(options: .init(
+            containerKind: "area", name: "Leaving", contextId: home.context.id
+        ))
+
+        let moved = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "area",
+            containerId: leaving.container.id,
+            clearContext: true
+        ))
+
+        #expect(moved.container.contextId == nil)
+        #expect(moved.container.order > unfiled.container.order)
+    }
+
+    /// The other half of the rule: a call that leaves the list in the context it is already in
+    /// invents no placement, so a rename or a same-context `contextId` keeps the number.
+    @Test func refilingIntoTheSameContextChangesNoOrder() throws {
+        let fixture = try Fixture()
+        let home = try fixture.writeService.createContext(options: .init(name: "Home"))
+        let first = try fixture.writeService.createContainer(options: .init(
+            containerKind: "project", name: "First", contextId: home.context.id
+        ))
+        _ = try fixture.writeService.createContainer(options: .init(
+            containerKind: "project", name: "Second", contextId: home.context.id
+        ))
+
+        let renamed = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "project",
+            containerId: first.container.id,
+            name: "First, renamed",
+            contextId: home.context.id
+        ))
+
+        #expect(renamed.container.order == first.container.order)
+    }
+
+    /// The end-of-section number is written beside the context, so a refused commit has to put it
+    /// back beside the context too -- through the same `previousOrders` undo a placement uses.
+    @Test func aRefusedRefilePutsTheListsNumberBack() throws {
+        let fixture = try Fixture()
+        let home = try fixture.writeService.createContext(options: .init(name: "Home"))
+        let work = try fixture.writeService.createContext(options: .init(name: "Office"))
+        _ = try fixture.writeService.createContainer(options: .init(
+            containerKind: "project", name: "Resident", contextId: home.context.id
+        ))
+        let arriving = try fixture.writeService.createContainer(options: .init(
+            containerKind: "project", name: "Arriving", contextId: work.context.id
+        ))
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.updateContainer(options: .init(
+                containerKind: "project",
+                containerId: arriving.container.id,
+                contextId: home.context.id
+            ))
+        }
+
+        let after = try fixture.readService.containerSummary(kind: "project", id: arriving.container.id).container
+        #expect(after.contextId == work.context.id)
+        #expect(after.order == arriving.container.order)
     }
 
     /// A placement writes rows the response never mentions, so the undo has to cover the bucket
