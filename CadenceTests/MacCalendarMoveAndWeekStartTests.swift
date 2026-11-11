@@ -208,6 +208,50 @@ struct MacCalendarMoveAndWeekStartTests {
         )
     }
 
+    // MARK: - T-16522: a transition-day event is drawn at its wall-clock span
+
+    private static func newYork(_ month: Int, _ day: Int, _ hour: Int, _ calendar: Calendar) throws -> Date {
+        try #require(calendar.date(from: DateComponents(year: 2026, month: month, day: day, hour: hour)))
+    }
+
+    @Test("On a DST day the Mac draws an event between its wall-clock ends, as iOS does")
+    func aTransitionDayEventIsDrawnAtItsWallClockSpan() throws {
+        let calendar = try CadenceTestTimeZones.calendar("America/New_York")
+        let store = EKEventStore()
+        // (month, day, start hour, end hour): spring forward, fall back, and an ordinary day.
+        for (month, day, startHour, endHour) in [(3, 8, 1, 4), (11, 1, 0, 3), (6, 11, 1, 4)] {
+            let start = try Self.newYork(month, day, startHour, calendar)
+            let end = try Self.newYork(month, day, endHour, calendar)
+            let dayStart = calendar.startOfDay(for: start)
+            let event = Self.timedEvent(store, "Overnight", start: start, end: end)
+            let item = try #require(CalendarEventItem(event: event, clippedTo: dayStart, calendar: calendar))
+            let ios = CadenceScheduleSupport.minuteRange(from: start, to: end, on: dayStart, calendar: calendar)
+
+            #expect(item.startMin == startHour * 60)
+            #expect(item.startMin + item.durationMinutes == endHour * 60, "\(month)/\(day) drawn to \(item.startMin + item.durationMinutes)")
+            #expect(item.startMin == ios.start && item.startMin + item.durationMinutes == ios.end)
+            // The elapsed length is kept separately, and differs exactly on the two transition days.
+            let elapsed = Int(end.timeIntervalSince(start) / 60)
+            #expect(item.eventDurationMinutes == elapsed)
+            #expect((item.durationMinutes == elapsed) == (month == 6))
+        }
+    }
+
+    @Test("Moving a DST-day event keeps its elapsed length, not its drawn one")
+    func movingATransitionDayEventKeepsItsElapsedLength() throws {
+        let calendar = try CadenceTestTimeZones.calendar("America/New_York")
+        let store = EKEventStore()
+        let start = try Self.newYork(3, 8, 1, calendar)
+        let end = try Self.newYork(3, 8, 4, calendar)
+        let event = Self.timedEvent(store, "Overnight", start: start, end: end)
+        let item = try #require(CalendarEventItem(event: event, clippedTo: calendar.startOfDay(for: start), calendar: calendar))
+        #expect(!item.isMultiDayTimedEvent)
+
+        let moved = try #require(item.eventDateRangeForMovedSegment(startMin: 10 * 60, calendar: calendar))
+        #expect(moved.start == (try Self.newYork(3, 8, 10, calendar)))
+        #expect(moved.end.timeIntervalSince(moved.start) == end.timeIntervalSince(start))
+    }
+
     @Test("The Month header reads its headings from the grid's calendar")
     func theHeaderReadsTheGridsCalendar() throws {
         let support = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/CalendarPageMonthGridSupport.swift"))

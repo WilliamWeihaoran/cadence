@@ -523,15 +523,30 @@ enum CadenceScheduleSupport {
         on day: Date,
         calendar: Calendar = .current
     ) -> (start: Int, end: Int) {
+        let span = wallClockMinuteSpan(from: startDate, to: endDate, on: day, calendar: calendar)
+        return (span.start, max(span.start + 15, span.end))
+    }
+
+    /// `minuteRange` without its 15-minute floor: the clamp-in-instant-space, read-in-wall-clock
+    /// derivation itself, so the Mac's `CalendarEventItem` can apply its own 5-minute floor to the
+    /// same two numbers iOS draws instead of re-deriving them from elapsed time ([[T-16522]]).
+    /// `end` can come back below `start` for a pair inside a repeated hour; callers floor it.
+    static func wallClockMinuteSpan(
+        from startDate: Date,
+        to endDate: Date,
+        on day: Date,
+        calendar: Calendar = .current
+    ) -> (start: Int, end: Int) {
         let dayStart = calendar.startOfDay(for: day)
         let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(24 * 60 * 60)
 
         let clampedStart = min(max(startDate, dayStart), dayEnd)
         let clampedEnd = min(max(endDate, clampedStart), dayEnd)
 
-        let start = minuteOfDay(for: clampedStart, dayEnd: dayEnd, calendar: calendar)
-        let end = minuteOfDay(for: clampedEnd, dayEnd: dayEnd, calendar: calendar)
-        return (start, max(start + 15, end))
+        return (
+            minuteOfDay(for: clampedStart, dayEnd: dayEnd, calendar: calendar),
+            minuteOfDay(for: clampedEnd, dayEnd: dayEnd, calendar: calendar)
+        )
     }
 
     /// An instant already clamped into `dayStart...dayEnd`, as the ladder's own minute-of-day.

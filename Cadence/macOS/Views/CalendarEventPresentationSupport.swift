@@ -41,7 +41,7 @@ struct CalendarEventItem: Identifiable {
         let segmentStart = max(eventStart, dayStart)
         let segmentEnd = min(eventEnd, dayEnd)
         guard segmentEnd > segmentStart else { return nil }
-        self.init(event: event, segmentStart: segmentStart, segmentEnd: segmentEnd, day: dayStart)
+        self.init(event: event, segmentStart: segmentStart, segmentEnd: segmentEnd, day: dayStart, calendar: calendar)
     }
 
     static func timedSegments(from events: [EKEvent], for date: Date, calendar: Calendar = .current) -> [CalendarEventItem] {
@@ -57,10 +57,19 @@ struct CalendarEventItem: Identifiable {
         self.title = CadenceEventTitleSupport.displayTitle(event.title)
         let dayStart = calendar.startOfDay(for: day)
         self.dateKey = DateFormatters.dateKey(from: dayStart)
-        let comps = calendar.dateComponents([.hour, .minute], from: segmentStart)
-        self.startMin = max(0, (comps.hour ?? 0) * 60 + (comps.minute ?? 0))
-        let raw = max(5, Int(segmentEnd.timeIntervalSince(segmentStart) / 60))
-        self.durationMinutes = min(raw, 24 * 60 - self.startMin)
+        // Both ends are wall-clock minutes of this day, read by the same derivation iOS's
+        // `minuteRange` draws from ([[T-16522]]). The grid is a ladder of clock rows, so on a
+        // transition day a 1:00 -> 4:00 event is three rows tall although it lasts two hours;
+        // `segmentEnd - segmentStart` drew it to 3:00. Moves keep the elapsed length
+        // (`eventDurationMinutes`), so this number is geometry and labels only.
+        let span = CadenceScheduleSupport.wallClockMinuteSpan(
+            from: segmentStart,
+            to: segmentEnd,
+            on: dayStart,
+            calendar: calendar
+        )
+        self.startMin = max(0, span.start)
+        self.durationMinutes = min(max(5, span.end - self.startMin), 24 * 60 - self.startMin)
         self.eventStartDate = eventStart
         self.eventEndDate = eventEnd
         self.eventDateKey = DateFormatters.dateKey(from: eventStart)
@@ -135,9 +144,11 @@ struct CalendarEventItem: Identifiable {
 
     func eventDateRangeForMovedSegment(startMin movedStartMin: Int, calendar: Calendar = .current) -> (start: Date, end: Date)? {
         guard isMultiDayTimedEvent else {
+            // The elapsed length, not the drawn one: on a transition day the two differ by an
+            // hour, and a move must not stretch or shrink the event ([[T-16522]]).
             return eventDateRangeForEditedSegment(
                 startMin: movedStartMin,
-                durationMinutes: durationMinutes,
+                durationMinutes: eventDurationMinutes,
                 calendar: calendar
             )
         }
