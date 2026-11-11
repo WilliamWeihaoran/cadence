@@ -88,10 +88,38 @@ Ranked by how often you would meet it, 11-inch iPad first, then the Mac.
 15. **iOS column editor: "Complete" / "Reopen" / "Archive" but "Unarchive Column".** Add the noun
     to all four (Mac's wording, may truncate at 393pt) or drop it from the fourth. **Drop it**
     ("Unarchive") -- safe at every width. [T-6983] Code checked (`iOSListEditorViews.swift:767`).
+15a. **Completing or archiving a list (Mac sidebar row menu, iPad row menu) cannot be undone**:
+    Cmd+Z does nothing (global model undo was removed on purpose, T-367), and Settings > Lists'
+    Reopen / Unarchive brings the list back but leaves the tasks the wind-down settled done or
+    canceled. The Mac confirmation now says so, as iOS's always has. (a) an in-app Undo for the
+    wind-down alone, on both platforms, (c) leave it -- the confirmation discloses it. Not (b)
+    (Reopen also reopens the tasks) without reversing iOS's stated rule. **(c)** -- nothing is
+    lost, both platforms already agree, and it asks first whenever work would be settled; (a) is
+    cheap if you want it. [T-12941] Code checked (added 2026-11-11 by agent `docs0808` at
+    `b6e498e3`: the sentence is `CadenceContainerWindDownSummary.confirmationMessage(containerNoun:)`
+    `Cadence/Services/CadenceTaskContainerLifecycleService.swift:394-398`, forwarded by
+    `SidebarListWindDown.confirmationMessage` `Cadence/macOS/Views/SidebarComponents.swift:522-523`
+    and drawn by the Mac dialog `:281`; the board column's dialog reads it too,
+    `KanbanSectionStateSupport.swift:287`. Both wind-downs already take a `CadenceListEditSnapshot`
+    before writing -- Mac `SidebarListWindDown.windDown` `SidebarComponents.swift:540-546`, iPad
+    `windDownList` `Cadence/iOS/iOSListWindDownSupport.swift:201-209` -- but only to restore a
+    refused save through `CadencePendingChangePersistence.commitEdit`; no Undo control reads it.)
 16. **Mac New List: switching Area / Project resets the colour and icon you already picked**;
     iOS keeps them. (1) match iOS, (2) move only a colour/icon still at the old type's default,
     (3) keep resetting. **(1)** -- the platforms agree and nothing you chose is thrown away.
     [T-7269] Code checked (`CreateListSheet.swift:84-85`).
+16a. **Mac New Task panel: clicking the dimmed background throws the draft away**, while the
+    quick-capture panel (global hotkey) keeps its draft when you click away and only Escape or
+    the ✕ clears it. (a) keep the draft, as quick-capture does, (b) ask first, (c) keep
+    discarding (what ships, and has since the panel existed). **(a)** -- one composer, one
+    rule; Escape and ✕ stay the way to discard. [T-8103] (part b) Code checked (added
+    2026-11-11 by agent `docs0808` at `b6e498e3`: the scrim's `onTapGesture` runs
+    `clearAppEditingFocus()` then `taskCreationManager.dismiss()`
+    `Cadence/macOS/Views/macOSRootSupportViews.swift:400-402`, which resets the seed
+    `Cadence/macOS/Services/TaskCreationManager.swift:65-68`; quick-capture's click-away is
+    `QuickTaskPanelController.close()` `Cadence/macOS/Services/QuickTaskPanelController.swift:127`,
+    which keeps the draft, and only `closeDiscardingDraft()` `:143` clears it. Part (a), Escape,
+    landed: `.keyboardShortcut(.cancelAction)` now `Cadence/macOS/Sheets/CreateTaskSheet.swift:148`.)
 17. **Should Return create the approved drafts in the Mac AI task-draft sheet?** Every card is a
     column of text fields, so Return would turn "finish this title" into "create everything".
     (1) leave (today), (2) Return, (3) Cmd+Return. **(3)**. [T-7290] Code checked
@@ -154,6 +182,16 @@ call -- it is a POST-RC fix with two technical shapes for the agent who takes it
 33. One attended `CADENCE_T710_RUNS=40` run of `CadenceSeededSidebarTimingUITests` (it drives
     your screen) to find the blank-launch cause; everything else in the ticket landed. [T-2020]
     Code checked (the variable is read at `CadenceSeededSidebarTimingUITests.swift:80`; re-cited 2026-11-07).
+33a. Your heartbeat scheduled task (`~/.claude/scheduled-tasks/cadence-heartbeat-resume/SKILL.md`,
+    outside the repo) calls neither `./scripts/heartbeat-progress.sh report` nor
+    `./scripts/ci-run-coverage.sh report`, so both instruments run only when someone remembers.
+    (a) add both calls to that task's steps (or let an agent do it with your go-ahead), (b) leave
+    them manual. **(a)** -- a stall only shows if something other than a person runs the check.
+    [T-1920] Code checked (added 2026-11-11 by agent `docs0808` at `b6e498e3`: named only by the
+    scripts' usage lines `scripts/ci-run-coverage.sh:4,102`, `scripts/heartbeat-progress.sh:4,304,309`,
+    `docs/AGENTS_REFERENCE.md:634,670`
+    and the comment `.github/workflows/ci.yml:722`; CI runs only `selftest` `:706` and
+    `push-attribution` `:762`; none of the 17 `~/.claude/scheduled-tasks/*/SKILL.md` names either).
 
 ## D. Tooling and process (nothing a user sees)
 
