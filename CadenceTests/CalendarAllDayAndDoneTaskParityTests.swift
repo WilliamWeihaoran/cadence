@@ -423,7 +423,7 @@ private final class FixedEventDaySource: CalendarEventDaySource {
     @Test func theDayInspectorsDueSectionKeepsACompletedTaskAsTheMonthCellDoes() throws {
         let context = ModelContext(try CadenceTestStore.container())
         let key = DateFormatters.dateKey(from: Self.day)
-        let otherDay = try #require(Calendar.current.date(byAdding: .day, value: 3, to: Self.day))
+        let otherDay = try #require(CadenceTestTimeZones.pinnedCalendar().date(byAdding: .day, value: 3, to: Self.day))
         let otherKey = DateFormatters.dateKey(from: otherDay)
         func addDue(_ title: String, doDate: String = "", done: Bool = false, cancelled: Bool = false) -> AppTask {
             let task = AppTask(title: title)
