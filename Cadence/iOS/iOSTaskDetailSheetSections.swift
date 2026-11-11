@@ -208,6 +208,8 @@ struct iOSTaskSubtasksSection: View {
     /// The circle's tick ([[T-7013]]): the sheet commits it and names a refusal in `failureNotice`.
     let onToggle: (Subtask) -> Void
     let onDelete: (Subtask) -> Void
+    /// [[T-16626]]: the composer's first responder, so it can be handed back after an add.
+    @FocusState private var isComposerFocused: Bool
 
     private var progressLabel: String? {
         CadenceTaskPresentationSupport.subtaskProgress(for: subtasks)?.countLabel
@@ -263,7 +265,8 @@ struct iOSTaskSubtasksSection: View {
                 .cadenceFont(.rowTitle)
                 .foregroundStyle(Theme.text)
                 .submitLabel(.done)
-                .onSubmit(onAdd)
+                .focused($isComposerFocused)
+                .onSubmit(submitFromKeyboard)
 
             Spacer(minLength: 8)
 
@@ -286,6 +289,20 @@ struct iOSTaskSubtasksSection: View {
         }
         .padding(.horizontal, 2)
         .frame(minHeight: 44)
+    }
+
+    /// [[T-16626]]: Return adds the subtask and keeps the keyboard up, so a checklist is typed in
+    /// one go, as the Mac inspector's composer (`TaskDetailSubtasksSection`) keeps first responder.
+    /// iOS resigns a field on submit, so the focus is handed back a turn later -- the same deferral
+    /// the Mac popover uses to focus its composer. An empty submit adds nothing and lets the
+    /// keyboard go: that is how the user says the list is finished.
+    private func submitFromKeyboard() {
+        let addsSomething = canAddSubtask
+        onAdd()
+        guard addsSomething else { return }
+        DispatchQueue.main.async {
+            isComposerFocused = true
+        }
     }
 }
 

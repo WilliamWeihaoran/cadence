@@ -376,6 +376,29 @@ nonisolated enum CadenceSubtaskAccessibility: Sendable {
     }
 }
 
+/// The ink a **subtask's title** is drawn in, on every platform ([[T-16627]]).
+///
+/// Two hosts, decided once. In the **editor** -- the Mac inspector's subtask block and iOS's detail
+/// sheet -- an open subtask is the content being edited, so it reads in `Theme.text`, the ink the
+/// "Add subtask" composer beneath it already types in on both platforms. The Mac inspector drew it
+/// in `Theme.muted` while iOS drew `Theme.text`: a typed subtask went a step dimmer the moment it
+/// landed, which read as disabled, and how a subtask reads in the editor is UI, not hardware
+/// ([[T-8201]]). Under a **task row or card** a subtask is a preview subordinate to its parent's
+/// title, so it stays `Theme.muted` there, as both platforms already drew it. A finished subtask is
+/// `Theme.dim` (struck through by the row) on either host.
+nonisolated enum CadenceSubtaskTitleInk: Sendable {
+    case editor
+    case preview
+
+    func color(isDone: Bool) -> Color {
+        if isDone { return Theme.dim }
+        switch self {
+        case .editor: return Theme.text
+        case .preview: return Theme.muted
+        }
+    }
+}
+
 enum CadenceTaskPresentationSupport {
     /// The task row's notes excerpt: the shared search reader, but **cut the way a row reads** —
     /// at a word boundary, with an ellipsis whenever anything was dropped ([[T-3222]]).

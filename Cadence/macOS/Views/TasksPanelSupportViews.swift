@@ -118,6 +118,11 @@ struct SubtaskRow: View {
         TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle)
     }
 
+    /// [[T-16627]]: the inspector (the only host that edits the title) is the editor and draws an
+    /// open subtask in `Theme.text`, as iOS's sheet does; under a task row or card it is a preview
+    /// and stays muted.
+    private var titleInk: CadenceSubtaskTitleInk { editsTitle ? .editor : .preview }
+
     var body: some View {
         HStack(spacing: 8) {
             Button { Self.toggleCompletion(of: subtask, in: modelContext) } label: {
@@ -138,7 +143,7 @@ struct SubtaskRow: View {
                 TextField("Subtask", text: $subtask.title)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
-                    .foregroundStyle(subtask.isDone ? Theme.dim : Theme.muted)
+                    .foregroundStyle(titleInk.color(isDone: subtask.isDone))
                     .strikethrough(subtask.isDone, color: Theme.dim)
                     .lineLimit(1)
                     .onSubmit { Self.commitTitle(in: modelContext) }
@@ -146,7 +151,7 @@ struct SubtaskRow: View {
             } else {
                 Text(displayTitle)
                     .font(.system(size: 13))
-                    .foregroundStyle(subtask.isDone ? Theme.dim : Theme.muted)
+                    .foregroundStyle(titleInk.color(isDone: subtask.isDone))
                     .strikethrough(subtask.isDone, color: Theme.dim)
                     .lineLimit(1)
             }

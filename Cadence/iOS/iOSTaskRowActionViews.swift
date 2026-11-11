@@ -466,7 +466,8 @@ struct iOSTaskRowSubtaskRow: View {
                 CadenceTaskCompletionCircle(isDone: false, tint: Theme.dim, diameter: CadenceTypeScale.size(.metadata, at: dynamicTypeSize, scaling: scaling))
                 Text(displayTitle)
                     .cadenceFont(.metadata)
-                    .foregroundStyle(Theme.muted)
+                    // [[T-16627]]: the preview ink, as the Mac's row-hosted `SubtaskRow` draws.
+                    .foregroundStyle(CadenceSubtaskTitleInk.preview.color(isDone: false))
                     .lineLimit(iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
                     .fixedSize(horizontal: false, vertical: scaling == .enabled)
                     .truncationMode(.tail)

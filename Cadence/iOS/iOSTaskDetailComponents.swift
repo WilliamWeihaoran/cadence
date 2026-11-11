@@ -690,7 +690,8 @@ struct iOSSubtaskRow: View {
             TextField("Subtask", text: $subtask.title, axis: .vertical)
                 .textFieldStyle(.plain)
                 .cadenceFont(.rowTitle)
-                .foregroundStyle(subtask.isDone ? Theme.dim : Theme.text)
+                // [[T-16627]]: the editor ink the Mac inspector shares.
+                .foregroundStyle(CadenceSubtaskTitleInk.editor.color(isDone: subtask.isDone))
                 .strikethrough(subtask.isDone, color: Theme.dim)
                 .lineLimit(2)
                 .submitLabel(.done)
