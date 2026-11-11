@@ -31,7 +31,9 @@ struct ListTasksView: View {
 
     private var activeTasks: [AppTask] {
         let sorted = CadenceTaskQuerySupport.openTasks(from: tasks).taskSorted(by: sortField, direction: sortDirection)
-        return applyFrozenTaskOrder(sorted, frozen: frozenTaskOrder)
+        // [[T-16551]]: the freeze may reorder this list's rows, never reinstate one it moved or
+        // deleted.
+        return applyFrozenListOrder(sorted, frozen: frozenTaskOrder)
     }
     /// See `TasksListView.completedTasks`: the **desktop** tier, which
     /// `CadenceTaskSurfaceOptions` leaves uncapped, asked rather than assumed (T-290).

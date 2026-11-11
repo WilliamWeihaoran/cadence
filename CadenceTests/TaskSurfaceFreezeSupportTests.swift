@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import SwiftData
 import SwiftUI
 import Testing
 @testable import Cadence
@@ -89,6 +90,69 @@ struct TaskSurfaceFreezeSupportTests {
 
         #expect(result.map(\.title) == ["a", "b"])
         #expect(result.count == 2)
+    }
+
+    // MARK: - applyFrozenListOrder (a list's own Tasks tab, [[T-16551]])
+
+    /// **The defect, on real models.** A project's Tasks tab under By Date froze its rows when the
+    /// pointer arrived; a row was then moved to another project and a second row deleted, both
+    /// with the pointer still over the tab. The tab's live rows are `project.tasks`, which no longer
+    /// hold either -- and the tab kept drawing both, because `applyFrozenTaskOrder` puts back a
+    /// frozen row that has left the live array (T-342's deliberate rule, for Today).
+    @Test func aListsFreezeDoesNotKeepDrawingARowMovedToAnotherListOrDeleted() throws {
+        let container = try CadenceTestStore.container()
+        let context = container.mainContext
+        let here = Project(name: "Here")
+        let elsewhere = Project(name: "Elsewhere")
+        context.insert(here)
+        context.insert(elsewhere)
+        let stays = task(title: "stays", order: 0)
+        let moved = task(title: "moved", order: 1)
+        let deleted = task(title: "deleted", order: 2)
+        for row in [stays, moved, deleted] {
+            context.insert(row)
+            row.project = here
+        }
+        try context.save()
+
+        func liveRows() -> [AppTask] {
+            CadenceTaskQuerySupport.openTasks(from: here.tasks ?? []).sorted { $0.order < $1.order }
+        }
+        // The freeze the pointer took, of the rows the tab drew.
+        let frozen = liveRows()
+        #expect(frozen.map(\.title) == ["stays", "moved", "deleted"])
+
+        moved.project = elsewhere
+        context.delete(deleted)
+        try context.save()
+        #expect(liveRows().map(\.title) == ["stays"], "self-check: the list no longer holds them")
+
+        #expect(applyFrozenListOrder(liveRows(), frozen: frozen).map(\.title) == ["stays"])
+        // The rule it departs from, on purpose: the shared freeze reinstates both.
+        #expect(applyFrozenTaskOrder(liveRows(), frozen: frozen).count == 3)
+    }
+
+    /// What the freeze is for still holds: rows the list still has keep their captured order, and
+    /// a row that arrived during the freeze goes after them.
+    @Test func aListsFreezeStillHoldsTheCapturedOrderOfTheRowsItKeeps() {
+        let a = task(title: "a", order: 0)
+        let b = task(title: "b", order: 1)
+        let c = task(title: "c", order: 2)
+        let gone = task(title: "gone", order: 3)
+
+        let result = applyFrozenListOrder([a, b, c], frozen: [b, gone, a])
+
+        #expect(result.map(\.title) == ["b", "a", "c"])
+        #expect(applyFrozenListOrder([a, b], frozen: nil).map(\.title) == ["a", "b"])
+    }
+
+    /// The call site: the Tasks tab's rows read the list variant, not the shared freeze.
+    @Test func theListTasksTabReadsTheListFreeze() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListDetailComponents.swift")
+        let code = CadenceSourceScan.strippingComments(source)
+        let rows = try #require(CadenceSourceScan.declarationBody("private var activeTasks: [AppTask]", in: code))
+        #expect(rows.contains("applyFrozenListOrder(sorted, frozen: frozenTaskOrder)"))
+        #expect(!rows.contains("applyFrozenTaskOrder("))
     }
 
     // MARK: - resolveFrozenTaskGroups (list-group snapshot path)

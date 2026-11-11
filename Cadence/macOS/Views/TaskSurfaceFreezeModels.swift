@@ -60,6 +60,23 @@ func applyFrozenTaskOrder(_ sorted: [AppTask], frozen: [AppTask]?) -> [AppTask] 
     return activeFrozen + sorted.filter { !frozenIDs.contains($0.id) }
 }
 
+/// **A list page's freeze reorders its rows; it never puts back a row the list no longer has
+/// ([[T-16551]]).**
+///
+/// `applyFrozenTaskOrder` keeps a frozen row that has left the live array on purpose -- on Today a
+/// row that stops matching while the pointer is over it stays put (T-342). A list's own Tasks tab
+/// has no such row: its live array is every open task of the list, so the only ways a row leaves it
+/// are finishing (already dropped) and leaving the list -- Move to List, or Delete Task. Both kept
+/// the row drawn on the list it had left, for as long as the pointer stayed over the tab, under By
+/// Date (the default), By Priority and None; By Section already dropped it at once, because
+/// `resolveFrozenTaskGroups` resolves the snapshot through the list's tasks. So the frozen order is
+/// read here only for the rows the list still holds.
+func applyFrozenListOrder(_ sorted: [AppTask], frozen: [AppTask]?) -> [AppTask] {
+    guard let frozen else { return sorted }
+    let liveIDs = Set(sorted.map(\.id))
+    return applyFrozenTaskOrder(sorted, frozen: frozen.filter { liveIDs.contains($0.id) })
+}
+
 /// Same rule as `applyFrozenTaskOrder`, and the same T-342 fix: a frozen group empties out when its
 /// tasks are finished, whichever way they finished. A group left holding only cancelled work used
 /// to survive the `isEmpty` check and keep rendering.
