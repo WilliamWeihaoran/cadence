@@ -1148,10 +1148,13 @@ struct CadenceTodayUnificationTests {
         #expect(section.contains("iOSTaskGroupDisclosure("), "the Completed fold draws its own control again")
         let disclosureControl = try declarationBody(of: "iOSTaskGroupDisclosure", in: "Cadence/iOS/iOSTaskGroupSection.swift")
         #expect(disclosureControl.contains("Image(systemName: isExpanded ? \"chevron.down\" : \"chevron.right\")"))
-        // The rows stay the shared ones, dimmed as a whole the way `iOSTaskGroupSection` dimmed
-        // them: this is a local fold, not a local row vocabulary.
+        // The rows stay the shared ones: this is a local fold, not a local row vocabulary. Since
+        // [[T-16463]] `iOSTaskRow` dims a settled task itself, so the section must not dim again.
         #expect(section.contains("iOSTaskRow("))
-        #expect(section.contains(".opacity(CadenceTaskRowMetrics.settledRowOpacity)"))
+        #expect(
+            !section.contains(".opacity(CadenceTaskRowMetrics.settledRowOpacity)"),
+            "the Completed section dims its rows on top of the row's own settled dim"
+        )
         // The cap disclosure `iOSTaskGroupSection` carried came with it, and T-2087 deleted both
         // copies together: nothing caps these rows, so there is nothing to disclose.
         #expect(!section.contains("hiddenCount"), "the completed section takes a remainder again")

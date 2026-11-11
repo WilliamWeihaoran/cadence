@@ -902,7 +902,8 @@ struct CadenceCancelledTaskReachabilityTests {
         try expectOccurrences(
             of: "isSettled",
             at: [
-                "Cadence/iOS/iOSTaskViews.swift": 5,
+                // Six since [[T-16463]]: the row's own settled dim is the sixth read.
+                "Cadence/iOS/iOSTaskViews.swift": 6,
                 "Cadence/iOS/iOSTaskDetailSheet.swift": 2
             ]
         )
