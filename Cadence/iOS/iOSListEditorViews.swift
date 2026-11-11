@@ -916,7 +916,8 @@ struct iOSListEditorSheet: View {
                 area.desc = details
                 area.icon = normalizedIcon
                 area.colorHex = normalizedColor
-                area.context = selectedContext
+                // [[T-16401]]: a moved area goes to the end of its new section, as on the Mac.
+                CadenceSidebarLists.refile(area, into: selectedContext)
                 // The columns are merged *before* the tasks are re-pointed, because the merge is what
                 // decides which columns actually survive — a column another device deleted while this
                 // sheet was open is gone from the result even though the drafts still list it, and its
@@ -945,7 +946,7 @@ struct iOSListEditorSheet: View {
                 project.desc = details
                 project.icon = normalizedIcon
                 project.colorHex = normalizedColor
-                project.context = selectedContext
+                CadenceSidebarLists.refile(project, into: selectedContext)
                 project.area = selectedArea
                 project.applySectionConfigEdits(base: originalSectionConfigs, edited: normalizedSectionConfigs)
                 reassignTasks(in: project.tasks ?? [], project: project)

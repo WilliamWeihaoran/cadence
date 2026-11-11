@@ -53,6 +53,9 @@ struct CadenceListEditSnapshot {
     private let hideSectionDueDateIfEmpty: Bool
     private let sectionConfigsRaw: String
     private let context: Context?
+    /// [[T-16401]]: a list re-filed into another context takes a new `order` beside the context
+    /// (`CadenceSidebarLists.refile`), so a refused save has to put the number back with it.
+    private let order: Int
     private let parentArea: Area?
 
     private let tasks: [AppTask]
@@ -74,6 +77,7 @@ struct CadenceListEditSnapshot {
         hideSectionDueDateIfEmpty = area.hideSectionDueDateIfEmpty
         sectionConfigsRaw = area.sectionConfigsRaw
         context = area.context
+        order = area.order
         parentArea = nil
         self.tasks = tasks
         taskSnapshots = Self.snapshots(of: tasks)
@@ -93,6 +97,7 @@ struct CadenceListEditSnapshot {
         hideSectionDueDateIfEmpty = project.hideSectionDueDateIfEmpty
         sectionConfigsRaw = project.sectionConfigsRaw
         context = project.context
+        order = project.order
         parentArea = project.area
         self.tasks = tasks
         taskSnapshots = Self.snapshots(of: tasks)
@@ -122,6 +127,7 @@ struct CadenceListEditSnapshot {
             area.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
             area.sectionConfigsRaw = sectionConfigsRaw
             area.context = context
+            area.order = order
         }
         if let project {
             project.statusRaw = statusRaw
@@ -135,6 +141,7 @@ struct CadenceListEditSnapshot {
             project.hideSectionDueDateIfEmpty = hideSectionDueDateIfEmpty
             project.sectionConfigsRaw = sectionConfigsRaw
             project.context = context
+            project.order = order
             project.area = parentArea
         }
         for (snapshot, task) in zip(taskSnapshots, tasks) {

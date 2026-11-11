@@ -470,8 +470,10 @@ struct CadenceContextlessListSurfaceTests {
         )
         // [[T-10180]]: the project editor writes its context beside its new parent area, through
         // `EditProjectSheet.applyOwnership` — behaviour-tested in `CadenceMacProjectAreaFieldTests`.
+        // [[T-16401]]: the area's write goes through the shared refile, which numbers a moved list
+        // into its new section — behaviour-tested in `CadenceSidebarListRefileTests`.
         let writeBack = [
-            "area": "area.context = selectedContext",
+            "area": "CadenceSidebarLists.refile(area, into: selectedContext)",
             "project": "Self.applyOwnership(to: project, context: selectedContext, area: selectedArea)"
         ]
         for model in ["area", "project"] {

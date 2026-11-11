@@ -147,7 +147,8 @@ struct EditAreaSheet: View {
         // including, by `inheritedContextTargets`, those of child projects with no context of
         // their own — and an ordinary rename has no business dirtying them.
         let contextChanged = area.context?.id != selectedContextID
-        area.context = selectedContext
+        // [[T-16401]]: a moved area goes to the end of its new section, numbered there.
+        CadenceSidebarLists.refile(area, into: selectedContext)
         if contextChanged {
             CadenceTaskMutationSupport.reassignInheritedContext(area: area)
         }
@@ -538,7 +539,8 @@ extension EditProjectSheet {
     /// refused commit puts the area back with everything else.
     static func applyOwnership(to project: Project, context: Context?, area: Area?) {
         let changed = ownershipChanged(project, contextID: context?.id, areaID: area?.id)
-        project.context = context
+        // [[T-16401]]: a project moved to another context goes to the end of its new section.
+        CadenceSidebarLists.refile(project, into: context)
         project.area = area
         if changed {
             CadenceTaskMutationSupport.reassignInheritedContext(project: project)

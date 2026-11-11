@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 /// The one place a live `Area` or `Project` becomes a `CadenceSidebarLists.Item`.
 ///
@@ -66,5 +67,80 @@ extension CadenceSidebarLists.Item {
             order: project.order,
             contextID: project.context?.id
         )
+    }
+}
+
+/// A list's `order` when it is re-filed into another context from a list editor ([[T-16401]]).
+///
+/// **The editors used to write the new context and keep the old number.** `order` is a sequence
+/// *within one context section* (`CadenceSidebarListReorder` renumbers a section from 0), so a
+/// number carried in from another section is a number some row of the destination usually already
+/// holds. `sorted(_:)` keeps a user-dragged interleaving of areas and projects only while every row
+/// holds a distinct `order`, so the destination dropped to areas-first -- the project the user had
+/// dragged to the top fell below every area -- and the moved list itself landed wherever its old
+/// number happened to fall, on every device, because the numbers sync. It is [[T-14621]]'s failure
+/// reached by editing a list instead of creating one. The Mac's cross-section DRAG already
+/// renumbered (`SidebarListContextMove`); the Mac's `EditAreaSheet` / `EditProjectSheet` and the
+/// iOS list editor did not.
+///
+/// A moved list goes to the END of its new section, numbered exactly as a list created there would
+/// be (`nextOrder(inContextWithID:areas:projects:)`). An edit that leaves the context alone keeps
+/// its number: a rename must not reshuffle anything.
+extension CadenceSidebarLists {
+    /// The pure rule. **`areas` / `projects` are read before the list's context is written**, so
+    /// the moved list's own slot still names its old context and is not counted in the new one.
+    static func orderAfterRefiling(
+        currentOrder: Int,
+        from oldContextID: UUID?,
+        to newContextID: UUID?,
+        areas: [OrderSlot],
+        projects: [OrderSlot]
+    ) -> Int {
+        guard oldContextID != newContextID else { return currentOrder }
+        return nextOrder(inContextWithID: newContextID, areas: areas, projects: projects)
+    }
+
+    /// Writes `area.context` and, when it changed, the `order` that puts the area last in its new
+    /// section. The caller's undo has to hold `order` too -- `CadenceListEditSnapshot` does.
+    static func refile(_ area: Area, into context: Context?) {
+        if area.context?.id != context?.id {
+            area.order = orderAfterRefiling(
+                currentOrder: area.order,
+                from: area.context?.id,
+                to: context?.id,
+                areas: orderSlots(Area.self, of: area),
+                projects: orderSlots(Project.self, of: area)
+            )
+        }
+        area.context = context
+    }
+
+    /// The project twin. Only `project.context` places a project in the sidebar (the bridge above
+    /// reads `project.context?.id`), so a change of parent AREA alone keeps its number.
+    static func refile(_ project: Project, into context: Context?) {
+        if project.context?.id != context?.id {
+            project.order = orderAfterRefiling(
+                currentOrder: project.order,
+                from: project.context?.id,
+                to: context?.id,
+                areas: orderSlots(Area.self, of: project),
+                projects: orderSlots(Project.self, of: project)
+            )
+        }
+        project.context = context
+    }
+
+    /// Every area's (or project's) slot in the store the list lives in. Read only when the context
+    /// actually changes; a list not yet inserted has no siblings to number against.
+    private static func orderSlots(_ kind: Area.Type, of model: any PersistentModel) -> [OrderSlot] {
+        guard let modelContext = model.modelContext,
+              let areas = try? modelContext.fetch(FetchDescriptor<Area>()) else { return [] }
+        return areas.map { ($0.context?.id, $0.order) }
+    }
+
+    private static func orderSlots(_ kind: Project.Type, of model: any PersistentModel) -> [OrderSlot] {
+        guard let modelContext = model.modelContext,
+              let projects = try? modelContext.fetch(FetchDescriptor<Project>()) else { return [] }
+        return projects.map { ($0.context?.id, $0.order) }
     }
 }
