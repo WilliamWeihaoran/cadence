@@ -164,6 +164,8 @@ struct iOSTaskDetailSheet: View {
             // [[T-6191]]: an After count stored below this occurrence before [[T-6114]]'s floor is
             // repaired when the task is opened, and only then. A coherent count is not written.
             .onAppear { CadenceTaskRecurrenceWorkflowSupport.repairEndCountOnOpen(task, in: modelContext) }
+            // [[T-16623]]: a tied checklist is numbered apart before a rename can reorder it.
+            .onAppear { CadenceTaskInspectorSupport.repairTiedSubtaskOrderOnOpen(task, in: modelContext) }
     }
 
     private var editorSurface: some View {

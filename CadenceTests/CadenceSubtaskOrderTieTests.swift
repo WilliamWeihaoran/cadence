@@ -100,4 +100,81 @@ struct CadenceSubtaskOrderTieTests {
             #expect(!source.contains(".sorted { $0.order < $1.order }"), "\(path) still sorts subtasks on order alone")
         }
     }
+
+    // MARK: - [[T-16623]]: a rename cannot move a tied row
+
+    private struct CommitRefused: Error {}
+
+    private func drawn(_ task: AppTask) -> [String] {
+        (task.subtasks ?? []).subtaskSorted().map(\.title)
+    }
+
+    /// The reproduction. The tie breaks on title, and both inspectors retitle on every keystroke,
+    /// so renaming "Adapter" to "Zzz" moved it under its twin "Zip bag" mid-word. Opened through
+    /// the repair, the row stays where it was drawn.
+    @Test func renamingATiedSubtaskAfterTheInspectorOpensLeavesItWhereItIs() throws {
+        let (container, task) = try makeTask(arrangement: [
+            ("Zip bag", 1), ("Charger", 2), ("Adapter", 1), ("Passport", 0)
+        ])
+        _ = container
+        #expect(drawn(task) == ["Passport", "Adapter", "Zip bag", "Charger"])
+
+        var commits = 0
+        let repaired = CadenceTaskInspectorSupport.repairTiedSubtaskOrderOnOpen(
+            task, in: container.mainContext, commit: { commits += 1; try $0.save() }
+        )
+        #expect(repaired)
+        #expect(commits == 1)
+        #expect(drawn(task) == ["Passport", "Adapter", "Zip bag", "Charger"], "the repair keeps the drawn order")
+        let orders = (task.subtasks ?? []).subtaskSorted().map(\.order)
+        #expect(Set(orders).count == orders.count, "no two rows share an order after the repair")
+
+        let adapter = try #require(task.subtasks?.first { $0.title == "Adapter" })
+        adapter.title = "Zzz"
+        #expect(drawn(task) == ["Passport", "Zzz", "Zip bag", "Charger"], "the renamed row did not move")
+    }
+
+    /// Idempotent and free: a checklist with no tie -- gaps included -- is not written or committed.
+    @Test func anUntiedChecklistIsNotWritten() throws {
+        let (container, task) = try makeTask(arrangement: [("Passport", 0), ("Adapter", 5), ("Zip bag", 9)])
+        var commits = 0
+        let repaired = CadenceTaskInspectorSupport.repairTiedSubtaskOrderOnOpen(
+            task, in: container.mainContext, commit: { commits += 1; try $0.save() }
+        )
+        #expect(!repaired)
+        #expect(commits == 0)
+        #expect((task.subtasks ?? []).subtaskSorted().map(\.order) == [0, 5, 9])
+    }
+
+    /// A refused commit puts every number back, so the next open tries again.
+    @Test func aRefusedRepairPutsEveryNumberBack() throws {
+        let (container, task) = try makeTask(arrangement: [("Zip bag", 0), ("Adapter", 0), ("Charger", 1)])
+        try container.mainContext.save()
+        let before = Dictionary(uniqueKeysWithValues: (task.subtasks ?? []).map { ($0.title, $0.order) })
+
+        let repaired = CadenceTaskInspectorSupport.repairTiedSubtaskOrderOnOpen(
+            task, in: container.mainContext, commit: { _ in throw CommitRefused() }
+        )
+        #expect(!repaired)
+        let after = Dictionary(uniqueKeysWithValues: (task.subtasks ?? []).map { ($0.title, $0.order) })
+        #expect(after == before)
+    }
+
+    /// Wiring: both inspectors -- the Mac popover and the iOS sheet, the two places a subtask is
+    /// retitled -- run the repair when they appear.
+    @Test func bothInspectorsRepairATieWhenTheyOpen() throws {
+        let hosts: [(path: String, declaration: String)] = [
+            ("Cadence/macOS/Views/SchedulePanelComponents.swift", "struct TaskDetailPopover: View"),
+            ("Cadence/iOS/iOSTaskDetailSheet.swift", "struct iOSTaskDetailSheet: View")
+        ]
+        let call = #"\.onAppear \{ CadenceTaskInspectorSupport\.repairTiedSubtaskOrderOnOpen\(task, in: modelContext\) \}"#
+        for host in hosts {
+            let source = try CadenceSourceScan.sourceFile(host.path)
+            let type = try #require(CadenceSourceScan.declarationBody(host.declaration, in: source), "\(host.path)")
+            #expect(
+                CadenceSourceScan.matchCount(call, in: type) == 1,
+                "\(host.path) opens a tied checklist without numbering it apart"
+            )
+        }
+    }
 }

@@ -72,6 +72,8 @@ struct TaskDetailPopover: View {
         .frame(width: TaskInspectorPopoverMetrics.width)
         .cadenceFixedTypography()
         .background(Theme.surface)
+        // [[T-16623]]: a tied checklist is numbered apart before a rename can reorder it.
+        .onAppear { CadenceTaskInspectorSupport.repairTiedSubtaskOrderOnOpen(task, in: modelContext) }
         .onAppear { focusSubtaskFieldIfRequested() }
         .onChange(of: taskSubtaskEntryManager.requestedTaskID) { _, _ in
             focusSubtaskFieldIfRequested()

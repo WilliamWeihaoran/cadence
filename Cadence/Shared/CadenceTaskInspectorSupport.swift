@@ -99,6 +99,50 @@ enum CadenceTaskInspectorSupport {
             : CadencePendingChangePersistence.editFailureNotice
     }
 
+    /// **[[T-16623]]: a tied checklist is numbered apart when the inspector opens it**, so a rename
+    /// cannot move the row being typed into.
+    ///
+    /// [[T-16341]] broke an `order` tie on the title, so every surface lists a tied pair alike.
+    /// Both inspectors retitle a subtask on every keystroke, so with a tie still stored the row
+    /// being renamed jumped past its twin the moment its title crossed the other's -- mid-word,
+    /// on both platforms. Ties are in real stores (see `TaskOrdering.subtaskPrecedes`). Numbering
+    /// the tied rows apart, in the order already drawn, leaves the list where it is and takes the
+    /// title out of the ordering for good.
+    ///
+    /// Repaired on OPEN, as `repairEndCountOnOpen` repairs a series count ([[T-6191]]'s ruling):
+    /// a checklist with no tie is not written at all. Each row keeps its `order` unless it is not
+    /// above the row before it, which then takes the next number, so two devices repairing the
+    /// same tie write the same numbers. A refused commit puts every number back, and the next open
+    /// tries again.
+    ///
+    /// - Returns: `true` when a repair was committed, `false` when nothing needed it or the store
+    ///   refused.
+    @discardableResult
+    static func repairTiedSubtaskOrderOnOpen(
+        _ task: AppTask,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let drawn = (task.subtasks ?? []).subtaskSorted()
+        guard Set(drawn.map(\.order)).count != drawn.count else { return false }
+        let stored = drawn.map { ($0, $0.order) }
+        var previous: Int?
+        for subtask in drawn {
+            if let previous, subtask.order <= previous {
+                subtask.order = previous + 1
+            }
+            previous = subtask.order
+        }
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+                for (subtask, order) in stored { subtask.order = order }
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// The tick a task row's listed subtask takes ([[T-8592]]): finish it, committed, and leave a
     /// subtask that is already done alone.
     ///
