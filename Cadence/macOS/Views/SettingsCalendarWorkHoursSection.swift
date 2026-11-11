@@ -97,7 +97,7 @@ struct SettingsCalendarWorkHoursSection: View {
 
             timePicker(
                 minute: endMinute,
-                options: CalendarWorkHoursPreferences.selectableEndMinutes,
+                options: CalendarWorkHoursPreferences.selectableEndMinutes(startingAt: startMinute),
                 isPresented: $showEndPicker,
                 set: setEndMinute
             )

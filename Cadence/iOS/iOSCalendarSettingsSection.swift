@@ -544,7 +544,7 @@ private struct iOSCalendarWorkHoursSection: View {
 
                         picker(
                             title: endMinute,
-                            options: CalendarWorkHoursPreferences.selectableEndMinutes,
+                            options: CalendarWorkHoursPreferences.selectableEndMinutes(startingAt: startMinute),
                             isPresented: $showEndPicker,
                             set: setEndMinute
                         )

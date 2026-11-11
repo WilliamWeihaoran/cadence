@@ -116,4 +116,51 @@ struct WorkHoursParityTests {
         #expect(CalendarWorkHoursPreferences.shouldShowHighlight(on: tuesday, calendar: calendar))
         #expect(!CalendarWorkHoursPreferences.shouldShowHighlight(on: saturday, calendar: calendar))
     }
+
+    /// **[[T-16101]].** Every end time the End picker offers is one the write keeps: picking it
+    /// stores exactly it. Both pickers listed every half hour from 12:30 AM, so with the window
+    /// starting at 9 AM a tap on "8 AM" stored 9:30 AM and the row showed a time nobody picked.
+    /// A relation over every selectable start, not a pinned list.
+    @Test func everyOfferedEndTimeIsKeptAsPicked() {
+        for start in CalendarWorkHoursPreferences.selectableStartMinutes {
+            let offered = CalendarWorkHoursPreferences.selectableEndMinutes(startingAt: start)
+            #expect(!offered.isEmpty, "a start of \(start) leaves no end to pick")
+            #expect(offered.last == 24 * 60, "a start of \(start) drops the midnight end")
+            for end in offered {
+                let range = CalendarWorkHoursPreferences.rangeByUpdatingEnd(end, currentStartMinute: start)
+                #expect(range.endMinute == end, "start \(start): picking \(end) stored \(range.endMinute)")
+                #expect(range.startMinute == start)
+            }
+            // Nothing that would still be a valid end is withheld.
+            let withheld = CalendarWorkHoursPreferences.selectableEndMinutes.filter { !offered.contains($0) }
+            for end in withheld {
+                #expect(CalendarWorkHoursPreferences.rangeByUpdatingEnd(end, currentStartMinute: start).endMinute != end)
+            }
+        }
+    }
+
+    /// The default 9-to-5 window offers 9:30 AM onward, and no end at or before its start.
+    @Test func theDefaultWindowOffersNoEndAtOrBeforeItsStart() {
+        let offered = CalendarWorkHoursPreferences.selectableEndMinutes(
+            startingAt: CalendarWorkHoursPreferences.defaultStartMinute
+        )
+        #expect(offered.first == 9 * 60 + 30)
+        #expect(offered.contains(CalendarWorkHoursPreferences.defaultEndMinute))
+        #expect(!offered.contains(8 * 60))
+        #expect(!offered.contains(9 * 60))
+    }
+
+    /// Both Work Hours rows list the start-aware end times. The iOS row is behind `#if os(iOS)`,
+    /// so its wiring is read as source.
+    @Test func bothWorkHoursRowsOfferTheStartAwareEndTimes() throws {
+        let needle = "CalendarWorkHoursPreferences.selectableEndMinutes(startingAt: startMinute)"
+        for path in [
+            "Cadence/iOS/iOSCalendarSettingsSection.swift",
+            "Cadence/macOS/Views/SettingsCalendarWorkHoursSection.swift",
+        ] {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(source.contains(needle), "\(path) offers end times its own write rewrites")
+            #expect(!source.contains("CalendarWorkHoursPreferences.selectableEndMinutes,"), "\(path) still lists every end time")
+        }
+    }
 }

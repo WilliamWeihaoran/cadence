@@ -34,6 +34,18 @@ enum CalendarWorkHoursPreferences {
     static let selectableStartMinutes = stride(from: 0, through: 23 * 60 + 30, by: 30).map { $0 }
     static let selectableEndMinutes = stride(from: 30, through: 24 * 60, by: 30).map { $0 }
 
+    /// **[[T-16101]]: the end times the End picker offers once the window starts at `startMinute`**
+    /// -- only those `rangeByUpdatingEnd` keeps as picked, on both platforms' Work Hours rows.
+    ///
+    /// Both pickers listed all of `selectableEndMinutes`, so with the window starting at 9 AM the
+    /// list offered 12:30 AM through 9 AM, and every one of those snapped to 9:30 AM the moment it
+    /// was tapped: the row showed a time nobody picked. The floor is `normalizedEndMinute`'s own
+    /// (`start + 30`), so no option this returns can be rewritten by the write it feeds.
+    static func selectableEndMinutes(startingAt startMinute: Int) -> [Int] {
+        let floor = normalizedStartMinute(startMinute) + 30
+        return selectableEndMinutes.filter { $0 >= floor }
+    }
+
     static func normalizedStartMinute(_ minute: Int) -> Int {
         min(max(minute, 0), 23 * 60 + 30)
     }
