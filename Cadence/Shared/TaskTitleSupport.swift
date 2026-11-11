@@ -74,29 +74,27 @@ nonisolated enum TaskTitleSupport {
         TaskTitleShortcutParsing.titleApplyingPriorityShortcut(title, priority: &priority)
     }
 
+    /// The title split the way the field previews it: the mark at each end, and the title between.
+    ///
+    /// **[[T-16586]].** Both ends are read here exactly as `priorityShortcut` reads them — leading
+    /// first, then trailing on what is left — and the title between is `priorityShortcut`'s own
+    /// cleaned title. This used to return the leading mark only, so `!! ship it !!!` previewed a
+    /// coloured `!!` and then `ship it !!!` as plain text, while the task was created high and
+    /// titled `ship it`.
     static func priorityShortcutSegments(in title: String) -> TaskTitlePriorityShortcutSegments? {
         let normalizedTitle = normalized(title)
         guard let shortcut = priorityShortcut(in: normalizedTitle) else { return nil }
 
-        if let leadingCount = leadingBangCount(in: normalizedTitle) {
-            return TaskTitlePriorityShortcutSegments(
-                title: normalized(String(normalizedTitle.dropFirst(leadingCount))),
-                marker: String(repeating: "!", count: leadingCount),
-                priority: shortcut.priority,
-                placement: .leading
-            )
-        }
+        let leadingCount = leadingBangCount(in: normalizedTitle) ?? 0
+        let afterLeading = normalized(String(normalizedTitle.dropFirst(leadingCount)))
+        let trailingCount = trailingBangCount(in: afterLeading) ?? 0
 
-        if let trailingCount = trailingBangCount(in: normalizedTitle) {
-            return TaskTitlePriorityShortcutSegments(
-                title: normalized(String(normalizedTitle.dropLast(trailingCount))),
-                marker: String(repeating: "!", count: trailingCount),
-                priority: shortcut.priority,
-                placement: .trailing
-            )
-        }
-
-        return nil
+        return TaskTitlePriorityShortcutSegments(
+            leadingMarker: String(repeating: "!", count: leadingCount),
+            title: shortcut.title,
+            trailingMarker: String(repeating: "!", count: trailingCount),
+            priority: shortcut.priority
+        )
     }
 
     private static func leadingBangCount(in title: String) -> Int? {
@@ -119,16 +117,13 @@ nonisolated enum TaskTitleSupport {
     }
 }
 
+/// A mark is empty when that end carries none; at least one is not. Both are drawn in `priority`'s
+/// colour, the priority the task is created with (the louder mark wins).
 nonisolated struct TaskTitlePriorityShortcutSegments: Equatable {
-    enum Placement: Equatable {
-        case leading
-        case trailing
-    }
-
+    let leadingMarker: String
     let title: String
-    let marker: String
+    let trailingMarker: String
     let priority: TaskPriority
-    let placement: Placement
 }
 
 nonisolated struct TaskTitleInlineShortcut: Equatable {

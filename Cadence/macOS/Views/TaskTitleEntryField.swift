@@ -341,35 +341,28 @@ struct TaskTitleEntryField: View {
     private var priorityShortcutPreview: some View {
         HStack(spacing: 4) {
             if let segments = priorityShortcutSegments {
-                switch segments.placement {
-                case .leading:
-                    priorityShortcutMarker(segments)
-                    if !segments.title.isEmpty {
-                        Text(segments.title)
-                            .font(previewFont)
-                            .foregroundStyle(Theme.text)
-                            .lineLimit(1)
-                            .fixedSize()
-                    }
-                case .trailing:
-                    if !segments.title.isEmpty {
-                        Text(segments.title)
-                            .font(previewFont)
-                            .foregroundStyle(Theme.text)
-                            .lineLimit(1)
-                            .fixedSize()
-                    }
-                    priorityShortcutMarker(segments)
+                if !segments.leadingMarker.isEmpty {
+                    priorityShortcutMarker(segments.leadingMarker, priority: segments.priority)
+                }
+                if !segments.title.isEmpty {
+                    Text(segments.title)
+                        .font(previewFont)
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+                if !segments.trailingMarker.isEmpty {
+                    priorityShortcutMarker(segments.trailingMarker, priority: segments.priority)
                 }
             }
             Spacer(minLength: 0)
         }
     }
 
-    private func priorityShortcutMarker(_ segments: TaskTitlePriorityShortcutSegments) -> some View {
-        Text(segments.marker)
+    private func priorityShortcutMarker(_ marker: String, priority: TaskPriority) -> some View {
+        Text(marker)
             .font(previewFont)
-            .foregroundStyle(Theme.priorityColor(segments.priority))
+            .foregroundStyle(Theme.priorityColor(priority))
             .lineLimit(1)
             .fixedSize()
     }

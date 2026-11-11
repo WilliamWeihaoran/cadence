@@ -49,5 +49,49 @@ struct InlineComposerPriorityPreviewTests {
         #expect(draft.resolvedPriority == segments.priority)
         #expect(draft.resolvedPriority != .none)
     }
+
+    /// **T-16586.** A title marked at both ends previews both marks as marks and the title between
+    /// as plain text — the title and priority the card is actually created with. The segments used
+    /// to carry the leading mark only, so `!! ship it !!!` drew a coloured `!!` and `ship it !!!`.
+    @Test func aTitleMarkedAtBothEndsPreviewsBothMarksAndTheCreatedTitle() throws {
+        let typed = "!! ship it !!!"
+        let segments = try #require(TaskTitleSupport.priorityShortcutSegments(in: typed))
+        let created = try #require(TaskTitleSupport.priorityShortcut(in: typed))
+        let draft = InlineTaskComposerSupport.draft(
+            title: typed,
+            fields: InlineTaskComposerSupport.initialFields(for: .column(container: .inbox, sectionName: "")),
+            tags: []
+        )
+        #expect(segments.leadingMarker == "!!")
+        #expect(segments.trailingMarker == "!!!")
+        #expect(segments.title == "ship it")
+        #expect(segments.title == created.title)
+        #expect(segments.priority == .high)
+        #expect(draft.resolvedPriority == segments.priority)
+    }
+
+    /// One-ended marks keep the other end empty, so the preview draws a single marker.
+    @Test func aTitleMarkedAtOneEndLeavesTheOtherMarkEmpty() throws {
+        let leading = try #require(TaskTitleSupport.priorityShortcutSegments(in: "! call mom"))
+        #expect(leading.leadingMarker == "!")
+        #expect(leading.trailingMarker.isEmpty)
+        #expect(leading.title == "call mom")
+
+        let trailing = try #require(TaskTitleSupport.priorityShortcutSegments(in: "call mom !!"))
+        #expect(trailing.leadingMarker.isEmpty)
+        #expect(trailing.trailingMarker == "!!")
+        #expect(trailing.title == "call mom")
+
+        #expect(TaskTitleSupport.priorityShortcutSegments(in: "email! alice") == nil)
+    }
+
+    /// **T-16586.** The field draws both ends' marks, not one chosen by placement.
+    @Test func theTitleFieldDrawsTheMarkAtEachEnd() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TaskTitleEntryField.swift")
+        )
+        #expect(source.contains("priorityShortcutMarker(segments.leadingMarker, priority: segments.priority)"))
+        #expect(source.contains("priorityShortcutMarker(segments.trailingMarker, priority: segments.priority)"))
+    }
 }
 #endif
