@@ -67,8 +67,9 @@ struct CadenceTagSettingsDuplicateNoticeTests {
             try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TagPickerPopoverViews.swift"))
         #expect(!picker.contains("struct TagNoticeRow"),
                 "the picker hand-rolls its own notice row instead of sharing Settings'")
-        // Save's gate is unchanged: a duplicate name still disables Save.
-        #expect(sheet.contains("!TagSupport.displayName(for:name).isEmpty&&!hasDuplicateSlug"))
+        // Save's gate: a duplicate name still disables Save, through the shared rename rule
+        // ([[T-15801]]), whose clash clause `TagRenameClashStableSlugTests` pins by behaviour.
+        #expect(sheet.contains("TagSupport.canRename(tag,to:name,in:allTags)"))
     }
 
     /// The phone's card, the half the Mac now matches. Non-vacuity for the needle above.

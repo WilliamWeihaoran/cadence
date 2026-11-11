@@ -372,8 +372,9 @@ private struct TagEditSheet: View {
         TagSupport.slugIsTaken(normalizedSlug, in: allTags, except: tag)
     }
 
+    /// [[T-15801]]: the shared rename rule, so `--` is refused here as Create Tag refuses it.
     private var canSave: Bool {
-        !TagSupport.displayName(for: name).isEmpty && !hasDuplicateSlug
+        TagSupport.canRename(tag, to: name, in: allTags)
     }
 
     var body: some View {

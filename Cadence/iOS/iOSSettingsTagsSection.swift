@@ -25,8 +25,9 @@ enum iOSTagSettingsEdit {
         TagSupport.normalizedColorHex(draft, fallback: saved)
     }
 
+    /// [[T-15801]]: `TagSupport.canRename`, the rule the Mac's two tag editors ask too.
     static func canSave(name: String, tag: Tag, allTags: [Tag]) -> Bool {
-        !TagSupport.displayName(for: name).isEmpty && !hasDuplicate(name: name, tag: tag, allTags: allTags)
+        TagSupport.canRename(tag, to: name, in: allTags)
     }
 
     /// `rewritingInlineMentions` is the user's answer to the T-6261 warning, not a default the

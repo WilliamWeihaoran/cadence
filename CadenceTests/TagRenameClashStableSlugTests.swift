@@ -55,6 +55,32 @@ struct TagRenameClashStableSlugTests {
         #expect(!source.contains("$0.slug==normalizedSlug"))
     }
 
+    /// [[T-15801]]: a rename to a name with no letter or digit is refused, as Create Tag refuses
+    /// it (`creationDecision` answers `.unusableName`); an unchanged name still saves.
+    @Test func aRenameToANameWithNoAlphanumericIsRefused() {
+        let work = Cadence.Tag(name: "Work")
+        let all = [work, Cadence.Tag(name: "home")]
+        for name in ["--", "!!", " #-# ", "…"] {
+            #expect(TagSupport.creationDecision(for: name, in: all).isCreatable == false, "non-vacuity: create refuses \(name)")
+            #expect(!TagSupport.canRename(work, to: name, in: all), "rename refuses \(name)")
+            #expect(!iOSTagSettingsEdit.canSave(name: name, tag: work, allTags: all), "iOS card refuses \(name)")
+        }
+        #expect(TagSupport.canRename(work, to: "Job", in: all))
+        #expect(TagSupport.canRename(work, to: "学习", in: all))
+        #expect(!TagSupport.canRename(work, to: "Home", in: all), "the clash clause is kept")
+
+        let legacy = Cadence.Tag(name: "--")
+        #expect(TagSupport.canRename(legacy, to: "--", in: [legacy]), "an unchanged name is not a rename")
+        #expect(TagSupport.canRename(legacy, to: "Errands", in: [legacy]))
+    }
+
+    @Test func bothMacEditorsSaveThroughTheSharedRenameRule() throws {
+        let row = try Self.squeezed("Cadence/macOS/Views/SettingsTagsSection.swift")
+        #expect(row.contains("privatevarcanSave:Bool{TagSupport.canRename(tag,to:draftName,in:allTags)}"))
+        let sheet = try Self.squeezed("Cadence/macOS/Views/TagPickerPopoverViews.swift")
+        #expect(sheet.contains("privatevarcanSave:Bool{TagSupport.canRename(tag,to:name,in:allTags)}"))
+    }
+
     @Test func theMacTitleFieldInlineCreateAsksTheStableSlug() throws {
         let source = try Self.squeezed("Cadence/macOS/Views/TaskTitleEntryField.swift")
         #expect(source.contains("return!TagSupport.slugIsTaken(TagSupport.slug(for:name),in:allTags)}"))

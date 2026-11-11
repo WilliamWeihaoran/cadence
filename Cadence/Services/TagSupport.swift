@@ -610,6 +610,25 @@ nonisolated enum TagSupport {
         tags.contains { $0.id != excluded?.id && stableSlug(for: $0) == candidateSlug }
     }
 
+    /// **The rename rule, for every tag editor's Save** ([[T-15801]]): Settings > Tags on both
+    /// platforms and the Mac tag picker's Edit Tag sheet.
+    ///
+    /// The three editors asked only "non-empty after `displayName`, slug not taken", so a tag
+    /// could be renamed to `--` or `!!` -- a name `creationDecision` answers `.unusableName` for,
+    /// which the Create Tag card and every tag picker refuse ([[T-13501]]). The rename door minted
+    /// exactly what the create door will not. The alphanumeric clause is `creationDecision`'s own.
+    ///
+    /// A name equal to the tag's current one is not a rename, so a tag already carrying such a
+    /// name (minted before this rule) can still have its description and colour saved.
+    static func canRename(_ tag: Tag, to candidate: String, in tags: [Tag]) -> Bool {
+        let display = displayName(for: candidate)
+        guard !display.isEmpty else { return false }
+        guard display == tag.name || display.rangeOfCharacter(from: .alphanumerics) != nil else {
+            return false
+        }
+        return !slugIsTaken(slug(for: display), in: tags, except: tag)
+    }
+
     /// Keyed by `stableSlug`, the identity `deduplicateTags` already groups by ([[T-14761]]).
     ///
     /// For every row a current build wrote the two are the same string. They differ only for a row
