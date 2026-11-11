@@ -425,6 +425,26 @@ enum TasksPanelSupport {
         )
     }
 
+    /// **The do date a drop on a By Date "Scheduled" header writes, or `nil` to leave it alone
+    /// ([[T-16652]]).** Tomorrow for a task with no do date, a do date of today, **or one already
+    /// gone by**; `nil` only for a do date after today, which already reads as Scheduled.
+    ///
+    /// The guard was `isEmpty || == todayKey`. That was complete while a past do date filed under
+    /// Scheduled too, and [[T-12323]] moved those rows into their own Leftover group without
+    /// touching this, so a Leftover row dropped on Scheduled answered `.applied`, wrote nothing and
+    /// stayed in Leftover. Tomorrow is counted from `todayKey`, the page's observed day, not from
+    /// `Date()`, so the write agrees with the buckets the page drew.
+    static func pushedToScheduledDateKey(
+        from scheduledDate: String,
+        todayKey: String,
+        calendar: Calendar = .current
+    ) -> String? {
+        guard scheduledDate.isEmpty || scheduledDate <= todayKey else { return nil }
+        guard let today = DateFormatters.date(from: todayKey),
+              let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) else { return nil }
+        return DateFormatters.dateKey(from: tomorrow)
+    }
+
     /// Writes the assignment and **commits nothing** — `assignTask` owns the one commit, which is
     /// why every date edit here is handed `commit: { _ in }` and `reconciler: .inert`. Still routed
     /// through `CadenceTaskDateEditing` rather than writing `task.scheduledDate` by hand: T-362's
@@ -458,10 +478,9 @@ enum TasksPanelSupport {
         case .pushToScheduled:
             // Already scheduled past today: the drop resolved, and leaving the later date alone is
             // the assignment, not a failure to make one — see `assignTask`.
-            if task.scheduledDate.isEmpty || task.scheduledDate == todayKey {
-                let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+            if let pushed = pushedToScheduledDateKey(from: task.scheduledDate, todayKey: todayKey) {
                 CadenceTaskDateEditing.setScheduledDate(
-                    DateFormatters.dateKey(from: tomorrow),
+                    pushed,
                     for: task,
                     in: modelContext,
                     reconciler: .inert,
