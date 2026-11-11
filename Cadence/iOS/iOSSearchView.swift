@@ -248,7 +248,7 @@ struct iOSSearchView: View {
         if isSearching {
             return iOSSearchIndexSupport.rankedResults(searchableNotes.compactMap { note in
                 let tagText = CadenceSearchTagSupport.text(for: note.sortedTags)
-                let content = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
+                let content = CadenceSearchNoteText.body(of: note, taskTitles: taskTitles)
                 guard let score = CadenceSearchMatcher.matchScore(
                     query: trimmedQuery,
                     fields: [NoteReferencePanelSupport.searchTitle(note), content, noteSubtitle(note), tagText]

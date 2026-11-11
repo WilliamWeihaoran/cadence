@@ -92,7 +92,7 @@ enum CadenceListRelatedNotes {
             guard requiredTagSlugs.isSubset(of: noteTagSlugs) else { return false }
             guard !query.isEmpty else { return true }
             return note.displayTitle.localizedCaseInsensitiveContains(query) ||
-                MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
+                CadenceSearchNoteText.body(of: note, taskTitles: taskTitles)
                     .localizedCaseInsensitiveContains(query) ||
                 anyTag(note.sortedTags, matches: query)
         }
