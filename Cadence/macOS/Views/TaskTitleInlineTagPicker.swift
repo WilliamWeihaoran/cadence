@@ -11,8 +11,13 @@ struct TaskTitleInlineTagPicker: View {
     /// `TagPickerPlaceholder`.
     let hasActiveTags: Bool
     let canCreate: Bool
+    /// [[T-16583]]: the archived tag the query's slug names, drawn as `Unarchive "<name>"` in the
+    /// Create row's place -- the row every other tag picker draws for it ([[T-12744]], [[T-13963]]).
+    /// `nil` when the host offers no unarchive.
+    let archivedMatch: Tag?
     let onSelect: (Tag) -> Void
     let onCreate: () -> Void
+    let onUnarchive: () -> Void
     let onSubmit: () -> Void
     let onMoveHighlight: (Int) -> Void
     let onRestoreLiteral: () -> Void
@@ -36,7 +41,9 @@ struct TaskTitleInlineTagPicker: View {
                         )
                     }
 
-                    if canCreate {
+                    if let archivedMatch {
+                        unarchiveRow(archivedMatch, isHighlighted: highlightIndex == filteredTags.count)
+                    } else if canCreate {
                         createRow(isHighlighted: highlightIndex == filteredTags.count)
                     }
 
@@ -44,7 +51,8 @@ struct TaskTitleInlineTagPicker: View {
                         placeholder: TagPickerPlaceholder.resolve(
                             hasActiveTags: hasActiveTags,
                             matchCount: filteredTags.count,
-                            canCreate: canCreate
+                            canCreate: canCreate,
+                            canRestore: archivedMatch != nil
                         )
                     )
                 }
@@ -63,6 +71,7 @@ struct TaskTitleInlineTagPicker: View {
         .onChange(of: query) { _, _ in highlightIndex = 0 }
         .onChange(of: filteredTags.map(\.id)) { _, _ in clampHighlightIndex() }
         .onChange(of: canCreate) { _, _ in clampHighlightIndex() }
+        .onChange(of: archivedMatch?.id) { _, _ in clampHighlightIndex() }
     }
 
     private var searchRow: some View {
@@ -118,8 +127,34 @@ struct TaskTitleInlineTagPicker: View {
         .buttonStyle(.cadenceMenuRow)
     }
 
+    /// The `TagPickerPopover` restore row's anatomy, so the two Mac tag pickers say it alike.
+    private func unarchiveRow(_ tag: Tag, isHighlighted: Bool) -> some View {
+        Button(action: onUnarchive) {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.uturn.backward.circle.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
+                Text(CadenceListVocabularyCopy.unarchiveRowTitle(name: tag.name))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.text)
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+            .background(isHighlighted ? Theme.blue.opacity(0.08) : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        // [[T-9465]]: the row style is the one hover plate.
+        .buttonStyle(.cadenceMenuRow)
+    }
+
     private var optionCount: Int {
-        filteredTags.count + (canCreate ? 1 : 0)
+        TaskTitleInlineTagSubmit.optionCount(
+            matchCount: filteredTags.count,
+            canCreate: canCreate,
+            offersUnarchive: archivedMatch != nil
+        )
     }
 
     private func clampHighlightIndex() {
@@ -128,6 +163,39 @@ struct TaskTitleInlineTagPicker: View {
             return
         }
         highlightIndex = min(max(highlightIndex, 0), optionCount - 1)
+    }
+}
+
+/// **[[T-16583]] -- what Return (or Tab) does in the title field's `#` panel.**
+///
+/// The panel's rows are the query's matches, then one trailing row: `Unarchive "<name>"` when an
+/// archived tag carries the query's slug, otherwise `Create "<name>"` when the name can become a
+/// tag. The two never draw together -- `TagSupport.pickerQuery` offers no Create name for an
+/// archived match. The panel used to have no Unarchive row at all, so typing an archived tag's name
+/// in a Mac board column's composer drew `No matching tags` and Return did nothing, where the
+/// inspector's tag popover, the capture card's strip and iOS's pickers all offer to bring it back.
+enum TaskTitleInlineTagSubmit {
+    case select(Tag)
+    case unarchive(Tag)
+    case create
+    case nothing
+
+    static func optionCount(matchCount: Int, canCreate: Bool, offersUnarchive: Bool) -> Int {
+        matchCount + (offersUnarchive || canCreate ? 1 : 0)
+    }
+
+    /// `archivedMatch` is the query's, already `nil` when the host offers no unarchive.
+    static func action(
+        highlightIndex: Int,
+        matches: [Tag],
+        canCreate: Bool,
+        archivedMatch: Tag?
+    ) -> TaskTitleInlineTagSubmit {
+        let count = optionCount(matchCount: matches.count, canCreate: canCreate, offersUnarchive: archivedMatch != nil)
+        let index = TaskPickerHighlightSupport.clampedIndex(highlightIndex, count: count)
+        if index < matches.count { return .select(matches[index]) }
+        if let archivedMatch { return .unarchive(archivedMatch) }
+        return canCreate ? .create : .nothing
     }
 }
 

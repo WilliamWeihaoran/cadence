@@ -83,7 +83,9 @@ struct TagRenameClashStableSlugTests {
 
     @Test func theMacTitleFieldInlineCreateAsksTheStableSlug() throws {
         let source = try Self.squeezed("Cadence/macOS/Views/TaskTitleEntryField.swift")
-        #expect(source.contains("return!TagSupport.slugIsTaken(TagSupport.slug(for:name),in:allTags)}"))
+        // [[T-16583]]: it reads `pickerQuery`, whose `creationDecision` compares `stableSlug`.
+        #expect(source.contains("privatevarcanCreateInlineTag:Bool{tagQuery.canCreate}"))
+        #expect(source.contains("TagSupport.pickerQuery(tagSearchQuery,in:allTags)"))
         #expect(!source.contains("$0.slug==slug"))
     }
 }

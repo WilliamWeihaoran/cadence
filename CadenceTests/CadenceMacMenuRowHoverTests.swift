@@ -95,7 +95,8 @@ import Testing
             "Cadence/macOS/Views/CadenceContextPicker.swift": 1,
             "Cadence/macOS/Views/TagPickerPopoverViews.swift": 4,
             "Cadence/macOS/Views/TagPickerSupportViews.swift": 1,
-            "Cadence/macOS/Views/TaskTitleInlineTagPicker.swift": 2,
+            // [[T-16583]]: + the Unarchive row.
+            "Cadence/macOS/Views/TaskTitleInlineTagPicker.swift": 3,
         ]
         for (path, expected) in sites {
             let source = try Self.code(path)

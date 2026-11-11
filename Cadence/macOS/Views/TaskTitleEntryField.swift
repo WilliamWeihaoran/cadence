@@ -25,6 +25,10 @@ struct TaskTitleEntryField: View {
     let sectionName: Binding<String>?
     let selectedTags: Binding<[Tag]>?
     let onCreateTag: ((String) -> Tag?)?
+    /// [[T-16583]]: un-archives and commits a tag, answering whether the store took it. With it the
+    /// `#` panel offers `Unarchive "<name>"` for an archived tag's name, as every other tag picker
+    /// does; without it the panel offers nothing for that name.
+    let onUnarchiveTag: ((Tag) -> Bool)?
 
     @State private var tildeMode: TaskTitleTildeMode = .none
     @State private var tildeSearchQuery = ""
@@ -70,6 +74,7 @@ struct TaskTitleEntryField: View {
         sectionName: Binding<String>? = nil,
         selectedTags: Binding<[Tag]>? = nil,
         onCreateTag: ((String) -> Tag?)? = nil,
+        onUnarchiveTag: ((Tag) -> Bool)? = nil,
         onDateNudge: ((Int) -> Void)? = nil,
         onSubmit: (() -> Void)? = nil
     ) {
@@ -93,6 +98,7 @@ struct TaskTitleEntryField: View {
         self.sectionName = sectionName
         self.selectedTags = selectedTags
         self.onCreateTag = onCreateTag
+        self.onUnarchiveTag = onUnarchiveTag
         self.onDateNudge = onDateNudge
         self.onSubmit = onSubmit
     }
@@ -200,21 +206,20 @@ struct TaskTitleEntryField: View {
         TagSupport.uniqueBySlug(allTags.filter { !$0.isArchived })
     }
 
-    private var filteredTags: [Tag] {
-        let trimmed = tagSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return activeTags }
-        let slug = TagSupport.slug(for: trimmed)
-        return activeTags.filter {
-            $0.name.localizedCaseInsensitiveContains(trimmed) ||
-                $0.slug.localizedCaseInsensitiveContains(slug)
-        }
+    /// [[T-16583]]: the `#` panel's rows, Create row and Unarchive row, read from the one decision
+    /// the inspector's `TagPickerPopover` and iOS's pickers ask ([[T-12744]]). This field spelled
+    /// its own filter and Create rule and had no archived match, so an archived tag's name drew
+    /// `No matching tags` here alone. `creationDecision` compares `stableSlug` ([[T-14772]]).
+    private var tagQuery: TagPickerQuery {
+        TagSupport.pickerQuery(tagSearchQuery, in: allTags)
     }
 
-    private var canCreateInlineTag: Bool {
-        let name = TagSupport.displayName(for: tagSearchQuery)
-        guard !name.isEmpty,
-              name.rangeOfCharacter(from: .alphanumerics) != nil else { return false }
-        return !TagSupport.slugIsTaken(TagSupport.slug(for: name), in: allTags)
+    private var filteredTags: [Tag] { tagQuery.matches }
+
+    private var canCreateInlineTag: Bool { tagQuery.canCreate }
+
+    private var archivedInlineTagMatch: Tag? {
+        onUnarchiveTag == nil ? nil : tagQuery.archivedMatch
     }
 
     /// Cmd+Shift+= / Cmd+Shift+- nudge the do-date **while the title field is the thing on
@@ -323,8 +328,10 @@ struct TaskTitleEntryField: View {
             selectedTags: selectedTags?.wrappedValue ?? [],
             hasActiveTags: !activeTags.isEmpty,
             canCreate: canCreateInlineTag,
+            archivedMatch: archivedInlineTagMatch,
             onSelect: selectInlineTagItem,
             onCreate: createInlineTag,
+            onUnarchive: unarchiveInlineTag,
             onSubmit: selectInlineTag,
             onMoveHighlight: moveTagHighlight,
             onRestoreLiteral: { restoreLiteralShortcut(marker: "#", query: tagSearchQuery) }
@@ -408,17 +415,25 @@ struct TaskTitleEntryField: View {
     }
 
     private func selectInlineTag() {
-        let tags = filteredTags
-        let index = clampedHighlightIndex(tagHighlightIdx, count: tagPickerOptionCount)
-        if index < tags.count {
-            selectInlineTagItem(tags[index])
-        } else if canCreateInlineTag {
-            createInlineTag()
+        switch TaskTitleInlineTagSubmit.action(
+            highlightIndex: tagHighlightIdx,
+            matches: filteredTags,
+            canCreate: canCreateInlineTag,
+            archivedMatch: archivedInlineTagMatch
+        ) {
+        case .select(let tag): selectInlineTagItem(tag)
+        case .unarchive: unarchiveInlineTag()
+        case .create: createInlineTag()
+        case .nothing: break
         }
     }
 
     private var tagPickerOptionCount: Int {
-        filteredTags.count + (canCreateInlineTag ? 1 : 0)
+        TaskTitleInlineTagSubmit.optionCount(
+            matchCount: filteredTags.count,
+            canCreate: canCreateInlineTag,
+            offersUnarchive: archivedInlineTagMatch != nil
+        )
     }
 
     private func movedHighlightIndex(_ current: Int, by offset: Int, count: Int) -> Int {
@@ -435,6 +450,21 @@ struct TaskTitleEntryField: View {
     private func createInlineTag() {
         guard let onCreateTag, let tag = onCreateTag(tagSearchQuery) else { return }
         selectInlineTagItem(tag)
+    }
+
+    /// [[T-16583]]: the T-631 rule `createInlineTag` follows -- a `false` from the host means the
+    /// store refused, so nothing is selected and the panel stays open over the name. A tag the
+    /// draft already carries is kept rather than toggled off by the row that brought it back.
+    private func unarchiveInlineTag() {
+        guard let onUnarchiveTag, let tag = archivedInlineTagMatch, onUnarchiveTag(tag) else { return }
+        if selectedTags?.wrappedValue.contains(where: { $0.id == tag.id }) == true {
+            tagSearchQuery = ""
+            tagHighlightIdx = 0
+            isTagMode = false
+            DispatchQueue.main.async { isTitleFocused = true }
+        } else {
+            selectInlineTagItem(tag)
+        }
     }
 
     /// Toggles, rather than only adding.

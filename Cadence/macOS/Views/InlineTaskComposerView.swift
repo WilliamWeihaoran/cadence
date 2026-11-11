@@ -105,6 +105,7 @@ struct InlineTaskComposer: View {
             sectionName: $fields.sectionName,
             selectedTags: $selectedTags,
             onCreateTag: createTag,
+            onUnarchiveTag: unarchiveTag,
             onSubmit: create
         )
         .id(entryGeneration)
@@ -265,6 +266,17 @@ struct InlineTaskComposer: View {
         }
         actionError = nil
         return tag
+    }
+
+    /// [[T-16583]]: the `#` panel's `Unarchive "<name>"`, committed the way the Cmd+N capture card
+    /// commits its own ([[T-13963]]); a refusal speaks on the hint line, as `createTag`'s does.
+    private func unarchiveTag(_ tag: Tag) -> Bool {
+        guard TagSupport.committedUnarchive(tag, in: modelContext) else {
+            actionError = CadencePendingChangePersistence.editFailureNotice
+            return false
+        }
+        actionError = nil
+        return true
     }
 }
 #endif

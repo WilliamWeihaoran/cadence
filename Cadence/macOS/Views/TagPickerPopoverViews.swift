@@ -229,14 +229,32 @@ struct TagPickerPopover: View {
     /// the phone's `+`/Return/dismiss already ask ([[T-12772]]). An archived match goes through
     /// `restore(_:)` -- the `Unarchive "<name>"` row directly below offers exactly that for the same
     /// text -- where Return used to stop at `canCreate`, false for an archived match, and leave the
-    /// name in the field. Every other name keeps the Create row's rules, so an active tag's name
-    /// still does nothing here (the Mac has no committedTag-style pick on Return).
+    /// name in the field. An active tag's name attaches it ([[T-16584]], `returnPick`); every other
+    /// name keeps the Create row's rules.
     private func commitQueriedField() {
         if case let .unarchive(archived) = TagSupport.pickerFieldCommit(query, in: allTags) {
             restore(archived)
             return
         }
+        if let picked = Self.returnPick(query, in: allTags, selected: selectedTags) {
+            selectedTags = picked
+            query = ""
+            return
+        }
         createQueriedTagIfNeeded()
+    }
+
+    /// **[[T-16584]] -- Return on an active tag's typed name attaches it**, as the phone's field
+    /// does (`iOSTaskTagPickerPopover.addTag`, through `pickerFieldCommit`'s `.resolve` and
+    /// `committedTag`), and as this popover's own row does on a click. Return used to stop at
+    /// `canCreate`, false for a name a tag already carries, so typing `work` and pressing Return
+    /// left the text in the field and attached nothing. No input constraint answers the
+    /// difference ([[T-8201]]). Adds only -- a tag already attached stays attached -- because a
+    /// typed name says "this one", not "toggle". `nil` when the query names no active tag.
+    static func returnPick(_ query: String, in allTags: [Tag], selected: [Tag]) -> [Tag]? {
+        guard let active = TagSupport.creationDecision(for: query, in: allTags).activeDuplicate else { return nil }
+        if selected.contains(where: { $0.id == active.id }) { return selected }
+        return selected + [active]
     }
 
     /// **T-652, and the third member of the set [[T-497]] fixed two of.** `archive(_:)` one screen

@@ -263,3 +263,146 @@ struct CadenceTagPickerQueryTests {
         }
     }
 }
+
+#if os(macOS)
+/// **[[T-16583]] — the Mac title field's `#` panel offers Unarchive for an archived tag's name.**
+///
+/// The panel a board column's inline composer opens (`TaskTitleEntryField` +
+/// `TaskTitleInlineTagPicker`) spelled its own filter and Create rule and had no archived match, so
+/// typing an archived tag's name drew `No matching tags` and Return did nothing -- the one tag
+/// picker left that could not bring an archived tag back ([[T-12744]], [[T-13963]]).
+struct TaskTitleInlineTagUnarchiveTests {
+
+    private func makeTags() throws -> (ModelContainer, [Cadence.Tag]) {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let work = Cadence.Tag(name: "Work", slug: "work")
+        let old = Cadence.Tag(name: "Old Project", slug: "old-project")
+        old.isArchived = true
+        let tags = [work, old]
+        for tag in tags { context.insert(tag) }
+        return (container, tags)
+    }
+
+    private func submit(_ query: String, highlight: Int = 0, offersUnarchive: Bool = true, in tags: [Cadence.Tag]) -> TaskTitleInlineTagSubmit {
+        let decision = TagSupport.pickerQuery(query, in: tags)
+        return TaskTitleInlineTagSubmit.action(
+            highlightIndex: highlight,
+            matches: decision.matches,
+            canCreate: decision.canCreate,
+            archivedMatch: offersUnarchive ? decision.archivedMatch : nil
+        )
+    }
+
+    @Test func returnOnAnArchivedTagsNameUnarchivesIt() throws {
+        let (_, tags) = try makeTags()
+        for query in ["Old Project", "old project", "#old-project"] {
+            guard case .unarchive(let tag) = submit(query, in: tags) else {
+                Issue.record("Return on \(query) does not unarchive")
+                continue
+            }
+            #expect(tag.slug == "old-project")
+        }
+        // The panel draws exactly one row for it, where it used to draw none.
+        #expect(TaskTitleInlineTagSubmit.optionCount(matchCount: 0, canCreate: false, offersUnarchive: true) == 1)
+    }
+
+    @Test func activeMatchesAndCreateKeepTheirRows() throws {
+        let (_, tags) = try makeTags()
+        guard case .select(let tag) = submit("wor", in: tags) else {
+            Issue.record("an active match is not selected")
+            return
+        }
+        #expect(tag.slug == "work")
+        // Past the match, the trailing row is Create for a new name.
+        guard case .create = submit("wor", highlight: 1, in: tags) else {
+            Issue.record("the Create row is not reached")
+            return
+        }
+        guard case .nothing = submit("--", in: tags) else {
+            Issue.record("an unusable name does something")
+            return
+        }
+    }
+
+    @Test func aHostWithNoUnarchiveOffersNothingForTheArchivedName() throws {
+        let (_, tags) = try makeTags()
+        guard case .nothing = submit("Old Project", offersUnarchive: false, in: tags) else {
+            Issue.record("no unarchive host, yet Return acted")
+            return
+        }
+        #expect(TaskTitleInlineTagSubmit.optionCount(matchCount: 0, canCreate: false, offersUnarchive: false) == 0)
+    }
+
+    /// Source shape: the field, the panel and the composer are views.
+    @Test func theFieldThePanelAndTheBoardComposerWireTheUnarchiveRow() throws {
+        let field = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TaskTitleEntryField.swift"))
+        #expect(field.contains("TagSupport.pickerQuery(tagSearchQuery, in: allTags)"))
+        #expect(field.contains("onUnarchiveTag == nil ? nil : tagQuery.archivedMatch"))
+        #expect(field.contains("archivedMatch: archivedInlineTagMatch,"))
+        #expect(field.contains("TaskTitleInlineTagSubmit.action("))
+
+        let panel = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TaskTitleInlineTagPicker.swift"))
+        #expect(panel.contains("if let archivedMatch {"))
+        #expect(panel.contains("canRestore: archivedMatch != nil"))
+        #expect(panel.contains("CadenceListVocabularyCopy.unarchiveRowTitle(name: tag.name)"))
+
+        let composer = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/InlineTaskComposerView.swift"))
+        #expect(composer.contains("onUnarchiveTag: unarchiveTag,"))
+        #expect(composer.contains("guard TagSupport.committedUnarchive(tag, in: modelContext) else {"))
+    }
+}
+
+/// **[[T-16584]] -- Return in the Mac tag popover attaches an active tag's typed name**, as the
+/// phone's field does through `pickerFieldCommit`'s `.resolve`. It used to do nothing.
+struct MacTagPickerReturnPickTests {
+
+    private func makeTags() throws -> (ModelContainer, [Cadence.Tag]) {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let work = Cadence.Tag(name: "Work", slug: "work")
+        let deepWork = Cadence.Tag(name: "Deep Work", slug: "deep-work")
+        let old = Cadence.Tag(name: "Old Project", slug: "old-project")
+        old.isArchived = true
+        let tags = [work, deepWork, old]
+        for tag in tags { context.insert(tag) }
+        return (container, tags)
+    }
+
+    @Test func anActiveTagsTypedNameIsAttached() throws {
+        let (_, tags) = try makeTags()
+        for query in ["work", " WORK ", "#Work"] {
+            let picked = try #require(TagPickerPopover.returnPick(query, in: tags, selected: []), "\(query)")
+            #expect(picked.map(\.slug) == ["work"], "\(query)")
+        }
+        let beside = try #require(TagPickerPopover.returnPick("deep work", in: tags, selected: [tags[0]]))
+        #expect(beside.map(\.slug) == ["work", "deep-work"])
+    }
+
+    @Test func anAttachedTagStaysAttached() throws {
+        let (_, tags) = try makeTags()
+        let picked = try #require(TagPickerPopover.returnPick("work", in: tags, selected: [tags[0]]))
+        #expect(picked.map(\.slug) == ["work"], "Return on a typed name never toggles it off")
+    }
+
+    @Test func newArchivedAndPartialNamesAreNotPicked() throws {
+        let (_, tags) = try makeTags()
+        #expect(TagPickerPopover.returnPick("Garden", in: tags, selected: []) == nil, "a new name is Create's")
+        #expect(TagPickerPopover.returnPick("Old Project", in: tags, selected: []) == nil, "an archived name is Unarchive's")
+        #expect(TagPickerPopover.returnPick("wor", in: tags, selected: []) == nil, "a prefix names no tag")
+        #expect(TagPickerPopover.returnPick("", in: tags, selected: []) == nil)
+    }
+
+    /// Source shape: `.onSubmit` is not callable. Unarchive first, then the pick, then Create.
+    @Test func returnAsksThePickBetweenUnarchiveAndCreate() throws {
+        let popover = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TagPickerPopoverViews.swift"))
+        let body = try #require(CadenceSourceScan.functionBody(named: "commitQueriedField", in: popover))
+        let restore = try #require(body.range(of: "restore(archived)"))
+        let pick = try #require(body.range(of: "if let picked = Self.returnPick(query, in: allTags, selected: selectedTags) {"))
+        let create = try #require(body.range(of: "createQueriedTagIfNeeded()"))
+        #expect(restore.upperBound < pick.lowerBound)
+        #expect(pick.upperBound < create.lowerBound)
+        #expect(body.contains("selectedTags = picked"))
+    }
+}
+#endif
