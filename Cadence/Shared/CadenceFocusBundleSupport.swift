@@ -86,6 +86,23 @@ enum CadenceFocusPickItem: Identifiable {
         return shownCount < readyCount ? "Top \(shownCount) of \(total)" : total
     }
 
+    /// **[[T-16560]]: the search field and the summary line are drawn only over something to
+    /// search**, on both pickers. iOS has hidden them over an empty ready list since [[T-8733]];
+    /// the Mac card drew both on every visit, so a first-run Focus page -- an empty store -- showed
+    /// a "Search tasks" field over nothing and "No ready sessions" stacked over the "No open
+    /// tasks" empty state that already said it. No hardware or input reason ([[T-8201]]).
+    static func showsSearchField(readyCount: Int) -> Bool {
+        readyCount > 0
+    }
+
+    /// Whether an empty picker is a search miss rather than an empty store. A query only counts
+    /// while its field is on screen: text typed before the last ready task was finished elsewhere
+    /// would otherwise draw "No matching tasks / Try a project..." under a field that has gone.
+    static func isSearching(query: String, readyCount: Int) -> Bool {
+        showsSearchField(readyCount: readyCount)
+            && !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     /// **[[T-13871]]: the picker's field matches through `CadenceSearchMatcher`, the one scorer.**
     ///
     /// It used to lowercase the query and ask whether the joined fields `contains` it -- a private

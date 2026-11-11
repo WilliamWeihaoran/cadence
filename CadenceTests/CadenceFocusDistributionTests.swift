@@ -156,6 +156,35 @@ struct CadenceFocusDistributionTests {
         #expect(occurrencesInFocusSource(of: "readyCount: readyTasks.count", in: page) == 1)
     }
 
+    // MARK: - Nothing to search ([[T-16560]])
+
+    /// The field and the summary line stand only over a ready list; a query left in a field that
+    /// has gone is not a search, so the empty state is the store's, not a miss.
+    @Test func thepickerOffersSearchOnlyOverSomethingToSearch() {
+        #expect(CadenceFocusPickItem.showsSearchField(readyCount: 0) == false)
+        #expect(CadenceFocusPickItem.showsSearchField(readyCount: 1) == true)
+
+        #expect(CadenceFocusPickItem.isSearching(query: "zz", readyCount: 3) == true)
+        #expect(CadenceFocusPickItem.isSearching(query: "  ", readyCount: 3) == false)
+        #expect(CadenceFocusPickItem.isSearching(query: "zz", readyCount: 0) == false)
+    }
+
+    /// Both pickers gate the field and the summary on the shared answer, and both empty states
+    /// read the shared search test. The Mac card drew its field and "No ready sessions" over an
+    /// empty store -- a first-run Focus page -- where iOS drew neither.
+    @Test func bothPickersHideSearchOverAnEmptyReadyList() throws {
+        let card = try strippingFocusTestComments(focusSourceFile("Cadence/macOS/Views/FocusPickerSupportViews.swift"))
+        let ios = try strippingFocusTestComments(focusSourceFile("Cadence/iOS/iOSFocusView.swift"))
+
+        let gatedMac = #"if FocusPickItem\.showsSearchField\(readyCount: readyCount\) \{\s*searchBar\s*HStack\(spacing: 10\) \{\s*Text\(resultSummary\)"#
+        #expect(card.range(of: gatedMac, options: .regularExpression) != nil, "the Mac card draws its search field over nothing again")
+        #expect(occurrencesInFocusSource(of: "FocusPickItem.isSearching(query: searchText, readyCount: readyCount)", in: card) == 1)
+
+        let gatedIOS = #"if CadenceFocusPickItem\.showsSearchField\(readyCount: pickItems\.count\) \{\s*pickSearchField\s*pickListSummary"#
+        #expect(ios.range(of: gatedIOS, options: .regularExpression) != nil)
+        #expect(occurrencesInFocusSource(of: "CadenceFocusPickItem.isSearching(query: pickSearchText, readyCount: pickItems.count)", in: ios) == 1)
+    }
+
     // MARK: - The picker's search field ([[T-13871]])
 
     private func pickTitles(_ ready: [AppTask], query: String) -> [String] {

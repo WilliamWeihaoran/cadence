@@ -41,15 +41,18 @@ struct FocusPickSessionCard: View {
                 FocusIdleClockBadge(clockDisplay: clockDisplay)
             }
 
-            searchBar
+            // [[T-16560]]: only over something to search, as iOS's picker draws them.
+            if FocusPickItem.showsSearchField(readyCount: readyCount) {
+                searchBar
 
-            HStack(spacing: 10) {
-                Text(resultSummary)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
+                HStack(spacing: 10) {
+                    Text(resultSummary)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
 
-                Spacer(minLength: 12)
+                    Spacer(minLength: 12)
+                }
             }
 
             ScrollView {
@@ -147,7 +150,7 @@ struct FocusPickSessionCard: View {
     }
 
     private var isSearching: Bool {
-        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        FocusPickItem.isSearching(query: searchText, readyCount: readyCount)
     }
 }
 

@@ -82,7 +82,7 @@ struct iOSFocusView: View {
     }
 
     private var isSearchingPickList: Bool {
-        !pickSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        CadenceFocusPickItem.isSearching(query: pickSearchText, readyCount: pickItems.count)
     }
 
     /// The row the session is running against. An explicitly chosen subject wins even after it
@@ -346,7 +346,7 @@ struct iOSFocusView: View {
             iOSPanelHeader(eyebrow: CadenceFocusSupport.pickListEyebrow, title: CadenceFocusSupport.pickListTitle)
             Divider().background(Theme.borderSubtle)
 
-            if !pickItems.isEmpty {
+            if CadenceFocusPickItem.showsSearchField(readyCount: pickItems.count) {
                 pickSearchField
                 pickListSummary
             }
