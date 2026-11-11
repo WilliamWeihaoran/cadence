@@ -606,6 +606,30 @@ struct iOSListKanbanPanel: View {
                                     listName: listName,
                                     sectionName: column.title
                                 )
+                                // One write for the column's three drop targets: a card, the
+                                // column body and the end slot ([[T-16503]]).
+                                let dropCard: ([String], CadenceKanbanCardDrop.Slot) -> Bool = { items, slot in
+                                    CadenceKanbanCardDrop.drop(
+                                        items,
+                                        intoColumn: column.title,
+                                        at: slot,
+                                        // [[T-15622]]: the column's finished cards too, so a
+                                        // card dropped on one lands in front of it.
+                                        columnTasks: ListDetailKanbanBoard.dropColumnCards(
+                                            open: column.tasks,
+                                            finished: finished[column.title] ?? []
+                                        ),
+                                        // [[T-15620]]: the finished cards too -- they are
+                                        // draggable behind the Completed toggle, as on the Mac.
+                                        among: ListDetailKanbanBoard.droppableCards(
+                                            open: tasks,
+                                            finished: completedTasks
+                                        ),
+                                        spanning: spanTasks ?? tasks,
+                                        ofList: CadenceTaskDropSupport.containerKey(for: container),
+                                        in: modelContext
+                                    )
+                                }
                                 iOSListKanbanColumn(
                                     title: column.title,
                                     dotColor: dotColor(for: column.title),
@@ -624,26 +648,10 @@ struct iOSListKanbanPanel: View {
                                         )
                                     },
                                     onDropCard: { items, target in
-                                        CadenceKanbanCardDrop.drop(
-                                            items,
-                                            intoColumn: column.title,
-                                            before: target,
-                                            // [[T-15622]]: the column's finished cards too, so a
-                                            // card dropped on one lands in front of it.
-                                            columnTasks: ListDetailKanbanBoard.dropColumnCards(
-                                                open: column.tasks,
-                                                finished: finished[column.title] ?? []
-                                            ),
-                                            // [[T-15620]]: the finished cards too -- they are
-                                            // draggable behind the Completed toggle, as on the Mac.
-                                            among: ListDetailKanbanBoard.droppableCards(
-                                                open: tasks,
-                                                finished: completedTasks
-                                            ),
-                                            spanning: spanTasks ?? tasks,
-                                            ofList: CadenceTaskDropSupport.containerKey(for: container),
-                                            in: modelContext
-                                        )
+                                        dropCard(items, .before(target))
+                                    },
+                                    onDropAtColumnEnd: { items in
+                                        dropCard(items, .columnEnd)
                                     }
                                 )
                                 .id(column.title)
@@ -750,6 +758,11 @@ private struct iOSListKanbanAddRequest: Identifiable {
     let seed: CadenceTaskComposerSeed
 }
 
+/// The end slot's height: a fingertip's worth of target under the last card ([[T-16503]]), short
+/// of the 44pt floor because it is a drop target rather than a tap target and sits in the stack's
+/// spacing.
+private let iOSListKanbanColumnEndSlotHeight: CGFloat = 28
+
 private struct iOSListKanbanColumn: View {
     let title: String
     let dotColor: Color
@@ -792,7 +805,16 @@ private struct iOSListKanbanColumn: View {
     /// it, in this column or from another — or `nil` for the column body, which files it at the end.
     /// Without it a card could change column and never move within one.
     var onDropCard: ([String], AppTask?) -> Bool = { _, _ in false }
+    /// **[[T-16503]]: the slot under the last open card**, which files a card at the column's end
+    /// -- its own column included. A card dropped on a card lands in front of it and the column
+    /// body refuses the card's own column (a touch set down in a gap would otherwise jump to the
+    /// bottom), so before this nothing put a card below the last one of its own column. The Mac
+    /// reaches that slot through its column body under the cards; a touch board cannot tell a gap
+    /// from the end, so the end is a target of its own.
+    var onDropAtColumnEnd: ([String]) -> Bool = { _ in false }
     @State private var isCardDropTargeted = false
+    /// Whether a held card is over the end slot, for the same 2pt insertion line a card draws.
+    @State private var isColumnEndDropTargeted = false
     /// **Collapsed on arrival**, as the Mac's toggle and the iOS Calendar Board's footer both are:
     /// the board is for the work that is left, and finished cards are there to be found rather
     /// than to be read past ([[T-9837]]).
@@ -838,6 +860,10 @@ private struct iOSListKanbanColumn: View {
                 LazyVStack(spacing: 8) {
                     ForEach(tasks) { task in
                         boardCard(task)
+                    }
+
+                    if !tasks.isEmpty {
+                        columnEndDropSlot
                     }
 
                     // **Inside the scroller, after the cards** ([[T-9611]] settled that for the
@@ -903,6 +929,29 @@ private struct iOSListKanbanColumn: View {
                 if isOver { dropTargetTaskID = task.id }
                 else if dropTargetTaskID == task.id { dropTargetTaskID = nil }
             }
+    }
+
+    /// **The end of the column's open cards, as a drop target** ([[T-16503]]). Drawn only under a
+    /// card: an empty column's body already files a card at its end, and the card dragged can only
+    /// be from another column. The insertion line is a card's (`boardCard(_:)`), drawn where the
+    /// card will land -- under the last one.
+    private var columnEndDropSlot: some View {
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: iOSListKanbanColumnEndSlotHeight)
+            .contentShape(Rectangle())
+            .overlay(alignment: .top) {
+                if isColumnEndDropTargeted {
+                    Rectangle()
+                        .fill(Theme.blue)
+                        .frame(height: 2)
+                        .allowsHitTesting(false)
+                }
+            }
+            .dropDestination(for: String.self) { items, _ in
+                onDropAtColumnEnd(items)
+            } isTargeted: { isColumnEndDropTargeted = $0 }
+            .accessibilityHidden(true)
     }
 
     /// **The "Completed N" row this column closes with** ([[T-9837]]).

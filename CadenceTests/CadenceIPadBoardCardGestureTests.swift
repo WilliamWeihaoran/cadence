@@ -134,6 +134,71 @@ struct CadenceIPadBoardCardGestureTests {
         #expect(task.order == 0, "a drop on the card's own column moved it to the end")
     }
 
+    // MARK: - What a card dropped on the column's end slot writes ([[T-16503]])
+
+    private func dropAtEnd(_ task: AppTask, into section: String, board: [AppTask], in modelContext: ModelContext,
+                           commit: (ModelContext) throws -> Void = { try $0.save() }) -> Bool {
+        CadenceKanbanCardDrop.drop(
+            [TaskDragPayload.string(for: task.id)],
+            intoColumn: section,
+            at: .columnEnd,
+            columnTasks: board.filter { $0.resolvedSectionName.caseInsensitiveCompare(section) == .orderedSame },
+            among: board,
+            spanning: board,
+            ofList: CadenceTaskDropSupport.containerKey(for: .inbox),
+            in: modelContext,
+            commit: commit
+        )
+    }
+
+    /// Red before the fix: nothing put a card below the last one of its own column. On the last
+    /// card it went second-last, and the column body refused its own column.
+    @Test func aCardDroppedOnItsOwnColumnsEndSlotBecomesTheLastCard() throws {
+        let modelContext = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let first = try boardTask("First", section: "Doing", order: 0, in: modelContext)
+        let second = try boardTask("Second", section: "Doing", order: 1, in: modelContext)
+        let third = try boardTask("Third", section: "Doing", order: 2, in: modelContext)
+        let seam = CountingCommit()
+        let board = [first, second, third]
+
+        #expect(dropAtEnd(first, into: "Doing", board: board, in: modelContext, commit: seam.commit))
+
+        #expect(seam.commitCount == 1)
+        #expect(first.sectionName == "Doing")
+        let column = board.sorted { $0.order < $1.order }.map(\.title)
+        #expect(column == ["Second", "Third", "First"], "the card did not land below the column's last card: \(column)")
+    }
+
+    /// The end slot of another column files it there at the end, as the column body does.
+    @Test func aCardDroppedOnAnotherColumnsEndSlotIsFiledAtItsEnd() throws {
+        let modelContext = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let moved = try boardTask("Moved", section: "Backlog", order: 0, in: modelContext)
+        let doingA = try boardTask("Doing A", section: "Doing", order: 1, in: modelContext)
+        let doingB = try boardTask("Doing B", section: "Doing", order: 2, in: modelContext)
+
+        #expect(dropAtEnd(moved, into: "Doing", board: [moved, doingA, doingB], in: modelContext))
+
+        #expect(moved.sectionName == "Doing")
+        #expect(doingA.order < doingB.order && doingB.order < moved.order)
+    }
+
+    /// The body keeps its refusal: the end slot is the new target, not a looser body.
+    @Test func theColumnBodyStillRefusesTheCardsOwnColumn() throws {
+        let modelContext = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let task = try boardTask("Stays put", section: "Doing", order: 0, in: modelContext)
+        let below = try boardTask("Below", section: "Doing", order: 1, in: modelContext)
+        let seam = CountingCommit()
+
+        let landed = CadenceKanbanCardDrop.drop(
+            [TaskDragPayload.string(for: task.id)], intoColumn: "Doing", at: .columnBody,
+            columnTasks: [task, below], among: [task, below], spanning: [task, below],
+            ofList: CadenceTaskDropSupport.containerKey(for: .inbox), in: modelContext, commit: seam.commit
+        )
+        #expect(!landed)
+        #expect(seam.commitCount == 0)
+        #expect(task.order == 0)
+    }
+
     // MARK: - What a card dropped on a card writes ([[T-8271]])
 
     /// The ticket's case: a card dropped on a card ABOVE it in its own column lands in front of
@@ -305,22 +370,29 @@ struct CadenceIPadBoardCardGestureTests {
             CadenceSourceScan.declarationBody("private struct iOSListKanbanColumn: View", in: source)
         )
         #expect(column.count > 1_000, "non-vacuity: the column read as \(column.count) characters")
-        #expect(CadenceSourceScan.matchCount(#"\.dropDestination\(for: String\.self\)"#, in: column) == 2,
-                "the column and each card are the two drop targets ([[T-8271]])")
+        #expect(CadenceSourceScan.matchCount(#"\.dropDestination\(for: String\.self\)"#, in: column) == 3,
+                "the column, each card ([[T-8271]]) and the end slot ([[T-16503]]) are the three drop targets")
         #expect(CadenceSourceScan.matchCount(#"onDropCard\(items, nil\)"#, in: column) == 1, "the column body drops to the end")
         #expect(CadenceSourceScan.matchCount(#"onDropCard\(items, task\)"#, in: column) == 1, "a card is not a drop target")
+        #expect(CadenceSourceScan.matchCount(#"onDropAtColumnEnd\(items\)"#, in: column) == 1, "the end slot is not a drop target")
+        #expect(CadenceSourceScan.matchCount(#"if !tasks\.isEmpty \{\s*columnEndDropSlot\s*\}"#, in: column) == 1,
+                "the column no longer draws its end slot under the last open card")
 
         let panel = try #require(
             CadenceSourceScan.declarationBody("struct iOSListKanbanPanel: View", in: source)
         )
         #expect(
-            CadenceSourceScan.matchCount(#"onDropCard:\s*\{\s*items, target in\s*CadenceKanbanCardDrop\.drop\("#, in: panel) == 1,
+            CadenceSourceScan.matchCount(#"\{\s*items, slot in\s*CadenceKanbanCardDrop\.drop\("#, in: panel) == 1,
             "the board builds its columns without wiring their drop to the shared write"
         )
         #expect(
-            CadenceSourceScan.matchCount(#"intoColumn: column\.title,\s*before: target,"#, in: panel) == 1,
+            CadenceSourceScan.matchCount(#"intoColumn: column\.title,\s*at: slot,"#, in: panel) == 1,
             "the board drops every card at the column's end whatever card it was set down on"
         )
+        #expect(CadenceSourceScan.matchCount(#"onDropCard:\s*\{\s*items, target in\s*dropCard\(items, \.before\(target\)\)"#, in: panel) == 1,
+                "a card or body drop no longer names the card it was set down on")
+        #expect(CadenceSourceScan.matchCount(#"onDropAtColumnEnd:\s*\{\s*items in\s*dropCard\(items, \.columnEnd\)"#, in: panel) == 1,
+                "the end slot's drop is not the column-end write")
     }
 }
 #endif

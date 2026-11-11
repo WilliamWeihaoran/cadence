@@ -13,7 +13,9 @@ struct ListSectionsKanbanView: View {
     var highlightedSectionName: String? = nil
 
     @State private var localShowArchived = false
-    @State private var draggingSectionName: String?
+    /// The column drag in flight ([[T-16502]]): ended by a column's drop or by the pointer coming
+    /// up, so a drag released over no column cannot leave the board faded.
+    @State private var columnDrag = KanbanColumnDrag()
     @State private var activeHighlightSectionName: String?
     /// Set when the store refused a column drag (T-870). The columns are already back in their old
     /// order by then, so the board and this sentence agree.
@@ -109,20 +111,20 @@ struct ListSectionsKanbanView: View {
                                     sortDirection: sortDirection,
                                     area: area,
                                     project: project,
-                                    isBeingDragged: draggingSectionName?.caseInsensitiveCompare(section.name) == .orderedSame,
-                                    isAnotherSectionBeingDragged: draggingSectionName != nil && draggingSectionName?.caseInsensitiveCompare(section.name) != .orderedSame,
+                                    isBeingDragged: columnDrag.isDragging(section.name),
+                                    isAnotherSectionBeingDragged: columnDrag.isDraggingAnother(than: section.name),
                                     isHighlighted: activeHighlightSectionName?.caseInsensitiveCompare(section.name) == .orderedSame,
                                     onReorderBefore: { movingName in
                                         let reordered = reorderSection(named: movingName, onto: section.name)
                                         DispatchQueue.main.async {
-                                            draggingSectionName = nil
+                                            columnDrag.end()
                                         }
                                         return reordered
                                     }
                                 )
                                 .id(section.id)
                                 .onDrag {
-                                    draggingSectionName = section.name
+                                    endColumnDragOnRelease(columnDrag.begin(section.name))
                                     return NSItemProvider(object: NSString(string: "\(kanbanSectionDragPrefix)\(section.name)"))
                                 } preview: {
                                     columnDragPreview(for: section)
@@ -150,6 +152,18 @@ struct ListSectionsKanbanView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .clipped()
         .cadenceTracksDayChanges($observedDay)
+    }
+
+    /// Ends the column drag numbered `generation` once the left mouse button is up ([[T-16502]]).
+    /// A drop on a column ends it sooner, through `onReorderBefore`; this is the ending a drag
+    /// released over the add-column rail, outside the board, or cancelled with Esc gets.
+    private func endColumnDragOnRelease(_ generation: Int) {
+        Task { @MainActor in
+            await KanbanColumnDrag.waitForPointerRelease {
+                NSEvent.pressedMouseButtons & 1 != 0
+            }
+            columnDrag.pointerReleased(generation: generation)
+        }
     }
 
     private func applyHighlightIfNeeded(with proxy: ScrollViewProxy) {

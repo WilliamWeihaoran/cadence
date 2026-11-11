@@ -3,6 +3,66 @@ import SwiftData
 import SwiftUI
 
 let kanbanSectionDragPrefix = "kanban-section::"
+
+/// **The section board's column drag in flight ([[T-16502]]).**
+///
+/// SwiftUI's `.onDrag` says when a drag starts and never when it ends, so the board cleared the
+/// dragged column only from a column's own drop. A column released over the add-column rail,
+/// outside the board, or cancelled with Esc reached no column: the dragged column stayed faded
+/// (0.42 opacity, 0.972 scale) and every other column drew the column-drop bar under the next
+/// card drag. The board now also ends the drag when the pointer comes up
+/// (`waitForPointerRelease`), whatever it was released over -- the one signal every ending shares.
+///
+/// `generation` numbers each drag, so a release watched for one drag can never end a newer one.
+nonisolated struct KanbanColumnDrag: Equatable {
+    private(set) var sectionName: String?
+    private(set) var generation = 0
+
+    /// A column drag began: the number its release must quote to end it.
+    mutating func begin(_ name: String) -> Int {
+        generation += 1
+        sectionName = name
+        return generation
+    }
+
+    /// A column took the drop: the drag is over, whichever drag it was.
+    mutating func end() {
+        sectionName = nil
+    }
+
+    /// The pointer came up after the drag numbered `generation` began. Ends that drag, and only it.
+    mutating func pointerReleased(generation released: Int) {
+        guard released == generation else { return }
+        sectionName = nil
+    }
+
+    /// Whether `name` is the column being dragged (case-insensitive, as columns are matched).
+    func isDragging(_ name: String) -> Bool {
+        sectionName?.caseInsensitiveCompare(name) == .orderedSame
+    }
+
+    /// Whether a column other than `name` is being dragged, so `name` is a place it could land.
+    func isDraggingAnother(than name: String) -> Bool {
+        sectionName != nil && !isDragging(name)
+    }
+
+    /// Returns once `isPressed` answers `false`, asking every `interval`; returns early if the
+    /// task is cancelled. The board passes the left mouse button's state: a drag ends, by drop,
+    /// by Esc or released over nothing, with that button up.
+    @MainActor
+    static func waitForPointerRelease(
+        every interval: Duration = .milliseconds(80),
+        isPressed: @MainActor () -> Bool
+    ) async {
+        while isPressed() {
+            do {
+                try await Task.sleep(for: interval)
+            } catch {
+                return
+            }
+        }
+    }
+}
 // The section swatch palette is `CadenceColorPalette.sectionColors`, in `Shared/`. It was eight
 // hex literals here (T-246) — a fourth palette, in a macOS view file, for a field iOS also edits.
 // The values did not change when they moved; see that declaration for why five of them are hexes

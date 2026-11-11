@@ -130,4 +130,78 @@ struct KanbanColumnDropOverCardTests {
         #expect(cardDrops == 2, "the open cards and the finished cards: \(cardDrops)")
     }
 }
+
+/// **[[T-16502]]: a column drag that ends on no column ends anyway.**
+///
+/// The board's drag state was set in `.onDrag` and cleared only by a column's drop, and SwiftUI
+/// says nothing when a drag ends. Released over the add-column rail, outside the board, or
+/// cancelled with Esc, the dragged column stayed faded and every other column drew the column-drop
+/// bar under the next card drag. The board now ends it when the pointer comes up.
+@MainActor
+struct KanbanColumnDragEndTests {
+    /// Red before the fix: nothing but a column's drop ever cleared the drag.
+    @Test func aDragReleasedOverNoColumnLeavesNoColumnFaded() {
+        var drag = KanbanColumnDrag()
+        let generation = drag.begin("Doing")
+        #expect(drag.isDragging("doing"))
+        #expect(drag.isDraggingAnother(than: "Todo"))
+
+        drag.pointerReleased(generation: generation)
+
+        #expect(!drag.isDragging("Doing"), "the released column is still drawn faded")
+        #expect(!drag.isDraggingAnother(than: "Todo"), "another column still draws the column-drop bar")
+        #expect(drag.sectionName == nil)
+    }
+
+    /// A release watched for an older drag cannot end the one in flight.
+    @Test func aStaleReleaseDoesNotEndANewerDrag() {
+        var drag = KanbanColumnDrag()
+        let first = drag.begin("Doing")
+        let second = drag.begin("Todo")
+        #expect(first != second)
+
+        drag.pointerReleased(generation: first)
+
+        #expect(drag.isDragging("Todo"), "an earlier drag's release ended the newer one")
+        drag.pointerReleased(generation: second)
+        #expect(drag.sectionName == nil)
+    }
+
+    /// A column's drop still ends the drag, and the dragged column is not a place it lands.
+    @Test func aDropEndsTheDragAndTheDraggedColumnIsNotATarget() {
+        var drag = KanbanColumnDrag()
+        _ = drag.begin("Doing")
+        #expect(!drag.isDraggingAnother(than: "DOING"))
+        drag.end()
+        #expect(drag.sectionName == nil)
+        #expect(!drag.isDraggingAnother(than: "Todo"))
+    }
+
+    /// The wait returns once the button is up, having asked until then -- not before, not never.
+    @Test func theWaitReturnsOnceThePointerIsUp() async {
+        var answers = [true, true, true, false]
+        var asked = 0
+        await KanbanColumnDrag.waitForPointerRelease(every: .milliseconds(1)) {
+            asked += 1
+            return answers.isEmpty ? false : answers.removeFirst()
+        }
+        #expect(asked == 4, "the wait asked \(asked) times; the button came up on the fourth")
+    }
+
+    /// The wiring: the board's drag starts the release watch, both ends clear the drag, and the
+    /// columns read the drag's own answers.
+    @Test func theBoardEndsAColumnDragOnRelease() throws {
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/KanbanListSectionSupportViews.swift")
+        )
+        #expect(CadenceSourceScan.matchCount(#"endColumnDragOnRelease\(columnDrag\.begin\(section\.name\)\)"#, in: source) == 1,
+                "the column drag no longer watches for its release")
+        #expect(CadenceSourceScan.matchCount(#"columnDrag\.pointerReleased\(generation: generation\)"#, in: source) == 1)
+        #expect(CadenceSourceScan.matchCount(#"NSEvent\.pressedMouseButtons & 1 != 0"#, in: source) == 1)
+        #expect(CadenceSourceScan.matchCount(#"columnDrag\.end\(\)"#, in: source) == 1, "a column's drop no longer ends the drag")
+        #expect(CadenceSourceScan.matchCount(#"draggingSectionName"#, in: source) == 0, "a second drag state is back")
+        #expect(CadenceSourceScan.matchCount(#"isBeingDragged: columnDrag\.isDragging\(section\.name\)"#, in: source) == 1)
+        #expect(CadenceSourceScan.matchCount(#"isAnotherSectionBeingDragged: columnDrag\.isDraggingAnother\(than: section\.name\)"#, in: source) == 1)
+    }
+}
 #endif
