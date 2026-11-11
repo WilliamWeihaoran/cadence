@@ -145,7 +145,8 @@ struct ListTasksView: View {
                     todayKey: todayKey,
                     dragOverTaskID: $dragOverTaskID,
                     onToggle: { toggleGroup(group.id) },
-                    onReorderTask: { dropTask(droppedID: $0, targetID: $1, into: group) }
+                    onReorderTask: { dropTask(droppedID: $0, targetID: $1, into: group) },
+                    onRefileTask: { refileIntoEmptySection(droppedID: $0, $1) }
                 )
             }
 
@@ -282,6 +283,21 @@ struct ListTasksView: View {
     ///
     /// - Returns: Whether the new order is in the store, so the row springs back on a refusal
     ///   rather than sitting in a place nothing holds.
+    /// [[T-15821]]: a drop on an empty section's header. The same refile and failure notice as
+    /// `dropTask`'s, with no renumber after it — an empty section has no row to land beside.
+    private func refileIntoEmptySection(droppedID: UUID, _ refiling: ListTasksGroupDrop.Refiling) -> Bool {
+        guard let dropped = tasks.first(where: { $0.id == droppedID }) else { return false }
+        reorderOffScreenNotice = nil
+        guard ListTasksGroupDrop.refile(dropped, refiling, todayKey: todayKey, modelContext: modelContext) else {
+            reorderFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return false
+        }
+        reorderFailureNotice = nil
+        frozenGroupedTasks = nil
+        frozenTaskOrder = nil
+        return true
+    }
+
     private func reorderTask(droppedID: UUID, targetID: UUID) -> Bool {
         // **Asked before the drop lands, not after it (T-1119).** The question is about the
         // arrangement this drop is leaving, and these are live rows — by the time `reorderTask` has

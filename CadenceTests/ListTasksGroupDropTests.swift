@@ -189,6 +189,55 @@ struct ListTasksGroupDropTests {
         #expect(ListTasksGroupDrop.headerDropTarget(droppedID: tasks[0].id, in: doToday) == tasks[1].id)
     }
 
+    /// **[[T-15821]]** — an EMPTY section's header files the task under that section. Grouped by
+    /// section the tab draws empty sections too, and an empty one has no row for
+    /// `headerDropTarget` to aim at, so before this the header refused the drag outright.
+    @Test func aDropOnAnEmptySectionsHeaderFilesTheTaskUnderIt() throws {
+        let (container, modelContext) = try store()
+        let tasks = try seeded([("Spec", "Documents"), ("Ship", "Documents")], in: modelContext)
+        let groups = CadenceTaskQuerySupport.sectionGroups(
+            from: tasks, sectionNames: ["Documents", "Later"], includingEmpty: true
+        ).map { ListTasksGroup(id: $0.id, title: $0.title, tasks: $0.tasks) }
+        let later = try #require(groups.first { $0.title == "Later" })
+        let documents = try #require(groups.first { $0.title == "Documents" })
+        #expect(later.tasks.isEmpty)
+        #expect(ListTasksGroupDrop.headerDropTarget(droppedID: tasks[0].id, in: later) == nil)
+
+        let refiling = try #require(
+            ListTasksGroupDrop.emptySectionRefiling(in: later),
+            "the empty Later header refuses a task from Documents"
+        )
+        #expect(refiling == .section("Later"))
+        #expect(ListTasksGroupDrop.refile(tasks[0], refiling, todayKey: Self.todayKey, modelContext: modelContext))
+        #expect(try storedTask(tasks[0].id, in: container)?.resolvedSectionName == "Later")
+        #expect(try storedTask(tasks[1].id, in: container)?.resolvedSectionName == "Documents")
+
+        #expect(ListTasksGroupDrop.emptySectionRefiling(in: documents) == nil,
+                "a non-empty section answers through its first row, not this path")
+        #expect(ListTasksGroupDrop.emptySectionRefiling(in: ListTasksGroup(id: "all", title: "Tasks", tasks: [])) == nil,
+                "the ungrouped group names no section")
+        #expect(ListTasksGroupDrop.emptySectionRefiling(in: ListTasksGroup(id: "priority-high", title: "High", tasks: [])) == nil)
+    }
+
+    /// The empty header's call site: after the first-row answer, it falls through to the refile.
+    @Test func theListTabsEmptySectionHeaderRefilesThroughTheTab() throws {
+        let support = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/ListDetailSupportViews.swift")
+        let start = try #require(support.range(of: "struct ListTasksGroupSectionView: View"))
+        let end = try #require(support.range(of: "struct ListTasksCompletedSectionView: View"))
+        let body = String(support[start.upperBound..<end.lowerBound])
+        let first = try #require(body.range(of: "ListTasksGroupDrop.headerDropTarget(droppedID: droppedID, in: group)"))
+        let empty = try #require(body.range(of: "ListTasksGroupDrop.emptySectionRefiling(in: group)"),
+                                 "the header never asks about an empty section")
+        #expect(first.lowerBound < empty.lowerBound)
+        #expect(body.contains("return onRefileTask(droppedID, refiling)"))
+
+        let components = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/ListDetailComponents.swift")
+        #expect(components.contains("onRefileTask: { refileIntoEmptySection(droppedID: $0, $1) }"))
+        let refile = try CadenceCommitSurfaceScan.declarationBody(named: "refileIntoEmptySection", in: components)
+        #expect(refile.contains("ListTasksGroupDrop.refile(dropped, refiling,"))
+        #expect(refile.contains("CadencePendingChangePersistence.editFailureNotice"))
+    }
+
     /// The header's call site: it hands its drop to the same row path, aimed at the first row.
     @Test func theListTabsHeaderHandsItsDropToTheRowPath() throws {
         let source = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/ListDetailSupportViews.swift")

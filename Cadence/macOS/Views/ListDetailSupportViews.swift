@@ -72,6 +72,21 @@ enum ListTasksGroupDrop {
     /// groups `priority-…` and the date buckets by name — and the header view is handed the group,
     /// not the page's grouping. `ListTasksGroupDropTests` builds its groups with those same
     /// functions, so a renamed id reddens there rather than turning every header off.
+    /// **[[T-15821]] — an EMPTY section's header files the dropped task under that section.**
+    /// Grouped by section, the tab draws every configured section, empty ones included, and an
+    /// empty section has no rows — so its header is its only drop site, and `headerDropTarget`
+    /// (which answers through the group's first row) is `nil` for exactly the section the user is
+    /// trying to fill. This is the refiling half of the row path without the renumber: there is no
+    /// row to land beside, so the task keeps its `order`.
+    ///
+    /// Section groups only (`section-…`, the id `CadenceTaskQuerySupport.sectionGroups` spells):
+    /// they are the only groups this tab draws empty. A non-empty group answers through
+    /// `headerDropTarget` instead, so the two never both claim one drop.
+    static func emptySectionRefiling(in group: ListTasksGroup) -> Refiling? {
+        guard group.tasks.isEmpty, group.id.hasPrefix("section-") else { return nil }
+        return .section(group.title)
+    }
+
     static func headerDropTarget(droppedID: UUID, in group: ListTasksGroup) -> UUID? {
         guard let first = group.tasks.first,
               !group.tasks.contains(where: { $0.id == droppedID }) else { return nil }
@@ -126,6 +141,9 @@ struct ListTasksGroupSectionView: View {
     /// Answers whether the new order is in the store (T-869). `Void` until then, over a renumber
     /// that reached no commit — so the row below reported every drop as landed.
     let onReorderTask: (UUID, UUID) -> Bool
+    /// Files a task dropped on an EMPTY section's header under it, answering whether the store
+    /// took it ([[T-15821]]).
+    let onRefileTask: (UUID, ListTasksGroupDrop.Refiling) -> Bool
 
     var body: some View {
         Group {
@@ -141,10 +159,14 @@ struct ListTasksGroupSectionView: View {
             // [[T-5840]]: a task let go over the header joins the group, as on All Tasks.
             .dropDestination(for: String.self) { items, _ in
                 guard let payload = items.first,
-                      let droppedID = TaskDragPayload.listTaskID(from: payload),
-                      let targetID = ListTasksGroupDrop.headerDropTarget(droppedID: droppedID, in: group)
+                      let droppedID = TaskDragPayload.listTaskID(from: payload)
                 else { return false }
-                return onReorderTask(droppedID, targetID)
+                if let targetID = ListTasksGroupDrop.headerDropTarget(droppedID: droppedID, in: group) {
+                    return onReorderTask(droppedID, targetID)
+                }
+                // [[T-15821]]: an empty section has no first row to aim at.
+                guard let refiling = ListTasksGroupDrop.emptySectionRefiling(in: group) else { return false }
+                return onRefileTask(droppedID, refiling)
             }
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
