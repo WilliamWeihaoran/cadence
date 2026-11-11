@@ -1225,6 +1225,47 @@ struct CadenceScheduleDraftTaskEditingTests {
         #expect(draft == chosen, "the refusal touched the draft the panel is still showing")
     }
 
+    /// [[T-16625]]: an inspector's notes are written as typed, on both platforms, so Cancel keeps
+    /// them, and Save — iOS's and the Mac's, through the one payload — never writes back the copy
+    /// the draft opened with over a change made while the inspector was open.
+    @Test("Typed notes land without Save, and Save never writes the opened notes back")
+    func typedNotesLandWithoutSaveAndSaveNeverWritesTheOpenedNotesBack() throws {
+        let (container, context) = try store()
+        let work = Area(name: "Work")
+        context.insert(work)
+        let task = try filedTask(in: context, area: work)
+        let opened = CadenceScheduleDraft(editing: task)
+        var draft = opened
+        draft.title = "Ship the beta"
+        #expect(draft.notes == "Before", "non-vacuity: the draft opened with the stored notes")
+
+        // Typing, then Cancel: nothing but the write-through runs, and the notes are in the store.
+        #expect(CadenceTaskInspectorNotes.writeTyped("Typed, then cancelled", to: task, in: context))
+        #expect(!context.hasChanges, "the typed notes were left pending, not committed")
+        let afterCancel = try #require(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(afterCancel.notes == "Typed, then cancelled", "Cancel threw away typed notes")
+        #expect(afterCancel.title == "Ship the fix", "the write-through committed a drafted field")
+
+        // A well writing back the text it already shows is not an edit and commits nothing.
+        var commits = 0
+        #expect(CadenceTaskInspectorNotes.writeTyped("Typed, then cancelled", to: task, in: context) { _ in commits += 1 })
+        #expect(commits == 0)
+
+        // Another writer moves the notes while the panel is open; Save must not undo it.
+        task.notes = "Synced from another device"
+        try context.save()
+        let payload = CadenceTaskInspectorNotes.savePayload(draft, for: task)
+        #expect(payload.title == "Ship the beta", "the payload dropped a drafted field")
+        let landed = CadenceTaskEditDraftCommit.save(
+            payload, opened: opened, to: task, area: work, project: nil,
+            allTasks: [task], scope: .thisTask, in: context, reconciler: .inert
+        )
+        #expect(landed)
+        let stored = try #require(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(stored.title == "Ship the beta")
+        #expect(stored.notes == "Synced from another device", "Save wrote the opened notes back over another writer")
+    }
+
     /// A series edit reaches later occurrences only when asked to, and the rule is applied only
     /// when it moved — applying it stamps series metadata.
     @Test("A series edit reaches the later occurrences only for this-and-future")
@@ -1377,8 +1418,16 @@ struct CadenceTaskEditorPanelAdoptionTests {
         ] {
             #expect(!sheet.contains(retired), "the task editor still carries \(retired)")
         }
-        // The note is drafted with everything else.
-        #expect(sheet.contains("notesText: $draft.notes"))
+        // [[T-16625]]: the note is written as typed, as the Mac inspector's is — not drafted.
+        #expect(!sheet.contains("notesText: $draft.notes"), "the task sheet drafts its notes again")
+        #expect(sheet.contains("notesText: taskNotesBinding"))
+        let binding = try #require(CadenceSourceScan.declarationBody("private var taskNotesBinding: Binding<String>", in: sheet))
+        #expect(binding.contains("CadenceTaskInspectorNotes.writeTyped($0, to: task, in: modelContext)"))
+        let applySave = try #require(CadenceSourceScan.functionBody(named: "applySave", in: sheet))
+        #expect(applySave.contains("CadenceTaskInspectorNotes.savePayload(draft, for: task)"))
+        let mac = try code("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift")
+        let macSave = try #require(CadenceSourceScan.declarationBody("enum TaskInspectorScheduleCommit", in: mac))
+        #expect(macSave.contains("CadenceTaskInspectorNotes.savePayload(draft, for: task)"), "the two inspectors' Save read notes apart")
         // An unsaved draft is not discarded by a swipe.
         // T-5170: the guard also sees notes the well has not yet written to the draft; since
         // [[T-5359]] it reads both through `CadenceTaskSheetUnsavedWork`.

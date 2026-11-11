@@ -221,3 +221,49 @@ enum CadenceTaskEditDraftCommit {
         }
     }
 }
+
+/// **[[T-16625]]: a task inspector's notes are written as typed, on both platforms.**
+///
+/// The Mac inspector's notes box always wrote through (`TaskDetailNotesSection`), and the iOS
+/// sheet drafted its notes and wrote them only on Save — so Cancel kept typed notes on the Mac and
+/// threw them away on iOS, with no hardware reason for the difference ([[T-8201]]). Write-through
+/// wins, for reasons the code holds rather than taste:
+///
+/// - **The notes well mints real tasks.** Turning a line into an embedded task inserts an
+///   `AppTask` the moment it is asked for (both platforms' markdown surfaces), so a drafted note
+///   discarded by Cancel left that task orphaned with nothing pointing at it.
+/// - **Every other notes editor writes through**: the Mac's pop-out Task Notes panel and Focus
+///   panel over these same notes, and the event editor's Notes field on both platforms
+///   ([[T-8572]]: committed notes are not an unsaved edit).
+/// - **A drafted copy overwrote other writers.** Save wrote the copy the sheet opened with back
+///   over a sync, MCP or second-editor change made while it was open.
+///
+/// So notes are an action on the record, like a subtask or a tag: Cancel does not take them back,
+/// and Save commits the panel's fields with the notes the task holds **now**.
+@MainActor
+enum CadenceTaskInspectorNotes {
+
+    /// The inspector's write of typed notes: lands them and commits at once, through the one
+    /// typed-content commit every notes editor uses. Text equal to the stored notes writes nothing,
+    /// so a well loading or normalising its binding is not an edit. `false` means the store
+    /// refused; the text stays pending in the context, as it does on every other typed surface.
+    @discardableResult
+    static func writeTyped(
+        _ content: String,
+        to task: AppTask,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        guard task.notes != content else { return true }
+        task.notes = content
+        return CadencePendingChangePersistence.commitTypedContent(in: modelContext, commit: commit)
+    }
+
+    /// The draft an inspector's Save commits: the panel's fields, with the task's current notes in
+    /// place of the copy the draft opened with — so Save never writes notes back at all.
+    static func savePayload(_ draft: CadenceScheduleDraft, for task: AppTask) -> CadenceScheduleDraft {
+        var payload = draft
+        payload.notes = task.notes
+        return payload
+    }
+}

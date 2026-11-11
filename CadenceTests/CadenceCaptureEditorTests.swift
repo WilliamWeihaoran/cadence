@@ -112,7 +112,8 @@ struct CadenceCaptureEditorTests {
         let status = try #require(CadenceSourceScan.declarationBody("private var statusActionsSection: some View", in: task))
         #expect(status.contains("onToggleCompletion: toggleCompletion"))
         #expect(task.contains("showDeleteConfirmation = true"))
-        #expect(task.contains("notesText: $draft.notes"))
+        // [[T-16625]]: the task sheet writes its notes as typed, as the Mac inspector does.
+        #expect(task.contains("notesText: taskNotesBinding"))
     }
 
     @Test func captureForwardsAndEnforcesReadOnlyAndStatus() throws {

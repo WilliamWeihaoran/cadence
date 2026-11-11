@@ -763,7 +763,8 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
 }
 
 /// The panel drafts recurrence alongside title, placement and schedule. Notes and record actions
-/// still commit independently, so Save reads their current values after the host's flush.
+/// commit independently, so Save reads their current values after the host's flush — on both
+/// platforms since [[T-16625]] (`CadenceTaskInspectorNotes`).
 @MainActor
 enum TaskInspectorScheduleCommit {
     static func needsRecurrenceScope(
@@ -789,8 +790,9 @@ enum TaskInspectorScheduleCommit {
         if CadenceTaskComposerSupport.selectedAreaID(selection) != nil && area == nil { return false }
         if CadenceTaskComposerSupport.selectedProjectID(selection) != nil && project == nil { return false }
         let current = CadenceScheduleDraft(editing: task)
-        var payload = draft
-        payload.notes = task.notes
+        // [[T-16625]]: notes are written as typed, so Save carries the task's own, never the copy
+        // the draft opened with — the one rule the iOS sheet's Save reads too.
+        var payload = CadenceTaskInspectorNotes.savePayload(draft, for: task)
         // An untouched recurrence draft must not overwrite a sync or another editor's change.
         if !draft.changesRecurrence(from: opened) {
             payload.repeatRule = current.repeatRule

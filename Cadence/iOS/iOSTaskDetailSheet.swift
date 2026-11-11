@@ -14,8 +14,9 @@ import SwiftUI
 /// This file is what the panel cannot hold, carried in its host slot: the tags, the task's series
 /// (Repeat, its end condition and the logged time, in `iOSTaskFieldListSection`), the subtasks, the
 /// markdown well, the status transitions and completion, and Focus. Those are **actions on the
-/// record**, not fields of the draft — a subtask added, a tag removed or a task completed lands the
-/// moment it is asked for, exactly as before, and Cancel does not take it back.
+/// record**, not fields of the draft — a subtask added, a tag removed, a task completed or a note
+/// typed lands the moment it is asked for, and Cancel does not take it back ([[T-16625]]: the
+/// notes too, as the Mac inspector's always have; `CadenceTaskInspectorNotes` says why).
 struct iOSTaskDetailSheet: View {
     @Bindable var task: AppTask
     @Environment(\.dismiss) private var dismiss
@@ -38,7 +39,7 @@ struct iOSTaskDetailSheet: View {
     /// same second alert `iOSTaskRow` carries — see `deleteTask()`.
     @State private var deleteFailed = false
     @State private var isNotesFocused = false
-    /// The Notes well's held-back typing, flushed before Save reads `draft` ([[T-5170]]).
+    /// The Notes well's held-back typing, flushed before Save commits ([[T-5170]]).
     @State private var notesFlush = iOSMarkdownEditorFlush()
     /// The one slot this sheet reports a refused save through (T-497, T-646): the panel draws it
     /// beside its footer, whether the save was asked directly or after the series-scope question.
@@ -317,16 +318,26 @@ struct iOSTaskDetailSheet: View {
         }
     }
 
-    /// The markdown well, writing the **draft's** note: it is saved with everything else the panel
-    /// holds, in the one commit, rather than on each keystroke behind a swallowed `try?`.
+    /// The markdown well, writing **the task's** notes as typed ([[T-16625]]): the well holds typing
+    /// back and writes it at its own flush, and each write commits through
+    /// `CadenceTaskInspectorNotes.writeTyped` — the Mac inspector's model, so Cancel keeps typed
+    /// notes on both platforms. It used to write `$draft.notes`, which Cancel threw away (orphaning
+    /// any task the well had embedded) and Save wrote back over a change made elsewhere.
     private var notesSection: some View {
         iOSTaskNotesSection(
-            notesText: $draft.notes,
+            notesText: taskNotesBinding,
             isFocused: $isNotesFocused,
             flush: notesFlush,
             referenceNotes: allNotes,
             referenceTasks: allTasks,
             onOpenReference: openMarkdownReference
+        )
+    }
+
+    private var taskNotesBinding: Binding<String> {
+        Binding(
+            get: { task.notes },
+            set: { CadenceTaskInspectorNotes.writeTyped($0, to: task, in: modelContext) }
         )
     }
 
@@ -353,8 +364,8 @@ struct iOSTaskDetailSheet: View {
     /// A task with no series has nothing to propagate to, so there is no scope to ask about and the
     /// save lands at once — the rule the per-field series edit this replaces followed.
     private func save() -> String? {
-        // [[T-5170]]: first, so `draft.notes` holds the words typed just before the tap. Dropping
-        // focus alone writes them a frame later, after the sheet has committed and closed.
+        // [[T-5170]]: first, so the words typed just before the tap are written. Dropping focus
+        // alone writes them a frame later, after the sheet has committed and closed.
         notesFlush.flush()
         isNotesFocused = false
         if draft.changesRecurrence(from: openedDraft) && task.isRecurrenceSeriesMember {
@@ -380,8 +391,9 @@ struct iOSTaskDetailSheet: View {
         if canAddSubtask {
             guard addSubtask() else { return }
         }
+        // [[T-16625]]: the notes the task holds now, never the copy the sheet opened with.
         guard CadenceTaskEditDraftCommit.save(
-            draft,
+            CadenceTaskInspectorNotes.savePayload(draft, for: task),
             opened: openedDraft,
             to: task,
             area: selectedArea,
