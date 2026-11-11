@@ -74,7 +74,7 @@ enum CadenceTaskDropSupport {
         // Inbox is the absence of a list, and a list is what owns sections, so there is nothing to
         // name there — the same rule `CadenceTaskComposerSupport.showsSectionRow` applies.
         if task.project != nil || task.area != nil {
-            parts.append("section:\(task.resolvedSectionName)")
+            parts.append("section:\(encodedSectionName(task.resolvedSectionName))")
         }
         if !task.scheduledDate.isEmpty {
             parts.append("date:\(task.scheduledDate)")
@@ -139,7 +139,7 @@ enum CadenceTaskDropSupport {
             // be inventing a date the destination never named.
             return "list:\(key)\(separator)date:today"
         case .section(let listKey, _, let name):
-            return "list:\(listKey)\(separator)section:\(name)"
+            return "list:\(listKey)\(separator)section:\(encodedSectionName(name))"
         case .priority(let priority):
             // The one identity the model already spells this way: `priorityDisplayGroups` populates
             // `CadenceTaskDisplayGroup.dropKey` with exactly this string. Priority is withheld from
@@ -198,6 +198,33 @@ enum CadenceTaskDropSupport {
     static func showsWhenEmpty(_ identity: CadenceTaskGroupDropIdentity?) -> Bool {
         guard let identity else { return false }
         return dropKey(forGroup: identity) != nil
+    }
+
+    /// **A section name is the one free-text value a drop key carries** ([[T-16081]]). Every other
+    /// part is a UUID, a fixed word or a date key, so none can hold the `|` the parts are split on;
+    /// a section name typed by the owner can. Spelled raw, a section called "Errands | Home" split
+    /// into `section:Errands ` and a stray ` Home`, the seed asked for a section named "Errands"
+    /// that the list does not have, and `normalizedSectionName` filed the new task under the list's
+    /// FIRST section -- a `+` dropped on one section's rows landed its task in another. So the
+    /// value is percent-escaped, and only for `%` and `|`: a name without either (every name the
+    /// existing keys and tests spell) is byte-identical on the wire, and a hand-written key holding
+    /// neither `%25` nor `%7C` is read as the literal text it is.
+    ///
+    /// Spelled by hand rather than with `addingPercentEncoding`, which escapes every non-ASCII
+    /// character whatever set it is handed, so "Café" would have changed on the wire too.
+    static func encodedSectionName(_ name: String) -> String {
+        name
+            .replacingOccurrences(of: "%", with: "%25")
+            .replacingOccurrences(of: String(separator), with: "%7C")
+    }
+
+    /// The inverse. Split on `%25` first: in an encoded value every `%` opens either `%25` or
+    /// `%7C`, so no `%7C` can straddle a split, and text holding neither comes back untouched.
+    static func decodedSectionName(_ value: String) -> String {
+        value
+            .components(separatedBy: "%25")
+            .map { $0.replacingOccurrences(of: "%7C", with: String(separator)) }
+            .joined(separator: "%")
     }
 
     private static func listKey(for task: AppTask) -> String {
@@ -411,7 +438,7 @@ enum CadenceTaskDropSupport {
         if part.hasPrefix("list:") {
             seed.container = container(fromListKey: String(part.dropFirst(5)))
         } else if part.hasPrefix("section:") {
-            let name = String(part.dropFirst(8)).trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = decodedSectionName(String(part.dropFirst(8))).trimmingCharacters(in: .whitespacesAndNewlines)
             seed.sectionName = name.isEmpty ? TaskSectionDefaults.defaultName : name
         } else if part.hasPrefix("date:") {
             if let dateKey = dateValue(String(part.dropFirst(5)), todayKey: todayKey) {

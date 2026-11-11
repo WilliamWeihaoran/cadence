@@ -190,6 +190,46 @@ struct CadenceTaskDropSupportTests {
         #expect(seed.sectionName == TaskSectionDefaults.defaultName)
     }
 
+    /// [[T-16081]]: a section name is owner-typed text and may hold the `|` the key's parts are
+    /// split on. Spelled raw, "Errands | Home" seeded a section called "Errands" and the new task
+    /// landed in the list's first section instead. A row's key and a section group's key must
+    /// both hand the whole name back, `%` included.
+    @Test func aSectionNameHoldingTheSeparatorRoundTripsWhole() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let project = Project(name: "Kitchen")
+        let task = AppTask(title: "Order tiles")
+        task.project = project
+        task.sectionName = "Errands | Home 100%"
+        task.scheduledDate = "2026-08-20"
+        context.insert(project)
+        context.insert(task)
+
+        let rowSeed = CadenceTaskDropSupport.seed(
+            forDropKey: CadenceTaskDropSupport.dropKey(for: task),
+            todayKey: "2026-08-17"
+        )
+        #expect(rowSeed.sectionName == "Errands | Home 100%")
+        #expect(rowSeed.doDateKey == "2026-08-20")
+        #expect(rowSeed.container == .project(project.id))
+
+        let groupKey = try #require(CadenceTaskDropSupport.dropKey(forGroup: CadenceTaskDropSupport.groupIdentity(
+            container: .project(project.id),
+            listName: "Kitchen",
+            sectionName: "Errands|Home"
+        )))
+        let groupSeed = CadenceTaskDropSupport.seed(forDropKey: groupKey, todayKey: "2026-08-17")
+        #expect(groupSeed.sectionName == "Errands|Home")
+        #expect(groupSeed.container == .project(project.id))
+    }
+
+    /// The escape touches only `%` and `|`, so every ordinary name is spelled on the wire exactly as
+    /// before, and a hand-written key that is not valid percent-encoding reads as its literal text.
+    @Test func anOrdinarySectionNameIsSpelledAsBefore() {
+        #expect(CadenceTaskDropSupport.encodedSectionName("Back log · Café") == "Back log · Café")
+        #expect(CadenceTaskDropSupport.decodedSectionName("100% done") == "100% done")
+    }
+
     // MARK: - Dates
 
     @Test func todayResolvesToTheDayHandedIn() {
