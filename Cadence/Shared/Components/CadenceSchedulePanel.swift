@@ -168,6 +168,9 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         let expansion = CadenceSchedulePanelRow.initialExpansion(row)
         panel._isDoExpanded = State(initialValue: expansion.isDoExpanded)
         panel._isDueExpanded = State(initialValue: expansion.isDueExpanded)
+        // [[T-16431]]: a row that opens expanded opens on its own date's month, as a tap does.
+        panel._doViewMonth = State(initialValue: panel.draft.gridMonth(for: .doDate))
+        panel._dueViewMonth = State(initialValue: panel.draft.gridMonth(for: .dueDate))
         return panel
     }
 
@@ -454,7 +457,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                 value: draft.doRowLabel,
                 systemImage: "calendar",
                 color: draft.isDoDateOverdue ? Theme.red : Theme.blue,
-                isExpanded: $isDoExpanded
+                isExpanded: gridExpansion(.doDate)
             )
 
             if isDoExpanded {
@@ -471,7 +474,9 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                     showsClear: draft.subject.isEditing && !draft.startDateKey.isEmpty,
                     onClear: { draft.clearDoDate() },
                     inlineStyle: true,
-                    markedDay: draft.dueDateKey.isEmpty ? nil : DateFormatters.date(from: draft.dueDateKey)
+                    markedDay: draft.dueDateKey.isEmpty ? nil : DateFormatters.date(from: draft.dueDateKey),
+                    // [[T-16431]]: an undated task's grid opens on today without picking it.
+                    hasSelection: draft.hasDoDate
                 )
 
                 CadenceFieldDivider()
@@ -491,7 +496,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                     value: draft.dueRowLabel,
                     systemImage: "calendar.badge.exclamationmark",
                     color: draft.isDueDateOverdue ? Theme.red : Theme.amber,
-                    isExpanded: $isDueExpanded
+                    isExpanded: gridExpansion(.dueDate)
                 )
 
                 // The grid and nothing else. There is no due *time* in the models to put beside it,
@@ -932,6 +937,28 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         $draft.taskDoDate
     }
 
+    /// The Do and Due rows' disclosure, re-anchoring that row's grid on the way open
+    /// ([[T-16431]]). Both months were `@State` seeded with today and nothing moved them, so a
+    /// task done or due in another month opened its grid on this one, its own day off-screen.
+    /// T-8105's rule for the date chips: the grid opens on the field's month every time it opens.
+    private func gridExpansion(_ row: CadenceSchedulePanelRow) -> Binding<Bool> {
+        Binding(
+            get: { row == .doDate ? isDoExpanded : isDueExpanded },
+            set: { opens in
+                if opens {
+                    switch row {
+                    case .doDate: doViewMonth = draft.gridMonth(for: .doDate)
+                    case .dueDate: dueViewMonth = draft.gridMonth(for: .dueDate)
+                    }
+                }
+                switch row {
+                case .doDate: isDoExpanded = opens
+                case .dueDate: isDueExpanded = opens
+                }
+            }
+        )
+    }
+
     private var dueDateBinding: Binding<Date> {
         Binding(
             get: { DateFormatters.date(from: draft.dueDateKey) ?? Date() },
@@ -1193,6 +1220,22 @@ struct CadenceSeriesEndCountRow: View {
 /// existing task has already reached (T-6114). Never keeps the other values, so switching back
 /// finds the count or day the user had; every write reads only the value of the resolved mode.
 extension CadenceScheduleDraft {
+    /// Whether the Do grid has a day to draw as picked ([[T-16431]]). `taskDoDate` hands the grid
+    /// today when there is none, and T-9211's rule is that a seed is not a selection.
+    var hasDoDate: Bool { !startDateKey.isEmpty }
+
+    /// The month `row`'s grid opens on: the first of the month of the row's own date, or of
+    /// `now` while the row has none ([[T-16431]]; `TaskDateChipMonthSupport.viewMonth`'s rule).
+    func gridMonth(
+        for row: CadenceSchedulePanelRow,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Date {
+        let key = row == .doDate ? startDateKey : dueDateKey
+        let anchor = DateFormatters.date(from: key) ?? now
+        return calendar.dateInterval(of: .month, for: anchor)?.start ?? anchor
+    }
+
     /// The Ends rows are drawn only under a Repeat that repeats.
     var showsSeriesEndRows: Bool {
         CadenceTaskRecurrenceEndPresentation.showsEndControls(rule: repeatRule)

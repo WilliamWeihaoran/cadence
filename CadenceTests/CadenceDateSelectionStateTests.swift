@@ -65,7 +65,7 @@ struct CadenceDateSelectionStateTests {
             ("Cadence/macOS/Views/KanbanColumnSupportViews.swift", ["hasSelection: !dueDateKey.isEmpty"]),
             ("Cadence/macOS/Views/TaskInspectorFieldSupportViews.swift", ["hasSelection: isOn"]),
             ("Cadence/macOS/Sheets/CreateTaskSheetSupportViews.swift", ["hasSelection: isOn"]),
-            ("Cadence/Shared/Components/CadenceSchedulePanel.swift", ["hasSelection: !draft.dueDateKey.isEmpty"]),
+            ("Cadence/Shared/Components/CadenceSchedulePanel.swift", ["hasSelection: !draft.dueDateKey.isEmpty", "hasSelection: draft.hasDoDate"]),
             ("Cadence/iOS/iOSTaskRowActionViews.swift", ["hasSelection: !dateKey.isEmpty"]),
         ]
         for (path, needles) in callers {
@@ -74,6 +74,44 @@ struct CadenceDateSelectionStateTests {
                 #expect(source.contains(needle), "\(path) lost `\(needle)`")
             }
         }
+    }
+
+    /// **[[T-16431]]: the schedule panel's Do and Due grids opened on today's month, with an
+    /// undated task's Do grid drawing today as picked.**
+    ///
+    /// The panel is the task editor on both platforms (the Mac inspector, the iOS detail sheet, the
+    /// inline panel). Its two grid months were `@State` seeded with today and never moved, so a task
+    /// done in March opened its Do grid on November with the picked day off-screen; and the Do grid
+    /// was the one T-9211 caller left on the default `hasSelection: true`, so "No date" sat over a
+    /// filled Today pill and a filled today cell.
+    @Test func theSchedulePanelGridsOpenOnTheirOwnDatesMonth() throws {
+        let now = try #require(DateFormatters.date(from: "2026-11-11"))
+        var draft = CadenceScheduleDraft(dateKey: "2027-03-17", startMin: 9 * 60, kind: .task)
+        draft.dueDateKey = "2026-08-04"
+        #expect(draft.hasDoDate)
+        #expect(DateFormatters.dateKey(from: draft.gridMonth(for: .doDate, now: now)) == "2027-03-01")
+        #expect(DateFormatters.dateKey(from: draft.gridMonth(for: .dueDate, now: now)) == "2026-08-01")
+
+        // Unset rows open on the month of `now`, and an undated Do grid has nothing picked.
+        draft.clearDoDate()
+        draft.dueDateKey = ""
+        #expect(!draft.hasDoDate)
+        #expect(DateFormatters.dateKey(from: draft.gridMonth(for: .doDate, now: now)) == "2026-11-01")
+        #expect(DateFormatters.dateKey(from: draft.gridMonth(for: .dueDate, now: now)) == "2026-11-01")
+
+        // The panel asks for both months on the way open -- a tap and `expanding(_:)` -- and both
+        // rows open through the re-anchoring binding, not the bare `@State`.
+        let panel = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+        )
+        #expect(panel.contains("doViewMonth = draft.gridMonth(for: .doDate)"))
+        #expect(panel.contains("dueViewMonth = draft.gridMonth(for: .dueDate)"))
+        #expect(panel.contains("panel._doViewMonth = State(initialValue: panel.draft.gridMonth(for: .doDate))"))
+        #expect(panel.contains("panel._dueViewMonth = State(initialValue: panel.draft.gridMonth(for: .dueDate))"))
+        #expect(panel.contains("isExpanded: gridExpansion(.doDate)"))
+        #expect(panel.contains("isExpanded: gridExpansion(.dueDate)"))
+        #expect(!panel.contains("isExpanded: $isDoExpanded"))
+        #expect(!panel.contains("isExpanded: $isDueExpanded"))
     }
 
     /// **[[T-10012]]: picking today made the panel's today marker vanish.**
