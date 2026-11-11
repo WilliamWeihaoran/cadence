@@ -8,6 +8,15 @@ import Testing
 @MainActor
 struct TaskSurfaceFreezeSupportTests {
 
+    /// Every row a surface freezes is a store row, and the freeze now drops one that has left the
+    /// store ([[T-16552]], `frozenRowLeftTheStore`) -- which a never-inserted model reads as. So the
+    /// helper below inserts, and a test that wants the store uses this one rather than its own.
+    private let container: ModelContainer
+
+    init() throws {
+        container = try CadenceTestStore.container()
+    }
+
     // MARK: - applyFrozenTaskOrder
 
     @Test func applyFrozenTaskOrderReturnsLiveOrderWhenNothingIsFrozen() {
@@ -92,6 +101,49 @@ struct TaskSurfaceFreezeSupportTests {
         #expect(result.count == 2)
     }
 
+    // MARK: - A deleted row leaves every surface's freeze ([[T-16552]])
+
+    /// **The defect, on real models.** Today froze three rows when the pointer arrived. One was then
+    /// rescheduled off Today and one deleted (Cmd+Delete over the hovered row), the pointer still on
+    /// the page, so the live array holds only the third. The freeze keeps the rescheduled row on
+    /// purpose (T-342) and used to keep the deleted one the same way, until the pointer left.
+    @Test func aDeletedRowLeavesTheFreezeWhileARowThatStoppedMatchingStays() throws {
+        let context = container.mainContext
+        let stays = task(title: "stays", order: 0)
+        let rescheduled = task(title: "rescheduled", order: 1)
+        let deleted = task(title: "deleted", order: 2)
+        try context.save()
+        let frozen = [stays, rescheduled, deleted]
+        // Neither of the other two matches the page any more; only one of them still exists.
+        let live = [stays]
+
+        context.delete(deleted)
+        // Between the delete and its save the row reads `isDeleted`...
+        #expect(applyFrozenTaskOrder(live, frozen: frozen).map(\.title) == ["stays", "rescheduled"])
+        try context.save()
+        // ...and after it, no context. Either way it is gone from the page at once.
+        #expect(applyFrozenTaskOrder(live, frozen: frozen).map(\.title) == ["stays", "rescheduled"])
+        // The list variant reads the same rule, so a list tab drops it too.
+        #expect(applyFrozenListOrder(live, frozen: frozen).map(\.title) == ["stays"])
+    }
+
+    /// The predicate, against a real store: a live row has not left it, a deleted one has, both
+    /// before and after the save -- the two halves SwiftData signals differently.
+    @Test func aFrozenRowLeftTheStoreOnlyOnceItIsDeleted() throws {
+        let context = container.mainContext
+        let kept = task(title: "kept", order: 0)
+        let doomed = task(title: "doomed", order: 1)
+        try context.save()
+        #expect(!frozenRowLeftTheStore(kept))
+        #expect(!frozenRowLeftTheStore(doomed))
+
+        context.delete(doomed)
+        #expect(frozenRowLeftTheStore(doomed), "pending delete")
+        try context.save()
+        #expect(frozenRowLeftTheStore(doomed), "committed delete")
+        #expect(!frozenRowLeftTheStore(kept))
+    }
+
     // MARK: - applyFrozenListOrder (a list's own Tasks tab, [[T-16551]])
 
     /// **The defect, on real models.** A project's Tasks tab under By Date froze its rows when the
@@ -100,7 +152,6 @@ struct TaskSurfaceFreezeSupportTests {
     /// hold either -- and the tab kept drawing both, because `applyFrozenTaskOrder` puts back a
     /// frozen row that has left the live array (T-342's deliberate rule, for Today).
     @Test func aListsFreezeDoesNotKeepDrawingARowMovedToAnotherListOrDeleted() throws {
-        let container = try CadenceTestStore.container()
         let context = container.mainContext
         let here = Project(name: "Here")
         let elsewhere = Project(name: "Elsewhere")
@@ -110,7 +161,6 @@ struct TaskSurfaceFreezeSupportTests {
         let moved = task(title: "moved", order: 1)
         let deleted = task(title: "deleted", order: 2)
         for row in [stays, moved, deleted] {
-            context.insert(row)
             row.project = here
         }
         try context.save()
@@ -128,8 +178,9 @@ struct TaskSurfaceFreezeSupportTests {
         #expect(liveRows().map(\.title) == ["stays"], "self-check: the list no longer holds them")
 
         #expect(applyFrozenListOrder(liveRows(), frozen: frozen).map(\.title) == ["stays"])
-        // The rule it departs from, on purpose: the shared freeze reinstates both.
-        #expect(applyFrozenTaskOrder(liveRows(), frozen: frozen).count == 3)
+        // The rule it departs from, on purpose: the shared freeze reinstates the row that left the
+        // list -- and, since [[T-16552]], not the one that left the store.
+        #expect(applyFrozenTaskOrder(liveRows(), frozen: frozen).map(\.title) == ["stays", "moved"])
     }
 
     /// What the freeze is for still holds: rows the list still has keep their captured order, and
@@ -433,6 +484,7 @@ struct TaskSurfaceFreezeSupportTests {
     private func task(title: String, order: Int) -> AppTask {
         let task = AppTask(title: title)
         task.order = order
+        container.mainContext.insert(task)
         return task
     }
 }
