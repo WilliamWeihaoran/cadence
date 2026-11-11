@@ -123,6 +123,43 @@ struct ListDetailSortControlsTests {
         #expect(byPriorityDesc.map(\.title) == all.filter { !$0.isDone }.taskSorted(by: .priority, direction: .descending).map(\.title))
     }
 
+    /// [[T-16301]]: a column's finished cards follow the board's Sort + Order, as the Mac column's
+    /// do -- not the Completed tab's most-recently-finished-first order.
+    @Test func sortedFinishedTasksUsesTheBoardsSortNotCompletionOrder() {
+        let base = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        // Finished latest -> earliest: low, medium, high. Priority-descending is the reverse.
+        let high = task("high", priority: .high, order: 0)
+        high.status = .done
+        high.completedAt = base
+        let medium = task("medium", priority: .medium, order: 1)
+        medium.status = .cancelled
+        medium.completedAt = base.addingTimeInterval(60)
+        let low = task("low", priority: .low, order: 2)
+        low.status = .done
+        low.completedAt = base.addingTimeInterval(120)
+        let open = task("open", priority: .high, order: 3)
+        let all = [low, open, medium, high]
+
+        #expect(CadenceTaskQuerySupport.completedTasks(from: all).map(\.title) == ["low", "medium", "high"])
+        let byPriorityDesc = ListDetailSortControls.sortedFinishedTasks(all, sortField: .priority, sortDirection: .descending)
+        #expect(byPriorityDesc.map(\.title) == ["high", "medium", "low"])
+        let byPriorityAsc = ListDetailSortControls.sortedFinishedTasks(all, sortField: .priority, sortDirection: .ascending)
+        #expect(byPriorityAsc.map(\.title) == ["low", "medium", "high"])
+        let custom = ListDetailSortControls.sortedFinishedTasks(all, sortField: .custom, sortDirection: .ascending)
+        #expect(custom.map(\.title) == ["high", "medium", "low"], "a drag-written order among finished cards must hold")
+
+        #if os(macOS)
+        // The Mac column's own finished half, through the same board sort.
+        let macColumn = ListSectionsKanbanView.columnCards(
+            from: all,
+            sections: [TaskSectionConfig(name: TaskSectionDefaults.defaultName)],
+            sortField: .priority,
+            direction: .descending
+        )[TaskSectionDefaults.defaultName] ?? []
+        #expect(KanbanBoardSupport.columnHalves(from: macColumn).completed.map(\.title) == byPriorityDesc.map(\.title))
+        #endif
+    }
+
     /// Each Group choice is the Mac list tab's arm: sections (tinted), priority buckets, date
     /// buckets, or one "Tasks" group.
     @Test func eachGroupingIsTheMacListTabsArm() {
@@ -191,5 +228,10 @@ struct ListDetailSortControlsTests {
         let cards = try #require(CadenceSourceScan.declarationBody("private var kanbanTasks: [AppTask]", in: iOS))
         #expect(cards.contains("let controls = kanbanControls"), "the board's cards are sorted by the Tasks tab's controls")
         #expect(cards.contains("ListDetailSortControls.sortedOpenTasks("))
+        // [[T-16301]]: the finished half too, in the board's own controls.
+        #expect(board.contains("completedTasks: kanbanCompletedTasks,"), "the board's finished cards take the Completed tab's order again")
+        let finished = try #require(CadenceSourceScan.declarationBody("private var kanbanCompletedTasks: [AppTask]", in: iOS))
+        #expect(finished.contains("let controls = kanbanControls"))
+        #expect(finished.contains("ListDetailSortControls.sortedFinishedTasks("))
     }
 }

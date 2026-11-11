@@ -80,7 +80,8 @@ struct iOSListBoardCompletedColumnTests {
     /// **The page hands the board its finished half**, which it never did — without this the
     /// column has a footer and nothing to put in it, so the defect would ship unchanged.
     ///
-    /// *Failing-first:* dropping `completedTasks: completedTasks` from the page's call fails here.
+    /// *Failing-first:* dropping `completedTasks: kanbanCompletedTasks` from the page's call fails here.
+    /// [[T-16301]]: the argument is the board-sorted finished half, no longer the Completed tab's list.
     @Test func theListPageHandsTheBoardItsFinishedHalf() throws {
         // Ordering rather than a fixed window: both comment strippers preserve the source's
         // LENGTH, so a `prefix(n)` after the call can be almost entirely blanked comment.
@@ -89,7 +90,7 @@ struct iOSListBoardCompletedColumnTests {
         let active = try #require(page.range(of: "tasks: kanbanTasks,", range: call.upperBound..<page.endIndex),
                                   "non-vacuity: the call read is not the board's")
         let finished = try #require(
-            page.range(of: "completedTasks: completedTasks,", range: active.upperBound..<page.endIndex),
+            page.range(of: "completedTasks: kanbanCompletedTasks,", range: active.upperBound..<page.endIndex),
             "the board is still handed the open half only, which is the [[T-9837]] defect"
         )
         // The board's own argument. This read `sectionNames: sectionNames,`, which the board call

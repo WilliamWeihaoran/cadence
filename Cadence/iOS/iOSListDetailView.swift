@@ -276,6 +276,17 @@ struct iOSListDetailView: View {
         CadenceTaskQuerySupport.completedTasks(from: filteredTasks)
     }
 
+    /// The board's finished cards, in the board's own Sort + Order as the Mac's column sorts them
+    /// ([[T-16301]]) -- not the Completed tab's most-recent-first list above.
+    private var kanbanCompletedTasks: [AppTask] {
+        let controls = kanbanControls
+        return ListDetailSortControls.sortedFinishedTasks(
+            filteredTasks,
+            sortField: controls.sortField,
+            sortDirection: controls.sortDirection
+        )
+    }
+
     private var filteredTasks: [AppTask] {
         CadenceTaskQuerySupport.tasks(for: area, project: project, in: allTasks)
     }
@@ -393,10 +404,11 @@ struct iOSListDetailView: View {
                 tasks: kanbanTasks,
                 // [[T-9837]]: the finished half, which the board used never to be given at all --
                 // so a column whose work was all done read "0" and empty here while the Mac showed
-                // it behind a Completed toggle. The page's own Completed TAB keeps this same list;
+                // it behind a Completed toggle. The page's own Completed TAB keeps these same tasks;
                 // one surface naming finished work does not excuse the other dropping it, which is
                 // the Mac's position on its own list page.
-                completedTasks: completedTasks,
+                // [[T-16301]]: in the board's Sort + Order, as the Mac column draws them.
+                completedTasks: kanbanCompletedTasks,
                 sectionNames: kanbanSectionNames,
                 sectionConfigs: sectionConfigs,
                 hideSectionDueDateIfEmpty: hideSectionDueDateIfEmpty,

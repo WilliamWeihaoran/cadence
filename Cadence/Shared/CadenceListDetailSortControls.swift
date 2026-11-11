@@ -151,6 +151,21 @@ enum ListDetailSortControls {
         CadenceTaskQuerySupport.activeTasks(from: tasks, sortField: sortField, sortDirection: sortDirection)
     }
 
+    /// **The finished cards behind a board column's "Completed N" toggle, in the board's Sort +
+    /// Order** ([[T-16301]]) -- the Mac's `ListSectionsKanbanView.columnCards`, which sorts a
+    /// column's whole bucket, finished cards included, with `taskSorted(by:direction:)`.
+    ///
+    /// The iOS board was handed the Completed TAB's list (`CadenceTaskQuerySupport.completedTasks`,
+    /// most recently finished first), so one column's finished stack read in a different order on
+    /// an iPad than on the Mac under the same Sort chip, and a finished card dragged into place
+    /// under Custom snapped back to its completion slot. Neither is a hardware or input reason
+    /// ([[T-8201]]). `isFinishedTask`, not `isDone`, so a cancelled card is finished here too.
+    static func sortedFinishedTasks(_ tasks: [AppTask], sortField: TaskSortField, sortDirection: TaskSortDirection) -> [AppTask] {
+        tasks
+            .filter { CadenceTaskQuerySupport.isFinishedTask($0) }
+            .taskSorted(by: sortField, direction: sortDirection)
+    }
+
     /// **The Tasks tab's groups under each Group choice** — the switch the Mac's
     /// `ListTasksView.liveGroups` makes, for the touch page.
     ///
