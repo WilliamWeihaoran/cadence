@@ -210,8 +210,8 @@ enum CadenceTaskDropSupport {
     /// existing keys and tests spell) is byte-identical on the wire, and a hand-written key holding
     /// neither `%25` nor `%7C` is read as the literal text it is.
     ///
-    /// Spelled by hand rather than with `addingPercentEncoding`, which escapes every non-ASCII
-    /// character whatever set it is handed, so "Café" would have changed on the wire too.
+    /// Spelled by hand rather than with Foundation's percent-encoding API, which escapes every
+    /// non-ASCII character whatever set it is handed, so "Café" would have changed on the wire too.
     static func encodedSectionName(_ name: String) -> String {
         name
             .replacingOccurrences(of: "%", with: "%25")
