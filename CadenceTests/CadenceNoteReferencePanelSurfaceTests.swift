@@ -385,8 +385,9 @@ struct CadenceNoteReferencePanelSurfaceTests {
     /// invisible to this target, so its two call sites are checked in source.
     @Test func cmdKNamesTheDayAndStillMatchesTheKey() throws {
         #if os(macOS)
-        let daily = Note(kind: .daily, title: "2026-10-26", dateKey: "2026-10-26")
-        let weekly = Note(kind: .weekly, title: "2026-W43", weekKey: "2026-W43")
+        // Written in: search draws no blank period note on either surface ([[T-15731]]).
+        let daily = Note(kind: .daily, title: "2026-10-26", content: "Standup ran long.", dateKey: "2026-10-26")
+        let weekly = Note(kind: .weekly, title: "2026-W43", content: "Ship the beta.", weekKey: "2026-W43")
         #expect(GlobalSearchIndexSupport.noteSubtitle(for: daily) == "Daily • \(NoteReferencePanelSupport.datedName(daily)!)")
         #expect(GlobalSearchIndexSupport.noteSubtitle(for: weekly) == "Weekly • \(NoteReferencePanelSupport.datedName(weekly)!)")
 

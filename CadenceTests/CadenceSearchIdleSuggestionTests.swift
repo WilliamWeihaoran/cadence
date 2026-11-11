@@ -115,6 +115,48 @@ struct CadenceSearchIdleSuggestionTests {
         #expect(suggested.map(\.id) == [newest.id, middle.id, oldest.id])
     }
 
+    /// **[[T-15731]]: a note nobody wrote in is not suggested, nor found by its kind or date.**
+    /// Opening a day or week in Notes creates its note, titled with its key, and a fresh note is the
+    /// most recently edited one -- so the blank days led both surfaces' idle Notes section. The
+    /// filter compared `displayTitle`, which is never empty, and passed them all. The Notes list's
+    /// own content rule now decides for period notes; a notepad, list or event note with a title the
+    /// user gave it still counts, and a blank untitled notepad note does not.
+    @Test func aNoteNobodyWroteInIsNeitherSuggestedNorFoundByItsKind() {
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        func at(_ seconds: Double) -> Date { base.addingTimeInterval(seconds) }
+        let writtenDaily = Note(kind: .daily, title: "2026-10-28", content: "Shipped the beta.",
+                                updatedAt: at(10), dateKey: "2026-10-28")
+        let titledNotepad = Note(kind: .permanent, title: "Groceries", updatedAt: at(20))
+        // Every blank note is newer than every written one, as browsing days makes them.
+        let blankDaily = Note(kind: .daily, title: "2026-10-30", updatedAt: at(100), dateKey: "2026-10-30")
+        let seededDaily = Note(kind: .daily, title: "2026-10-29", content: "# 2026-10-29\n\n",
+                               updatedAt: at(90), dateKey: "2026-10-29")
+        let blankWeekly = Note(kind: .weekly, title: "2026-W44", updatedAt: at(80), weekKey: "2026-W44")
+        let untitledNotepad = Note(kind: .permanent, title: "", content: "# \n\n", updatedAt: at(70))
+        let notes = [blankDaily, writtenDaily, seededDaily, blankWeekly, titledNotepad, untitledNotepad]
+
+        let suggested = CadenceSearchIdleSuggestions.notes(notes)
+        #expect(suggested.map(\.id) == [titledNotepad.id, writtenDaily.id])
+        // Non-vacuity: every blank note still has a non-empty display title.
+        #expect([blankDaily, seededDaily, blankWeekly, untitledNotepad].allSatisfy { !$0.displayTitle.isEmpty })
+
+        let idle = GlobalSearchIndexSupport.noteResults(notes: notes, query: "", taskTitles: [:])
+        #expect(idle.map(\.id) == suggested.map { CadenceSearchIdentity.note($0.id) })
+
+        // Typed: "daily" reaches the written day through its subtitle, and only it.
+        let searched = GlobalSearchIndexSupport.noteResults(notes: notes, query: "daily", taskTitles: [:])
+        #expect(searched.map(\.id) == [CadenceSearchIdentity.note(writtenDaily.id)])
+
+        // Event notes: both answer "event note" through the undated subtitle; only the one with a
+        // title is drawn.
+        let titledEvent = Note(kind: .meeting, title: "Standup sync", updatedAt: at(5))
+        let blankEvent = Note(kind: .meeting, title: "", updatedAt: at(6))
+        let events = GlobalSearchIndexSupport.eventNoteResults(
+            notes: [titledEvent, blankEvent], query: "event note", taskTitles: [:]
+        )
+        #expect(events.map(\.destination) == [.eventNote(titledEvent.id)])
+    }
+
     // MARK: - The palette reads it
 
     @Test func anEmptyPaletteQuerySuggestsTheSharedTaskWindowNotAnAlphabeticalOne() {

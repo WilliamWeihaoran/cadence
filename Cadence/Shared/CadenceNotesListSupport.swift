@@ -522,11 +522,11 @@ enum NotesListVisibility {
     /// looks blank in the editor but carries `---\ntags: [...]\n---`. Blank-bodied is exactly the
     /// state the template chips exist for, so the editor is right to offer them; the list is not,
     /// because dropping the row is the only handle on those tags and would strand them.
-    static func hasContent(_ note: Note) -> Bool {
+    nonisolated static func hasContent(_ note: Note) -> Bool {
         hasContent(rawContent: note.content, displayTitle: note.displayTitle)
     }
 
-    static func hasContent(rawContent: String, displayTitle: String) -> Bool {
+    nonisolated static func hasContent(rawContent: String, displayTitle: String) -> Bool {
         let split = MarkdownMetadataParser.splitFrontmatter(in: rawContent)
         if !split.frontmatter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
         return !isBlankBody(split.body, displayTitle: displayTitle)
@@ -539,7 +539,7 @@ enum NotesListVisibility {
     /// **The seeded heading is `# <title>` or, for a note nobody has named, a bare `#`**
     /// ([[T-13901]]): the list `+` and Notepad's New Note seed `"# \n\n"` ([[T-733]]), whose
     /// heading has no title to compare with -- `displayTitle` is then the kind's fallback word.
-    static func isBlankBody(_ body: String, displayTitle: String) -> Bool {
+    nonisolated static func isBlankBody(_ body: String, displayTitle: String) -> Bool {
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty || trimmed == "#" || trimmed == "# \(displayTitle)"
     }

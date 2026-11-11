@@ -581,9 +581,23 @@ nonisolated enum CadenceSearchIdleSuggestions {
     }
 
     /// A note with neither a title nor any text has nothing to show in a row or to be found by.
+    ///
+    /// **"Text" is what the user wrote, measured as the Notes list measures it** ([[T-15731]]).
+    /// This used to test `content` or `displayTitle`, and `displayTitle` is never empty -- every kind
+    /// falls back to a word ("Notepad", "Untitled") or its period key -- so the filter passed every
+    /// note. Daily and weekly notes are created *for* you, titled with their key, the moment a day
+    /// or week is opened, and a fresh row is the most recently edited one: browsing a few days in
+    /// Notes filled both search surfaces' idle Notes section with blank days, which the Notes list
+    /// itself hides (`NotesListVisibility.hasContent`). A period note now needs content; any other
+    /// kind exists because someone made it, so a title it was given still counts.
     static func hasVisibleText(_ note: Note) -> Bool {
-        !note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-            !note.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if NotesListVisibility.hasContent(note) { return true }
+        switch note.kind {
+        case .daily, .weekly:
+            return false
+        case .permanent, .list, .meeting:
+            return !note.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
     }
 
     /// **Areas before projects, each in the user's own arrangement, ties broken by identity**

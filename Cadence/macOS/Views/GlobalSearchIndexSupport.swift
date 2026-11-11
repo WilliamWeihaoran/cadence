@@ -464,8 +464,11 @@ enum GlobalSearchIndexSupport {
         // an empty query ties every row and breaks the tie on title, which read A to Z. Searching,
         // `rankedResults` is a total order, so the input order does not matter.
         let isSearching = CadenceListSearchSupport.isSearching(query)
+        // Searching draws only notes with something in them, as iOS Search does ([[T-15731]]).
         let meetingNotes = notes.filter { $0.kind == .meeting }
-        let ordered = isSearching ? meetingNotes : CadenceSearchIdleSuggestions.notes(meetingNotes)
+        let ordered = isSearching
+            ? meetingNotes.filter(CadenceSearchIdleSuggestions.hasVisibleText)
+            : CadenceSearchIdleSuggestions.notes(meetingNotes)
 
         let rows: [(result: GlobalSearchResult, score: Int)] = ordered.compactMap { note in
             let title = note.displayTitle
@@ -517,7 +520,11 @@ enum GlobalSearchIndexSupport {
                 }
         }
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
-        return rankedByScore(notes.compactMap { note -> (result: GlobalSearchResult, score: Int)? in
+        // A blank daily or weekly note -- made by opening the day, never written in -- still answers
+        // "daily" or its date through its subtitle; iOS Search's typed path applies this same filter,
+        // and so does the palette now ([[T-15731]]).
+        let written = notes.filter(CadenceSearchIdleSuggestions.hasVisibleText)
+        return rankedByScore(written.compactMap { note -> (result: GlobalSearchResult, score: Int)? in
             guard let subtitle = noteSubtitle(for: note) else { return nil }
             let title = NoteReferencePanelSupport.searchTitle(note)
             let content = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
