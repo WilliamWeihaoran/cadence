@@ -46,7 +46,7 @@ final class QuickTaskPanelController: NSObject {
         let content = CreateTaskPanelSurface(
             seed: seed,
             dismissAction: { [weak self] in self?.closeDiscardingDraft() },
-            successAction: { [weak self] in self?.showCaptureSuccessThenClose() }
+            successAction: { [weak self] kind in self?.showCaptureSuccessThenClose(kind: kind) }
         )
         .padding(Self.shadowPadding)
         .modelContainer(container)
@@ -157,7 +157,7 @@ final class QuickTaskPanelController: NSObject {
         panel?.orderOut(nil)
     }
 
-    private func showCaptureSuccessThenClose() {
+    private func showCaptureSuccessThenClose(kind: CadenceScheduleDraftKind) {
         guard let panel else { return }
         logger.debug("Showing quick capture success")
         sizeObserver?.invalidate()
@@ -170,7 +170,7 @@ final class QuickTaskPanelController: NSObject {
         // `close()` that kept "the draft" would hand the next open a tick and a Captured label.
         draftRetention.draftResolved()
 
-        let content = QuickTaskCaptureSuccessView()
+        let content = QuickTaskCaptureSuccessView(kind: kind)
             .padding(Self.shadowPadding)
             .preferredColorScheme(.dark)
         let hc = NSHostingController(rootView: AnyView(content))
@@ -390,7 +390,24 @@ struct QuickTaskPanelSuccessDismissal: Equatable {
     }
 }
 
+/// **[[T-16511]] — what the success beat says was captured.**
+///
+/// The panel's card has a Task/Event switch, and an event committed from it ran the same success
+/// beat as a task -- which read "Task added to Cadence" over an event that went to the user's
+/// calendar and appears in no Cadence list. The line now follows the kind that was created.
+enum QuickTaskCaptureSuccessCopy {
+    static let title = "Captured"
+
+    static func detail(for kind: CadenceScheduleDraftKind) -> String {
+        switch kind {
+        case .task: return "Task added to Cadence"
+        case .event: return "Event added to your calendar"
+        }
+    }
+}
+
 private struct QuickTaskCaptureSuccessView: View {
+    let kind: CadenceScheduleDraftKind
     @State private var isVisible = false
 
     var body: some View {
@@ -407,10 +424,10 @@ private struct QuickTaskCaptureSuccessView: View {
             .opacity(isVisible ? 1 : 0)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("Captured")
+                Text(QuickTaskCaptureSuccessCopy.title)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(Theme.text)
-                Text("Task added to Cadence")
+                Text(QuickTaskCaptureSuccessCopy.detail(for: kind))
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.dim)
             }

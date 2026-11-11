@@ -4,12 +4,12 @@ import SwiftUI
 struct CreateTaskPanelSurface: View {
     let seed: TaskCreationSeed
     let dismissAction: (() -> Void)?
-    let successAction: (() -> Void)?
+    let successAction: ((CadenceScheduleDraftKind) -> Void)?
 
     init(
         seed: TaskCreationSeed,
         dismissAction: (() -> Void)? = nil,
-        successAction: (() -> Void)? = nil
+        successAction: ((CadenceScheduleDraftKind) -> Void)? = nil
     ) {
         self.seed = seed
         self.dismissAction = dismissAction

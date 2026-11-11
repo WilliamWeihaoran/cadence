@@ -24,7 +24,8 @@ import EventKit
 struct CreateTaskSheet: View {
     let seed: TaskCreationSeed
     let dismissAction: (() -> Void)?
-    let successAction: (() -> Void)?
+    /// [[T-16511]]: told which kind was created, so the quick-capture panel's success beat names it.
+    let successAction: ((CadenceScheduleDraftKind) -> Void)?
 
     @Environment(\.modelContext) private var modelContext
     @Environment(TaskCreationManager.self) private var taskCreationManager
@@ -51,7 +52,7 @@ struct CreateTaskSheet: View {
     init(
         seed: TaskCreationSeed,
         dismissAction: (() -> Void)? = nil,
-        successAction: (() -> Void)? = nil
+        successAction: ((CadenceScheduleDraftKind) -> Void)? = nil
     ) {
         self.seed = seed
         self.dismissAction = dismissAction
@@ -355,7 +356,7 @@ struct CreateTaskSheet: View {
         HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
 
         if let successAction {
-            successAction()
+            successAction(.task)
         } else {
             dismiss()
             taskCreationManager.presentSuccessToast()
@@ -373,7 +374,7 @@ struct CreateTaskSheet: View {
             CadenceCalendarEventEditingSupport.saveOutcome(for: failure),
             into: $actionError
         ) {
-            if let successAction { successAction() } else { dismiss() }
+            if let successAction { successAction(.event) } else { dismiss() }
         }
     }
 

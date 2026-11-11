@@ -89,7 +89,7 @@ struct CadenceQuickTaskPanelDraftTests {
     /// before it closes, and a close during the beat does not keep the tick as a "draft".
     @Test func theControllerTokensTheSuccessTimerAndEveryPresentationChangeMovesIt() throws {
         let source = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/Services/QuickTaskPanelController.swift")
-        let success = try #require(CadenceSourceScan.declarationBody("private func showCaptureSuccessThenClose()", in: source))
+        let success = try #require(CadenceSourceScan.declarationBody("private func showCaptureSuccessThenClose(kind: CadenceScheduleDraftKind)", in: source))
         #expect(success.contains("let token = successDismissal.successShown()"))
         #expect(success.contains("guard let self, self.successDismissal.timerMayClose(token: token) else { return }"))
 
@@ -155,7 +155,7 @@ struct CadenceQuickTaskPanelDraftTests {
         #expect(source.contains("dismissAction: { [weak self] in self?.closeDiscardingDraft() }"))
 
         // A capture that landed spends the draft before the success view replaces the form.
-        let success = try #require(CadenceSourceScan.declarationBody("private func showCaptureSuccessThenClose()", in: source))
+        let success = try #require(CadenceSourceScan.declarationBody("private func showCaptureSuccessThenClose(kind: CadenceScheduleDraftKind)", in: source))
         #expect(success.contains("draftRetention.draftResolved()"))
         #expect(success.contains("self.closeDiscardingDraft()"))
 
@@ -164,6 +164,40 @@ struct CadenceQuickTaskPanelDraftTests {
         #expect(show.contains("draftRetention.reusesTheStandingForm("))
         #expect(show.contains("seedIsEmpty: Self.seedIsEmpty(seed)"))
         #expect(show.contains("if restoring, let standing = hostingController"))
+    }
+
+    // MARK: - [[T-16511]] What the success beat says
+
+    /// The panel's card has a Task/Event switch, and an event committed from it ran the same
+    /// beat as a task: "Task added to Cadence" over an event that went to the calendar.
+    @Test func theSuccessBeatNamesTheKindThatWasCaptured() {
+        #expect(QuickTaskCaptureSuccessCopy.detail(for: .task) == "Task added to Cadence")
+        let event = QuickTaskCaptureSuccessCopy.detail(for: .event)
+        #expect(!event.localizedCaseInsensitiveContains("task"), "an event's beat must not say task: \(event)")
+        #expect(event.localizedCaseInsensitiveContains("event"))
+        #expect(event != QuickTaskCaptureSuccessCopy.detail(for: .task))
+    }
+
+    /// The wiring, read as source: each commit arm reports its own kind, the controller hands it
+    /// to the success view, and the view reads the copy rather than a literal.
+    @Test func eachCommitArmReportsItsKindToTheSuccessBeat() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let sheet = try read("Cadence/macOS/Sheets/CreateTaskSheet.swift")
+        let task = try #require(CadenceSourceScan.declarationBody("private func createTask()", in: sheet))
+        #expect(task.contains("successAction(.task)"))
+        #expect(!task.contains("successAction(.event)"))
+        let event = try #require(CadenceSourceScan.declarationBody("private func createEvent()", in: sheet))
+        #expect(event.contains("successAction(.event)"))
+        #expect(!event.contains("successAction(.task)"))
+
+        let controller = try read("Cadence/macOS/Services/QuickTaskPanelController.swift")
+        #expect(controller.contains("successAction: { [weak self] kind in self?.showCaptureSuccessThenClose(kind: kind) }"))
+        let success = try #require(CadenceSourceScan.declarationBody(
+            "private func showCaptureSuccessThenClose(kind: CadenceScheduleDraftKind)", in: controller
+        ))
+        #expect(success.contains("QuickTaskCaptureSuccessView(kind: kind)"))
+        #expect(controller.contains("Text(QuickTaskCaptureSuccessCopy.detail(for: kind))"))
+        #expect(!controller.contains("Text(\"Task added to Cadence\")"))
     }
 }
 #endif
