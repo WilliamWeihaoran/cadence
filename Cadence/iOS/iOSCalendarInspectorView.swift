@@ -36,8 +36,15 @@ struct iOSCalendarDayInspector: View {
         DateFormatters.dateKey(from: date)
     }
 
+    /// The **Timed** section, in start order ([[T-16201]]). `tasks` arrives as
+    /// `CadenceScheduleSupport.calendarDayTasks`, which is sorted by *priority* — right for Do Date
+    /// and Due, wrong for a section named for the time of day: a high-priority 3 PM task was listed
+    /// above a 9 AM one. `scheduledTasks(on:from:includeCompleted:)` is the same admission
+    /// (`scheduledDate == dayKey`, a start minute, not cancelled; a done task stays, as on the
+    /// timed grid) in the one start-minute order the timeline, the agenda and the Mac's schedule
+    /// panel already use.
     private var timedTasks: [AppTask] {
-        tasks.filter { $0.scheduledDate == dayKey && $0.scheduledStartMin >= 0 }
+        CadenceScheduleSupport.scheduledTasks(on: dayKey, from: tasks, includeCompleted: true)
     }
 
     private var hasItems: Bool {
