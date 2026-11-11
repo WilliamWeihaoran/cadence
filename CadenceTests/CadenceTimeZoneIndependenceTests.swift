@@ -157,7 +157,20 @@ nonisolated enum CadenceAmbientZoneReadScan {
     /// A wall-clock read that reaches a day derivation. Weaker than the rule above and ledgered
     /// rather than banned; it is a clock race, not a zone dependency, and the pin does not fix it.
     static func readsTheClockForADayBoundary(_ body: String) -> Bool {
-        body.contains("Date()") && dayBoundaryNeedles.contains { body.contains($0) }
+        readsTheWallClock(body) && dayBoundaryNeedles.contains { body.contains($0) }
+    }
+
+    /// A bare `Date()`, not the tail of a longer call: [[T-16464]], where `draft.clearDoDate()`
+    /// read as a clock read and redded main.
+    static func readsTheWallClock(_ body: String) -> Bool {
+        var rest = body[...]
+        while let hit = rest.range(of: "Date()") {
+            guard hit.lowerBound > body.startIndex else { return true }
+            let before = body[body.index(before: hit.lowerBound)]
+            if !(before.isLetter || before.isNumber || before == "_") { return true }
+            rest = body[hit.upperBound...]
+        }
+        return false
     }
 
     /// Assembled from pieces so this file's own source does not contain the needles it scans for —
@@ -681,6 +694,13 @@ struct CadenceTimeZoneIndependenceTests {
                 let key = DateFormatters.dateKey(from: fixedInstant, calendar: calendar)
                 """),
             "the clock detector fires on a key derived from a stated instant"
+        )
+        #expect(
+            !clock.fires(on: """
+                draft.clearDoDate()
+                let key = DateFormatters.dateKey(from: draft.gridMonth(for: .doDate, now: now))
+                """),
+            "the clock detector fires on a method whose name ends in Date() (T-16464)"
         )
 
         // And the walk itself: a detector that works over an empty file list is the other way a
