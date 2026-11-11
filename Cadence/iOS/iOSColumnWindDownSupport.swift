@@ -234,10 +234,10 @@ struct iOSSectionRowLifecycle {
     let archive: () -> Void
     let reopen: () -> Void
 
-    var stateLabel: String {
-        if isArchived { return "Archived" }
-        if isCompleted { return "Completed" }
-        return "Active"
+    /// [[T-16132]]: the shared word and colour, completed before archived -- the Mac's Show Archived
+    /// board says "Completed" over the same column.
+    var state: CadenceBoardColumnLifecycleState {
+        CadenceBoardColumnLifecycleState.of(isCompleted: isCompleted, isArchived: isArchived)
     }
 }
 #endif

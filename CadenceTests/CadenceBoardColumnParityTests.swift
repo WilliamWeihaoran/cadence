@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -72,6 +73,31 @@ struct CadenceBoardColumnParityTests {
         #expect(CadenceBoardColumnLifecycleCopy.label(isCompleted: true, isPendingCompletion: true) == "Completed")
         #expect(CadenceBoardColumnLifecycleCopy.label(isCompleted: false, isPendingCompletion: true) == "Completing…")
         #expect(CadenceBoardColumnLifecycleCopy.label(isCompleted: false) == nil)
+    }
+
+    /// [[T-16132]]: completing a column archives it ([[T-15722]]), so the order is the whole
+    /// decision -- the iPad's list editor said "Archived" where the Mac's Show Archived board says
+    /// "Completed" over the same column.
+    @Test func aColumnsStateIsCompletedBeforeArchived() {
+        typealias State = CadenceBoardColumnLifecycleState
+        #expect(State.of(isCompleted: true, isArchived: true) == .completed)
+        #expect(State.of(isCompleted: true, isArchived: false) == .completed)
+        #expect(State.of(isCompleted: false, isArchived: true) == .archived)
+        #expect(State.of(isCompleted: false, isArchived: false) == .active)
+        #expect(State.of(isCompleted: true, isArchived: true).label == CadenceBoardColumnLifecycleCopy.label(isCompleted: true))
+        #expect(State.completed.color == CadenceBoardColumnTint.completed.color(listAccent: Theme.dim))
+        #expect(State.archived.label == "Archived")
+        #expect(State.active.label == "Active")
+    }
+
+    @Test func theListEditorRowReadsTheSharedState() throws {
+        let editor = try code(Self.iOSEditorFile)
+        #expect(editor.contains("Text(lifecycle.state.label)"), "the iOS row spells its own state word again")
+        #expect(editor.contains(".foregroundStyle(lifecycle.state.color)"), "the iOS row spells its own state colour again")
+        #expect(!editor.contains("if lifecycle.isArchived { return Theme.amber }"))
+        let support = try code("Cadence/iOS/iOSColumnWindDownSupport.swift")
+        #expect(support.contains("CadenceBoardColumnLifecycleState.of(isCompleted: isCompleted, isArchived: isArchived)"))
+        #expect(!support.contains("if isArchived { return \"Archived\" }"))
     }
 
     @Test func bothBoardsDrawTheSharedLifecycleLine() throws {

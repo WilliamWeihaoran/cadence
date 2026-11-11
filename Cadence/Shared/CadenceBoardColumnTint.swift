@@ -61,7 +61,7 @@ nonisolated enum CadenceBoardColumnTint: Equatable, Sendable {
 /// board has no control that completes a column (that is the list editor's), but a column completed
 /// on the Mac syncs, and what it reads is not an input question.
 nonisolated enum CadenceBoardColumnLifecycleCopy {
-    static let completed = "Completed"
+    static let completed = CadenceBoardColumnLifecycleState.completed.label
     static let completing = "Completing…"
 
     /// `nil` for an open column, which draws no line.
@@ -69,6 +69,42 @@ nonisolated enum CadenceBoardColumnLifecycleCopy {
         if isCompleted { return completed }
         if isPendingCompletion { return completing }
         return nil
+    }
+}
+
+/// **A column's settled state, in one word and one colour, read by both platforms** ([[T-16132]],
+/// one app on two platforms, [[T-8201]]).
+///
+/// Since [[T-15722]] completing a column archives it, so every completed column is also archived.
+/// The iOS list editor's Status row tested `isArchived` first and said "Archived" in amber; the Mac's
+/// Show Archived board says "Completed" in green under the same column's header. Neither a pointer
+/// nor a touch answers what state a column is in, so there is one order: completed before archived.
+/// A column archived without being completed still says "Archived".
+nonisolated enum CadenceBoardColumnLifecycleState: Equatable, Sendable {
+    case completed
+    case archived
+    case active
+
+    static func of(isCompleted: Bool, isArchived: Bool) -> CadenceBoardColumnLifecycleState {
+        if isCompleted { return .completed }
+        if isArchived { return .archived }
+        return .active
+    }
+
+    var label: String {
+        switch self {
+        case .completed: "Completed"
+        case .archived: "Archived"
+        case .active: "Active"
+        }
+    }
+
+    @MainActor var color: Color {
+        switch self {
+        case .completed: Theme.green
+        case .archived: Theme.amber
+        case .active: Theme.muted
+        }
     }
 }
 
@@ -101,6 +137,6 @@ struct CadenceBoardColumnLifecycleLine: View {
     var body: some View {
         Text(label)
             .cadenceFont(.metadata, base: 9, weight: .semibold)
-            .foregroundStyle(Theme.green)
+            .foregroundStyle(CadenceBoardColumnLifecycleState.completed.color)
     }
 }

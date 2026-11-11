@@ -1151,9 +1151,9 @@ private struct iOSSectionDraftRow: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Theme.subdued)
             Spacer(minLength: 0)
-            Text(lifecycle.stateLabel)
+            Text(lifecycle.state.label)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(statusColor(lifecycle))
+                .foregroundStyle(lifecycle.state.color)
         }
 
         HStack(spacing: 8) {
@@ -1200,12 +1200,6 @@ private struct iOSSectionDraftRow: View {
 
             Spacer(minLength: 0)
         }
-    }
-
-    private func statusColor(_ lifecycle: iOSSectionRowLifecycle) -> Color {
-        if lifecycle.isArchived { return Theme.amber }
-        if lifecycle.isCompleted { return Theme.green }
-        return Theme.muted
     }
 }
 
