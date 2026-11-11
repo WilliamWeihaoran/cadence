@@ -181,7 +181,14 @@ Re-checked 2026-10-20 by reading the tree rather than this file. Two of these ar
 likely to be wrong at the moment a build is cut, so they are written as measurements with a date on
 them rather than as standing claims.
 
-- **OWED (2026-11-04, [[T-8162]] / [[T-8163]], agent `eventmeta0838`): THREE NEW FIELDS ON THE DEPLOYED
+- **DISCHARGED 2026-11-11 (owner, in the CloudKit Console, coordinator `coord1900` reading each
+  screen; [[T-15700]]): Production's `CD_Note` is at 29 fields and carries all three
+  `CD_eventNotesMerged*` columns.** Added to Development by hand, deployed, and verified in Production
+  by reading the record type rather than trusting the diff. The diff touched `CD_Note` alone, by
+  addition only. They carry no `QUERYABLE SEARCHABLE SORTABLE`, which is correct: mirroring fetches by
+  zone change token and nothing in the tree queries or sorts on them. **Build 26 owes nothing further
+  here.** The bullet below is kept for the route, which [[T-15750]] changed.
+- **WAS OWED (2026-11-04, [[T-8162]] / [[T-8163]], agent `eventmeta0838`): THREE NEW FIELDS ON THE DEPLOYED
   `CD_Note` RECORD TYPE — `eventNotesMergedAt` (`Date?`), `eventNotesMergedNativeHash` (`String`,
   default empty) and `eventNotesMergedContentHash` (`String`, default empty).** The event note's synced
   merge baseline, the ONE schema change both owner decisions of 2026-10-31 accepted. Additive only;
@@ -191,7 +198,7 @@ them rather than as standing claims.
   debug build stopped doing it on 2026-10-07, when [[T-3013]] turned mirroring off for
   development-signed builds), press *Deploy Schema Changes*, and count Production's fields against
   the model's stored properties **before distributing any TestFlight build at or after the commit that
-  adds them**. Owner-only; nothing in the build will say so. Delete this bullet once verified.
+  adds them**. Owner-only; nothing in the build will say so. **Done — see the bullet above.**
 - **Was: no new CloudKit schema obligation since the 2026-10-02 deploy** (true until the bullet above). The deploy that discharged
   `CD_NoteTemplatePreference` and `calendarPresentationRaw` was 2026-10-02. Every commit touching
   `Cadence/Models/` since then was read: four commits, none of them adding a `var`, an `@Attribute`

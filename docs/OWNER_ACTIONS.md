@@ -310,7 +310,16 @@ internal TestFlight build is neither. This section is the gap, checked against H
 - **Internal TestFlight needs no Beta App Review, no nutrition label and no test information.**
   That is why item 8 is marked "public release only" — it is, and nothing about the internal RC
   changes it.
-- **BUILD 26 OWES A CLOUDKIT SCHEMA DEPLOY — redone 2026-11-10, and the answer changed.** The
+- **BUILD 26's CLOUDKIT SCHEMA DEPLOY IS DONE — deployed and verified by the owner 2026-11-11, in
+  the Console, with the coordinator reading each screen ([[T-15700]]).** Production's `CD_Note` reads
+  **29 fields** (23 `CD_` plus the six `___` metadata fields) and carries `CD_eventNotesMergedAt`,
+  `CD_eventNotesMergedContentHash` and `CD_eventNotesMergedNativeHash`. The deployment diff touched
+  `CD_Note` and nothing else, by addition only, across 569 lines. **Nothing further is owed before the
+  build 26 upload**; the steps below are kept because the route changed under them and the next schema
+  change needs it. The three fields deployed WITHOUT `QUERYABLE SEARCHABLE SORTABLE`, which is correct
+  here: mirroring fetches by zone change token, and no `#Predicate`, `FetchDescriptor` or `sortBy` in
+  the tree touches them. Indexes can be added and deployed later if that ever changes.
+- **(How it was owed, kept for the route.) Redone 2026-11-10, and the answer changed.** The
   measurement below is build 25's and it no longer holds. At build 26's HEAD: `CadenceSchema.swift`
   is still byte-identical and there are still **24 `@Model` types**, but `Note` gained **three new
   stored properties** since 2026-10-27 — `eventNotesMergedAt: Date? = nil`,
