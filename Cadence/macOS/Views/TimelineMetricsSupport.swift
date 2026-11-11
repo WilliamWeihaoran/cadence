@@ -222,7 +222,8 @@ enum TimelineMetricsSupport {
     static func computeUnifiedLayouts(
         tasks: [AppTask],
         events: [CalendarEventItem],
-        cascadeGapMinutes: Int
+        cascadeGapMinutes: Int,
+        drawnFloorMinutes: Int = 0
     ) -> (tasks: [TimelineBlockLayout], events: [TimelineEventLayout]) {
         struct RawSlot {
             enum Kind { case task(AppTask); case event(CalendarEventItem) }
@@ -251,6 +252,16 @@ enum TimelineMetricsSupport {
         for event in events {
             let end = event.startMin + max(event.durationMinutes, 5)
             slots.append(RawSlot(kind: .event(event), startMin: event.startMin, endMin: end))
+        }
+        // T-16521: a short block is drawn at `TimelineBlockStyle.minHeight`, which at the resting
+        // zoom covers more grid than its own minutes, so it is columned over what it covers. A
+        // back-to-back neighbour then sits beside it instead of being painted over its title.
+        slots = slots.map {
+            RawSlot(
+                kind: $0.kind,
+                startMin: $0.startMin,
+                endMin: CadenceCalendarOverlapLayout.drawnSlotEnd(startMin: $0.startMin, endMin: $0.endMin, drawnFloorMinutes: drawnFloorMinutes)
+            )
         }
 
         // Draw order is start order, and that is load-bearing now rather than incidental: the

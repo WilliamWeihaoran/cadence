@@ -297,6 +297,30 @@ nonisolated enum CadenceCalendarOverlapLayout {
     /// place to read it from.
     static let minimumSlotMinutes = 5
 
+    /// Minutes of grid a block **drawn at its height floor** covers at `hourHeight` ([[T-16521]]).
+    ///
+    /// Both timed canvases floor a short block's rectangle to a tappable height (iOS 24pt plus its
+    /// 4pt gap, the Mac `TimelineBlockStyle.minHeight`), and at the resting zoom that floor is far
+    /// longer than fifteen minutes: about 29 minutes of a 58pt iOS hour. The solver used to be
+    /// handed only the block's own minutes, so two back-to-back 15-minute meetings were "not
+    /// overlapping", both took the whole column, and the later one was painted over the bottom
+    /// half of the earlier one's floored rectangle, cutting through its title. Overlap is a
+    /// question about rectangles, so a slot reaches as far as its rectangle does.
+    ///
+    /// Rounded up, less a hair, so a floor that is a whole number of minutes in exact arithmetic
+    /// is not pushed one minute further by the float division — that would make two blocks that
+    /// merely touch count as overlapping.
+    static func drawnFloorMinutes(minimumBlockHeight: CGFloat, hourHeight: CGFloat) -> Int {
+        guard hourHeight > 0, minimumBlockHeight > 0, minimumBlockHeight.isFinite, hourHeight.isFinite else { return 0 }
+        return max(0, Int((minimumBlockHeight * 60 / hourHeight - 0.001).rounded(.up)))
+    }
+
+    /// The end a solver slot is given: the block's own end, or the minute its floored rectangle
+    /// reaches, whichever is later. Never earlier than `minimumSlotMinutes` past the start.
+    static func drawnSlotEnd(startMin: Int, endMin: Int, drawnFloorMinutes: Int) -> Int {
+        max(endMin, startMin + max(minimumSlotMinutes, drawnFloorMinutes))
+    }
+
     /// Half-open overlap: a block that ends exactly where the next begins does not overlap it.
     static func overlaps(_ lhs: Slot, _ rhs: Slot) -> Bool {
         lhs.startMin < rhs.endMin && lhs.endMin > rhs.startMin

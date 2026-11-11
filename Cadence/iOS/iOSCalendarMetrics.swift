@@ -448,7 +448,8 @@ nonisolated enum iOSCalendarTimelineBlockLayout {
     ///
     /// Blocks are solved in the order given, which is the order the column draws them in, so a tie
     /// at the same start minute is broken the same way every pass. A block shorter than
-    /// `CadenceCalendarOverlapLayout.minimumSlotMinutes` is widened to it, as macOS does.
+    /// `CadenceCalendarOverlapLayout.minimumSlotMinutes` is widened to it, as macOS does, and a
+    /// block drawn at its height floor is widened to the minutes that floor covers ([[T-16521]]).
     ///
     /// `isCompactWidth` is **required rather than defaulted**, for the reason
     /// `computeUnifiedLayouts` requires its threshold: a silently-absent width is indistinguishable
@@ -465,10 +466,17 @@ nonisolated enum iOSCalendarTimelineBlockLayout {
         headerHeight: CGFloat,
         isCompactWidth: Bool
     ) -> [Key: CadenceCalendarOverlapPlacement] {
+        // T-16521: a short block is columned over the minutes its floored rectangle (and the gap
+        // under it) covers, not just its own, so a back-to-back neighbour is laid out beside it
+        // rather than painted across its title.
+        let floorMinutes = CadenceCalendarOverlapLayout.drawnFloorMinutes(
+            minimumBlockHeight: minimumBlockHeight + blockGap,
+            hourHeight: hourHeight
+        )
         let slots = blocks.map { block in
             CadenceCalendarOverlapLayout.Slot(
                 startMin: block.startMin,
-                endMin: max(block.endMin, block.startMin + CadenceCalendarOverlapLayout.minimumSlotMinutes),
+                endMin: CadenceCalendarOverlapLayout.drawnSlotEnd(startMin: block.startMin, endMin: block.endMin, drawnFloorMinutes: floorMinutes),
                 mayCascade: block.kind.mayCascade(isCompactWidth: isCompactWidth)
             )
         }
@@ -493,10 +501,17 @@ nonisolated enum iOSCalendarTimelineBlockLayout {
         (minute - CGFloat(CadenceScheduleSupport.calendarStartHour * 60)) / 60.0 * hourHeight
     }
 
+    /// The tappable floor a block's rectangle is never drawn below.
+    static let minimumBlockHeight: CGFloat = 24
+
+    /// How much short of its end minute a block is drawn, so two back-to-back blocks do not touch.
+    static let blockGap: CGFloat = 4
+
     /// Drawn height of a block spanning `start..<end`, floored to a tappable 24pt and drawn 4pt
-    /// short so two back-to-back blocks do not touch.
+    /// short so two back-to-back blocks do not touch. `placements` columns a block over the minutes
+    /// this floor covers ([[T-16521]]), so the two must be read from the same constants.
     static func blockHeight(start: Int, end: Int, hourHeight: CGFloat) -> CGFloat {
-        max(24, CGFloat(end - start) / 60.0 * hourHeight - 4)
+        max(minimumBlockHeight, CGFloat(end - start) / 60.0 * hourHeight - blockGap)
     }
 
     // MARK: - The in-place draft

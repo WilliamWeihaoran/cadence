@@ -408,16 +408,19 @@ func computeTimelineBlockFrame(
 ///
 /// `cascadeGapMinutes` comes from `CadenceCalendarOverlapLayout.cascadeGapMinutes(headerHeight:
 /// hourHeight:)` — the event block's own header height converted into minutes at the canvas's
-/// current zoom.
+/// current zoom. `drawnFloorMinutes` is `CadenceCalendarOverlapLayout.drawnFloorMinutes` at the
+/// canvas's `style.minHeight` and zoom ([[T-16521]]); required here so the canvas cannot drop it.
 func computeUnifiedLayouts(
     tasks: [AppTask],
     events: [CalendarEventItem],
-    cascadeGapMinutes: Int
+    cascadeGapMinutes: Int,
+    drawnFloorMinutes: Int
 ) -> (tasks: [TimelineBlockLayout], events: [TimelineEventLayout]) {
     TimelineMetricsSupport.computeUnifiedLayouts(
         tasks: tasks,
         events: events,
-        cascadeGapMinutes: cascadeGapMinutes
+        cascadeGapMinutes: cascadeGapMinutes,
+        drawnFloorMinutes: drawnFloorMinutes
     )
 }
 #endif

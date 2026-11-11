@@ -1419,3 +1419,183 @@ struct CadenceCalendarOverlapLayoutTests {
         )
     }
 }
+
+/// [[T-16521]]. Short blocks are DRAWN at a height floor (iOS 24pt + its 4pt gap, Mac
+/// `TimelineBlockStyle.minHeight`) that covers more grid than their own minutes at the resting
+/// zoom, so the solver columns them over what their rectangle covers. The property pinned is the
+/// one the owner sees: no two drawn rectangles in one day column cross.
+@Suite
+struct CadenceCalendarDrawnFloorOverlapTests {
+    private typealias IOSLayout = iOSCalendarTimelineBlockLayout
+
+    private static let iosHourHeight: CGFloat = iOSCalendarTimelineMetrics.hourHeight
+    private static let iosColumnWidth: CGFloat = CadenceCalendarWeekGridLayout.preferredDayColumnWidth(isRegularWidth: true)
+
+    private struct Rect { let minX, maxX, minY, maxY: CGFloat }
+
+    private static func crosses(_ a: Rect, _ b: Rect) -> Bool {
+        a.minX < b.maxX && b.minX < a.maxX && a.minY < b.maxY && b.minY < a.maxY
+    }
+
+    /// The iOS day column's rectangles, built from the same calls the column draws with.
+    private static func iosRects(
+        _ blocks: [IOSLayout.Block<String>],
+        hourHeight: CGFloat,
+        isCompactWidth: Bool
+    ) -> [String: (placement: CadenceCalendarOverlapPlacement, rect: Rect)] {
+        let placements = IOSLayout.placements(
+            for: blocks,
+            hourHeight: hourHeight,
+            headerHeight: CadenceCalendarOverlapLayout.iOSEventHeaderHeight,
+            isCompactWidth: isCompactWidth
+        )
+        var result: [String: (CadenceCalendarOverlapPlacement, Rect)] = [:]
+        for block in blocks {
+            let placement = placements[block.key] ?? .single
+            let frame = IOSLayout.horizontalFrame(for: placement, kind: block.kind, columnWidth: iosColumnWidth)
+            let top = IOSLayout.blockTop(forMinute: CGFloat(block.startMin), hourHeight: hourHeight)
+            let height = IOSLayout.blockHeight(start: block.startMin, end: block.endMin, hourHeight: hourHeight)
+            result[block.key] = (placement, Rect(minX: frame.x, maxX: frame.x + frame.width, minY: top, maxY: top + height))
+        }
+        return result
+    }
+
+    @Test func theFloorIsTheMinutesTheFlooredRectangleCoversAndAnExactFitIsNotRoundedPastIt() {
+        // 28pt (24 + 4 gap) of a 58pt hour is 28.97 minutes.
+        #expect(CadenceCalendarOverlapLayout.drawnFloorMinutes(minimumBlockHeight: 28, hourHeight: 58) == 29)
+        // At the 3x pinch the same floor is under ten minutes.
+        #expect(CadenceCalendarOverlapLayout.drawnFloorMinutes(minimumBlockHeight: 28, hourHeight: 174) == 10)
+        // Exactly 30 minutes must stay 30, or two blocks that only touch would count as crossing.
+        #expect(CadenceCalendarOverlapLayout.drawnFloorMinutes(minimumBlockHeight: 30, hourHeight: 60) == 30)
+        #expect(CadenceCalendarOverlapLayout.drawnFloorMinutes(minimumBlockHeight: 24, hourHeight: 0) == 0)
+        // A block longer than its floor keeps its own end.
+        #expect(CadenceCalendarOverlapLayout.drawnSlotEnd(startMin: 540, endMin: 600, drawnFloorMinutes: 29) == 600)
+        #expect(CadenceCalendarOverlapLayout.drawnSlotEnd(startMin: 540, endMin: 555, drawnFloorMinutes: 29) == 569)
+        #expect(CadenceCalendarOverlapLayout.drawnSlotEnd(startMin: 540, endMin: 540, drawnFloorMinutes: 0) == 545)
+    }
+
+    /// The reported shape: two back-to-back 15-minute meetings at the resting zoom. The first is
+    /// drawn 24pt (~25 minutes) tall, so the second used to be painted over its lower half.
+    @Test func backToBackFifteenMinuteIOSBlocksAreLaidOutBesideEachOtherNotOverEachOther() throws {
+        #expect(Self.iosHourHeight == 58, "non-vacuity: the resting hour this fixture assumes moved")
+        for isCompactWidth in [false, true] {
+            let rects = Self.iosRects([
+                .init(key: "a", kind: .event, startMin: 540, endMin: 555),
+                .init(key: "b", kind: .event, startMin: 555, endMin: 570),
+            ], hourHeight: Self.iosHourHeight, isCompactWidth: isCompactWidth)
+            let a = try #require(rects["a"]), b = try #require(rects["b"])
+            // Non-vacuity: the floor really does make the two rectangles meet vertically.
+            #expect(b.rect.minY < a.rect.maxY, "the fixture no longer exercises the height floor")
+            #expect(!Self.crosses(a.rect, b.rect), "compact \(isCompactWidth): the later block is painted over the earlier one")
+            #expect(a.placement.totalColumns == 2 && b.placement.totalColumns == 2)
+        }
+    }
+
+    /// Zoomed in, the same pair is tall enough not to meet, so each keeps the whole column; and a
+    /// pair half an hour apart at rest is unaffected by the floor.
+    @Test func blocksWhoseRectanglesDoNotMeetKeepTheWholeColumn() {
+        let zoomed = Self.iosRects([
+            .init(key: "a", kind: .event, startMin: 540, endMin: 555),
+            .init(key: "b", kind: .event, startMin: 555, endMin: 570),
+        ], hourHeight: Self.iosHourHeight * 3, isCompactWidth: false)
+        #expect(zoomed["a"]?.placement.totalColumns == 1 && zoomed["b"]?.placement.totalColumns == 1)
+
+        let apart = Self.iosRects([
+            .init(key: "a", kind: .task, startMin: 540, endMin: 555),
+            .init(key: "b", kind: .event, startMin: 570, endMin: 600),
+        ], hourHeight: Self.iosHourHeight, isCompactWidth: false)
+        #expect(apart["a"]?.placement.totalColumns == 1 && apart["b"]?.placement.totalColumns == 1)
+    }
+
+    /// Swept rather than sampled: every pair of short blocks on the 5-minute grid, either kind, at
+    /// rest, compact and regular. No two drawn rectangles in the column may cross.
+    @Test func noTwoShortIOSBlocksAtRestAreDrawnAcrossEachOther() {
+        var pairs = 0
+        var floorBound = 0
+        for firstLength in stride(from: 5, through: 30, by: 5) {
+            for gap in stride(from: 5, through: 40, by: 5) {
+                for secondLength in [5, 15, 30, 60] {
+                    for kinds in [(IOSLayout.Kind.event, IOSLayout.Kind.event), (.task, .event), (.event, .task)] {
+                        for isCompactWidth in [false, true] {
+                            let rects = Self.iosRects([
+                                .init(key: "a", kind: kinds.0, startMin: 540, endMin: 540 + firstLength),
+                                .init(key: "b", kind: kinds.1, startMin: 540 + gap, endMin: 540 + gap + secondLength),
+                            ], hourHeight: Self.iosHourHeight, isCompactWidth: isCompactWidth)
+                            guard let a = rects["a"], let b = rects["b"] else { continue }
+                            pairs += 1
+                            if gap >= firstLength, b.rect.minY < a.rect.maxY { floorBound += 1 }
+                            // A cascade overlaps on purpose and keeps the behind block's header
+                            // clear; that is T-3161's rule, not this one.
+                            guard b.placement.cascadeDepth == 0 else { continue }
+                            #expect(!Self.crosses(a.rect, b.rect), "\(firstLength)m then +\(gap)m \(kinds) compact \(isCompactWidth)")
+                        }
+                    }
+                }
+            }
+        }
+        #expect(pairs == 6 * 8 * 4 * 3 * 2)
+        #expect(floorBound > 0, "non-vacuity: no pair in the sweep had a floored rectangle reaching its neighbour")
+    }
+
+    #if os(macOS)
+    private static func macItem(hour: Int, minute: Int, durationMinutes: Int) throws -> CalendarEventItem {
+        let calendar = Calendar.current
+        let day = try #require(calendar.date(from: DateComponents(year: 2026, month: 8, day: 10)))
+        let event = EKEvent(eventStore: EKEventStore())
+        event.title = "\(hour):\(minute)"
+        let start = try #require(calendar.date(byAdding: DateComponents(hour: hour, minute: minute), to: day))
+        event.startDate = start
+        event.endDate = start.addingTimeInterval(TimeInterval(durationMinutes * 60))
+        return CalendarEventItem(event: event)
+    }
+
+    /// The Mac canvas at a resting Today-panel zoom: twelve hours across a ~700pt viewport. Two
+    /// back-to-back 15-minute events, drawn at the calendar style's 22pt floor, no longer cross.
+    @Test func backToBackFifteenMinuteMacEventsAreLaidOutBesideEachOther() throws {
+        let hourHeight: CGFloat = 58
+        let metrics = TimelineMetrics(startHour: 0, endHour: 24, hourHeight: hourHeight)
+        let style = TimelineBlockStyle.calendar
+        let floor = CadenceCalendarOverlapLayout.drawnFloorMinutes(minimumBlockHeight: style.minHeight, hourHeight: hourHeight)
+        #expect(floor > 15, "non-vacuity: the 22pt floor no longer outlasts fifteen minutes at this zoom")
+        let result = computeUnifiedLayouts(
+            tasks: [],
+            events: [
+                try Self.macItem(hour: 9, minute: 0, durationMinutes: 15),
+                try Self.macItem(hour: 9, minute: 15, durationMinutes: 15),
+            ],
+            cascadeGapMinutes: CadenceCalendarOverlapLayout.cascadeGapMinutes(
+                headerHeight: CadenceCalendarOverlapLayout.macEventHeaderHeight(verticalPadding: style.verticalPadding),
+                hourHeight: hourHeight
+            ),
+            drawnFloorMinutes: floor
+        )
+        let frames = result.events.map { layout in
+            TimelineMetricsSupport.computeBlockFrame(
+                startMinute: layout.item.startMin,
+                durationMinutes: layout.item.durationMinutes,
+                column: layout.column,
+                totalColumns: layout.totalColumns,
+                cascadeDepth: layout.cascadeDepth,
+                totalWidth: 300,
+                metrics: metrics,
+                style: style
+            )
+        }
+        #expect(frames.count == 2)
+        let rects = frames.map { Rect(minX: $0.x, maxX: $0.x + $0.width, minY: $0.y, maxY: $0.y + $0.height) }
+        #expect(rects[1].minY < rects[0].maxY, "non-vacuity: the floor no longer makes the pair meet")
+        #expect(!Self.crosses(rects[0], rects[1]), "the 9:15 event is painted over the 9:00 one")
+        #expect(result.events.map(\.totalColumns) == [2, 2])
+    }
+
+    /// The canvas hands the solver its own style's floor at its own zoom.
+    @Test func theDayCanvasPassesItsStylesHeightFloorToTheSolver() throws {
+        let canvas = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineDayCanvas.swift")
+        )
+        #expect(canvas.count > 2_000, "non-vacuity: read \(canvas.count) characters of the day canvas")
+        #expect(canvas.contains("drawnFloorMinutes: CadenceCalendarOverlapLayout.drawnFloorMinutes("))
+        #expect(canvas.contains("minimumBlockHeight: style.minHeight"))
+    }
+    #endif
+}

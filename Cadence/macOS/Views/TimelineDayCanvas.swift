@@ -87,7 +87,11 @@ struct TimelineDayCanvas: View {
         let unified = computeUnifiedLayouts(
             tasks: tasks,
             events: externalEvents,
-            cascadeGapMinutes: cascadeGapMinutes
+            cascadeGapMinutes: cascadeGapMinutes,
+            drawnFloorMinutes: CadenceCalendarOverlapLayout.drawnFloorMinutes(
+                minimumBlockHeight: style.minHeight,
+                hourHeight: metrics.hourHeight
+            )
         )
         let layouts = unified.tasks
         let eventLayouts = unified.events
