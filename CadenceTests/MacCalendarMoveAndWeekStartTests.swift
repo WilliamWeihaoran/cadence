@@ -252,6 +252,61 @@ struct MacCalendarMoveAndWeekStartTests {
         #expect(moved.end.timeIntervalSince(moved.start) == end.timeIntervalSince(start))
     }
 
+    // MARK: - T-16578: a resize writes the wall-clock row the user let go on
+
+    @Test("Resizing a DST-day event writes the end at the row it was released on")
+    func resizingATransitionDayEventWritesTheWallClockEnd() throws {
+        let calendar = try CadenceTestTimeZones.calendar("America/New_York")
+        let store = EKEventStore()
+        // (month, day, start hour, end hour, released-on hour): spring forward, fall back, ordinary.
+        for (month, day, startHour, endHour, releasedHour) in [(3, 8, 1, 4, 5), (11, 1, 0, 3, 4), (6, 11, 1, 4, 5)] {
+            let start = try Self.newYork(month, day, startHour, calendar)
+            let end = try Self.newYork(month, day, endHour, calendar)
+            let event = Self.timedEvent(store, "Overnight", start: start, end: end)
+            let item = try #require(CalendarEventItem(event: event, clippedTo: calendar.startOfDay(for: start), calendar: calendar))
+
+            // Bottom edge dragged down one row, then back onto the row it started on.
+            let grown = try #require(item.eventDateRangeForResizedSegment(
+                startMin: item.startMin, endMin: releasedHour * 60, calendar: calendar))
+            #expect(grown.start == start)
+            #expect(grown.end == (try Self.newYork(month, day, releasedHour, calendar)),
+                    "\(month)/\(day): released on \(releasedHour):00, wrote hour \(calendar.component(.hour, from: grown.end))")
+            let back = try #require(item.eventDateRangeForResizedSegment(
+                startMin: item.startMin, endMin: endHour * 60, calendar: calendar))
+            #expect(back.end == end, "\(month)/\(day): released on \(endHour):00, wrote hour \(calendar.component(.hour, from: back.end))")
+
+            // The bottom edge pulled to the foot of the grid is the next midnight.
+            let toMidnight = try #require(item.eventDateRangeForResizedSegment(
+                startMin: item.startMin, endMin: 24 * 60, calendar: calendar))
+            #expect(toMidnight.end == (try #require(calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: start)))))
+        }
+    }
+
+    @Test("A top-edge resize keeps an end inside the repeated fall-back hour")
+    func aTopEdgeResizeKeepsTheEventsOwnEnd() throws {
+        let calendar = try CadenceTestTimeZones.calendar("America/New_York")
+        let store = EKEventStore()
+        let start = try Self.newYork(11, 1, 0, calendar)
+        // 1:30 EST, the second of the day's two 1:30s: 1:00 EDT plus ninety minutes.
+        let end = try Self.newYork(11, 1, 1, calendar).addingTimeInterval(90 * 60)
+        let event = Self.timedEvent(store, "Late", start: start, end: end)
+        let item = try #require(CalendarEventItem(event: event, clippedTo: start, calendar: calendar))
+        #expect(item.startMin + item.durationMinutes == 90)
+
+        let resized = try #require(item.eventDateRangeForResizedSegment(
+            startMin: 30, endMin: item.startMin + item.durationMinutes, calendar: calendar))
+        #expect(resized.start == start.addingTimeInterval(30 * 60))
+        #expect(resized.end == end, "the untouched end was re-read as the earlier 1:30")
+    }
+
+    @Test("The timeline block's resize writes its end as a wall-clock row")
+    func theBlockResizesThroughTheWallClockRange() throws {
+        let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineEventBlock.swift"))
+        #expect(CadenceSourceScan.matchCount(#"requestEventMutation\(\.resize\(startMin: finalStart, endMin: finalStart \+ finalDuration\)\)"#, in: code) == 1)
+        #expect(CadenceSourceScan.matchCount(#"item\.eventDateRangeForResizedSegment\(startMin: startMin, endMin: endMin\)"#, in: code) == 1)
+        #expect(CadenceSourceScan.matchCount(#"eventDateRangeForEditedSegment"#, in: code) == 0)
+    }
+
     @Test("The Month header reads its headings from the grid's calendar")
     func theHeaderReadsTheGridsCalendar() throws {
         let support = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/CalendarPageMonthGridSupport.swift"))

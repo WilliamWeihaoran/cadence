@@ -13,7 +13,7 @@ import Foundation
 ///   caller's `CalendarEventEditPopover.isEditable(_:)`, which is that same rule.
 /// - **A resize handle sits only on an edge the event has.** A multi-day timed event is drawn as
 ///   one segment per day, clipped at midnight. A clip is not an edge:
-///   `CalendarEventItem.eventDateRangeForEditedSegment` moves the event's start only from its first
+///   `CalendarEventItem.eventDateRangeForResizedSegment` moves the event's start only from its first
 ///   segment and its end only from its last, so a drag on a midnight edge wrote back the range the
 ///   event already had.
 /// - **Live drag state survives a write only when a store change is coming to replace it.** The

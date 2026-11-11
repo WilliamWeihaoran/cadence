@@ -101,7 +101,9 @@ struct CalendarEventItem: Identifiable {
     /// `DateFormatters.date(from:)` in the host zone while the clock was set in `calendar`. Both
     /// halves now go through `CadenceCalendarEventTiming.startDate(dateKey:startMin:calendar:)`,
     /// which parses the key and sets the clock in the one calendar. The end stays a duration on
-    /// purpose: a 60-minute meeting is 60 minutes long on a transition day too.
+    /// purpose: a 60-minute meeting is 60 minutes long on a transition day too. That is the
+    /// rule for a **move**; a **resize** names its end as a row on the grid and goes through
+    /// `wallClockSegmentRange` instead ([[T-16578]]).
     static func segmentRange(
         dateKey: String,
         startMin: Int,
@@ -112,6 +114,63 @@ struct CalendarEventItem: Identifiable {
               let end = calendar.date(byAdding: .minute, value: max(5, durationMinutes), to: start)
         else { return nil }
         return (start, end)
+    }
+
+    /// The instants a resized segment on `dateKey` spans: **both** ends are wall-clock rows of the
+    /// grid, each *set* on the day, the same rule `CadenceScheduleDraft.eventDateRange` applies to
+    /// the iOS editor's two pickers ([[T-16578]], [[T-8201]]). Since [[T-16522]] the block is drawn
+    /// between its wall-clock ends, so the row the user lets go on is a clock reading, not a
+    /// duration: on 2026-03-08 a 1:00 -> 4:00 event dragged back to the `4 AM` row is three rows
+    /// tall but two hours long, and `segmentRange` would have written 5:00.
+    ///
+    /// `endMin == 1440` is the next midnight, which no reading on the day can name. A reading the
+    /// day does not have (the spring-forward gap) resolves as `startDate` does, to the instant the
+    /// gap closes; an end that lands at or before the start keeps the five-minute floor.
+    static func wallClockSegmentRange(
+        dateKey: String,
+        startMin: Int,
+        endMin: Int,
+        calendar: Calendar = .current
+    ) -> (start: Date, end: Date)? {
+        guard let start = CadenceCalendarEventTiming.startDate(dateKey: dateKey, startMin: startMin, calendar: calendar)
+        else { return nil }
+        let endReading: Date?
+        if endMin == 24 * 60 {
+            endReading = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: start))
+        } else {
+            endReading = CadenceCalendarEventTiming.startDate(dateKey: dateKey, startMin: endMin, calendar: calendar)
+        }
+        guard let end = endReading else { return nil }
+        return (start, Self.flooredEnd(end, after: start, calendar: calendar))
+    }
+
+    private static func flooredEnd(_ end: Date, after start: Date, calendar: Calendar) -> Date {
+        let floor = calendar.date(byAdding: .minute, value: 5, to: start) ?? start.addingTimeInterval(300)
+        return max(end, floor)
+    }
+
+    /// The range a resize writes. An edge the drag did not touch writes the event's own instant
+    /// back, so a top-edge resize never re-reads an end in the repeated fall-back hour as the
+    /// earlier of its two instants (the same untouched-schedule rule as the iOS editor's save).
+    func eventDateRangeForResizedSegment(
+        startMin resizedStartMin: Int,
+        endMin resizedEndMin: Int,
+        calendar: Calendar = .current
+    ) -> (start: Date, end: Date)? {
+        guard var (segmentStart, segmentEnd) = Self.wallClockSegmentRange(
+            dateKey: dateKey,
+            startMin: resizedStartMin,
+            endMin: resizedEndMin,
+            calendar: calendar
+        ) else { return nil }
+        if isFirstSegment, resizedStartMin == startMin {
+            segmentStart = eventStartDate
+        }
+        if isLastSegment, resizedEndMin == startMin + durationMinutes {
+            segmentEnd = eventEndDate
+        }
+        segmentEnd = Self.flooredEnd(segmentEnd, after: segmentStart, calendar: calendar)
+        return eventRange(replacingSegmentStart: segmentStart, segmentEnd: segmentEnd)
     }
 
     func eventDateRangeForEditedSegment(
@@ -125,7 +184,13 @@ struct CalendarEventItem: Identifiable {
             durationMinutes: editedDurationMinutes,
             calendar: calendar
         ) else { return nil }
+        return eventRange(replacingSegmentStart: segmentStart, segmentEnd: segmentEnd)
+    }
 
+    /// The whole event's range once this segment spans `segmentStart...segmentEnd`: a single-day
+    /// event is the segment; a multi-day one moves its start only from its first segment and its
+    /// end only from its last.
+    private func eventRange(replacingSegmentStart segmentStart: Date, segmentEnd: Date) -> (start: Date, end: Date)? {
         guard isMultiDayTimedEvent else {
             return segmentEnd > segmentStart ? (segmentStart, segmentEnd) : nil
         }

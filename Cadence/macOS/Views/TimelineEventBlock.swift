@@ -9,7 +9,7 @@ import SwiftData
 struct TimelineEventBlock: View {
     private enum PendingEventMutation {
         case move(startMin: Int)
-        case resize(startMin: Int, durationMinutes: Int)
+        case resize(startMin: Int, endMin: Int)
         case delete
     }
 
@@ -327,7 +327,8 @@ struct TimelineEventBlock: View {
     private func endResize() {
         let finalStart    = liveStartMin        ?? effectiveStartMin
         let finalDuration = liveDurationMinutes ?? effectiveDuration
-        requestEventMutation(.resize(startMin: finalStart, durationMinutes: finalDuration))
+        // The end is the row the user let go on, a wall-clock reading ([[T-16578]]).
+        requestEventMutation(.resize(startMin: finalStart, endMin: finalStart + finalDuration))
         // Keep live state until item refreshes (onChange clears it)
         resizeSession = nil
     }
@@ -359,9 +360,9 @@ struct TimelineEventBlock: View {
         switch mutation {
         case .move(let startMin):
             updateEventRange(item.eventDateRangeForMovedSegment(startMin: startMin), scope: scope)
-        case .resize(let startMin, let durationMinutes):
+        case .resize(let startMin, let endMin):
             updateEventRange(
-                item.eventDateRangeForEditedSegment(startMin: startMin, durationMinutes: durationMinutes),
+                item.eventDateRangeForResizedSegment(startMin: startMin, endMin: endMin),
                 scope: scope
             )
         case .delete:
