@@ -67,8 +67,9 @@ final class SectionCompletionAnimationManager {
                 guard let self, self.pendingStartTimes[sectionID] != nil, var current = getCurrent() else { return }
                 self.pendingTasks[sectionID] = nil
                 self.pendingStartTimes[sectionID] = nil
-                current.isCompleted = true
-                current.isArchived = true
+                // The shared write ([[T-15722]]): completing a column archives it, on both
+                // platforms -- the sweep this countdown draws is the column leaving the board.
+                current.markColumnCompleted()
                 save(current)
             }
         }

@@ -213,6 +213,8 @@ struct iOSWindDownRefusalTests {
         try context.windDownColumn(.init(config: try doing(area), area: area, project: nil, action: .complete))
         #expect(!context.hasChanges)
         #expect(try doing(area).isCompleted)
+        // [[T-15722]]: completing a column archives it, as the Mac's countdown does.
+        #expect(try doing(area).isArchived)
         #expect(open.status == .done)
     }
 }

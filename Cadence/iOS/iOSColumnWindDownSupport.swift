@@ -69,7 +69,7 @@ struct iOSColumnWindDownTarget: Identifiable {
                 title: "Complete Column",
                 actionIcon: "checkmark.circle.fill",
                 headline: "Completing settles what is left",
-                explanation: "The column is marked complete and stays on the board. Reopening it does not reopen the work marked done below.",
+                explanation: "The column is marked complete and leaves the board, as an archived column does; it can be unarchived from this editor. Unarchiving it does not reopen the work marked done below.",
                 name: name,
                 icon: "square.grid.3x2",
                 colorHex: config.colorHex,
@@ -115,7 +115,9 @@ extension ModelContext {
         updateColumn(uuid: target.config.uuid, area: target.area, project: target.project) { config in
             switch target.action {
             case .archive: config.isArchived = true
-            case .complete: config.isCompleted = true
+            // [[T-15722]]: the one completion write, which archives the column too -- as the
+            // Mac's countdown does.
+            case .complete: config.markColumnCompleted()
             }
         }
 

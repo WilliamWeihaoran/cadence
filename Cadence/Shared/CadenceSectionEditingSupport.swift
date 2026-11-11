@@ -76,6 +76,37 @@ struct CadenceSectionDraft: Identifiable, Hashable {
     }
 }
 
+/// **The one write that completes a kanban column, on both platforms ([[T-15722]]).**
+///
+/// Completing a column also archives it: the column is finished, so it leaves the board and is
+/// reached again through Show Archived (Mac) or the list editor (iPad), whose Unarchive brings it
+/// back open. The Mac's completion countdown (`SectionCompletionAnimationManager`) always wrote
+/// both flags -- its sweep is built around the column leaving -- while the iPad's
+/// `ModelContext.windDownColumn(.complete)` wrote `isCompleted` alone and said the column "stays
+/// on the board", so one gesture filed the column away on one device and not the other. No
+/// pointer, touch or width constraint decides which ([[T-8201]]), and the rest of the model
+/// already reads a completed column as an archived one ([[T-15661]]). The flag pair is decided
+/// here once, for the stored config and for the iPad editor's draft of it alike, so the two can
+/// never be written apart again.
+///
+/// The settle that goes with it -- the open cards marked done -- is not here: it belongs to the
+/// caller's commit, as `KanbanSectionStateSupport.windDownOutcome` (Mac) and `windDownColumn`
+/// (iPad) already arrange.
+nonisolated protocol CadenceColumnLifecycleFlags {
+    var isCompleted: Bool { get set }
+    var isArchived: Bool { get set }
+}
+
+nonisolated extension CadenceColumnLifecycleFlags {
+    mutating func markColumnCompleted() {
+        isCompleted = true
+        isArchived = true
+    }
+}
+
+nonisolated extension TaskSectionConfig: CadenceColumnLifecycleFlags {}
+extension CadenceSectionDraft: CadenceColumnLifecycleFlags {}
+
 /// Turning a list's columns into an editable form and back, plus the task reassignment a rename or
 /// a removal implies.
 ///

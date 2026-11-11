@@ -322,8 +322,9 @@ struct CadenceColumnWindDownSurfaceTests {
     // this bundle too, so the value tests are fenced and the source-reading one below is not.
     #if os(macOS)
 
-    /// [[T-15661]]. A column the iPad completed stays on the board (`windDownColumn(.complete)`
-    /// writes `isCompleted` alone), so a card can be added to it afterwards. Archiving that column
+    /// [[T-15661]]. A column completed on the iPad before [[T-15722]] stayed on the board
+    /// (`windDownColumn(.complete)` wrote `isCompleted` alone), so a card can be added to it
+    /// afterwards, and such columns are still in stores. Archiving that column
     /// on the Mac used to skip the cancel because the column was completed, leaving the card open
     /// under a column the board no longer draws; the iPad's archive of the same column cancels it.
     /// The decision is the one `saveSection` and `toggleSectionArchive` both read, composed here
@@ -493,7 +494,80 @@ struct CadenceColumnWindDownSurfaceTests {
         // file that does spell them had stopped spelling them.
         let support = try strippingComments(sourceFile("Cadence/iOS/iOSColumnWindDownSupport.swift"))
         #expect(support.contains("config.isArchived = true"))
-        #expect(support.contains("config.isCompleted = true"))
+        #expect(support.contains("config.markColumnCompleted()"))
+    }
+
+    // MARK: - T-15722: completing a column archives it, on both platforms
+
+    /// [[T-15722]]. The shared write sets both flags, on the stored config and on the iPad
+    /// editor's draft alike, and composed with the settle `windDownColumn(.complete)` runs it marks
+    /// the open card done and takes the column off the board -- what the Mac's countdown did all
+    /// along. A column already archived stays so, and Default still refuses both flags (T-268).
+    @Test func completingAColumnArchivesItAndMarksItsOpenWorkDone() throws {
+        let context = ModelContext(try container())
+        let open = task("open", section: "Doing")
+        let inProgress = task("in progress", section: "Doing", status: .inProgress)
+        let elsewhere = task("elsewhere", section: "Later")
+        let area = board([open, inProgress, elsewhere], in: context)
+        try context.save()
+
+        let doing = try #require(area.sectionConfigs.first { $0.name == "Doing" })
+        #expect(!doing.isCompleted && !doing.isArchived)
+        #expect(area.sectionNames.contains("Doing"))
+
+        // The write and the settle, composed as `ModelContext.windDownColumn(.complete)` composes
+        // them: the flag pair through `updateSectionConfig`, then the column's open work done.
+        let found = CadenceSectionConfigMerge.container(area: area, project: nil)?
+            .updateSectionConfig(uuid: doing.uuid) { $0.markColumnCompleted() }
+        #expect(found == true)
+        TaskContainerLifecycleService.completeRemainingActiveTasks(in: doing, area: area, project: nil, in: context)
+        try context.save()
+
+        let stored = try #require(area.sectionConfigs.first { $0.uuid == doing.uuid })
+        #expect(stored.isCompleted)
+        #expect(stored.isArchived)
+        #expect(!area.sectionNames.contains("Doing"), "a completed column is still drawn on the board")
+        #expect([open, inProgress].map(\.status) == [.done, .done])
+        #expect(elsewhere.status == .todo)
+        #expect(area.sectionConfigs.first { $0.name == "Later" }.map { !$0.isCompleted && !$0.isArchived } == true)
+
+        // The iPad editor's draft follows the same write, so its own Save cannot write the
+        // archive back off.
+        var draft = CadenceSectionDraft(config: doing)
+        draft.markColumnCompleted()
+        #expect(draft.isCompleted && draft.isArchived)
+        #expect(draft.config.isCompleted && draft.config.isArchived)
+
+        // Default refuses the pair whoever writes it.
+        let defaultColumn = try #require(area.sectionConfigs.first { $0.isDefault })
+        CadenceSectionConfigMerge.container(area: area, project: nil)?
+            .updateSectionConfig(uuid: defaultColumn.uuid) { $0.markColumnCompleted() }
+        let storedDefault = try #require(area.sectionConfigs.first { $0.isDefault })
+        #expect(!storedDefault.isCompleted && !storedDefault.isArchived)
+    }
+
+    /// The wiring half of [[T-15722]]: the Mac countdown, the iPad wind-down and the iPad editor's
+    /// draft all reach the one completion write, and neither platform spells `isCompleted = true`
+    /// for a column on its own any more -- the split that let the two write different pairs.
+    @Test func bothPlatformsCompleteAColumnThroughTheOneSharedWrite() throws {
+        try expectOccurrences(of: "markColumnCompleted()", at: [
+            "Cadence/macOS/Services/SectionCompletionAnimationManager.swift": 1,
+            "Cadence/iOS/iOSColumnWindDownSupport.swift": 1,
+            "Cadence/iOS/iOSListEditorViews.swift": 1
+        ])
+        for path in [
+            "Cadence/macOS/Services/SectionCompletionAnimationManager.swift",
+            "Cadence/iOS/iOSColumnWindDownSupport.swift",
+            "Cadence/iOS/iOSListEditorViews.swift"
+        ] {
+            let code = try strippingComments(sourceFile(path))
+            #expect(!code.contains("isCompleted = true"), "\(path) completes a column with its own flag write again")
+        }
+
+        // The iPad's confirmation says what the write now does.
+        let support = try sourceFile("Cadence/iOS/iOSColumnWindDownSupport.swift")
+        #expect(!support.contains("stays on the board"))
+        #expect(support.contains("The column is marked complete and leaves the board"))
     }
 }
 

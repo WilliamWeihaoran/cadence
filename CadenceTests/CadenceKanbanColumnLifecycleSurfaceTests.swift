@@ -170,10 +170,13 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
         manager.cancelPending(for: active.id)
         #expect(!manager.isPending(active))
 
-        // And the sweep's landing writes the pair `completeColumnTheWayTheMacButtonDid` uses.
+        // And the sweep's landing writes the pair `completeColumnTheWayTheMacButtonDid` uses --
+        // through the shared completion write ([[T-15722]]), which sets both flags.
         let sweep = try strippingComments(sourceFile("Cadence/macOS/Services/SectionCompletionAnimationManager.swift"))
-        #expect(sweep.contains("current.isCompleted = true"))
-        #expect(sweep.contains("current.isArchived = true"))
+        #expect(sweep.contains("current.markColumnCompleted()"))
+        var landed = active
+        landed.markColumnCompleted()
+        #expect(landed.isCompleted && landed.isArchived)
         #expect(sweep.contains("current.isCompleted = false"))
         #expect(sweep.contains("current.isArchived = false"))
     }

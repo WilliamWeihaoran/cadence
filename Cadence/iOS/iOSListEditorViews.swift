@@ -739,7 +739,7 @@ struct iOSListEditorSheet: View {
         updateDraft(target.config.uuid) { draft in
             switch target.action {
             case .archive: draft.isArchived = true
-            case .complete: draft.isCompleted = true
+            case .complete: draft.markColumnCompleted()
             }
         }
     }
