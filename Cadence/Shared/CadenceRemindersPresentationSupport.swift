@@ -311,15 +311,18 @@ enum AppleReminderRowPresentation {
         }
     }
 
-    /// Red for a due date that has gone by, amber for today, and neutral for anything still ahead.
+    /// Red for a due date that has gone by, and neutral for anything else -- today included.
     /// `nil` — an unparseable date key — is neutral rather than late.
     ///
-    /// The same three stops the task row uses, and the same rule behind them: colour is reserved
-    /// for the exceptional, so a reminder due next week is chrome.
+    /// **[[T-16231]]: the task row's two stops, not three.** This said "the same three stops the
+    /// task row uses" and drew today amber, but the Cadence task rows this one sits between in the
+    /// Inbox draw their due date red once past and grey otherwise (`MacTaskRow.dueDateBadgeList`,
+    /// iOS's `iOSTaskRowDateChip` tint), the rule the sidebar list badge shares ([[T-11432]]). So a
+    /// reminder due today read amber "Due today" one row below a task's grey "Due today" -- and
+    /// amber-today is those rows' DO-date colour (`CadenceTaskRowDoDateEmphasis`), not a deadline's.
     static func dueTint(dayOffset: Int?) -> Color {
         guard let dayOffset else { return Theme.dim }
-        if dayOffset < 0 { return Theme.red }
-        return dayOffset == 0 ? Theme.amber : Theme.dim
+        return dayOffset < 0 ? Theme.red : Theme.dim
     }
 
     /// [[T-14354]]: the due badge's words, measured against the host page's observed day

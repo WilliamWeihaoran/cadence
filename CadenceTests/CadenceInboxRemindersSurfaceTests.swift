@@ -919,23 +919,54 @@ struct CadenceInboxRemindersSurfaceTests {
         #expect(AppleReminderRowPresentation.priorityTint(42) == Theme.priorityColor(.none))
     }
 
-    /// Colour is reserved for the exceptional: late is red, today is amber, and everything still
-    /// ahead — or unparseable — is chrome.
-    @Test func onlyALateOrTodayDueDateEarnsAColour() {
+    /// Colour is reserved for the exceptional: late is red, and everything else -- today, ahead,
+    /// or unparseable -- is chrome. **[[T-16231]]:** today was amber, a third stop the Cadence task
+    /// rows beside it in the Inbox do not have.
+    @Test func onlyALateDueDateEarnsAColour() {
         #expect(AppleReminderRowPresentation.dueTint(dayOffset: -1) == Theme.red)
-        #expect(AppleReminderRowPresentation.dueTint(dayOffset: 0) == Theme.amber)
+        #expect(AppleReminderRowPresentation.dueTint(dayOffset: 0) == Theme.dim)
         #expect(AppleReminderRowPresentation.dueTint(dayOffset: 1) == Theme.dim)
         #expect(AppleReminderRowPresentation.dueTint(dayOffset: nil) == Theme.dim)
     }
 
+    /// **[[T-16231]].** A reminder due today reads like the Cadence task due today one row away in
+    /// the same Inbox: the task rows draw a due date red once past and grey otherwise (the Mac's
+    /// `MacTaskRow.dueDateBadgeList`, iOS's `iOSTaskRowDateChip` tint), and the sidebar's list
+    /// badge reads the same two stops. Amber-today is the task rows' DO-date colour, so a reminder
+    /// wearing it read as a do date. Stated as relations, so a third stop on either side reds this.
+    @Test func aReminderDueTodayWearsTheTaskRowsDueTintNotTheDoDatesAmber() throws {
+        let today = "2026-11-11"
+        let dueToday = AppleReminderRowPresentation.dueTint(forDueDateKey: today, todayKey: today)
+        let dueTomorrow = AppleReminderRowPresentation.dueTint(forDueDateKey: "2026-11-12", todayKey: today)
+        let dueYesterday = AppleReminderRowPresentation.dueTint(forDueDateKey: "2026-11-10", todayKey: today)
+        // Today reads as any not-yet-late day does, and only late differs.
+        #expect(dueToday == dueTomorrow)
+        #expect(dueYesterday != dueToday)
+        // The sidebar's list badge, the one shared due-tint rule in `Shared/`, agrees on all three.
+        for (key, tint) in [(today, dueToday), ("2026-11-12", dueTomorrow), ("2026-11-10", dueYesterday)] {
+            let sidebar = CadenceSidebarLayout.listDueDateIsPast(key, todayKey: today) ? Theme.red : Theme.dim
+            #expect(tint == sidebar, "\(key)")
+        }
+        // Not the do date's colour.
+        #expect(dueToday != CadenceTaskRowDoDateEmphasis.labelColor(for: .attention))
+        #expect(dueToday != Theme.amber)
+
+        // Both task rows still draw their own due date in exactly those two stops.
+        let mac = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
+        #expect(mac.contains(".foregroundStyle(isOverdue ? Theme.red : Theme.dim"), "non-vacuity: the Mac task row's due tint moved")
+        let ios = try strippingComments(sourceFile("Cadence/iOS/iOSTaskViews.swift"))
+        #expect(ios.contains("tint: dueUrgency == .overdue ? Theme.red : Theme.dim"), "non-vacuity: the iOS task row's due tint moved")
+    }
+
     /// **[[T-14354]].** The badge's words and tint are measured against the observed day handed
-    /// in, never the clock: a reminder due on the observed day is "Due today" amber, and the same
+    /// in, never the clock: a reminder due on the observed day is "Due today" grey ([[T-16231]];
+    /// it was amber), and the same
     /// reminder once that day turns is "Overdue Mar 4" red, whatever the clock says. (The words are
     /// the tasks' due vocabulary since [[T-15502]]; they were "Today" / "Yesterday".)
     @Test func theReminderDueBadgeFollowsTheObservedDayNotTheClock() {
         #expect(DateFormatters.todayKey() != "2001-03-04", "non-vacuity: the clock must not be on the observed day")
         #expect(AppleReminderRowPresentation.dueLabel(forDueDateKey: "2001-03-04", todayKey: "2001-03-04") == "Due today")
-        #expect(AppleReminderRowPresentation.dueTint(forDueDateKey: "2001-03-04", todayKey: "2001-03-04") == Theme.amber)
+        #expect(AppleReminderRowPresentation.dueTint(forDueDateKey: "2001-03-04", todayKey: "2001-03-04") == Theme.dim)
         #expect(AppleReminderRowPresentation.dueLabel(forDueDateKey: "2001-03-04", todayKey: "2001-03-05") == "Overdue Mar 4")
         #expect(AppleReminderRowPresentation.dueTint(forDueDateKey: "2001-03-04", todayKey: "2001-03-05") == Theme.red)
         #expect(AppleReminderRowPresentation.dueTint(forDueDateKey: "2001-03-04", todayKey: "2001-03-03") == Theme.dim)
