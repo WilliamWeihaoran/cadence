@@ -528,13 +528,10 @@ struct iOSTaskRowContextMenu: View {
         CadenceTaskComposerSupport.pickableProjects(projects, selectedID: task.project?.id)
     }
 
+    /// [[T-16171]]: the filed list's columns, project first -- read from the model, where a test
+    /// can reach it; this file is invisible to the macOS-built test target.
     private var availableSectionNames: [String] {
-        let rawNames = task.area?.sectionNames ?? task.project?.sectionNames ?? []
-        let names = rawNames.isEmpty ? [TaskSectionDefaults.defaultName] : rawNames
-        if names.contains(where: { $0.caseInsensitiveCompare(task.resolvedSectionName) == .orderedSame }) {
-            return names
-        }
-        return names + [task.resolvedSectionName]
+        task.moveSectionChoices
     }
 
     var body: some View {

@@ -133,6 +133,48 @@ struct CadenceDualFiledTaskListPrecedenceTests {
         #expect(container.name == "Kitchen Reno")
     }
 
+    // MARK: - [[T-16171]]: the row menu's Move Section
+
+    /// The long-press menu's Move Section lists the PROJECT's columns for a dual-filed task -- the
+    /// board every page shows it on -- not the area's, which it used to read first.
+    @Test func moveSectionOffersTheProjectsColumnsForADualFiledTask() throws {
+        let s = try seedWithColumns()
+        #expect(s.task.moveSectionChoices == s.project.sectionNames)
+        #expect(s.task.moveSectionChoices.contains("Build"))
+        #expect(!s.task.moveSectionChoices.contains("Errands"))
+    }
+
+    /// The single-list halves and the Inbox keep what the menu always offered: the list's own
+    /// columns, Default for no list, and the task's own section appended when its list no longer
+    /// names it.
+    @Test func moveSectionKeepsTheSingleListAndInboxRows() throws {
+        let s = try seedWithColumns()
+
+        let inArea = AppTask(title: "Water plants")
+        inArea.area = s.area
+        inArea.sectionName = "errands"
+        #expect(inArea.moveSectionChoices == s.area.sectionNames)
+        #expect(inArea.moveSectionChoices.contains("Errands"))
+
+        let inProject = AppTask(title: "Pick tiles")
+        inProject.project = s.project
+        inProject.sectionName = "Retired"
+        #expect(inProject.moveSectionChoices == s.project.sectionNames + ["Retired"])
+
+        let unfiled = AppTask(title: "Loose")
+        #expect(unfiled.moveSectionChoices == [TaskSectionDefaults.defaultName])
+    }
+
+    /// The iOS row menu is behind `#if os(iOS)`, which this target does not compile on macOS, so
+    /// its half is read from source: Move Section's rows come from the shared helper, and no
+    /// area-first spelling of them is left in the file.
+    @Test func theIOSRowMenusMoveSectionReadsTheSharedChoices() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskRowActionViews.swift")
+        let stripped = CadenceSourceScan.strippingComments(raw)
+        #expect(stripped.contains("task.moveSectionChoices"))
+        #expect(!stripped.contains("task.area?.sectionNames"))
+    }
+
     /// A single-list task is unchanged by the precedence — the area-only and project-only halves.
     @Test func aTaskInOneListStillNamesThatList() {
         let area = Area(name: "Home", colorHex: "#aa3311", icon: "house.fill")

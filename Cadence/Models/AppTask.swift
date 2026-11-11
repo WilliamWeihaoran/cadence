@@ -442,6 +442,24 @@ nonisolated enum CadenceTodayStanding: Int, CaseIterable, Hashable {
         project == nil ? area : nil
     }
 
+    /// **[[T-16171]]: the row menu's Move Section rows** -- the columns of the list this task is
+    /// FILED in, project first through `filedArea`, plus its own section when that list no longer
+    /// names it, so the menu always has a row that means "where this task is".
+    ///
+    /// The iOS row menu spelled this inline, area first: on a task holding both lists -- which a
+    /// field-wise CloudKit merge produces ([[T-15431]]) and which every page shows on the
+    /// PROJECT's board -- Move Section listed the area's columns, and picking one wrote a column
+    /// the project does not have.
+    var moveSectionChoices: [String] {
+        let rawNames = project?.sectionNames ?? filedArea?.sectionNames ?? []
+        let names = rawNames.isEmpty ? [TaskSectionDefaults.defaultName] : rawNames
+        let current = resolvedSectionName
+        if names.contains(where: { $0.caseInsensitiveCompare(current) == .orderedSame }) {
+            return names
+        }
+        return names + [current]
+    }
+
     var resolvedSectionName: String {
         let trimmed = sectionName.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? TaskSectionDefaults.defaultName : trimmed
