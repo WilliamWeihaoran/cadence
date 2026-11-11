@@ -196,10 +196,10 @@ struct iOSSearchResult: Identifiable {
     let icon: String
     let color: Color
     let score: Int
-    /// Split out of `detail` rather than joined into it, for the same reason macOS's
-    /// `GlobalSearchSubtitleParts` splits it out of the subtitle: the due date sits near the
-    /// end of a bullet-joined metadata string, so a long list name plus tags truncated it
-    /// away entirely. Carried separately, the row can lay it out with priority.
+    /// Split out of `detail` rather than joined into it, as macOS's `GlobalSearchResult.dueLabel`
+    /// is ([[T-16471]]): the due date sits near the end of a bullet-joined metadata string, so a
+    /// long list name plus tags truncated it away entirely. Carried separately, the row can lay
+    /// it out with priority.
     var dueLabel: String?
 }
 

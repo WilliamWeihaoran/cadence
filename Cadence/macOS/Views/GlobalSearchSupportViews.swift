@@ -214,37 +214,16 @@ struct GlobalSearchResult: Identifiable, Hashable {
     /// A third line under the subtitle, empty for every kind but a note, which carries
     /// `CadenceSearchNoteExcerpt`'s body excerpt as an iOS Search note row does ([[T-8763]]).
     var detail: String = ""
+    /// A task's due words, `CadenceTaskPresentationSupport.dueDateLabel`'s ("Overdue Nov 9" /
+    /// "Due today"), carried beside the subtitle as `iOSSearchResult.dueLabel` is ([[T-16471]]).
+    /// The row lays it out with priority, so a long list name plus tags cannot truncate it away.
+    ///
+    /// It used to be fished back out of the bullet-joined subtitle by a `"Due "` prefix, which
+    /// [[T-15491]]'s "Overdue Nov 9" does not start with: an overdue task -- the one whose date
+    /// matters most -- lost its amber capsule and its date sank into the dim, truncating line.
+    var dueLabel: String? = nil
 
     var tint: Color { Color(hex: tintHex) }
-}
-
-/// Task subtitles are a bullet-joined metadata string where the due date lands near the end,
-/// so a long list name plus tags used to truncate it away entirely. Splitting the due segment
-/// out lets the row lay it out with priority instead of letting it fall off the tail.
-struct GlobalSearchSubtitleParts {
-    let leading: String
-    let due: String?
-
-    init(subtitle: String, category: GlobalSearchCategory) {
-        let segments = subtitle.components(separatedBy: " • ")
-        // Only tasks carry a due segment, and the container name always leads — so a list
-        // literally named "Due Diligence" is never mistaken for one. Scanning from the back
-        // also prefers the real due segment over an earlier tag that happens to start with it.
-        let dueIndex: Int? = category == .tasks
-            ? segments.indices.dropFirst().last(where: { segments[$0].hasPrefix("Due ") })
-            : nil
-
-        guard let dueIndex else {
-            self.leading = subtitle
-            self.due = nil
-            return
-        }
-        self.leading = segments.enumerated()
-            .filter { $0.offset != dueIndex }
-            .map(\.element)
-            .joined(separator: " • ")
-        self.due = segments[dueIndex]
-    }
 }
 
 /// Everything a category matched, and how many of them the palette lists before it has to say
@@ -566,10 +545,6 @@ struct GlobalSearchResultRow: View {
     let onSelect: () -> Void
     let onHover: () -> Void
 
-    private var subtitleParts: GlobalSearchSubtitleParts {
-        GlobalSearchSubtitleParts(subtitle: result.subtitle, category: result.category)
-    }
-
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 12) {
@@ -589,15 +564,15 @@ struct GlobalSearchResultRow: View {
                         .lineLimit(1)
 
                     HStack(spacing: 6) {
-                        if !subtitleParts.leading.isEmpty {
-                            Text(subtitleParts.leading)
+                        if !result.subtitle.isEmpty {
+                            Text(result.subtitle)
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.dim)
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                         }
 
-                        if let due = subtitleParts.due {
+                        if let due = result.dueLabel {
                             // Laid out ahead of the rest of the metadata so the due date is never
                             // the part that gets truncated away.
                             Text(due)

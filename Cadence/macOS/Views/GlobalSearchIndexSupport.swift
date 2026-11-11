@@ -319,8 +319,6 @@ enum GlobalSearchIndexSupport {
             container,
             tags.isEmpty ? nil : tags.map(\.name).joined(separator: ", "),
             task.scheduledDate.isEmpty ? nil : "Do \(DateFormatters.relativeDate(from: task.scheduledDate))",
-            // [[T-15491]]: the one due-date vocabulary, "Overdue Nov 9" / "Due today".
-            CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: todayKey),
             task.isDone ? "Completed" : "Active"
         ].compactMap { $0 }
 
@@ -331,7 +329,10 @@ enum GlobalSearchIndexSupport {
             subtitle: meta.joined(separator: " • "),
             icon: CadenceTaskSearchSupport.glyph(for: task).systemImage,
             tintHex: task.containerColor,
-            destination: .task(task.id)
+            destination: .task(task.id),
+            // [[T-15491]]: the one due-date vocabulary, "Overdue Nov 9" / "Due today". Its own
+            // field, not a subtitle part ([[T-16471]]): see `GlobalSearchResult.dueLabel`.
+            dueLabel: CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: todayKey)
         )
     }
 

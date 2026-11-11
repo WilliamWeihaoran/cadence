@@ -68,12 +68,34 @@ struct CadenceDueDateVocabularyTests {
                 .first { $0.field == .dueDate }?.title
             #expect(embedDue == expected, "embed chip, \(key)")
             #if os(macOS)
-            // Cmd+K's task subtitle carries the words as one of its parts, unprefixed.
-            let subtitle = GlobalSearchIndexSupport.taskResult(for: task, todayKey: Self.today).subtitle
-            #expect(subtitle.components(separatedBy: " • ").contains(expected), "Cmd+K, \(key): \(subtitle)")
+            // Cmd+K's task row carries the words in its own due field ([[T-16471]]).
+            let row = GlobalSearchIndexSupport.taskResult(for: task, todayKey: Self.today)
+            #expect(row.dueLabel == expected, "Cmd+K, \(key): \(String(describing: row.dueLabel))")
             #endif
         }
     }
+
+    #if os(macOS)
+    /// **[[T-16471]]: Cmd+K draws an overdue task's due date in its capsule.** The row used to find
+    /// the due words by splitting the subtitle on " • " and keeping the last part that began
+    /// "Due ", and [[T-15491]]'s overdue wording begins "Overdue": an overdue task's date was left
+    /// in the dim metadata line, after the list and the tags, where a long name truncated it away.
+    /// The due words now travel as their own field, as iOS Search's `dueLabel` does, and appear
+    /// nowhere in the subtitle -- so every wording, overdue included, reaches the capsule.
+    @Test func cmdKCarriesEveryDueWordingOutsideTheSubtitle() {
+        for (key, expected) in Self.cases {
+            let task = task(dueDate: key)
+            let row = GlobalSearchIndexSupport.taskResult(for: task, todayKey: Self.today)
+            #expect(row.dueLabel == expected, "\(key)")
+            #expect(!row.subtitle.contains(expected), "\(key): the subtitle repeats the due words: \(row.subtitle)")
+        }
+        let overdue = GlobalSearchIndexSupport.taskResult(for: task(dueDate: "2026-11-09"), todayKey: Self.today)
+        #expect(overdue.dueLabel?.hasPrefix("Overdue ") == true, "non-vacuity: the overdue case is the one a prefix split missed")
+
+        let undated = GlobalSearchIndexSupport.taskResult(for: task(dueDate: ""), todayKey: Self.today)
+        #expect(undated.dueLabel == nil)
+    }
+    #endif
 
     /// **[[T-15522]]:** a settled item whose date has passed says "Due Nov 9" -- the date, with no
     /// lateness claim -- because every surface's overdue predicate already calls it not late and
