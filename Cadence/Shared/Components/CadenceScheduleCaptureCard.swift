@@ -221,6 +221,23 @@ enum CadenceCaptureFieldInventory {
     }
 }
 
+/// **The commit button's enabled state and the colour that shows it are one fact** ([[T-16042]]).
+///
+/// The card paints everything `Theme.text` from its root and wears `.cadencePlain`, which reads
+/// `configuration.isPressed` and hover but never `isEnabled` -- so `.disabled` alone left the Add
+/// arrow the same white whether it would act or not (sighted on the Mac: identical pixels, the
+/// AX state flipping underneath). The tint is chosen here from the same gate `.disabled` reads,
+/// in the app's established disabled treatment (`Theme.dim`, as the iOS subtask add arrow does).
+enum CadenceCaptureCommitButton {
+    /// Whether the commit button acts: the host's own gate, and [[T-14042]]'s title gate, so a
+    /// title of `!!!` alone greys it.
+    static func isEnabled(canCommit: Bool, draft: CadenceScheduleDraft) -> Bool {
+        canCommit && draft.hasCommittableTitle
+    }
+
+    static func tint(isEnabled: Bool) -> Color { isEnabled ? Theme.text : Theme.dim }
+}
+
 /// A mode switch must not turn an untimed task into a scheduled task merely by visiting Event.
 struct CadenceCaptureKindMemory {
     private var task: CadenceScheduleDraft?
@@ -553,6 +570,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                 .disabled(isReadOnly)
             }
             if !isReadOnly {
+                let commitEnabled = CadenceCaptureCommitButton.isEnabled(canCommit: canCommit, draft: draft)
                 Button(action: commit) {
                     if draft.subject.isEditing {
                         Text("Save").cadenceFont(.controlLabel, weight: .semibold)
@@ -564,11 +582,13 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                             .frame(minWidth: 44, minHeight: 44)
                     }
                 }
+                .foregroundStyle(CadenceCaptureCommitButton.tint(isEnabled: commitEnabled))
                 .accessibilityLabel(draft.subject.isEditing ? "Save" : "Create \(draft.kind.title.lowercased())")
                 .accessibilityIdentifier(draft.subject.isEditing ? "capture-save" : "capture-create")
                 .help(draft.subject.isEditing ? "Save" : "Create \(draft.kind.title.lowercased())")
-                // [[T-14042]]: the commit's own title gate, so a title of `!!!` alone greys this.
-                .disabled(!canCommit || !draft.hasCommittableTitle)
+                // [[T-14042]]: the commit's own title gate, so a title of `!!!` alone greys this --
+                // and [[T-16042]]: the tint above reads the same value, so it visibly does.
+                .disabled(!commitEnabled)
             }
         }
         if draft.kind == .event, let calendarUnavailableNotice {
