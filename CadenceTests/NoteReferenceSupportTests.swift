@@ -582,6 +582,31 @@ struct NoteReferenceSupportTests {
         #expect(NoteUnlinkedMentionResolver.firstLoosePhraseRange(buried.displayTitle, in: source.content) == nil)
     }
 
+    /// **[[T-16181]]: a title inside another reference's label is not an unlinked mention.**
+    ///
+    /// "Cadence" sits only inside `[[note:<id>|Cadence Roadmap]]`: it used to be offered, and its
+    /// Link control rewrote the label into a nested reference. A plain occurrence after the link
+    /// is the control -- it is the one found, so the skip is a skip and not a blanket refusal.
+    @Test func aTitleInsideAnotherReferenceIsNotAnUnlinkedMention() throws {
+        let roadmap = Note(kind: .list, title: "Cadence Roadmap")
+        let short = Note(kind: .list, title: "Cadence")
+        let task = AppTask(title: "Ship Cadence build")
+        let onlyInLinks = "See \(NoteReferenceParser.noteReferenceMarkdown(for: roadmap)) and [[task:\(task.id.uuidString)|Ship Cadence build]]."
+        let source = Note(kind: .list, title: "Source", content: onlyInLinks)
+
+        #expect(NoteUnlinkedMentionResolver.firstLoosePhraseRange("Cadence", in: onlyInLinks) == nil)
+        #expect(NoteUnlinkedMentionResolver.unlinkedMentions(for: source, in: [source, roadmap, short]).isEmpty)
+
+        let withPlain = onlyInLinks + " Cadence ships Friday."
+        let range = try #require(NoteUnlinkedMentionResolver.firstLoosePhraseRange("Cadence", in: withPlain))
+        let plain = (withPlain as NSString).range(of: " Cadence ships")
+        #expect(range == NSRange(location: plain.location + 1, length: 7))
+        #expect(
+            NoteUnlinkedMentionResolver.unlinkedMentions(noteID: source.id, content: withPlain, in: [source, roadmap, short])
+                .map(\.id) == [short.id]
+        )
+    }
+
     /// **The seven lines are written once.** Two byte-identical copies is the state this ticket
     /// removed, and a count is the only thing that keeps it removed — the behavioural rows above
     /// pass just as well with three copies as with one.

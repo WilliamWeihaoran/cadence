@@ -631,13 +631,27 @@ nonisolated enum NoteUnlinkedMentionResolver {
     /// non-word character, so the old `containsLoosePhrase("")` could answer `true` about a note
     /// containing nothing but a space. `unlinkedMentions` cannot reach it — it requires
     /// `title.count >= 3` — but the views call this with a trimmed title and no such floor.
+    ///
+    /// **[[T-16181]]: an occurrence inside a `[[…]]` reference is not a mention.** The phrase was
+    /// found anywhere, so with "Cadence Roadmap" linked as `[[note:<id>|Cadence Roadmap]]`, a note
+    /// titled "Cadence" was offered as an unlinked mention, and its Link control replaced the
+    /// "Cadence" INSIDE that label -- `[[note:<id>|[[note:<id2>|Cadence]] Roadmap]]`, which breaks
+    /// the existing link. Matches that overlap a reference span (`NoteReferenceParser`'s own
+    /// pattern, note and task references alike) are skipped, so the first PLAIN occurrence is the
+    /// answer, or none.
     static func firstLoosePhraseRange(_ phrase: String, in content: String) -> NSRange? {
         guard !phrase.isEmpty else { return nil }
         let escaped = NSRegularExpression.escapedPattern(for: phrase)
         let pattern = #"(?i)(?<![\p{L}\p{N}_])"# + escaped + #"(?![\p{L}\p{N}_])"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
-        return regex.firstMatch(in: content, range: NSRange(location: 0, length: (content as NSString).length))?.range
+        let whole = NSRange(location: 0, length: (content as NSString).length)
+        let referenceSpans = wikiReferenceRegex?.matches(in: content, range: whole).map(\.range) ?? []
+        return regex.matches(in: content, range: whole).first { match in
+            !referenceSpans.contains { NSIntersectionRange($0, match.range).length > 0 }
+        }?.range
     }
+
+    private static let wikiReferenceRegex = try? NSRegularExpression(pattern: NoteReferenceParser.wikiReferencePattern)
 }
 
 // MARK: - The `# H1` is the title
