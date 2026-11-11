@@ -306,6 +306,16 @@ enum CadenceNoteTemplateInsertionSupport {
         let stencilBody = String(stencil.body.drop { $0.isWhitespace })
 
         if NotesListVisibility.isBlankBody(note.body, displayTitle: displayTitle) {
+            // [[T-16491]]: a blank note that already NAMES itself -- its body is just `# <title>`,
+            // as an event note is created and as a list/Notepad note reads once named -- keeps
+            // that heading, and the template's own `# <Template>` H1 is dropped under it. Replacing
+            // it renamed a list/Notepad note to the template (its title follows the first H1,
+            // `MarkdownNoteTitleSync`) and headed an event note "Meeting Notes" instead of its event.
+            if let heading = namedHeading(of: note.body, displayTitle: displayTitle) {
+                let body = heading + "\n\n" + droppingLeadingH1(stencilBody)
+                let frontmatter = note.frontmatter.isEmpty ? stencil.frontmatter : note.frontmatter
+                return MarkdownMetadataParser.content(frontmatter: frontmatter, body: body)
+            }
             // No block of either kind to keep apart: the template verbatim, as it always was.
             guard !note.frontmatter.isEmpty else { return template.body }
             return MarkdownMetadataParser.content(frontmatter: note.frontmatter, body: stencilBody)
@@ -316,6 +326,24 @@ enum CadenceNoteTemplateInsertionSupport {
             frontmatter: note.frontmatter,
             body: trimmedBody + "\n\n" + stencilBody
         )
+    }
+
+    /// The `# <title>` line a blank body names its note with, or `nil` for a body with no name in
+    /// it -- empty, or the bare `#` a nameless note is seeded with ([[T-733]]). The same test
+    /// `NotesListVisibility.isBlankBody` makes, so "blank" and "named" cannot disagree.
+    private static func namedHeading(of body: String, displayTitle: String) -> String? {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let heading = "# \(displayTitle)"
+        guard !displayTitle.trimmingCharacters(in: .whitespaces).isEmpty, trimmed == heading else { return nil }
+        return heading
+    }
+
+    /// `body` without its first line when that line is an `# H1` (`MarkdownBlockSupport`'s reading,
+    /// not a second `hasPrefix` copy of the title rule), and the blank lines under it.
+    private static func droppingLeadingH1(_ body: String) -> String {
+        let firstLine = body.prefix { $0 != "\n" }
+        guard MarkdownBlockSupport.headingLineInfo(in: String(firstLine))?.level == 1 else { return body }
+        return String(body.dropFirst(firstLine.count).drop { $0.isNewline })
     }
 
     static func apply(_ template: NoteTemplate, to note: Note, in modelContext: ModelContext) {

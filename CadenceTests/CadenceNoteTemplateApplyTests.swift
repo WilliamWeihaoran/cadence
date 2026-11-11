@@ -44,6 +44,34 @@ struct CadenceNoteTemplateApplyTests {
         #expect(!hasFence(split.body))
     }
 
+    /// [[T-16491]]: a note whose body is only its own named heading -- an event note as created
+    /// (`"# Team sync\n\n"`, `CadenceEventNoteSupport.initialContent`) or a list/Notepad note just
+    /// named -- is blank, so the template replaces the body. It used to replace the heading too:
+    /// the event note's editor then opened on `# Meeting Notes`, and a list/Notepad note, whose
+    /// title follows its first H1 (`MarkdownNoteTitleSync`), was renamed to the template's name.
+    @Test func aNamedBlankNoteKeepsItsHeadingUnderATemplate() throws {
+        let meeting = try #require(NoteTemplateLibrary.defaultTemplate(id: "meeting-notes"))
+        let event = CadenceNoteTemplateInsertionSupport.contentByApplying(
+            meeting,
+            to: "# Team sync\n\n",
+            displayTitle: "Team sync"
+        )
+        #expect(event.hasPrefix("# Team sync\n\n## Agenda\n"))
+        #expect(!event.contains("# Meeting Notes"))
+
+        let template = try projectBrief
+        let named = CadenceNoteTemplateInsertionSupport.contentByApplying(
+            template,
+            to: "# Kickoff\n\n",
+            displayTitle: "Kickoff"
+        )
+        let split = MarkdownMetadataParser.splitFrontmatter(in: named)
+        #expect(split.frontmatter.contains("tags: [project]"))
+        #expect(split.body.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("# Kickoff\n\n## Objective\n"))
+        #expect(!named.contains("# Project Brief"))
+        #expect(MarkdownNoteTitleSync.title(from: String(split.body.drop { $0.isNewline }), kind: .list, currentTitle: "Kickoff") == nil)
+    }
+
     @Test func aTemplateAppendedBelowTextLeavesItsBlockBehind() throws {
         let template = try projectBrief
         let content = CadenceNoteTemplateInsertionSupport.contentByApplying(
