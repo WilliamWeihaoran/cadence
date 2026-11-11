@@ -10,6 +10,13 @@ struct CadenceScheduleCaptureOptions {
     /// keyboard layer on top of it has no other way in. A field the card is not offering for the
     /// draft's kind is dropped.
     var fieldRequest: Binding<CadenceCaptureField?> = .constant(nil)
+    /// The panel standing open, owned by the host when it passes one; `nil` keeps it the card's
+    /// own. The Mac composer holds it so Escape closes an open panel before the composer
+    /// ([[T-16041]]): a Mac popover window is never key, so the key reaches the composer's window
+    /// whichever panel is up, and only the host can tell the two apart. Opening and closing still
+    /// happen here: the card mirrors its own open panel into it, and a host that sets it to `nil`
+    /// closes the panel.
+    var activeField: Binding<CadenceCaptureField?>?
 }
 
 /// What the capture card's "New tag" field may hand `createTag` ([[T-10028]]): the name trimmed,
@@ -408,7 +415,15 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
             .presentationCompactAdaptation(.sheet)
         }
         .onAppear { titleIsFocused = !draft.subject.isEditing && !isReadOnly }
-        .onChange(of: activeField) { _, field in if field == nil { titleIsFocused = !draft.subject.isEditing && !isReadOnly } }
+        .onChange(of: activeField) { _, field in
+            // [[T-16041]]: the host's copy follows the card's own.
+            options.activeField?.wrappedValue = field
+            if field == nil { titleIsFocused = !draft.subject.isEditing && !isReadOnly }
+        }
+        // ...and a host that sets its copy to `nil` closes the panel.
+        .onChange(of: options.activeField?.wrappedValue) { _, field in
+            if field == nil, activeField != nil { activeField = nil }
+        }
         .onChange(of: draft.title) { _, _ in actionError = nil }
         .onChange(of: options.fieldRequest.wrappedValue) { _, field in
             guard let field else { return }

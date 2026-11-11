@@ -40,6 +40,11 @@ struct CreateTaskSheet: View {
     @State private var actionError: String?
     /// Cmd+Shift+T / Cmd+Shift+D: the card panel to open. See `CadenceScheduleCaptureOptions`.
     @State private var fieldRequest: CadenceCaptureField?
+    /// The card panel standing open, held here so Escape can close it rather than the composer
+    /// ([[T-16041]]). The card reads and writes it through `CadenceScheduleCaptureOptions.activeField`.
+    @State private var openField: CadenceCaptureField?
+    /// [[T-16043]]: the composer's own Escape monitor and the window it answers for.
+    @State private var escapeMonitor = CreateTaskEscapeMonitor()
     @FocusState private var focusedSubtask: CreateTaskSubtaskDraft.ID?
     @State private var subtaskDrafts: [CreateTaskSubtaskDraft] = []
 
@@ -82,15 +87,19 @@ struct CreateTaskSheet: View {
                 },
                 selectedTagIDs: $selectedTagIDs,
                 createTag: createTag,
-                fieldRequest: $fieldRequest
+                fieldRequest: $fieldRequest,
+                activeField: $openField
             ))
         }
         .frame(width: 600)
         .background(Theme.surface)
+        .background(CreateTaskHostWindowReader(monitor: escapeMonitor))
         .onAppear {
             reconcileContainer()
             normalizeCalendar()
+            escapeMonitor.install(handleEscapeKey)
         }
+        .onDisappear { escapeMonitor.remove() }
         // **T-317: the lists change too, not just the selection.** A container deleted in another
         // window or removed by sync stayed selected, and creation quietly downgraded it to the
         // Inbox. `@Query` republishes when the store does, so this flips the moment the chosen
@@ -129,9 +138,13 @@ struct CreateTaskSheet: View {
             // (`TaskCreationLayerView`) had no Escape at all, so the key fell through to the main
             // window's `cancelOperation` and did nothing. The quick-capture panel's
             // `dismissAction` is the `closeDiscardingDraft` its `NSPanel.cancelOperation` runs, so
-            // the key means the same there. The card's field popovers, and the `~` / `#` strip's,
-            // are their own windows, so this key equivalent does not take Escape from them.
-            Button("", action: dismiss)
+            // the key means the same there.
+            // [[T-16041]]: NOT "the card's popovers keep their own Escape" -- a popover window is
+            // never key (measured under [[T-1742]], `TaskInspectorChildPanelEscapeDismissal`), so a
+            // panel with nothing focusable in it (Due) let Escape reach this button and lose the
+            // whole draft. Escape now closes an open panel first. The monitor installed in `body`
+            // takes the key before any window does; this stays as the key equivalent behind it.
+            Button("", action: cancelFromKeyboard)
                 .keyboardShortcut(.cancelAction)
         }
         .frame(width: 0, height: 0)
@@ -368,6 +381,38 @@ struct CreateTaskSheet: View {
         if let dismissAction { dismissAction() } else { taskCreationManager.dismiss() }
     }
 
+    /// The hidden `.cancelAction` button: the key reached a window, so it is this composer's.
+    private func cancelFromKeyboard() {
+        perform(CreateTaskEscapeRoute.route(
+            isEscape: true, isComposerWindow: true, hasOpenField: openField != nil, isComposingText: false
+        ))
+    }
+
+    /// The composer's local key monitor ([[T-16043]]). Returns `true` when it consumed the key.
+    private func handleEscapeKey(_ event: NSEvent) -> Bool {
+        let firstResponder = event.window?.firstResponder
+        return perform(CreateTaskEscapeRoute.route(
+            isEscape: TaskInspectorChildPanelEscapeKey.closesPanel(keyCode: event.keyCode, modifiers: event.modifierFlags),
+            isComposerWindow: escapeMonitor.answers(for: event.window),
+            hasOpenField: openField != nil,
+            isComposingText: (firstResponder as? NSTextInputClient)?.hasMarkedText() ?? false
+        ))
+    }
+
+    @discardableResult
+    private func perform(_ route: CreateTaskEscapeRoute) -> Bool {
+        switch route {
+        case .closeField:
+            openField = nil
+            return true
+        case .dismissComposer:
+            dismiss()
+            return true
+        case .pass:
+            return false
+        }
+    }
+
     // MARK: - Calendars
 
     private var selectedCalendar: EKCalendar? {
@@ -520,6 +565,87 @@ enum CreateTaskKeyboardCommands {
     private static func setDoDate(_ draft: inout CadenceScheduleDraft, to key: String) {
         draft.startDateKey = key
         draft.endDateKey = key
+    }
+}
+
+/// **What Escape does in the Mac composer** ([[T-16041]], [[T-16043]]).
+///
+/// - **An open card panel closes, and only it.** With the Due panel open, Escape closed the whole
+///   composer and discarded the draft, while the same key on the Do panel closed just the panel.
+///   Both are the card's one `.popover`; the Do panel holds a focusable time roller and the Due
+///   panel holds nothing focusable, and a Mac popover window is never key ([[T-1742]]'s
+///   measurement), so on Due the key went to the main window and its `.cancelAction` button.
+/// - **Text being composed keeps its Escape**, so cancelling a Pinyin candidate does not discard
+///   the task -- marked text in the first responder means the input method owns the key.
+/// - **Otherwise the composer closes, on the first press.** The ⌃Space-opened composer took two
+///   ([[T-16043]]) where the Cmd+N-opened one took one; both run `TaskCreationManager.present()`,
+///   so the difference is in how the first key travels, not in the composer. The local monitor
+///   that applies this sees the key before any window, field editor or input method does.
+/// - **A key for another window is not ours**: the quick-capture panel keeps its hosting
+///   controller (and this monitor) alive while hidden ([[T-5302]]), and an in-window composer can
+///   stand behind it.
+///
+/// Pure, so `CadenceCreateTaskEscapeRouteTests` can state every case.
+nonisolated enum CreateTaskEscapeRoute: Equatable {
+    case closeField
+    case dismissComposer
+    case pass
+
+    static func route(isEscape: Bool, isComposerWindow: Bool, hasOpenField: Bool, isComposingText: Bool) -> Self {
+        guard isEscape, isComposerWindow, !isComposingText else { return .pass }
+        return hasOpenField ? .closeField : .dismissComposer
+    }
+}
+
+/// The composer's Escape monitor and the window it answers for. A reference, so the monitor's
+/// closure and the window reader share one; the window is weak, so a closed panel is not kept.
+@MainActor
+final class CreateTaskEscapeMonitor {
+    weak var window: NSWindow?
+    private var monitor: Any?
+
+    /// The composer's own window, or a window it owns -- a card popover, when one is key.
+    func answers(for eventWindow: NSWindow?) -> Bool {
+        guard let window, let eventWindow else { return false }
+        return eventWindow === window || eventWindow.parent === window
+    }
+
+    func install(_ handle: @escaping (NSEvent) -> Bool) {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            handle(event) ? nil : event
+        }
+    }
+
+    func remove() {
+        guard let monitor else { return }
+        NSEvent.removeMonitor(monitor)
+        self.monitor = nil
+    }
+}
+
+/// Hands the composer's window to its `CreateTaskEscapeMonitor` as the view joins one.
+private struct CreateTaskHostWindowReader: NSViewRepresentable {
+    let monitor: CreateTaskEscapeMonitor
+
+    func makeNSView(context: NSViewRepresentableContext<CreateTaskHostWindowReader>) -> CreateTaskHostWindowReaderView {
+        let view = CreateTaskHostWindowReaderView()
+        view.monitor = monitor
+        return view
+    }
+
+    func updateNSView(_ nsView: CreateTaskHostWindowReaderView, context: NSViewRepresentableContext<CreateTaskHostWindowReader>) {
+        nsView.monitor = monitor
+        monitor.window = nsView.window
+    }
+}
+
+private final class CreateTaskHostWindowReaderView: NSView {
+    weak var monitor: CreateTaskEscapeMonitor?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        monitor?.window = window
     }
 }
 
