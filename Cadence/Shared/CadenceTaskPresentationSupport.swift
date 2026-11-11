@@ -83,6 +83,14 @@ nonisolated struct CadenceTaskRowMetrics: Equatable, Sendable {
     /// one, and with no touch-target frame to ramp around it.
     static let completionCircleDiameter: CGFloat = 16
 
+    /// How far a settled (done or cancelled) task row is dimmed as a whole, on both platforms
+    /// ([[T-16461]]). `MacTaskRow` dimmed every finished row to 0.5 while iOS's two logbooks --
+    /// the folded Completed section and a list's Completed tab -- spelled their own 0.62, so the
+    /// same finished task read brighter on an iPhone than on the Mac. How a completed task reads is
+    /// not a hardware or input difference ([[T-8201]]); the Mac's long-standing figure is the one
+    /// both read now.
+    static let settledRowOpacity: Double = 0.5
+
     let horizontalPadding: CGFloat
     /// **The figure that has to stay split**, and the reason `.desktop` is a tier rather than a
     /// relabelling of `.regular`. 8pt is right under a pointer; a finger needs the 9–12 that keeps

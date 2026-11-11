@@ -171,7 +171,7 @@ struct MacTaskRow: View {
         .popover(isPresented: $showTaskInspector, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
             TaskDetailPopover(task: task)
         }
-        .opacity(task.isDone || task.isCancelled ? 0.5 : 1.0)
+        .opacity(task.isDone || task.isCancelled ? CadenceTaskRowMetrics.settledRowOpacity : 1.0)
         .onAppear(perform: handlePendingDeepLink)
         .onChange(of: deepLinkManager.pendingTaskID) { _, _ in
             handlePendingDeepLink()

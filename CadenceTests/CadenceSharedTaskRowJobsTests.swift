@@ -312,6 +312,40 @@ struct CadenceSharedTaskRowJobsTests {
         }
     }
 
+    // MARK: - [[T-16461]]: a finished row is dimmed the same on both platforms
+
+    /// `MacTaskRow` dimmed every settled row to 0.5; iOS's folded Completed section and a list's
+    /// Completed tab each spelled 0.62, so the same finished task read brighter on an iPhone's
+    /// logbook than on the Mac's. One figure, read by all three sites, and no site keeps a literal.
+    @Test func everyLogbookRowIsDimmedByTheOneSettledRowFigure() throws {
+        #expect(CadenceTaskRowMetrics.settledRowOpacity == 0.5)
+        #expect(CadenceTaskRowMetrics.settledRowOpacity > 0 && CadenceTaskRowMetrics.settledRowOpacity < 1)
+
+        try expectOccurrences(
+            of: "CadenceTaskRowMetrics.settledRowOpacity",
+            at: [
+                // `MacTaskRow`, behind its own settled test.
+                "Cadence/macOS/Views/TasksPanelComponents.swift": 1,
+                // `iOSCompletedTasksSection` -- Today, Inbox, All Tasks and a list's Tasks tab.
+                "Cadence/iOS/iOSTaskGroupSection.swift": 1,
+                // `iOSListCompletedPanel`, a list's Completed tab.
+                "Cadence/iOS/iOSListSupportViews.swift": 1,
+            ]
+        )
+        let macRow = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
+        #expect(macRow.contains(".opacity(task.isDone || task.isCancelled ? CadenceTaskRowMetrics.settledRowOpacity : 1.0)"))
+        for path in [
+            "Cadence/macOS/Views/TasksPanelComponents.swift",
+            "Cadence/iOS/iOSTaskGroupSection.swift",
+            "Cadence/iOS/iOSListSupportViews.swift",
+        ] {
+            let code = try strippingComments(sourceFile(path))
+            #expect(!code.contains(".opacity(0.62)"), "\(path) dims finished rows by its own figure again")
+            #expect(!code.contains("opacity: 0.62"), "\(path) dims finished rows by its own figure again")
+            #expect(!code.contains("isCancelled ? 0.5"), "\(path) dims finished rows by its own figure again")
+        }
+    }
+
     // MARK: - T-174: a chip that would repeat the surface's own day
 
     /// **The rule, and it is an equality — not "day columns hide the do date".** A board column that

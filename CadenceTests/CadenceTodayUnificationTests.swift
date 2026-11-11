@@ -1151,7 +1151,7 @@ struct CadenceTodayUnificationTests {
         // The rows stay the shared ones, dimmed as a whole the way `iOSTaskGroupSection` dimmed
         // them: this is a local fold, not a local row vocabulary.
         #expect(section.contains("iOSTaskRow("))
-        #expect(section.contains(".opacity(0.62)"))
+        #expect(section.contains(".opacity(CadenceTaskRowMetrics.settledRowOpacity)"))
         // The cap disclosure `iOSTaskGroupSection` carried came with it, and T-2087 deleted both
         // copies together: nothing caps these rows, so there is nothing to disclose.
         #expect(!section.contains("hiddenCount"), "the completed section takes a remainder again")

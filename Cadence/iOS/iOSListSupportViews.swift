@@ -448,8 +448,14 @@ struct iOSListCompletedPanel: View {
                         .listRowSeparator(.hidden)
 
                     ForEach(tasks) { task in
-                        // Scoped to one list already — see `iOSTaskRow.showsContainer`.
-                        iOSTaskListRow(task: task, opacity: 0.62, showsContainer: false, todayKey: todayKey)
+                        // Scoped to one list already — see `iOSTaskRow.showsContainer`. Dimmed at
+                        // the shared settled-row figure, as the Mac's same tab is ([[T-16461]]).
+                        iOSTaskListRow(
+                            task: task,
+                            opacity: CadenceTaskRowMetrics.settledRowOpacity,
+                            showsContainer: false,
+                            todayKey: todayKey
+                        )
                     }
                 }
                 .listStyle(.plain)
