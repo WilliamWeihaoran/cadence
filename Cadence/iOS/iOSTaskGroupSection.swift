@@ -255,8 +255,9 @@ struct iOSCompletedTasksSection: View {
         )
     }
 
-    /// Completed rows are dimmed as a whole rather than row by row, at the settled-row dim
-    /// `MacTaskRow` draws every finished row at ([[T-16461]]; it was a local 0.62).
+    /// Completed rows are dimmed by `iOSTaskRow` itself, at the settled-row figure `MacTaskRow`
+    /// draws every finished row at ([[T-16461]], moved into the row on [[T-16463]]); a second
+    /// `.opacity` here would dim them twice.
     private var rows: some View {
         LazyVStack(spacing: 7) {
             ForEach(tasks) { task in
@@ -266,7 +267,6 @@ struct iOSCompletedTasksSection: View {
                     dayAlreadyStatedBySurface: dayAlreadyStatedBySurface,
                     todayKey: todayKey
                 )
-                .opacity(CadenceTaskRowMetrics.settledRowOpacity)
             }
         }
         .transition(.opacity.combined(with: .move(edge: .top)))

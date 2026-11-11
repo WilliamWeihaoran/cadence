@@ -120,6 +120,12 @@ struct iOSTaskRow: View {
                     .fill(Theme.borderSubtle.opacity(0.22))
                     .frame(height: 1)
             }
+            // [[T-16463]]: a settled row dims itself, wherever it is drawn, at the one figure
+            // `MacTaskRow` dims every finished row by. It was the two logbook containers that
+            // dimmed, so a done task in the iPad day inspector or the iPhone month agenda -- both
+            // admit one -- drew at full brightness. Before the swipe container, so the action tray
+            // a swipe reveals is not dimmed with the row.
+            .opacity(isSettled ? CadenceTaskRowMetrics.settledRowOpacity : 1)
             .contentShape(Rectangle())
             .onTapGesture {
                 openDetail()
@@ -670,14 +676,13 @@ struct iOSTaskMetaLabel: View {
 
 struct iOSTaskListRow: View {
     @Bindable var task: AppTask
-    var opacity: Double = 1
     var showsContainer: Bool = true
     /// The host's observed day, for `iOSTaskRow.todayKey` ([[T-14341]]).
     let todayKey: String
 
     var body: some View {
+        // No `opacity` of its own ([[T-16463]]): `iOSTaskRow` dims a settled task itself.
         iOSTaskRow(task: task, showsContainer: showsContainer, todayKey: todayKey)
-            .opacity(opacity)
             .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)

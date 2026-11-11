@@ -321,21 +321,40 @@ struct CadenceSharedTaskRowJobsTests {
         #expect(CadenceTaskRowMetrics.settledRowOpacity == 0.5)
         #expect(CadenceTaskRowMetrics.settledRowOpacity > 0 && CadenceTaskRowMetrics.settledRowOpacity < 1)
 
+        // [[T-16463]]: each platform's ROW reads the figure, once, keyed on its own settled state;
+        // no container dims on top of it. The two iOS logbook containers used to be the readers,
+        // which left a done task drawn by `iOSTaskRow` anywhere else -- the iPad day inspector,
+        // the iPhone month agenda -- at full brightness.
         try expectOccurrences(
             of: "CadenceTaskRowMetrics.settledRowOpacity",
             at: [
                 // `MacTaskRow`, behind its own settled test.
                 "Cadence/macOS/Views/TasksPanelComponents.swift": 1,
-                // `iOSCompletedTasksSection` -- Today, Inbox, All Tasks and a list's Tasks tab.
-                "Cadence/iOS/iOSTaskGroupSection.swift": 1,
-                // `iOSListCompletedPanel`, a list's Completed tab.
-                "Cadence/iOS/iOSListSupportViews.swift": 1,
+                // `iOSTaskRow`, for every iOS surface that draws one.
+                "Cadence/iOS/iOSTaskViews.swift": 1,
+                // `iOSCompletedTasksSection` and `iOSListCompletedPanel`: dimmed by the row now.
+                "Cadence/iOS/iOSTaskGroupSection.swift": 0,
+                "Cadence/iOS/iOSListSupportViews.swift": 0,
             ]
         )
         let macRow = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
         #expect(macRow.contains(".opacity(task.isDone || task.isCancelled ? CadenceTaskRowMetrics.settledRowOpacity : 1.0)"))
+        let iOSRow = try strippingComments(sourceFile("Cadence/iOS/iOSTaskViews.swift"))
+        #expect(iOSRow.contains(".opacity(isSettled ? CadenceTaskRowMetrics.settledRowOpacity : 1)"))
+        // `isSettled` is the shared done-or-cancelled answer, the Mac row's `isDone || isCancelled`.
+        #expect(iOSRow.contains("CadenceTaskCompletionState.resolve(task: task).isSettled"))
+        // `iOSTaskListRow` no longer takes an opacity, so no host can dim a row a second time.
+        #expect(!iOSRow.contains("var opacity: Double"))
+        for path in [
+            "Cadence/iOS/iOSTaskGroupSection.swift",
+            "Cadence/iOS/iOSListSupportViews.swift",
+        ] {
+            let code = try strippingComments(sourceFile(path))
+            #expect(!code.contains("opacity: CadenceTaskRowMetrics"), "\(path) dims settled rows on top of the row")
+        }
         for path in [
             "Cadence/macOS/Views/TasksPanelComponents.swift",
+            "Cadence/iOS/iOSTaskViews.swift",
             "Cadence/iOS/iOSTaskGroupSection.swift",
             "Cadence/iOS/iOSListSupportViews.swift",
         ] {
@@ -343,6 +362,32 @@ struct CadenceSharedTaskRowJobsTests {
             #expect(!code.contains(".opacity(0.62)"), "\(path) dims finished rows by its own figure again")
             #expect(!code.contains("opacity: 0.62"), "\(path) dims finished rows by its own figure again")
             #expect(!code.contains("isCancelled ? 0.5"), "\(path) dims finished rows by its own figure again")
+        }
+    }
+
+    /// [[T-16463]]: why the dim had to move into `iOSTaskRow`. Every calendar surface that draws
+    /// one admits a DONE task (only cancelled leaves): the iPad day inspector's Timed, Do Date and
+    /// Due sections and the iPhone month agenda. Were any of them to drop done tasks, a container
+    /// dim would have been enough -- so this pins the admissions the row-level dim answers.
+    @Test func everyCalendarSurfaceDrawingAnIOSTaskRowAdmitsADoneTask() {
+        let day = "2026-11-11"
+        let timed = task(doDate: day, isDone: true)
+        timed.scheduledStartMin = 9 * 60
+        let doDated = task(doDate: day, isDone: true)
+        let dueOnly = task(dueDate: day, isDone: true)
+        let all = [timed, doDated, dueOnly]
+
+        #expect(CadenceScheduleSupport.scheduledTasks(on: day, from: all, includeCompleted: true).map(\.id) == [timed.id])
+        #expect(CadenceScheduleSupport.items(on: day, in: CadenceScheduleSupport.unscheduledTasksByDate(all)).map(\.id) == [doDated.id])
+        #expect(CadenceScheduleSupport.dueOnlyTasks(on: day, from: all).map(\.id) == [dueOnly.id])
+        #expect(Set(CadenceScheduleSupport.items(on: day, in: CadenceScheduleSupport.monthTasksByDate(all)).map(\.id)) == Set(all.map(\.id)))
+        #expect(all.allSatisfy { CadenceTaskCompletionState.resolve(task: $0).isSettled }, "non-vacuity: every fixture is settled")
+
+        // And those surfaces draw it through `iOSTaskRow`, with no dim of their own.
+        for path in ["Cadence/iOS/iOSCalendarInspectorView.swift", "Cadence/iOS/iOSCalendarMonthAgendaViews.swift"] {
+            let code = (try? strippingComments(sourceFile(path))) ?? ""
+            #expect(code.contains("iOSTaskRow(task: task"), "\(path) no longer draws an iOSTaskRow")
+            #expect(!code.contains("settledRowOpacity"), "\(path) dims settled rows on top of the row")
         }
     }
 
