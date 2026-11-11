@@ -39,9 +39,20 @@ record type in the **Development** database as a debug build ran -- until [[T-30
 Since that commit **no debug build of this app mirrors anything**, so Development's schema is frozen
 at 2026-10-07 and running the app cannot teach it a new type or field. The **Production** database
 gets it only when a human presses *Deploy Schema Changes* in the CloudKit Console. That is
-owner-only, and Production has been live since 2026-09-05. Until [[T-15751]] lands an
-`initializeCloudKitSchema()` path, the only route is to add the type or field to the Console's
-Development schema **by hand** and then deploy.
+owner-only, and Production has been live since 2026-09-05.
+
+**Teaching Development is a command now, not a Console form ([[T-15751]]).** A development-signed
+Debug build launched with `CADENCE_INITIALIZE_CLOUDKIT_SCHEMA=1` publishes every type in
+`CadenceSchema.models` to the Development environment and exits before any window:
+`CadenceCloudKitSchemaInitializer` builds the managed object model with
+`NSManagedObjectModel.makeManagedObjectModel(for:)` and calls `initializeCloudKitSchema(options: [])`
+over a throwaway store under `tmp`, which is what makes it safe where reviving the old mirroring
+route is not -- [[T-3013]]'s guard is untouched and no record of the owner's is mirrored anywhere.
+**Not** through `scripts/run-macos-app.sh`, which forces `CADENCE_LOCAL_STORE_ONLY=1` and so has no
+container to publish to. **Unverified end to end as of 2026-11-10** -- that needs a
+development-signed run on the owner's own Mac -- so until someone has seen it work, hand-adding the
+type or field in the Console is still the fallback. Either way a human presses *Deploy Schema
+Changes* afterwards; this publishes Development, never Production.
 
 **The blast radius is the whole store, not the new type** (T-1294 / R49): a missing Production
 schema, a record **type** *or a* **field**, can abort mirroring for every type at once — so an

@@ -797,7 +797,7 @@ struct CadenceAgentDefaultsIsolationTests {
         let source = try CadenceSourceScan.sourceFile("Cadence/Services/PersistenceController.swift")
 
         let storeResolver = try #require(
-            CadenceSourceScan.declarationBody("private static func resolvedStoreURL(", in: source),
+            CadenceSourceScan.declarationBody("static func resolvedStoreURL(", in: source),
             "PersistenceController.resolvedStoreURL did not read as itself"
         )
         #expect(
