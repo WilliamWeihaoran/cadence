@@ -47,13 +47,10 @@ struct MacTaskRowContextMenu: View {
         CadenceTaskComposerSupport.pickableProjects(projects, selectedID: task.project?.id)
     }
 
+    /// The project's columns before the area's, as every board shows a dual-filed task and as the
+    /// iOS row menu reads them ([[T-16171]], [[T-16173]]).
     private var availableSectionNames: [String] {
-        let rawNames = task.area?.sectionNames ?? task.project?.sectionNames ?? []
-        let names = rawNames.isEmpty ? [TaskSectionDefaults.defaultName] : rawNames
-        if names.contains(where: { $0.caseInsensitiveCompare(task.resolvedSectionName) == .orderedSame }) {
-            return names
-        }
-        return names + [task.resolvedSectionName]
+        task.moveSectionChoices
     }
 
     var body: some View {

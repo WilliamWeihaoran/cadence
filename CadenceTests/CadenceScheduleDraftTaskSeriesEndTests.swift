@@ -101,6 +101,24 @@ struct CadenceScheduleDraftTaskSeriesEndTests {
         #expect(task.priority == .high)
     }
 
+    /// The slot sheet and timeline panel store notes trimmed, as the `+` sheet does
+    /// (`TaskCreationDraft.trimmedNotes`, [[T-16373]]); a trailing newline no longer survives as a
+    /// blank last line from one entry point only.
+    @Test("Slot and timeline notes are stored trimmed, as the + sheet stores them")
+    func notesAreStoredTrimmedLikeThePlusSheet() throws {
+        var draft = CadenceScheduleDraft(dateKey: "2026-11-09", startMin: 9 * 60, kind: .task)
+        draft.title = "Ship it"
+        draft.notes = "  Bring the charger\n\n"
+
+        let task = try storedTask(from: draft)
+        let plusSheet = CadenceTaskComposerSupport.creationDraft(
+            from: draft, container: .inbox, tags: [], subtaskTitles: []
+        )
+        #expect(plusSheet.notes == draft.notes, "non-vacuity: the + sheet draft did not carry the notes")
+        #expect(task.notes == plusSheet.trimmedNotes, "the slot write and the + sheet disagree")
+        #expect(task.notes == "Bring the charger")
+    }
+
     /// The chip still decides when the title carries no marker.
     @Test("With no title marker the Priority chip is what is stored")
     func theChipDecidesWithoutAMarker() throws {

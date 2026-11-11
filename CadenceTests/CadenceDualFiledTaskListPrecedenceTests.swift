@@ -175,6 +175,17 @@ struct CadenceDualFiledTaskListPrecedenceTests {
         #expect(!stripped.contains("task.area?.sectionNames"))
     }
 
+    /// The Mac row menu's Move Section reads the same shared choices ([[T-16173]]): its inline
+    /// area-first spelling offered the area's columns for a task the Mac shows on the project's
+    /// board.
+    @Test func theMacRowMenusMoveSectionReadsTheSharedChoices() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/MacTaskRowContextMenu.swift")
+        let stripped = CadenceSourceScan.strippingComments(raw)
+        #expect(stripped.contains("Move Section"), "non-vacuity: the reader did not reach the menu")
+        #expect(stripped.contains("task.moveSectionChoices"))
+        #expect(!stripped.contains("task.area?.sectionNames"))
+    }
+
     /// A single-list task is unchanged by the precedence — the area-only and project-only halves.
     @Test func aTaskInOneListStillNamesThatList() {
         let area = Area(name: "Home", colorHex: "#aa3311", icon: "house.fill")

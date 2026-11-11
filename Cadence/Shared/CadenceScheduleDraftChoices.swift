@@ -127,7 +127,9 @@ enum CadenceScheduleDraftTaskWrite {
         project: Project?,
         allTasks: [AppTask]
     ) {
-        task.notes = draft.notes
+        // Trimmed as `TaskCreationDraft.trimmedNotes` stores the `+` sheet's and every Mac
+        // composer's notes ([[T-16373]]); untrimmed, a trailing newline kept a blank last line.
+        task.notes = draft.notes.trimmingCharacters(in: .whitespacesAndNewlines)
         task.estimatedMinutes = draft.estimateMinutes
         task.dueDate = draft.dueDateKey
         // A `!`/`!!`/`!!!` marker in the title outranks the chip ([[T-16371]]), the precedence the
