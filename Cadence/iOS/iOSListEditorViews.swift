@@ -930,7 +930,7 @@ struct iOSListEditorSheet: View {
                 // changed pick is evidence this device has seen the calendar.
                 CadenceCalendarLinkObservations.recordPick(selectedCalendarID, replacing: area.linkedCalendarID)
                 area.linkedCalendarID = selectedCalendarID
-                if case .reopen? = lifecycleStep { area.status = .active }
+                if case .reopen? = lifecycleStep { CadenceSidebarLists.reopen(area) }
                 if let windDown { modelContext.settleListWindDown(windDown) }
                 try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: undo.restore)
             case .editProject(let project):
@@ -955,7 +955,7 @@ struct iOSListEditorSheet: View {
                 project.dueDate = projectDueDateKey
                 CadenceCalendarLinkObservations.recordPick(selectedCalendarID, replacing: project.linkedCalendarID)
                 project.linkedCalendarID = selectedCalendarID
-                if case .reopen? = lifecycleStep { project.status = .active }
+                if case .reopen? = lifecycleStep { CadenceSidebarLists.reopen(project) }
                 if let windDown { modelContext.settleListWindDown(windDown) }
                 try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: undo.restore)
             }

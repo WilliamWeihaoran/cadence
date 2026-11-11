@@ -459,13 +459,14 @@ struct iOSListsView: View {
         requestWindDown(.project(project, .complete))
     }
 
+    /// [[T-16658]]: through the shared reopen, so the list's sidebar section keeps its order.
     private func restore(_ area: Area) {
-        area.status = .active
+        CadenceSidebarLists.reopen(area)
         try? modelContext.save()
     }
 
     private func restore(_ project: Project) {
-        project.status = .active
+        CadenceSidebarLists.reopen(project)
         try? modelContext.save()
     }
 }

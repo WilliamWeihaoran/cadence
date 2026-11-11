@@ -144,3 +144,83 @@ extension CadenceSidebarLists {
         return projects.map { ($0.context?.id, $0.order) }
     }
 }
+
+/// A list's `order` when it is brought back to the sidebar -- reopened from Done, Archived, Paused
+/// or Cancelled ([[T-16658]]).
+///
+/// **The reopen used to write `status = .active` and nothing else.** A list that is not active is
+/// not in any sidebar section, so while it is away the section is free to be reordered without it,
+/// and a reorder renumbers the visible rows densely from 0 (`CadenceSidebarListReorder.commit`).
+/// The number the reopened list kept is then usually one a visible row already holds, and
+/// `sorted(_:)` keeps a dragged area/project interleaving only while every row's `order` is
+/// distinct -- so the whole section fell back to areas-first (a project the user had dragged to the
+/// top dropped below every area) on every device, because the numbers sync. [[T-16401]]'s failure,
+/// reached by reopening a list instead of re-filing one.
+///
+/// The reopened list keeps its number when no active list in its section holds it -- so archiving
+/// and at once reopening puts it back exactly where it was -- and otherwise goes to the END of the
+/// section, numbered as a list created there would be.
+extension CadenceSidebarLists {
+    /// The pure rule. `activeSiblings` are the slots of the OTHER active lists in the store (any
+    /// context; only the reopened list's own context is compared); `areas` / `projects` are every
+    /// slot in the store, active or not, which is what `nextOrder` numbers against.
+    static func orderAfterReopening(
+        currentOrder: Int,
+        contextID: UUID?,
+        activeSiblings: [OrderSlot],
+        areas: [OrderSlot],
+        projects: [OrderSlot]
+    ) -> Int {
+        let taken = activeSiblings.contains { $0.contextID == contextID && $0.order == currentOrder }
+        guard taken else { return currentOrder }
+        return nextOrder(inContextWithID: contextID, areas: areas, projects: projects)
+    }
+
+    /// Sets `area.status = .active` and, when it was not already active, the `order` that keeps its
+    /// sidebar section's dragged order intact. An already-active area is left exactly as it is.
+    /// The caller's undo has to hold `order` too -- `CadenceListEditSnapshot` does.
+    static func reopen(_ area: Area) {
+        if area.status != .active {
+            let rows = listRows(of: area)
+            area.order = orderAfterReopening(
+                currentOrder: area.order,
+                contextID: area.context?.id,
+                activeSiblings: rows.filter { $0.isActive && $0.modelID != area.persistentModelID }.map(\.slot),
+                areas: rows.filter { $0.kind == .area }.map(\.slot),
+                projects: rows.filter { $0.kind == .project }.map(\.slot)
+            )
+        }
+        area.status = .active
+    }
+
+    /// The project twin.
+    static func reopen(_ project: Project) {
+        if project.status != .active {
+            let rows = listRows(of: project)
+            project.order = orderAfterReopening(
+                currentOrder: project.order,
+                contextID: project.context?.id,
+                activeSiblings: rows.filter { $0.isActive && $0.modelID != project.persistentModelID }.map(\.slot),
+                areas: rows.filter { $0.kind == .area }.map(\.slot),
+                projects: rows.filter { $0.kind == .project }.map(\.slot)
+            )
+        }
+        project.status = .active
+    }
+
+    private struct ListRow {
+        let kind: Kind
+        let modelID: PersistentIdentifier
+        let isActive: Bool
+        let slot: OrderSlot
+    }
+
+    /// Every area and project in the store the list lives in, with whether the sidebar draws it.
+    private static func listRows(of model: any PersistentModel) -> [ListRow] {
+        guard let modelContext = model.modelContext else { return [] }
+        let areas = (try? modelContext.fetch(FetchDescriptor<Area>())) ?? []
+        let projects = (try? modelContext.fetch(FetchDescriptor<Project>())) ?? []
+        return areas.map { ListRow(kind: .area, modelID: $0.persistentModelID, isActive: $0.isActive, slot: ($0.context?.id, $0.order)) }
+            + projects.map { ListRow(kind: .project, modelID: $0.persistentModelID, isActive: $0.isActive, slot: ($0.context?.id, $0.order)) }
+    }
+}

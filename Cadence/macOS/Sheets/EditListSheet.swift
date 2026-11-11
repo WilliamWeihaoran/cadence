@@ -207,7 +207,7 @@ struct EditAreaSheet: View {
         )
         applyEdits()
         switch choice {
-        case .active: area.status = .active
+        case .active: CadenceSidebarLists.reopen(area)
         case .completed: area.status = .done
         case .archived: area.status = .archived
         }
@@ -468,7 +468,7 @@ struct EditProjectSheet: View {
         )
         applyEdits()
         switch choice {
-        case .active: project.status = .active
+        case .active: CadenceSidebarLists.reopen(project)
         case .completed: project.status = .done
         case .archived: project.status = .archived
         }

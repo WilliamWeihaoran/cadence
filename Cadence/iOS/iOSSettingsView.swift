@@ -568,13 +568,14 @@ struct iOSSettingsView: View {
         try? modelContext.save()
     }
 
+    /// [[T-16658]]: through the shared reopen, so the list's sidebar section keeps its order.
     private func reopen(_ area: Area) {
-        area.status = .active
+        CadenceSidebarLists.reopen(area)
         try? modelContext.save()
     }
 
     private func reopen(_ project: Project) {
-        project.status = .active
+        CadenceSidebarLists.reopen(project)
         try? modelContext.save()
     }
 }
