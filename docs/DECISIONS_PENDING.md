@@ -25,6 +25,16 @@ Ranked by how often you would meet it, 11-inch iPad first, then the Mac.
    (a) default "New Column" and the iOS Kanban tab's add row says "Add column", (b) leave,
    (c) one word everywhere. **(a)** -- only the default for new columns changes, never a stored
    name. [T-7085] Code checked (`KanbanBoardSupport.nextSectionName`, `CadenceSectionCreationRow`).
+3a. **A board card whose do date and due date name one day says it twice on the Mac**
+   ("Fri · Due Fri"); iPhone and iPad cards already fold it into one "Due Fri" token. On the Mac
+   each token is the picker for its own field, so folding takes the card's do-date picker with
+   it. (a) fold on the Mac too, giving up that picker, (b) keep both tokens on the Mac (what
+   ships). **(b)** -- a pointer target versus an inert label is an input difference, so not
+   drift under T-8201, and the repeat is redundant, not wrong. [T-10049] Code checked (added
+   2026-11-11 by agent `sweep0238`: `CadenceBoardCardMetadata.chips` takes
+   `dateChipsArePickers` `Cadence/Shared/CadenceBoardCardMetadata.swift:119`, folds only when
+   it is false `:132`; iOS passes `false` `Cadence/iOS/iOSBoardCards.swift:304`; the Mac
+   `KanbanCard` takes the default `true` `Cadence/macOS/Views/KanbanCardView.swift:179`).
 4. **iOS Settings splits the Calendar toolbar's Week / Month / Board into two rows**, so with
    Board on, "Calendar view" still reads "Week". (1) one row with all three, (2) grey the row
    under Board, (3) leave. **(1)** -- it is what the page's toolbar already shows. [T-7074]
@@ -43,8 +53,9 @@ Ranked by how often you would meet it, 11-inch iPad first, then the Mac.
    tags, Do, Due and Active/Completed; iOS Search uses its own shorter subtitle. Note rows
    already match. (a) one shared task subtitle on both, (b) leave. **(a)** -- per T-8201 no
    input or hardware forces the difference. [T-8763] Code checked (added 2026-10-30 by keeper
-   `keeper2208`; re-cited 2026-11-07 by `sweep0538`: Mac `GlobalSearchIndexSupport.swift:303-312`, iOS
-   `CadenceSearchCandidateSupport.swift:124`).
+   `keeper2208`; re-cited 2026-11-11 by `sweep0238`: Mac `taskResult(for:todayKey:)`
+   `Cadence/macOS/Views/GlobalSearchIndexSupport.swift:314-324`, iOS `resultSubtitle(for:)`
+   `Cadence/Shared/CadenceSearchCandidateSupport.swift:124`).
 8. **Mac `/` picker in a note has no height cap** -- a bare `/` lists ~22 rows (~580pt), more than
    a 13-inch MacBook fits beside the caret. Cap it (~10 rows, scrolling with the highlight) or
    leave. **Cap it** -- the keyboard highlight can walk off screen today. [T-7233] Code checked
