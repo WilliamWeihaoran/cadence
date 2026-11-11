@@ -151,7 +151,9 @@ private struct DailyNotesPage: View {
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
-                NotesListHeader(title: NotesView.NotesPage.daily.vocabulary.columnTitle, onPickDate: openNote(forDate:))
+                NotesListHeader(title: NotesView.NotesPage.daily.vocabulary.columnTitle, onPickDate: openNote(forDate:),
+                                shownDayKey: CadenceNoteDateNavigation.shownDayKey(
+                                    for: .today, pickedDayKey: observedDay.todayKey, openNote: selectedNote))
 
                 if let createFailureNotice {
                     CadenceInlineFailureNotice(text: createFailureNotice)
@@ -304,7 +306,9 @@ private struct WeeklyNotesPage: View {
                 // "the week containing this date" is how anyone actually locates one.
                 // [[T-15492]]: Monday-first rows, so the row tapped is the ISO week opened.
                 NotesListHeader(title: NotesView.NotesPage.weekly.vocabulary.columnTitle, onPickDate: openNote(forDate:),
-                                pickerCalendar: CadenceNoteDateNavigation.pickerCalendar(for: .week))
+                                pickerCalendar: CadenceNoteDateNavigation.pickerCalendar(for: .week),
+                                shownDayKey: CadenceNoteDateNavigation.shownDayKey(
+                                    for: .week, pickedDayKey: observedDay.todayKey, openNote: selectedNote))
 
                 if let createFailureNotice {
                     CadenceInlineFailureNotice(text: createFailureNotice)
@@ -741,6 +745,9 @@ private struct NotesListHeader: View {
     var onCreate: (() -> Void)? = nil
     /// The date picker's grid calendar. Weekly passes a Monday-first one ([[T-15492]]).
     var pickerCalendar: Calendar = .current
+    /// [[T-16664]]: the open note's day, which the picker opens on and marks -- as the iOS header's
+    /// picker does. It used to open on the last day picked (or today), whatever note was open.
+    var shownDayKey: String? = nil
 
     var body: some View {
         HStack {
@@ -749,7 +756,7 @@ private struct NotesListHeader: View {
                 .foregroundStyle(Theme.text)
             Spacer()
             if let onPickDate {
-                NotesDateJumpButton(calendar: pickerCalendar, onPick: onPickDate)
+                NotesDateJumpButton(calendar: pickerCalendar, shownDayKey: shownDayKey, onPick: onPickDate)
             }
             if let onCreate {
                 CadenceQuietPillButton(state: .quiet, action: onCreate) {
@@ -778,6 +785,7 @@ private struct NotesListHeader: View {
 /// the list is an index of days you wrote on, and this is how you write on a new one.
 private struct NotesDateJumpButton: View {
     var calendar: Calendar = .current
+    var shownDayKey: String? = nil
     let onPick: (Date) -> Void
 
     @State private var isOpen = false
@@ -785,7 +793,7 @@ private struct NotesDateJumpButton: View {
     @State private var viewMonth = Date()
 
     var body: some View {
-        CadenceQuietPillButton(state: .quiet, action: { isOpen = true }) {
+        CadenceQuietPillButton(state: .quiet, action: open) {
             Image(systemName: "calendar")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.muted)
@@ -807,6 +815,18 @@ private struct NotesDateJumpButton: View {
                 calendar: calendar
             )
         }
+    }
+
+    /// Seeds the grid with the open note's day before it shows ([[T-16664]]). Writing `selection`
+    /// directly, not through the panel's binding, so seeding is never taken for a pick.
+    private func open() {
+        if let shownDayKey, let day = DateFormatters.date(from: shownDayKey) {
+            selection = day
+            var components = calendar.dateComponents([.year, .month], from: day)
+            components.day = 1
+            viewMonth = calendar.date(from: components) ?? day
+        }
+        isOpen = true
     }
 }
 

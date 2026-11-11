@@ -241,4 +241,51 @@ struct CadenceNoteDateNavigationTests {
         #expect(CadenceScheduleSupport.weekdaySymbols(calendar: weekly, width: .compact).first == "Mo")
         #expect(CadenceScheduleSupport.weekdaySymbols(calendar: usCalendar, width: .compact).first == "Su")
     }
+
+    /// [[T-16664]]: a note opened from its row moves the date control onto that note's day. On the
+    /// iPad the header is the only date on the page; it went on naming the day picked before over
+    /// an editor showing another day, and picking that day back did nothing.
+    @Test func theDateControlStandsOnTheOpenNotesDay() {
+        let picked = "2026-11-11"
+        // Daily: the open note's day, not the one picked.
+        #expect(CadenceNoteDateNavigation.shownDayKey(
+            for: .today, pickedDayKey: picked,
+            openNoteKind: .daily, openNoteDateKey: "2026-10-26", openNoteWeekKey: "") == "2026-10-26")
+        // Weekly, another week: that week's Monday, so the range reads the open week.
+        let shownWeek = CadenceNoteDateNavigation.shownDayKey(
+            for: .week, pickedDayKey: picked,
+            openNoteKind: .weekly, openNoteDateKey: "", openNoteWeekKey: "2026-W34")
+        #expect(shownWeek == midWeekMonday)
+        #expect(CadenceNoteDateNavigation.title(for: .week, dayKey: shownWeek, now: now) == "Aug 17–23")
+        // Weekly, the picked day's own week: the picked day stays put.
+        #expect(CadenceNoteDateNavigation.shownDayKey(
+            for: .week, pickedDayKey: "2026-08-20",
+            openNoteKind: .weekly, openNoteDateKey: "", openNoteWeekKey: "2026-W34") == "2026-08-20")
+        // Nothing to follow: no note, a malformed key, a note of another kind, an undated tab.
+        for (tab, kind, dateKey, weekKey) in [
+            (CadenceNotesTabVocabulary.today, NoteKind?.none, "", ""),
+            (.today, .daily, "not-a-day", ""),
+            (.week, .weekly, "", "garbage"),
+            (.today, .weekly, "", "2026-W34"),
+            (.notepad, .permanent, "", ""),
+        ] {
+            #expect(CadenceNoteDateNavigation.shownDayKey(
+                for: tab, pickedDayKey: picked,
+                openNoteKind: kind, openNoteDateKey: dateKey, openNoteWeekKey: weekKey) == picked)
+        }
+    }
+
+    /// [[T-16664]]: both platforms' date controls read the open note's day through the one helper.
+    @Test func bothDateControlsFollowTheOpenNote() throws {
+        let iOS = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSNotesView.swift"))
+        let header = try #require(CadenceSourceScan.declarationBody("private var notesHeader: some View", in: iOS))
+        #expect(header.contains("iOSNotesDateTitle(tab: activeTab, dayKey: shownDayKey)"), "the iOS header binds the picked day, not the shown one")
+        let binding = try #require(CadenceSourceScan.declarationBody("private var shownDayKey: Binding<String>", in: iOS))
+        #expect(binding.contains("CadenceNoteDateNavigation.shownDayKey(for: activeTab, pickedDayKey: selectedDayKey, openNote: selectedNote)"))
+        #expect(binding.contains("openNoteForSelectedDay()"), "a pick of the stored day is a dead button")
+
+        let mac = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/NotesView.swift"))
+        #expect(mac.components(separatedBy: "pickedDayKey: observedDay.todayKey, openNote: selectedNote)").count - 1 == 2,
+                "a Mac dated page's picker does not open on its note's day")
+    }
 }

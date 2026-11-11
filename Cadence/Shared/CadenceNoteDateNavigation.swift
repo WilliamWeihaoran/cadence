@@ -130,6 +130,59 @@ enum CadenceNoteDateNavigation {
         DateFormatters.noteWeekRangeLabel(forDayKey: dayKey, now: now, calendar: calendar)
     }
 
+    /// **[[T-16664]]: the day a dated tab's date control stands on — the open note's, not the last
+    /// day picked.** A note can be opened two ways: by picking a day, which moves the control, or
+    /// by tapping its row, which did not. On the iPad the row tap left the header naming the day
+    /// picked before ("Wednesday, November 11", no "Today" control because that IS today) over an
+    /// editor showing October 26 — and picking November 11 did nothing, because nothing changed.
+    /// The Mac's editor header always names the open note (`NoteEditorPane.headerTitle`), so the
+    /// iPad was the one platform whose title could misname the note under it ([[T-8201]]).
+    ///
+    /// - Daily: the open daily note's `dateKey`.
+    /// - Weekly: `pickedDayKey` when it already falls in the open note's week (a Thursday picked
+    ///   stays Thursday in the picker), otherwise that week's Monday.
+    /// - No open note, a note of another kind, a key that does not parse, or an undated tab:
+    ///   `pickedDayKey`, unchanged.
+    ///
+    /// Pure, so it writes nothing: a row tap must not manufacture the standing notes a picked day
+    /// does (`CadenceCoreNoteSupport.loadOrCreateCoreNotes`).
+    static func shownDayKey(
+        for tab: CadenceNotesTabVocabulary,
+        pickedDayKey: String,
+        openNoteKind: NoteKind?,
+        openNoteDateKey: String,
+        openNoteWeekKey: String,
+        calendar: Calendar = .current
+    ) -> String {
+        switch tab {
+        case .today:
+            guard openNoteKind == .daily, DateFormatters.date(from: openNoteDateKey) != nil else { return pickedDayKey }
+            return openNoteDateKey
+        case .week:
+            guard openNoteKind == .weekly,
+                  let monday = DateFormatters.weekStartDate(forWeekKey: openNoteWeekKey, calendar: calendar)
+            else { return pickedDayKey }
+            if DateFormatters.date(from: pickedDayKey) != nil, weekKey(forDayKey: pickedDayKey) == openNoteWeekKey {
+                return pickedDayKey
+            }
+            return DateFormatters.dateKey(from: monday)
+        case .notepad, .events:
+            return pickedDayKey
+        }
+    }
+
+    /// `shownDayKey(for:pickedDayKey:openNoteKind:openNoteDateKey:openNoteWeekKey:calendar:)` for a
+    /// stored note, or none.
+    static func shownDayKey(for tab: CadenceNotesTabVocabulary, pickedDayKey: String, openNote: Note?) -> String {
+        shownDayKey(
+            for: tab,
+            pickedDayKey: pickedDayKey,
+            openNoteKind: openNote?.kind,
+            openNoteDateKey: openNote?.dateKey ?? "",
+            openNoteWeekKey: openNote?.weekKey ?? ""
+        )
+    }
+
     /// True when the panel is showing the note it would have shown before this control existed.
     /// The header uses it to decide whether the title needs a "jump back" affordance beside it —
     /// a date picker with no way home is a trap on a phone.

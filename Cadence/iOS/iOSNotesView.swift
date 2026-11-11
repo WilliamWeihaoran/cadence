@@ -322,7 +322,7 @@ struct iOSNotesView: View {
             selection: $activeTab,
             onBack: backAction,
             title: {
-                iOSNotesDateTitle(tab: activeTab, dayKey: $selectedDayKey)
+                iOSNotesDateTitle(tab: activeTab, dayKey: shownDayKey)
             }
         ) {
             // Notepad is the one tab whose notes are not manufactured by a date, so it is the one
@@ -385,6 +385,27 @@ struct iOSNotesView: View {
         }
         .frame(height: useStandardHeaderHeight ? iOSNotesHeaderStandardHeight : nil, alignment: .top)
         .background(Theme.surface)
+    }
+
+    /// [[T-16664]]: the header's date is the open note's day, not only the last one picked — a row
+    /// tap opens a note without moving `selectedDayKey`, and the iPad's header (the only date on
+    /// its page) went on naming the day picked before. Reading it from the note writes nothing; a
+    /// pick of the day already stored changes nothing `onChange` could see, so it reopens that
+    /// day's note directly — otherwise "Today" back from a row-opened day would be a dead button.
+    private var shownDayKey: Binding<String> {
+        Binding(
+            get: {
+                CadenceNoteDateNavigation.shownDayKey(for: activeTab, pickedDayKey: selectedDayKey, openNote: selectedNote)
+            },
+            set: { newValue in
+                guard newValue == selectedDayKey else {
+                    selectedDayKey = newValue
+                    return
+                }
+                isEditorFocused = false
+                openNoteForSelectedDay()
+            }
+        )
     }
 
     /// One pane or two — the only thing that separates iPhone from iPad here, and the only thing
