@@ -381,6 +381,46 @@ struct CadenceCaptureEditorTests {
         #expect(draft.effectiveSeriesEndMode == .never)
     }
 
+    /// **[[T-16251]] — a frequency picked under "Custom…" leaves the Ends rows on screen.**
+    ///
+    /// Since [[T-10121]] the Repeat panel's one frequency list is also the custom panel's, and the
+    /// custom panel says "Choose a frequency above to set when the series ends." The list closed
+    /// the whole panel on a pick, so that instruction took the panel away the moment it was
+    /// followed. Behavioural half: the list's `isPresented:` refuses the pick's close while the
+    /// custom panel is open, and performs it otherwise. Wiring half: the `.repeatRule` case hands
+    /// the list that binding over `showsCustomRepeat`, not the bare `editorIsOpen`.
+    ///
+    /// **Failing-first:** handing the list `editorIsOpen` again, or `pickClosesPanel` answering
+    /// `true` under the custom panel, fails the close assertions below.
+    @Test func aFrequencyPickedUnderCustomRepeatKeepsTheEndsRowsOnScreen() throws {
+        var panelOpen = true
+        let panel = Binding(get: { panelOpen }, set: { panelOpen = $0 })
+
+        // Custom… open: the pick's close is refused, so Ends stays drawn.
+        let underCustom = CadenceCaptureRepeatFrequencyList.presentation(customPanelIsOpen: true, panelIsOpen: panel)
+        #expect(underCustom.wrappedValue)
+        underCustom.wrappedValue = false
+        #expect(panelOpen, "a frequency picked under Custom… closed the panel and took the Ends rows with it")
+        #expect(!CadenceCaptureRepeatFrequencyList.pickClosesPanel(customPanelIsOpen: true))
+
+        // The list alone: a pick still closes the panel, as every draft picker does.
+        let plain = CadenceCaptureRepeatFrequencyList.presentation(customPanelIsOpen: false, panelIsOpen: panel)
+        plain.wrappedValue = false
+        #expect(!panelOpen, "the plain frequency list stopped closing on a pick")
+        #expect(CadenceCaptureRepeatFrequencyList.pickClosesPanel(customPanelIsOpen: false))
+
+        // Wiring: the card's one frequency list reads the helper over the custom panel's state.
+        let card = CadenceSourceScan.codeOnly(try source("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift"))
+        // From the card's one `TaskRecurrenceRule.allCases` (the editor's list, pinned to one by the
+        // T-10121 test above) to the next case: `case .repeatRule:` alone also names the chip label.
+        let caseStart = try #require(card.range(of: "TaskRecurrenceRule.allCases"))
+        let caseEnd = try #require(card.range(of: "case .priority:", range: caseStart.upperBound..<card.endIndex))
+        let repeatCase = String(card[caseStart.upperBound..<caseEnd.lowerBound])
+        #expect(repeatCase.contains("CadenceCaptureRepeatFrequencyList.presentation("))
+        #expect(repeatCase.contains("customPanelIsOpen: showsCustomRepeat"))
+        #expect(!repeatCase.contains("isPresented: editorIsOpen"), "the frequency list closes the panel under Custom… again")
+    }
+
     /// **[[T-9662]]. A button's hit frame belongs INSIDE its label.** The card applies
     /// `.buttonStyle(.cadencePlain)`, and on iOS that style lays its `contentShape` on
     /// `configuration.label` -- so a `.frame` written as a modifier on the `Button` reserves the

@@ -29,6 +29,29 @@ nonisolated enum CadenceCaptureTagEntry {
     }
 }
 
+/// Whether a pick in the Repeat panel's frequency list closes the panel ([[T-16251]]).
+///
+/// The list is a draft picker, so a pick writes `repeatRule` and closes -- right when the list is
+/// all the panel shows. But since [[T-10121]] it is also the ONLY frequency control under
+/// "Custom…", whose panel says "Choose a frequency above to set when the series ends." and whose
+/// Ends rows qualify the rule picked there. Closing on that pick took the Ends rows away the moment
+/// they became usable: with Never chosen, Custom… was a dead end until the panel was reopened and
+/// Custom… tapped a second time. (The duplicate list T-10121 removed stayed open on a pick, which
+/// is why the dead end arrived with that change.) While the custom panel is open the pick leaves
+/// the panel standing; the header's Done closes it, as it does every other field panel.
+enum CadenceCaptureRepeatFrequencyList {
+    static func pickClosesPanel(customPanelIsOpen: Bool) -> Bool {
+        !customPanelIsOpen
+    }
+
+    /// The `isPresented:` the frequency list is handed: the panel's own binding, or one whose
+    /// close the list cannot perform while the custom panel is open.
+    static func presentation(customPanelIsOpen: Bool, panelIsOpen: Binding<Bool>) -> Binding<Bool> {
+        guard !pickClosesPanel(customPanelIsOpen: customPanelIsOpen) else { return panelIsOpen }
+        return Binding(get: { panelIsOpen.wrappedValue }, set: { if $0 { panelIsOpen.wrappedValue = true } })
+    }
+}
+
 /// Which edges of a vertical scroll view have content hidden past them ([[T-12272]]).
 ///
 /// Reads a scroll view's geometry along its one axis: offset, the visible height, the content's
@@ -972,7 +995,10 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                     draft.repeatRule = rule
                     if rule == .none { CadenceCaptureFieldInventory.clear(.repeatRule, draft: &draft) }
                 }),
-                isPresented: editorIsOpen
+                // [[T-16251]]: stays open under Custom…, whose Ends rows qualify this pick.
+                isPresented: CadenceCaptureRepeatFrequencyList.presentation(
+                    customPanelIsOpen: showsCustomRepeat, panelIsOpen: editorIsOpen
+                )
             )
             Button("Custom…") { showsCustomRepeat = true }
             if showsCustomRepeat { customRepeat }
