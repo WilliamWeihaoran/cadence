@@ -80,6 +80,38 @@ struct CadenceScheduleDraftTaskSeriesEndTests {
         #expect(task.recurrenceEndCount == 0)
     }
 
+    /// [[T-16371]]: a `!`/`!!`/`!!!` marker in the title outranks the Priority chip, as it does on
+    /// the `+` sheet and every Mac composer (`TaskCreationDraft.resolvedPriority`), and as the
+    /// capture card itself shows it (`CadenceCaptureFieldInventory.priority(for:)`). The slot sheet
+    /// and the iPad timeline panel let the chip win, so `Ship it !!!` typed after picking Low read
+    /// High on the card and was saved Low.
+    @Test("A title marker outranks the Priority chip, as on the + sheet and the Mac")
+    func aTitleMarkerOutranksThePriorityChip() throws {
+        var draft = CadenceScheduleDraft(dateKey: "2026-11-09", startMin: 9 * 60, kind: .task)
+        draft.title = "Ship it !!!"
+        draft.priority = .low
+
+        let task = try storedTask(from: draft)
+        let plusSheet = CadenceTaskComposerSupport.creationDraft(
+            from: draft, container: .inbox, tags: [], subtaskTitles: []
+        )
+        #expect(task.title == "Ship it", "non-vacuity: the marker was not read at all")
+        #expect(task.priority == plusSheet.resolvedPriority, "the slot write and the + sheet disagree")
+        #expect(task.priority == CadenceCaptureFieldInventory.priority(for: draft), "saved unlike the card showed")
+        #expect(task.priority == .high)
+    }
+
+    /// The chip still decides when the title carries no marker.
+    @Test("With no title marker the Priority chip is what is stored")
+    func theChipDecidesWithoutAMarker() throws {
+        var draft = CadenceScheduleDraft(dateKey: "2026-11-09", startMin: 9 * 60, kind: .task)
+        draft.title = "Ship it"
+        draft.priority = .low
+
+        let task = try storedTask(from: draft)
+        #expect(task.priority == .low)
+    }
+
     /// The iOS write configures through the shared function and keeps no private copy of it.
     @Test("The iOS slot and timeline task write configures through the shared write")
     func theIOSTaskWriteUsesTheSharedConfiguration() throws {

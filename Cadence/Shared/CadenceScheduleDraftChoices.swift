@@ -130,8 +130,13 @@ enum CadenceScheduleDraftTaskWrite {
         task.notes = draft.notes
         task.estimatedMinutes = draft.estimateMinutes
         task.dueDate = draft.dueDateKey
-        if draft.priority != .none {
-            task.priority = draft.priority
+        // A `!`/`!!`/`!!!` marker in the title outranks the chip ([[T-16371]]), the precedence the
+        // `+` sheet and every Mac composer write through `TaskCreationDraft.resolvedPriority` and
+        // the capture card shows. `makeTask` has already read the marker; letting a non-None chip
+        // overwrite it saved `Ship it !!!` picked Low as Low while the card read High.
+        let priority = CadenceTaskComposerSupport.resolvedPriority(title: draft.title, selected: draft.priority)
+        if priority != .none {
+            task.priority = priority
         }
         CadenceTaskMutationSupport.assignContainer(
             task,
