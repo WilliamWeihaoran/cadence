@@ -134,6 +134,18 @@ enum CadenceTodayRolloverSupport {
         return CadenceTaskQuerySupport.todayListGroups(from: sorted, contexts: contexts).flatMap(\.tasks)
     }
 
+    /// The list a banner row names ([[T-16283]]): the one name Today's group heading and the row's
+    /// list chip give the same task -- `CadenceBoardCardMetadata.listTitle(for:)`, the
+    /// [[T-11892]] / [[T-14001]] rule. The banner read the raw `AppTask.containerName` and drew it
+    /// only when non-empty, so a leftover in a blank-named area or project named no list (a
+    /// whitespace-only name drew blank text) under a heading reading "Untitled Area", and an Inbox
+    /// leftover named none beside a grey dot under a heading reading "Inbox". An Inbox row says
+    /// "Inbox" here too: the label exists to tell you which group the row returns to on "Not Now",
+    /// and that group's heading says "Inbox".
+    static func listName(for task: AppTask) -> String {
+        CadenceBoardCardMetadata.listTitle(for: task)
+    }
+
     /// Today's tasks as the grouped list should show them while the banner is up: the offered tasks
     /// are withheld, because the banner is already listing them and a Past Do section under it
     /// would be the same rows twice.

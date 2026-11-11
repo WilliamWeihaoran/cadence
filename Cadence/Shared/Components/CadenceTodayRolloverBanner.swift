@@ -239,15 +239,14 @@ struct CadenceTodayRolloverBanner: View {
             .fixedSize(horizontal: false, vertical: wraps)
     }
 
-    @ViewBuilder
+    /// The row's list, named as Today's group heading names it ([[T-16283]]) -- always present,
+    /// "Inbox" included, so it is never the raw `containerName` that a blank list left empty.
     private func containerName(_ task: AppTask) -> some View {
-        if !task.containerName.isEmpty {
-            Text(task.containerName)
-                .cadenceFont(.metadata, base: 10, weight: .regular)
-                .foregroundStyle(Theme.dim)
-                .lineLimit(wraps ? nil : 1)
-                .fixedSize(horizontal: false, vertical: wraps)
-        }
+        Text(CadenceTodayRolloverSupport.listName(for: task))
+            .cadenceFont(.metadata, base: 10, weight: .regular)
+            .foregroundStyle(Theme.dim)
+            .lineLimit(wraps ? nil : 1)
+            .fixedSize(horizontal: false, vertical: wraps)
     }
 }
 

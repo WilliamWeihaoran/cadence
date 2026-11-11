@@ -367,6 +367,54 @@ struct CadenceTodayRolloverSurfaceTests {
         }
     }
 
+    // MARK: - The list each row names (T-16283)
+
+    /// Each row names its list as Today's group heading names it: a blank-named area or project
+    /// reads "Untitled Area" / "Untitled Project" (not nothing, not blank), and an Inbox leftover
+    /// reads "Inbox" -- the heading of the group "Not Now" hands it back to.
+    @Test func eachRolloverRowNamesItsListAsTodaysHeadingDoes() throws {
+        let modelContext = ModelContext(try CadenceTestStore.container())
+        let named = Area(name: "Admin")
+        let blankArea = Area(name: "")
+        let spaceProject = Project(name: "   ")
+        for list in [named, blankArea] { modelContext.insert(list) }
+        modelContext.insert(spaceProject)
+        func leftover(_ title: String, area: Area? = nil, project: Project? = nil) -> AppTask {
+            let task = task(title: title, scheduled: "2026-08-19")
+            task.area = area
+            task.project = project
+            modelContext.insert(task)
+            return task
+        }
+        let leftovers = [
+            leftover("Named", area: named),
+            leftover("Blank area", area: blankArea),
+            leftover("Blank project", project: spaceProject),
+            leftover("Inbox"),
+        ]
+        try modelContext.save()
+
+        let expected = ["Named": "Admin", "Blank area": "Untitled Area", "Blank project": "Untitled Project", "Inbox": "Inbox"]
+        for leftover in leftovers {
+            #expect(CadenceTodayRolloverSupport.listName(for: leftover) == expected[leftover.title], "\(leftover.title)")
+        }
+        // The same words as the Today group heading each row returns to.
+        let groups = CadenceTaskQuerySupport.todayListGroups(from: leftovers, contexts: [])
+        #expect(groups.count == 4, "non-vacuity: one group per list")
+        for group in groups {
+            for row in group.tasks {
+                #expect(CadenceTodayRolloverSupport.listName(for: row) == group.title, "\(row.title)")
+            }
+        }
+
+        // The banner draws that name, unconditionally, and never the raw `containerName`.
+        let banner = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceTodayRolloverBanner.swift"))
+        let list = try cadenceFunctionBody("private func containerName(_ task: AppTask) -> some View", in: banner)
+        #expect(list.contains("Text(CadenceTodayRolloverSupport.listName(for: task))"))
+        #expect(!list.contains(".containerName"))
+        #expect(!banner.contains("task.containerName"))
+    }
+
     // MARK: - The order of the offer (T-16281)
 
     /// Two lists in two contexts, each holding leftovers whose per-list `order` numbers collide
