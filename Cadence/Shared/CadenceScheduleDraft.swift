@@ -643,8 +643,17 @@ struct CadenceScheduleDraft: Equatable {
 
     /// The collapsed **Do** row. A date and nothing else: expanding Do opens the calendar, because
     /// the date is what matters for a task and the time is a secondary row revealed under it.
-    var doRowLabel: String {
-        startDateKey.isEmpty ? "No date" : Self.dayLabel(startDateKey)
+    ///
+    /// **[[T-17081]]: named the way the task's row names it** -- `Today`, `Tomorrow`, `in 3 days` --
+    /// inside the capture card's seven-day window, then the date. It read `Nov 12` for a task the
+    /// row, the board card and the capture chip all call `Today`, so the inspector (Mac panel,
+    /// iOS sheet, note embed panel) was the one surface that made the reader do the arithmetic. The
+    /// capture card's Do and Due chips read these two labels, so the card that set a day and the
+    /// inspector that reads it back cannot word it two ways.
+    var doRowLabel: String { doRowLabel(relativeTo: DateFormatters.now()) }
+
+    func doRowLabel(relativeTo referenceDate: Date) -> String {
+        startDateKey.isEmpty ? "No date" : Self.relativeDayLabel(startDateKey, relativeTo: referenceDate)
     }
 
     /// The quiet Time row inside the expanded Do section. `"Add time"` while there is none, and the
@@ -681,8 +690,11 @@ struct CadenceScheduleDraft: Equatable {
         }
     }
 
-    var dueRowLabel: String {
-        dueDateKey.isEmpty ? "No due date" : Self.dayLabel(dueDateKey)
+    var dueRowLabel: String { dueRowLabel(relativeTo: DateFormatters.now()) }
+
+    /// The collapsed **Due** row, in `doRowLabel`'s words ([[T-17081]]).
+    func dueRowLabel(relativeTo referenceDate: Date) -> String {
+        dueDateKey.isEmpty ? "No due date" : Self.relativeDayLabel(dueDateKey, relativeTo: referenceDate)
     }
 
     var displayTitle: String {
@@ -757,5 +769,14 @@ struct CadenceScheduleDraft: Equatable {
 
     private static func dayLabel(_ key: String) -> String {
         DateFormatters.shortDateString(from: key)
+    }
+
+    /// [[T-17081]]: the capture card's window ([[T-3237]]), so its chips and these rows agree.
+    private static func relativeDayLabel(_ key: String, relativeTo referenceDate: Date) -> String {
+        DateFormatters.relativeDate(
+            from: key,
+            relativeTo: referenceDate,
+            withinDays: CadenceCaptureFieldInventory.relativeDateCutoffDays
+        )
     }
 }

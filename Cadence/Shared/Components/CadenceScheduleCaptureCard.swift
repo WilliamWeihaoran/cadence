@@ -788,10 +788,8 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
         })
     }
 
-    private var doDayText: String {
-        draft.startDateKey.isEmpty ? draft.doRowLabel
-            : DateFormatters.relativeDate(from: draft.startDateKey, withinDays: CadenceCaptureFieldInventory.relativeDateCutoffDays)
-    }
+    /// The inspector's own Do row label, so the card and the inspector word a day alike ([[T-17081]]).
+    private var doDayText: String { draft.doRowLabel }
 
     /// Whether the do date is today, which is the one day it gets its own glyph and hue.
     private var doDateIsToday: Bool {
@@ -850,8 +848,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
             // No "Due" in front of it. The glyph beside it is the app's red due-date flag, and on
             // a line that sits the two dates side by side a word on one chip and not the other
             // reads as a difference between the fields rather than as a label.
-            return draft.dueDateKey.isEmpty ? draft.dueRowLabel
-                : DateFormatters.relativeDate(from: draft.dueDateKey, withinDays: CadenceCaptureFieldInventory.relativeDateCutoffDays)
+            return draft.dueRowLabel
         case .list:
             let list = listChoices.first { $0.id == draft.listToken }?.name ?? "Inbox"
             return draft.sectionName == TaskSectionDefaults.defaultName ? list : "\(list) · \(draft.sectionName)"
