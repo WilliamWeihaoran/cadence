@@ -66,8 +66,11 @@ nonisolated enum CadenceSearchEventNoteSupport {
     static func subtitleFacts(for note: Note, relativeTo referenceDate: Date = Date()) -> [String] {
         guard let date = DateFormatters.date(from: note.eventDateKey) else { return [undatedLabel] }
         let day = DateFormatters.absoluteDay(date, relativeTo: referenceDate)
-        guard note.eventStartMin >= 0, note.eventEndMin >= 0 else { return [day] }
-        return [day, TimeFormatters.timeRange(startMin: note.eventStartMin, endMin: note.eventEndMin)]
+        // [[T-16880]]: "All day" for an all-day event's note, as the event's own row says.
+        guard let time = CadenceEventNoteTimeLabel.label(startMin: note.eventStartMin, endMin: note.eventEndMin) else {
+            return [day]
+        }
+        return [day, time]
     }
 }
 

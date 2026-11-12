@@ -592,6 +592,37 @@ struct CadenceNotesListSupportTests {
         }
     }
 
+    // MARK: - T-16880: an all-day event's note says "All day"
+
+    /// An all-day event's note stores a midnight-to-end-of-day span and no flag, and read it as a
+    /// clock range: "12:00 AM – 11:59 PM" under the Events tab, the list page's Events section and
+    /// both search surfaces. Both readings of the all-day end (minute 1439 and the next midnight,
+    /// minute 0) say "All day"; a timed midnight start keeps its range, and no span says nothing.
+    @Test func anAllDayEventNoteSaysAllDayEverywhereItsTimeIsNamed() throws {
+        let reference = try #require(DateFormatters.ymd.date(from: "2026-10-25")).addingTimeInterval(12 * 60 * 60)
+        let endOfDay = Note(kind: .meeting, title: "Offsite", eventDateKey: "2026-11-04", eventStartMin: 0, eventEndMin: 1439)
+        let nextMidnight = Note(kind: .meeting, title: "Holiday", eventDateKey: "2026-11-04", eventStartMin: 0, eventEndMin: 0)
+        let earlyTimed = Note(kind: .meeting, title: "Launch", eventDateKey: "2026-11-04", eventStartMin: 0, eventEndMin: 60)
+        let lateTimed = Note(kind: .meeting, title: "Close", eventDateKey: "2026-11-04", eventStartMin: 60, eventEndMin: 1439)
+        let spanless = Note(kind: .meeting, title: "Loose", eventDateKey: "2026-11-04")
+
+        for note in [endOfDay, nextMidnight] {
+            #expect(MeetingNoteListRow.detail(for: note, showsDate: false, relativeTo: reference) == "All day")
+            #expect(MeetingNoteListRow.detail(for: note, showsDate: true, relativeTo: reference) == "Nov 4 • All day")
+            #expect(CadenceSearchEventNoteSupport.subtitleFacts(for: note, relativeTo: reference) == ["Nov 4", "All day"])
+        }
+
+        #expect(MeetingNoteListRow.detail(for: earlyTimed, showsDate: false, relativeTo: reference)
+            == TimeFormatters.timeRange(startMin: 0, endMin: 60))
+        #expect(MeetingNoteListRow.detail(for: lateTimed, showsDate: false, relativeTo: reference)
+            == TimeFormatters.timeRange(startMin: 60, endMin: 1439))
+        #expect(CadenceSearchEventNoteSupport.subtitleFacts(for: earlyTimed, relativeTo: reference)
+            == ["Nov 4", TimeFormatters.timeRange(startMin: 0, endMin: 60)])
+        #expect(MeetingNoteListRow.detail(for: spanless, showsDate: false, relativeTo: reference) == "")
+        #expect(MeetingNoteListRow.detail(for: spanless, showsDate: true, relativeTo: reference) == "Nov 4")
+        #expect(CadenceSearchEventNoteSupport.subtitleFacts(for: spanless, relativeTo: reference) == ["Nov 4"])
+    }
+
     // MARK: - Fixtures
 
     private func makeContext() throws -> ModelContext {

@@ -1022,6 +1022,40 @@ struct WeeklyNoteListRow: View {
 
 // MARK: - Meeting
 
+/// **[[T-16880]]: the time an event note's row and search subtitle name -- "All day" for an all-day
+/// event, never its midnight clock range.**
+///
+/// `Note` stores an event's span as two wall-clock minutes (`eventStartMin`, `eventEndMin`,
+/// written by `CadenceEventNoteSupport.eventDateMetadata` on both platforms) and no all-day flag.
+/// An all-day event's span is midnight to the end of the day, so every note made from one --
+/// Apple Calendar's Birthdays, a holiday, an offsite -- read "12:00 AM – 11:59 PM" in the Events
+/// tab, the list page's Events section and both search surfaces, where every calendar surface
+/// says "All day" (`GlobalSearchIndexSupport.eventDayTimeLine`, `iOSCalendarEventSupport`).
+///
+/// The span is read rather than a flag added: a new synced field would leave every note already
+/// on disk unlabelled. Both readings of an all-day end are taken -- EventKit's 23:59:59 on the
+/// last day (minute 1439) and the next midnight (minute 0) -- since either is a midnight start
+/// that runs to the day's end, which is what "All day" says. A timed 12:00 AM -> 1:00 AM event
+/// keeps its range.
+nonisolated enum CadenceEventNoteTimeLabel {
+    static let allDay = "All day"
+
+    /// `nil` when the note carries no span (`-1`), so the caller says nothing about time.
+    static func label(startMin: Int, endMin: Int) -> String? {
+        guard startMin >= 0, endMin >= 0 else { return nil }
+        if isAllDaySpan(startMin: startMin, endMin: endMin) { return allDay }
+        return TimeFormatters.timeRange(startMin: startMin, endMin: endMin)
+    }
+
+    static func label(for note: Note) -> String? {
+        label(startMin: note.eventStartMin, endMin: note.eventEndMin)
+    }
+
+    static func isAllDaySpan(startMin: Int, endMin: Int) -> Bool {
+        startMin == 0 && (endMin == 1439 || endMin == 0)
+    }
+}
+
 struct MeetingNoteListRow: View {
     let note: Note
     let isSelected: Bool
@@ -1039,9 +1073,7 @@ struct MeetingNoteListRow: View {
     /// -- "Mar 28" this year, "Mar 28, 2025" outside it ([[T-6432]]) -- because the row stands with
     /// no month header above it, so nothing else on screen says which year the event was in.
     static func detail(for note: Note, showsDate: Bool, relativeTo referenceDate: Date) -> String {
-        let timeLabel = note.eventStartMin >= 0 && note.eventEndMin >= 0
-            ? TimeFormatters.timeRange(startMin: note.eventStartMin, endMin: note.eventEndMin)
-            : ""
+        let timeLabel = CadenceEventNoteTimeLabel.label(for: note) ?? ""
         guard showsDate else { return timeLabel }
         guard let date = DateFormatters.date(from: note.eventDateKey) else {
             return "Updated \(DateFormatters.absoluteDay(note.updatedAt, relativeTo: referenceDate))"
