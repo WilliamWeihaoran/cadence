@@ -243,7 +243,72 @@ struct CadenceListRelatedNotesTests {
         // Both surfaces that draw the panel narrow it by tag, so the word is true on each.
         for path in ["Cadence/macOS/Views/ListNotesView.swift", "Cadence/iOS/iOSListNotesView.swift"] {
             let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
-            #expect(code.contains("requiredTagSlugs: selectedTagFilterSlugs"), "\(path) no longer narrows by tag")
+            #expect(code.contains("requiredTagSlugs: requiredTagFilterSlugs"), "\(path) no longer narrows by tag")
         }
+    }
+
+    // MARK: - [[T-17014]] the selection follows the tag, not its slug
+
+    /// A chip selection is held as tag ids. Renaming the selected tag rewrites its slug; the
+    /// selection survives the bar's prune and the filter requires the NEW slug, so the list stays
+    /// narrowed. A tag that leaves the bar -- archived, or no longer on anything listed -- drops out.
+    @Test func aRenamedTagKeepsItsChipOnAndTheFilterApplied() throws {
+        let context = try makeContext()
+        let work = Tag(name: "work")
+        let home = Tag(name: "home")
+        context.insert(work)
+        context.insert(home)
+        let plan = Note(kind: .list, title: "Plan", content: "# Plan")
+        plan.tags = [work]
+        let diary = Note(kind: .list, title: "Diary", content: "# Diary")
+        diary.tags = [home]
+        context.insert(plan)
+        context.insert(diary)
+        try context.save()
+
+        let notes = [plan, diary]
+        func offered() -> [Cadence.Tag] {
+            CadenceListRelatedNotes.filterableTags(notes: notes, taskNotes: [], in: [work, home])
+        }
+        var selection: Set<UUID> = [work.id]
+        #expect(CadenceListRelatedNotes.requiredTagSlugs(selectedTagIDs: selection, filterableTags: offered()) == ["work"])
+
+        _ = TagSupport.rename(work, to: "Job")
+        #expect(work.slug == "job")
+        selection = CadenceListRelatedNotes.prunedTagSelection(selection, filterableTags: offered())
+        #expect(selection == [work.id], "the rename let go of the chip")
+        let required = CadenceListRelatedNotes.requiredTagSlugs(selectedTagIDs: selection, filterableTags: offered())
+        #expect(required == ["job"])
+        #expect(CadenceListRelatedNotes.filter(notes, query: "", requiredTagSlugs: required, tasks: []).map(\.id) == [plan.id])
+
+        // Archived: it leaves the bar, so it leaves the selection and requires nothing.
+        work.isArchived = true
+        selection = CadenceListRelatedNotes.prunedTagSelection(selection, filterableTags: offered())
+        #expect(selection.isEmpty)
+        #expect(CadenceListRelatedNotes.requiredTagSlugs(selectedTagIDs: [work.id], filterableTags: offered()).isEmpty)
+
+        // No longer on anything listed: same.
+        selection = [home.id]
+        diary.tags = []
+        selection = CadenceListRelatedNotes.prunedTagSelection(selection, filterableTags: offered())
+        #expect(selection.isEmpty)
+    }
+
+    /// Both tabs and the Mac bar hold ids and read the shared derivation; neither re-spells the
+    /// slug intersection that let a rename clear the filter.
+    @Test func bothTabsHoldTheTagSelectionAsIds() throws {
+        for path in ["Cadence/macOS/Views/ListNotesView.swift", "Cadence/iOS/iOSListNotesView.swift"] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(code.contains("@State private var selectedTagFilterIDs: Set<UUID> = []"), "\(path)")
+            #expect(code.contains("CadenceListRelatedNotes.requiredTagSlugs(selectedTagIDs: selectedTagFilterIDs"), "\(path)")
+            #expect(code.contains("CadenceListRelatedNotes.prunedTagSelection("), "\(path)")
+            #expect(!code.contains("selectedTagFilterSlugs"), "\(path) still holds slugs")
+            #expect(!code.contains("formIntersection"), "\(path) re-spells the prune")
+        }
+        let bar = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TagPickerSupportViews.swift")
+        )
+        #expect(bar.contains("@Binding var selectedTagIDs: Set<UUID>"))
+        #expect(!bar.contains("selectedSlugs"))
     }
 }

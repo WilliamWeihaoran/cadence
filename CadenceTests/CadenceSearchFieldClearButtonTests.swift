@@ -225,7 +225,7 @@ struct CadenceSearchFieldClearButtonTests {
     /// empties a string — the search field's clear button, spelled out.
     ///
     /// The emptying assignment is what separates it from the other three controls in the app that
-    /// draw the same glyph: the tag filter bar's `selectedSlugs.removeAll()`, the embed editor's
+    /// draw the same glyph: the tag filter bar's `selectedTagIDs.removeAll()`, the embed editor's
     /// `clearScheduledTime(…)`, and a cancelled task's completion circle, which is not a button at
     /// all. None of those is a search field and none should become one.
     ///
@@ -252,9 +252,9 @@ struct CadenceSearchFieldClearButtonTests {
             // The nearest control that must be left alone: same glyph, same `isEmpty` guard, same
             // button style — and it clears a *selection*, not a query.
             andNotOn: """
-            if !selectedSlugs.isEmpty {
+            if !selectedTagIDs.isEmpty {
                 Button {
-                    selectedSlugs.removeAll()
+                    selectedTagIDs.removeAll()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 12, weight: .semibold))

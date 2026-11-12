@@ -74,6 +74,23 @@ enum CadenceListRelatedNotes {
         return TagSupport.uniqueBySlug(allTags.filter { !$0.isArchived && slugs.contains($0.slug) })
     }
 
+    /// The slugs `filter` requires for a chip selection held as tag **ids**: the live slug of each
+    /// selected tag the bar still offers.
+    ///
+    /// **[[T-17014]].** Both tabs held the selection as slugs and intersected it with the bar's
+    /// slugs whenever they changed. `TagSupport.rename` rewrites a tag's slug, so renaming `work`
+    /// to `Job` while its chip was on silently dropped the filter -- every note reappeared and the
+    /// `Job` chip drew off. An id survives a rename; the slug is read here, at filter time.
+    static func requiredTagSlugs(selectedTagIDs: Set<UUID>, filterableTags: [Tag]) -> Set<String> {
+        Set(filterableTags.filter { selectedTagIDs.contains($0.id) }.map(\.slug))
+    }
+
+    /// The selection pruned to the tags the bar still offers: a tag archived, or no longer on
+    /// anything listed, cannot stay a hidden requirement. A renamed tag keeps its id and so stays.
+    static func prunedTagSelection(_ selectedTagIDs: Set<UUID>, filterableTags: [Tag]) -> Set<UUID> {
+        selectedTagIDs.intersection(filterableTags.map(\.id))
+    }
+
     /// A note survives when it carries **every** required tag and, given a query, the query is in
     /// its title, its body (task embeds read under the task's live title — see
     /// `MarkdownTaskEmbedTitleCache`), or one of its tags' names or slugs.

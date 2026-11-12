@@ -43,7 +43,8 @@ struct iOSListNotesView: View {
     @State private var observedDay = CadenceObservedDay()
     @State private var searchText = ""
     @FocusState private var isSearchFocused: Bool
-    @State private var selectedTagFilterSlugs: Set<String> = []
+    /// Tag ids, not slugs: a rename rewrites the slug and must not let go of the filter ([[T-17014]]).
+    @State private var selectedTagFilterIDs: Set<UUID> = []
     // [[T-15433]]: the Mac's fold, per section, held the way `ListNotesView` holds it.
     @State private var isListNotesCollapsed = false
     @State private var isEventNotesCollapsed = false
@@ -129,7 +130,7 @@ struct iOSListNotesView: View {
         CadenceListRelatedNotes.filter(
             taskNotes: taskNotes,
             query: searchText,
-            requiredTagSlugs: selectedTagFilterSlugs
+            requiredTagSlugs: requiredTagFilterSlugs
         )
     }
 
@@ -141,6 +142,10 @@ struct iOSListNotesView: View {
         )
     }
 
+    private var requiredTagFilterSlugs: Set<String> {
+        CadenceListRelatedNotes.requiredTagSlugs(selectedTagIDs: selectedTagFilterIDs, filterableTags: filterableTags)
+    }
+
     private var hasAnyNotes: Bool {
         !(listNotes.isEmpty && eventNotes.isEmpty && taskNotes.isEmpty)
     }
@@ -149,7 +154,7 @@ struct iOSListNotesView: View {
         CadenceListRelatedNotes.filter(
             notes,
             query: searchText,
-            requiredTagSlugs: selectedTagFilterSlugs,
+            requiredTagSlugs: requiredTagFilterSlugs,
             tasks: allTasks
         )
     }
@@ -199,8 +204,11 @@ struct iOSListNotesView: View {
             normalizeSelection()
         }
         // A tag that no longer appears on anything listed cannot stay a hidden requirement.
-        .onChange(of: filterableTags.map(\.slug)) { _, slugs in
-            selectedTagFilterSlugs.formIntersection(Set(slugs))
+        .onChange(of: filterableTags.map(\.id)) { _, _ in
+            selectedTagFilterIDs = CadenceListRelatedNotes.prunedTagSelection(
+                selectedTagFilterIDs,
+                filterableTags: filterableTags
+            )
         }
         .sheet(item: $selectedEventNote) { note in
             iOSHeldNoteSheet(note: note) { selectedEventNote = nil } content: { note in
@@ -362,12 +370,12 @@ struct iOSListNotesView: View {
         ScrollView(.horizontal) {
             HStack(spacing: 6) {
                 ForEach(filterableTags) { tag in
-                    let isSelected = selectedTagFilterSlugs.contains(tag.slug)
+                    let isSelected = selectedTagFilterIDs.contains(tag.id)
                     Button {
                         if isSelected {
-                            selectedTagFilterSlugs.remove(tag.slug)
+                            selectedTagFilterIDs.remove(tag.id)
                         } else {
-                            selectedTagFilterSlugs.insert(tag.slug)
+                            selectedTagFilterIDs.insert(tag.id)
                         }
                     } label: {
                         CadenceTagChip(tag: tag, selection: isSelected ? .on : .off)
@@ -379,9 +387,9 @@ struct iOSListNotesView: View {
                     .accessibilityValue(isSelected ? "On" : "Off")
                 }
 
-                if !selectedTagFilterSlugs.isEmpty {
+                if !selectedTagFilterIDs.isEmpty {
                     Button {
-                        selectedTagFilterSlugs.removeAll()
+                        selectedTagFilterIDs.removeAll()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 14, weight: .semibold))

@@ -45,7 +45,8 @@ struct ListNotesView: View {
     @Environment(CalendarManager.self) private var calendarManager
     @State private var selection: ListNotesSelection?
     @State private var searchText = ""
-    @State private var selectedTagFilterSlugs: Set<String> = []
+    /// Tag ids, not slugs: a rename rewrites the slug and must not let go of the filter ([[T-17014]]).
+    @State private var selectedTagFilterIDs: Set<UUID> = []
     @State private var folderSheetRequest: NoteFolderSheetRequest?
     @State private var isListNotesCollapsed = false
     @State private var isEventNotesCollapsed = false
@@ -131,6 +132,10 @@ struct ListNotesView: View {
         CadenceListRelatedNotes.filterableTags(notes: relatedNotes, taskNotes: taskNotes, in: allTags)
     }
 
+    private var requiredTagFilterSlugs: Set<String> {
+        CadenceListRelatedNotes.requiredTagSlugs(selectedTagIDs: selectedTagFilterIDs, filterableTags: filterableTags)
+    }
+
     /// This list's open tasks with notes — the sidebar's "tasks in this list that have notes" —
     /// which is genuinely a per-list question and must stay scoped ([[T-7031]]: derived in
     /// `CadenceListRelatedNotes`, which the iPad tab reads too).
@@ -149,7 +154,7 @@ struct ListNotesView: View {
         CadenceListRelatedNotes.filter(
             taskNotes: taskNotes,
             query: searchText,
-            requiredTagSlugs: selectedTagFilterSlugs
+            requiredTagSlugs: requiredTagFilterSlugs
         )
     }
 
@@ -235,8 +240,11 @@ struct ListNotesView: View {
         .onChange(of: allTasks.map { "\($0.id.uuidString)-\($0.statusRaw)" }) { _, _ in
             normalizeSelectionIfNeeded()
         }
-        .onChange(of: filterableTags.map(\.slug)) { _, slugs in
-            selectedTagFilterSlugs.formIntersection(Set(slugs))
+        .onChange(of: filterableTags.map(\.id)) { _, _ in
+            selectedTagFilterIDs = CadenceListRelatedNotes.prunedTagSelection(
+                selectedTagFilterIDs,
+                filterableTags: filterableTags
+            )
         }
         .sheet(item: $folderSheetRequest) { request in
             NoteFolderSheet(request: request, existingFolders: listNoteFolderNames) { folderPath in
@@ -252,7 +260,7 @@ struct ListNotesView: View {
                 onNewNoteInFolder: { folderSheetRequest = NoteFolderSheetRequest(mode: .newNote) }
             )
             ListNotesSearchField(searchText: $searchText, hasTagFilters: !filterableTags.isEmpty)
-            TagFilterBar(tags: filterableTags, selectedSlugs: $selectedTagFilterSlugs)
+            TagFilterBar(tags: filterableTags, selectedTagIDs: $selectedTagFilterIDs)
 
             if let createFailureNotice {
                 CadenceInlineFailureNotice(text: createFailureNotice)
@@ -425,7 +433,7 @@ struct ListNotesView: View {
         CadenceListRelatedNotes.filter(
             notes,
             query: searchText,
-            requiredTagSlugs: selectedTagFilterSlugs,
+            requiredTagSlugs: requiredTagFilterSlugs,
             tasks: allTasks
         )
     }

@@ -152,7 +152,8 @@ private struct TagOverflowBadge: View {
 /// iPad tab ([[T-14451]]). The strip scrolls, so there is no cap to answer a width problem.
 struct TagFilterBar: View {
     let tags: [Tag]
-    @Binding var selectedSlugs: Set<String>
+    /// Ids, so a renamed tag keeps its chip on ([[T-17014]]).
+    @Binding var selectedTagIDs: Set<UUID>
 
     private var visibleTags: [Tag] { tags }
 
@@ -161,12 +162,12 @@ struct TagFilterBar: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(visibleTags) { tag in
-                        let isSelected = selectedSlugs.contains(tag.slug)
+                        let isSelected = selectedTagIDs.contains(tag.id)
                         Button {
                             if isSelected {
-                                selectedSlugs.remove(tag.slug)
+                                selectedTagIDs.remove(tag.id)
                             } else {
-                                selectedSlugs.insert(tag.slug)
+                                selectedTagIDs.insert(tag.id)
                             }
                         } label: {
                             CadenceTagChip(tag: tag, selection: isSelected ? .on : .off)
@@ -177,9 +178,9 @@ struct TagFilterBar: View {
                         .help(isSelected ? "Remove tag filter" : "Filter by \(CadenceTagChipStyle.displayName(for: tag))")
                     }
 
-                    if !selectedSlugs.isEmpty {
+                    if !selectedTagIDs.isEmpty {
                         Button {
-                            selectedSlugs.removeAll()
+                            selectedTagIDs.removeAll()
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 12, weight: .semibold))
