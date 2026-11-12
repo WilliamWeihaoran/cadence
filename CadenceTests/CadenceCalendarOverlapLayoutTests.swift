@@ -950,6 +950,40 @@ struct CadenceCalendarOverlapLayoutTests {
         #expect(CadenceSourceScan.matchCount(#"\.event\(event\.calendarItemIdentifier\)"#, in: column) == 0)
     }
 
+    // MARK: - T-16696: the iOS lists over a day's events key one row per occurrence
+
+    /// A day listing two occurrences of one series (both carry its one `calendarItemIdentifier`)
+    /// gets a distinct key per row, in the day's own order, with every item kept; a day with no
+    /// repeat keys exactly by the identifiers it already had.
+    @Test func aDaysEventListKeysTwoOccurrencesOfOneSeriesApart() {
+        let day = [("sleep-series", "tail"), ("standup", "standup"), ("sleep-series", "head")]
+        let keyed = IOSLayout.uniquelyKeyed(day, identifier: \.0)
+        #expect(keyed.count == 3)
+        #expect(Set(keyed.map(\.id)).count == 3, "two rows share a ForEach id: \(keyed.map(\.id))")
+        #expect(keyed.map(\.item.1) == ["tail", "standup", "head"], "the list lost or reordered an item")
+        #expect(keyed[0].id == "sleep-series" && keyed[1].id == "standup")
+        #expect(IOSLayout.uniquelyKeyed([("a", 1), ("b", 2)], identifier: \.0).map(\.id) == ["a", "b"])
+    }
+
+    /// The all-day band, the Month cell's chips and the day inspector each key their events
+    /// `ForEach` through the helper, and none keys by the series-shared identifier.
+    @Test func theIOSAllDayBandMonthChipsAndDayInspectorKeyEventsPerOccurrence() throws {
+        let sites: [(file: String, forEach: String)] = [
+            ("Cadence/iOS/iOSCalendarTimelineViews.swift", "ForEach(allDayEvents.prefix(split.events).uniquelyKeyed) { keyed in"),
+            ("Cadence/iOS/iOSCalendarMonthViews.swift", "ForEach(visibleEvents.uniquelyKeyed) { keyed in"),
+            ("Cadence/iOS/iOSCalendarInspectorView.swift", "ForEach(events.uniquelyKeyed) { keyed in"),
+        ]
+        for site in sites {
+            let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(site.file))
+            #expect(code.count > 5_000, "non-vacuity: read \(code.count) characters of \(site.file)")
+            #expect(code.contains(site.forEach), "\(site.file) no longer keys its events per occurrence")
+            #expect(CadenceSourceScan.matchCount(#"id:\s*\\\.calendarItemIdentifier"#, in: code) == 0,
+                    "\(site.file) keys a ForEach by the series-shared calendarItemIdentifier")
+        }
+        let support = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarEventSupport.swift"))
+        #expect(support.contains("iOSCalendarTimelineBlockLayout.uniquelyKeyed(self, identifier: \\.calendarItemIdentifier)"))
+    }
+
     /// One authored workweek — standups, 1:1s, lunches, reviews, focus blocks and errands, every
     /// time on the quarter-hour grid a calendar actually schedules on. **Authored, not the owner's
     /// data** (no agent may read a real calendar); its 20 overlapping pairs start 0 (x5), 15,

@@ -633,7 +633,8 @@ private struct iOSCalendarMonthDayCell: View {
     /// date and opened nothing ([[T-8725]], under [[T-8201]]).
     private func chipStack(opens: Bool) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            ForEach(visibleEvents, id: \.calendarItemIdentifier) { event in
+            ForEach(visibleEvents.uniquelyKeyed) { keyed in
+                let event = keyed.item
                 iOSCalendarMiniChip(
                     title: iOSCalendarEventSupport.title(for: event),
                     icon: event.isAllDay ? "calendar" : "calendar.badge.clock",

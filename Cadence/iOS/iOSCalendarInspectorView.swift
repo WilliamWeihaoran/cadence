@@ -87,7 +87,8 @@ struct iOSCalendarDayInspector: View {
 
                         if !events.isEmpty {
                             iOSCalendarInspectorSection(title: CadenceAppleCalendarNaming.integrationSectionTitle, color: Theme.green) {
-                                ForEach(events, id: \.calendarItemIdentifier) { event in
+                                ForEach(events.uniquelyKeyed) { keyed in
+                                    let event = keyed.item
                                     Button {
                                         selectedEvent = iOSCalendarEventSelection(event: event)
                                     } label: {

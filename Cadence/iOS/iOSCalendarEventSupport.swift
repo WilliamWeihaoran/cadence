@@ -57,4 +57,12 @@ enum iOSCalendarEventSupport {
         )
     }
 }
+
+extension Sequence where Element == EKEvent {
+    /// These events under one key apiece for a `ForEach` ([[T-16696]]): `calendarItemIdentifier`
+    /// is shared by every occurrence of a series, so two occurrences on one day collide under it.
+    var uniquelyKeyed: [iOSCalendarTimelineBlockLayout.KeyedItem<EKEvent>] {
+        iOSCalendarTimelineBlockLayout.uniquelyKeyed(self, identifier: \.calendarItemIdentifier)
+    }
+}
 #endif

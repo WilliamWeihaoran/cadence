@@ -526,6 +526,27 @@ nonisolated enum iOSCalendarTimelineBlockLayout {
         }
     }
 
+    /// One item of a day's list under a key no sibling shares ([[T-16696]]).
+    struct KeyedItem<Item>: Identifiable {
+        let id: String
+        let item: Item
+    }
+
+    /// `items` keyed through `uniqueEventKeys`, in their own order, for a `ForEach` over a day's
+    /// events ([[T-16696]]). The all-day band, the Month cell's chips and the day inspector keyed
+    /// their `ForEach`es by `calendarItemIdentifier`, which every occurrence of a recurring series
+    /// shares, so a day holding two occurrences of one series handed SwiftUI a duplicate id --
+    /// undefined results, a chip or row drawn twice or dropped on a redraw. No geometry rides on
+    /// these keys; they only have to be distinct and stable for one list.
+    static func uniquelyKeyed<Item>(
+        _ items: some Sequence<Item>,
+        identifier: (Item) -> String
+    ) -> [KeyedItem<Item>] {
+        let items = Array(items)
+        let keys = uniqueEventKeys(items.map(identifier))
+        return zip(keys, items).map { KeyedItem(id: $0, item: $1) }
+    }
+
     // MARK: - Vertical placement
 
     /// Top edge, in a day column's own coordinates, of a block starting at `minute`. The one

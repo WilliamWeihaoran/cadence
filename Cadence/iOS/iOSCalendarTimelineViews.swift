@@ -1246,7 +1246,8 @@ private struct iOSCalendarAllDayBandChips: View {
             if let draftTitle {
                 CadenceAllDayDraftChip(title: draftTitle)
             }
-            ForEach(allDayEvents.prefix(split.events), id: \.calendarItemIdentifier) { event in
+            ForEach(allDayEvents.prefix(split.events).uniquelyKeyed) { keyed in
+                let event = keyed.item
                 iOSCalendarMiniChip(
                     title: iOSCalendarEventSupport.title(for: event),
                     icon: "calendar",
