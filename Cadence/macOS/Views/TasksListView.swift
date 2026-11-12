@@ -506,7 +506,11 @@ struct TasksListView: View {
     /// aim rather than a failure (T-591). `.refused` borrows the drop surface's one notice slot:
     /// `CadencePendingChangePersistence.editFailureNotice` is "Nothing was changed", which is only
     /// true because `CadenceTaskFieldEditCommit` put every field back before answering.
-    private func assignTask(_ task: AppTask, for dropKey: String) -> Bool {
+    ///
+    /// The outcome is handed on whole, not folded to a `Bool`: the row drop needs `.refused` apart
+    /// from `.resolvedNothing`, so a refused re-file stops the drop instead of reordering over it
+    /// and answering `true` ([[T-17115]]).
+    private func assignTask(_ task: AppTask, for dropKey: String) -> TasksPanelDropOutcome {
         let outcome = TasksPanelSupport.assignTask(
             task,
             for: dropKey,
@@ -516,7 +520,7 @@ struct TasksListView: View {
             modelContext: modelContext
         )
         reorderFailureNotice = outcome == .refused ? CadencePendingChangePersistence.editFailureNotice : nil
-        return outcome == .applied
+        return outcome
     }
 
     private func requestRemindersAccess() {

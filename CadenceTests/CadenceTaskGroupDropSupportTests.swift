@@ -521,7 +521,7 @@ struct CadenceTaskGroupDropSupportTests {
                     areas: [],
                     projects: [],
                     modelContext: context
-                ) == .applied
+                )
             },
             reorderTask: { _, _, _ in true }
         )
@@ -576,7 +576,7 @@ struct CadenceTaskGroupDropSupportTests {
                         areas: [],
                         projects: projects,
                         modelContext: context
-                    ) == .applied
+                    )
                 },
                 reorderTask: { _, _, _ in true }
             )
@@ -637,7 +637,7 @@ struct CadenceTaskGroupDropSupportTests {
             taskIDFromPayload: { TasksPanelSupport.taskID(from: $0) },
             assignTask: { _, key in
                 assigned.append(key)
-                return true
+                return .applied
             },
             // Answers `true`: since T-868 a row drop reports the *commit*, so a stub that
             // answered `false` would make `handleTaskDrop` refuse every drop below and the two
@@ -712,7 +712,7 @@ struct CadenceTaskGroupDropSupportTests {
                     areas: [],
                     projects: [home, work],
                     modelContext: context
-                ) == .applied
+                )
             },
             reorderTask: { droppedID, targetID, scope in
                 TasksPanelSupport.reorderTask(
@@ -736,6 +736,94 @@ struct CadenceTaskGroupDropSupportTests {
         let workOrder = all.filter { $0.project?.id == work.id }.sorted { $0.order < $1.order }.map(\.title)
         #expect(workOrder == ["Work A", "Moved", "Work B", "Work C"], "the row did not land in front of the one it was dropped on: \(workOrder)")
         #expect(homeB.project?.id == home.id)
+    }
+
+    /// **[[T-17115]]: a cross-group row drop whose re-file the STORE refuses answers `false`.**
+    ///
+    /// `CadenceTaskFieldEditCommit` puts the row back in its old group on the refusal, so the
+    /// reorder that used to follow found it outside the target group's scope, wrote nothing and
+    /// answered `true`: the row sprang home under a drop reported as landed, and the page's
+    /// `editFailureNotice` -- set by the refusal -- was cleared by that `true`. The drop now stops
+    /// on `.refused`; the reorder is never asked.
+    @Test func arowDropWhoseRefileTheStoreRefusesAnswersFalseAndReordersNothing() throws {
+        struct Refused: Error {}
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let home = Project(name: "Home")
+        let work = Project(name: "Work")
+        context.insert(home)
+        context.insert(work)
+        func row(_ title: String, _ order: Int, _ project: Project) -> AppTask {
+            let task = AppTask(title: title)
+            task.order = order
+            task.project = project
+            context.insert(task)
+            return task
+        }
+        let moved = row("Moved", 0, home)
+        let workA = row("Work A", 0, work)
+        let workB = row("Work B", 1, work)
+        let all = [moved, workA, workB]
+        try context.save()
+
+        var outcomes: [TasksPanelDropOutcome] = []
+        var reorders = 0
+        func coordinator(refusing: Bool) -> TasksPanelDropCoordinator {
+            TasksPanelDropCoordinator(
+                allTasks: all,
+                taskIDFromPayload: { TasksPanelSupport.taskID(from: $0) },
+                assignTask: { dropped, key in
+                    let outcome = TasksPanelSupport.assignTask(
+                        dropped,
+                        for: key,
+                        todayKey: self.todayKey,
+                        areas: [],
+                        projects: [home, work],
+                        modelContext: context,
+                        commit: { store in
+                            if refusing { throw Refused() }
+                            try store.save()
+                        }
+                    )
+                    outcomes.append(outcome)
+                    return outcome
+                },
+                reorderTask: { droppedID, targetID, scope in
+                    reorders += 1
+                    return TasksPanelSupport.reorderTask(
+                        droppedID: droppedID,
+                        targetID: targetID,
+                        scopeTasks: scope,
+                        spanTasks: all,
+                        modelContext: context
+                    )
+                }
+            )
+        }
+        let payload = TasksPanelSupport.taskDragPayload(for: moved)
+        let key = "list:p_\(work.id.uuidString)"
+
+        #expect(!coordinator(refusing: true).handleTaskDrop(
+            payload: payload,
+            targetTask: workB,
+            scopeTasks: [workA, workB],
+            dropKey: key
+        ), "a re-file the store refused was reported to the row as a drop that happened")
+        #expect(outcomes == [.refused], "non-vacuity: the commit was not refused: \(outcomes)")
+        #expect(moved.project?.id == home.id, "the refused re-file was not put back")
+        #expect(reorders == 0, "the drop reordered over a refused re-file")
+
+        // Paired: the same drop over a commit that lands is answered `true`, so the `false` above
+        // is about the refusal rather than a coordinator that refuses this drop.
+        #expect(coordinator(refusing: false).handleTaskDrop(
+            payload: payload,
+            targetTask: workB,
+            scopeTasks: [workA, workB],
+            dropKey: key
+        ))
+        #expect(outcomes.last == .applied)
+        #expect(moved.project?.id == work.id)
+        #expect(reorders == 1)
     }
 
     /// The other half: the `nil` arm is reached by **real groups**, not only by a test that passes

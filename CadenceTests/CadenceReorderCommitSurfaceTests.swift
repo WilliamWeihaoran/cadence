@@ -293,7 +293,7 @@ struct CadenceReorderCommitSurfaceTests {
             TasksPanelDropCoordinator(
                 allTasks: [dropped, target],
                 taskIDFromPayload: { TasksPanelSupport.taskID(from: $0) },
-                assignTask: { _, _ in true },
+                assignTask: { _, _ in .applied },
                 reorderTask: { _, _, _ in reorderSucceeds }
             )
         }

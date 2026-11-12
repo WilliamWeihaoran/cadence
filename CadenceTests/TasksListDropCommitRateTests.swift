@@ -330,13 +330,26 @@ struct TasksListDropCommitRateTests {
                 source.contains("reorderFailureNotice = outcome == .refused ? CadencePendingChangePersistence.editFailureNotice : nil"),
                 "\(path) does not name and clear a refused assignment in one expression"
             )
+            // [[T-17115]]: the page hands the outcome on whole, and the coordinator decides --
+            // a header answers only `.applied`, a row drop stops on `.refused`.
             #expect(
-                source.contains("return outcome == .applied"),
-                "\(path) reports a drop the store did not take"
+                source.contains("return outcome\n"),
+                "\(path) folds the outcome before the coordinator can tell a refusal apart"
             )
             read += 1
         }
         #expect(read == 2, "expected two macOS drop surfaces, read \(read)")
+        let coordinator = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanelDropCoordinator.swift")
+        )
+        #expect(
+            coordinator.contains("return assignTask(droppedTask, dropKey) == .applied"),
+            "a header drop reports a drop the store did not take"
+        )
+        #expect(
+            coordinator.contains("if outcome == .refused { return false }"),
+            "a row drop reports a re-file the store refused"
+        )
 
         // And the swallow the ticket is about is gone from the unit that held it -- the shared
         // header drop since [[T-16654]], which `TasksPanelSupport.assignTask` forwards to.

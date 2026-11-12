@@ -4,8 +4,10 @@ import Foundation
 struct TasksPanelDropCoordinator {
     let allTasks: [AppTask]
     let taskIDFromPayload: (String) -> UUID?
-    /// Answers whether the key resolved to anything. See `handleSectionDrop`.
-    let assignTask: (AppTask, String) -> Bool
+    /// Answers all three outcomes, not a `Bool` ([[T-17115]]): a row drop has to tell a key that
+    /// resolved to nothing (reorder anyway) from a re-file the store refused (stop). See
+    /// `handleSectionDrop` and `handleTaskDrop`.
+    let assignTask: (AppTask, String) -> TasksPanelDropOutcome
     /// Answers whether the new order is in the store — see `handleTaskDrop`. It was `Void` until
     /// T-868, over a `try? modelContext.save()` that could not have told anyone anyway.
     let reorderTask: (UUID, UUID, [AppTask]) -> Bool
@@ -37,7 +39,7 @@ struct TasksPanelDropCoordinator {
     /// says the move happened.
     func handleSectionDrop(payload: String, dropKey: String) -> Bool {
         guard let (_, droppedTask) = droppedTask(from: payload) else { return false }
-        return assignTask(droppedTask, dropKey)
+        return assignTask(droppedTask, dropKey) == .applied
     }
 
     /// **`dropKey` has no default (T-715).** It carried `= nil`, and both call sites — Today's
@@ -64,10 +66,19 @@ struct TasksPanelDropCoordinator {
               droppedID != targetTask.id else { return false }
         var joined = false
         if let dropKey {
-            // Not a refusal, unlike `handleSectionDrop`: the reorder below runs either way, so a
-            // row drop whose key resolved to nothing still moved the row and is not the silent
-            // accept T-591 was about. What it answers decides the reorder's scope, below.
-            joined = assignTask(droppedTask, dropKey)
+            // A key that resolved to nothing is not a refusal, unlike `handleSectionDrop`: the
+            // reorder below runs either way, so a row drop whose key named nothing still moved the
+            // row and is not the silent accept T-591 was about. What it answers decides the
+            // reorder's scope, below.
+            //
+            // **A re-file the STORE refused is ([[T-17115]]).** `CadenceTaskFieldEditCommit` has
+            // already put the row back in its old group, so the reorder would find it outside this
+            // group's scope, write nothing and answer `true` -- a drop reported as landed while the
+            // row springs home, and the page's notice, set by the refusal, cleared by that `true`.
+            // The drop answers `false` and the refusal's own notice stands.
+            let outcome = assignTask(droppedTask, dropKey)
+            if outcome == .refused { return false }
+            joined = outcome == .applied
         }
         // **A row filed into this group by the drop is one of its rows ([[T-17112]]).** `scopeTasks`
         // is the TARGET group's rows, drawn before the drop, so a row dragged in from another group
