@@ -568,6 +568,51 @@ struct CadenceWriteServiceTests {
         #expect(tasks.allSatisfy { $0.status == .cancelled })
     }
 
+    // MARK: - T-17001: a prefix cancels open work, never finished history
+
+    /// A completed task carrying the prefix is neither matched nor touched: it stays done with its
+    /// own `completedAt`, the dry run does not list it, and it does not count against the cap.
+    @Test func bulkCancelByPrefixLeavesCompletedTasksDoneAndOutOfTheSelection() throws {
+        let fixture = try Fixture()
+        let open = AppTask(title: "MCP TEST weekly review")
+        let finished = AppTask(title: "MCP TEST weekly review")
+        let stamp = Date(timeIntervalSince1970: 1_700_000_000)
+        finished.status = .done
+        finished.completedAt = stamp
+        fixture.modelContext.insert(open)
+        fixture.modelContext.insert(finished)
+        try fixture.modelContext.save()
+
+        let preview = try fixture.writeService.bulkCancelTasks(options: .init(titlePrefix: "MCP TEST", dryRun: true))
+        #expect(preview.matchedTasks.map(\.id) == [open.id.uuidString])
+
+        let executed = try fixture.writeService.bulkCancelTasks(options: .init(titlePrefix: "MCP TEST"))
+        #expect(executed.cancelledTasks.map(\.id) == [open.id.uuidString])
+        #expect(open.status == .cancelled)
+        #expect(finished.status == .done)
+        #expect(finished.completedAt == stamp)
+    }
+
+    /// The cap counts what the prefix would cancel. `limit` finished occurrences plus one open task
+    /// is a one-task selection, not one over the page ceiling.
+    @Test func bulkCancelPrefixCapDoesNotCountCompletedTasks() throws {
+        let fixture = try Fixture()
+        let limit = CadenceMCPServiceSupport.maximumPageSize
+        for _ in 0..<limit {
+            let done = AppTask(title: "MCP TEST daily standup")
+            done.status = .done
+            done.completedAt = Date(timeIntervalSince1970: 1_700_000_000)
+            fixture.modelContext.insert(done)
+        }
+        let open = AppTask(title: "MCP TEST daily standup")
+        fixture.modelContext.insert(open)
+        try fixture.modelContext.save()
+
+        let executed = try fixture.writeService.bulkCancelTasks(options: .init(titlePrefix: "MCP TEST"))
+        #expect(executed.cancelledTasks.count == 1)
+        #expect(open.status == .cancelled)
+    }
+
     // MARK: - T-308: a wrong section name is not a missing one
 
     @Test func createTaskRejectsASectionNameTheListDoesNotHave() throws {

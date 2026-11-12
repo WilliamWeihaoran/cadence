@@ -1925,8 +1925,16 @@ final class CadenceWriteService {
                 throw CadenceWriteError.invalidCombination("titlePrefix must be at least 8 characters for bulk cancellation.")
             }
             let normalizedPrefix = prefix.lowercased()
+            // **Open work only ([[T-17001]]).** The pattern used to skip only cancelled rows, so a
+            // prefix matched every COMPLETED task carrying it too: the loop below then flipped each
+            // one from done to cancelled and re-stamped its `completedAt` to now -- a repeating
+            // series' finished history read as abandoned on both platforms and landed in Today's
+            // Completed section -- and those done rows counted against the cap, so a long-lived
+            // series could make a two-task cancellation refuse. A pattern is a finder for work still
+            // to be abandoned; a caller that means a settled task names it in `taskIds`, the
+            // branch that keeps `cancel_task`'s per-task semantics.
             selectedTasks = tasks.filter {
-                !$0.isCancelled && $0.title.lowercased().hasPrefix(normalizedPrefix)
+                !$0.isDone && !$0.isCancelled && $0.title.lowercased().hasPrefix(normalizedPrefix)
             }
             // The breadth control, and only on the branch that executes: see this function's note.
             let limit = CadenceMCPServiceSupport.maximumPageSize
