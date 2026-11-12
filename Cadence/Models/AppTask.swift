@@ -319,8 +319,21 @@ nonisolated enum CadenceTodayStanding: Int, CaseIterable, Hashable {
         set { recurrenceSourceTaskIDRaw = newValue?.uuidString ?? "" }
     }
 
+    /// Whether a rule or end edit on this task has a series to ask "this one or this and future?"
+    /// about. True while it repeats, while it is linked to another occurrence (spawned from one, or
+    /// has spawned one), or while it sits in a series rooted at some *other* task.
+    ///
+    /// **[[T-16961]]: its own id in `recurrenceSeriesIDRaw` is not enough.** Giving any task a rule
+    /// stamps that (`ensureRecurrenceSeriesMetadata`), and turning the rule back off never removes
+    /// it, so a lone task whose repeat had been switched on and off read as a series for good: the
+    /// next rule picked for it -- on the Mac row, the iOS row, either editor's Save -- stopped at
+    /// "Change repeating task?" on a task whose Repeat row says Never, two buttons with one effect.
+    /// `recurrenceSeriesID` already falls back to `id`, so a self-stamp carries no information.
     var isRecurrenceSeriesMember: Bool {
-        isRecurring || !recurrenceSeriesIDRaw.isEmpty || !recurrenceSourceTaskIDRaw.isEmpty
+        isRecurring
+            || recurrenceSourceTaskID != nil
+            || recurrenceSpawnedTaskID != nil
+            || (!recurrenceSeriesIDRaw.isEmpty && recurrenceSeriesID != id)
     }
 
     // MARK: - Recurrence end condition

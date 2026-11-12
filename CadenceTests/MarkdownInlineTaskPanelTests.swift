@@ -380,6 +380,35 @@ struct CadenceTaskInlinePanelSeriesScopeTests {
         #expect(!CadenceTaskInlinePanel.asksSeriesScope(draft: memberOpened, opened: memberOpened, task: member))
     }
 
+    /// **[[T-16961]]: a task that only USED to repeat is not a series.** Giving a task a rule
+    /// stamps `recurrenceSeriesIDRaw` with its own id (`ensureRecurrenceSeriesMetadata`), and
+    /// turning the rule back off left the stamp behind, so the next rule picked for that lone,
+    /// non-repeating task stopped at "Change repeating task?" -- two buttons with one effect, on a
+    /// task whose Repeat row says Never. A real member is still asked: a successor of another task
+    /// (its source link and a foreign series id), and a root whose successor is linked.
+    @Test func aTaskThatOnlyUsedToRepeatIsNotAskedTheSeriesQuestion() {
+        let lapsed = AppTask(title: "Water plants")
+        lapsed.recurrenceSeriesIDRaw = lapsed.id.uuidString
+        let opened = CadenceScheduleDraft(editing: lapsed)
+        var moved = opened
+        moved.repeatRule = .weekly
+        #expect(lapsed.recurrenceRule == .none, "fixture is not the lapsed case it claims")
+        #expect(!lapsed.isRecurrenceSeriesMember, "a lone task reads as a series member on its own stamp")
+        #expect(!CadenceTaskInlinePanel.asksSeriesScope(draft: moved, opened: opened, task: lapsed))
+
+        let root = AppTask(title: "Water plants")
+        let successor = AppTask(title: "Water plants")
+        successor.recurrenceSeriesIDRaw = root.id.uuidString
+        successor.recurrenceSourceTaskID = root.id
+        #expect(successor.isRecurrenceSeriesMember, "a spawned occurrence stopped being a series member")
+        let foreign = AppTask(title: "Water plants")
+        foreign.recurrenceSeriesIDRaw = root.id.uuidString
+        #expect(foreign.isRecurrenceSeriesMember, "a task in another task's series stopped being a member")
+        root.recurrenceSeriesIDRaw = root.id.uuidString
+        root.recurrenceSpawnedTaskID = successor.id
+        #expect(root.isRecurrenceSeriesMember, "a root with a linked successor stopped being a member")
+    }
+
     /// The panel's half of [[T-3253]] (a): which of its rows a named opening row expands. `nil` —
     /// the iOS card tap, which has no chip — opens every row closed, as it always has.
     @Test func anOpeningRowExpandsThatRowAndNoOther() {

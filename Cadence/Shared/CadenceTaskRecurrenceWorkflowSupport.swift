@@ -626,6 +626,12 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         let seriesID = task.recurrenceSeriesID
         for candidate in allTasks where !seen.contains(candidate.id) {
             guard candidate.recurrenceSeriesID == seriesID else { continue }
+            // [[T-16962]]: an earlier occurrence is never "future", whatever its date says. The
+            // date test below lets a member with no date through, and a dateless series' first
+            // occurrence has none (its successors are seeded one, [[T-14823]]), so "this and
+            // future" from occurrence 2 rewrote the finished occurrence 1 -- and from an occurrence
+            // whose date had been cleared, every earlier one. The index only grows along a chain.
+            guard candidate.recurrenceOccurrenceIndex >= task.recurrenceOccurrenceIndex else { continue }
             if let currentDate,
                let candidateDate = recurrenceSortDateKey(for: candidate),
                candidateDate < currentDate {

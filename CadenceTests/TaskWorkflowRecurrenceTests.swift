@@ -631,5 +631,45 @@ struct TaskWorkflowRecurrenceTests {
         #expect(open.map(\.title) == ["First", "Second", "Daily", "Fourth", "Fifth"])
         #expect(open.firstIndex { $0.id == next.id } == 2)
     }
+
+    // MARK: - 12. "This and future" never reaches back to an earlier occurrence (T-16962)
+
+    /// **[[T-16962]]: a dateless first occurrence is in the past, not the future.** A repeating
+    /// task created with no date is occurrence 1 with nothing to sort by; its successor is seeded a
+    /// do date ([[T-14823]]). The future scan compared dates and let any member with NO date
+    /// through, so "this and future" from occurrence 2 also rewrote the finished occurrence 1:
+    /// turning the repeat off cleared its successor link, and a new rule re-labelled its row in
+    /// Completed. The same hole ran the other way: from an open occurrence whose date had been
+    /// cleared, every earlier dated occurrence was "future".
+    @Test func thisAndFutureLeavesAnEarlierUndatedOccurrenceAlone() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let first = makeRecurringTask(title: "Water plants", rule: .daily)
+        context.insert(first)
+        try context.save()
+        TaskWorkflowService.markDone(first, in: context)
+        try context.save()
+        let second = try #require(try spawnedTask(for: first, in: context))
+        #expect(first.scheduledDate.isEmpty && !second.scheduledDate.isEmpty, "fixture is not the dateless-first shape")
+
+        let all = try context.fetch(FetchDescriptor<AppTask>())
+        let targets = CadenceTaskRecurrenceWorkflowSupport.recurrenceTargets(from: second, allTasks: all, scope: .thisAndFuture)
+        #expect(targets.map(\.id) == [second.id], "this and future reached the finished first occurrence")
+
+        CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(.none, to: second, allTasks: all, scope: .thisAndFuture)
+        #expect(first.recurrenceRule == .daily, "the finished occurrence's rule was rewritten")
+        #expect(first.recurrenceSpawnedTaskID == second.id, "the finished occurrence lost its successor link")
+
+        // The other direction: an open occurrence with its date cleared still reaches only forward.
+        second.scheduledDate = ""
+        let dated = makeRecurringTask(title: "Water plants", rule: .daily, scheduledDate: "2026-01-01")
+        dated.recurrenceSeriesIDRaw = first.recurrenceSeriesIDRaw
+        dated.recurrenceOccurrenceIndex = 0
+        let fromUndated = CadenceTaskRecurrenceWorkflowSupport.recurrenceTargets(
+            from: second, allTasks: all + [dated], scope: .thisAndFuture
+        )
+        #expect(!fromUndated.contains { $0.id == dated.id }, "an earlier dated occurrence counted as future")
+    }
 }
 #endif

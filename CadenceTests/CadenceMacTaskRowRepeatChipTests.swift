@@ -159,6 +159,28 @@ struct CadenceMacTaskRowRepeatChipTests {
         #expect(task.recurrenceRule == .weekly, "the rule changed before the scope was answered")
     }
 
+    /// **[[T-16961]]: repeat on, off, on again is not a series question.** Driven through the real
+    /// writers in the order a user meets them on the row: a plain task takes Daily at once, its
+    /// Never is asked about (it repeats) and answered "Only This Task", and the Weekly that follows
+    /// lands at once again -- it used to stop at "Change repeating task?" because the first rule
+    /// had stamped the task's own id as its series and nothing ever took the stamp off.
+    @Test func aTaskWhoseRepeatWasTurnedOffTakesANewRuleWithoutTheScopeQuestion() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Water plants")
+        context.insert(task)
+        try context.save()
+
+        #expect(MacTaskRowContextMenu.selectRecurrenceRule(.daily, for: task, allTasks: [task], modelContext: context) == .settled)
+        #expect(MacTaskRowContextMenu.selectRecurrenceRule(.none, for: task, allTasks: [task], modelContext: context) == .needsRecurrenceScope(.none))
+        #expect(MacTaskRowContextMenu.applyRecurrenceRule(.none, scope: .thisTask, for: task, modelContext: context) == .settled)
+        #expect(task.recurrenceRule == .none, "fixture never turned the repeat off")
+
+        let outcome = MacTaskRowContextMenu.selectRecurrenceRule(.weekly, for: task, allTasks: [task], modelContext: context)
+        #expect(outcome == .settled, "a task that no longer repeats was asked which occurrences to change")
+        #expect(task.recurrenceRule == .weekly)
+    }
+
     // MARK: - [[T-9122]]: the note embed card's Repeat field is the same picker
 
     private static let embedPath = "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift"
