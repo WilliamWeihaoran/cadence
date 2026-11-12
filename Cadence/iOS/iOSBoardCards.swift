@@ -83,18 +83,18 @@ struct iOSCalendarBoardEventItem: Identifiable {
             endMin = 24 * 60
         } else {
             let dayStart = calendar.startOfDay(for: date)
-            let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
             let eventStart = event.startDate ?? dayStart
             let fallbackEnd = eventStart.addingTimeInterval(30 * 60)
             let eventEnd = max(event.endDate ?? fallbackEnd, fallbackEnd)
-            let segmentStart = max(eventStart, dayStart)
-            let segmentEnd = min(eventEnd, dayEnd)
-            guard segmentEnd > segmentStart else { return nil }
-            let startComponents = calendar.dateComponents([.hour, .minute], from: segmentStart)
-            let rawStart = (startComponents.hour ?? 0) * 60 + (startComponents.minute ?? 0)
-            let duration = max(5, Int(segmentEnd.timeIntervalSince(segmentStart) / 60))
-            startMin = min(max(0, rawStart), 24 * 60 - 5)
-            endMin = min(24 * 60, max(startMin + 5, startMin + duration))
+            // Wall-clock ends, not start + elapsed, so a DST-day card agrees with the grid ([[T-17021]]).
+            guard let range = CadenceScheduleSupport.boardCardMinuteRange(
+                from: eventStart,
+                to: eventEnd,
+                on: dayStart,
+                calendar: calendar
+            ) else { return nil }
+            startMin = range.start
+            endMin = range.end
         }
 
         id = "\(eventIdentifier)-\(dateKey)-\(startMin)"

@@ -527,6 +527,29 @@ enum CadenceScheduleSupport {
         return (span.start, max(span.start + 15, span.end))
     }
 
+    /// A timed event's minutes on one **board column** — the iOS Board card's label and sort
+    /// minute — or `nil` when the event does not touch that day ([[T-17021]]).
+    ///
+    /// The card used to read its end as `startMin + elapsed`, the derivation [[T-16522]] took out
+    /// of the Mac: on a DST transition day a 1:00-4:00 event (two hours of real time on
+    /// 2026-03-08) was labelled "1:00 AM – 3:00 AM", and a fall-back 0:00-3:00 one "12:00 AM –
+    /// 4:00 AM", while the timeline beside it and the Mac Board card both said the clock times.
+    /// Both ends are now `wallClockMinuteSpan`'s, with the card's own 5-minute floor.
+    static func boardCardMinuteRange(
+        from startDate: Date,
+        to endDate: Date,
+        on day: Date,
+        calendar: Calendar = .current
+    ) -> (start: Int, end: Int)? {
+        let dayStart = calendar.startOfDay(for: day)
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(24 * 60 * 60)
+        guard min(endDate, dayEnd) > max(startDate, dayStart) else { return nil }
+        let span = wallClockMinuteSpan(from: startDate, to: endDate, on: dayStart, calendar: calendar)
+        let dayMinutes = calendarEndHour * 60
+        let start = min(max(0, span.start), dayMinutes - 5)
+        return (start, min(dayMinutes, max(start + 5, span.end)))
+    }
+
     /// `minuteRange` without its 15-minute floor: the clamp-in-instant-space, read-in-wall-clock
     /// derivation itself, so the Mac's `CalendarEventItem` can apply its own 5-minute floor to the
     /// same two numbers iOS draws instead of re-deriving them from elapsed time ([[T-16522]]).
