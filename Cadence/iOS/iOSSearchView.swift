@@ -509,8 +509,11 @@ struct iOSSearchView: View {
             )
         } else {
             // [[T-9663]]: the Notes tab's editor, with its Export, tags, AI actions and
-            // Move/Delete, not a thinner sheet of Search's own. Titled as the row was ([[T-8523]]).
-            iOSNoteEditorCover(reachedFrom: note, title: NoteReferencePanelSupport.searchTitle(note))
+            // Move/Delete, not a thinner sheet of Search's own. Titled by the editor's own dated-note
+            // title, "Monday, August 17", as the Mac's Search hit opens it ([[T-16671]], [[T-15493]]);
+            // [[T-8523]]'s "titled as the row was" is superseded for dated notes. A note with no date
+            // still reads the row's name, which is the cover's fallback.
+            iOSNoteEditorCover(reachedFrom: note)
         }
     }
 

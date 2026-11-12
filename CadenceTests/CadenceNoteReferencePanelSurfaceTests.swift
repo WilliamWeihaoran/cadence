@@ -383,7 +383,8 @@ struct CadenceNoteReferencePanelSurfaceTests {
 
     /// **Cmd+K and iOS Search say one date.** The Mac rows are built here; iOS is `#if os(iOS)` and
     /// invisible to this target, so its call sites are checked in source: the row's match field
-    /// and title, and the title its row hands the note it opens ([[T-8523]], [[T-16666]]).
+    /// and title. The note it opens is titled by the editor, not the row ([[T-16671]], superseding
+    /// [[T-8523]] for dated notes), so the row's name appears twice, not three times.
     @Test func cmdKNamesTheDayAndStillMatchesTheKey() throws {
         #if os(macOS)
         // Written in: search draws no blank period note on either surface ([[T-15731]]).
@@ -400,7 +401,7 @@ struct CadenceNoteReferencePanelSurfaceTests {
         #endif
 
         let search = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchView.swift"))
-        #expect(search.components(separatedBy: "NoteReferencePanelSupport.searchTitle(note)").count - 1 == 3)
+        #expect(search.components(separatedBy: "NoteReferencePanelSupport.searchTitle(note)").count - 1 == 2)
         #expect(search.components(separatedBy: "NoteReferencePanelSupport.searchKeyFields(note)").count - 1 == 1)
         #expect(!search.contains("title: note.displayTitle,"))
     }

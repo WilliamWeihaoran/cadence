@@ -1105,7 +1105,8 @@ extension iOSNoteEditorCover {
     /// `[[link]]` reads "Monday, August 17", as the Notes-tab cover (`coverTitle`) and every Mac
     /// route (`NoteEditorPane.headerTitle`) do, through the one dated-note title ([[T-15493]]).
     /// The navigation bar has the row to itself, so no width reason asks for "Aug 17" ([[T-8201]]).
-    /// Search passes `title:` to keep the name its row drew ([[T-8523]]).
+    /// Search no longer passes `title:` ([[T-16671]]): a Search hit opens titled as the Mac's does,
+    /// superseding [[T-8523]]'s "titled as the row was" for dated notes.
     init(reachedFrom note: Note, title: String? = nil) {
         let isListNote = note.kind == .list
         self.init(
