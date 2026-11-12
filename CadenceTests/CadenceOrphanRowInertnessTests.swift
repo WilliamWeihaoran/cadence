@@ -250,11 +250,9 @@ struct CadenceOrphanRowInertnessTests {
 
     // MARK: - The two saved-link panels
 
-    /// `LinksView.links` (macOS) and `iOSListLinksPanel.links` (iOS) both filter
+    /// `LinksView.links` (macOS) and `iOSListLinksPanel.links` (iOS) both draw
+    /// `CadenceSavedLinkList.links(area:project:among:)` ([[T-17123]]), which filters the
     /// `@Query`'d `[SavedLink]` down to the rows whose `area`/`project` **id equals this list's**.
-    ///
-    /// Read as text because both are private computed properties on SwiftUI views and the iOS one
-    /// is inside `#if os(iOS)`, invisible to this macOS-built target.
     ///
     /// The reason it is load-bearing is the comparison, not the presence of a filter. `deleteArea`
     /// and `deleteProject` delete `area.links` / `project.links` from the local replica only, so a
@@ -262,29 +260,41 @@ struct CadenceOrphanRowInertnessTests {
     /// is `nil == someUUID`, which is false, so the orphan lands in no panel. A panel that returned
     /// `allLinks` — or filtered on anything weaker than owner identity, such as `$0.area != nil` —
     /// would show one list's bookmark on a different list, or every list's bookmarks on all of them.
+    ///
+    /// Asserted by calling the rule since [[T-17123]] moved it out of the two private view
+    /// properties; the call sites are read as text only to prove both panels still draw it.
     @Test func neitherSavedLinkPanelCanShowAListItDoesNotOwn() throws {
-        let unfiltered = """
-            private var links: [SavedLink] {
-                if let area {
-                    return allLinks
-                }
-                return []
-            }
-            """
-        let filtered = """
-            private var links: [SavedLink] {
-                if let area {
-                    return allLinks.filter { $0.area?.id == area.id }
-                }
-                return []
-            }
-            """
-        let instrument = try CadenceScanInstrument(
-            "a saved-link panel returns the whole query",
-            fires: unfiltered,
-            andNotOn: filtered,
-            by: { CadenceSourceScan.matchCount("return allLinks(?!\\.filter)", in: $0) > 0 }
-        )
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let area = Area(name: "Home")
+        let otherArea = Area(name: "Work")
+        let project = Project(name: "Launch")
+        let otherProject = Project(name: "Archive")
+        for list in [area, otherArea] { modelContext.insert(list) }
+        for list in [project, otherProject] { modelContext.insert(list) }
+        func link(_ title: String, area: Area? = nil, project: Project? = nil) -> SavedLink {
+            let link = SavedLink(title: title, url: "https://example.com/\(title)")
+            modelContext.insert(link)
+            link.area = area
+            link.project = project
+            return link
+        }
+        let own = link("own", area: area)
+        let ownProject = link("ownProject", project: project)
+        let all = [
+            own, ownProject,
+            link("otherArea", area: otherArea),
+            link("otherProject", project: otherProject),
+            link("orphan")
+        ]
+        try modelContext.save()
+
+        #expect(CadenceSavedLinkList.links(area: area, project: nil, among: all).map(\.title) == ["own"],
+                "an area's panel shows a link it does not own — a T-623 orphan would land on it")
+        #expect(CadenceSavedLinkList.links(area: nil, project: project, among: all).map(\.title) == ["ownProject"],
+                "a project's panel shows a link it does not own — a T-623 orphan would land on it")
+        #expect(CadenceSavedLinkList.links(area: nil, project: nil, among: all).isEmpty,
+                "a panel with no list shows links — the orphan's own shape")
 
         for path in [
             "Cadence/macOS/Views/LinksView.swift",
@@ -292,30 +302,9 @@ struct CadenceOrphanRowInertnessTests {
         ] {
             let code = try CadenceCommitSurfaceScan.scanned(path)
             let body = try cadenceFunctionBody("private var links: [SavedLink]", in: code)
-
             #expect(
-                instrument.fires(on: body) == false,
-                """
-                \(path)'s saved-link panel returns its whole SavedLink query unfiltered. Filtering \
-                by owner id is what keeps T-623 inert: a hard list deletion walks only the local \
-                replica, so a saved link that had not yet imported survives with its owner nulled, \
-                and an unfiltered panel shows that phantom bookmark on every list. Do not remove \
-                it without unparking T-623.
-                """
-            )
-            #expect(
-                CadenceSourceScan.matchCount("\\$0\\.area\\?\\.id == area\\.id", in: body) == 1
-                    && CadenceSourceScan.matchCount("\\$0\\.project\\?\\.id == project\\.id", in: body) == 1,
-                """
-                \(path)'s saved-link panel no longer selects by owner **identity** on both branches. \
-                `$0.area?.id == area.id` is false for a nulled owner, which is the whole reason a \
-                T-623 orphan cannot appear here; a weaker predicate such as `$0.area != nil` admits \
-                it onto every list's panel. Do not weaken it without unparking T-623.
-                """
-            )
-            #expect(
-                CadenceSourceScan.matchCount("allLinks", in: body) == 2,
-                "\(path): the panel reads its query \(CadenceSourceScan.matchCount("allLinks", in: body)) times, not twice — the scan is no longer reading the two branches it is about"
+                body.contains("CadenceSavedLinkList.links(area: area, project: project, among: allLinks)"),
+                "\(path)'s saved-link panel no longer draws the owner-identity filter. Do not replace it without unparking T-623."
             )
         }
     }

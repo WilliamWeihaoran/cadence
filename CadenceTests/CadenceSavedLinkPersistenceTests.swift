@@ -44,7 +44,7 @@ struct CadenceSavedLinkPersistenceTests {
         #expect(modifier.contains("Button(\"Delete\", role: .destructive) {\n                perform(selected)"))
         #expect(modifier.contains("Button(\"Cancel\", role: .cancel) { link = nil }"))
         #expect(modifier.components(separatedBy: "perform(selected)").count - 1 == 1)
-        #expect(modifier.contains("CadenceSavedLinkPersistence.deleteConfirmationMessage(title: selected.title)"))
+        #expect(modifier.contains("CadenceSavedLinkPersistence.deleteConfirmationMessage(for: selected)"))
         let mac = try read("Cadence/macOS/Views/LinksView.swift")
         #expect(mac.contains("struct LinksView: View"))
         // T-3095: the Mac reads the shared constant rather than re-typing it, the way
@@ -52,8 +52,80 @@ struct CadenceSavedLinkPersistenceTests {
         // literal here contradicted `noCallSiteRetypesASharedStringConstant`, which forbids exactly
         // that re-typing; both platforms now read one constant and the rendered words are unchanged.
         #expect(mac.contains("title: CadenceSavedLinkPersistence.deleteConfirmationTitle"))
-        #expect(mac.contains("message: CadenceSavedLinkPersistence.deleteConfirmationMessage(title: link.title)"))
+        #expect(mac.contains("message: CadenceSavedLinkPersistence.deleteConfirmationMessage(for: link)"))
         #expect(mac.contains("deleteLink(link)"))
+    }
+
+    /// [[T-17122]]: a link stored with a blank title is confirmed by the URL its row shows, not as
+    /// `delete ""`. A titled link keeps the sentence it always had.
+    @Test func aBlankTitledLinkIsConfirmedByTheURLItsRowShows() {
+        let blank = SavedLink(title: "", url: "https://example.com/blank")
+        let spaces = SavedLink(title: "  \n", url: "https://example.com/spaces")
+        let titled = SavedLink(title: "Docs", url: "https://example.com/docs")
+        #expect(CadenceSavedLinkPersistence.deleteConfirmationMessage(for: blank)
+            == "This will permanently delete \"https://example.com/blank\".")
+        #expect(CadenceSavedLinkPersistence.deleteConfirmationMessage(for: spaces)
+            == "This will permanently delete \"https://example.com/spaces\".")
+        #expect(CadenceSavedLinkPersistence.deleteConfirmationMessage(for: titled)
+            == CadenceSavedLinkPersistence.deleteConfirmationMessage(title: "Docs"))
+    }
+
+    /// [[T-17123]]: two links holding one `order` come back in one sequence however the store hands
+    /// them over -- title, then id, `list_links`' own tie-break -- and `order` still leads.
+    @Test func linksSharingAnOrderComeBackInOneSequenceWhateverTheQueryOrder() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let area = Area(name: "Home")
+        modelContext.insert(area)
+        func link(_ title: String, order: Int) -> SavedLink {
+            let link = SavedLink(title: title, url: "https://example.com/\(title)")
+            modelContext.insert(link)
+            link.area = area
+            link.order = order
+            return link
+        }
+        let zebra = link("Zebra", order: 0)
+        let apple = link("apple", order: 0)
+        let mango = link("Mango", order: 0)
+        let first = link("Zulu", order: -1)
+        let last = link("Aardvark", order: 1)
+        try modelContext.save()
+
+        let expected = ["Zulu", "apple", "Mango", "Zebra", "Aardvark"]
+        for arrival in [[zebra, apple, mango, first, last], [last, mango, first, apple, zebra], [apple, last, zebra, first, mango]] {
+            #expect(CadenceSavedLinkList.links(area: area, project: nil, among: arrival).map(\.title) == expected,
+                    "the tab's order depends on the order the query handed the links over")
+        }
+    }
+
+    /// [[T-17124]]: deleting the link the form is editing closes the form; deleting any other link
+    /// leaves an open add or edit alone.
+    @Test func deletingTheLinkBeingEditedClosesTheForm() {
+        let edited = UUID()
+        var form = SavedLinkAddForm()
+        form.beginEditing(id: edited, title: "Docs", url: "https://example.com")
+        form.linkWasDeleted(id: UUID())
+        #expect(form.isOpen && form.editingLinkID == edited && form.title == "Docs",
+                "deleting another link disturbed the edit")
+        form.linkWasDeleted(id: edited)
+        #expect(form == SavedLinkAddForm(), "the form stayed open on a link that is gone")
+
+        var adding = SavedLinkAddForm()
+        _ = adding.toggle()
+        adding.title = "Draft"
+        adding.linkWasDeleted(id: edited)
+        #expect(adding.isOpen && adding.title == "Draft", "a delete closed an add that was editing nothing")
+    }
+
+    @Test func bothLinksTabsCloseTheFormWhenTheEditedLinkIsDeleted() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let mac = try read("Cadence/macOS/Views/LinksView.swift")
+        let macDelete = try #require(CadenceSourceScan.functionBody(named: "deleteLink", in: mac))
+        #expect(macDelete.contains("addForm.linkWasDeleted(id: id)"))
+        let mobile = try read("Cadence/iOS/iOSListSupportViews.swift")
+        let panel = try #require(CadenceSourceScan.declarationBody("struct iOSListLinksPanel: View", in: mobile))
+        let mobileDelete = try #require(CadenceSourceScan.functionBody(named: "delete", in: panel))
+        #expect(mobileDelete.contains("addForm.linkWasDeleted(id: id)"))
     }
 
     /// The delete. A second context must stop seeing the link, and must have stopped seeing it

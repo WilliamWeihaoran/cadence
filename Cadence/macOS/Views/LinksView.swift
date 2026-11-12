@@ -12,13 +12,9 @@ struct LinksView: View {
     @State private var addForm = SavedLinkAddForm()
     @State private var actionError: String?
 
+    /// [[T-17123]]: filtered and tie-broken by the one rule iOS's tab and `list_links` read.
     private var links: [SavedLink] {
-        if let area {
-            return allLinks.filter { $0.area?.id == area.id }
-        } else if let project {
-            return allLinks.filter { $0.project?.id == project.id }
-        }
-        return []
+        CadenceSavedLinkList.links(area: area, project: project, among: allLinks)
     }
 
     var body: some View {
@@ -81,7 +77,7 @@ struct LinksView: View {
                             LinkRow(link: link) {
                                 deleteConfirmationManager.present(
                                     title: CadenceSavedLinkPersistence.deleteConfirmationTitle,
-                                    message: CadenceSavedLinkPersistence.deleteConfirmationMessage(title: link.title)
+                                    message: CadenceSavedLinkPersistence.deleteConfirmationMessage(for: link)
                                 ) {
                                     deleteLink(link)
                                 }
@@ -136,7 +132,9 @@ struct LinksView: View {
     /// talks about is visibly still there.
     private func deleteLink(_ link: SavedLink) {
         do {
+            let id = link.id
             try CadenceSavedLinkPersistence.delete(link, in: modelContext)
+            addForm.linkWasDeleted(id: id)
             actionError = nil
         } catch {
             actionError = CadenceSavedLinkPersistence.deleteFailureNotice

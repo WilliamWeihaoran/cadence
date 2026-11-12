@@ -34,6 +34,14 @@ enum CadenceSavedLinkPersistence {
         "This will permanently delete \"\(title)\"."
     }
 
+    /// The confirmation for `link`, naming it as its row does ([[T-17122]]). Both Links tabs passed
+    /// `link.title` raw, so a link stored with a blank title -- an import, an MCP write, sync from
+    /// an older build, the rows [[T-12793]] taught both rows to draw by their URL -- was confirmed
+    /// as `delete ""`, naming nothing, under a row that read as its URL.
+    static func deleteConfirmationMessage(for link: SavedLink) -> String {
+        deleteConfirmationMessage(title: CadenceTitleNormalization.display(link.title, fallback: link.url))
+    }
+
     /// Shown when the insert could not be committed. The link is gone again by then, so the
     /// sentence is about the save rather than about the row.
     static let saveFailureNotice = "Couldn't save this link."
@@ -215,6 +223,14 @@ nonisolated struct SavedLinkAddForm: Equatable {
         return false
     }
 
+    /// A link was deleted from the tab ([[T-17124]]). When it is the one the form is editing,
+    /// the form closes: left open it went on showing the deleted link's title and URL under an
+    /// enabled Save that, by `saveEdit`'s rule for a vanished link, closed it and wrote nothing.
+    mutating func linkWasDeleted(id: UUID) {
+        guard editingLinkID == id else { return }
+        cancel()
+    }
+
     mutating func cancel() {
         isOpen = false
         title = ""
@@ -230,6 +246,30 @@ nonisolated struct SavedLinkAddForm: Equatable {
     var headerLabel: String {
         guard isOpen else { return "Add link" }
         return isEditing ? "Cancel editing this link" : "Cancel adding a link"
+    }
+}
+
+// MARK: - Link List
+
+/// The rows a Links tab draws for one list, in the order both tabs draw them ([[T-17123]]).
+///
+/// Both tabs filtered a `@Query(sort: \SavedLink.order)` and stopped there, so two links holding
+/// one `order` -- two devices each adding a link before sync met, an archive import, an MCP write
+/// beside an app write -- came back in whatever order the store handed them over, and could swap
+/// between renders. `list_links` already broke the tie by title then id
+/// (`CadenceMCPOrdering.precedes`); the tabs now read that same total order, so the app and an
+/// agent reading the list see one sequence.
+enum CadenceSavedLinkList {
+    static func links(area: Area?, project: Project?, among allLinks: [SavedLink]) -> [SavedLink] {
+        let own: [SavedLink]
+        if let area {
+            own = allLinks.filter { $0.area?.id == area.id }
+        } else if let project {
+            own = allLinks.filter { $0.project?.id == project.id }
+        } else {
+            own = []
+        }
+        return own.sorted(by: CadenceMCPOrdering.precedes)
     }
 }
 

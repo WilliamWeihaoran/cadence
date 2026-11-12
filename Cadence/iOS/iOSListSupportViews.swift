@@ -1018,14 +1018,9 @@ struct iOSListLinksPanel: View {
 
     @State private var linkToDelete: SavedLink?
 
+    /// [[T-17123]]: filtered and tie-broken by the one rule the Mac's tab and `list_links` read.
     private var links: [SavedLink] {
-        if let area {
-            return allLinks.filter { $0.area?.id == area.id }
-        }
-        if let project {
-            return allLinks.filter { $0.project?.id == project.id }
-        }
-        return []
+        CadenceSavedLinkList.links(area: area, project: project, among: allLinks)
     }
 
     var body: some View {
@@ -1197,7 +1192,9 @@ struct iOSListLinksPanel: View {
     /// the list — so without a notice the swipe simply looked like it had not registered.
     private func delete(_ link: SavedLink) {
         do {
+            let id = link.id
             try CadenceSavedLinkPersistence.delete(link, in: modelContext)
+            addForm.linkWasDeleted(id: id)
             actionError = nil
         } catch {
             actionError = CadenceSavedLinkPersistence.deleteFailureNotice
@@ -1227,7 +1224,7 @@ private struct iOSSavedLinkDeletionModifier: ViewModifier {
             }
             Button("Cancel", role: .cancel) { link = nil }
         } message: { selected in
-            Text(CadenceSavedLinkPersistence.deleteConfirmationMessage(title: selected.title))
+            Text(CadenceSavedLinkPersistence.deleteConfirmationMessage(for: selected))
         }
     }
 }
