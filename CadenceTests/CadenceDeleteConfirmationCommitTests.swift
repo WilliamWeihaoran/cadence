@@ -352,4 +352,77 @@ struct CadenceDeleteConfirmationCommitTests {
         #expect(CadenceSourceScan.matchCount(#"try\?"#, in: "try? modelContext.save()") == 1)
         #expect(CadenceSourceScan.matchCount(#"try\?"#, in: "try onConfirm()") == 0)
     }
+
+    // MARK: - The task delete reclaims its notes' images ([[T-17387]])
+
+    private func taskImage(_ byte: UInt8) -> MarkdownImageAsset {
+        MarkdownImageAsset(data: Data([byte]), mimeType: "image/png", pixelWidth: 20, pixelHeight: 20, displayWidth: 20)
+    }
+
+    private func markdown(_ asset: MarkdownImageAsset) -> String {
+        "![shot](cadence-image://\(asset.id.uuidString))"
+    }
+
+    /// An image pasted into a task's notes goes with the task, as a note's image goes with the
+    /// note -- and one the task shares with a surviving note stays. Read back from a second
+    /// context, so the claim is about the store and not the pending set.
+    @Test func deletingATaskReclaimsAnImageOnlyItsNotesHeld() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let own = taskImage(0x1)
+        let shared = taskImage(0x2)
+        let task = AppTask(title: "Fix the gate")
+        task.notes = markdown(own) + "\n" + markdown(shared)
+        let note = Note(kind: .list, title: "Hardware", content: markdown(shared))
+        modelContext.insert(own)
+        modelContext.insert(shared)
+        modelContext.insert(task)
+        modelContext.insert(note)
+        try modelContext.save()
+        let sharedID = shared.id
+
+        #expect(CadenceTaskMutationSupport.delete(task, modelContext: modelContext))
+
+        let readBack = ModelContext(container)
+        #expect(try readBack.fetch(FetchDescriptor<AppTask>()).isEmpty)
+        #expect(try readBack.fetch(FetchDescriptor<MarkdownImageAsset>()).map(\.id) == [sharedID])
+    }
+
+    /// The refused half: the rollback that puts the task back puts its image back with it.
+    @Test func arefusedTaskDeleteLeavesItsNotesImageWhereItWas() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let own = taskImage(0x3)
+        let task = AppTask(title: "Fix the gate")
+        task.notes = markdown(own)
+        modelContext.insert(own)
+        modelContext.insert(task)
+        try modelContext.save()
+
+        #expect(!CadenceTaskMutationSupport.delete(task, modelContext: modelContext, commit: refuse))
+
+        #expect(try modelContext.fetch(FetchDescriptor<MarkdownImageAsset>()).count == 1)
+        #expect(try ModelContext(container).fetch(FetchDescriptor<MarkdownImageAsset>()).count == 1)
+    }
+
+    /// "Delete This Occurrence" mints a successor carrying the same notes, so the image is still
+    /// read by a live task and stays.
+    @Test func anOccurrenceDeleteKeepsTheImageItsSuccessorsNotesStillShow() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let own = taskImage(0x4)
+        let task = AppTask(title: "Water the plants")
+        task.recurrenceRule = .daily
+        task.scheduledDate = "2026-10-25"
+        task.notes = markdown(own)
+        modelContext.insert(own)
+        modelContext.insert(task)
+        try modelContext.save()
+
+        #expect(CadenceTaskMutationSupport.delete(task, modelContext: modelContext, recurrenceScope: .thisOccurrence))
+
+        let readBack = ModelContext(container)
+        #expect(try readBack.fetch(FetchDescriptor<AppTask>()).map(\.notes) == [markdown(own)])
+        #expect(try readBack.fetch(FetchDescriptor<MarkdownImageAsset>()).count == 1)
+    }
 }

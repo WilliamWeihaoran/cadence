@@ -1022,17 +1022,6 @@ extension CadenceTaskMutationSupport {
             CadenceDeferredDeleteEffects.current?.holdUndo(survivors.restore)
         }
 
-        let subtasks = allSubtasks.filter { subtask in
-            guard let parentTask = subtask.parentTask else { return false }
-            return taskIDs.contains(parentTask.id)
-        }
-        for subtask in subtasks {
-            subtask.parentTask = nil
-            modelContext.delete(subtask)
-        }
-
-        let touchedBundles = uniqueBundles(from: tasks.compactMap(\.bundle))
-
         // **"Delete this occurrence" is what keeps the repeat alive ([[T-6115]]).** Before this,
         // `markDone` and `markCancelled` were the only two callers that ever minted a successor,
         // so deleting the live occurrence of a repeating task ended the series in silence — the
@@ -1059,11 +1048,28 @@ extension CadenceTaskMutationSupport {
         // `commitsImmediately: false` lands in `commitCascade`, which rolls back on both of its
         // refusal paths for the same reason. Pinned, not assumed:
         // `arefusedOccurrenceDeleteLeavesNoSuccessorBehind`.
+        //
+        // **Above the subtask sweep too ([[T-17386]]).** The spawn copies the doomed row's
+        // `subtasks` onto the successor, and the sweep below nils each subtask's `parentTask`, which
+        // SwiftData mirrors onto `task.subtasks` at once -- so a spawn placed after it copied an
+        // empty checklist, and every later occurrence of the series came back with no subtasks.
+        // `allSubtasks` was fetched before this, so the successor's fresh copies are not swept.
         if recurrenceScope == .thisOccurrence {
             for task in tasks {
                 CadenceTaskRecurrenceWorkflowSupport.spawnSuccessorBeforeDeletingOccurrence(task, in: modelContext)
             }
         }
+
+        let subtasks = allSubtasks.filter { subtask in
+            guard let parentTask = subtask.parentTask else { return false }
+            return taskIDs.contains(parentTask.id)
+        }
+        for subtask in subtasks {
+            subtask.parentTask = nil
+            modelContext.delete(subtask)
+        }
+
+        let touchedBundles = uniqueBundles(from: tasks.compactMap(\.bundle))
 
         // Otherwise, if a deleted task is a mid-series recurring occurrence, whichever task
         // recorded it as its `recurrenceSpawnedTaskID` would keep believing the series has a live
@@ -1071,9 +1077,26 @@ extension CadenceTaskMutationSupport {
         // CadenceTaskRecurrenceWorkflowSupport for the full story.
         CadenceTaskRecurrenceWorkflowSupport.repairDanglingRecurrenceLinks(forDeleted: tasks, allTasks: allTasks)
 
+        // Read before the deletes below, as `deleteNote` reads its body: it is the candidate set.
+        let doomedTaskNotes = tasks.map(\.notes)
+
         for task in tasks {
             detachRelationships(for: task)
             modelContext.delete(task)
+        }
+
+        // **[[T-17387]]: an image pasted into a task's notes goes with the task, as one in a note
+        // goes with the note.** The note delete and the list cascades both reclaim images their
+        // doomed markdown was the last reader of; this path, the one every single-task delete on
+        // both platforms takes, did not, so the image's bytes stayed in the store and synced
+        // forever with nothing able to reach them -- and `DataIntegrityRepairService` deliberately
+        // collects no orphans, leaving the delete helpers as the only thing that can. Deferred
+        // deletes skip it: their caller's cascade already sweeps `tasks.map(\.notes)` itself. The
+        // sweep reads the live store, so a successor `.thisOccurrence` just minted keeps the
+        // images its copied notes still point at, and the commit's rollback puts the image back
+        // with the task on a refusal.
+        if commitsImmediately {
+            modelContext.deleteUnreferencedMarkdownImageAssets(referencedByDeletedMarkdown: doomedTaskNotes)
         }
 
         let deletedBundleIDs = deleteEmptyBundles(touchedBundles, modelContext: modelContext)

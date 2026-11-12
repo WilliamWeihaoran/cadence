@@ -146,6 +146,33 @@ struct CadenceRecurringDeleteScopeTests {
         #expect(remainingSubtasks.allSatisfy { $0.parentTask?.id == successor.id })
     }
 
+    /// [[T-17386]]: the successor an occurrence delete mints carries the series' checklist, as the
+    /// one a tick mints does. `anOccurrenceDeleteStillTakesTheRowsSubtasksWithIt` asks only that
+    /// every remaining subtask be the successor's -- an `allSatisfy` that an EMPTY fetch passes --
+    /// and the core used to unlink the doomed row's subtasks above the spawn, so the spawn copied
+    /// an empty `task.subtasks` and every later occurrence came back with no subtasks at all.
+    @Test func theSuccessorAnOccurrenceDeleteMintsKeepsTheSubtasksInOrder() throws {
+        let modelContext = try makeContext()
+        let task = makeDailyOccurrence(in: modelContext)
+        CadenceTaskMutationSupport.insertSubtask(titled: "Fill the can", into: task, modelContext: modelContext)
+        CadenceTaskMutationSupport.insertSubtask(titled: "Water the ferns", into: task, modelContext: modelContext)
+        try modelContext.save()
+        let deletedID = task.id
+
+        #expect(CadenceTaskMutationSupport.delete(
+            task,
+            modelContext: modelContext,
+            recurrenceScope: .thisOccurrence
+        ))
+
+        let successor = try #require(try openTasks(in: modelContext).first)
+        #expect(successor.id != deletedID)
+        #expect((successor.subtasks ?? []).subtaskSorted().map(\.title) == ["Fill the can", "Water the ferns"])
+        let remainingSubtasks = try modelContext.fetch(FetchDescriptor<Subtask>())
+        #expect(remainingSubtasks.count == 2)
+        #expect(remainingSubtasks.allSatisfy { $0.parentTask?.id == successor.id && !$0.isDone })
+    }
+
     // MARK: - The predecessor's pointer lands on the new successor
 
     /// Why the spawn sits **above** `repairDanglingRecurrenceLinks`: with the successor already
