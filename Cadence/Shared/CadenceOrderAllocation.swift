@@ -27,4 +27,24 @@ nonisolated enum CadenceOrderAllocation {
     static func nextOrder<Item>(after items: some Sequence<Item>, order: (Item) -> Int) -> Int {
         nextOrder(after: items.map(order))
     }
+
+    /// The `order` a list takes when it is reopened -- brought back to its sidebar section from
+    /// Done, Archived, Paused or Cancelled ([[T-16658]]).
+    ///
+    /// It keeps `currentOrder` unless an ACTIVE list in its own section already holds that number
+    /// (a reorder while it was away renumbers the visible rows densely from 0), and otherwise goes
+    /// one past the highest number in the section, active or not. Both sequences are the reopened
+    /// list's own section only; `activeSiblingOrders` excludes the reopened list itself.
+    ///
+    /// Spelled here, not in `CadenceSidebarLists`, because the MCP server's `update_list` reopens a
+    /// list too ([[T-16660]]) and that target compiles this file but not the sidebar's: one rule,
+    /// reached by `CadenceSidebarLists.orderAfterReopening` and by `CadenceWriteService`.
+    static func orderAfterReopening(
+        currentOrder: Int,
+        activeSiblingOrders: some Sequence<Int>,
+        ordersInSection: some Sequence<Int>
+    ) -> Int {
+        guard activeSiblingOrders.contains(currentOrder) else { return currentOrder }
+        return nextOrder(after: ordersInSection)
+    }
 }

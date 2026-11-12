@@ -998,6 +998,12 @@ final class CadenceWriteService {
             placement = try plannedListOrders(moving: resolved, into: destinationContextID, to: position)
         } else if destinationContextID != contextID(of: resolved) {
             placement = [(row: resolved, order: try nextListOrder(inContextWithID: destinationContextID))]
+        } else if let statusRaw, reopens(resolved, to: statusRaw) {
+            // [[T-16660]]: a reopen keeps the list's number unless an active list in its section
+            // holds it, else goes to the end -- the app's reopen since [[T-16658]], through the
+            // one rule both targets compile. A move or a position above already gives the list a
+            // number no active row holds, which is why this is an `else`.
+            placement = [(row: resolved, order: try orderAfterReopening(resolved, in: destinationContextID))]
         } else {
             placement = nil
         }
@@ -2150,9 +2156,42 @@ final class CadenceWriteService {
     /// like a filed one. `CreateListSheet.nextListOrder` spells the same rule for the same reason:
     /// walking `context.areas` instead would leave every context-less list created at 0.
     private func nextListOrder(inContextWithID id: UUID?) throws -> Int {
-        var orders = try fetchAreas().filter { $0.context?.id == id }.map(\.order)
-        orders += try fetchProjects().filter { $0.context?.id == id }.map(\.order)
+        let section = try sectionLists(inContextWithID: id)
+        let orders = section.areas.map(\.order) + section.projects.map(\.order)
         return (orders.max() ?? -1) + 1
+    }
+
+    /// The areas and projects filed in one sidebar section, compared optional-to-optional for
+    /// `nextListOrder`'s reason. Shared by `nextListOrder` and `orderAfterReopening`, which number
+    /// against the same section.
+    private func sectionLists(inContextWithID id: UUID?) throws -> (areas: [Area], projects: [Project]) {
+        (try fetchAreas().filter { $0.context?.id == id }, try fetchProjects().filter { $0.context?.id == id })
+    }
+
+    /// Whether writing `statusRaw` brings a list that is not active back to the sidebar. The new
+    /// value is read the way the model reads it (`status` coerces an unknown raw to `.active`).
+    private func reopens(_ container: CadenceResolvedContainer, to statusRaw: String) -> Bool {
+        switch container {
+        case .area(let area):
+            return !area.isActive && (AreaStatus(rawValue: statusRaw) ?? .active) == .active
+        case .project(let project):
+            return !project.isActive && (ProjectStatus(rawValue: statusRaw) ?? .active) == .active
+        }
+    }
+
+    /// The reopened list's number, by `CadenceOrderAllocation.orderAfterReopening` -- the rule
+    /// `CadenceSidebarLists.reopen` applies in the app ([[T-16658]]). Areas and projects share one
+    /// section per context, compared optional-to-optional as in `nextListOrder`.
+    private func orderAfterReopening(_ container: CadenceResolvedContainer, in contextID: UUID?) throws -> Int {
+        let targetID = identifier(of: container)
+        let (areas, projects) = try sectionLists(inContextWithID: contextID)
+        let activeSiblingOrders = areas.filter { $0.isActive && $0.id != targetID }.map(\.order)
+            + projects.filter { $0.isActive && $0.id != targetID }.map(\.order)
+        return CadenceOrderAllocation.orderAfterReopening(
+            currentOrder: currentOrder(of: container),
+            activeSiblingOrders: activeSiblingOrders,
+            ordersInSection: areas.map(\.order) + projects.map(\.order)
+        )
     }
 
     /// One past the highest `order` among the links already on this list, max-plus-one for

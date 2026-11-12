@@ -2037,6 +2037,112 @@ struct CadenceWriteServiceTests {
         #expect(try fixture.readService.containerSummary(kind: "project", id: second.container.id).container.order == 1)
     }
 
+    /// [[T-16660]]: the section a reopened list comes back to, after the app reordered its visible
+    /// rows while the list was away. `CadenceSidebarListReorder.commit` renumbers only the VISIBLE
+    /// rows densely from 0, so the returning list's old number is one a visible row now holds;
+    /// that is written straight onto the models here, the way the app's drag leaves them.
+    private struct ReopenSection {
+        let returning: CadenceContainerSummary
+        let visible: [CadenceContainerSummary]
+    }
+
+    private func makeReopenSection(_ fixture: Fixture, returningKind: String, awayStatus: String) throws -> ReopenSection {
+        let home = try fixture.writeService.createContext(options: .init(name: "Home"))
+        let returning = try fixture.writeService.createContainer(options: .init(
+            containerKind: returningKind, name: "Returning", contextId: home.context.id
+        ))
+        let garden = try fixture.writeService.createContainer(options: .init(
+            containerKind: "project", name: "Garden", contextId: home.context.id
+        ))
+        let errands = try fixture.writeService.createContainer(options: .init(
+            containerKind: "area", name: "Errands", contextId: home.context.id
+        ))
+        _ = try fixture.writeService.updateContainer(options: .init(
+            containerKind: returningKind, containerId: returning.container.id, status: awayStatus
+        ))
+        // The drag while it was away: Garden then Errands, renumbered 0, 1.
+        try #require(try fixture.modelContext.fetch(FetchDescriptor<Project>()).first { $0.name == "Garden" }).order = 0
+        try #require(try fixture.modelContext.fetch(FetchDescriptor<Area>()).first { $0.name == "Errands" }).order = 1
+        try fixture.modelContext.save()
+        let after = try fixture.readService.containerSummary(kind: returningKind, id: returning.container.id).container
+        #expect(after.order == 0, "non-vacuity: the returning list's number must be one a visible row holds")
+        return ReopenSection(returning: returning, visible: [garden, errands])
+    }
+
+    @Test func anAreaReopenedOverMCPWhoseNumberIsTakenGoesToTheEndOfItsSection() throws {
+        let fixture = try Fixture()
+        let section = try makeReopenSection(fixture, returningKind: "area", awayStatus: "archived")
+
+        let reopened = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "area", containerId: section.returning.container.id, status: "active"
+        ))
+
+        #expect(reopened.container.status == "active")
+        #expect(reopened.container.order == 2)
+        // The dragged rows keep the numbers the drag gave them.
+        #expect(try fixture.readService.containerSummary(kind: "project", id: section.visible[0].container.id).container.order == 0)
+        #expect(try fixture.readService.containerSummary(kind: "area", id: section.visible[1].container.id).container.order == 1)
+    }
+
+    @Test func aProjectReopenedOverMCPWhoseNumberIsTakenGoesToTheEndOfItsSection() throws {
+        let fixture = try Fixture()
+        let section = try makeReopenSection(fixture, returningKind: "project", awayStatus: "paused")
+
+        let reopened = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "project", containerId: section.returning.container.id, status: "active"
+        ))
+
+        #expect(reopened.container.status == "active")
+        #expect(reopened.container.order == 2)
+    }
+
+    /// The other half of the rule: with nothing reordered while it was away, archive-then-reopen
+    /// is a perfect undo, and a status write on a list that is already active moves nothing.
+    @Test func aReopenOverMCPWhoseNumberIsFreeKeepsIt() throws {
+        let fixture = try Fixture()
+        let home = try fixture.writeService.createContext(options: .init(name: "Home"))
+        let first = try fixture.writeService.createContainer(options: .init(
+            containerKind: "area", name: "First", contextId: home.context.id
+        ))
+        _ = try fixture.writeService.createContainer(options: .init(
+            containerKind: "project", name: "Second", contextId: home.context.id
+        ))
+        _ = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "area", containerId: first.container.id, status: "archived"
+        ))
+
+        let reopened = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "area", containerId: first.container.id, status: "active"
+        ))
+        #expect(reopened.container.order == first.container.order)
+
+        let again = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "area", containerId: first.container.id, status: "active"
+        ))
+        #expect(again.container.order == first.container.order)
+    }
+
+    /// The reopen's number rides the `previousOrders` undo, beside the status the snapshot restores.
+    @Test func aRefusedReopenPutsTheNumberAndTheStatusBack() throws {
+        let fixture = try Fixture()
+        let section = try makeReopenSection(fixture, returningKind: "area", awayStatus: "archived")
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.updateContainer(options: .init(
+                containerKind: "area", containerId: section.returning.container.id, status: "active"
+            ))
+        }
+
+        let after = try fixture.readService.containerSummary(kind: "area", id: section.returning.container.id).container
+        #expect(after.status == "archived")
+        #expect(after.order == 0)
+    }
+
     /// Contexts are one flat sequence rather than one per parent, so the bucket is every context
     /// there is — and the same dense renumber applies.
     @Test func placingAContextRenumbersTheOneFlatSequence() throws {

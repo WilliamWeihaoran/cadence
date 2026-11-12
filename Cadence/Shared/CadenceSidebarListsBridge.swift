@@ -171,9 +171,11 @@ extension CadenceSidebarLists {
         areas: [OrderSlot],
         projects: [OrderSlot]
     ) -> Int {
-        let taken = activeSiblings.contains { $0.contextID == contextID && $0.order == currentOrder }
-        guard taken else { return currentOrder }
-        return nextOrder(inContextWithID: contextID, areas: areas, projects: projects)
+        CadenceOrderAllocation.orderAfterReopening(
+            currentOrder: currentOrder,
+            activeSiblingOrders: activeSiblings.filter { $0.contextID == contextID }.map(\.order),
+            ordersInSection: (areas + projects).filter { $0.contextID == contextID }.map(\.order)
+        )
     }
 
     /// Sets `area.status = .active` and, when it was not already active, the `order` that keeps its
