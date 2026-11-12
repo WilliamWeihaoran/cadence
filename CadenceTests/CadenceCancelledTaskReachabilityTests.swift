@@ -932,9 +932,11 @@ struct CadenceCancelledTaskReachabilityTests {
         )
         // One, not two, since [[T-12642]]: the do-date chip's own `isOverdo` (whose `!task.isDone`
         // guard was the second) became the shared row emphasis, which keeps that guard itself.
+        // None since [[T-16891]]: the last, the due tint's `CadenceDueUrgency` guard, reads
+        // `CadenceTaskQuerySupport.isFinishedTask(task)` so a cancelled deadline is settled too.
         try expectOccurrences(
             of: "task.isDone",
-            at: ["Cadence/iOS/iOSTaskViews.swift": 1]
+            at: ["Cadence/iOS/iOSTaskViews.swift": 0]
         )
     }
 

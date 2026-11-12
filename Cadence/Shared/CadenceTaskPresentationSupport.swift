@@ -598,10 +598,31 @@ enum CadenceTaskPresentationSupport {
     /// draw `DateFormatters.relativeDate` ("Yesterday", "Due Today") beside a timeline block that
     /// said "Overdue Nov 9" for the same task.
     ///
-    /// [[T-15522]]: settled is `isDone`, the same half `AppTask.isOverdue(todayKey:)` guards with,
-    /// so a done task's past date says "Due Nov 9" beside the neutral tint that predicate gives it.
+    /// [[T-15522]]: a settled task's past date says "Due Nov 9" beside the neutral tint
+    /// `dueDateIsLate` gives it. **[[T-16891]]: settled is done OR cancelled**
+    /// (`CadenceTaskQuerySupport.isFinishedTask`), the predicate that files the task under
+    /// Completed in the first place -- see `dueDateIsLate`.
     static func dueDateLabel(for task: AppTask, todayKey: String = DateFormatters.todayKey()) -> String? {
-        CadenceWidgetDateSupport.dueLabel(for: task.dueDate, todayKey: todayKey, isSettled: task.isDone)
+        CadenceWidgetDateSupport.dueLabel(
+            for: task.dueDate,
+            todayKey: todayKey,
+            isSettled: CadenceTaskQuerySupport.isFinishedTask(task)
+        )
+    }
+
+    /// Whether a task row's or board card's due flag reads **late** -- red, and "Overdue" in
+    /// `dueDateLabel`'s words -- on both platforms ([[T-16891]]).
+    ///
+    /// `AppTask.isOverdue(todayKey:)` guards `isDone` only, and keeps a cancelled task eligible on
+    /// purpose (`TaskOverdueSupportTests` pins it). That is the store-level predicate; it is not
+    /// the row's answer. A cancelled task is over: it sits in Today's Completed section and a
+    /// list's Completed tab, struck through and wearing the "Canceled" chip, and still flew a red
+    /// "Overdue Nov 9" flag there on the Mac row, the iOS row and both boards -- while the sidebar's
+    /// overdue count (`CadenceSidebarLayout.overdueTaskCount`), the Calendar chips
+    /// (`CadenceCalendarTaskDoneStyle`) and the subtask list under the row ([[T-13841]]) all
+    /// already treat it as finished. "Finished" here is that same `isFinishedTask`.
+    static func dueDateIsLate(_ task: AppTask, todayKey: String) -> Bool {
+        !CadenceTaskQuerySupport.isFinishedTask(task) && task.isOverdue(todayKey: todayKey)
     }
 
     /// Which date chips a row draws for `task`. See `CadenceTaskRowDatePlan` for why the merged

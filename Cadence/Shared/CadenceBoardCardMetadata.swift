@@ -191,7 +191,8 @@ enum CadenceBoardCardMetadata {
             // [[T-15491]]: the one due-date vocabulary, against the card's own `todayKey`.
             text: CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: todayKey) ?? task.dueDate,
             listColorHex: nil,
-            emphasis: task.isOverdue(todayKey: todayKey) ? .urgent : .neutral
+            // [[T-16891]]: a cancelled card's past deadline is not late either.
+            emphasis: CadenceTaskPresentationSupport.dueDateIsLate(task, todayKey: todayKey) ? .urgent : .neutral
         )
     }
 
@@ -228,8 +229,12 @@ enum CadenceBoardCardMetadata {
     /// to disagree with. The `isDone` guard is the one `AppTask.isOverdue(todayKey:)` already
     /// applies to the deadline — you did it, so you are not late — and `KanbanCardComputedSupport`
     /// applied it here too; date keys are fixed-width, so the compare is chronological.
+    ///
+    /// [[T-16891]]: "finished" is done OR cancelled (`CadenceTaskQuerySupport.isFinishedTask`), as
+    /// for the due flag beside it (`CadenceTaskPresentationSupport.dueDateIsLate`) -- a cancelled
+    /// task's do date gone by is not over-do work.
     static func doDateEmphasis(for task: AppTask, todayKey: String) -> CadenceBoardCardChip.Emphasis {
-        guard !task.isDone else { return .neutral }
+        guard !CadenceTaskQuerySupport.isFinishedTask(task) else { return .neutral }
         if task.scheduledDate < todayKey { return .urgent }
         if task.scheduledDate == todayKey { return .attention }
         return .neutral

@@ -7,8 +7,10 @@ enum KanbanCardComputedSupport {
     // same on both sides of midnight — so a list page left open overnight kept yesterday's red and
     // amber until something else redrew it. The page host observes the day once and hands its key
     // down; asking for it here is what makes forgetting it a compile error.
+    /// The Mac row's due flag. [[T-16891]]: the shared row answer, so a cancelled task's past
+    /// deadline is not red here while the iOS row and both boards call it settled.
     static func isOverdue(task: AppTask, todayKey: String) -> Bool {
-        task.isOverdue(todayKey: todayKey)
+        CadenceTaskPresentationSupport.dueDateIsLate(task, todayKey: todayKey)
     }
 
     static func isOverdo(task: AppTask, todayKey: String) -> Bool {

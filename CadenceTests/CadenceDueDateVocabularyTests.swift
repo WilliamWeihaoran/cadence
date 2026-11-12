@@ -213,6 +213,49 @@ struct CadenceDueDateVocabularyTests {
             #expect(!source.contains("relativeDate("), "\(path) words a due badge with relativeDate again")
         }
     }
+
+    /// **[[T-16891]]: a cancelled task's past dates fly no late flag on its row or card.** It sits
+    /// in Completed, struck through under the "Canceled" chip; the due chip said "Overdue Nov 9"
+    /// in red there, and the do pill went red too, on the Mac row, the iOS row and both boards.
+    /// Settled is `isFinishedTask` -- done OR cancelled -- for the words, the due flag's tint, the
+    /// do pill's emphasis and the Mac row's own flag. An open task is unchanged, and the store-level
+    /// `AppTask.isOverdue` still answers yes for the cancelled task (pinned in
+    /// `TaskOverdueSupportTests`), which is the non-vacuity check: the row rule is what changed.
+    @Test func aCancelledTasksPastDatesFlyNoLateFlagOnItsRowOrCard() throws {
+        let past = "2026-11-09"
+        let cancelled = task(dueDate: past)
+        cancelled.scheduledDate = past
+        cancelled.status = .cancelled
+        let open = task(dueDate: past)
+        open.scheduledDate = past
+
+        #expect(cancelled.isOverdue(todayKey: Self.today), "non-vacuity: the store predicate still calls it overdue")
+        #expect(CadenceTaskPresentationSupport.dueDateLabel(for: cancelled, todayKey: Self.today) == "Due Nov 9", "cancelled row chip words")
+        #expect(!CadenceTaskPresentationSupport.dueDateIsLate(cancelled, todayKey: Self.today), "cancelled row flag tint")
+        #if os(macOS)
+        #expect(!KanbanCardComputedSupport.isOverdue(task: cancelled, todayKey: Self.today), "Mac row flag")
+        #endif
+        let card = try #require(CadenceBoardCardMetadata.dueDateChip(for: cancelled, todayKey: Self.today))
+        #expect(card.text == "Due Nov 9" && card.emphasis == .neutral, "cancelled board card due chip")
+        #expect(CadenceBoardCardMetadata.doDateEmphasis(for: cancelled, todayKey: Self.today) == .neutral, "cancelled do pill")
+
+        #expect(CadenceTaskPresentationSupport.dueDateLabel(for: open, todayKey: Self.today) == "Overdue Nov 9", "open row chip words")
+        #expect(CadenceTaskPresentationSupport.dueDateIsLate(open, todayKey: Self.today), "open row flag tint")
+        #if os(macOS)
+        #expect(KanbanCardComputedSupport.isOverdue(task: open, todayKey: Self.today), "open Mac row flag")
+        #endif
+        #expect(CadenceBoardCardMetadata.dueDateChip(for: open, todayKey: Self.today)?.emphasis == .urgent, "open board card")
+        #expect(CadenceBoardCardMetadata.doDateEmphasis(for: open, todayKey: Self.today) == .urgent, "open do pill")
+    }
+
+    /// The iOS row's due tint is behind `#if os(iOS)`, so its wiring is read as code: it hands
+    /// `CadenceDueUrgency` the finished predicate, not `task.isDone` ([[T-16891]]).
+    @Test func theIOSRowTintsACancelledDeadlineAsSettled() throws {
+        let row = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskViews.swift"))
+        #expect(row.contains("CadenceDueUrgency.evaluate("), "non-vacuity: the iOS row reads the urgency classifier")
+        #expect(row.contains("isDone: CadenceTaskQuerySupport.isFinishedTask(task),"), "the iOS row tints a cancelled deadline as late")
+        #expect(!row.contains("isDone: task.isDone, todayKey: todayKey)"), "the iOS row went back to the done-only guard")
+    }
 }
 
 /// **[[T-15494]]: Settings' "Last checked" stamp and four `Date.formatted` sites.**

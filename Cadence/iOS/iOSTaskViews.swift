@@ -608,7 +608,13 @@ struct iOSTaskRow: View {
     /// plan decides *whether*, this decides *how*. `evaluate` returns `nil` only for an empty key,
     /// so the two agree on the one case they overlap.
     private var dueUrgency: CadenceDueUrgency? {
-        CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone, todayKey: todayKey)
+        // [[T-16891]]: settled is done OR cancelled, `CadenceTaskPresentationSupport.dueDateIsLate`'s
+        // rule, so a cancelled row's past deadline is not red beside the "Canceled" chip.
+        CadenceDueUrgency.evaluate(
+            dueDateKey: task.dueDate,
+            isDone: CadenceTaskQuerySupport.isFinishedTask(task),
+            todayKey: todayKey
+        )
     }
 
     /// The circle's tap is the shared deferred completion ([[T-8203]]): it starts the 1.2s fill,

@@ -96,7 +96,8 @@ struct CadenceListPagesObservedDayTests {
         #expect(!row.contains("let todayKey: String ="))
         #expect(!row.contains("DateFormatters.todayKey()"))
         #expect(CadenceSourceScan.matchCount(#"CadenceTaskRowDoDateEmphasis\.emphasis\(for: task, todayKey: todayKey\)"#, in: row) == 1)
-        #expect(CadenceSourceScan.matchCount(#"CadenceDueUrgency\.evaluate\(dueDateKey: task\.dueDate, isDone: task\.isDone, todayKey: todayKey\)"#, in: row) == 1)
+        // [[T-16891]]: the settled half is `isFinishedTask` now; the day is still the handed one.
+        #expect(CadenceSourceScan.matchCount(#"CadenceDueUrgency\.evaluate\(\s*dueDateKey: task\.dueDate,\s*isDone: CadenceTaskQuerySupport\.isFinishedTask\(task\),\s*todayKey: todayKey\s*\)"#, in: row) == 1)
         let listRow = try #require(CadenceSourceScan.declarationBody("struct iOSTaskListRow: View", in: views))
         #expect(listRow.contains("let todayKey: String"))
         #expect(listRow.contains("todayKey: todayKey)"))
