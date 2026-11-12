@@ -303,8 +303,12 @@ internal TestFlight build is neither. This section is the gap, checked against H
   not one for build 25. (The test bundles still read 24 and the MCP server reads 1; none of the
   three ships.) **When the number is bumped for the next upload, bump the app and the widget
   together** — four `CURRENT_PROJECT_VERSION` lines, two configurations each — or this check fails.
-- **Build 25 is now the highest uploaded build**, so 25 itself would be rejected as a duplicate.
-  The next upload needs 26 or higher.
+- **Build 27 is now the highest uploaded build** (macOS, read off TestFlight 2026-11-12: `Cadence -
+  Daily Scheduler`, 1.0 (27), 26.9 MB, release date 2026-11-10). The tree is bumped to **28**, so the
+  next archive is valid without touching anything. **Build 27 has no commit behind it** -- no revision
+  in this repository ever set `CURRENT_PROJECT_VERSION = 27`, so Xcode's own version-and-build-number
+  management produced it during Distribute App. See [[T-17360]]: do not infer a shipped build's source
+  revision from this file or from `git log`.
 - **Both binaries carry a privacy manifest**, app and widget, each declaring the UserDefaults and
   file-timestamp reasons.
 - **Internal TestFlight needs no Beta App Review, no nutrition label and no test information.**
@@ -364,9 +368,11 @@ TestFlight on both platforms is the evidence they are done; 3 and 5 recur every 
    was accepted into it.
 2. ~~**That record must have the macOS platform enabled.**~~ Done — the Mac leg of build 25 is in
    TestFlight. It stays relevant only if the record is ever recreated.
-3. **The build number must exceed the highest build already uploaded for version 1.0** — 25 as of
-   2026-10-27, so the next upload needs `CURRENT_PROJECT_VERSION` 26 or higher. (If
-   `MARKETING_VERSION` moves past 1.0, this compares against that version's builds instead.)
+3. **The build number must exceed the highest build already uploaded for version 1.0** — **27** as of
+   2026-11-12, read off TestFlight rather than inferred from this tree. The project is at 28, which
+   clears it. (If `MARKETING_VERSION` moves past 1.0, this compares against that version's builds
+   instead.) **Check TestFlight, not this file, before an upload** — 26 and 27 both went up without a
+   commit recording either, which is [[T-17360]].
 4. ~~**Internal testers must be added.**~~ Done for build 25 — it was installed and tested from
    TestFlight (T-7550 was reported from it). New testers still need a role on the team first.
 5. **The upload itself**, through Xcode Organizer, every time. Agents are barred from it, and
