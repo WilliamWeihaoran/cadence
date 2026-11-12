@@ -65,7 +65,8 @@ struct FocusSessionHeader: View {
     let onClose: () -> Void
 
     var body: some View {
-        let hasContainer = !task.containerName.isEmpty
+        // [[T-17044]]: the shared list name, so a blank-named list reads "Untitled Project" here too.
+        let listName = CadenceFocusSupport.listName(for: task)
         let hasPriority = task.priority != .none
         let dueLabel = CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: task.dueDate, todayKey: todayKey)
         let hasDueDate = dueLabel != nil
@@ -80,9 +81,9 @@ struct FocusSessionHeader: View {
             onClose: onClose
         ) {
             HStack(spacing: 7) {
-                if hasContainer {
+                if let listName {
                     Label {
-                        Text(task.containerName)
+                        Text(listName)
                     } icon: {
                         Circle()
                             .fill(Color(hex: task.containerColor))

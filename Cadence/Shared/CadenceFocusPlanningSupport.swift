@@ -247,6 +247,20 @@ enum CadenceFocusSupport {
         return CadenceFocusRecurrenceFact(label: rule.label, systemImage: rule.systemImage)
     }
 
+    /// **[[T-17044]].** The list a focused task is filed in, by the name every other surface gives
+    /// it, or `nil` for an Inbox task.
+    ///
+    /// Both session headers and this detail line printed `task.containerName` -- the raw
+    /// `project.name` / `area.name` -- so a task in a blank-named list drew no list chip in the
+    /// Focus header and read "Ready to focus" in the picker, while its list chip, the sidebar and
+    /// Search ([[T-16940]]) call that list "Untitled Project" / "Untitled Area". It is
+    /// `CadenceTaskSearchSupport.containerLabel(for:)`'s answer, project before area, with the
+    /// Inbox left unnamed: no list is not a list to name in a header or a row.
+    static func listName(for task: AppTask) -> String? {
+        guard task.project != nil || task.area != nil else { return nil }
+        return CadenceTaskSearchSupport.containerLabel(for: task)
+    }
+
     /// Detail line for focus rows, split into segments so surfaces can tint the due segment red
     /// without staining the scheduling segment beside it.
     ///
@@ -268,7 +282,7 @@ enum CadenceFocusSupport {
             return CadenceTaskDetailLine(lead: nil, due: due, isOverdue: overdue)
         }
         return CadenceTaskDetailLine(
-            lead: task.containerName.isEmpty ? fallback : task.containerName,
+            lead: listName(for: task) ?? fallback,
             due: nil,
             isOverdue: false
         )

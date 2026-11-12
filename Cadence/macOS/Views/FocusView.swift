@@ -92,7 +92,16 @@ struct FocusView: View {
                         // 218 + the hint line and its gap ([[T-11209]]), so the clock keeps its size.
                         .frame(height: 236)
 
+                        // [[T-17043]]: one panel per task, as Notes' editor pane is one per note.
+                        // Reused across a switch (a Next up row, Log Session's "Mark task as
+                        // complete", the task finished elsewhere), its `.onChange(of: task.id)`
+                        // cancelled the pending debounced commit and reloaded the buffer, so up to
+                        // `fallbackContentCommitDelay` of typing was dropped: a click on a SwiftUI
+                        // button never ends the text view's editing, so no focus-loss flush ran.
+                        // Torn down instead, the outgoing panel's `.onDisappear` flushes it while
+                        // its `task` is still the one the text belongs to.
                         FocusNotesPanel(task: task)
+                            .id(task.id)
                             .frame(minHeight: 280)
                     }
                     .padding(18)

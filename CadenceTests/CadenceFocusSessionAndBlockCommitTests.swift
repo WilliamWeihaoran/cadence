@@ -217,6 +217,28 @@ struct CadenceFocusSessionAndBlockCommitTests {
         #expect(view.contains("struct iOSFocusView: View"))
     }
 
+    /// **[[T-17043]]: the Mac's focus note is one panel per task too.**
+    ///
+    /// `FocusNotesPanel` commits typing on a debounce (`fallbackContentCommitDelay`) or when its
+    /// text view ends editing, and a click on a Next up row -- a SwiftUI button -- does neither.
+    /// Reused across that switch, the panel's `.onChange(of: task.id)` cancelled the pending commit
+    /// and loaded the next task's notes over the buffer, so the last seconds typed into the
+    /// outgoing task were gone. Keyed on the task, the outgoing panel is torn down and its
+    /// `.onDisappear` flushes into the task it was editing. A scan, because view identity is not
+    /// something a unit test can drive; it reads code only, so the comment cannot pass it.
+    @Test func theMacFocusNotePanelIsKeyedOnTheFocusedTask() throws {
+        let view = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusView.swift"))
+        #expect(CadenceSourceScan.matchCount(#"FocusNotesPanel\(task: task\)"#, in: view) == 1)
+        #expect(
+            CadenceSourceScan.matchCount(#"FocusNotesPanel\(task: task\)\s*\.id\(task\.id\)"#, in: view) == 1,
+            "the Mac focus note panel is reused across a task switch again, dropping unflushed typing"
+        )
+        // The flush the teardown relies on is still the panel's `.onDisappear`.
+        let panel = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusNotesPanel.swift"))
+        let onDisappear = try #require(CadenceSourceScan.declarationBody(".onDisappear", in: panel))
+        #expect(onDisappear.contains("flushPendingEditorContent()"))
+    }
+
     /// The write path under that editor: the task's own notes, committed through the shared field
     /// transaction, which puts the text back on a refusal.
     @Test func theFocusNoteBindingTypesThroughTheSharedFieldTransaction() throws {

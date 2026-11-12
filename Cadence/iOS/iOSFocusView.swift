@@ -518,8 +518,9 @@ struct iOSFocusView: View {
 
     private func selectedTaskHeader(_ task: AppTask) -> some View {
         sessionHeader(title: TaskTitleSupport.displayTitle(task.title)) {
-            if !task.containerName.isEmpty {
-                iOSMetaChip(label: task.containerName, color: Color(hex: task.containerColor))
+            // [[T-17044]]: the shared list name, the Mac header's, so a blank-named list is named.
+            if let listName = CadenceFocusSupport.listName(for: task) {
+                iOSMetaChip(label: listName, color: Color(hex: task.containerColor))
             }
             if task.priority != .none {
                 iOSMetaChip(label: task.priority.label, color: Theme.priorityColor(task.priority))
