@@ -210,9 +210,17 @@ enum RootCommandActionSupport {
     /// **[[T-7232]] — a menu item running a Cmd+K command**, as `CadenceMenuCommandRoute` hands it
     /// over. Dismisses the palette as a pick from it does, so Cmd+, with Cmd+K open does not leave
     /// the palette standing over the page it just opened.
-    static func handleMenuCommand(_ command: GlobalSearchCommand, context: RootSearchSelectionContext) {
+    ///
+    /// **[[T-17170]] — and never behind a modal.** The root monitor hands every key but Return and
+    /// Escape on while the delete confirmation or the date picker is up (`.passToOverlay`), so
+    /// Cmd+N and Cmd+, reached their menu items there: New Task opened *under* the confirmation
+    /// (z 10 beneath its 20) and Settings swapped the page behind it, and the next Return -- the
+    /// one that commits a typed title -- confirmed a delete the user could no longer see. View
+    /// ▸ items had `RootViewMenuGate` for exactly this; these two had nothing.
+    static func handleMenuCommand(_ command: GlobalSearchCommand, context: RootSearchSelectionContext, hasModal: Bool) {
         handleMenuCommand(
             command,
+            hasModal: hasModal,
             clearAppEditingFocus: context.clearAppEditingFocus,
             presentTaskCreation: context.presentTaskCreation,
             setSelection: context.setSelection,
@@ -224,11 +232,13 @@ enum RootCommandActionSupport {
     /// the context carries a `CalendarManager`, which owns a real `EKEventStore`.
     static func handleMenuCommand(
         _ command: GlobalSearchCommand,
+        hasModal: Bool,
         clearAppEditingFocus: () -> Void,
         presentTaskCreation: () -> Void,
         setSelection: (SidebarItem) -> Void,
         dismissSearch: () -> Void
     ) {
+        guard !hasModal else { return }
         performCommand(
             command,
             clearAppEditingFocus: clearAppEditingFocus,

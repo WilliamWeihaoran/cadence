@@ -180,10 +180,15 @@ struct macOSRootView: View {
         .onChange(of: deepLinkManager.route?.token) { _, _ in
             handleDeepLinkRoute()
         }
-        // T-7232. Cadence ▸ Settings… (Cmd+,) — a menu item has no handle on `selection`.
+        // T-7232. Cadence ▸ Settings… (Cmd+,) and, since [[T-17170]], File ▸ New Task (Cmd+N) — a
+        // menu item has no handle on `selection`. Neither runs behind a modal (T-17170).
         .onChange(of: menuCommandRoute.request?.token) { _, _ in
             guard let request = menuCommandRoute.request else { return }
-            RootCommandHandler.handleMenuCommand(request.command, context: makeSearchSelectionContext())
+            RootCommandHandler.handleMenuCommand(
+                request.command,
+                context: makeSearchSelectionContext(),
+                hasModal: deleteConfirmationManager.request != nil || hoveredTaskDatePickerManager.request != nil
+            )
         }
         // T-7203. View ▸ Search / Toggle Sidebar / Toggle Timeline — the key monitor's own actions.
         .onChange(of: viewMenuRoute.request?.token) { _, _ in

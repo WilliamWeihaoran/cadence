@@ -56,6 +56,7 @@ struct CadenceMacAppSettingsMenuTests {
         var creations = 0
         RootCommandActionSupport.handleMenuCommand(
             request.command,
+            hasModal: false,
             clearAppEditingFocus: {},
             presentTaskCreation: { creations += 1 },
             setSelection: { selections.append($0) },
@@ -90,7 +91,37 @@ struct CadenceMacAppSettingsMenuTests {
         let root = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/macOSRootView.swift")
         #expect(root.contains("struct macOSRootView: View"), "non-vacuity: the scan read the root")
         #expect(CadenceSourceScan.matchCount(#"\.onChange\(of: menuCommandRoute\.request\?\.token\)"#, in: root) == 1)
-        #expect(root.contains("RootCommandHandler.handleMenuCommand(request.command, context: makeSearchSelectionContext())"))
+        let arm = try #require(CadenceSourceScan.declarationBody(".onChange(of: menuCommandRoute.request?.token)", in: root))
+        #expect(arm.contains("RootCommandHandler.handleMenuCommand("))
+        #expect(arm.contains("context: makeSearchSelectionContext()"))
+        // [[T-17170]]: the arm hands the handler both modals, so neither menu item runs behind one.
+        #expect(arm.contains("hasModal: deleteConfirmationManager.request != nil || hoveredTaskDatePickerManager.request != nil"))
+    }
+
+    /// **[[T-17170]] — a menu command stands down behind the delete confirmation or the date
+    /// picker.** The monitor hands Cmd+N and Cmd+, on to the menu there (`.passToOverlay`), so
+    /// without this New Task opened beneath the confirmation and Settings swapped the page behind
+    /// it, and the next Return confirmed a delete the user could no longer see. Every command the
+    /// menu can send, so a third item routed this way is covered as it lands.
+    @Test func noMenuCommandRunsBehindAModal() {
+        for command in [CadenceNewItemMenu.newTaskCommand, CadenceAppSettingsMenu.command] {
+            var selections: [SidebarItem] = []
+            var dismissals = 0
+            var creations = 0
+            var focusClears = 0
+            RootCommandActionSupport.handleMenuCommand(
+                command,
+                hasModal: true,
+                clearAppEditingFocus: { focusClears += 1 },
+                presentTaskCreation: { creations += 1 },
+                setSelection: { selections.append($0) },
+                dismissSearch: { dismissals += 1 }
+            )
+            #expect(selections.isEmpty, "\(command)")
+            #expect(creations == 0, "\(command)")
+            #expect(dismissals == 0, "\(command)")
+            #expect(focusClears == 0, "\(command)")
+        }
     }
 
     /// **No double fire.** The root key monitor sees Cmd+, before the menu does; it has no arm for

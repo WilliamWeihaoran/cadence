@@ -156,6 +156,16 @@ enum RootCommandEventSupport {
         }
     }
 
+    /// **[[T-17171]] — Cmd+/ toggles cancellation; Cmd+Shift+/ is not Cmd+/.**
+    ///
+    /// Shift+/ is `?`, and Cmd+? is the system's Help ▸ Search, which every Mac app answers. The
+    /// `case 44` arm checked no modifier but Command, so with the pointer resting on a task Cmd+?
+    /// cancelled that task and the Help menu never opened -- and with the New Task panel up it was
+    /// swallowed outright. The Cmd+P arm already stands down on Shift for the same reason.
+    static func cancellationArmClaims(modifierFlags: NSEvent.ModifierFlags) -> Bool {
+        !modifierFlags.contains(.shift)
+    }
+
     /// **[[T-7203]] — the one body behind Cmd+K, Cmd+O and Cmd+\ and their View-menu items.**
     ///
     /// The `case 40` / `case 31` / `case 42` arms below call this and return `nil`, so the key is
@@ -243,6 +253,8 @@ enum RootCommandEventSupport {
             if context.hoveredSectionManager.triggerToggleComplete() { return nil }
             return event
         case 44:
+            // [[T-17171]]: Cmd+Shift+/ is Cmd+? — Help ▸ Search — and is not this arm's key.
+            guard cancellationArmClaims(modifierFlags: event.modifierFlags) else { return event }
             guard !context.taskCreationManager.isPresented else { return nil }
             guard context.hoveredTaskManager.hoveredTask != nil else { return event }
             _ = RootCommandActionSupport.handleCancellation(context: context)

@@ -24,8 +24,11 @@ struct macOSRootMenuCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
+            // [[T-17170]]: through the route, not `TaskCreationManager.shared.present()` direct, so
+            // the item runs Cmd+K's own New Task row -- Cmd+K closes behind it -- and stands down
+            // behind a delete confirmation or the date picker instead of opening under one.
             Button(CadenceNewItemMenu.newTask.title) {
-                TaskCreationManager.shared.present()
+                CadenceMenuCommandRoute.shared.send(CadenceNewItemMenu.newTaskCommand)
             }
             .keyboardShortcut(KeyEquivalent(CadenceNewItemMenu.newTaskShortcut), modifiers: .command)
 
@@ -168,6 +171,10 @@ nonisolated enum CadenceNewItemMenu {
     /// Cmd+N, from anywhere. Over a Kanban column the root key monitor still claims the key first
     /// and creates the card in that column; everywhere else it falls through to this.
     static let newTask = Item(title: "New Task", commandShortcut: newTaskShortcut)
+
+    /// [[T-17170]] — the Cmd+K command the item runs, as `CadenceAppSettingsMenu.command` is
+    /// Settings…'s, so the menu and the palette cannot open the panel two different ways.
+    static let newTaskCommand: GlobalSearchCommand = .newTask
 
     /// No key equivalent, on the owner's decision — the item exists for [[T-3186]]'s zero-window
     /// recovery, and Cmd+N belongs to New Task.

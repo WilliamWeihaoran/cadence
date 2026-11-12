@@ -70,8 +70,40 @@ struct CadenceMacNewItemMenuTests {
         // written once inside the `ForEach` over `CadenceViewMenu.items`.
         #expect(CadenceSourceScan.matchCount(#"\.keyboardShortcut\("#, in: menu) == 3)
         #expect(menu.contains("KeyEquivalent(CadenceNewItemMenu.newTaskShortcut), modifiers: .command"))
-        #expect(menu.contains("TaskCreationManager.shared.present()"), "Cmd+N no longer opens the New Task panel")
+        // [[T-17170]]: New Task goes through the menu route to Cmd+K's own New Task command, never
+        // straight at the manager, which skipped the palette's dismissal and every modal gate.
+        #expect(group.contains("CadenceMenuCommandRoute.shared.send(CadenceNewItemMenu.newTaskCommand)"), "Cmd+N no longer opens the New Task panel")
+        #expect(!group.contains("TaskCreationManager.shared.present()"), "New Task bypasses the route again")
         #expect(menu.contains("openWindow(id: CadenceWindowGroupID.main)"), "New Window opens nothing")
+    }
+
+    /// **[[T-17170]] — File ▸ New Task is Cmd+K's New Task row.** It clears editing focus, opens
+    /// the panel once, and closes the palette, which the direct `present()` it used to call left
+    /// standing over the panel.
+    @Test func newTaskRunsThePalettesNewTaskCommandAndClosesSearch() throws {
+        #expect(CadenceNewItemMenu.newTaskCommand == .newTask)
+
+        let route = CadenceMenuCommandRoute()
+        route.send(CadenceNewItemMenu.newTaskCommand)
+        let request = try #require(route.request)
+
+        var selections: [SidebarItem] = []
+        var dismissals = 0
+        var creations = 0
+        var focusClears = 0
+        RootCommandActionSupport.handleMenuCommand(
+            request.command,
+            hasModal: false,
+            clearAppEditingFocus: { focusClears += 1 },
+            presentTaskCreation: { creations += 1 },
+            setSelection: { selections.append($0) },
+            dismissSearch: { dismissals += 1 }
+        )
+
+        #expect(creations == 1)
+        #expect(dismissals == 1)
+        #expect(focusClears == 1)
+        #expect(selections.isEmpty)
     }
 
     /// The scene half: the commands have to be attached, and the window group has to be named for

@@ -23,6 +23,7 @@ struct RootCommandTextEditingGateTests {
     private static let globalKeys: [UInt16] = [40, 42, 31]
     private static let priorityKey: UInt16 = 35
     private static let returnKey: UInt16 = 36
+    private static let slashKey: UInt16 = 44
 
     @Test func everyHoverScopedKeyPassesThroughWhileEditingText() {
         for key in Self.hoverScopedKeys {
@@ -108,6 +109,47 @@ struct RootCommandTextEditingGateTests {
         #expect(result === event)
     }
 
+    /// **[[T-17171]] — Cmd+? is Help ▸ Search, not Cmd+/.** Shift+/ is `?`, and the Cmd+/ arm
+    /// checked no modifier but Command, so Cmd+? over a hovered task began cancelling that task and
+    /// the Help menu never opened. Driven through the real handler with a real hovered task.
+    @Test func commandQuestionMarkReachesTheHelpMenuAndLeavesTheHoveredTaskAlone() throws {
+        let container = try CadenceTestStore.container()
+        let modelContext = container.mainContext
+        let task = AppTask(title: "Hovered")
+        modelContext.insert(task)
+        try modelContext.save()
+
+        let window = makeWindow()
+        defer { window.close() }
+        try #require(window.makeFirstResponder(nil))
+
+        HoveredTaskManager.shared.clear()
+        HoveredTaskManager.shared.beginHovering(task, source: .list)
+        defer { HoveredTaskManager.shared.clear() }
+        try #require(HoveredTaskManager.shared.hoveredTask?.id == task.id)
+        let animations = TaskCompletionAnimationManager.shared
+        try #require(!animations.isPendingCancel(task))
+
+        let help = try commandKeyEvent(Self.slashKey, in: window, modifiers: [.command, .shift])
+        let result = RootCommandEventSupport.handleCommandKeyEvent(help, context: makeContext(modelContext))
+        #expect(result === help, "Cmd+? was consumed, so Help ▸ Search never sees it")
+        #expect(!animations.isPendingCancel(task), "Cmd+? began cancelling the hovered task")
+
+        // Scope control: plain Cmd+/ over the same task is still the cancellation key.
+        let cancel = try commandKeyEvent(Self.slashKey, in: window)
+        let control = RootCommandEventSupport.handleCommandKeyEvent(cancel, context: makeContext(modelContext))
+        #expect(control == nil)
+        #expect(animations.isPendingCancel(task))
+        animations.toggleCancellation(for: task)
+        #expect(!animations.isPendingCancel(task), "cleanup: the control's pending cancel is withdrawn")
+    }
+
+    @Test func theCancellationArmStandsDownOnShiftOnly() {
+        #expect(RootCommandEventSupport.cancellationArmClaims(modifierFlags: .command))
+        #expect(!RootCommandEventSupport.cancellationArmClaims(modifierFlags: [.command, .shift]))
+        #expect(RootCommandEventSupport.cancellationArmClaims(modifierFlags: [.command, .option]))
+    }
+
     // MARK: - Fixtures
 
     private func makeWindow() -> NSWindow {
@@ -121,11 +163,15 @@ struct RootCommandTextEditingGateTests {
         return window
     }
 
-    private func commandKeyEvent(_ keyCode: UInt16, in window: NSWindow) throws -> NSEvent {
+    private func commandKeyEvent(
+        _ keyCode: UInt16,
+        in window: NSWindow,
+        modifiers: NSEvent.ModifierFlags = .command
+    ) throws -> NSEvent {
         let event = try #require(NSEvent.keyEvent(
             with: .keyDown,
             location: .zero,
-            modifierFlags: .command,
+            modifierFlags: modifiers,
             timestamp: 0,
             windowNumber: window.windowNumber,
             context: nil,
