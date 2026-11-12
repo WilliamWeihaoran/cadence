@@ -494,7 +494,8 @@ final class CalendarManager {
             startMin: startMin,
             calendar: calendar
         ) else { return record(.invalidRange) }
-        guard let endDate = calendar.date(byAdding: .minute, value: 60, to: startDate) else {
+        let convertedMinutes = CalendarAllDayEventDropSupport.convertedDurationMinutes
+        guard let endDate = calendar.date(byAdding: .minute, value: convertedMinutes, to: startDate) else {
             return record(.invalidRange)
         }
         event.isAllDay = false

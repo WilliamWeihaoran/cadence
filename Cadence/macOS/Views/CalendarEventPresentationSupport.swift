@@ -398,6 +398,19 @@ enum CalendarEventDragPayload {
 /// nothing, so the drop was accepted and did nothing. Both hosts now call `convert` here rather than
 /// the Today host growing a second copy of the lookup and the editability guard.
 enum CalendarAllDayEventDropSupport {
+    /// The length a chip dropped on a timeline is written at, named once ([[T-17202]]):
+    /// `convertAllDayEventToTimed` writes it and `landingStart` clamps by it.
+    static let convertedDurationMinutes = 60
+
+    /// The minute a chip released at `startMin` lands at on `metrics`' canvas: clamped by the
+    /// converted length, so a chip dropped on the last slot becomes 23:00-24:00 — the way a task or
+    /// an event move lands ([[T-5355]], [[T-5370]]) — instead of an hour running past midnight.
+    /// The delegate cannot know the payload is a chip until it resolves, so this is asked at drop
+    /// time, once it has.
+    static func landingStart(_ startMin: Int, metrics: TimelineMetrics) -> Int {
+        metrics.clampStart(startMin, duration: convertedDurationMinutes)
+    }
+
     /// The event the payload names, or `nil` when it cannot be found or cannot be written.
     ///
     /// Looks first in the source day's all-day list (the chip came from it), then asks the store by

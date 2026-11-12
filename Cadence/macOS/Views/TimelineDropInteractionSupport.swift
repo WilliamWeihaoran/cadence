@@ -147,8 +147,11 @@ struct TimelineDropDelegate: DropDelegate {
             guard let payload = object as? NSString else { return }
             let payloadString = payload as String
             if let eventPayload = CalendarEventDragPayload.allDayEventPayload(from: payloadString) {
+                // The chip's written length, not the 5-minute floor the unresolved preview used
+                // ([[T-17202]]).
+                let chipStartMin = CalendarAllDayEventDropSupport.landingStart(startMin, metrics: metrics)
                 Task { @MainActor in
-                    onDropAllDayEventAtMinute?(eventPayload, startMin)
+                    onDropAllDayEventAtMinute?(eventPayload, chipStartMin)
                 }
             } else if let uuid = taskID(from: payloadString) {
                 Task { @MainActor in
@@ -166,7 +169,8 @@ struct TimelineDropDelegate: DropDelegate {
 
     /// The minute the dragged block's top resolves to, clamped by the dragged task's length so the
     /// preview never shows a slot the drop would refuse ([[T-5370]]). Until the payload names a
-    /// task — and for an all-day event chip, which is not one — this is the start-only clamp.
+    /// task — and for an all-day event chip, which is not one — this is the start-only clamp; a
+    /// chip's drop re-clamps by its converted hour once the payload says it is one ([[T-17202]]).
     private func snappedStart(for info: DropInfo) -> Int {
         let draggedID = dragSession.taskID ?? previewTaskID
         let task = draggedID.flatMap { id in allTasks.first(where: { $0.id == id }) }

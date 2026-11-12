@@ -135,5 +135,45 @@ struct MacTodayAllDayDropTests {
         }
         #expect(stray.isEmpty, "\(stray) builds a TimelineDayCanvas this test does not check")
     }
+
+    // MARK: - [[T-17202]] a chip dropped on the last slot lands inside the day
+
+    @Test("A chip dropped on the last slot lands so its converted hour ends at the canvas's end")
+    func aChipDroppedOnTheLastSlotEndsAtMidnightInsteadOfPastIt() {
+        let metrics = TimelineMetrics(startHour: 0, endHour: 24, hourHeight: 60)
+        let lastSlot = metrics.snappedStart(fromY: metrics.totalHeight, duration: TimelineDayRange.minimumDuration)
+        #expect(lastSlot == 23 * 60 + 55, "the unresolved preview's floor still reaches the last slot")
+
+        let landed = CalendarAllDayEventDropSupport.landingStart(lastSlot, metrics: metrics)
+        #expect(landed + CalendarAllDayEventDropSupport.convertedDurationMinutes == TimelineDayRange.endMin)
+        #expect(landed < lastSlot)
+        // An earlier drop is not moved, and a narrower canvas clamps by its own end.
+        #expect(CalendarAllDayEventDropSupport.landingStart(600, metrics: metrics) == 600)
+        let workday = TimelineMetrics(startHour: 8, endHour: 18, hourHeight: 60)
+        #expect(
+            CalendarAllDayEventDropSupport.landingStart(18 * 60 - 5, metrics: workday)
+                + CalendarAllDayEventDropSupport.convertedDurationMinutes == 18 * 60
+        )
+    }
+
+    @Test("The timeline drop hands a chip the clamped minute, and the converter writes the named length")
+    func theDropAndTheConverterShareTheConvertedLength() throws {
+        let drop = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineDropInteractionSupport.swift")
+        )
+        let performDrop = try #require(CadenceSourceScan.functionBody(named: "performDrop", in: drop))
+        #expect(CadenceSourceScan.matchCount(
+            #"CalendarAllDayEventDropSupport\.landingStart\(startMin, metrics: metrics\)"#, in: performDrop
+        ) == 1)
+        #expect(CadenceSourceScan.matchCount(#"onDropAllDayEventAtMinute\?\(eventPayload, chipStartMin\)"#, in: performDrop) == 1)
+        #expect(CadenceSourceScan.matchCount(#"onDropAllDayEventAtMinute\?\(eventPayload, startMin\)"#, in: performDrop) == 0)
+
+        let manager = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Services/CalendarManager.swift")
+        )
+        let convert = try #require(CadenceSourceScan.functionBody(named: "convertAllDayEventToTimed", in: manager))
+        #expect(CadenceSourceScan.matchCount(#"CalendarAllDayEventDropSupport\.convertedDurationMinutes"#, in: convert) == 1)
+        #expect(CadenceSourceScan.matchCount(#"value: 60\b"#, in: convert) == 0)
+    }
 }
 #endif

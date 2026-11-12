@@ -606,7 +606,8 @@ struct CadenceCalendarEventTimingTests {
 
         // Positive: the end legs are still durations added to the start.
         #expect(
-            manager.contains("calendar.date(byAdding: .minute, value: 60, to: startDate)"),
+            manager.contains("calendar.date(byAdding: .minute, value: convertedMinutes, to: startDate)")
+                && manager.contains("let convertedMinutes = CalendarAllDayEventDropSupport.convertedDurationMinutes"),
             "convertAllDayEventToTimed's one-hour block is an hour of real time after its start"
         )
         #expect(
