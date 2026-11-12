@@ -1592,14 +1592,15 @@ private struct iOSCalendarTimelineDayColumn: View {
             let solved = blockPlacements
             let placements = solved.placements
 
-            ForEach(timedEvents, id: \.calendarItemIdentifier) { event in
+            ForEach(keyedTimedEvents) { keyed in
                 // The column's own day, so an event that crosses midnight draws the part that
                 // belongs here. `frame` uses the range clamped into the drawn hours; the block
                 // still labels itself with the true one.
+                let event = keyed.event
                 let range = iOSCalendarEventSupport.minuteRange(for: event, on: date)
                 let drawn = CadenceScheduleSupport.timelineVisibleRange(start: range.start, end: range.end)
-                let key = BlockKey.event(event.calendarItemIdentifier)
-                let slot = horizontalFrame(placements[.event(event.calendarItemIdentifier)], kind: .event)
+                let key = BlockKey.event(keyed.id)
+                let slot = horizontalFrame(placements[.event(keyed.id)], kind: .event)
                 iOSCalendarEventBlock(event: event, startMin: range.start, endMin: range.end, blockWidth: slot.width, onOpen: { openEvent(event) })
                     .frame(width: slot.width, height: blockHeight(start: drawn.start, end: drawn.end))
                     .offset(x: slot.x, y: yOffset(for: drawn.start))
@@ -2370,6 +2371,20 @@ private struct iOSCalendarTimelineDayColumn: View {
             .map(\.element)
     }
 
+    /// `timedEvents` under the keys the column draws and lays them out by: one per block, even
+    /// when two blocks are occurrences of one series ([[T-16694]],
+    /// `iOSCalendarTimelineBlockLayout.uniqueEventKeys`).
+    private var keyedTimedEvents: [KeyedTimedEvent] {
+        let events = timedEvents
+        let keys = iOSCalendarTimelineBlockLayout.uniqueEventKeys(events.map(\.calendarItemIdentifier))
+        return zip(keys, events).map { KeyedTimedEvent(id: $0, event: $1) }
+    }
+
+    private struct KeyedTimedEvent: Identifiable {
+        let id: String
+        let event: EKEvent
+    }
+
     /// What a block in this column is drawn by, across its two `ForEach`es.
     private enum BlockKey: Hashable {
         case task(PersistentIdentifier)
@@ -2400,11 +2415,11 @@ private struct iOSCalendarTimelineDayColumn: View {
         zIndexes: [BlockKey: Double]
     ) {
         var blocks: [iOSCalendarTimelineBlockLayout.Block<BlockKey>] = []
-        for event in timedEvents {
-            let range = iOSCalendarEventSupport.minuteRange(for: event, on: date)
+        for keyed in keyedTimedEvents {
+            let range = iOSCalendarEventSupport.minuteRange(for: keyed.event, on: date)
             let drawn = CadenceScheduleSupport.timelineVisibleRange(start: range.start, end: range.end)
             blocks.append(.init(
-                key: .event(event.calendarItemIdentifier),
+                key: .event(keyed.id),
                 kind: .event,
                 startMin: drawn.start,
                 endMin: drawn.end

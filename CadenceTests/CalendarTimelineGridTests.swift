@@ -1187,7 +1187,7 @@ struct CadenceTodayTimelinePaneTests {
         #expect(today.contains(".iOSFloatingCreateTaskButton()"))
 
         // (2) The day's events. The column draws them, and the pane is what fetches them.
-        #expect(column.contains("ForEach(timedEvents, id: \\.calendarItemIdentifier)"))
+        #expect(column.contains("ForEach(keyedTimedEvents) { keyed in"))
         #expect(column.contains("iOSCalendarEventBlock(event: event"))
         #expect(pane.contains("calendarManager.fetchEvents(for: today)"))
         #expect(pane.contains("eventsByDate: [todayKey: todayEvents]"))

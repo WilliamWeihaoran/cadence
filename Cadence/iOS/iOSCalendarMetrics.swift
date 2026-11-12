@@ -493,6 +493,39 @@ nonisolated enum iOSCalendarTimelineBlockLayout {
         )
     }
 
+    /// The key each of a day column's timed events is drawn and laid out under ([[T-16694]]).
+    ///
+    /// The column keyed an event by `calendarItemIdentifier`, which EventKit gives every
+    /// occurrence of a recurring series alike. A daily series that crosses midnight -- 11 PM to
+    /// 7 AM -- puts two occurrences on every day column: the tail of last night's at the top and
+    /// the head of tonight's at the bottom. Both went into `placements` under one key, whose
+    /// `uniquingKeysWith` keeps the first, so tonight's block was drawn in last night's slot:
+    /// half width beside a morning task it never touches, or full width across a task it does.
+    /// The Mac keys `CalendarEventItem` by an occurrence-aware id and never collided.
+    ///
+    /// The first holder of an identifier keeps it unchanged, so a day with no repeat keys exactly
+    /// as it did; each later holder gets `#2`, `#3`, … in the column's own draw order, skipping
+    /// any spelling already taken.
+    static func uniqueEventKeys(_ identifiers: [String]) -> [String] {
+        var used = Set<String>()
+        var lastSuffix: [String: Int] = [:]
+        return identifiers.map { raw in
+            guard used.contains(raw) else {
+                used.insert(raw)
+                return raw
+            }
+            var suffix = lastSuffix[raw, default: 1]
+            var key: String
+            repeat {
+                suffix += 1
+                key = "\(raw)#\(suffix)"
+            } while used.contains(key)
+            lastSuffix[raw] = suffix
+            used.insert(key)
+            return key
+        }
+    }
+
     // MARK: - Vertical placement
 
     /// Top edge, in a day column's own coordinates, of a block starting at `minute`. The one

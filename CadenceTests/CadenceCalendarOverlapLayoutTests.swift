@@ -891,6 +891,65 @@ struct CadenceCalendarOverlapLayoutTests {
         )
     }
 
+    // MARK: - T-16694: two occurrences of one series on one iOS day column
+
+    /// The first holder of an identifier keeps it, so a day with no repeat keys exactly as before;
+    /// every later holder gets its own spelling, including one that would collide with a raw id.
+    @Test func everyTimedEventInAColumnGetsItsOwnKeyAndTheFirstKeepsItsIdentifier() {
+        #expect(IOSLayout.uniqueEventKeys(["a", "b", "c"]) == ["a", "b", "c"])
+        let keys = IOSLayout.uniqueEventKeys(["a", "b", "a", "a", "a#2"])
+        #expect(keys.count == 5)
+        #expect(Set(keys).count == 5, "two blocks share a key: \(keys)")
+        #expect(keys[0] == "a" && keys[1] == "b", "a first occurrence was renamed: \(keys)")
+        #expect(IOSLayout.uniqueEventKeys([]) == [])
+    }
+
+    /// **The defect, as the column drew it.** A nightly 11 PM - 7 AM series puts two occurrences on
+    /// one day: last night's tail (12 AM - 7 AM) and tonight's head (11 PM - 12 AM), both carrying
+    /// the series' one `calendarItemIdentifier`. A 6 AM task splits the tail into two columns; the
+    /// head overlaps nothing and must keep the whole strip. Keyed by the shared identifier, the
+    /// head read the tail's two-column slot and was drawn half width at the bottom of the day.
+    @Test func tonightsOccurrenceOfANightlySeriesIsNotDrawnInLastNightsSlot() throws {
+        let raw = ["sleep-series", "sleep-series"]
+        let keys = IOSLayout.uniqueEventKeys(raw)
+        let blocks: [IOSLayout.Block<String>] = [
+            .init(key: keys[0], kind: .event, startMin: 0, endMin: 420),
+            .init(key: keys[1], kind: .event, startMin: 1380, endMin: 1440),
+            .init(key: "gym", kind: .task, startMin: 360, endMin: 420),
+        ]
+        let ranges = Self.iosRanges(blocks)
+        let tail = try #require(ranges[keys[0]])
+        let head = try #require(ranges[keys[1]], "tonight's occurrence has no placement of its own")
+        #expect(tail.placement.totalColumns == 2, "non-vacuity: the 6 AM task no longer splits last night's tail")
+        #expect(head.placement.totalColumns == 1, "tonight's occurrence is drawn in a \(head.placement.totalColumns)-column slot")
+        let lone = IOSLayout.horizontalFrame(for: .single, kind: .event, columnWidth: Self.iosColumnWidth)
+        #expect(head.minX == lone.x && head.maxX == lone.x + lone.width)
+
+        // Non-vacuity: under the shared raw key the solver's answer for the head is thrown away.
+        let shared = IOSLayout.placements(
+            for: zip(raw + ["gym"], blocks).map { IOSLayout.Block(key: $0, kind: $1.kind, startMin: $1.startMin, endMin: $1.endMin) },
+            hourHeight: Self.iosHourHeight,
+            headerHeight: CadenceCalendarOverlapLayout.iOSEventHeaderHeight,
+            isCompactWidth: false
+        )
+        #expect(shared["sleep-series"]?.totalColumns == 2)
+    }
+
+    /// The column keys both its event `ForEach` and its solver input through the helper.
+    @Test func theIOSDayColumnKeysItsTimedEventsThroughTheUniquingHelper() throws {
+        let grid = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
+        )
+        let column = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayColumn: View", in: grid)
+        )
+        #expect(column.count > 5_000, "non-vacuity: read \(column.count) characters of the day column")
+        #expect(column.contains("iOSCalendarTimelineBlockLayout.uniqueEventKeys(events.map(\\.calendarItemIdentifier))"))
+        #expect(column.contains("ForEach(keyedTimedEvents) { keyed in"))
+        #expect(column.contains("key: .event(keyed.id),"))
+        #expect(CadenceSourceScan.matchCount(#"\.event\(event\.calendarItemIdentifier\)"#, in: column) == 0)
+    }
+
     /// One authored workweek — standups, 1:1s, lunches, reviews, focus blocks and errands, every
     /// time on the quarter-hour grid a calendar actually schedules on. **Authored, not the owner's
     /// data** (no agent may read a real calendar); its 20 overlapping pairs start 0 (x5), 15,
