@@ -979,7 +979,7 @@ struct SettingsSevenPaneVocabularyTests {
         let archived = t286RemovingWhitespace(
             try #require(CadenceSourceScan.declarationBody("struct ArchivedContextRow: View", in: source))
         )
-        #expect(archived.contains("Text(context.name).font(.system(size:13)).foregroundStyle(Theme.muted).lineLimit(1).truncationMode(.tail)"),
+        #expect(archived.contains("Text(CadenceContextPickerSupport.title(for:context)).font(.system(size:13)).foregroundStyle(Theme.muted).lineLimit(1).truncationMode(.tail)"),
                 "the archived context's name can wrap again")
         // [[T-9461]]: the shared action button (its label is one line), held at its width.
         #expect(archived.contains("CadenceActionButton(title:CadenceListVocabularyCopy.unarchiveActionTitle,role:.secondary,size:.compact,tint:Theme.text,action:onRestore).fixedSize()"),
@@ -992,6 +992,25 @@ struct SettingsSevenPaneVocabularyTests {
         )
         #expect(active.contains(".font(.system(size:13)).foregroundStyle(Theme.text).lineLimit(1).truncationMode(.tail)"),
                 "the active context's name can wrap again")
+    }
+
+    /// **[[T-17101]].** Both Mac context rows draw and speak the name `iOSSettingsContextRow` and
+    /// `iOSSettingsArchivedContextRow` draw -- `CadenceContextPickerSupport.title(for:)`, trimmed,
+    /// "Untitled Context" when blank -- not `context.name` raw, which drew a context named "" as an
+    /// empty row and labelled its hover buttons "Rename ", "Archive ", "Delete ".
+    @Test func theMacContextRowsDrawABlankContextAsUntitled() throws {
+        #expect(CadenceContextPickerSupport.untitledName == "Untitled Context")
+        let source = CadenceSourceScan.strippingComments(try t20SourceFile("Cadence/macOS/Views/SettingsSupportViews.swift"))
+        for declaration in ["struct ContextSettingsRow: View", "struct ArchivedContextRow: View"] {
+            let body = t286RemovingWhitespace(
+                try #require(CadenceSourceScan.declarationBody(declaration, in: source))
+            )
+            #expect(body.contains("CadenceContextPickerSupport.title(for:context)"),
+                    "non-vacuity: \(declaration) no longer reads the shared title")
+            #expect(!body.contains("Text(context.name)"), "\(declaration) draws the raw name again")
+            #expect(!body.contains("?context.name:"), "\(declaration) draws the raw name again")
+            #expect(!body.contains("\\(context.name)"), "\(declaration) speaks the raw name again")
+        }
     }
 }
 

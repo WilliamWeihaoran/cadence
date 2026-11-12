@@ -58,6 +58,11 @@ struct ContextSettingsRow: View {
     static let glyphLabelSpacing: CGFloat = 12
     static var dividerLeadingInset: CGFloat { horizontalPadding + glyphSide + glyphLabelSpacing }
 
+    /// [[T-17101]]: the name this row draws and its hover buttons speak -- trimmed, and
+    /// "Untitled Context" when blank, the title `iOSSettingsContextRow` already draws. A context
+    /// named "" (MCP, sync) drew an empty row here, and VoiceOver read "Rename ".
+    private var displayName: String { CadenceContextPickerSupport.title(for: context) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Self.glyphLabelSpacing) {
@@ -72,7 +77,7 @@ struct ContextSettingsRow: View {
 
                 // [[T-9291]]: one line, as the archived row below and `ListLifecycleRow` are, so a
                 // long name does not wrap when the hover actions take their width.
-                Text(isEditing ? (editName.isEmpty ? context.name : editName) : context.name)
+                Text(isEditing && !editName.isEmpty ? editName : displayName)
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
@@ -82,16 +87,16 @@ struct ContextSettingsRow: View {
 
                 if isHovered && !isEditing {
                     HStack(spacing: 4) {
-                        actionButton(icon: "pencil", accessibilityLabel: "Rename \(context.name)") { startEditing() }
+                        actionButton(icon: "pencil", accessibilityLabel: "Rename \(displayName)") { startEditing() }
                         actionButton(
                             icon: "archivebox",
                             color: Theme.amber,
-                            accessibilityLabel: "Archive \(context.name)"
+                            accessibilityLabel: "Archive \(displayName)"
                         ) { onArchive() }
                         actionButton(
                             icon: "trash",
                             color: Theme.red,
-                            accessibilityLabel: "Delete \(context.name)"
+                            accessibilityLabel: "Delete \(displayName)"
                         ) { onDelete() }
                     }
                     .transition(.opacity)
@@ -302,7 +307,8 @@ struct ArchivedContextRow: View {
             // several lines and squeezed "Restore" and "Delete" until they broke inside their fills;
             // the name now truncates on one line and the buttons keep their natural width.
             VStack(alignment: .leading, spacing: 2) {
-                Text(context.name)
+                // [[T-17101]]: `iOSSettingsArchivedContextRow`'s title, not the raw name.
+                Text(CadenceContextPickerSupport.title(for: context))
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.muted)
                     .lineLimit(1)

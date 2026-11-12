@@ -383,8 +383,24 @@ nonisolated enum CadenceListSettingsCopy {
 
     /// The second line of a project row: its context and its area, or `noParentListSubtitle`.
     static func parentSubtitle(contextName: String?, areaName: String?) -> String {
-        let parts = [contextName, areaName].compactMap { $0 }.filter { !$0.isEmpty }
+        // [[T-17102]]: trimmed and tested with `isBlank`, not `isEmpty` -- a parent named " "
+        // passed the old filter and drew a blank-looking subtitle, or "   • Launch".
+        let parts = [contextName, areaName].compactMap { $0 }
+            .map(CadenceTitleNormalization.normalized)
+            .filter { !$0.isEmpty }
         return parts.isEmpty ? noParentListSubtitle : parts.joined(separator: " • ")
+    }
+
+    /// **[[T-17102]].** The second line of an inactive *area* row: its context's name, trimmed, or
+    /// `noContextSubtitle` when it has none or the name is blank. Both surfaces wrote
+    /// `area.context?.name ?? noContextSubtitle`, so an area under a context named "" drew an empty
+    /// second line -- the blank line [[T-577]] removed from the project branch beside it. A blank
+    /// parent is dropped exactly as `parentSubtitle` drops one.
+    static func areaSubtitle(contextName: String?) -> String {
+        guard let contextName, !CadenceTitleNormalization.isBlank(contextName) else {
+            return noContextSubtitle
+        }
+        return CadenceTitleNormalization.normalized(contextName)
     }
 
     /// An area filed under no context. The whole line, not a prefix.

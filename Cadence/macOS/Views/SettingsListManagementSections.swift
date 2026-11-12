@@ -814,7 +814,7 @@ struct SettingsListsSection: View {
                         // T-695: was `area.context?.name ?? "No context"`, typed byte-identically
                         // in this file and in the iOS twin below — the same duplication T-577
                         // already converged for the project branch's `parentSubtitle`.
-                        subtitle: area.context?.name ?? CadenceListSettingsCopy.noContextSubtitle,
+                        subtitle: CadenceListSettingsCopy.areaSubtitle(contextName: area.context?.name),
                         color: Color(hex: area.colorHex),
                         statusLabel: area.isDone ? "Completed" : "Archived",
                         primaryLabel: area.isDone ? "Reopen" : CadenceListVocabularyCopy.unarchiveActionTitle,

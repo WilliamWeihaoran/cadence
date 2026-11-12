@@ -985,6 +985,20 @@ struct CadenceSettingsSectionCopyTests {
         )
     }
 
+    /// **[[T-17102]].** A parent whose name is only whitespace is blank too: it used to pass the
+    /// `isEmpty` filter and draw a subtitle of spaces, or "   • Launch". The area row's own
+    /// subtitle drew an empty line for a context named "" and now drops it the same way.
+    @Test func aBlankParentNameIsDroppedFromEitherLifecycleSubtitle() {
+        #expect(CadenceListSettingsCopy.parentSubtitle(contextName: "   ", areaName: nil) == "No parent list")
+        #expect(CadenceListSettingsCopy.parentSubtitle(contextName: " \n", areaName: "Launch") == "Launch")
+        #expect(CadenceListSettingsCopy.parentSubtitle(contextName: " Work ", areaName: "\t") == "Work")
+
+        #expect(CadenceListSettingsCopy.areaSubtitle(contextName: nil) == "No context")
+        #expect(CadenceListSettingsCopy.areaSubtitle(contextName: "") == "No context")
+        #expect(CadenceListSettingsCopy.areaSubtitle(contextName: "  ") == "No context")
+        #expect(CadenceListSettingsCopy.areaSubtitle(contextName: " Work ") == "Work")
+    }
+
     /// The other half of T-577, and the half the file contradicted itself about: macOS passed
     /// `area.name` and `project.name` to the row raw, twelve lines under an *area* subtitle branch
     /// that already knew to fall back to "No context". An unnamed list drew a row with no title.
@@ -1039,9 +1053,11 @@ struct CadenceSettingsSectionCopyTests {
 
         for path in Self.inactiveListSurfaces {
             let code = try Self.strippedSource(at: path)
+            // [[T-17102]]: the constant is reached through `areaSubtitle`, which also drops a
+            // blank context name the bare `?? noContextSubtitle` drew as an empty line.
             #expect(
-                code.contains("CadenceListSettingsCopy.noContextSubtitle"),
-                "\(path) does not read the shared area-fallback constant"
+                code.contains("CadenceListSettingsCopy.areaSubtitle(contextName:"),
+                "\(path) does not read the shared area subtitle"
             )
             #expect(
                 !code.contains("\"No context\""),
