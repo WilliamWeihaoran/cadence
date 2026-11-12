@@ -90,6 +90,15 @@ struct CadenceApp: App {
 #endif
 
     init() {
+#if DEBUG
+        // [[T-15751]]: the first statement of the launch, and in a Release build not a statement at
+        // all. Returns immediately unless `CADENCE_INITIALIZE_CLOUDKIT_SCHEMA=1`; when that is set
+        // it publishes the schema from a throwaway store under `tmp` and exits before any window,
+        // any `PersistenceController` touch and any of the preference migrations below. It must
+        // stay above them: the whole claim is that this path never opens the app-group store, and
+        // a line that opened it first would be true of the line and false of the launch.
+        CadenceCloudKitSchemaInitializer.runIfRequestedAndExit()
+#endif
         // Silent-push registration is **not** here. `CadenceAppDelegate.applicationDidFinishLaunching`
         // is the one production caller of `CadenceRemoteNotificationRegistrar.registerIfNeeded()`,
         // and this initializer used to call it too — two launch callers for one registrar, while

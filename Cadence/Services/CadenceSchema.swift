@@ -1,7 +1,13 @@
 import SwiftData
 
 nonisolated enum CadenceSchema {
-    nonisolated static let schema = Schema([
+    /// The authoritative model list, as types rather than as a built `Schema`.
+    ///
+    /// [[T-15751]] needs the types themselves: `NSManagedObjectModel.makeManagedObjectModel(for:)`
+    /// takes `[any PersistentModel.Type]`, and a `Schema`'s entities cannot be turned back into
+    /// one. Hoisted rather than copied, so `CadenceCloudKitSchemaInitializer` publishes exactly
+    /// the types this app opens its store with.
+    nonisolated static let models: [any PersistentModel.Type] = [
         Context.self,
         Area.self,
         Project.self,
@@ -26,5 +32,7 @@ nonisolated enum CadenceSchema {
         SidebarLayoutPreference.self,
         LookPreference.self,
         NoteTemplatePreference.self,
-    ])
+    ]
+
+    nonisolated static let schema = Schema(models)
 }

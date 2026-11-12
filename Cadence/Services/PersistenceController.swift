@@ -1241,7 +1241,12 @@ struct PersistenceController {
     /// spelled out here, and `StoreBackupManager.storeDirectoryURL(in:)` honoured only the first of
     /// them. `CadenceUITestStoreDirectory.redirectedStoreDirectory` is now the only place either
     /// question is answered, so the backups cannot go to a store this launch does not have open.
-    private static func resolvedStoreURL() throws -> URL {
+    /// Internal rather than private since [[T-15751]], and for no other reason:
+    /// `CadenceCloudKitSchemaInitializer.SafetyInputs.live(fileManager:)`
+    /// refuses this exact URL, and a safety test that asserts that has to be able to ask the same
+    /// resolver rather than hand-rolling a second copy of it — which is the mistake [[T-1530]]
+    /// exists to have ended. Nothing about what it answers changed.
+    static func resolvedStoreURL() throws -> URL {
         guard let storeDirectoryURL = CadenceUITestStoreDirectory.redirectedStoreDirectory() else {
             return try CadenceStoreSupport.primaryStoreURL()
         }
