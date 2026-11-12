@@ -470,10 +470,13 @@ final class CadenceReadService {
 
         return CadenceContextSummary(
             context: contextRef(context),
-            // [[T-17047]]: open Inbox work only, through the predicate every on-screen Inbox count
-            // reads. The hand-spelled filter here dropped cancelled tasks but kept done ones, so
-            // this field disagreed with `activeTaskCount` beside it and with the Inbox badge.
-            inboxTaskCount: CadenceTaskQuerySupport.openInboxTaskCount(from: tasks),
+            // [[T-17047]]: open Inbox work only, the same predicate as
+            // `CadenceTaskQuerySupport.openInboxTaskCount` behind every on-screen Inbox count. The
+            // old filter dropped cancelled tasks but kept done ones, so this field disagreed with
+            // `activeTaskCount` beside it and with the Inbox badge. Spelled from `activeTasks`
+            // rather than by calling that helper because `CadenceMCPServer` does not compile
+            // `CadenceTaskQuerySharedSupport.swift`; the call redded CI's MCP build.
+            inboxTaskCount: activeTasks.filter { $0.area == nil && $0.project == nil }.count,
             activeTaskCount: activeTasks.count,
             completedTaskCount: tasks.filter(\.isDone).count,
             scheduledTaskCount: activeTasks.filter { !$0.scheduledDate.isEmpty }.count,
