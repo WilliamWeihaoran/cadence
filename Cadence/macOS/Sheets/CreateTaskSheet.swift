@@ -484,7 +484,8 @@ struct CreateTaskSheet: View {
     }
 
     private func createTag(_ name: String) -> String? {
-        guard let tag = TagSupport.committedTag(named: name, in: modelContext) else {
+        // [[T-17326]]: an archived tag's name un-archives it, so the chip shows in the card's list.
+        guard let tag = TagSupport.committedFieldTag(named: name, in: tags, context: modelContext) else {
             actionError = CadencePendingChangePersistence.editFailureNotice
             return actionError
         }

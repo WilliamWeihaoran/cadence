@@ -128,6 +128,39 @@ extension TagSupport {
         }
     }
 
+    /// **[[T-17326]] -- what the capture card's "New tag" field commits**, on the Mac's Cmd+N
+    /// sheet and the iOS New Task sheet alike: the field decision the tag pickers' own fields read
+    /// (`pickerFieldCommit`, [[T-12772]]), then the committed pick, mint or un-archive.
+    ///
+    /// Both sheets handed the typed name straight to `committedTag`, whose slug index holds
+    /// archived rows too. Typing an archived tag's name and pressing Add therefore selected the
+    /// archived row -- which the card's own tag list hides -- so the field cleared, no chip
+    /// appeared, and the task was created carrying a tag nothing had shown it would. An archived
+    /// match is now un-archived first, exactly as the `#` strip's Unarchive chip does
+    /// ([[T-13963]]), so the chip is drawn in the list it is selected from.
+    ///
+    /// `nil` when the field would do nothing (`.nothing`: blank, or no letter or digit) as well as
+    /// when the store refused the write; the card's Add button is disabled for the first
+    /// (`CadenceCaptureTagEntry.submittableName`), so a caller only meets `nil` for the second.
+    ///
+    /// - Parameter allTags: every tag in the store, archived and active.
+    /// - Parameter commit: forwarded so a test can reach a refused commit.
+    static func committedFieldTag(
+        named name: String,
+        in allTags: [Tag],
+        context: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Tag? {
+        switch pickerFieldCommit(name, in: allTags) {
+        case .nothing:
+            return nil
+        case let .unarchive(archived):
+            return committedUnarchive(archived, in: context, commit: commit) ? archived : nil
+        case let .resolve(resolvedName):
+            return committedTag(named: resolvedName, in: context, commit: commit)
+        }
+    }
+
     /// `syncNoteTagsFromMarkdown`, **plus the commit for the rows it had to mint** (T-651).
     ///
     /// The same shape as `committedTag`, one call site over: `CadenceCoreNoteSupport.update` calls

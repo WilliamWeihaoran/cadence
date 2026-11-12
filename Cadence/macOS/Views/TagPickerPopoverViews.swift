@@ -330,7 +330,10 @@ struct TagPickerPopover: View {
         // T-6261: and their inline `#mentions` too, when the user said so above.
         let undoRename = TagSupport.rename(tag, to: name, rewritingInlineMentions: rewritingInlineMentions)
         tag.desc = editDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-        tag.colorHex = TagSupport.normalizedColorHex(editColorHex)
+        // [[T-17327]]: a Hex field left half-typed (`#ff6`) or cleared keeps the saved colour, as
+        // both Settings > Tags editors' Save does. With no fallback this sheet saved the default
+        // grey, and nothing about a sheet or a pointer answers the difference ([[T-8201]]).
+        tag.colorHex = TagSupport.normalizedColorHex(editColorHex, fallback: tag.colorHex)
         tag.updatedAt = Date()
 
         do {

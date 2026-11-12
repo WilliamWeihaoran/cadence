@@ -22,10 +22,18 @@ struct CadenceScheduleCaptureOptions {
 /// What the capture card's "New tag" field may hand `createTag` ([[T-10028]]): the name trimmed,
 /// or `nil` when nothing but whitespace was typed -- the answer the Add button greys out on, and
 /// the one Return now reads too, so the two can never disagree about a blank name.
+///
+/// **[[T-17326]]: and `nil` for a name with no letter or digit**, such as `--` or `!!` -- the
+/// `.unusableName` that Create Tag, every tag picker's field ([[T-13501]]) and rename
+/// ([[T-15801]]) all refuse. This field alone minted it, as a tag named `--` under the fallback
+/// slug `tag`, so Add is disabled for it exactly as the iOS picker's `+` is.
 nonisolated enum CadenceCaptureTagEntry {
     static func submittableName(_ raw: String) -> String? {
         let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? nil : name
+        guard !name.isEmpty, TagSupport.displayName(for: name).rangeOfCharacter(from: .alphanumerics) != nil else {
+            return nil
+        }
+        return name
     }
 }
 

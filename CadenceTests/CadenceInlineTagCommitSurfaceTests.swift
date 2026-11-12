@@ -303,12 +303,21 @@ struct CadenceInlineTagCommitSurfaceTests {
             ("Cadence/iOS/iOSTaskDetailComponents.swift", "addTag", "tagFailureNotice")
         ]
 
+        // [[T-17326]]: the two capture sheets' "New tag" field reads `pickerFieldCommit` first, so
+        // they reach `committedTag` one frame down, through `committedFieldTag`.
+        let captureSheets: Set<String> = [
+            "Cadence/macOS/Sheets/CreateTaskSheet.swift", "Cadence/iOS/iOSCreateTaskSheet.swift",
+        ]
+
         for (path, name, notice) in creators {
             let view = try CadenceCommitSurfaceScan.scanned(path)
             let body = try CadenceCommitSurfaceScan.declarationBody(named: name, in: view)
+            let creator = captureSheets.contains(path)
+                ? "TagSupport.committedFieldTag(named: name, in: tags, context: modelContext)"
+                : "TagSupport.committedTag(named: name, in: modelContext)"
 
             #expect(
-                body.contains("TagSupport.committedTag(named:"),
+                body.contains(captureSheets.contains(path) ? "TagSupport.committedFieldTag(named:" : "TagSupport.committedTag(named:"),
                 "\(path).\(name) does not reach the committing creator"
             )
             #expect(
@@ -331,7 +340,7 @@ struct CadenceInlineTagCommitSurfaceTests {
             // Written out identically on purpose — this is the sentence T-631 found six different
             // answers to, and a seventh answer is what the uniformity is protecting against.
             #expect(
-                body.contains("guard let tag = TagSupport.committedTag(named: name, in: modelContext) else {"),
+                body.contains("guard let tag = \(creator) else {"),
                 "\(path).\(name) does not guard on the refusal"
             )
             #expect(
