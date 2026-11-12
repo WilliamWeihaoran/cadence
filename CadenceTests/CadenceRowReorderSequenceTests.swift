@@ -207,10 +207,16 @@ struct CadenceRowReorderSequenceTests {
         let ownList = try CadenceCommitSurfaceScan.declarationBody(named: "ownListSiblings", in: span)
         #expect(!ownList.contains(".sorted"), "the span rule grew a second sequence beside the one it shares")
 
-        let panelSupport = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/TasksPanelSupport.swift")
-        let shared = try CadenceCommitSurfaceScan.declarationBody(named: "reorderTask", in: panelSupport)
+        // [[T-16682]]: the body is `CadenceTaskRowReorder.reorderTask`'s, in `Shared/`, so iOS's
+        // list Tasks tab renumbers through it too; the Mac's name only forwards.
+        let rowReorder = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/CadenceTaskRowReorder.swift")
+        let shared = try CadenceCommitSurfaceScan.declarationBody(named: "reorderTask", in: rowReorder)
         #expect(shared.contains("CadenceRowReorderSpan.ownListSiblings("), "the shared row renumber stopped reading the span rule")
         #expect(!shared.contains(".sorted"), "the shared row renumber grew a second sequence of its own")
+        let panelSupport = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/TasksPanelSupport.swift")
+        let forwarder = try CadenceCommitSurfaceScan.declarationBody(named: "reorderTask", in: panelSupport)
+        #expect(forwarder.contains("CadenceTaskRowReorder.reorderTask("), "the Mac's row renumber is a second copy again")
+        #expect(!forwarder.contains(".sorted"), "the Mac's row renumber grew a sequence of its own")
 
         let listTab = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/ListDetailComponents.swift")
         let tabDrop = try CadenceCommitSurfaceScan.declarationBody(named: "reorderTask", in: listTab)

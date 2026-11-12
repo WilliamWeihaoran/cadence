@@ -5,6 +5,7 @@ import SwiftUI
 struct iOSListDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     let area: Area?
     let project: Project?
@@ -52,6 +53,11 @@ struct iOSListDetailView: View {
     @State private var kanbanControlsListKey: String?
     /// The day the By Date groups are cut against ([[T-5012]]), as the Mac's `ListTasksView` holds.
     @State private var observedDay = CadenceObservedDay()
+    /// What the last row dropped on a Tasks tab heading has to say ([[T-16682]]): a refusal, or a
+    /// landing the active sort does not show -- the Mac's `ListTasksView` pair, from the same
+    /// `ListTasksGroupDrop.dropOnHeader` answer.
+    @State private var headingDropFailureNotice: String?
+    @State private var headingDropLandingNotice: String?
 
     init(
         area: Area,
@@ -562,6 +568,44 @@ struct iOSListDetailView: View {
         )
     }
 
+    /// **A task row dragged onto a heading re-files it, as the Mac's list Tasks tab does
+    /// ([[T-16682]]).** The whole drop is `ListTasksGroupDrop.dropOnHeader`, the Mac header's own
+    /// steps: into the group (section, priority or date bucket), then to its top; an empty
+    /// section's heading files it there with no renumber. `nil` -- no row destination at all --
+    /// for a heading that names nothing to file under (the ungrouped "Tasks", Overdue, Leftover,
+    /// Due Today), so it never accepts a row it then files nowhere (T-591).
+    private func headingRowDrop(for group: CadenceTaskDisplayGroup) -> ((String) -> Bool)? {
+        guard ListTasksGroupDrop.takesDroppedRow(group) else { return nil }
+        let controls = taskControls
+        // The page's observed day, never the clock -- the day its By Date groups were cut on.
+        let dayKey = observedDay.todayKey
+        return { payload in
+            let outcome = ListTasksGroupDrop.dropOnHeader(
+                payload: payload,
+                onto: group,
+                groupingMode: controls.grouping,
+                listTasks: filteredTasks,
+                todayKey: dayKey,
+                modelContext: modelContext,
+                sortKeyOrder: {
+                    TaskOrdering.sortKeyOrder($0, $1, field: controls.sortField, direction: controls.sortDirection)
+                }
+            )
+            switch outcome {
+            case .applied(let notice):
+                headingDropFailureNotice = nil
+                headingDropLandingNotice = notice
+                return true
+            case .refused(let notice):
+                headingDropLandingNotice = nil
+                headingDropFailureNotice = notice
+                return false
+            case .resolvedNothing:
+                return false
+            }
+        }
+    }
+
     /// The Tasks tab's rows, on `iOSTaskGroupSection` — the same counted group Today, Inbox and All
     /// Tasks are built from.
     ///
@@ -574,6 +618,12 @@ struct iOSListDetailView: View {
     private var sectionStack: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: iOSTaskCollectionMetrics.groupSpacing) {
+                if let headingDropFailureNotice {
+                    CadenceInlineFailureNotice(text: headingDropFailureNotice)
+                }
+                if let headingDropLandingNotice {
+                    CadenceInlineNotice(text: headingDropLandingNotice, tone: .informational)
+                }
                 if isTaskColumnEmpty {
                     listEmptyPanel
                 }
@@ -589,7 +639,8 @@ struct iOSListDetailView: View {
                         todayKey: observedDay.todayKey,
                         dropIdentity: dropIdentity(for: group),
                         collapsedGroupIDs: collapsedGroupIDsBinding,
-                        groupID: group.id
+                        groupID: group.id,
+                        onDropTaskPayload: headingRowDrop(for: group)
                     )
                 }
 

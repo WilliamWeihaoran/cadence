@@ -2,7 +2,9 @@
 import SwiftUI
 import SwiftData
 
-struct ListTasksGroup: Identifiable {
+/// A heading on a list's Tasks tab. `ListTasksDropGroup` is what the shared drop reads of it
+/// ([[T-16682]]), so this tab and iOS's ask `ListTasksGroupDrop` the same questions.
+struct ListTasksGroup: Identifiable, ListTasksDropGroup {
     let id: String
     let title: String
     let tasks: [AppTask]
@@ -11,118 +13,6 @@ struct ListTasksGroup: Identifiable {
     /// the same fallback `CadenceTaskQuerySupport.sectionAccent(named:configs:)` gives a name no
     /// section config carries.
     var tint: Color = Theme.dim
-}
-
-/// **[[T-5358]] — a row dropped into ANOTHER group on a list's Tasks tab joins that group.**
-///
-/// The tab's row drop only renumbered, so a task dragged from "Documents" onto a row under "Later"
-/// took a new `order` and sprang straight back under Documents, with nothing said. All Tasks and
-/// the section board both refile on the same gesture (`TasksPanelDropCoordinator.handleTaskDrop`
-/// assigns its group's key, then reorders; `KanbanSectionColumnView.moveTask` files the card under
-/// its column). This is that first half for this tab: what the target group means, written as one
-/// commit before the reorder that `ListTasksView.reorderTask` already makes.
-///
-/// - By section: the group's section name — the configured spelling, which is the group's title.
-/// - By priority: the target row's priority, the `priority:` key All Tasks reads.
-/// - By date: `TasksListView.dateDropKey(forGroupID:)`, so Do Today / Scheduled / Unscheduled move
-///   a task exactly as they do on All Tasks, and Overdue / Due Today — a day already gone, with no
-///   assignment that makes a task late — reorder only, as they do there.
-enum ListTasksGroupDrop {
-    enum Refiling: Equatable {
-        case section(String)
-        case dropKey(String)
-    }
-
-    /// `nil` when the drop stays inside its own group, or the group names nothing a task can be
-    /// moved into — the drop is then the plain reorder it always was.
-    static func refiling(
-        dropping dropped: AppTask,
-        onto target: AppTask,
-        in group: ListTasksGroup,
-        groupingMode: TaskGroupingMode
-    ) -> Refiling? {
-        guard !group.tasks.contains(where: { $0.id == dropped.id }) else { return nil }
-        switch groupingMode {
-        case .none:
-            return nil
-        case .byList:
-            return .section(group.title)
-        case .byPriority:
-            return target.priority == dropped.priority ? nil : .dropKey("priority:\(target.priority.rawValue)")
-        case .byDate:
-            return TasksListView.dateDropKey(forGroupID: group.id).map(Refiling.dropKey)
-        }
-    }
-
-    /// **[[T-5840]] — a drop on a group's HEADER joins that group, at its top.** The header had no
-    /// drop destination, so a task let go over "Later" itself, with no row under the pointer, was
-    /// not taken at all. A header drop is answered as a drop on the group's first row: the same
-    /// refiling as a row drop (`refiling(dropping:onto:in:groupingMode:)` reads that row's priority,
-    /// which is the group's, since every row of a priority group shares it), then the renumber puts
-    /// the task first in the group — the place a drop just under a heading means. Going through the
-    /// row path keeps one commit order and one failure notice for both drop sites.
-    ///
-    /// `nil` — the header refuses the drop — when the task is already in this group, or the group
-    /// names nothing a task can be moved into (the ungrouped "Tasks" group; Overdue / Due Today by
-    /// date). A header that only renumbered would answer a drop the user aimed at a group by leaving
-    /// the task out of it, which is the silent accept T-591 removed from All Tasks' headers.
-    ///
-    /// **Asked of the group's id, not of a grouping mode**, because the id already says which kind
-    /// of group this is — `CadenceTaskQuerySupport` spells section groups `section-…`, priority
-    /// groups `priority-…` and the date buckets by name — and the header view is handed the group,
-    /// not the page's grouping. `ListTasksGroupDropTests` builds its groups with those same
-    /// functions, so a renamed id reddens there rather than turning every header off.
-    /// **[[T-15821]] — an EMPTY section's header files the dropped task under that section.**
-    /// Grouped by section, the tab draws every configured section, empty ones included, and an
-    /// empty section has no rows — so its header is its only drop site, and `headerDropTarget`
-    /// (which answers through the group's first row) is `nil` for exactly the section the user is
-    /// trying to fill. This is the refiling half of the row path without the renumber: there is no
-    /// row to land beside, so the task keeps its `order`.
-    ///
-    /// Section groups only (`section-…`, the id `CadenceTaskQuerySupport.sectionGroups` spells):
-    /// they are the only groups this tab draws empty. A non-empty group answers through
-    /// `headerDropTarget` instead, so the two never both claim one drop.
-    static func emptySectionRefiling(in group: ListTasksGroup) -> Refiling? {
-        guard group.tasks.isEmpty, group.id.hasPrefix("section-") else { return nil }
-        return .section(group.title)
-    }
-
-    static func headerDropTarget(droppedID: UUID, in group: ListTasksGroup) -> UUID? {
-        guard let first = group.tasks.first,
-              !group.tasks.contains(where: { $0.id == droppedID }) else { return nil }
-        let refiles = group.id.hasPrefix("section-")
-            || group.id.hasPrefix("priority-")
-            || TasksListView.dateDropKey(forGroupID: group.id) != nil
-        return refiles ? first.id : nil
-    }
-
-    /// Writes the refiling as one commit. `false` means the store refused it and every field is
-    /// back as it was (`CadenceTaskFieldEditCommit` / `TasksPanelSupport.assignTask` undo it), so
-    /// the caller must not go on to reorder a row the store still files in its old group.
-    static func refile(
-        _ task: AppTask,
-        _ refiling: Refiling,
-        todayKey: String,
-        modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) -> Bool {
-        switch refiling {
-        case .section(let name):
-            return CadenceTaskFieldEditCommit.commit(task, in: modelContext, commit: commit) {
-                task.sectionName = name
-            }
-        case .dropKey(let key):
-            return TasksPanelSupport.assignTask(
-                task,
-                for: key,
-                todayKey: todayKey,
-                areas: [],
-                projects: [],
-                modelContext: modelContext,
-                commit: commit
-            ) == .applied
-        }
-    }
 }
 
 enum TaskListDisplayMetrics {

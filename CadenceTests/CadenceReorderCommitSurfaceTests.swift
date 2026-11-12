@@ -323,7 +323,11 @@ struct CadenceReorderCommitSurfaceTests {
 
     /// **T-868(a).** Today's and All Tasks'/Inbox's row drop, which both reach this one function.
     @Test func thetaskRowDropCommitsProperlyRatherThanSwallowingIt() throws {
-        let source = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/TasksPanelSupport.swift")
+        // [[T-16682]]: `TasksPanelSupport.reorderTask` forwards to the shared body, which is read.
+        let panelSupport = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/TasksPanelSupport.swift")
+        #expect(try CadenceCommitSurfaceScan.declarationBody(named: "reorderTask", in: panelSupport)
+            .contains("CadenceTaskRowReorder.reorderTask("), "the Mac's row drop no longer reaches the shared renumber")
+        let source = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/CadenceTaskRowReorder.swift")
         let body = try CadenceCommitSurfaceScan.declarationBody(named: "reorderTask", in: source)
 
         // Non-vacuity: this is the rearranging body. The `CadenceOrderReassignment.moved(` call it
@@ -531,14 +535,16 @@ struct CadenceReorderCommitSurfaceTests {
         ("Cadence/Shared/CadenceOrderCommit.swift", "static func commit<Item>("),
         ("Cadence/Shared/CadenceSectionConfigMerge.swift", "func reorderSectionConfigs("),
         ("Cadence/macOS/Views/KanbanBoardSupport.swift", "static func reorder("),
-        ("Cadence/macOS/Views/TasksPanelSupport.swift", "static func reorderTask(")
+        ("Cadence/macOS/Views/TasksPanelSupport.swift", "static func reorderTask("),
+        ("Cadence/Shared/CadenceTaskRowReorder.swift", "static func reorderTask(")
     ]
 
     private static let reorderAnswerNames = [
         "CadenceOrderCommit.commit",
         "reorderSectionConfigs",
         "KanbanBoardSupport.reorder",
-        "TasksPanelSupport.reorderTask"
+        "TasksPanelSupport.reorderTask",
+        "CadenceTaskRowReorder.reorderTask"
     ]
 
     /// Whether `@discardableResult` sits on the declaration `declaration` opens.

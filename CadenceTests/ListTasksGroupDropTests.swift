@@ -1,4 +1,4 @@
-// macOS only: `ListTasksGroupDrop` and `TasksListView` are macOS app types.
+// macOS only: `ListTasksGroup` and `TasksListView` are macOS app types (`ListTasksGroupDrop` is shared since [[T-16682]]).
 #if os(macOS)
 import Foundation
 import SwiftData

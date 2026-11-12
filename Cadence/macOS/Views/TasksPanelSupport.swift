@@ -188,6 +188,9 @@ enum TasksPanelSupport {
     /// - Returns: Whether the new order is in the store. `false` means every row is back where it
     ///   was, and the panel must show `CadenceOrderCommit.failureNotice`. A drop with nothing to
     ///   write answers `true`, because nothing failed.
+    ///
+    /// **The body is `CadenceTaskRowReorder.reorderTask`'s since [[T-16682]]**, in `Shared/`, so
+    /// iOS's list Tasks tab renumbers a row dropped on a heading through this same rule.
     static func reorderTask(
         droppedID: UUID,
         targetID: UUID,
@@ -196,25 +199,14 @@ enum TasksPanelSupport {
         modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
-        guard let siblings = CadenceRowReorderSpan.ownListSiblings(
-            moving: droppedID,
-            before: targetID,
-            in: scopeTasks
-        ), let dropped = siblings.first(where: { $0.id == droppedID }) else { return true }
-        let sequence = CadenceRowReorderSpan.wholeSequence(
-            resequencing: siblings,
-            within: spanTasks,
-            ofList: CadenceTaskQuerySupport.listGroupKey(for: dropped)
+        CadenceTaskRowReorder.reorderTask(
+            droppedID: droppedID,
+            targetID: targetID,
+            scopeTasks: scopeTasks,
+            spanTasks: spanTasks,
+            modelContext: modelContext,
+            commit: commit
         )
-        return withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
-            CadenceOrderCommit.commit(
-                sequence,
-                readOrder: { $0.order },
-                writeOrder: { $0.order = $1 },
-                in: modelContext,
-                commit: commit
-            )
-        }
     }
 
     // **The assign half lives in `Shared/` now ([[T-16654]])**, on `CadenceTaskHeaderDrop`, so the
