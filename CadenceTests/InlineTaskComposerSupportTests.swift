@@ -140,6 +140,28 @@ struct InlineTaskComposerSupportTests {
         #expect(InlineTaskComposerSupport.canCreate(title: "Ship it"))
     }
 
+    /// T-17083: `TaskCreationService` strips priority marks and makes nothing from a title that
+    /// was only marks, so Return must not be offered for one — and must say why, where a blank
+    /// field stays quiet.
+    @Test func priorityMarksAloneAreNotCreatableAndSaySo() {
+        for marksOnly in ["!!!", "!", " !! ", "!!! "] {
+            #expect(!InlineTaskComposerSupport.canCreate(title: marksOnly), "\(marksOnly)")
+            #expect(InlineTaskComposerSupport.refusalNotice(title: marksOnly)
+                == InlineTaskComposerSupport.noNameNotice, "\(marksOnly)")
+            // The service agrees: the same title resolves to no name.
+            let draft = InlineTaskComposerSupport.draft(
+                title: marksOnly,
+                fields: InlineTaskComposerFields(container: .inbox, sectionName: "", doDateKey: "", startMin: -1),
+                tags: []
+            )
+            #expect(draft.trimmedTitle.isEmpty, "\(marksOnly)")
+        }
+        #expect(InlineTaskComposerSupport.canCreate(title: "!!! Ship it"))
+        #expect(InlineTaskComposerSupport.refusalNotice(title: "!!! Ship it") == nil)
+        #expect(InlineTaskComposerSupport.refusalNotice(title: "") == nil)
+        #expect(InlineTaskComposerSupport.refusalNotice(title: "   ") == nil)
+    }
+
     // MARK: - How a draft resolves to a task
 
     @Test func columnDraftLandsInTheColumnsListAndSection() throws {

@@ -76,6 +76,14 @@ struct InlineTaskComposer: View {
             onDismiss()
             return .handled
         }
+        // The no-name sentence answers the title it was said about; once the title names
+        // something it is stale. A save failure's sentence is left for the next Return to answer.
+        .onChange(of: title) { _, newTitle in
+            if actionError == InlineTaskComposerSupport.noNameNotice,
+               InlineTaskComposerSupport.refusalNotice(title: newTitle) == nil {
+                actionError = nil
+            }
+        }
         .onChange(of: fields.container) { _, container in
             fields.sectionName = InlineTaskComposerSupport.normalizedSectionName(
                 fields.sectionName,
@@ -231,7 +239,12 @@ struct InlineTaskComposer: View {
     /// on screen or in the store. `createTask` takes the task back out on a throw, so the composer
     /// keeps every character and the hint line says why instead of "Return to add".
     private func create() {
-        guard InlineTaskComposerSupport.canCreate(title: title) else { return }
+        guard InlineTaskComposerSupport.canCreate(title: title) else {
+            // T-17083: a title of priority marks alone names nothing; say so rather than let
+            // Return vanish under "Return to add".
+            actionError = InlineTaskComposerSupport.refusalNotice(title: title)
+            return
+        }
         let draft = InlineTaskComposerSupport.draft(title: title, fields: fields, tags: selectedTags)
         let created: AppTask?
         do {
@@ -241,7 +254,10 @@ struct InlineTaskComposer: View {
             actionError = TaskCreationService.saveFailureNotice
             return
         }
-        guard created != nil else { return }
+        guard created != nil else {
+            actionError = InlineTaskComposerSupport.noNameNotice
+            return
+        }
 
         actionError = nil
         // Same fast-path reconcile the create sheet runs, so a card created with a do date does not

@@ -104,9 +104,26 @@ enum InlineTaskComposerSupport {
         return TimeFormatters.timeRange(startMin: fields.startMin, endMin: fields.startMin + duration)
     }
 
+    /// **T-17083.** Whether Return makes a card: the title must still name something once its
+    /// `!`/`!!`/`!!!` priority marks are taken out, because `TaskCreationService` takes them out
+    /// and makes nothing from what is left. The rule is `TaskCreationDraft.trimmedTitle`'s, the
+    /// same one [[T-14042]] gave the capture card (`CadenceScheduleDraft.hasCommittableTitle`).
     static func canCreate(title: String) -> Bool {
-        !TaskTitleSupport.isEmpty(title)
+        guard !TaskTitleSupport.isEmpty(title) else { return false }
+        let name = TaskTitleSupport.priorityShortcut(in: title)?.title ?? TaskTitleSupport.normalized(title)
+        return !name.isEmpty
     }
+
+    /// What the hint line says when Return was refused, or `nil` to stay quiet. A blank field
+    /// stays quiet — there is nothing typed to explain — but a title of marks alone has been
+    /// typed, and swallowing its Return under "Return to add" is the lie T-17083 names.
+    static func refusalNotice(title: String) -> String? {
+        guard !canCreate(title: title), !TaskTitleSupport.isEmpty(title) else { return nil }
+        return noNameNotice
+    }
+
+    /// The capture card's sentence for the same refusal, so the two composers agree.
+    static let noNameNotice = "Add a title first."
 
     /// The draft the composer hands to `TaskCreationService` — the same type, and the same service,
     /// the create sheet uses. Nothing on this path builds an `AppTask` by hand, which is what let
