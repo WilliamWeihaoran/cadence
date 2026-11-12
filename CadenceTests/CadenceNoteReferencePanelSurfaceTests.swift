@@ -442,17 +442,19 @@ struct CadenceNoteReferencePanelSurfaceTests {
         #expect(NoteReferencePanelSupport.noteKindDetail(weekly) != weekly.displayTitle)
     }
 
-    /// Undated and unfiled notes fall back to the kind's own label rather than to a blank line —
-    /// including the whitespace-only container name `iOSSearchView`'s `compactMap { $0 }.first`
-    /// accepted and rendered as an empty subtitle.
+    /// Undated and unfiled notes fall back to the kind's own label rather than to a blank line.
+    /// A whitespace-only list name, which `iOSSearchView`'s `compactMap { $0 }.first` rendered as
+    /// an empty subtitle, reads as its untitled placeholder ([[T-16944]]).
     @Test func theDetailFallsBackToTheKindLabelWhenThereIsNothingToAdd() {
         #expect(NoteReferencePanelSupport.noteKindDetail(Note(kind: .daily)) == "Daily note")
         #expect(NoteReferencePanelSupport.noteKindDetail(Note(kind: .weekly)) == "Weekly note")
         #expect(NoteReferencePanelSupport.noteKindDetail(Note(kind: .meeting)) == "Event note")
         #expect(NoteReferencePanelSupport.noteKindDetail(Note(kind: .list)) == "List note")
 
+        // A blank-named list is still a list: it reads as the sidebar names it, not as no list
+        // and not as a blank line ([[T-16944]]).
         let blank = Note(kind: .list, title: "Spec", area: Area(name: "   "))
-        #expect(NoteReferencePanelSupport.noteKindDetail(blank) == "List note")
+        #expect(NoteReferencePanelSupport.noteKindDetail(blank) == CadenceTitleNormalization.defaultAreaName)
     }
 
     /// The two rows read the shared detail and neither spells a kind of its own. Value assertions

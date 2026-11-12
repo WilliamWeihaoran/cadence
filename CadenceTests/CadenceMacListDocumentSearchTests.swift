@@ -104,9 +104,51 @@ struct CadenceMacListDocumentSearchTests {
         #expect(found.isEmpty)
         #expect(GlobalSearchListNoteRoute.route(for: fixture.orphanNote) == nil)
         #expect(GlobalSearchIndexSupport.noteSubtitle(for: fixture.orphanNote) == nil)
-        // The bare subtitle is still spelled for a list whose name is blank, so a routable
-        // document never renders a trailing bullet with nothing after it.
+        // The bare kind, for the note filed under no list, so a row never renders a trailing
+        // bullet with nothing after it. A blank-named list is named "Untitled …" ([[T-16944]]).
         #expect(GlobalSearchIndexSupport.listNoteSubtitle(for: fixture.orphanNote) == "List")
+    }
+
+    /// **[[T-16944]]: a list document in a blank-named list is named for that list, and for the
+    /// list selecting it opens.** Both helpers took the first non-blank of the area's and the
+    /// project's names, so a note in a blank-named area read the bare `List` in Cmd+K and
+    /// `List note` on iOS Search and in the `[[` picker, where the list it opens is "Untitled
+    /// Area" everywhere else; and a note filed in a blank area AND a named project was named for
+    /// the project while `route(for:)` opened the area.
+    @Test func aListDocumentInABlankNamedListIsNamedForTheListItOpens() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = container.mainContext
+        let blankArea = Area(name: "   ")
+        let blankProject = Project(name: "")
+        let namedProject = Project(name: "Launch")
+        context.insert(blankArea)
+        for project in [blankProject, namedProject] { context.insert(project) }
+        let inArea = Note(kind: .list, title: "Area spec")
+        let inProject = Note(kind: .list, title: "Project spec")
+        let inBoth = Note(kind: .list, title: "Shared spec")
+        for note in [inArea, inProject, inBoth] { context.insert(note) }
+        CadenceListNoteSupport.attach(inArea, to: blankArea, project: nil)
+        CadenceListNoteSupport.attach(inProject, to: nil, project: blankProject)
+        CadenceListNoteSupport.attach(inBoth, to: blankArea, project: namedProject)
+        try context.save()
+
+        // Cmd+K.
+        #expect(GlobalSearchIndexSupport.listNoteSubtitle(for: inArea) == "List • \(CadenceTitleNormalization.defaultAreaName)")
+        #expect(GlobalSearchIndexSupport.listNoteSubtitle(for: inProject) == "List • \(CadenceTitleNormalization.defaultProjectName)")
+        // iOS Search's subtitle and the `[[` picker's detail.
+        #expect(NoteReferencePanelSupport.noteKindDetail(inArea) == CadenceTitleNormalization.defaultAreaName)
+        #expect(NoteReferencePanelSupport.noteKindDetail(inProject) == CadenceTitleNormalization.defaultProjectName)
+
+        // Named for the list it opens: the area, though only the project has a name.
+        #expect(GlobalSearchListNoteRoute.route(for: inBoth) == .area(blankArea.id))
+        #expect(GlobalSearchIndexSupport.listNoteSubtitle(for: inBoth) == "List • \(CadenceTitleNormalization.defaultAreaName)")
+        #expect(NoteReferencePanelSupport.noteKindDetail(inBoth) == CadenceTitleNormalization.defaultAreaName)
+
+        // And the row Cmd+K draws carries it.
+        let row = try #require(GlobalSearchIndexSupport.noteResults(
+            notes: [inArea, inProject, inBoth], query: "area spec", taskTitles: [:]
+        ).first)
+        #expect(row.subtitle == "List • \(CadenceTitleNormalization.defaultAreaName)")
     }
 
     /// **Where the hit goes**: the note's own list, the Documents tab, that document selected.

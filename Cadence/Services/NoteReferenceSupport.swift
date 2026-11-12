@@ -578,13 +578,25 @@ nonisolated enum NoteReferencePanelSupport {
             .filter { !$0.isEmpty }
     }
 
-    /// The list a `.list` note is filed under, trimmed and non-empty. `iOSSearchView` spelled this
-    /// `compactMap { $0 }.first`, which accepts a whitespace-only list name and renders as a blank
-    /// subtitle instead of falling through to "List note".
-    private static func listContainerName(_ note: Note) -> String? {
-        [note.area?.name, note.project?.name]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty }
+    /// The name of the list a `.list` note is filed under -- its area, else its project, the list
+    /// Cmd+K's `GlobalSearchListNoteRoute.route(for:)` opens -- with a blank name drawn as
+    /// "Untitled Area" / "Untitled Project", as the sidebar and the list's own search row draw it.
+    /// `nil` only for a note filed under no list. iOS Search's subtitle and the `[[` picker read it
+    /// through `noteKindDetail`, and Cmd+K's `GlobalSearchIndexSupport.listNoteSubtitle(for:)`.
+    ///
+    /// **[[T-16944]]: the relationship picks the list, not the name.** This took the first
+    /// NON-BLANK of `[area?.name, project?.name]`, so a note in a blank-named list dropped the list
+    /// from its row (iOS Search `List note`, Cmd+K `List`), and a note carrying both relationships
+    /// whose area was blank was named for its project while Cmd+K opened its area. The task rows'
+    /// version of this defect was [[T-16940]].
+    static func listContainerName(_ note: Note) -> String? {
+        if let area = note.area {
+            return CadenceTitleNormalization.display(area.name, fallback: CadenceTitleNormalization.defaultAreaName)
+        }
+        if let project = note.project {
+            return CadenceTitleNormalization.display(project.name, fallback: CadenceTitleNormalization.defaultProjectName)
+        }
+        return nil
     }
 
     // A referenced task's chip, when it has no due date to show, says what its `[[` suggestion

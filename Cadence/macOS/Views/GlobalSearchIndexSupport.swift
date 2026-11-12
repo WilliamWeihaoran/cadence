@@ -570,18 +570,17 @@ enum GlobalSearchIndexSupport {
         }
     }
 
-    /// "List • Marketing", or the bare kind when the list it is filed under has a blank name.
+    /// "List • Marketing" -- "List • Untitled Area" for a blank-named list ([[T-16944]]) -- or the
+    /// bare kind for a note filed under no list, which `noteSubtitle(for:)` does not offer anyway.
     ///
-    /// Same shape as the `Daily •` / `Weekly •` lines beside it, and the same area-before-project
-    /// preference `GlobalSearchListNoteRoute.route(for:)` routes by, so the list this row names is
-    /// the list selecting it opens. `NoteReferencePanelSupport.noteKindDetail` answers the same
-    /// question for iOS but answers it without the kind prefix, which would read as an untitled
+    /// Same shape as the `Daily •` / `Weekly •` lines beside it. The name is
+    /// `NoteReferencePanelSupport.listContainerName`, the one iOS Search and the `[[` picker draw,
+    /// and it picks the list by the same area-before-project relationship
+    /// `GlobalSearchListNoteRoute.route(for:)` routes by, so the list this row names is the list
+    /// selecting it opens. iOS draws it without the kind prefix, which would read as an untitled
     /// row here.
     static func listNoteSubtitle(for note: Note) -> String {
-        let container = [note.area?.name, note.project?.name]
-            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty }
-        guard let container else { return "List" }
+        guard let container = NoteReferencePanelSupport.listContainerName(note) else { return "List" }
         return "List • \(container)"
     }
 
