@@ -26,6 +26,10 @@ struct iOSTaskGroupHeader: View {
     /// (decided on [[T-11214]]); `nil` is left for the one heading that is not a task group's —
     /// the Inbox's "Apple Reminders", which the Mac pins open too (`isToggleEnabled: false`).
     var isExpanded: Binding<Bool>? = nil
+    /// A task row dragged onto the heading, by its `TaskDragPayload` string; answers whether the
+    /// row was re-filed. `nil` -- a heading that names nothing a task can be filed under -- takes
+    /// no row at all. The Mac's `TasksListSectionView` header is the same drop ([[T-16654]]).
+    var onDropTaskPayload: ((String) -> Bool)? = nil
 
     var body: some View {
         // `CadenceTaskGroupHeading`, in `Shared/Components/`, is the row itself now — macOS's Today
@@ -64,6 +68,27 @@ struct iOSTaskGroupHeader: View {
         //
         // The header itself takes no fill. One layer, at one radius, and it is the ghost's.
         .iOSNewTaskDropTarget(group: dropIdentity)
+        // **And a dragged ROW re-files under the heading, as it does on the Mac ([[T-16654]]).**
+        // The `+` above reaches this heading through a published-frame hit test, never a system
+        // drop, so the two cannot claim one gesture: a lifted row is a system drag and only this
+        // destination reads it.
+        .iOSTaskRowDropTarget(onDropTaskPayload)
+    }
+}
+
+extension View {
+    /// The heading's row drop, registered only when there is something to apply -- a heading that
+    /// accepted the row and filed it nowhere would be T-591's silent accept.
+    @ViewBuilder
+    func iOSTaskRowDropTarget(_ onDropTaskPayload: ((String) -> Bool)?) -> some View {
+        if let onDropTaskPayload {
+            dropDestination(for: String.self) { items, _ in
+                guard let payload = items.first else { return false }
+                return onDropTaskPayload(payload)
+            }
+        } else {
+            self
+        }
     }
 }
 
@@ -118,6 +143,8 @@ struct iOSTaskGroupSection: View {
     /// The key this group folds under in `collapsedGroupIDs` — the display group's own `id`, which
     /// is unique on its page. Defaults to the title for the single ungrouped section.
     var groupID: String? = nil
+    /// See `iOSTaskGroupHeader.onDropTaskPayload`.
+    var onDropTaskPayload: ((String) -> Bool)? = nil
 
     private var foldKey: String { groupID ?? title }
 
@@ -148,7 +175,8 @@ struct iOSTaskGroupSection: View {
                     title: title,
                     color: color,
                     dropIdentity: dropIdentity,
-                    isExpanded: isExpanded
+                    isExpanded: isExpanded,
+                    onDropTaskPayload: onDropTaskPayload
                 )
 
                 if !tasks.isEmpty && isExpanded.wrappedValue {

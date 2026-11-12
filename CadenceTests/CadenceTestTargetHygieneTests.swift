@@ -1741,6 +1741,9 @@ struct CadenceTestTargetHygieneTests {
         // `Cadence/iOS/`, so their refusal is testable on the iOS leg only; the source half is
         // `CadenceSaveCommitDisciplineTests.theWindDownSettlesCommitThroughTheSpineAndThrow`.
         "CadenceTests/iOSWindDownRefusalTests.swift",
+        // [[T-16654]]: the grouped headings' row drop is `iOSTaskCollectionSections` wiring under
+        // `Cadence/iOS/`; the write it reaches is `CadenceTaskHeaderDropTests`, on both legs.
+        "CadenceTests/iOSTaskHeaderRowDropTests.swift",
     ]
 
     @Test func noTestFileCompilesToNothingWhereItIsMeantToRun() throws {

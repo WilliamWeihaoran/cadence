@@ -237,7 +237,8 @@ struct CadenceTaskSortGroupParityTests {
         #expect(body.contains("CadenceTaskQuerySupport.displayGroups("))
         #expect(body.contains("mode: groupingMode,"))
         #expect(!body.contains("switch"), "a mode is special-cased again")
-        #expect(body.contains("dropKey: group.dropKey ?? Self.dateDropKey(forGroupID: group.id)"))
+        // Asked of the shared header drop since [[T-16654]], which the iOS headings ask too.
+        #expect(body.contains("dropKey: CadenceTaskHeaderDrop.dropKey(forDisplayGroup: group)"))
         #expect(body.contains("isListGroup: groupingMode == .byList"))
         #expect(!CadenceSourceScan.codeOnly(raw).contains("TasksPanelSupport.listGroups"))
     }

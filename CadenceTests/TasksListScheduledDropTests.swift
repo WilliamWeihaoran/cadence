@@ -6,7 +6,7 @@ import Testing
 
 /// **[[T-16652]] — a Leftover row dropped on a By Date "Scheduled" header moved nowhere.**
 ///
-/// `TasksPanelSupport.apply(.pushToScheduled)` wrote tomorrow only for a task with no do date or a
+/// `CadenceTaskHeaderDrop.apply(.pushToScheduled)` wrote tomorrow only for a task with no do date or a
 /// do date of today. A do date already gone by fell through both, so the drop on All Tasks' or a
 /// list Tasks tab's Scheduled header answered `.applied`, wrote nothing, and the row stayed under
 /// Leftover — the group [[T-12323]] gave those rows, after this guard was written. The fixture is

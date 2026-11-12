@@ -283,6 +283,53 @@ struct iOSTaskCollectionSections: View {
     var showsRemindersSection = false
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
     @Environment(RemindersManager.self) private var remindersManager
+    @Environment(\.modelContext) private var modelContext
+    /// A heading's row drop the store refused ([[T-16654]]): the Mac's All Tasks borrows its one
+    /// notice slot for the same outcome, and every field is already back when this is set.
+    @State private var rowDropFailureNotice: String?
+
+    /// **A task row dragged onto a grouped heading re-files it, as on the Mac ([[T-16654]]).**
+    /// The key is `CadenceTaskHeaderDrop.dropKey(forDisplayGroup:)` -- the one `TasksListView`
+    /// hands its own headers -- and the write is `CadenceTaskHeaderDrop`'s, so a By Date, By List
+    /// or By Priority heading files a row identically at either width and on either platform.
+    /// `nil` for a group that names nothing to file under (Overdue, Leftover, Due Today), which
+    /// then registers no row destination at all. `tasks` is the page's own universe: a payload
+    /// naming anything else resolves to nothing, the Mac's membership rule.
+    static func headerTaskDrop(
+        for group: CadenceTaskDisplayGroup,
+        among tasks: [AppTask],
+        todayKey: String,
+        modelContext: ModelContext,
+        reconciler: CadenceWindDownReconciler? = nil
+    ) -> ((String) -> TasksPanelDropOutcome)? {
+        guard let dropKey = CadenceTaskHeaderDrop.dropKey(forDisplayGroup: group) else { return nil }
+        return { payload in
+            CadenceTaskHeaderDrop.dropTask(
+                payload: payload,
+                onHeaderKeyed: dropKey,
+                among: tasks,
+                todayKey: todayKey,
+                modelContext: modelContext,
+                reconciler: reconciler
+            )
+        }
+    }
+
+    /// The view's half: the outcome, as the `Bool` a drop destination answers, plus the notice.
+    /// `.resolvedNothing` says nothing -- the row springing back is the whole report (T-591).
+    private func onDropTaskPayload(for group: CadenceTaskDisplayGroup) -> ((String) -> Bool)? {
+        guard let drop = Self.headerTaskDrop(
+            for: group,
+            among: activeTasks + completedTasks,
+            todayKey: todayKey,
+            modelContext: modelContext
+        ) else { return nil }
+        return { payload in
+            let outcome = drop(payload)
+            rowDropFailureNotice = outcome == .refused ? CadencePendingChangePersistence.editFailureNotice : nil
+            return outcome == .applied
+        }
+    }
 
     /// **Finished work counts as content whether or not it is unfolded (T-2090).** This read
     /// `!showsCompleted || completedTasks.isEmpty`, which was right while a chip decided whether
@@ -332,6 +379,10 @@ struct iOSTaskCollectionSections: View {
         let showsContainer = CadenceTaskSurfaceOptions.showsContainerChip(on: collection.surface)
 
         return VStack(alignment: .leading, spacing: metrics.groupSpacing) {
+            if let rowDropFailureNotice {
+                CadenceInlineFailureNotice(text: rowDropFailureNotice)
+            }
+
             // **Ungrouped is still one section with a drop identity; grouped is the shared
             // groups** ([[T-8731]]).
             //
@@ -350,6 +401,10 @@ struct iOSTaskCollectionSections: View {
             // The grouped arm passes no drop identity: a date, list or priority bucket on this
             // surface is a reading of the rows, and `CadenceTaskQuerySupport.displayGroups` has
             // already dropped the empty ones, so there is nothing for `showsWhenEmpty` to keep.
+            // It does pass a ROW drop since [[T-16654]]: a row dragged onto a bucket's heading is
+            // re-filed into it, the Mac's gesture, through the Mac's write -- see
+            // `headerTaskDrop(for:among:todayKey:modelContext:reconciler:)`. The ungrouped heading takes no
+            // row, as the Mac's "Tasks" heading takes none: there is nothing to move it into.
             if groupingMode == .none {
                 iOSTaskGroupSection(
                     title: CadenceTaskQuerySupport.ungroupedGroupTitle,
@@ -372,7 +427,8 @@ struct iOSTaskCollectionSections: View {
                         ),
                         todayKey: todayKey,
                         collapsedGroupIDs: $collapsedGroupIDs,
-                        groupID: group.id
+                        groupID: group.id,
+                        onDropTaskPayload: onDropTaskPayload(for: group)
                     )
                 }
             }

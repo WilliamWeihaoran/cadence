@@ -327,7 +327,8 @@ struct CadenceTaskContextInheritanceTests {
     /// `CadenceTaskEditDraftCommit` in `Cadence/Shared/CadenceScheduleDraftTaskEditing.swift`, which
     /// is now the site counted here. [[T-5353]] routed the row's list chip through
     /// `MacTaskRowContextMenu.moveToList` (which reaches `assignContainer`) and a list drop in
-    /// `TasksPanelSupport` through `assignContainer` itself. [[T-8061]] routed the Lists board's
+    /// `TasksPanelSupport` through `assignContainer` itself -- a drop that is
+    /// `CadenceTaskHeaderDrop`'s since [[T-16654]], so both platforms' headings file through it. [[T-8061]] routed the Lists board's
     /// column drops in `KanbanBoardSupport` through it too.
     @Test func everyPathThatFilesATaskIntoAProjectAsksTheProjectToResolveItsContext() throws {
         let assignContainer = #"CadenceTaskMutationSupport\.assignContainer\("#
@@ -338,7 +339,7 @@ struct CadenceTaskContextInheritanceTests {
             ("Cadence/Services/DataIntegrityRepairService.swift", resolves("target")),
             ("Cadence/Shared/CadenceScheduleDraftTaskEditing.swift", assignContainer),
             ("Cadence/macOS/Views/TasksPanelComponents.swift", #"MacTaskRowContextMenu\.moveToList\("#),
-            ("Cadence/macOS/Views/TasksPanelSupport.swift", assignContainer),
+            ("Cadence/Shared/CadenceTaskHeaderDrop.swift", assignContainer),
             ("Cadence/macOS/Views/KanbanBoardSupport.swift", assignContainer),
             ("Cadence/macOS/Views/KanbanSectionColumnView.swift", resolves("project")),
         ]

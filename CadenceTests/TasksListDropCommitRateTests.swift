@@ -338,12 +338,13 @@ struct TasksListDropCommitRateTests {
         }
         #expect(read == 2, "expected two macOS drop surfaces, read \(read)")
 
-        // And the swallow the ticket is about is gone from the unit that held it.
+        // And the swallow the ticket is about is gone from the unit that held it -- the shared
+        // header drop since [[T-16654]], which `TasksPanelSupport.assignTask` forwards to.
         let support = CadenceSourceScan.codeOnly(
-            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanelSupport.swift")
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTaskHeaderDrop.swift")
         )
         #expect(support.contains("static func assignTask("), "the reader missed the declaration it is about")
-        #expect(!support.contains("try? modelContext.save()"), "TasksPanelSupport swallows a commit again")
+        #expect(!support.contains("try? modelContext.save()"), "the header drop swallows a commit again")
         #expect(support.contains("CadenceTaskFieldEditCommit.commit("))
     }
 

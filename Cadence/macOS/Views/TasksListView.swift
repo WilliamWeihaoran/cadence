@@ -248,7 +248,8 @@ struct TasksListView: View {
             TasksListSection(
                 id: group.id,
                 title: group.title,
-                dropKey: group.dropKey ?? Self.dateDropKey(forGroupID: group.id),
+                // The iPhone and iPad headings ask the same function ([[T-16654]]).
+                dropKey: CadenceTaskHeaderDrop.dropKey(forDisplayGroup: group),
                 tasks: group.tasks,
                 isListGroup: groupingMode == .byList,
                 tint: group.accent
@@ -256,24 +257,13 @@ struct TasksListView: View {
         }
     }
 
-    /// The three date buckets a task can be *moved into*.
-    ///
-    /// `CadenceTaskQuerySupport.dateDisplayGroups` leaves `dropKey` nil for all six — deliberately,
-    /// per `CadenceTaskDropSupport`, which says a group header that lights up and then applies
-    /// nothing is noise. Overdue, Leftover and Due Today are exactly that: Overdue and Leftover are
-    /// defined by a day that has already gone by, and there is no "make this late" assignment. The other three map onto the
-    /// keys `TasksPanelSupport.assignTask` has always read, so All Tasks' droppable date sections
-    /// survive the move to the shared buckets unchanged.
+    /// The three date buckets a task can be *moved into* -- `CadenceTaskHeaderDrop.dateDropKey`,
+    /// where the mapping lives since [[T-16654]] so iOS's headings hand out the same keys.
     ///
     /// Not `private` since [[T-5358]]: a list's own Tasks tab asks it too, so a row dropped into
     /// one of its date groups is moved into that bucket by the same keys All Tasks hands out.
     static func dateDropKey(forGroupID id: String) -> String? {
-        switch id {
-        case "do-today": return "date:today"
-        case "scheduled": return "date:scheduled"
-        case "unscheduled": return "date:unscheduled"
-        default: return nil
-        }
+        CadenceTaskHeaderDrop.dateDropKey(forGroupID: id)
     }
 
     // MARK: - Body

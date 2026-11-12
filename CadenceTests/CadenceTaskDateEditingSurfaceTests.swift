@@ -283,7 +283,10 @@ struct CadenceTaskDateEditingSurfaceTests {
         // `Cadence/macOS/Views/TaskInspectorContentSupportViews.swift` was here for the inspector
         // action row's Unschedule button, whose one host had switched it off; [[T-12644]] deleted
         // it, and the file edits no date at all now, so it is removed rather than loosened.
-        "Cadence/macOS/Views/TasksPanelSupport.swift",
+        // `Cadence/macOS/Views/TasksPanelSupport.swift` was here for a header drop's date write;
+        // [[T-16654]] moved that write to the shared header drop, so both platforms' headings
+        // reach it, and the path followed it.
+        "Cadence/Shared/CadenceTaskHeaderDrop.swift",
         "Cadence/iOS/iOSTaskRowActionViews.swift",
         // `Cadence/iOS/iOSTodaySchedulePanel.swift` was here for the clear-time control on its
         // hour rows. [[T-3081]] made Today's pane draw `iOSCalendarTimelineGrid`, so that control

@@ -113,7 +113,9 @@ struct CadenceListPagesObservedDayTests {
         // row it builds.
         let hosts: [(path: String, needle: String, count: Int)] = [
             ("Cadence/iOS/iOSTaskCollectionPage.swift", "todayKey: observedDay.todayKey,\n", 2),
-            ("Cadence/iOS/iOSTaskCollectionPage.swift", "todayKey: todayKey,\n", 3),
+            // Five since [[T-16654]]: the grouped headings' row drop writes against the page's day
+            // too (`headerTaskDrop` and the closure that calls it), never the clock.
+            ("Cadence/iOS/iOSTaskCollectionPage.swift", "todayKey: todayKey,\n", 5),
             // Five since [[T-14581]]: the board panel takes the page's day for its cards too.
             ("Cadence/iOS/iOSListDetailView.swift", "todayKey: observedDay.todayKey", 5),
             // Split one argument per line since `3bf97ddc` ([[T-16461]]); [[T-16504]].

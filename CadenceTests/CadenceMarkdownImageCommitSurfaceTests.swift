@@ -559,7 +559,10 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // [[T-13792]] makes it 84: the Mac's New Task sheet became the shared capture card, which
         // draws the sheet's refusal itself (`failureNotice:` into `CadenceInlineNotice`), as iOS's
         // `+` sheet always has -- the same move [[T-3171]] made for the iOS task inspector.
-        #expect(total == 84, "the inline notice has \(total) call sites, not the 84 this test was written over")
+        // [[T-16654]] makes it 85, and bare: iOS All Tasks / Inbox name a row drop on a grouped
+        // heading that the store refused above the groups, as the Mac's page does -- the retry is
+        // the drag itself, and the next drop that lands clears it.
+        #expect(total == 85, "the inline notice has \(total) call sites, not the 85 this test was written over")
         #expect(withDismissal == 9, "\(withDismissal) call sites offer a dismissal, not 9")
 
         // And each of the nine is named, so one swapping places with another is still a failure.
