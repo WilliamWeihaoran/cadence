@@ -328,13 +328,17 @@ nonisolated enum DateFormatters {
     /// reference date's year, "Jan 15, 2027" outside it (`absoluteDay`, [[T-6252]]) -- so a
     /// project deadline, the Today widget's due line or a recurrence's "Until" a year out no
     /// longer reads exactly like one next month. `relativeTo` is for a caller that already knows
-    /// what "today" is (the widget's `todayKey`, a drop's `todayKey`); everyone else gets the clock.
-    static func shortDateString(from key: String, relativeTo referenceDate: Date = Date()) -> String {
+    /// what "today" is (the widget's `todayKey`, a drop's `todayKey`); everyone else gets `now()`,
+    /// the same "today" `todayKey()` names under the Debug today override ([[T-16860]]).
+    static func shortDateString(from key: String, relativeTo referenceDate: Date = DateFormatters.now()) -> String {
         guard let date = ymd.date(from: key) else { return key }
         return absoluteDay(date, relativeTo: referenceDate)
     }
 
-    static func dayOffset(from key: String, relativeTo referenceDate: Date = Date()) -> Int? {
+    /// Defaults to `now()`, not `Date()`, so a defaulted caller (the schedule panel's past-start
+    /// check, the composer's selected do-date choice) measures from `todayKey()`'s day under the
+    /// Debug today override ([[T-16860]]). Identical to `Date()` in every Release build.
+    static func dayOffset(from key: String, relativeTo referenceDate: Date = DateFormatters.now()) -> Int? {
         guard let date = ymd.date(from: key) else { return nil }
         let cal = Calendar.current
         let today = cal.startOfDay(for: referenceDate)

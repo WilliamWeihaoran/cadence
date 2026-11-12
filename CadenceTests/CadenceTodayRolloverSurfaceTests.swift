@@ -399,6 +399,33 @@ struct CadenceTodayRolloverSurfaceTests {
         #expect(!formatters.contains("static func relativeDate(from key: String, relativeTo referenceDate: Date = Date()"))
     }
 
+    /// `dayOffset` and `shortDateString` measure from the same overridden "today" as `relativeDate`
+    /// ([[T-16860]]): their defaulted callers -- the schedule panel's past-start check, the
+    /// composer's selected do-date choice, the deadline and "until" labels -- would otherwise read
+    /// the real clock while `todayKey()` names the shifted day.
+    @Test func dayOffsetAndShortDateStringDefaultToTheOverriddenToday() throws {
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
+        let realNow = try #require(calendar.date(from: DateComponents(year: 2026, month: 12, day: 31, hour: 12)))
+        let realDayKey = DateFormatters.dateKey(from: realNow, calendar: calendar)
+        let override = CadenceTodayOverride(offsetDays: 0, center: NotificationCenter())
+        override.advance()
+        let shiftedNow = DateFormatters.now(override: override, realNow: realNow, calendar: calendar)
+        #expect(DateFormatters.dateKey(from: shiftedNow, calendar: calendar) == "2027-01-01", "non-vacuity: the override crossed the year")
+        // What the defaulted callers get once the default is `now()`: the real day is yesterday, and
+        // a date in the real year now spells its year.
+        #expect(DateFormatters.dayOffset(from: realDayKey, relativeTo: shiftedNow) == -1)
+        #expect(DateFormatters.shortDateString(from: realDayKey, relativeTo: shiftedNow) != DateFormatters.shortDateString(from: realDayKey, relativeTo: realNow))
+
+        let formatters = try strippingComments(sourceFile("Cadence/Shared/DateFormatters.swift"))
+        for signature in [
+            "static func dayOffset(from key: String, relativeTo referenceDate: Date = ",
+            "static func shortDateString(from key: String, relativeTo referenceDate: Date = ",
+        ] {
+            #expect(formatters.components(separatedBy: signature + "DateFormatters.now())").count - 1 == 1, "\(signature) defaults to now()")
+            #expect(!formatters.contains(signature + "Date()"), "\(signature) still defaults to the real clock")
+        }
+    }
+
     // MARK: - The list each row names (T-16283)
 
     /// Each row names its list as Today's group heading names it: a blank-named area or project
