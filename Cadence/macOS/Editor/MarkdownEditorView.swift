@@ -568,13 +568,12 @@ struct MarkdownEditorView: NSViewRepresentable {
         guard didUpdateText || didUpdateRenderedContent else { return }
 
         if didUpdateText {
-            let sel = textView.selectedRange()
+            // [[T-17181]]: one undoable edit once the note is open, never a bare `string =`, which
+            // left the undo stack describing text that is no longer there.
             MarkdownEditorScrollSupport.preservingScrollPosition(in: scrollView) {
-                textView.string = displayText
+                context.coordinator.applyExternalText(displayText, to: textView)
                 MarkdownStylist.apply(to: textView)
             }
-            let safe = NSRange(location: min(sel.location, (displayText as NSString).length), length: 0)
-            textView.setSelectedRange(safe)
         } else {
             MarkdownEditorScrollSupport.preservingScrollPosition(in: scrollView) {
                 MarkdownStylist.apply(to: textView)

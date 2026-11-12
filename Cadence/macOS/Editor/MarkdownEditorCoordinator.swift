@@ -17,12 +17,59 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
     private var referenceUpdateIsScheduled = false
     private var tagUpdateIsScheduled = false
 
+    /// [[T-17182]]: this editor's own undo history, handed to its text view through
+    /// `undoManager(for:)`.
+    ///
+    /// Without it an `NSTextView` uses the window's manager, which outlives the editor. Every host
+    /// rebuilds the editor per note (`.id(note.id)`), so opening another note left the previous
+    /// note's typing on the window's stack: Edit read "Undo Typing" over a note nobody had typed
+    /// in, and Cmd+Z there reverted the detached text view of the note just left — measured, the
+    /// press was consumed and the open note did not change. One manager per coordinator scopes
+    /// the history to the note it was recorded in and ends with it.
+    let undoManager = UndoManager()
+
     init(parent: MarkdownEditorView) {
         self.parent = parent
     }
 
     func update(parent: MarkdownEditorView) {
         self.parent = parent
+    }
+
+    func undoManager(for view: NSTextView) -> UndoManager? {
+        undoManager
+    }
+
+    /// Writes `displayText` into `textView` for `updateNSView` ([[T-17181]]) as one undoable edit.
+    ///
+    /// Except while it is the note *loading*: every host starts its editor on `""` and fills it
+    /// from the note on appear, and that write must not be a step Cmd+Z can take back to blank. An
+    /// empty view with no history is exactly that case, and with nothing on this editor's stack
+    /// ([[T-17182]]) there is no record the wholesale write could leave stale. An empty view that
+    /// *has* history (everything typed, then deleted) takes the undoable edit, so undoing back
+    /// through it lands every older record on the text it was recorded against. The edit's own
+    /// `textDidChange` is skipped: the binding already holds this text, and the typing transforms
+    /// and pickers answer keystrokes, not a body handed in from outside.
+    func applyExternalText(_ displayText: String, to textView: CadenceTextView) {
+        if textView.string.isEmpty, !undoManager.canUndo, !undoManager.canRedo {
+            Self.assignWholesale(displayText, to: textView)
+            return
+        }
+        isApplyingEditorMutations = true
+        defer { isApplyingEditorMutations = false }
+        if !textView.replaceMarkdownRegisteringUndo(with: displayText), textView.string != displayText {
+            // A refused edit still has to show the note's text; it just cannot be undone.
+            Self.assignWholesale(displayText, to: textView)
+        }
+    }
+
+    /// The pre-T-17181 write, kept for the load: the caret stays where it was, clamped.
+    private static func assignWholesale(_ displayText: String, to textView: NSTextView) {
+        let selection = textView.selectedRange()
+        textView.string = displayText
+        textView.setSelectedRange(
+            NSRange(location: min(selection.location, (displayText as NSString).length), length: 0)
+        )
     }
 
     func notifyTextViewIfNeeded(_ textView: CadenceTextView, onChange: @escaping (CadenceTextView) -> Void) {

@@ -497,6 +497,39 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         )
     }
 
+    /// [[T-17181]]: a body rewritten from outside the text view — linking an unlinked mention,
+    /// applying a template, an external write landing in the open note — as one undoable edit.
+    ///
+    /// `MarkdownEditorView.updateNSView` used to assign `string` wholesale. That registers no undo
+    /// *and keeps every record already on the stack*, each of which describes the old text by
+    /// offset — so Cmd+Z after "Link" replayed the user's last typing against text that had shifted
+    /// underneath it: measured, `"Call Sam today now"` typed, `[[Sam]] ` prepended, one undo gave
+    /// `"[[Sam]] Call Soday now"`. Going through `shouldChangeText` / `replaceCharacters` /
+    /// `didChangeText` makes the rewrite its own step, so the first Cmd+Z takes the rewrite back and
+    /// the second undoes the typing against the text it was recorded on.
+    ///
+    /// Returns `false` when nothing changed or the view refused the edit.
+    @discardableResult
+    func replaceMarkdownRegisteringUndo(with updated: String) -> Bool {
+        guard let textStorage else { return false }
+        let current = string as NSString
+        let target = updated as NSString
+        guard !current.isEqual(to: updated) else { return false }
+
+        let edit = MarkdownTextEditDiff.minimalEdit(from: current, to: target)
+        let replacement = target.substring(with: edit.replacementRange)
+        breakUndoCoalescing()
+        guard shouldChangeText(in: edit.range, replacementString: replacement) else { return false }
+
+        let selection = selectedRange()
+        textStorage.replaceCharacters(in: edit.range, with: replacement)
+        didChangeText()
+        setSelectedRange(
+            MarkdownTextEditDiff.selection(selection, after: edit, in: textStorage.length)
+        )
+        return true
+    }
+
     func deleteMarkdownImageForCommand(backward: Bool) -> Bool {
         if let selectedMarkdownImageID,
            let range = markdownImageRange(for: selectedMarkdownImageID) {
