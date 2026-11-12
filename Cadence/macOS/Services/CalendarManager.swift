@@ -662,14 +662,28 @@ final class CalendarManager {
 
     // MARK: - Delete Event
 
+    /// Whether EventKit will accept writes to this event — `iOSCalendarManager.canModify`'s rule,
+    /// stated once more here because the two managers are separate types ([[T-17388]]).
+    /// Birthdays, Holidays and subscribed feeds are visible but read-only.
+    func canModify(_ event: EKEvent) -> Bool {
+        event.calendar?.allowsContentModifications ?? false
+    }
+
     /// Delete an EKEvent directly (used from the event edit popover).
+    ///
+    /// **[[T-17388]]**, aligned with `iOSCalendarManager.deleteEvent(_:span:)` under [[T-8201]]:
+    /// a read-only calendar is refused before EventKit is asked, with the shared
+    /// `noWritableCalendar` sentence rather than EventKit's own localized error, and a landed
+    /// remove bumps `storeVersion` at once instead of waiting for `EKEventStoreChanged`.
     @discardableResult
     func deleteEvent(_ event: EKEvent, scope: CalendarRecurrenceEditScope = .thisOccurrence) -> CalendarWriteFailure? {
         guard isAuthorized else { return record(.notAuthorized) }
         // [[T-3031]]: the delete sink refuses on a disarmed launch even past the flag.
         guard !isEventKitDisarmed else { return record(.notAuthorized) }
+        guard canModify(event) else { return record(.noWritableCalendar) }
         do {
             try store.remove(event, span: scope.eventSpan)
+            storeVersion += 1
             return nil
         } catch {
             return record(.saveFailed(error.localizedDescription))
@@ -696,6 +710,8 @@ final class CalendarManager {
         }
         do {
             try store.save(event, span: span)
+            // [[T-17388]]: a landed write refreshes the views now, as iOS's writes do.
+            storeVersion += 1
             return nil
         } catch {
             event.reset()

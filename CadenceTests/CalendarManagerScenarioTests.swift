@@ -173,6 +173,34 @@ struct CalendarManagerScenarioTests {
         manager.lastWriteFailure = nil
     }
 
+    /// **[[T-17388]]**: the desktop delete refuses a read-only event before it asks EventKit, with
+    /// the shared `noWritableCalendar` cause iOS gives ([[T-8201]]), and neither that refusal nor a
+    /// save EventKit rejects bumps `storeVersion` — only a landed write may. The landed-write bump
+    /// itself cannot be reached here (EventKit refuses every foreign-store event, and the owner's
+    /// calendars are off limits); `CadenceEventKitPlatformParityTests` pins it by source.
+    @Test func aReadOnlyDeleteIsRefusedBeforeEventKitAndARefusedWriteDoesNotBumpTheStoreVersion() {
+        let manager = makeManager(authorized: true)
+        // A foreign-store event has no calendar, so `canModify` answers false for it.
+        let event = EKEvent(eventStore: EKEventStore())
+        #expect(event.calendar == nil, "precondition: the scratch event is filed in no calendar")
+        #expect(!manager.canModify(event))
+        let before = manager.storeVersion
+
+        manager.lastWriteFailure = nil
+        #expect(manager.deleteEvent(event) == .noWritableCalendar)
+        #expect(manager.deleteEvent(event, scope: .futureOccurrences) == .noWritableCalendar)
+        #expect(manager.lastWriteFailure == .noWritableCalendar)
+
+        let start = Date()
+        let failure = manager.updateEvent(event, title: "Rejected", startDate: start, endDate: start.addingTimeInterval(1800))
+        guard case .saveFailed = failure else {
+            Issue.record("expected EventKit to refuse the foreign event, got \(String(describing: failure))")
+            return
+        }
+        #expect(manager.storeVersion == before, "a refused write bumped storeVersion")
+        manager.lastWriteFailure = nil
+    }
+
     @Test func updateEventRejectsInvertedTimeRangeWithoutMutatingTheEvent() {
         let manager = makeManager(authorized: true)
 

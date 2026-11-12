@@ -168,12 +168,16 @@ struct CadenceEventKitLaunchGateTests {
         #expect(disarmed.lastWriteFailure == .notAuthorized)
     }
 
-    /// The control for the test above: the same calls on an armed, seeded manager do reach
-    /// EventKit (which refuses the foreign event), so `.notAuthorized` there is the gate's answer.
+    /// The control for the test above: the same calls on an armed, seeded manager get past the
+    /// gate, so `.notAuthorized` there is the gate's answer. The update reaches EventKit (which
+    /// refuses the foreign event); the delete now stops one step earlier, at its read-only guard,
+    /// because a foreign event is filed in no calendar ([[T-17388]]).
     @Test func theSameWritesOnAnArmedSeededManagerReachEventKit() {
         let armed = makeManager(environment: [:], authorized: true)
         let foreignEvent = EKEvent(eventStore: EKEventStore())
-        let answer = armed.deleteEvent(foreignEvent)
+        #expect(armed.deleteEvent(foreignEvent) == .noWritableCalendar)
+        let start = Date()
+        let answer = armed.updateEvent(foreignEvent, title: "B", startDate: start, endDate: start.addingTimeInterval(3600))
         #expect(answer != nil)
         #expect(answer != .notAuthorized)
     }

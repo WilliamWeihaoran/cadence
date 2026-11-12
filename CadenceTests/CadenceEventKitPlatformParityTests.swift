@@ -912,4 +912,39 @@ struct CadenceEventKitPlatformParityTests {
         #expect(stripped.contains("let b = 2"))
         #expect(!stripped.contains("not code"))
     }
+
+    // MARK: - T-17388: the desktop writes refresh the views at once, as iOS's do
+
+    /// Both managers bump `storeVersion` right after a landed EventKit write and only then
+    /// (inside the `do`, between the `try` and `return nil`), and both deletes refuse a read-only
+    /// event through `canModify` before `store.remove` ([[T-8201]]). The success path cannot be
+    /// driven from a unit test — EventKit refuses every foreign-store event and the owner's
+    /// calendars are off limits — so this is pinned by source; the refusal half is exercised in
+    /// `CalendarManagerScenarioTests`.
+    @Test func bothManagersBumpTheStoreVersionAfterALandedWriteAndGuardTheDelete() throws {
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Services/CalendarManager.swift")
+        )
+        let ios = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarManager.swift")
+        )
+        let landed = #"do \{\s*try store\.(?:save|remove)\([^)]*\)\s*storeVersion \+= 1\s*return nil"#
+
+        let macDelete = try #require(CadenceSourceScan.declarationBody("func deleteEvent(", in: mac))
+        let macSave = try #require(CadenceSourceScan.declarationBody("private func save(", in: mac))
+        #expect(CadenceSourceScan.matchCount(landed, in: macDelete) == 1, "the desktop delete does not bump storeVersion after a landed remove")
+        #expect(CadenceSourceScan.matchCount(landed, in: macSave) == 1, "the desktop save does not bump storeVersion after a landed save")
+        for (name, body) in [("delete", macDelete), ("save", macSave)] {
+            #expect(CadenceSourceScan.matchCount(#"storeVersion \+= 1"#, in: body) == 1, "the desktop \(name) bumps outside the landed branch")
+        }
+        let guardRange = try #require(macDelete.range(of: "guard canModify(event) else { return record(.noWritableCalendar) }"), "the desktop delete has no read-only guard")
+        let removeRange = try #require(macDelete.range(of: "try store.remove("))
+        #expect(guardRange.lowerBound < removeRange.lowerBound, "the desktop delete asks EventKit before its read-only guard")
+        #expect(mac.contains("func canModify(_ event: EKEvent) -> Bool"))
+
+        // The iOS side this mirrors, so a drift on either half reads here.
+        let iosDelete = try #require(CadenceSourceScan.declarationBody("func deleteEvent(", in: ios))
+        #expect(CadenceSourceScan.matchCount(landed, in: iosDelete) == 1, "the iOS delete no longer bumps after a landed remove")
+        #expect(iosDelete.contains("guard canModify(event) else { return .noWritableCalendar }"))
+    }
 }
