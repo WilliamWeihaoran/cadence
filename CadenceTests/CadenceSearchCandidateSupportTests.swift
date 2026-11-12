@@ -228,6 +228,83 @@ struct CadenceSearchCandidateSupportTests {
         #expect(!inboxHits.contains("task-\(fixture.active.id.uuidString)"))
     }
 
+    /// **[[T-16940]]: a task in a blank-named list is named for that list, not for the Inbox.**
+    /// The label used to fall back to "Inbox" whenever `containerName` was blank, so Cmd+K's and
+    /// iOS Search's rows called such a task "Inbox" while its list chip ([[T-11892]]) and the
+    /// list's own search row say "Untitled Area" / "Untitled Project".
+    @Test func aTaskInABlankNamedListIsNamedForItsListNotTheInbox() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let blankArea = Area(name: "   ")
+        let blankProject = Project(name: "")
+        let inAreaTask = AppTask(title: "Water the plants")
+        inAreaTask.area = blankArea
+        inAreaTask.sectionName = "Billing"
+        let inProjectTask = AppTask(title: "Sketch the deck")
+        inProjectTask.project = blankProject
+        inProjectTask.sectionName = "Design"
+        let inboxTask = AppTask(title: "Call the bank")
+        modelContext.insert(blankArea)
+        modelContext.insert(blankProject)
+        for task in [inAreaTask, inProjectTask, inboxTask] { modelContext.insert(task) }
+        try modelContext.save()
+
+        #expect(CadenceTaskSearchSupport.containerLabel(for: inAreaTask) == CadenceTitleNormalization.defaultAreaName)
+        #expect(CadenceTaskSearchSupport.containerLabel(for: inProjectTask) == CadenceTitleNormalization.defaultProjectName)
+        #expect(CadenceTaskSearchSupport.containerLabel(for: inboxTask) == "Inbox")
+        // The label a list chip draws for the same task ([[T-11892]]): one rule, two spellings of it.
+        #expect(CadenceTaskSearchSupport.containerLabel(for: inAreaTask) == CadenceBoardCardMetadata.listTitle(for: inAreaTask))
+        #expect(CadenceTaskSearchSupport.containerLabel(for: inProjectTask) == CadenceBoardCardMetadata.listTitle(for: inProjectTask))
+
+        // iOS Search's subtitle: a blank-named list is still a list, so its section is named --
+        // the empty name too, which an emptiness guard on `containerName` read as the Inbox.
+        #expect(CadenceTaskSearchSupport.resultSubtitle(for: inAreaTask) == "Untitled Area / Billing")
+        #expect(CadenceTaskSearchSupport.resultSubtitle(for: inProjectTask) == "Untitled Project / Design")
+
+        // Cmd+K's row leads with the same name.
+        let row = try #require(GlobalSearchIndexSupport.taskResults(tasks: [inAreaTask], query: "plants").first)
+        #expect(row.subtitle.hasPrefix("Untitled Area"))
+
+        // `inbox` finds the Inbox task only; `untitled` finds the two filed ones.
+        let tasks = [inAreaTask, inProjectTask, inboxTask]
+        #expect(sharedTaskIdentities(tasks, query: "inbox") == ["task-\(inboxTask.id.uuidString)"])
+        #expect(sharedTaskIdentities(tasks, query: "untitled")
+            == ["task-\(inAreaTask.id.uuidString)", "task-\(inProjectTask.id.uuidString)"])
+    }
+
+    /// **[[T-16942]]: an untitled task or list is found by, and ranked on, the title its row
+    /// draws.** The raw blank title was the title field, so `untitled` missed a row reading
+    /// "Untitled Task", and `CadenceSearchMatcher` -- which drops empty fields before reading
+    /// `fields[0]` as the title -- scored the task's list name as its title: a blank task in
+    /// "Operations" outranked a task actually titled "Operations review" for `operations`.
+    @Test func anUntitledTaskOrListIsFoundByTheTitleItsRowDraws() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let area = Area(name: "Operations")
+        let blankArea = Area(name: " ")
+        let blankProject = Project(name: "")
+        let untitled = AppTask(title: "  ")
+        untitled.area = area
+        let titled = AppTask(title: "Operations review")
+        modelContext.insert(area)
+        modelContext.insert(blankArea)
+        modelContext.insert(blankProject)
+        for task in [untitled, titled] { modelContext.insert(task) }
+        try modelContext.save()
+
+        #expect(CadenceTaskSearchSupport.searchFields(for: untitled).first == TaskTitleSupport.defaultDisplayTitle)
+        #expect(CadenceTaskSearchSupport.matchScore(query: "untitled", task: untitled) != nil)
+        #expect(CadenceTaskSearchSupport.matchScore(query: "untitled", task: titled) == nil)
+
+        let ranked = GlobalSearchIndexSupport.taskResults(tasks: [untitled, titled], query: "operations")
+        #expect(ranked.map(\.destination) == [.task(titled.id), .task(untitled.id)],
+                "the task titled for the query ranks above the blank one filed in a list of that name")
+
+        #expect(CadenceListSearchSupport.matchScore(query: "untitled", area: blankArea) != nil)
+        #expect(CadenceListSearchSupport.matchScore(query: "untitled", project: blankProject) != nil)
+        #expect(CadenceListSearchSupport.matchScore(query: "untitled", area: area) == nil)
+    }
+
     // MARK: - T-5880: the default section is never named in a result subtitle
 
     @Test func aTaskResultSubtitleNamesOnlyASectionTheUserNamed() throws {

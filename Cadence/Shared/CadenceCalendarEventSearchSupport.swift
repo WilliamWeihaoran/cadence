@@ -22,9 +22,13 @@ import Foundation
 nonisolated enum CadenceCalendarEventSearchSupport {
     /// Title first: `CadenceSearchMatcher` scores the first field as the title and weights a
     /// prefix hit there far above one in the body.
+    ///
+    /// [[T-16942]]: the title the row draws ("Untitled Event" for a blank one), as `rankingFields`
+    /// already scores -- the raw title let a blank event's notes stand in as its title, and
+    /// `untitled` did not find the row that says it.
     static func searchFields(for event: EKEvent) -> [String] {
         [
-            event.title ?? "",
+            CadenceEventTitleSupport.displayTitle(event.title),
             event.notes ?? "",
             event.calendar?.title ?? ""
         ]

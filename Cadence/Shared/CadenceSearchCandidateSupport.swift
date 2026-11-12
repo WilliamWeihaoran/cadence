@@ -116,8 +116,21 @@ nonisolated enum CadenceTaskSearchSupport {
 
     /// The container a row names, with the Inbox spelled out rather than left blank: a task with
     /// no list is findable by typing `inbox` on both surfaces.
+    ///
+    /// **[[T-16940]]: "Inbox" only for a task in no list.** This read `display(task.containerName,
+    /// fallback: "Inbox")`, so a task filed in a blank-named area or project was called "Inbox" in
+    /// Cmd+K's and iOS Search's task rows (and answered the query `inbox`), while its list chip,
+    /// the sidebar and the list's own search row say "Untitled Area" / "Untitled Project" --
+    /// `CadenceBoardCardMetadata.listTitle(for:)`'s rule ([[T-11892]]), spelled here because that
+    /// type is main-actor and this enum is not. Project before area, as `containerName` reads.
     static func containerLabel(for task: AppTask) -> String {
-        CadenceTitleNormalization.display(task.containerName, fallback: "Inbox")
+        if let project = task.project {
+            return CadenceTitleNormalization.display(project.name, fallback: CadenceTitleNormalization.defaultProjectName)
+        }
+        if let area = task.area {
+            return CadenceTitleNormalization.display(area.name, fallback: CadenceTitleNormalization.defaultAreaName)
+        }
+        return "Inbox"
     }
 
     /// The subtitle a task result draws on iOS Search: the container, plus ` / <section>` only
@@ -126,7 +139,7 @@ nonisolated enum CadenceTaskSearchSupport {
     /// "Work", not "Work / Default". An Inbox task has nowhere to be sectioned and reads "Inbox".
     static func resultSubtitle(for task: AppTask) -> String {
         let container = containerLabel(for: task)
-        guard !task.containerName.isEmpty else { return container }
+        guard task.project != nil || task.area != nil else { return container }
         let section = task.resolvedSectionName
         guard section.caseInsensitiveCompare(TaskSectionDefaults.defaultName) != .orderedSame else {
             return container
@@ -137,9 +150,14 @@ nonisolated enum CadenceTaskSearchSupport {
     /// The searchable fields, in matcher order. `fields[0]` is the title and is weighted highest;
     /// everything after it is body text, so the grouping below is about what exists, not about
     /// what ranks.
+    ///
+    /// **[[T-16942]]: the title field is the title the row draws** -- "Untitled Task" for a blank
+    /// one, as the Focus picker already matches ([[T-13871]]). The raw title was blank, so
+    /// `untitled` did not find the row that says it, and `CadenceSearchMatcher` drops empty fields
+    /// before taking `fields[0]` as the title, so the task's LIST name was scored as its title.
     static func searchFields(for task: AppTask) -> [String] {
         [
-            task.title,
+            TaskTitleSupport.displayTitle(task.title),
             containerLabel(for: task),
             task.context?.name ?? "",
             task.notes,
@@ -302,9 +320,12 @@ nonisolated enum CadenceListSearchSupport {
     /// pre-joined "context • area" summary and iOS fed it separate fields; the words were the same
     /// but the *title* field is weighted differently from the body, so identical text could score
     /// differently on the two platforms.
+    ///
+    /// [[T-16942]]: the name field is `resultTitle`, the name the row draws, for the reason
+    /// `CadenceTaskSearchSupport.searchFields` gives.
     static func searchFields(for area: Area) -> [String] {
         [
-            area.name,
+            resultTitle(for: area),
             area.desc,
             area.context?.name ?? "",
             lifecycle(of: area).aliases
@@ -313,7 +334,7 @@ nonisolated enum CadenceListSearchSupport {
 
     static func searchFields(for project: Project) -> [String] {
         [
-            project.name,
+            resultTitle(for: project),
             project.desc,
             project.context?.name ?? "",
             project.area?.name ?? "",

@@ -100,6 +100,16 @@ struct CadenceCalendarEventSearchSupportTests {
         #expect(CadenceCalendarEventSearchSupport.matches(query: "roadmap", event: event))
     }
 
+    /// [[T-16942]]: a blank event is searched under the title its row draws, "Untitled Event", so
+    /// `untitled` finds it and its notes are not scored as its title.
+    @Test func aBlankEventIsSearchedUnderTheTitleItsRowDraws() {
+        let event = event(title: "  ", notes: "bring the roadmap", start: now.addingTimeInterval(3_600))
+
+        #expect(CadenceCalendarEventSearchSupport.searchFields(for: event)
+            == [CadenceEventTitleSupport.defaultDisplayTitle, "bring the roadmap", ""])
+        #expect(CadenceCalendarEventSearchSupport.matches(query: "untitled", event: event))
+    }
+
     /// [[T-12803]]: the one list both platforms RANK a matched event on -- the drawn title, the
     /// gate's notes and calendar, then the day-and-time line the caller draws. iOS Search used to
     /// hand-build it in the view and Cmd+K ranked on the row's two lines instead.
