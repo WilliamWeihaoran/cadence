@@ -228,7 +228,9 @@ struct iOSMarkdownEditor: UIViewRepresentable {
 
         if textView.text != text {
             let selection = textView.selectedRange
-            context.coordinator.applyMarkdownStyle(to: textView, text: text)
+            // [[T-17184]]: one undoable edit once the note is open, never a bare restyle into new
+            // text, which left the undo stack describing text that is no longer there.
+            context.coordinator.applyRewrite(text, to: textView)
             textView.selectedRange = context.coordinator.clamped(selection, in: textView.textStorage)
             context.coordinator.publishSelectedRange(from: textView)
         } else {
@@ -339,6 +341,43 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             return true
         }
 
+        /// Set across `applyRewrite`'s own write, so the delegate callback it raises does not run
+        /// the typing transforms, renumber or publish a body that came from the host or from a
+        /// command that has already published it.
+        private var isApplyingRewrite = false
+
+        /// Puts a rewritten body into the text view **as one undoable edit** ([[T-17184]], the iOS
+        /// twin of the Mac's [[T-17181]]).
+        ///
+        /// `updateUIView`, the hardware-keyboard format commands, list indentation and the typing
+        /// transforms used to hand the new text straight to `applyMarkdownStyle`, which replaces the
+        /// whole text storage. That registers no undo *and keeps every record already on the
+        /// stack*, each describing the old text by offset — measured on `Cadence-iPhone15`:
+        /// `"Call Sam today"`, type `" now"`, the host prepends `[[Sam]] `, and undo gave
+        /// `"[[Sam]] Call Soday now"`, exactly the Mac defect. The rewrite now goes through
+        /// `replaceProgrammatically` as the smallest single write, so the first undo takes the
+        /// rewrite back and the next one the typing; the restyle after it is over the same text.
+        ///
+        /// Except while it is the note *loading*: an empty view with nothing on its undo stack is
+        /// filled wholesale, so undo straight after opening a note cannot blank it. Same rule as the
+        /// Mac's `MarkdownEditorCoordinator.applyExternalText`; no hardware difference applies.
+        /// While undo or redo is replaying, the write is not registered either way.
+        func applyRewrite(_ text: String, to textView: UITextView) {
+            let current = textView.text ?? ""
+            let manager = textView.undoManager
+            let isLoad = current.isEmpty && manager?.canUndo != true && manager?.canRedo != true
+            let isReplaying = manager?.isUndoing == true || manager?.isRedoing == true
+            if !isLoad, !isReplaying,
+               let edit = MarkdownProgrammaticEditSupport.minimalEdit(from: current, to: text) {
+                isApplyingRewrite = true
+                defer { isApplyingRewrite = false }
+                replaceProgrammatically(edit.range, with: edit.replacement, in: textView)
+            }
+            // Restyles the text just written, or — for the load, a replay or a refused write —
+            // shows the body wholesale, as before.
+            applyMarkdownStyle(to: textView, text: text)
+        }
+
         /// Brings the text view's first-responder state in line with the host's `isFocused`, **on
         /// the next main-queue turn rather than inside the SwiftUI graph update that asked for it**.
         ///
@@ -398,7 +437,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         }
 
         func textViewDidChange(_ textView: UITextView) {
-            guard !isApplyingStyle, !isApplyingTableEdit, !isRenumberingOrderedList else { return }
+            guard !isApplyingStyle, !isApplyingTableEdit, !isRenumberingOrderedList, !isApplyingRewrite else { return }
             var updatedText = textView.text ?? ""
             if applyTypingTransformIfNeeded(to: textView, text: updatedText) {
                 return
@@ -676,7 +715,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                 selection: textView.selectedRange
             )
             parent.text = mutation.text
-            applyMarkdownStyle(to: textView, text: mutation.text)
+            applyRewrite(mutation.text, to: textView)
             textView.selectedRange = clamped(mutation.selection, in: textView.textStorage)
             publishSelectedRange(from: textView)
             if !textView.isFirstResponder {
@@ -692,7 +731,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             ) else { return }
 
             parent.text = result.text
-            applyMarkdownStyle(to: textView, text: result.text)
+            applyRewrite(result.text, to: textView)
             textView.selectedRange = clamped(result.selection, in: textView.textStorage)
             publishSelectedRange(from: textView)
             if !textView.isFirstResponder {
@@ -752,7 +791,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             }
 
             parent.text = mutation.text
-            applyMarkdownStyle(to: textView, text: mutation.text)
+            applyRewrite(mutation.text, to: textView)
             textView.selectedRange = clamped(mutation.selection, in: textView.textStorage)
             publishSelectedRange(from: textView)
             if !textView.isFirstResponder {
