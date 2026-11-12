@@ -92,11 +92,13 @@ struct iOSListDetailView: View {
     }
 
     private var subtitle: String {
+        // [[T-17141]]: blank parent names dropped, as the Lists page and Search drop them, so the
+        // eyebrow never reads "Work / " or a line of spaces; empty falls back to the kind below.
         if let area {
-            return area.context?.name ?? "Area"
+            return CadenceListSearchSupport.containerNames(for: area).first ?? "Area"
         }
         if let project {
-            return [project.context?.name, project.area?.name].compactMap { $0 }.joined(separator: " / ")
+            return CadenceListSearchSupport.containerNames(for: project).joined(separator: " / ")
         }
         return ""
     }

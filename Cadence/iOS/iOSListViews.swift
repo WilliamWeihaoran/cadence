@@ -201,7 +201,7 @@ struct iOSListsView: View {
         NavigationLink(value: iOSListRoute.area(area.id)) {
             iOSListPickerRow(
                 title: area.name,
-                subtitle: area.context?.name,
+                subtitle: CadenceListSearchSupport.containerNames(for: area).first,
                 icon: area.icon,
                 colorHex: area.colorHex,
                 count: CadenceTaskQuerySupport.openTaskCount(for: area)
@@ -286,7 +286,7 @@ struct iOSListsView: View {
     private func archivedAreaRow(_ area: Area) -> some View {
         iOSArchivedListRow(
             title: area.name,
-            subtitle: area.context?.name,
+            subtitle: CadenceListSearchSupport.containerNames(for: area).first,
             icon: area.icon,
             colorHex: area.colorHex
         ) {
@@ -369,8 +369,10 @@ struct iOSListsView: View {
         }
     }
 
+    /// [[T-17141]]: through the search rows' blank-dropping walk ([[T-8524]]), so a project in an
+    /// area named "" reads "Work", not "Work / ", here as it already did in Search.
     private func projectSubtitle(_ project: Project) -> String {
-        [project.context?.name, project.area?.name].compactMap { $0 }.joined(separator: " / ")
+        CadenceListSearchSupport.containerNames(for: project).joined(separator: " / ")
     }
 
     @ViewBuilder

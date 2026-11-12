@@ -1114,6 +1114,28 @@ struct CadenceSearchCandidateSupportTests {
         #expect(CadenceListSearchSupport.containerNames(for: bare).isEmpty)
     }
 
+    /// **[[T-17141]].** The area twin drops a blank context and trims a padded one, and the iOS
+    /// Lists page, its iPad pane and the list header take their subtitles from the two walks --
+    /// never the raw `context?.name` (a line of spaces) or the `compactMap { $0 }` join that ended
+    /// "Work / " on a project in a blank-named area. The iOS files are source-scanned: the test
+    /// bundle is macOS-only.
+    @Test func theIOSListsPageAndListHeaderDropBlankParentNames() throws {
+        #expect(CadenceListSearchSupport.containerNames(for: Area(name: "Ops", context: Context(name: "   "))).isEmpty)
+        #expect(CadenceListSearchSupport.containerNames(for: Area(name: "Ops", context: Context(name: " Work "))) == ["Work"])
+        #expect(CadenceListSearchSupport.containerNames(for: Area(name: "Ops")).isEmpty)
+
+        for path in ["Cadence/iOS/iOSListViews.swift", "Cadence/iOS/iOSListsRegularPane.swift", "Cadence/iOS/iOSListDetailView.swift"] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path)).filter { !$0.isWhitespace }
+            #expect(!code.contains("area.context?.name"), "\(path) reads an area's context name raw")
+            #expect(!code.contains("[project.context?.name,project.area?.name].compactMap{$0}"),
+                    "\(path) joins a project's parents without dropping a blank one")
+        }
+        let page = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListViews.swift"))
+            .filter { !$0.isWhitespace }
+        #expect(page.contains("CadenceListSearchSupport.containerNames(for:project).joined(separator:\"/\")"))
+        #expect(page.contains("subtitle:CadenceListSearchSupport.containerNames(for:area).first"))
+    }
+
     /// **[[T-8525]], [[T-8526]].** The count is the open count in `openTaskLabel`'s words, on
     /// every row; the lifecycle word follows it only on a finished list.
     @Test func aListRowCountsActiveTasksAndNamesOnlyAFinishedLifecycle() {

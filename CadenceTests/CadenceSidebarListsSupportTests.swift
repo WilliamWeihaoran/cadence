@@ -47,6 +47,32 @@ struct CadenceSidebarListsSupportTests {
         #expect(sections[0].contextID == work.id)
     }
 
+    /// [[T-17140]]: a blank-named context's header says "Untitled Context", as Settings > Contexts
+    /// and the context pickers do, on every sidebar -- the flattened overload (iPad, iPhone Tasks
+    /// index) and the generic one the Mac calls. A padded name is trimmed; a real one is kept.
+    @Test func aBlankNamedContextsHeaderSaysUntitledContextRatherThanNothing() {
+        let blank = CadenceSidebarLists.ContextRef(id: UUID(), name: "")
+        let spaces = CadenceSidebarLists.ContextRef(id: UUID(), name: "   ")
+        let padded = CadenceSidebarLists.ContextRef(id: UUID(), name: "  Work  ")
+        let untitled = CadenceTitleNormalization.defaultContextName
+
+        let touch = CadenceSidebarLists.sections(
+            contexts: [blank, spaces, padded],
+            items: [item("Clients", context: blank)]
+        )
+        #expect(touch.map(\.title) == [untitled, untitled, "Work"],
+                "a blank-named context drew an empty sidebar header")
+
+        let mac = CadenceSidebarLists.sections(
+            contexts: [blank, padded],
+            elements: [item("Clients", context: blank), item("Ops", context: padded)],
+            keepingEmptyContexts: true,
+            item: { $0 }
+        )
+        #expect(mac.map(\.title) == [untitled, "Work"])
+        #expect(mac.first?.elements.map(\.name) == ["Clients"])
+    }
+
     /// [[T-14793]]: the flattened overload is what the iPad sidebar and the iPhone Tasks index
     /// call, and since [[T-3073]] every header there carries the `+` that opens the list editor
     /// seeded with that context. A context with no lists keeps its section, as on the Mac, or a

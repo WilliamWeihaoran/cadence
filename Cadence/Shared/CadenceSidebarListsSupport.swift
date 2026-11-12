@@ -218,7 +218,7 @@ nonisolated enum CadenceSidebarLists {
         var sections = contexts.compactMap { context -> ElementSection<Element>? in
             let owned = byContext[context.id] ?? []
             guard keepingEmptyContexts || !owned.isEmpty else { return nil }
-            return section(context.id, context.name, owned)
+            return section(context.id, contextTitle(context.name), owned)
         }
 
         if !ungrouped.isEmpty {
@@ -226,6 +226,15 @@ nonisolated enum CadenceSidebarLists {
         }
 
         return sections
+    }
+
+    /// **[[T-17140]].** A context section's header: the context's name, trimmed, or "Untitled
+    /// Context" when it is blank. It was `context.name` as stored, so a context named "" or "  "
+    /// (by MCP, an import or another device) drew an empty eyebrow over its lists on the Mac and
+    /// iPad sidebars and the iPhone Tasks index, and its `+` was spoken "Add list to " -- while
+    /// Settings > Contexts and every context picker already said "Untitled Context" ([[T-17101]]).
+    static func contextTitle(_ name: String) -> String {
+        CadenceTitleNormalization.display(name, fallback: CadenceTitleNormalization.defaultContextName)
     }
 
     /// One context's rows.

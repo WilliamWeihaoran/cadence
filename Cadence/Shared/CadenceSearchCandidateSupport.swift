@@ -370,6 +370,15 @@ nonisolated enum CadenceListSearchSupport {
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
     }
+
+    /// The area twin: its context's name, trimmed, or nothing when it has none or it is blank.
+    /// [[T-17141]]: the iOS Lists page and list header read `area.context?.name` raw, so an area
+    /// under a context named "  " drew a line of spaces where its subtitle goes.
+    static func containerNames(for area: Area) -> [String] {
+        [area.context?.name]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
 }
 
 /// The facts an Area or Project search row shows, in the order both rows show them ([[T-8526]]).
@@ -415,7 +424,7 @@ extension CadenceListSearchSupport {
     @MainActor
     static func rowFacts(for area: Area) -> CadenceListSearchRowFacts {
         rowFacts(
-            containers: [area.context?.name].compactMap { $0 },
+            containers: containerNames(for: area),
             lifecycle: lifecycle(of: area),
             openTaskCount: CadenceTaskQuerySupport.openTaskCount(for: area)
         )

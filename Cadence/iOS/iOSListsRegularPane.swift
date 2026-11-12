@@ -72,7 +72,7 @@ struct iOSListsRegularPane: View {
                 ForEach(activeAreas) { area in
                     iOSListSelectionRow(
                         title: area.name,
-                        subtitle: area.context?.name,
+                        subtitle: CadenceListSearchSupport.containerNames(for: area).first,
                         icon: area.icon,
                         colorHex: area.colorHex,
                         count: CadenceTaskQuerySupport.openTaskCount(for: area),
@@ -163,7 +163,7 @@ struct iOSListsRegularPane: View {
                 ForEach(archivedAreas) { area in
                     iOSArchivedListSelectionRow(
                         title: area.name,
-                        subtitle: area.context?.name,
+                        subtitle: CadenceListSearchSupport.containerNames(for: area).first,
                         icon: area.icon,
                         colorHex: area.colorHex
                     ) {
