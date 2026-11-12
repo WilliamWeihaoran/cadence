@@ -865,9 +865,20 @@ struct iOSListEditorSheet: View {
         // went with it, and its cards were emptied into Default, from clearing a text field, with
         // no confirmation and nothing said. The column now keeps the name it had; this is what
         // says so.
-        let refusal: KanbanColumnRenameRefusal? =
-            CadenceSectionEditingSupport.clearedColumnNames(in: sectionDrafts).isEmpty ? nil : .emptyName
+        // [[T-17035]]: and a name another column already holds is refused the same way, which is
+        // what the Mac's column popover says over the same rename.
+        let refusal: KanbanColumnRenameRefusal?
+        if !CadenceSectionEditingSupport.clearedColumnNames(in: sectionDrafts).isEmpty {
+            refusal = .emptyName
+        } else if !CadenceSectionEditingSupport.collidingColumnNames(in: sectionDrafts).isEmpty {
+            refusal = .nameAlreadyTaken
+        } else {
+            refusal = nil
+        }
         nameRefusalNotice = refusal?.notice
+        // A NEW list writes nothing over a refused column name: the sheet stays open to say so, and
+        // a list inserted behind it would be inserted again by the next Create.
+        guard refusal == nil || isEditing else { return }
         // [[T-12020]]: a Complete / Archive from the Status rows settles inside the edit's own
         // commit, as macOS's `apply(_:)` does -- one snapshot, one commit -- so a refusal undoes
         // the edits and the settle together and "Nothing was changed" is true. Not over a refused

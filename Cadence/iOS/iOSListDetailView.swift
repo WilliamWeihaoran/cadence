@@ -720,7 +720,7 @@ private struct iOSListDetailHeader: View {
         // every page header on both platforms; it lands on the count capsule now, same as macOS.
         iOSPageHeader(
             eyebrow: eyebrow,
-            title: TaskTitleSupport.displayTitle(title, fallback: TaskTitleSupport.defaultCompactDisplayTitle),
+            title: ListDetailHeaderAccessibility.displayTitle(listName: title),
             color: Color(hex: colorHex),
             onBack: onBack
         ) {

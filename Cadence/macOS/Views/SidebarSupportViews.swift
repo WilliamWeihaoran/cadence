@@ -322,7 +322,16 @@ struct SidebarListRow: View {
     @State private var observedDay = CadenceObservedDay()
 
     private var hoverID: String {
-        "sidebar-\(kind.label)-\(label)"
+        Self.hoverID(for: item)
+    }
+
+    /// **The row's Cmd+E registration, keyed by the list's id ([[T-17039]]).** It was
+    /// `"sidebar-<Kind>-<name>"`, so two projects (or two areas) with one name in different
+    /// contexts shared it: `beginHovering` returns early on an id it already holds, so a pointer
+    /// moving straight from one to the other kept the FIRST row's edit action, and Cmd+E over the
+    /// second opened the first's sheet -- or the first row's `endHovering` cleared the second's.
+    static func hoverID(for item: SidebarItem) -> String {
+        "sidebar-list-\(item)"
     }
 
     private var isSelected: Bool { selection == item }

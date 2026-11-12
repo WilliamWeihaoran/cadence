@@ -305,7 +305,7 @@ private struct ListDetailChromeView: View {
         // it on an identity tile; with page tiles gone it lands on the count capsule, which is the
         // only thing `tint` colours now.
         DesktopPageHeader(
-            title: name,
+            title: ListDetailHeaderAccessibility.displayTitle(listName: name),
             tint: Color(hex: colorHex)
         ) {
             HStack(spacing: 8) {

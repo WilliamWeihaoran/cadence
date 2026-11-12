@@ -338,7 +338,16 @@ enum ListDetailHeaderAccessibility {
     /// "Edit list" and the Mac "Edit <name>"; the one that names the list is strictly more use to
     /// VoiceOver, so both read this. A blank name reads the header's own fallback title.
     static func editLabel(listName: String) -> String {
-        "Edit \(TaskTitleSupport.displayTitle(listName, fallback: TaskTitleSupport.defaultCompactDisplayTitle))"
+        "Edit \(displayTitle(listName: listName))"
+    }
+
+    /// **The header's title: the list's name, or "Untitled" when it is blank ([[T-17036]]).** The
+    /// iPhone and iPad header, the sidebar row on both platforms and this control's own label
+    /// already read it so; the Mac header drew the raw name, so a list whose name arrived blank
+    /// (sync, MCP, a legacy store -- the editors refuse one, [[T-11871]]) opened on a page whose
+    /// title was empty space beside its pencil.
+    static func displayTitle(listName: String) -> String {
+        TaskTitleSupport.displayTitle(listName, fallback: TaskTitleSupport.defaultCompactDisplayTitle)
     }
 
     /// The header's edit control's glyph, drawn by both headers in the list's own colour

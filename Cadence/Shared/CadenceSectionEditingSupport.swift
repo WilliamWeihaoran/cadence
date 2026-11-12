@@ -197,16 +197,65 @@ enum CadenceSectionEditingSupport {
     /// A draft with no `originalName` never reached disk, so there is no column, no colour and no
     /// card to lose; those are still dropped without a word.
     static func configs(from drafts: [CadenceSectionDraft]) -> [TaskSectionConfig] {
-        let configs = drafts.compactMap { draft -> TaskSectionConfig? in
+        let configs = zip(drafts, storedNames(for: drafts)).compactMap { draft, name -> TaskSectionConfig? in
+            guard let name else { return nil }
             var config = draft.config
-            guard config.name.isEmpty else { return config }
-            guard let originalName = draft.originalName,
-                  !originalName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            else { return nil }
-            config.name = originalName
+            config.name = name
             return config
         }
         return configs.isEmpty ? [TaskSectionConfig(name: TaskSectionDefaults.defaultName)] : configs
+    }
+
+    /// **The name each draft is saved under, or `nil` for a draft that is dropped ([[T-17035]]).**
+    ///
+    /// A cleared field keeps the column's saved name (T-1053, above). **A name another column
+    /// already holds is refused the same way.** `normalizedSectionConfigs` keeps only the first
+    /// config of each case-insensitive name and drops the rest, so renaming "Doing" to "todo" on a
+    /// list that has "Todo" -- or to "Default" -- used to delete one of the two columns on Save:
+    /// its colour and due date went, and its cards were emptied into Default, or into the other
+    /// column, with nothing said. The macOS column popover refuses the same rename
+    /// (`KanbanSectionStateSupport.renameRefusal`); this is that refusal for the touch editor.
+    ///
+    /// Only a draft whose name the user changed can be refused -- a renamed column keeps its saved
+    /// name, an added one is dropped -- and when two changed drafts collide, both are. Reverting a
+    /// rename can make it collide with a third draft renamed onto the old name, so this settles to
+    /// a fixed point. The key is the normalizer's own (trimmed, lowercased), so what passes here is
+    /// exactly what the normalizer keeps.
+    static func storedNames(for drafts: [CadenceSectionDraft]) -> [String?] {
+        func trimmed(_ name: String) -> String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let saved: [String?] = drafts.map { draft in
+            draft.originalName.map(trimmed).flatMap { $0.isEmpty ? nil : $0 }
+        }
+        var names: [String?] = drafts.indices.map { index in
+            let typed = trimmed(drafts[index].name)
+            return typed.isEmpty ? saved[index] : typed
+        }
+        var settled = drafts.indices.map { names[$0] != nil && names[$0] == saved[$0] }
+        var changed = true
+        while changed {
+            changed = false
+            var counts: [String: Int] = [:]
+            for name in names.compactMap({ $0 }) { counts[name.lowercased(), default: 0] += 1 }
+            for index in names.indices where !settled[index] {
+                guard let name = names[index], counts[name.lowercased(), default: 0] > 1 else { continue }
+                names[index] = saved[index]
+                settled[index] = true
+                changed = true
+            }
+        }
+        return names
+    }
+
+    /// **The names the editor refused because another column holds them ([[T-17035]])** -- the
+    /// seam behind the "already exists" sentence, as `clearedColumnNames(in:)` is behind the
+    /// empty-name one. What the user typed, trimmed, for every draft `storedNames(for:)` did not
+    /// save under it.
+    static func collidingColumnNames(in drafts: [CadenceSectionDraft]) -> [String] {
+        zip(drafts, storedNames(for: drafts)).compactMap { draft, stored in
+            let typed = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !typed.isEmpty, stored != typed else { return nil }
+            return typed
+        }
     }
 
     /// **The names of columns that already exist and whose name the editor has cleared (T-1053).**
