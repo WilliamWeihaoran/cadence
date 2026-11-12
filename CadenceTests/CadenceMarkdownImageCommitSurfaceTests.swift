@@ -565,7 +565,10 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // [[T-16682]] makes it 86, and bare: a list's Tasks tab on iOS names a row drop on a
         // heading that the store refused above its groups, as the Mac's tab does -- the retry is
         // the drag itself, and the next drop that lands clears it.
-        #expect(total == 86, "the inline notice has \(total) call sites, not the 86 this test was written over")
+        // [[T-17329]] makes it 88, both bare: Settings > Tags names a refused Archive / Unarchive
+        // under the row on both platforms -- the retry is the same button, and the next archive
+        // that lands clears it.
+        #expect(total == 88, "the inline notice has \(total) call sites, not the 88 this test was written over")
         #expect(withDismissal == 9, "\(withDismissal) call sites offer a dismissal, not 9")
 
         // And each of the nine is named, so one swapping places with another is still a failure.
