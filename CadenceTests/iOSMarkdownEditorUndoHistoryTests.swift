@@ -112,6 +112,77 @@ struct iOSMarkdownEditorUndoHistoryTests {
         #expect(hosted.view.text == "Ship it")
     }
 
+    // MARK: - [[T-17322]]: a restyle in the keystroke's own turn
+
+    private static let fencedNote = "Intro\n\n```\nlet a = 1\n```\n\nAfter"
+
+    private static func isDrawnAsCanvas(_ location: Int, in view: UITextView) -> Bool {
+        view.textStorage.attribute(.cadenceMarkdownBlockCanvas, at: location, effectiveRange: nil) != nil
+    }
+
+    /// The measurement [[T-17322]] was filed from, re-run: a restyle straight after a keystroke,
+    /// before the run loop turns. `applyMarkdownStyle` replaces the storage with the same string,
+    /// and the keystroke's undo survives it.
+    @Test func aRestyleInTheKeystrokesTurnKeepsTheKeystrokesUndo() throws {
+        let hosted = try Self.host("Call Sam today")
+        hosted.view.selectedRange = NSRange(location: 14, length: 0)
+        Self.turnRunLoop()
+
+        hosted.view.insertText(" now")
+        hosted.coordinator.applyMarkdownStyle(to: hosted.view, text: hosted.view.text)
+        Self.turnRunLoop()
+        #expect(hosted.manager.canUndo)
+
+        Self.undo(hosted)
+        #expect(hosted.view.text == "Call Sam today")
+    }
+
+    /// Typing inside a fenced code block the caret has revealed grows the revealed block, so the
+    /// selection change the keystroke raises asks for a restyle in the keystroke's own turn. That
+    /// restyle must not take the keystroke's undo with it. (Unlike the caret-move test below, this
+    /// one cannot observe *when* the restyle ran: removing the selection-change restyle leaves it
+    /// green, measured by agent fix1848a's mutation M1.)
+    @Test func typingInsideARevealedCodeBlockStaysUndoable() throws {
+        let hosted = try Self.host(Self.fencedNote)
+        let caret = (Self.fencedNote as NSString).range(of: "let a = 1").upperBound
+        hosted.view.selectedRange = NSRange(location: caret, length: 0)
+        Self.turnRunLoop()
+
+        let fence = (Self.fencedNote as NSString).range(of: "```").location
+        #expect(!Self.isDrawnAsCanvas(fence, in: hosted.view), "the caret inside the fence reveals its source")
+
+        hosted.view.insertText("2")
+        Self.turnRunLoop()
+        #expect(hosted.view.text == "Intro\n\n```\nlet a = 12\n```\n\nAfter")
+        #expect(hosted.manager.canUndo)
+
+        Self.undo(hosted)
+        #expect(hosted.view.text == Self.fencedNote)
+    }
+
+    /// The caret moving into a fenced block in the same turn as a keystroke — the selection
+    /// change restyles to reveal the fence's source at once.
+    @Test func aCaretMoveIntoACodeBlockInTheKeystrokesTurnKeepsTheKeystrokesUndo() throws {
+        let hosted = try Self.host(Self.fencedNote)
+        hosted.view.selectedRange = NSRange(location: (Self.fencedNote as NSString).length, length: 0)
+        Self.turnRunLoop()
+
+        let fence = (Self.fencedNote as NSString).range(of: "```").location
+        #expect(Self.isDrawnAsCanvas(fence, in: hosted.view), "the fence is drawn while the caret is outside it")
+
+        hosted.view.insertText(" now")
+        let caret = (Self.fencedNote as NSString).range(of: "let a").upperBound
+        hosted.view.selectedRange = NSRange(location: caret, length: 0)
+        // The restyle is in the keystroke's turn: the fence shows its source before the run loop turns.
+        #expect(!Self.isDrawnAsCanvas(fence, in: hosted.view), "the caret move did not restyle in the keystroke's turn")
+        Self.turnRunLoop()
+        #expect(hosted.view.text == Self.fencedNote + " now")
+        #expect(hosted.manager.canUndo)
+
+        Self.undo(hosted)
+        #expect(hosted.view.text == Self.fencedNote)
+    }
+
     /// The other half of the rule: an editor opens on its note's text, and filling an empty view
     /// with no history is the load, not an edit — undo straight after opening must not blank it.
     @Test func theLoadIntoAnEmptyIOSEditorIsNotAnUndoableStep() throws {
