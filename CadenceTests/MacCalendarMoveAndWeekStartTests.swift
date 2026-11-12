@@ -33,6 +33,45 @@ struct MacCalendarMoveAndWeekStartTests {
         #expect(TimelineEventBlockEditGate.commitsMove(to: 595, from: 600))
     }
 
+    /// [[T-17200]]: a block's own top resolves to the block's own minute at every zoom.
+    ///
+    /// A sideways-slipped click hands the gate `topY == yOffset(for: start)`, and a task drag that
+    /// comes back to its origin hands the drop delegate the same Y. `yToMins` truncated
+    /// `y / hourHeight * 60`, which in floating point lands a hair under the minute for about one
+    /// (hourHeight, minute) pair in seven -- 25 at a 33.33pt hour read as 24.999..., floored to the
+    /// previous 5-minute line -- so the "click is a click" gate above saw a move to 20 and wrote it.
+    /// The hour heights are the ones `TimelineZoom.hourHeight` produces for a sweep of window
+    /// heights, so the count is over real zoom levels, not a contrived figure.
+    @Test("A block whose top is exactly at its start resolves to that start at every zoom")
+    func aBlocksOwnTopResolvesToItsOwnMinute() {
+        var checked = 0
+        var drifted = 0
+        var example = ""
+        for halfPoints in stride(from: 800, through: 2_400, by: 7) {
+            for level in TimelineZoom.levels {
+                let hourHeight = TimelineZoom.hourHeight(viewportHeight: CGFloat(halfPoints) / 2, level: level)
+                let metrics = TimelineMetrics(startHour: 0, endHour: 24, hourHeight: hourHeight)
+                for start in stride(from: 0, to: 24 * 60 - 60, by: CadenceScheduleSupport.pointerTimeGridMinutes) {
+                    checked += 1
+                    let top = metrics.yOffset(for: start)
+                    let resolved = TimelineEventBlockEditGate.movedStartMinute(
+                        topY: top,
+                        durationMinutes: 60,
+                        isMultiDayTimedEvent: false,
+                        metrics: metrics
+                    )
+                    if resolved != start || TimelineEventBlockEditGate.commitsMove(to: resolved, from: start)
+                        || metrics.snappedStart(fromY: top, duration: 60) != start {
+                        if drifted == 0 { example = "\(start) at \(hourHeight)pt -> \(resolved)" }
+                        drifted += 1
+                    }
+                }
+            }
+        }
+        #expect(checked > 10_000)
+        #expect(drifted == 0, "\(drifted) block tops resolved off their own minute, e.g. \(example)")
+    }
+
     // MARK: - T-5355: a single-day event still ends by midnight
 
     private static let fullDay = TimelineMetrics(startHour: 0, endHour: 24, hourHeight: 60)

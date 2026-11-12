@@ -172,7 +172,10 @@ enum CadenceTimelineBlockEdit {
             let movedStart = min(max(start + delta, dayStartMinute), latestStart)
             return (movedStart, movedStart + duration)
         case .resizeStart:
-            let latestStart = max(dayStartMinute, end - minimumDurationMinutes)
+            // Short of the stored end AND of the drawn day's ([[T-17201]]): a task can run past
+            // midnight (the picker caps only its start), and against `end` alone the top handle
+            // could be dragged to 24:00 or later -- a start no day owns.
+            let latestStart = max(dayStartMinute, min(end, dayEndMinute) - minimumDurationMinutes)
             let movedStart = min(max(start + delta, dayStartMinute), latestStart)
             return (movedStart, end)
         case .resizeEnd:

@@ -127,6 +127,35 @@ struct CadenceTimelineBlockEditTests {
         #expect(squeezedFromAbove.end - squeezedFromAbove.start == minimum)
     }
 
+    /// [[T-17201]]: a task can run past midnight -- the time picker caps the START at 23:59
+    /// ([[T-14235]]) and leaves the estimate alone, so 11:30 PM with a 60-minute estimate ends at
+    /// minute 1470. Its top handle stopped `minimumDurationMinutes` short of that stored end, not of
+    /// the drawn day's, so dragging it down wrote a start of 24:00 or later: a minute no day owns,
+    /// past the cap every other writer of a start keeps.
+    @Test func aStartHandleOnABlockRunningPastMidnightStopsInsideTheDay() {
+        let dayEnd = 24 * 60
+        let minimum = CadenceTimelineBlockEdit.minimumDurationMinutes
+        let start = 23 * 60 + 30
+        let end = start + 60
+        for minutes in [30, 45, 3 * 60] {
+            let resized = CadenceTimelineBlockEdit.editedRange(
+                kind: .resizeStart, start: start, end: end,
+                translationY: points(forMinutes: minutes), hourHeight: hourHeight,
+                dayStartMinute: 0, dayEndMinute: dayEnd
+            )
+            #expect(resized.start <= dayEnd - minimum, "dragged \(minutes) min down, the start landed at \(resized.start)")
+            #expect(resized.start >= start)
+            #expect(resized.end == end, "the un-dragged end moved")
+        }
+        // A day that is not over yet is untouched: the old floor against the stored end still binds.
+        let midDay = CadenceTimelineBlockEdit.editedRange(
+            kind: .resizeStart, start: 600, end: 660,
+            translationY: points(forMinutes: 5 * 60), hourHeight: hourHeight,
+            dayStartMinute: 0, dayEndMinute: dayEnd
+        )
+        #expect(midDay.start == 660 - minimum)
+    }
+
     // MARK: - Handle geometry
 
     @Test func theHandleBandIsAFullTouchTargetThatNeverSwallowsTheMoveCore() {

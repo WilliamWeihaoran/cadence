@@ -18,8 +18,20 @@ struct TimelineMetrics {
         return (mins / grid) * grid
     }
 
+    /// Canvas Y -> minute, truncated, so a pointer anywhere inside a minute's row reads that minute.
+    ///
+    /// **A row's own top reads its own minute** ([[T-17200]]). `y / hourHeight * 60` is a float
+    /// round trip of `yOffset(for:)`, and for about one zoom-and-minute pair in seven it lands a
+    /// hair UNDER the minute (25 at a 33.33pt hour is 24.999...), which the bare truncation then
+    /// floored to 24 and `snapToGrid` to 20. A block's top is handed back here exactly whenever a
+    /// gesture ends where it began -- an event click that slipped sideways, a task drag returned to
+    /// its origin -- so the block moved five minutes earlier and T-5354's "a click is a click" gate
+    /// saw a real move. `minuteTolerance` is far below any pointer's resolution and only absorbs the
+    /// round trip's error.
+    static let minuteTolerance: CGFloat = 1e-6
+
     func yToMins(_ y: CGFloat) -> Int {
-        clampStart(Int(y / hourHeight * 60) + startHour * 60)
+        clampStart(Int(y / hourHeight * 60 + Self.minuteTolerance) + startHour * 60)
     }
 
     /// Clamps a minute so a block of `duration` minutes still fits inside the **visible** canvas.
