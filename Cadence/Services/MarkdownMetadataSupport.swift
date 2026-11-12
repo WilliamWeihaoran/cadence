@@ -175,13 +175,23 @@ nonisolated enum MarkdownMetadataParser {
         let frontmatterText = nsContent.substring(with: range)
         let lines = frontmatterText.components(separatedBy: "\n")
         var replaced = false
-        let updatedLines = lines.map { line in
+        var updatedLines: [String] = []
+        // [[T-17011]]: the replaced line's own `- item` block list goes with it. Left behind, the
+        // old names sat under the new flow list, hidden by the editor and read back by nothing.
+        var droppingBlockList = false
+        for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if droppingBlockList, line.first?.isWhitespace == true, trimmed.hasPrefix("- ") {
+                continue
+            }
+            droppingBlockList = false
             if trimmed.lowercased().hasPrefix("tags:") || trimmed.lowercased().hasPrefix("tag:") {
                 replaced = true
-                return tagLine
+                droppingBlockList = true
+                updatedLines.append(tagLine)
+                continue
             }
-            return line
+            updatedLines.append(line)
         }
 
         let updatedFrontmatter: String
@@ -228,11 +238,19 @@ nonisolated enum MarkdownMetadataParser {
 
         let lines = content.components(separatedBy: "\n")
         var properties: [String: String] = [:]
+        // [[T-17011]]: the `- item` lines under a property whose own line holds no value -- the
+        // block list other markdown tools write for `tags:`. They were filler and nothing else, so
+        // such a note's tags were never read.
+        var blockLists: [String: [String]] = [:]
+        var lastKey: String?
         var offset = (lines[0] as NSString).length + 1
         for index in 1..<lines.count {
             let line = lines[index]
             if line.trimmingCharacters(in: .whitespacesAndNewlines) == "---" {
                 guard !properties.isEmpty else { return notFrontmatter }
+                for (key, items) in blockLists where properties[key]?.isEmpty == true {
+                    properties[key] = flowList(items)
+                }
                 let end = min(nsContent.length, offset + (line as NSString).length + (index < lines.count - 1 ? 1 : 0))
                 return MarkdownFrontmatter(
                     properties: properties,
@@ -242,7 +260,12 @@ nonisolated enum MarkdownMetadataParser {
 
             if let property = yamlProperty(in: line) {
                 properties[property.key] = property.value
-            } else if !isYAMLFiller(line, hasProperty: !properties.isEmpty) {
+                lastKey = property.key
+            } else if isYAMLFiller(line, hasProperty: !properties.isEmpty) {
+                if let lastKey, let item = blockListItem(in: line) {
+                    blockLists[lastKey, default: []].append(item)
+                }
+            } else {
                 return notFrontmatter
             }
             offset += (line as NSString).length + 1
@@ -284,10 +307,52 @@ nonisolated enum MarkdownMetadataParser {
         let content = trimmed.hasPrefix("[") && trimmed.hasSuffix("]")
             ? String(trimmed.dropFirst().dropLast())
             : trimmed
-        return content
-            .split(separator: ",")
+        return splitOutsideQuotes(content)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "\"'")) }
             .filter { !$0.isEmpty }
+    }
+
+    /// **[[T-17010]]: a comma inside a quoted item is part of the name.** `tags: ["Q1, Q2"]` is
+    /// what `content(_:replacingFrontmatterTags:)` writes for a tag named `Q1, Q2` -- a name both
+    /// Create Tag cards and every tag picker accept -- and a bare `split(",")` read it back as two
+    /// tags, `Q1` and `Q2`: the next sync minted both and moved the note off the real tag.
+    nonisolated private static func splitOutsideQuotes(_ list: String) -> [String] {
+        var items: [String] = []
+        var current = ""
+        var openQuote: Character?
+        for character in list {
+            if let quote = openQuote {
+                if character == quote { openQuote = nil }
+                current.append(character)
+            } else if character == "\"" || character == "'", current.allSatisfy(\.isWhitespace) {
+                // Only a quote that opens an item opens a quoted span, so `Bob's, Work` stays two
+                // unquoted names rather than one span running to the end of the line.
+                openQuote = character
+                current.append(character)
+            } else if character == "," {
+                items.append(current)
+                current = ""
+            } else {
+                current.append(character)
+            }
+        }
+        items.append(current)
+        return items
+    }
+
+    /// The value of a `- item` block-list line, outer quotes removed, or nil for any other line.
+    nonisolated private static func blockListItem(in line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("- ") else { return nil }
+        let value = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+        guard !value.isEmpty else { return nil }
+        return value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+    }
+
+    /// A block list re-spelled as the flow list `frontmatterTags` reads, quoted as the writer
+    /// quotes, so a comma inside an item survives the round trip.
+    nonisolated private static func flowList(_ items: [String]) -> String {
+        "[" + items.map { "\"\($0.replacingOccurrences(of: "\"", with: "'"))\"" }.joined(separator: ", ") + "]"
     }
 
     nonisolated private static func inlineTags(in content: String, excluding excludedRange: NSRange?) -> [String] {
