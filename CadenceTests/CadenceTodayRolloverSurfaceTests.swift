@@ -367,6 +367,38 @@ struct CadenceTodayRolloverSurfaceTests {
         }
     }
 
+    /// Under the Debug today override the rows say how late they are against the SHIFTED day, the
+    /// one the page header and `todayKey()` show -- not the real clock ([[T-16801]]). Seen on
+    /// `Cadence-iPhone15`: one advance of the override turned the header to the next day while the offer's
+    /// rows, all planned the day before, still read `Today`.
+    @Test func eachRolloverRowWordsItsDoDateAgainstTheOverriddenToday() throws {
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
+        let realNow = try #require(calendar.date(from: DateComponents(year: 2026, month: 11, day: 11, hour: 12)))
+        let leftover = task(title: "Planned on the real day", scheduled: DateFormatters.dateKey(from: realNow, calendar: calendar))
+
+        // Unarmed: the real clock's words, so the seam changes nothing outside the lever.
+        #expect(CadenceTaskPresentationSupport.scheduledDayLabel(for: leftover, override: nil, realNow: realNow) == "Today")
+
+        // Armed and advanced one day, as the override's Darwin advance does on the simulator.
+        let override = CadenceTodayOverride(offsetDays: 0, center: NotificationCenter())
+        override.advance()
+        #expect(override.offsetDays == 1, "non-vacuity: the override moved")
+        #expect(
+            CadenceTodayRolloverSupport.pastDoTasks(
+                from: [leftover],
+                todayKey: DateFormatters.dateKey(from: DateFormatters.now(override: override, realNow: realNow), calendar: calendar)
+            ).count == 1,
+            "non-vacuity: under the override it is a leftover the offer lists"
+        )
+        #expect(CadenceTaskPresentationSupport.scheduledDayLabel(for: leftover, override: override, realNow: realNow) == "Yesterday")
+
+        // Every other defaulted `relativeDate` caller (the Mac task rows, search, the board card,
+        // `scheduledDateLabel`) gets the same "today" through the formatter's own default.
+        let formatters = try strippingComments(sourceFile("Cadence/Shared/DateFormatters.swift"))
+        #expect(formatters.components(separatedBy: "static func relativeDate(from key: String, relativeTo referenceDate: Date = DateFormatters.now()").count - 1 == 2)
+        #expect(!formatters.contains("static func relativeDate(from key: String, relativeTo referenceDate: Date = Date()"))
+    }
+
     // MARK: - The list each row names (T-16283)
 
     /// Each row names its list as Today's group heading names it: a blank-named area or project

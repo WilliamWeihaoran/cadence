@@ -574,8 +574,20 @@ enum CadenceTaskPresentationSupport {
     /// there the slot ran to three times the width of every other chip and pushed the row's
     /// metadata onto a second line. The iOS row shows the day here; the Today timeline pane and the
     /// task inspector are where the slot itself is read.
-    static func scheduledDayLabel(for task: AppTask) -> String {
-        DateFormatters.relativeDate(from: task.scheduledDate)
+    ///
+    /// Worded against `DateFormatters.now()`, the app's "today", so under the Debug today override
+    /// the rollover offer's rows say how late they are against the shifted day the page header and
+    /// `todayKey()` already show ([[T-16801]]). `override` / `realNow` exist for tests; callers
+    /// pass neither.
+    static func scheduledDayLabel(
+        for task: AppTask,
+        override: CadenceTodayOverride? = CadenceTodayOverride.live,
+        realNow: Date = Date()
+    ) -> String {
+        DateFormatters.relativeDate(
+            from: task.scheduledDate,
+            relativeTo: DateFormatters.now(override: override, realNow: realNow)
+        )
     }
 
     /// The task's due date in Cadence's one due-date vocabulary ([[T-15491]]): "Overdue Nov 9",

@@ -351,7 +351,12 @@ nonisolated enum DateFormatters {
     /// summary line (removed under [[T-3335]]) honoured its injected day for `isLate` and silently
     /// read the system clock for the words beside it — the two halves of one line disagreeing
     /// about the date.
-    static func relativeDate(from key: String, relativeTo referenceDate: Date = Date()) -> String {
+    ///
+    /// The default is `now()`, not `Date()`, so a caller that passes nothing words the day against
+    /// the same "today" `todayKey()` names -- under the Debug today override the rollover offer's
+    /// rows read `Yesterday`, not `Today` ([[T-16801]]). Identical to `Date()` wherever
+    /// `CadenceTodayOverride.live` is `nil`, which is every Release build.
+    static func relativeDate(from key: String, relativeTo referenceDate: Date = DateFormatters.now()) -> String {
         guard let date = ymd.date(from: key) else { return key }
         let diff = dayOffset(from: key, relativeTo: referenceDate) ?? Int.max
         // The original window, unchanged: forward as far as a fortnight, backward without a limit.
@@ -370,7 +375,7 @@ nonisolated enum DateFormatters {
     ///
     /// Inside the window the words are the same ones, spelled in the same place, so the two forms
     /// cannot drift into saying `Tomorrow` differently.
-    static func relativeDate(from key: String, relativeTo referenceDate: Date = Date(), withinDays: Int) -> String {
+    static func relativeDate(from key: String, relativeTo referenceDate: Date = DateFormatters.now(), withinDays: Int) -> String {
         guard let date = ymd.date(from: key) else { return key }
         guard let diff = dayOffset(from: key, relativeTo: referenceDate), abs(diff) <= withinDays else {
             return absoluteDay(date, relativeTo: referenceDate)
