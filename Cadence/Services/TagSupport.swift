@@ -640,9 +640,14 @@ nonisolated enum TagSupport {
         var result: [String: Tag] = [:]
         for tag in sorted(tags) {
             let key = stableSlug(for: tag)
-            if result[key] == nil {
-                result[key] = tag
+            // [[T-17013]]: an active row outranks an archived one for its slug, the first rule of
+            // `preferredDuplicateTagSort`. By `sorted` order alone an archived twin with a lower
+            // `order` won, so every note naming the slug was synced onto the archived row and drew
+            // a dimmed chip, and the `#` picker hid the tag on an empty query.
+            if let existing = result[key], !(existing.isArchived && !tag.isArchived) {
+                continue
             }
+            result[key] = tag
         }
         return result
     }
