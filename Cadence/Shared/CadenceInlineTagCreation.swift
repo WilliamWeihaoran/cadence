@@ -113,9 +113,34 @@ extension TagSupport {
         in context: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
+        committedSetArchived(tag, to: false, in: context, commit: commit)
+    }
+
+    /// **[[T-17329]] -- `committedUnarchive`'s other half**: archives `tag` and commits it, with the
+    /// same two-field undo and the same `Bool` answer. Settings > Tags' Archive buttons on both
+    /// platforms used to flip the flag over `try? modelContext.save()`, so a refused write moved the
+    /// row to Archived Tags and hid the tag from every picker over a store that still held it
+    /// active. The Mac tag picker's Edit Tag sheet (`TagPickerPopover.archive`, T-652) already
+    /// committed the same act this way.
+    ///
+    /// - Parameter commit: forwarded so a test can reach the `false` a refused commit produces.
+    static func committedArchive(
+        _ tag: Tag,
+        in context: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        committedSetArchived(tag, to: true, in: context, commit: commit)
+    }
+
+    private static func committedSetArchived(
+        _ tag: Tag,
+        to isArchived: Bool,
+        in context: ModelContext,
+        commit: (ModelContext) throws -> Void
+    ) -> Bool {
         let previousIsArchived = tag.isArchived
         let previousUpdatedAt = tag.updatedAt
-        tag.isArchived = false
+        tag.isArchived = isArchived
         tag.updatedAt = Date()
         do {
             try CadencePendingChangePersistence.commitEdit(in: context, commit: commit) {

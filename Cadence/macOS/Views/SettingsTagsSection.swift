@@ -80,8 +80,13 @@ struct SettingsTagsSection: View {
                             text: "\"\(matchingArchivedTag.name)\" is archived.",
                             actionTitle: CadenceListVocabularyCopy.unarchiveActionTitle
                         ) {
-                            restore(matchingArchivedTag)
-                            clearCreateFields()
+                            // [[T-17329]]: the draft clears only once the store took the un-archive.
+                            if restore(matchingArchivedTag) {
+                                createFailureNotice = nil
+                                clearCreateFields()
+                            } else {
+                                createFailureNotice = CadencePendingChangePersistence.editFailureNotice
+                            }
                         }
                     } else if hasDuplicateSlug {
                         TagNoticeRow(
@@ -194,16 +199,17 @@ struct SettingsTagsSection: View {
         newTagColorHex = TagSupport.colorOptions[2]
     }
 
-    private func archive(_ tag: Tag) {
-        tag.isArchived = true
-        tag.updatedAt = Date()
-        try? modelContext.save()
+    /// [[T-17329]]: both commit through `TagSupport`'s committed pair, the same path the tag
+    /// picker's Edit Tag sheet and the capture strip's Unarchive chip take, and answer whether the
+    /// store took it so the row can say so. They flipped the flag over a swallowed save, so a
+    /// refused write moved the row between Active and Archived Tags anyway. The phone's twin is
+    /// `iOSSettingsTagsSection.archive`/`restore`.
+    private func archive(_ tag: Tag) -> Bool {
+        TagSupport.committedArchive(tag, in: modelContext)
     }
 
-    private func restore(_ tag: Tag) {
-        tag.isArchived = false
-        tag.updatedAt = Date()
-        try? modelContext.save()
+    private func restore(_ tag: Tag) -> Bool {
+        TagSupport.committedUnarchive(tag, in: modelContext)
     }
 
     /// T-653, the existence half of the `try? save()` rule: this used to reach `seedDefaultTags`'
@@ -223,11 +229,14 @@ private struct SettingsTagRow: View {
     let tag: Tag
     let allTags: [Tag]
     let isArchivedList: Bool
-    let onArchive: () -> Void
-    let onRestore: () -> Void
+    /// `true` when the store took the change ([[T-17329]]).
+    let onArchive: () -> Bool
+    let onRestore: () -> Bool
 
     @Environment(\.modelContext) private var modelContext
     @State private var isEditing = false
+    /// [[T-17329]]: a refused Archive or Unarchive, said on the card that stayed where it was.
+    @State private var archiveFailureNotice: String?
     @State private var draftName = ""
     @State private var draftDescription = ""
     @State private var draftColorHex = ""
@@ -264,6 +273,10 @@ private struct SettingsTagRow: View {
                 editContent
             } else {
                 displayContent
+                if let archiveFailureNotice {
+                    CadenceInlineFailureNotice(text: archiveFailureNotice)
+                        .padding(.top, 10)
+                }
             }
         }
         .padding(12)
@@ -318,9 +331,13 @@ private struct SettingsTagRow: View {
                         startEditing()
                     }
                     if isArchivedList {
-                        rowButton(icon: "arrow.uturn.backward", color: Theme.blue, accessibilityLabel: CadenceTagChipStyle.unarchiveControlLabel(for: tag), action: onRestore)
+                        rowButton(icon: "arrow.uturn.backward", color: Theme.blue, accessibilityLabel: CadenceTagChipStyle.unarchiveControlLabel(for: tag)) {
+                            recordArchiveOutcome(onRestore())
+                        }
                     } else {
-                        rowButton(icon: "archivebox", color: Theme.amber, accessibilityLabel: CadenceTagChipStyle.archiveControlLabel(for: tag), action: onArchive)
+                        rowButton(icon: "archivebox", color: Theme.amber, accessibilityLabel: CadenceTagChipStyle.archiveControlLabel(for: tag)) {
+                            recordArchiveOutcome(onArchive())
+                        }
                     }
                 }
             }
@@ -438,7 +455,12 @@ private struct SettingsTagRow: View {
         .cadenceControlLabel(accessibilityLabel)
     }
 
+    private func recordArchiveOutcome(_ committed: Bool) {
+        archiveFailureNotice = committed ? nil : CadencePendingChangePersistence.editFailureNotice
+    }
+
     private func startEditing() {
+        archiveFailureNotice = nil
         saveFailureNotice = nil
         draftName = tag.name
         draftDescription = tag.desc

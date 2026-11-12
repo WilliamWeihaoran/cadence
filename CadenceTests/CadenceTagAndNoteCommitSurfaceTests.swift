@@ -507,6 +507,68 @@ struct CadenceTagAndNoteCommitSurfaceTests {
         #expect(restored.upperBound < created.lowerBound, "an archived match falls through to Create first")
     }
 
+    /// **[[T-17329]] -- what Settings > Tags' Archive button now commits**, on both platforms:
+    /// the tag is archived **in the store** (read back through a second context), and a refused
+    /// commit puts both fields back and answers `false`, so the row stays in Active Tags and says
+    /// so instead of moving over a store that still holds the tag active. Its un-archive half is
+    /// `CadenceTagPickerQueryTests.theStripsUnarchiveCommitsAndARefusalUndoes`.
+    @MainActor
+    @Test func theSettingsArchiveCommitsAndARefusalUndoes() throws {
+        struct CommitRefused: Error {}
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let tag = Cadence.Tag(name: "Deep Work", slug: "deep-work")
+        context.insert(tag)
+        try context.save()
+        let activeAt = tag.updatedAt
+
+        #expect(!TagSupport.committedArchive(tag, in: context, commit: { _ in throw CommitRefused() }))
+        #expect(!tag.isArchived, "a refused archive left the row archived in the context")
+        #expect(tag.updatedAt == activeAt)
+        #expect(try ModelContext(container).fetch(FetchDescriptor<Cadence.Tag>()).first?.isArchived == false)
+
+        #expect(TagSupport.committedArchive(tag, in: context))
+        #expect(tag.isArchived)
+        #expect(!context.hasChanges)
+        let stored = try ModelContext(container).fetch(FetchDescriptor<Cadence.Tag>())
+        #expect(stored.count == 1)
+        #expect(stored.first?.isArchived == true, "the archive never reached the store")
+    }
+
+    /// **[[T-17329]], source shape: the Settings rows' Archive and Unarchive take the committed
+    /// pair and say a refusal on the card.** Both platforms' `archive`/`restore` flipped
+    /// `isArchived` over `try? modelContext.save()`; they now hand the tag to `TagSupport`'s
+    /// committed pair, and the row draws the shared sentence when it answers `false`. The Create
+    /// Tag card's "is archived" Unarchive clears its draft only on the committed path.
+    @Test func theSettingsTagRowsArchiveAndUnarchiveThroughTheCommittedPair() throws {
+        for (path, clear) in [
+            ("Cadence/macOS/Views/SettingsTagsSection.swift", "clearCreateFields()"),
+            ("Cadence/iOS/iOSSettingsTagsSection.swift", "clearDraft()"),
+        ] {
+            let view = try scanned(path)
+            let archive = try declarationBody(named: "archive", in: view)
+            let restore = try declarationBody(named: "restore", in: view)
+            #expect(archive.contains("TagSupport.committedArchive(tag, in: modelContext)"), "\(path)")
+            #expect(restore.contains("TagSupport.committedUnarchive(tag, in: modelContext)"), "\(path)")
+            for body in [archive, restore] {
+                #expect(CadenceSourceScan.matchCount(#"try\?"#, in: body) == 0, "\(path) still swallows its save")
+                #expect(!body.contains("isArchived ="), "\(path) flips the flag outside the committed pair")
+            }
+            #expect(
+                view.contains("archiveFailureNotice = committed ? nil : CadencePendingChangePersistence.editFailureNotice"),
+                "\(path) does not name a refused archive with the shared sentence"
+            )
+            #expect(view.contains("CadenceInlineFailureNotice(text: archiveFailureNotice)"), "\(path) sets a notice it never draws")
+            #expect(
+                view.range(
+                    of: #"if restore\(matchingArchived\w*\) \{\s*createFailureNotice = nil\s*"# + NSRegularExpression.escapedPattern(for: clear),
+                    options: .regularExpression
+                ) != nil,
+                "\(path) clears the Create Tag draft whether or not the un-archive committed"
+            )
+        }
+    }
+
     // MARK: - Non-vacuity
 
     /// Non-vacuity for every scan above: the reader really opened these six files, `scanned` really

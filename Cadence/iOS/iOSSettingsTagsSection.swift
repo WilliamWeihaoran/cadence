@@ -134,8 +134,13 @@ struct iOSTagsSettingsSection: View {
                             text: "\"\(matchingArchived.name)\" is archived.",
                             actionTitle: CadenceListVocabularyCopy.unarchiveActionTitle,
                             action: {
-                                restore(matchingArchived)
-                                clearDraft()
+                                // [[T-17329]]: the draft clears only once the store took the un-archive.
+                                if restore(matchingArchived) {
+                                    createFailureNotice = nil
+                                    clearDraft()
+                                } else {
+                                    createFailureNotice = CadencePendingChangePersistence.editFailureNotice
+                                }
                             }
                         )
                     } else if hasDuplicate {
@@ -253,16 +258,15 @@ struct iOSTagsSettingsSection: View {
         }
     }
 
-    private func archive(_ tag: Tag) {
-        tag.isArchived = true
-        tag.updatedAt = Date()
-        try? modelContext.save()
+    /// [[T-17329]]: the Mac twin is `SettingsTagsSection.archive`/`restore` and the two are fixed
+    /// as one -- both commit through `TagSupport`'s committed pair and answer whether the store
+    /// took it, so a refused write leaves the row where it was and the row says so.
+    private func archive(_ tag: Tag) -> Bool {
+        TagSupport.committedArchive(tag, in: modelContext)
     }
 
-    private func restore(_ tag: Tag) {
-        tag.isArchived = false
-        tag.updatedAt = Date()
-        try? modelContext.save()
+    private func restore(_ tag: Tag) -> Bool {
+        TagSupport.committedUnarchive(tag, in: modelContext)
     }
 }
 
@@ -270,8 +274,8 @@ private struct iOSTagList: View {
     let tags: [Tag]
     let allTags: [Tag]
     let isArchivedList: Bool
-    let archive: (Tag) -> Void
-    let restore: (Tag) -> Void
+    let archive: (Tag) -> Bool
+    let restore: (Tag) -> Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -301,14 +305,17 @@ private struct iOSTagSettingsRow: View {
     @State private var draftDescription = ""
     @State private var draftColorHex = ""
     @State private var saveFailureNotice: String?
+    /// [[T-17329]]: a refused Archive or Unarchive, said on the row that stayed where it was.
+    @State private var archiveFailureNotice: String?
     /// T-6261: the notes whose prose mentions this tag, counted when Save is tapped and held here
     /// while the user answers. Non-`nil` only when the count is non-zero.
     @State private var inlineMentionPrompt: CadenceTagRenameInlineMentions.Prompt?
     let tag: Tag
     let allTags: [Tag]
     let isArchivedList: Bool
-    let archive: () -> Void
-    let restore: () -> Void
+    /// `true` when the store took the change ([[T-17329]]).
+    let archive: () -> Bool
+    let restore: () -> Bool
 
     private var taskCount: Int { tag.tasks?.count ?? 0 }
     private var noteCount: Int { tag.notes?.count ?? 0 }
@@ -323,6 +330,9 @@ private struct iOSTagSettingsRow: View {
                 editContent
             } else {
                 displayContent
+                if let archiveFailureNotice {
+                    CadenceInlineFailureNotice(text: archiveFailureNotice)
+                }
             }
         }
         .padding(.vertical, 8)
@@ -411,6 +421,7 @@ private struct iOSTagSettingsRow: View {
                 draftDescription = tag.desc
                 draftColorHex = tag.colorHex
                 saveFailureNotice = nil
+                archiveFailureNotice = nil
                 isEditing = true
             }
 
@@ -423,7 +434,8 @@ private struct iOSTagSettingsRow: View {
                 tint: isArchivedList ? Theme.blue : Theme.amber,
                 isSelected: true
             ) {
-                isArchivedList ? restore() : archive()
+                let committed = isArchivedList ? restore() : archive()
+                archiveFailureNotice = committed ? nil : CadencePendingChangePersistence.editFailureNotice
             }
         }
     }

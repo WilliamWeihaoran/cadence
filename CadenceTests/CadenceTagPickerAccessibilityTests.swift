@@ -78,11 +78,13 @@ struct CadenceTagPickerAccessibilityTests {
         #expect(CadenceTagChipStyle.unarchiveControlLabel(name: " ", slug: "deep-work") == "Unarchive deep-work")
 
         let mac = try Self.compactBody("private var displayContent: some View", in: Self.macSettingsPath)
-        #expect(mac.contains("action:onArchive") && mac.contains("action:onRestore"),
+        // [[T-17329]]: each control's action now records whether the store took the change, so the
+        // label is followed by a trailing closure around `onRestore()` / `onArchive()`.
+        #expect(mac.contains("recordArchiveOutcome(onArchive())") && mac.contains("recordArchiveOutcome(onRestore())"),
                 "non-vacuity: the Mac Settings row still draws both archive controls")
-        #expect(mac.contains(#"accessibilityLabel:CadenceTagChipStyle.unarchiveControlLabel(for:tag),action:onRestore"#),
+        #expect(mac.contains(#"accessibilityLabel:CadenceTagChipStyle.unarchiveControlLabel(for:tag)){recordArchiveOutcome(onRestore())}"#),
                 "the Mac Settings tag row's restore control is not named for its tag")
-        #expect(mac.contains(#"accessibilityLabel:CadenceTagChipStyle.archiveControlLabel(for:tag),action:onArchive"#),
+        #expect(mac.contains(#"accessibilityLabel:CadenceTagChipStyle.archiveControlLabel(for:tag)){recordArchiveOutcome(onArchive())}"#),
                 "the Mac Settings tag row's archive control is not named for its tag")
         #expect(!mac.contains(#""Archivetag""#) && !mac.contains(#""Restoretag""#))
 
