@@ -555,6 +555,19 @@ enum NotesListVisibility {
         notes.filter { isPinned($0) || hasContent($0) }
     }
 
+    /// **[[T-17313]] -- how many notes a tile labelled "Notes" counts**: the hide-blank rule above,
+    /// so iOS Settings > Local Data agrees with the Notes list. It counted every `Note` row, and a
+    /// daily or weekly note is made the moment its day or week is opened, so a user who wrote in
+    /// five days but browsed forty read "Notes 40" beside a list of five.
+    ///
+    /// The same `listed` filter, with only the kinds the list never filters pinned: a period note
+    /// counts once `hasContent` says it holds something, and a notepad, event or list note counts
+    /// because it only exists when someone made it (`notepadNotes`, `meetingNotes`). The pinned
+    /// blank current day and week are not counted -- a row that is a way in is not a note written.
+    static func listedCount(_ notes: [Note]) -> Int {
+        listed(notes) { $0.kind != .daily && $0.kind != .weekly }.count
+    }
+
     /// Daily tab: today is always listed, even blank — it is the way in to writing today's note.
     static func dailyNotes(_ notes: [Note], todayKey: String) -> [Note] {
         listed(notes) { $0.dateKey == todayKey }

@@ -281,7 +281,7 @@ struct iOSSettingsView: View {
                 activeContextCount: activeContextCount,
                 activeAreaCount: activeAreaCount,
                 activeProjectCount: activeProjectCount,
-                noteCount: notes.count,
+                noteCount: NotesListVisibility.listedCount(notes),
                 sampleDataStatus: sampleDataStatus,
                 seedSampleData: seedSampleData
             )
@@ -293,7 +293,7 @@ struct iOSSettingsView: View {
                 activeContextCount: activeContextCount,
                 activeAreaCount: activeAreaCount,
                 activeProjectCount: activeProjectCount,
-                noteCount: notes.count
+                noteCount: NotesListVisibility.listedCount(notes)
             )
             #endif
 

@@ -209,6 +209,36 @@ struct NotesListVisibilityTests {
         #expect(NotesListVisibility.notepadNotes([note, daily, list]).map(\.id) == [note.id])
     }
 
+    /// **[[T-17313]]: the iOS Local Data "Notes" tile counts what the Notes list shows**, not every
+    /// row. Blank daily and weekly notes -- made the moment a day or week is opened -- do not
+    /// count; written ones, a tagged-only one, and every notepad, event and list note do. The
+    /// blank current day is not counted either: it is listed as a way in, not as a note written.
+    @Test func theLocalDataNotesTileCountsWrittenNotesOnly() throws {
+        let context = try makeContext()
+        let written = daily("2026-08-07", content: "Shipped the thing", in: context)
+        let blankPast = daily("2026-08-06", content: "", in: context)
+        let blankToday = daily("2026-08-10", content: "# 2026-08-10", in: context)
+        let tagged = daily("2026-08-05", content: "---\ntags: [work]\n---\n", in: context)
+        let blankWeek = Note(kind: .weekly, title: "2026-W32", content: "", weekKey: "2026-W32")
+        let writtenWeek = Note(kind: .weekly, title: "2026-W31", content: "Plan", weekKey: "2026-W31")
+        let blankNotepad = Note(kind: .permanent, content: "# \n\n")
+        let meeting = Note(kind: .meeting, title: "Standup", content: "")
+        let list = Note(kind: .list, title: "Specs", content: "")
+        for note in [blankWeek, writtenWeek, blankNotepad, meeting, list] { context.insert(note) }
+
+        let all = [written, blankPast, blankToday, tagged, blankWeek, writtenWeek, blankNotepad, meeting, list]
+        #expect(NotesListVisibility.listedCount(all) == 6, "written, tagged, written week, notepad, event, list")
+        #expect(NotesListVisibility.listedCount([blankPast, blankToday, blankWeek]) == 0)
+        #expect(NotesListVisibility.listedCount([]) == 0)
+    }
+
+    /// The tile is handed that count on both of its builds, and the unfiltered `notes.count` is gone.
+    @Test func theLocalDataTileIsHandedTheListedCount() throws {
+        let settings = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSettingsView.swift"))
+        #expect(settings.components(separatedBy: "noteCount: NotesListVisibility.listedCount(notes)").count - 1 == 2)
+        #expect(!settings.contains("noteCount: notes.count"))
+    }
+
     /// Deleting is the only way a notepad note leaves the column, since nothing filters it.
     @Test func deletedNotepadNoteLeavesTheList() throws {
         let context = try makeContext()
