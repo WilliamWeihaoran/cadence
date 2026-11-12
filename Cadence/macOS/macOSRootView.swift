@@ -1,4 +1,5 @@
 #if os(macOS)
+import Combine
 import SwiftUI
 import SwiftData
 import AppKit
@@ -398,12 +399,23 @@ struct macOSRootView: View {
 private struct NotificationReconcileObserver: View {
     @Environment(\.scenePhase) private var scenePhase
     let sceneContext: ModelContext
+    /// [[T-17311]]: the desktop and Notification Center widgets are on screen beside this window,
+    /// so a save is the Mac's checkpoint too, not only leaving active. One per observer, so its
+    /// pending trailing reload survives re-renders.
+    @State private var widgetReloader = CadenceWidgetStoreChangeReloader()
 
     var body: some View {
         Color.clear
             // SwiftUI's `Color.clear` is hit-testable, unlike UIKit's. This one is a full-window
             // background, so without this it would sit in front of the shell for pointer events.
             .allowsHitTesting(false)
+            // Any save in this process, not only `sceneContext`'s: `refreshAppData()` swaps the
+            // context, and every in-process write is one the widgets have not read. Never in a
+            // test host, whose saves are fixtures and whose reload would stamp the real app group.
+            .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in
+                guard !NotificationManager.isTestEnvironment else { return }
+                widgetReloader.storeDidSave()
+            }
             .onChange(of: scenePhase) { _, phase in
                 if phase != .active {
                     CadenceWidgetRefreshCenter.reloadAllWidgets()

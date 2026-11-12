@@ -13,7 +13,7 @@ nonisolated enum CadenceWidgetRefreshCenter {
     private static let recentlyCompletedTasksDefaultsKey = "cadence.widgets.today.recentlyCompletedTasks"
     private static let recentlyChangedHabitsDefaultsKey = "cadence.widgets.habits.recentlyChangedHabits"
     private static let completionSuppressionInterval: TimeInterval = 90
-    private static let defaultReloadInterval: TimeInterval = 15
+    static let defaultReloadInterval: TimeInterval = 15
 
     static func reloadAllWidgets(
         minimumInterval: TimeInterval = defaultReloadInterval,
@@ -229,5 +229,76 @@ nonisolated enum CadenceWidgetRefreshCenter {
             }
         )
         defaults.set(payload, forKey: recentlyChangedHabitsDefaultsKey)
+    }
+}
+
+/// **Reloads the widgets after this process saves, at most once per throttle window, and never
+/// drops the last change of a burst** ([[T-17311]]).
+///
+/// The Mac app had no reload on a write. Its one caller was `NotificationReconcileObserver`'s
+/// leaving-active arm, and [[T-1176]] measured that macOS reports leaving active on HIDE, not on
+/// blur: a window left open beside the desktop's Today widget never fired it. So ticking off the
+/// overdue task left the widget reading "1 overdue" until its own timeline came round -- 15
+/// minutes for a ready snapshot, 30 for an empty one. That arm assumed a widget cannot be seen
+/// while the app is in front, which is iOS's home screen and not the Mac's desktop or
+/// Notification Center: the hardware difference that puts this observer on macOS only.
+///
+/// `reloadAllWidgets`' own throttle drops any call inside its window, which is right for the
+/// scene-phase checkpoint and wrong here: completing two tasks ten seconds apart would reload for
+/// the first and drop the second, leaving the widget one change behind for the same 15 minutes.
+/// So a save inside the window schedules ONE trailing reload at the window's end instead, and
+/// further saves before it fires ride on it.
+@MainActor
+final class CadenceWidgetStoreChangeReloader {
+    typealias Schedule = @MainActor (_ delay: TimeInterval, _ work: @escaping @MainActor () -> Void) -> Void
+
+    private let minimumInterval: TimeInterval
+    private let now: () -> Date
+    private let lastReload: () -> Date?
+    private let reload: () -> Void
+    private let schedule: Schedule
+    /// Whether a trailing reload is already waiting; a save while it waits needs nothing more.
+    private(set) var hasPendingReload = false
+
+    init(
+        minimumInterval: TimeInterval = CadenceWidgetRefreshCenter.defaultReloadInterval,
+        now: @escaping () -> Date = Date.init,
+        lastReload: @escaping () -> Date? = { CadenceWidgetRefreshCenter.lastReloadDate() },
+        reload: @escaping () -> Void = { CadenceWidgetRefreshCenter.reloadAllWidgets(force: true) },
+        schedule: @escaping Schedule = { delay, work in
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(delay))
+                work()
+            }
+        }
+    ) {
+        self.minimumInterval = minimumInterval
+        self.now = now
+        self.lastReload = lastReload
+        self.reload = reload
+        self.schedule = schedule
+    }
+
+    /// One store save happened. Reloads now when the last reload is outside the window (or in the
+    /// future -- a clock step back must not stall reloads for its whole size), otherwise makes sure
+    /// one reload is scheduled for the window's end.
+    func storeDidSave() {
+        guard !hasPendingReload else { return }
+        let current = now()
+        guard let last = lastReload() else {
+            reload()
+            return
+        }
+        let elapsed = current.timeIntervalSince(last)
+        guard elapsed >= 0, elapsed < minimumInterval else {
+            reload()
+            return
+        }
+        hasPendingReload = true
+        schedule(minimumInterval - elapsed) { [weak self] in
+            guard let self else { return }
+            self.hasPendingReload = false
+            self.reload()
+        }
     }
 }
