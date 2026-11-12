@@ -140,6 +140,26 @@ struct MacTaskRowContextMenuEffectTests {
         #expect(f.context.insertedModelsArray.isEmpty, "Move to List inserts nothing")
     }
 
+    /// [[T-17426]]: tapping the list the task is already in -- the checked row -- keeps it under
+    /// an archived column the list still holds. It re-normalized against the visible columns and
+    /// refiled the card to Default, out of the column Unarchive brings back.
+    @Test func reTappingTheCurrentListKeepsAnArchivedColumn() throws {
+        let f = try makeFixture()
+        f.area.sectionConfigs = f.area.sectionConfigs + [TaskSectionConfig(name: "Shelved", isArchived: true)]
+        f.subject.sectionName = "Shelved"
+        f.subject.status = .cancelled
+        try f.context.save()
+
+        let outcome = MacTaskRowContextMenu.moveToList(
+            f.subject, area: f.area, project: nil, allTasks: f.allTasks, modelContext: f.context
+        )
+
+        #expect(outcome == .settled)
+        let committed = try #require(try f.committed(f.subject))
+        #expect(committed.area?.id == f.area.id)
+        #expect(committed.sectionName == "Shelved", "re-tapping the current list refiled the card out of its archived column")
+    }
+
     @Test func moveToInboxClearsBothContainers() throws {
         let f = try makeFixture()
 

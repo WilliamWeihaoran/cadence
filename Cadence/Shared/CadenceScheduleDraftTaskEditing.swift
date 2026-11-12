@@ -42,7 +42,8 @@ extension CadenceScheduleDraft {
         priority = task.priority
         dueDateKey = task.dueDate
         listToken = Self.containerToken(of: task)
-        sectionName = CadenceTaskMutationSupport.normalizedSectionName(
+        // [[T-17426]]: retained, not normalized -- a task under an archived column opens on it.
+        sectionName = CadenceTaskMutationSupport.retainedSectionName(
             task.resolvedSectionName,
             area: task.filedArea,
             project: task.project
@@ -178,8 +179,11 @@ enum CadenceTaskEditDraftCommit {
         if CadenceTaskMutationSupport.isAlreadyInContainer(task, area: area, project: project) {
             // **Not `assignContainer`** (T-726's ground, one frame lower): re-asserting the list a
             // task is already in would re-derive its context from the list and overwrite one the
-            // user set by hand. Staying put changes only the section.
-            task.sectionName = sectionName
+            // user set by hand. Staying put changes only the section -- and keeps an archived
+            // column the list still holds ([[T-17426]]).
+            task.sectionName = CadenceTaskMutationSupport.retainedSectionName(
+                draft.sectionName, area: area, project: project
+            )
         } else {
             CadenceTaskMutationSupport.assignContainer(
                 task,

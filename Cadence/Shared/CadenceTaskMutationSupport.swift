@@ -516,6 +516,21 @@ extension CadenceTaskMutationSupport {
         return names.first ?? TaskSectionDefaults.defaultName
     }
 
+    /// **[[T-17426]]: the section a task KEEPS when it stays in its own list** -- the task editor's
+    /// read on open and its write on Save. `normalizedSectionName` matches the list's visible
+    /// columns only, so a task under an archived column (and completing a column archives it,
+    /// [[T-15722]]) opened reading "Default", and any Save -- a rename, a note -- refiled it there:
+    /// the card left the column on the Show Archived board and did not come back with Unarchive.
+    /// A column the list still holds, archived or not, is kept; a name no column holds still
+    /// normalizes. A task MOVING into a list never reads this: archived columns are not targets.
+    static func retainedSectionName(_ sectionName: String, area: Area?, project: Project?) -> String {
+        let stored = area?.sectionConfigs ?? project?.sectionConfigs ?? []
+        if let held = stored.first(where: { $0.name.caseInsensitiveCompare(sectionName) == .orderedSame }) {
+            return held.name
+        }
+        return normalizedSectionName(sectionName, area: area, project: project)
+    }
+
     /// True when `area`/`project` already name the container the task sits in — so assigning them
     /// would move it nowhere.
     ///
@@ -551,9 +566,13 @@ extension CadenceTaskMutationSupport {
         allTasks: [AppTask],
         updateOrder: Bool = true
     ) {
-        let normalizedSectionName = normalizedSectionName(sectionName, area: area, project: project)
         // Read before the relationships below are rewritten.
         let isContainerChange = !isAlreadyInContainer(task, area: area, project: project)
+        // [[T-17426]]: a task staying in its list keeps an archived column the list still holds --
+        // Move to List re-tapping the checked current list must not refile it to Default.
+        let normalizedSectionName = isContainerChange
+            ? normalizedSectionName(sectionName, area: area, project: project)
+            : retainedSectionName(sectionName, area: area, project: project)
 
         if let area {
             task.area = area

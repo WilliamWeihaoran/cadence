@@ -1108,6 +1108,68 @@ struct CadenceScheduleDraftTaskEditingTests {
         #expect(stored.title == "Ship the fix")
     }
 
+    /// [[T-17426]]: a task under an ARCHIVED column -- which a completed column now is
+    /// ([[T-15722]]) -- opens on that column and a Save keeps it there. The draft normalized against
+    /// the visible columns only, so it opened reading "Default" and a rename refiled the card out
+    /// of the column; Unarchive then brought the column back without it. A name no column holds
+    /// still normalizes, and a task MOVING into a list never lands in an archived column.
+    @Test("A task under an archived column opens on it and a rename keeps it there")
+    func aTaskUnderAnArchivedColumnKeepsItOnSave() throws {
+        let (container, context) = try store()
+        let launch = Project(name: "Launch")
+        launch.sectionConfigs = [
+            TaskSectionConfig(name: TaskSectionDefaults.defaultName),
+            TaskSectionConfig(name: "Doing", isCompleted: true, isArchived: true),
+        ]
+        let other = Project(name: "Other")
+        other.sectionConfigs = launch.sectionConfigs
+        context.insert(launch)
+        context.insert(other)
+        let task = AppTask(title: "Ship it")
+        task.project = launch
+        task.sectionName = "doing"
+        task.status = .done
+        let stray = AppTask(title: "Stray")
+        stray.project = launch
+        stray.sectionName = "Removed elsewhere"
+        let mover = AppTask(title: "Mover")
+        mover.project = launch
+        mover.sectionName = "Doing"
+        for model in [task, stray, mover] { context.insert(model) }
+        try context.save()
+        #expect(!launch.sectionNames.contains("Doing"), "fixture: the column is not archived")
+
+        let opened = CadenceScheduleDraft(editing: task)
+        #expect(opened.sectionName == "Doing", "the editor opened an archived column's task on another column")
+        var renamed = opened
+        renamed.title = "Ship it now"
+        #expect(CadenceTaskEditDraftCommit.save(
+            renamed, opened: opened, to: task, area: nil, project: launch,
+            allTasks: [task, stray, mover], scope: .thisTask, in: context, reconciler: .inert
+        ))
+
+        let strayOpened = CadenceScheduleDraft(editing: stray)
+        #expect(strayOpened.sectionName == TaskSectionDefaults.defaultName)
+        #expect(CadenceTaskEditDraftCommit.save(
+            strayOpened, opened: strayOpened, to: stray, area: nil, project: launch,
+            allTasks: [task, stray, mover], scope: .thisTask, in: context, reconciler: .inert
+        ))
+
+        var moved = CadenceScheduleDraft(editing: mover)
+        moved.listToken = CadenceTaskComposerSupport.token(for: .project(other.id))
+        #expect(CadenceTaskEditDraftCommit.save(
+            moved, opened: CadenceScheduleDraft(editing: mover), to: mover, area: nil, project: other,
+            allTasks: [task, stray, mover], scope: .thisTask, in: context, reconciler: .inert
+        ))
+
+        let stored = try ModelContext(container).fetch(FetchDescriptor<AppTask>())
+        let byTitle = Dictionary(uniqueKeysWithValues: stored.map { ($0.title, $0) })
+        #expect(byTitle["Ship it now"]?.sectionName == "Doing", "a rename refiled the card out of its archived column")
+        #expect(byTitle["Stray"]?.sectionName == TaskSectionDefaults.defaultName, "a name no column holds was kept")
+        #expect(byTitle["Mover"]?.project?.id == other.id)
+        #expect(byTitle["Mover"]?.sectionName == TaskSectionDefaults.defaultName, "a move landed in an archived column")
+    }
+
     /// [[T-14233]]: the last five-minute starts of the day survive Save. The write capped the start
     /// at 1425, the last QUARTER-hour, while the Start roller steps in five minutes and the draft
     /// reads up to 23:59 -- so a picked 11:55 PM saved as 11:45 PM, and a task already at 23:50
