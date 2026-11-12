@@ -842,8 +842,9 @@ struct iOSNoteReferencePanel: View {
             // referenced task does not read as undated on one platform and overdue on the other.
             // Without one, the chip names the task the way its `[[` suggestion does ([[T-14424]]):
             // the list's display title or "Inbox", then " · Completed" when it is done.
-            let due = CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey, isSettled: task.isDone)
-            let isOverdue = task.isOverdue(todayKey: todayKey)
+            // [[T-16893]]: the task row's words and flag, so a cancelled task's deadline is settled.
+            let due = CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: todayKey)
+            let isOverdue = CadenceTaskPresentationSupport.dueDateIsLate(task, todayKey: todayKey)
             let title = task.title.trimmingCharacters(in: .whitespacesAndNewlines)
 
             iOSMarkdownSuggestionPill(

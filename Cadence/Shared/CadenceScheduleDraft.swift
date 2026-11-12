@@ -152,9 +152,12 @@ struct CadenceScheduleDraft: Equatable {
     /// Which occurrence of its series this is, 1-based — **read, never written**. The Ends row's
     /// "3 of 5" is the one fact about a counted series the editor has nowhere else to say.
     var seriesOccurrenceNumber: Int
-    /// Whether the task is done. It colours nothing by itself; it is what stops a past do date or
-    /// a passed deadline being painted as wrong on a task that is already finished.
-    var isDone: Bool
+    /// Whether the task is settled -- done OR cancelled, `CadenceTaskQuerySupport.isFinishedTask`
+    /// ([[T-16893]], after [[T-16891]]). It colours nothing by itself; it is what stops a past do
+    /// date or a passed deadline being painted as wrong on a task that is already over. It was
+    /// `isDone`, set from `task.isDone`, so a cancelled task's Due and Do rows went red in the
+    /// inspector while its row and card read them settled.
+    var isSettled: Bool
 
     // MARK: Event only
 
@@ -201,7 +204,7 @@ struct CadenceScheduleDraft: Equatable {
         self.seriesEndDateKey = ""
         self.seriesEndCount = 0
         self.seriesOccurrenceNumber = 1
-        self.isDone = false
+        self.isSettled = false
         self.location = ""
         self.calendarID = ""
     }
@@ -286,7 +289,7 @@ struct CadenceScheduleDraft: Equatable {
         self.seriesEndDateKey = ""
         self.seriesEndCount = 0
         self.seriesOccurrenceNumber = 1
-        self.isDone = false
+        self.isSettled = false
         self.location = location
         self.calendarID = calendarID
 
@@ -655,16 +658,16 @@ struct CadenceScheduleDraft: Equatable {
         return "\(time) · " + CadenceTaskPresentationSupport.estimateLabel(minutes: estimateMinutes)
     }
 
-    /// A do date in the past on a task that is not done — one of the two things in a task's
+    /// A do date in the past on a task that is not settled — one of the two things in a task's
     /// schedule that is wrong, and so one of the two the panel spends colour on.
     var isDoDateOverdue: Bool {
-        guard kind == .task, !isDone, !startDateKey.isEmpty else { return false }
+        guard kind == .task, !isSettled, !startDateKey.isEmpty else { return false }
         return (DateFormatters.dayOffset(from: startDateKey) ?? 0) < 0
     }
 
-    /// A passed deadline on a task that is not done — the other one.
+    /// A passed deadline on a task that is not settled — the other one.
     var isDueDateOverdue: Bool {
-        kind == .task && CadenceDueUrgency.evaluate(dueDateKey: dueDateKey, isDone: isDone) == .overdue
+        kind == .task && CadenceDueUrgency.evaluate(dueDateKey: dueDateKey, isDone: isSettled) == .overdue
     }
 
     /// The end mode that actually applies: `AppTask.effectiveRecurrenceEndMode`'s rule, read off

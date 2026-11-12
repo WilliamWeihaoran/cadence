@@ -280,8 +280,9 @@ struct TaskNoteListRow: View {
             metrics: metrics,
             systemImage: task.isDone ? "checkmark.circle.fill" : "circle",
             glyphColor: task.isDone ? Theme.green : nil,
-            leadingDetail: CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey, isSettled: task.isDone),
-            leadingDetailIsAlert: task.isOverdue(todayKey: todayKey)
+            // [[T-16893]]: the row's words and flag, so a cancelled task's past deadline is settled.
+            leadingDetail: CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: todayKey),
+            leadingDetailIsAlert: CadenceTaskPresentationSupport.dueDateIsLate(task, todayKey: todayKey)
         )
         // [[T-7068]]: the open task is a blue fill, which an assistive client cannot read.
         .accessibilityAddTraits(isSelected ? .isSelected : [])

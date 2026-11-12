@@ -3,7 +3,7 @@ import Foundation
 /// What the iOS task sheet would lose if it closed now: the one answer its swipe guard, its
 /// Focus handoff and its Save read, so the three cannot disagree about what "unsaved" means.
 ///
-/// **[[T-5359]] — completion is not an unsaved edit.** `CadenceScheduleDraft.isDone` is a mirror
+/// **[[T-5359]] — completion is not an unsaved edit.** `CadenceScheduleDraft.isSettled` is a mirror
 /// of the task, never a field the panel lets anyone change: it only stops a past date being
 /// painted as wrong on a finished task, and `CadenceTaskEditDraftCommit` never writes it. The sheet
 /// copies the live status into it when Complete lands, so comparing it made a task completed from
@@ -37,7 +37,7 @@ enum CadenceTaskSheetUnsavedWork {
     /// The draft against the one it opened as, with the completion mirror left out.
     static func draftDiffers(_ draft: CadenceScheduleDraft, from opened: CadenceScheduleDraft) -> Bool {
         var comparable = draft
-        comparable.isDone = opened.isDone
+        comparable.isSettled = opened.isSettled
         return comparable != opened
     }
 

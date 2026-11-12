@@ -58,7 +58,7 @@ extension CadenceScheduleDraft {
             occurrenceNumber: task.recurrenceOccurrenceNumber
         )
         seriesOccurrenceNumber = task.recurrenceOccurrenceNumber
-        isDone = task.isDone
+        isSettled = CadenceTaskQuerySupport.isFinishedTask(task)
 
         let hasTime = task.scheduledStartMin >= 0 && !task.scheduledDate.isEmpty
         isAllDay = !hasTime

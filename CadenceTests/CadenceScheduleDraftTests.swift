@@ -1377,14 +1377,42 @@ struct CadenceScheduleDraftTaskEditingTests {
         draft.dueDateKey = "2020-01-02"
         #expect(draft.isDoDateOverdue)
         #expect(draft.isDueDateOverdue)
-        draft.isDone = true
+        draft.isSettled = true
         #expect(!draft.isDoDateOverdue)
         #expect(!draft.isDueDateOverdue)
-        draft.isDone = false
+        draft.isSettled = false
         draft.startDateKey = "2999-01-01"
         draft.dueDateKey = "2999-01-02"
         #expect(!draft.isDoDateOverdue)
         #expect(!draft.isDueDateOverdue)
+    }
+
+    /// [[T-16893]], after [[T-16891]]: a CANCELLED task is settled too. The inspector opened it
+    /// with `isDone`, so its passed deadline and past do date were painted red in the Due and Do
+    /// rows while its row and board card read them settled. Opening reads
+    /// `CadenceTaskQuerySupport.isFinishedTask`; an open task's past dates still read late.
+    @Test("A cancelled task's past dates read settled in the inspector")
+    func aCancelledTasksPastDatesReadSettledInTheInspector() throws {
+        let (_, context) = try store()
+        let area = Area(name: "Work")
+        context.insert(area)
+        let task = try filedTask(in: context, area: area)
+        task.scheduledDate = "2020-01-01"
+        task.dueDate = "2020-01-02"
+
+        let open = CadenceScheduleDraft(editing: task)
+        #expect(!open.isSettled)
+        #expect(open.isDoDateOverdue)
+        #expect(open.isDueDateOverdue)
+
+        task.status = .cancelled
+        let cancelled = CadenceScheduleDraft(editing: task)
+        #expect(cancelled.isSettled, "a cancelled task opened as unsettled")
+        #expect(!cancelled.isDoDateOverdue, "a cancelled task's past do date read red")
+        #expect(!cancelled.isDueDateOverdue, "a cancelled task's passed deadline read red")
+
+        task.status = .done
+        #expect(CadenceScheduleDraft(editing: task).isSettled)
     }
 }
 

@@ -35,15 +35,15 @@ struct CadenceTaskSheetUnsavedWorkTests {
 
     @Test func completingTheTaskFromTheSheetIsNotAnUnsavedEdit() {
         var draft = Self.opened()
-        draft.isDone = true
+        draft.isSettled = true
         #expect(!Self.unsaved(draft), "Complete made the sheet refuse its swipe-down")
-        draft.isDone = false
+        draft.isSettled = false
         #expect(!Self.unsaved(draft))
     }
 
     @Test func aRealEditStillCountsWhenTheTaskWasAlsoCompleted() {
         var draft = Self.opened()
-        draft.isDone = true
+        draft.isSettled = true
         draft.title = "Retitled"
         #expect(Self.unsaved(draft))
     }

@@ -723,7 +723,7 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
         // [[T-6191]]: an After count stored below this occurrence before [[T-6114]]'s floor is
         // repaired when the task is opened, and only then. A coherent count is not written.
         .onAppear { CadenceTaskRecurrenceWorkflowSupport.repairEndCountOnOpen(task, in: modelContext) }
-        .onChange(of: task.statusRaw) { _, _ in draft.isDone = task.isDone }
+        .onChange(of: task.statusRaw) { _, _ in draft.isSettled = CadenceTaskQuerySupport.isFinishedTask(task) }
         .confirmationDialog(
             CadenceRecurrenceScopeCopy.taskScopeTitle,
             isPresented: $isAskingRecurrenceScope,
@@ -801,7 +801,7 @@ enum TaskInspectorScheduleCommit {
             payload.seriesEndCount = current.seriesEndCount
         }
         payload.seriesOccurrenceNumber = current.seriesOccurrenceNumber
-        payload.isDone = current.isDone
+        payload.isSettled = current.isSettled
         let clearsSchedule = (payload.startDateKey.isEmpty && !current.startDateKey.isEmpty)
             || (payload.scheduledStartMin < 0 && current.scheduledStartMin >= 0)
         return CadenceTaskEditDraftCommit.save(

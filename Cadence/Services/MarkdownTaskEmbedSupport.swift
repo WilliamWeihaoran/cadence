@@ -34,6 +34,13 @@ nonisolated struct MarkdownTaskEmbedRenderInfo: Hashable {
     let isMissing: Bool
     let subtasks: [MarkdownTaskEmbedSubtaskRenderInfo]
 
+    /// Done OR cancelled: `CadenceTaskQuerySupport.isFinishedTask`, read off the card's snapshot
+    /// rather than the live task. A settled card's past dates read settled -- no red, no
+    /// "Overdue" ([[T-16893]], after [[T-16891]]).
+    var isSettled: Bool {
+        isDone || isCancelled
+    }
+
     var subtaskTotalCount: Int {
         subtasks.count
     }

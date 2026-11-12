@@ -28,12 +28,12 @@ struct CadenceDueDateVocabularyTests {
         return task
     }
 
-    private func embedInfo(dueDate: String, isDone: Bool = false) -> MarkdownTaskEmbedRenderInfo {
+    private func embedInfo(dueDate: String, isDone: Bool = false, isCancelled: Bool = false, scheduledDate: String = "") -> MarkdownTaskEmbedRenderInfo {
         MarkdownTaskEmbedRenderInfo(
             id: UUID(), title: "T", statusRaw: TaskStatus.todo.rawValue, priorityRaw: TaskPriority.none.rawValue,
-            sectionName: "", containerName: "", containerColorHex: "", dueDate: dueDate, scheduledDate: "",
+            sectionName: "", containerName: "", containerColorHex: "", dueDate: dueDate, scheduledDate: scheduledDate,
             scheduledStartMin: -1, estimatedMinutes: 0, actualMinutes: 0,
-            recurrenceRaw: TaskRecurrenceRule.none.rawValue, isDone: isDone, isCancelled: false, isMissing: false,
+            recurrenceRaw: TaskRecurrenceRule.none.rawValue, isDone: isDone, isCancelled: isCancelled, isMissing: false,
             subtasks: []
         )
     }
@@ -144,16 +144,61 @@ struct CadenceDueDateVocabularyTests {
     }
 
     /// The three note-reference surfaces are a SwiftUI body each, so their wiring is read as source:
-    /// each hands the task's `isDone` to the label it pairs with `isOverdue`.
+    /// each reads the task row's words and flag -- `dueDateLabel` and `dueDateIsLate`, settled on
+    /// `isFinishedTask` -- so a CANCELLED task's past deadline is settled there too ([[T-16893]];
+    /// they handed in `task.isDone` and paired it with `task.isOverdue`, which keeps a cancelled
+    /// task eligible).
     @Test func theNoteReferenceSurfacesHandInTheSettledState() throws {
-        let needle = "CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey, isSettled: task.isDone)"
         for path in [
             "Cadence/Shared/CadenceNoteFolderSupport.swift",
             "Cadence/macOS/Views/NoteReferenceSupportViews.swift",
             "Cadence/iOS/iOSMarkdownAccessoryViews.swift",
         ] {
             let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
-            #expect(source.contains(needle), "\(path) words a done task's due date without its settled state")
+            #expect(
+                source.contains("CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: todayKey)"),
+                "\(path) words a settled task's due date without the row's settled state"
+            )
+            #expect(
+                source.contains("CadenceTaskPresentationSupport.dueDateIsLate(task, todayKey: todayKey)"),
+                "\(path) flags a due date late without the row's settled state"
+            )
+            #expect(!source.contains("isSettled: task.isDone"), "\(path) went back to the done-only words")
+            #expect(!source.contains("task.isOverdue(todayKey: todayKey)"), "\(path) went back to the store predicate")
+        }
+    }
+
+    /// **[[T-16893]]: a cancelled task's embed card reads its past dates settled** -- the due chip
+    /// says "Due Nov 9" in the dim tone and the do chip is dim, on the Mac card and the iOS card
+    /// alike (both draw `CadenceTaskEmbedChipRow`'s slots). The card's snapshot carries
+    /// `isCancelled`; the tone and words guarded `isDone` alone. An open card is unchanged.
+    @Test func aCancelledEmbedCardsPastDatesReadSettled() throws {
+        let past = "2026-11-09"
+        let reference = try #require(DateFormatters.date(from: Self.today))
+        let cancelled = embedInfo(dueDate: past, isCancelled: true, scheduledDate: past)
+        let open = embedInfo(dueDate: past, scheduledDate: past)
+
+        #expect(CadenceTaskEmbedDateTone.dueDate(of: cancelled, todayKey: Self.today) == .neutral, "cancelled due tone")
+        #expect(CadenceTaskEmbedDateTone.doDate(of: cancelled, todayKey: Self.today) == .neutral, "cancelled do tone")
+        let cancelledDue = CadenceTaskEmbedChipRow.slots(for: cancelled, relativeTo: reference)
+            .first { $0.field == .dueDate }?.title
+        #expect(cancelledDue == "Due Nov 9", "cancelled embed due words")
+
+        #expect(CadenceTaskEmbedDateTone.dueDate(of: open, todayKey: Self.today) == .overdue, "open due tone")
+        #expect(CadenceTaskEmbedDateTone.doDate(of: open, todayKey: Self.today) == .overdue, "open do tone")
+        let openDue = CadenceTaskEmbedChipRow.slots(for: open, relativeTo: reference)
+            .first { $0.field == .dueDate }?.title
+        #expect(openDue == "Overdue Nov 9", "open embed due words")
+    }
+
+    /// Both inspectors re-mirror the live status into the draft when it changes (Complete, Cancel,
+    /// Reopen), behind a SwiftUI `onChange`, so that wiring is read as code: it hands the draft the
+    /// finished predicate, not `task.isDone` ([[T-16893]]). Opening is pinned on real models in
+    /// `CadenceScheduleDraftTaskEditingTests.aCancelledTasksPastDatesReadSettledInTheInspector`.
+    @Test func bothInspectorsMirrorTheSettledStateOnAStatusChange() throws {
+        for path in ["Cadence/iOS/iOSTaskDetailSheet.swift", "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift"] {
+            let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            #expect(source.contains("draft.isSettled = CadenceTaskQuerySupport.isFinishedTask(task)"), "\(path) mirrors a done-only state")
         }
     }
 

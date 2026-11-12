@@ -131,6 +131,15 @@ struct GoalContributionResolverTests {
         stillOpen.context = context
         stillOpen.dueDate = "2026-04-02"
 
+        // [[T-16893]]: cancelled is settled too. `AppTask.isOverdue` keeps it eligible, so this
+        // is the shape that says the goal's overdue count leaves it out (`contributingTasks`
+        // drops cancelled work before `overdueTasks` asks).
+        let cancelledPastDue = AppTask(title: "Dropped after the deadline")
+        cancelledPastDue.area = area
+        cancelledPastDue.context = context
+        cancelledPastDue.dueDate = "2026-04-03"
+        cancelledPastDue.status = .cancelled
+
         let link = GoalListLink(goal: goal, area: area)
 
         modelContext.insert(context)
@@ -138,10 +147,12 @@ struct GoalContributionResolverTests {
         modelContext.insert(goal)
         modelContext.insert(doneButPastDue)
         modelContext.insert(stillOpen)
+        modelContext.insert(cancelledPastDue)
         modelContext.insert(link)
         try modelContext.save()
 
         let now = DateFormatters.date(from: "2026-04-30") ?? Date()
+        #expect(cancelledPastDue.isOverdue(todayKey: "2026-04-30"), "non-vacuity: the store predicate calls it overdue")
         #expect(GoalContributionResolver.summary(for: goal, now: now).overdueTaskCount == 1)
         #expect(
             GoalContributionResolver.overdueTasks(for: goal, now: now).map(\.title) == ["Never finished"]

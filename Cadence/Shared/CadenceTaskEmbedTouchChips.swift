@@ -122,8 +122,8 @@ nonisolated enum CadenceTaskEmbedChipRow {
         slots.append(CadenceTaskEmbedChipSlot(
             field: .dueDate,
             // [[T-15491]]: the one due-date vocabulary, the words the Mac reference chip draws;
-            // settled on the `isDone` the tone below guards with ([[T-15522]]).
-            title: CadenceWidgetDateSupport.dueLabel(for: task.dueDate, todayKey: todayKey, isSettled: task.isDone),
+            // settled on the `isSettled` the tone below guards with ([[T-15522]], [[T-16893]]).
+            title: CadenceWidgetDateSupport.dueLabel(for: task.dueDate, todayKey: todayKey, isSettled: task.isSettled),
             tone: .date(CadenceTaskEmbedDateTone.dueDate(of: task, todayKey: todayKey)),
             importance: task.dueDate.isEmpty ? Importance.emptyDueDate : Importance.dueDate
         ))
@@ -216,19 +216,20 @@ nonisolated enum CadenceTaskEmbedTouchChips {
 /// an unfinished task; a do date is red once it has passed, the highlight accent on the day itself,
 /// and dim otherwise; nothing on a finished task is urgent. The iOS card painted every Due red and
 /// every Do blue, so "Due Tomorrow" and the due date of a task already done read as overdue.
-/// `isDone` is the only settled state excluded, as in `AppTask.isOverdue(todayKey:)`.
+/// "Finished" is `MarkdownTaskEmbedRenderInfo.isSettled` -- done OR cancelled ([[T-16893]]); it was
+/// `isDone` only, as in `AppTask.isOverdue(todayKey:)`, so a cancelled card's past dates read red.
 nonisolated enum CadenceTaskEmbedDateTone: Equatable {
     case neutral
     case today
     case overdue
 
     static func dueDate(of task: MarkdownTaskEmbedRenderInfo, todayKey: String) -> CadenceTaskEmbedDateTone {
-        guard !task.isDone, AppTask.isDueDateOverdue(task.dueDate, todayKey: todayKey) else { return .neutral }
+        guard !task.isSettled, AppTask.isDueDateOverdue(task.dueDate, todayKey: todayKey) else { return .neutral }
         return .overdue
     }
 
     static func doDate(of task: MarkdownTaskEmbedRenderInfo, todayKey: String) -> CadenceTaskEmbedDateTone {
-        guard !task.isDone, !task.scheduledDate.isEmpty else { return .neutral }
+        guard !task.isSettled, !task.scheduledDate.isEmpty else { return .neutral }
         if task.scheduledDate < todayKey { return .overdue }
         if task.scheduledDate == todayKey { return .today }
         return .neutral

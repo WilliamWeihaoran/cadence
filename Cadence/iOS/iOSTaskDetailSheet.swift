@@ -188,7 +188,7 @@ struct iOSTaskDetailSheet: View {
         // and logged time, which the focus timer writes. `normalizeCompletionState` is the repair
         // the old field observers fired; Save runs it for every drafted field.
         .onChange(of: task.statusRaw) { _, _ in
-            draft.isDone = task.isDone
+            draft.isSettled = CadenceTaskQuerySupport.isFinishedTask(task)
             saveTask()
         }
         .onChange(of: task.actualMinutes) { _, _ in saveTask() }

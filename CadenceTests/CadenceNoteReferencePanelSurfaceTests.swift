@@ -653,8 +653,10 @@ struct CadenceNoteReferencePanelSurfaceTests {
 
     /// The overdue deadline and the section accents are read from the shared vocabularies rather than
     /// spelled again: the same due-label helper macOS's chip calls, and `Theme` for every colour.
+    /// Since [[T-16893]] that helper is the task row's own `dueDateLabel`, settled on
+    /// `isFinishedTask`, so a cancelled task's deadline is not red here either.
     @Test func thePanelBorrowsTheDueLabelAndSpendsNoColourOfItsOwn() throws {
-        try expectOccurrences(of: "CadenceFocusSupport.dueLabel(", at: [
+        try expectOccurrences(of: "CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: todayKey)", at: [
             "Cadence/iOS/iOSMarkdownAccessoryViews.swift": 1,
             "Cadence/macOS/Views/NoteReferenceSupportViews.swift": 1
         ])
