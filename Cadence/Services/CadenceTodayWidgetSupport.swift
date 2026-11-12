@@ -422,8 +422,26 @@ nonisolated enum CadenceTodayWidgetSupport {
             priorityRaw: task.priority.rawValue,
             dueDate: task.dueDate,
             scheduledDate: task.scheduledDate,
-            containerName: task.containerName
+            containerName: listLabel(for: task)
         )
+    }
+
+    /// The list a widget row names ([[T-17067]]): a blank or whitespace-only area or project name
+    /// reads "Untitled Area" / "Untitled Project", as Today's group heading, the row's list chip and
+    /// the rollover banner name it ([[T-11892]], [[T-14001]], [[T-16283]]). The row read the raw
+    /// `AppTask.containerName`, so a blank-named list drew no pill (and a whitespace one an empty
+    /// capsule) beside a task the app's Today files under "Untitled Project". An Inbox task still
+    /// answers "" and draws no pill, as before. `CadenceTitleNormalization` rather than
+    /// `CadenceBoardCardMetadata.listTitle`: this file is compiled into the widget extension, which
+    /// builds `Models/` and not `Shared/`.
+    nonisolated static func listLabel(for task: AppTask) -> String {
+        if let project = task.project {
+            return CadenceTitleNormalization.display(project.name, fallback: CadenceTitleNormalization.defaultProjectName)
+        }
+        if let area = task.area {
+            return CadenceTitleNormalization.display(area.name, fallback: CadenceTitleNormalization.defaultAreaName)
+        }
+        return ""
     }
 
     /// **Open work carrying at least one date** — the population every date-driven widget reads,

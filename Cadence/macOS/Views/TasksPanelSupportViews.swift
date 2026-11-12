@@ -69,9 +69,15 @@ struct TasksPanelHeader<Trailing: View>: View {
 
     /// The day itself — `DateFormatters.longDate`, uppercased by `SectionEyebrowLabel`, exactly as
     /// both iOS Todays spell it. The observed-day read is the dependency the observer invalidates.
+    ///
+    /// [[T-17068]]: `DateFormatters.now()`, not `Date()` -- the day `todayKey()` names, which is
+    /// what iPad Today's header is handed (`iOSTodayView`) and what [[T-15611]] moved the Mac
+    /// schedule pane beside this header onto. Under the Debug today override ([[T-15200]]) this
+    /// read the real clock, so the header named the real date above a page drawn for the shifted
+    /// day. Identical to `Date()` in every Release build.
     private var eyebrow: String {
         _ = observedDay.todayKey
-        return DateFormatters.longDate.string(from: Date())
+        return DateFormatters.longDate.string(from: DateFormatters.now())
     }
 
     var body: some View {
