@@ -212,7 +212,15 @@ struct FocusView: View {
                         items: focusPickerItems,
                         readyCount: readyTasks.count,
                         todayKey: todayKey,
-                        onSelectTask: { task in reportingFocusFailure { try focusManager.startFocus(task: task, in: modelContext) } }
+                        // [[T-17048]]: a started session takes the card off screen, and the query
+                        // used to outlive it -- the card came back after the session filtered to
+                        // the old search ("1 match"), hiding most ready tasks. Cleared only when
+                        // the start committed, so a refused start leaves the search as typed.
+                        onSelectTask: { task in
+                            if reportingFocusFailure({ try focusManager.startFocus(task: task, in: modelContext) }) {
+                                idleSearchText = ""
+                            }
+                        }
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }

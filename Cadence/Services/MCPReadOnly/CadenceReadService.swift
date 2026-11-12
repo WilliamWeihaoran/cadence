@@ -470,7 +470,10 @@ final class CadenceReadService {
 
         return CadenceContextSummary(
             context: contextRef(context),
-            inboxTaskCount: tasks.filter { $0.area == nil && $0.project == nil && !$0.isCancelled }.count,
+            // [[T-17047]]: open Inbox work only, through the predicate every on-screen Inbox count
+            // reads. The hand-spelled filter here dropped cancelled tasks but kept done ones, so
+            // this field disagreed with `activeTaskCount` beside it and with the Inbox badge.
+            inboxTaskCount: CadenceTaskQuerySupport.openInboxTaskCount(from: tasks),
             activeTaskCount: activeTasks.count,
             completedTaskCount: tasks.filter(\.isDone).count,
             scheduledTaskCount: activeTasks.filter { !$0.scheduledDate.isEmpty }.count,
