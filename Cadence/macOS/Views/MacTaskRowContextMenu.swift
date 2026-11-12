@@ -275,10 +275,17 @@ struct MacTaskRowContextMenu: View {
     /// A refused duplicate would otherwise look exactly like a menu that did nothing, so the
     /// refusal is named, as every other write in this menu that can refuse is. iOS names it too
     /// since [[T-13843]] (`iOSTaskRowContextMenu.duplicate`).
+    ///
+    /// **[[T-17161]]: a landed copy reconciles reminders.** The copy carries the source's do date,
+    /// start time and due date, so it is a dated task like any the create sheets insert -- and those
+    /// reconcile at once. Duplicate did not, so the copy's "Starting now" / "Due today" waited for
+    /// the next scene-phase change. After the commit and not inside it, `CadenceTaskDateEditing`'s
+    /// contract: the reconcile fetches what the store took.
     static func duplicate(
         _ task: AppTask,
         allTasks: [AppTask],
         modelContext: ModelContext,
+        reconciler: CadenceWindDownReconciler? = nil,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> ActionOutcome {
         do {
@@ -286,6 +293,7 @@ struct MacTaskRowContextMenu: View {
         } catch {
             return .refused(.duplicate)
         }
+        (reconciler ?? .default).run(in: modelContext)
         return .settled
     }
 

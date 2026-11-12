@@ -770,18 +770,23 @@ struct iOSTaskRowContextMenu: View {
     /// through `commitInsert`), so nothing appeared; the menu has closed, so the row's duplicate
     /// alert says it, as the Mac row's `MacTaskRowMenuFailure.duplicate` does. This was
     /// `_ = try?`, and a refused Duplicate looked exactly like a menu that did nothing.
+    ///
+    /// **[[T-17161]].** A landed copy reconciles reminders, as the Mac row's
+    /// `MacTaskRowContextMenu.duplicate` does: the copy keeps the source's dates and start time.
     static func duplicate(
         _ task: AppTask,
         allTasks: [AppTask],
         modelContext: ModelContext,
+        reconciler: CadenceWindDownReconciler? = nil,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
         do {
             _ = try CadenceTaskMutationSupport.duplicate(task, allTasks: allTasks, modelContext: modelContext, commit: commit)
-            return true
         } catch {
             return false
         }
+        (reconciler ?? .default).run(in: modelContext)
+        return true
     }
 
     /// **[[T-11614]] (G4).** This used to say there was "nothing here to refuse", because the

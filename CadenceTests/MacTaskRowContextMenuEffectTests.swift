@@ -89,6 +89,33 @@ struct MacTaskRowContextMenuEffectTests {
         #expect(f.sibling.title == "Sibling" && f.sibling.sectionName == "Now")
     }
 
+    /// **[[T-17161]].** A landed copy reconciles reminders once, over the menu's context; a refused
+    /// one does not. The copy keeps the source's do date and start time, so without the reconcile
+    /// its "Starting now" waited for the next scene-phase change.
+    @Test func aLandedDuplicateReconcilesRemindersAndARefusedOneDoesNot() throws {
+        let f = try makeFixture()
+        f.subject.scheduledDate = "2099-01-01"
+        f.subject.scheduledStartMin = 600
+        try f.context.save()
+        var reconciled: [ObjectIdentifier] = []
+        let recorder = CadenceWindDownReconciler { reconciled.append(ObjectIdentifier($0)) }
+
+        let refused = MacTaskRowContextMenu.duplicate(
+            f.subject, allTasks: f.allTasks, modelContext: f.context, reconciler: recorder,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(refused == .refused(.duplicate))
+        #expect(reconciled.isEmpty, "a refused duplicate wrote nothing, so it has nothing to reconcile")
+
+        let landed = MacTaskRowContextMenu.duplicate(
+            f.subject, allTasks: f.allTasks, modelContext: f.context, reconciler: recorder
+        )
+        #expect(landed == .settled)
+        #expect(reconciled == [ObjectIdentifier(f.context)])
+        let copy = try #require(try allCommittedTasks(f).first { $0.id != f.subject.id && $0.id != f.sibling.id })
+        #expect(copy.scheduledDate == "2099-01-01" && copy.scheduledStartMin == 600, "the copy is dated")
+    }
+
     // MARK: - Move to List
 
     @Test func moveToListCommitsTheRowsTaskIntoTheChosenListKeepingItsSection() throws {

@@ -294,6 +294,12 @@ struct CadenceAIDraftReview: Equatable, Sendable {
     /// so a caller cannot skip the gate by reaching for `AIActionService.applyTaskDrafts` with the
     /// same arguments. `AINoteActionReviewTests` pins that the iOS surface calls this and never
     /// that.
+    ///
+    /// **[[T-17162]]: created tasks reconcile reminders.** A draft can carry a due date, a do date
+    /// and a start time, so what lands here is dated work like anything the create sheets insert,
+    /// and every one of those reconciles at once. This did not, so an extracted "call the vendor at
+    /// 10:00" got no "Starting now" until the next scene-phase change. After the commit, and only
+    /// when something was created: a refusal throws past it, and an empty selection wrote nothing.
     @discardableResult
     @MainActor
     func applyApproved(
@@ -301,12 +307,13 @@ struct CadenceAIDraftReview: Equatable, Sendable {
         project: Project? = nil,
         areas: [Area],
         projects: [Project],
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        reconciler: CadenceWindDownReconciler? = nil
     ) throws -> [AppTask] {
         guard canCreate else {
             throw AIActionError.invalidDrafts(refusalMessage ?? "These drafts cannot be created yet.")
         }
-        return try AIActionService.applyTaskDrafts(
+        let created = try AIActionService.applyTaskDrafts(
             drafts,
             selectedIDs: selectedIDs,
             area: area,
@@ -315,5 +322,9 @@ struct CadenceAIDraftReview: Equatable, Sendable {
             projects: projects,
             modelContext: modelContext
         )
+        if !created.isEmpty {
+            (reconciler ?? .default).run(in: modelContext)
+        }
+        return created
     }
 }

@@ -317,6 +317,28 @@ struct AINoteActionReviewTests {
         #expect(created.first?.project?.id == project.id)
     }
 
+    /// **[[T-17162]].** Created drafts reconcile reminders once, over the sheet's context. A
+    /// refused review writes nothing and reconciles nothing.
+    @Test func createdDraftsReconcileRemindersAndARefusalDoesNot() throws {
+        let modelContext = try emptyStore()
+        var reconciled: [ObjectIdentifier] = []
+        let recorder = CadenceWindDownReconciler { reconciled.append(ObjectIdentifier($0)) }
+
+        let refused = CadenceAIDraftReview(drafts: [draft(title: "Bad", dueDate: "next Tuesday")])
+        #expect(throws: AIActionError.self) {
+            try refused.applyApproved(areas: [], projects: [], modelContext: modelContext, reconciler: recorder)
+        }
+        #expect(reconciled.isEmpty, "a refused review reconciled")
+
+        let timed = draft(title: "Call the vendor", scheduledDate: "2099-01-01", scheduledStartMin: 600)
+        let review = CadenceAIDraftReview(drafts: [timed])
+        let created = try review.applyApproved(areas: [], projects: [], modelContext: modelContext, reconciler: recorder)
+
+        #expect(created.count == 1)
+        #expect(created.first?.scheduledStartMin == 600)
+        #expect(reconciled == [ObjectIdentifier(modelContext)])
+    }
+
     /// A date the model got wrong on an *edited* draft: the review passes once the user has fixed it,
     /// and the fixed value is what lands.
     @Test func correctingADraftInTheReviewIsWhatGetsWritten() throws {
