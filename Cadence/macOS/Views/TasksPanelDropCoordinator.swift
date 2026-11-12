@@ -62,12 +62,23 @@ struct TasksPanelDropCoordinator {
     ) -> Bool {
         guard let (droppedID, droppedTask) = droppedTask(from: payload),
               droppedID != targetTask.id else { return false }
+        var joined = false
         if let dropKey {
-            // Ignored deliberately, unlike `handleSectionDrop`: the reorder below runs either way,
-            // so a row drop whose key resolved to nothing still moved the row and is not the
-            // silent accept T-591 was about.
-            _ = assignTask(droppedTask, dropKey)
+            // Not a refusal, unlike `handleSectionDrop`: the reorder below runs either way, so a
+            // row drop whose key resolved to nothing still moved the row and is not the silent
+            // accept T-591 was about. What it answers decides the reorder's scope, below.
+            joined = assignTask(droppedTask, dropKey)
         }
+        // **A row filed into this group by the drop is one of its rows ([[T-17112]]).** `scopeTasks`
+        // is the TARGET group's rows, drawn before the drop, so a row dragged in from another group
+        // was not among them -- and `CadenceRowReorderSpan` reads a dragged id it cannot find as a
+        // drop with nothing to write. Every cross-group row drop on All Tasks, Inbox and Today
+        // re-filed the row and never placed it: By List sent it to the end of the new list (the
+        // re-file's own end-of-list order), By Priority and By Date left it wherever its old number
+        // fell, never in front of the row it was let go over.
+        let scope = joined && !scopeTasks.contains(where: { $0.id == droppedID })
+            ? scopeTasks + [droppedTask]
+            : scopeTasks
         // **The answer is the reorder's own (T-868).** A row drop that renumbered and then had
         // its commit refused must not be reported as a drop that happened: the rows have already
         // been put back by the time this returns, so answering `true` would spring the row to a
@@ -75,7 +86,7 @@ struct TasksPanelDropCoordinator {
         // `false`, one failure mode further along — and the panel draws
         // `CadenceOrderCommit.failureNotice` beside it, because a drop that silently declines is
         // indistinguishable from a drop the user aimed badly.
-        return reorderTask(droppedID, targetTask.id, scopeTasks)
+        return reorderTask(droppedID, targetTask.id, scope)
     }
 
     private func droppedTask(from payload: String) -> (UUID, AppTask)? {

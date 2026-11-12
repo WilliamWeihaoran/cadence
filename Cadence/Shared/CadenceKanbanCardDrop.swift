@@ -53,9 +53,19 @@ enum CadenceKanbanCardDrop {
         } else {
             ordered.append(task)
         }
+        // **A card arriving from another column holds no place in this one ([[T-17111]]).** The
+        // span rule refills the places the slice's rows held before the drop, and on a section
+        // board the arriving card is a row of the SAME list, so its old place -- up in the column
+        // it is leaving -- counted as one of the destination column's. The column's first card
+        // took it: drag the top Backlog card to the end of Doing and Doing's first card jumped
+        // above every other Backlog card in the list's own sequence, which a list's Tasks tab and
+        // All Tasks draw. Left out of the universe it is the arriving card `wholeSequence` already
+        // keeps for a by-list board, and spends none of the anchors' places. A move inside one
+        // column is unchanged: the card's place is one of that column's.
+        let arrives = !columnTasks.contains { $0.id == task.id }
         let sequence = CadenceRowReorderSpan.wholeSequence(
             resequencing: ordered,
-            within: spanTasks,
+            within: arrives ? spanTasks.filter { $0.id != task.id } : spanTasks,
             ofList: listKey
         )
         return CadenceTaskFieldEditCommit.commit(

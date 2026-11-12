@@ -672,6 +672,72 @@ struct CadenceTaskGroupDropSupportTests {
         #expect(reordered.count == 2, "the reorder must run either way")
     }
 
+    /// **[[T-17112]]: a row dragged onto a row of ANOTHER group lands in front of that row.**
+    ///
+    /// The row hands over its own group's `scopeTasks`, and the dragged row came from a different
+    /// group, so it was not among them: the re-file landed (By List: the end of the new list) and
+    /// the reorder read a dragged id it could not find as nothing to write. Red before the fix:
+    /// Work read `["Work A", "Work B", "Work C", "Moved"]` -- the row the user let go over "Work B"
+    /// sat under every row of the list instead.
+    @Test func arowDroppedOnARowOfAnotherListGroupLandsInFrontOfIt() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let home = Project(name: "Home")
+        let work = Project(name: "Work")
+        context.insert(home)
+        context.insert(work)
+        func row(_ title: String, _ order: Int, _ project: Project) -> AppTask {
+            let task = AppTask(title: title)
+            task.order = order
+            task.project = project
+            context.insert(task)
+            return task
+        }
+        let moved = row("Moved", 0, home)
+        let homeB = row("Home B", 1, home)
+        let workA = row("Work A", 0, work)
+        let workB = row("Work B", 1, work)
+        let workC = row("Work C", 2, work)
+        let all = [moved, homeB, workA, workB, workC]
+        try context.save()
+
+        let coordinator = TasksPanelDropCoordinator(
+            allTasks: all,
+            taskIDFromPayload: { TasksPanelSupport.taskID(from: $0) },
+            assignTask: { dropped, key in
+                TasksPanelSupport.assignTask(
+                    dropped,
+                    for: key,
+                    todayKey: self.todayKey,
+                    areas: [],
+                    projects: [home, work],
+                    modelContext: context
+                ) == .applied
+            },
+            reorderTask: { droppedID, targetID, scope in
+                TasksPanelSupport.reorderTask(
+                    droppedID: droppedID,
+                    targetID: targetID,
+                    scopeTasks: scope,
+                    spanTasks: all,
+                    modelContext: context
+                )
+            }
+        )
+
+        #expect(coordinator.handleTaskDrop(
+            payload: TasksPanelSupport.taskDragPayload(for: moved),
+            targetTask: workB,
+            scopeTasks: [workA, workB, workC],
+            dropKey: "list:p_\(work.id.uuidString)"
+        ))
+
+        #expect(moved.project?.id == work.id, "non-vacuity: the drop did not re-file the row")
+        let workOrder = all.filter { $0.project?.id == work.id }.sorted { $0.order < $1.order }.map(\.title)
+        #expect(workOrder == ["Work A", "Moved", "Work B", "Work C"], "the row did not land in front of the one it was dropped on: \(workOrder)")
+        #expect(homeB.project?.id == home.id)
+    }
+
     /// The other half: the `nil` arm is reached by **real groups**, not only by a test that passes
     /// `nil`. These three are exactly the groups whose headers offer no drop key, so every row
     /// drop inside Today's Overdue, Past-do and Completed group takes the arm above.

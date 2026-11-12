@@ -234,6 +234,43 @@ struct CadenceIPadBoardCardGestureTests {
         #expect(board.map(\.order).sorted() == Array(0..<3))
     }
 
+    /// **[[T-17111]]: a card moved to another column leaves the rest of the list where it was.**
+    /// The arriving card's old place is in the column it left, and the destination column's first
+    /// card used to fill it -- so moving the top Backlog card to the end of Doing put "Doing A"
+    /// above both remaining Backlog cards in the list's own order, the order the list's Tasks tab
+    /// and All Tasks draw. Red before the fix: `["Doing A", "Backlog B", "Backlog C", "Moved"]`.
+    @Test func aCardMovedToAnotherColumnLeavesTheOtherCardsInTheirListOrder() throws {
+        let modelContext = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let moved = try boardTask("Moved", section: "Backlog", order: 0, in: modelContext)
+        let backlogB = try boardTask("Backlog B", section: "Backlog", order: 1, in: modelContext)
+        let backlogC = try boardTask("Backlog C", section: "Backlog", order: 2, in: modelContext)
+        let doingA = try boardTask("Doing A", section: "Doing", order: 3, in: modelContext)
+        let board = [moved, backlogB, backlogC, doingA]
+
+        #expect(drop([TaskDragPayload.string(for: moved.id)], into: "Doing", board: board, in: modelContext))
+
+        #expect(moved.sectionName == "Doing")
+        let list = board.sorted { $0.order < $1.order }.map(\.title)
+        #expect(list == ["Backlog B", "Backlog C", "Doing A", "Moved"], "a card the drop never named changed places in the list: \(list)")
+        #expect(board.map(\.order).sorted() == Array(0..<4))
+    }
+
+    /// The same rule with a target card: dropped in front of the column's second card, the moved
+    /// card lands between the two and the column's first card keeps its place behind Backlog's.
+    @Test func aCardDroppedInFrontOfACardInAnotherColumnMovesNoOtherCardInTheList() throws {
+        let modelContext = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let moved = try boardTask("Moved", section: "Backlog", order: 0, in: modelContext)
+        let backlogB = try boardTask("Backlog B", section: "Backlog", order: 1, in: modelContext)
+        let doingA = try boardTask("Doing A", section: "Doing", order: 2, in: modelContext)
+        let doingB = try boardTask("Doing B", section: "Doing", order: 3, in: modelContext)
+        let board = [moved, backlogB, doingA, doingB]
+
+        #expect(drop([TaskDragPayload.string(for: moved.id)], into: "Doing", before: doingB, board: board, in: modelContext))
+
+        let list = board.sorted { $0.order < $1.order }.map(\.title)
+        #expect(list == ["Backlog B", "Doing A", "Moved", "Doing B"], "a card the drop never named changed places in the list: \(list)")
+    }
+
     /// A card set down on itself writes nothing — macOS's `droppedID != target.id`.
     @Test func aCardDroppedOnItselfWritesNothing() throws {
         let modelContext = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
