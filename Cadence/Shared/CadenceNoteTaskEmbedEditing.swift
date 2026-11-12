@@ -50,6 +50,16 @@ enum CadenceNoteTaskEmbedEditing {
         return true
     }
 
+    /// **[[T-17190]].** Whether a title typed over an embedded card still names a task once its
+    /// `!`/`!!`/`!!!` marks are taken out -- `TaskCreationDraft.trimmedTitle`'s rule, which the
+    /// composers' "Add a title first." refusal and `CadenceScheduleDraft.hasCommittableTitle` read.
+    /// The Mac editor asks it before it rewrites the note's `[[task:UUID|Title]]` reference, so
+    /// the reference and the task are left alone together.
+    static func namesTask(_ typed: String) -> Bool {
+        let name = TaskTitleSupport.priorityShortcut(in: typed)?.title ?? TaskTitleSupport.normalized(typed)
+        return !name.isEmpty
+    }
+
     /// Renames an embedded card's task, applying the `!`-style priority shortcut the inline title
     /// field accepts. Both fields are restored together when the commit is refused: the shortcut
     /// moves the priority as a side effect of the title, so undoing one without the other would
@@ -63,6 +73,12 @@ enum CadenceNoteTaskEmbedEditing {
         in modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
+        // [[T-17190]]: a typed title that names nothing is no rename. Clearing the card's title,
+        // or typing `!!!` over it, renamed the task to "" (drawn "Untitled task" everywhere) and,
+        // for the marks, raised it to high -- where the task panel refuses a blank title and the
+        // composers refuse a marks-only one ("Add a title first."). Nothing is written, so
+        // there is nothing to refuse either, and the card keeps the name the store holds.
+        guard namesTask(title) else { return true }
         let snapshot = CadenceTaskFieldSnapshot(task)
 
         var priority = task.priority

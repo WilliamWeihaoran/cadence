@@ -675,7 +675,9 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         editor.removeFromSuperview()
         inlineTaskTitleEditor = nil
         inlineTaskTitleTaskID = nil
-        if commit {
+        // [[T-17190]]: a cleared or marks-only title is a cancel, so neither the task nor the
+        // note's reference text is renamed to nothing.
+        if commit, CadenceNoteTaskEmbedEditing.namesTask(rawTitle) {
             onRenameEmbeddedMarkdownTask?(taskID, rawTitle)
             replaceEmbeddedTaskReferenceTitle(id: taskID, title: referenceTitle)
         }

@@ -112,6 +112,29 @@ struct CadenceNoteTaskEmbedCommitTests {
         #expect(stored.map(\.priority) == [.high])
     }
 
+    /// **[[T-17190]] (behavioural).** A title that names nothing once its marks are out -- cleared,
+    /// spaces, or `!!!` alone -- leaves the task as it was: no empty title, no high priority, and
+    /// nothing pending. It renamed the task to "" and, for the marks, raised it to high.
+    @Test func anEmbeddedRenameToNoNameLeavesTheTaskAsItWas() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let (task, _) = try taskWithSubtask(in: modelContext)
+
+        for typed in ["", "   ", "!!!", " ! ", "!! !!!"] {
+            #expect(!CadenceNoteTaskEmbedEditing.namesTask(typed), "\(typed)")
+            #expect(CadenceNoteTaskEmbedEditing.rename(task, to: typed, in: modelContext), "\(typed)")
+            #expect(task.title == "Ship the beta", "\(typed)")
+            #expect(task.priority == .none, "\(typed)")
+            #expect(!modelContext.hasChanges, "\(typed)")
+        }
+        #expect(CadenceNoteTaskEmbedEditing.namesTask("!!! Ship"))
+        #expect(CadenceNoteTaskEmbedEditing.namesTask("Ship"))
+
+        let stored = try ModelContext(modelContainer).fetch(FetchDescriptor<AppTask>())
+        #expect(stored.map(\.title) == ["Ship the beta"])
+        #expect(stored.map(\.priority) == [.none])
+    }
+
     /// **Behavioural.** The shortcut moves the priority as a side effect of the title, so a
     /// refused rename has to put **both** back. `CadenceTaskFieldSnapshot` used to carry
     /// `priorityRaw` and not `title`, so restoring through it would have undone the priority and
