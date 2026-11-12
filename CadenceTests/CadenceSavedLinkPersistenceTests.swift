@@ -258,10 +258,43 @@ struct CadenceSavedLinkPersistenceTests {
     @Test func aTypedLinkWithNoSchemeIsGivenTheAssumedOne() {
         #expect(CadenceSavedLinkURL.normalized("example.com") == "https://example.com")
         #expect(CadenceSavedLinkURL.normalized("example.com/a?b=c") == "https://example.com/a?b=c")
-        // A scheme the list does not recognise is not a scheme as far as this rule is concerned —
-        // the behaviour both platforms already shipped, pinned rather than changed.
-        #expect(CadenceSavedLinkURL.normalized("ftp://example.com") == "https://ftp://example.com")
+        // [[T-17126]] changed this pin on purpose: `ftp://` was demoted to `https://ftp://...` as
+        // the behaviour both platforms shipped (T-509), and is now a recognised scheme. The
+        // demotion itself stays for every scheme the list does not name.
+        #expect(CadenceSavedLinkURL.normalized("ftp://example.com") == "ftp://example.com")
         #expect(CadenceSavedLinkURL.assumedScheme == "https://", "a typed link was downgraded to cleartext")
+    }
+
+    /// [[T-17126]]: `mailto:`, `tel:` and `ftp://` were stored as `https://mailto:...` and opened a
+    /// broken page. They are kept as typed, in any case, while a bare `host:port` -- which parses
+    /// as an RFC 3986 scheme -- still gets `https://`, and so does any scheme the list does not
+    /// name, which is what keeps [[T-3106]]'s `file://` and third-party schemes inert.
+    @Test func mailToTelAndFTPKeepTheirSchemeButHostPortAndUnlistedSchemesDoNot() {
+        for typed in ["mailto:someone@example.com", "MAILTO:someone@example.com", "tel:+15551234567",
+                      "tel:5551234", "Tel:555-1234", "ftp://files.example.com/pub", "FTP://example.com"] {
+            #expect(CadenceSavedLinkURL.normalized(typed) == typed, "\(typed) was given a second scheme")
+        }
+        for typed in ["localhost:8080", "example.com:443/x", "localhost:3000/path?q=1",
+                      "file:///Applications/Utilities/Terminal.app", "x-cadence-evil://run", "javascript:alert(1)",
+                      "mailtoexample.com", "telephone.example.com", "ftp.example.com"] {
+            #expect(CadenceSavedLinkURL.normalized(typed) == "https://" + typed, "\(typed) kept a scheme it should not")
+        }
+    }
+
+    /// [[T-17125]]: a row draws its URL line only when it says something the title line does not.
+    /// An untitled link stores its URL as its title (T-509), and a blank title is drawn as the URL
+    /// (T-12793); both used to read as the same string on two lines.
+    @Test func aLinkRowDrawsItsURLLineOnlyWhenItDiffersFromTheTitleLine() {
+        let url = "https://example.com/spec"
+        #expect(CadenceSavedLinkRowText.detail(title: url, url: url) == nil, "the URL fallback title was repeated")
+        #expect(CadenceSavedLinkRowText.detail(title: "", url: url) == nil, "a blank title's URL was repeated")
+        #expect(CadenceSavedLinkRowText.detail(title: " \n", url: url) == nil)
+        #expect(CadenceSavedLinkRowText.detail(title: "  \(url)\n", url: url) == nil,
+                "the comparison is not made after the title line's own trim")
+        #expect(CadenceSavedLinkRowText.detail(title: "Spec", url: url) == url, "a titled link lost its URL line")
+        #expect(CadenceSavedLinkRowText.detail(title: "https://example.com", url: url) == url)
+        #expect(CadenceSavedLinkRowText.detail(title: "HTTPS://example.com/spec", url: url) == url,
+                "a title that only differs in case still says something")
     }
 
     /// Trimming and the blank case moved into the helper with the scheme check, so that the guard

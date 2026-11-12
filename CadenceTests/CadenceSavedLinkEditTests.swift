@@ -209,5 +209,25 @@ struct CadenceSavedLinkEditTests {
         #expect(CadenceTitleNormalization.display("  \n", fallback: "https://example.com") == "https://example.com")
         #expect(CadenceTitleNormalization.display(" Spec ", fallback: "https://example.com") == "Spec")
     }
+
+    /// [[T-17125]]: both rows draw their URL line through the one rule that drops it when it repeats
+    /// the title line; neither draws `link.url` unconditionally. The rule is pinned behaviourally in
+    /// `CadenceSavedLinkPersistenceTests.aLinkRowDrawsItsURLLineOnlyWhenItDiffersFromTheTitleLine`.
+    @Test func bothLinkRowsDropAURLLineThatRepeatsTheTitle() throws {
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/LinksView.swift")
+        )
+        let ios = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListSupportViews.swift")
+        )
+        let macRow = try #require(CadenceSourceScan.declarationBody("private struct LinkRow: View", in: mac))
+        let iosRow = try #require(CadenceSourceScan.declarationBody("private struct iOSLinkRow: View", in: ios))
+        for (name, row) in [("LinkRow", macRow), ("iOSLinkRow", iosRow)] {
+            #expect(row.contains("if let detail = CadenceSavedLinkRowText.detail(title: link.title, url: link.url)"),
+                    "\(name) does not draw its URL line through the shared rule")
+            #expect(row.contains("Text(detail)"), "\(name) does not draw the line the rule returned")
+            #expect(!row.contains("Text(link.url)"), "\(name) still draws the URL line unconditionally")
+        }
+    }
 }
 #endif

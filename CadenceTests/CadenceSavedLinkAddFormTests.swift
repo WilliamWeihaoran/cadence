@@ -26,6 +26,26 @@ struct CadenceSavedLinkAddFormTests {
         #expect(viaHeader.url.isEmpty)
     }
 
+    /// [[T-17127]]: both Links headers clear a failure notice only when their tap CLOSED the form,
+    /// the rule `toggle()`'s own doc names. iOS cleared it after every tap, so opening the form
+    /// there wiped a notice the Mac keeps, with no input behind the difference ([[T-8201]]).
+    @Test func bothLinksHeadersClearTheNoticeOnlyWhenTheyCloseTheForm() throws {
+        let mac = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/LinksView.swift"))
+        let ios = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListSupportViews.swift"))
+        let view = try #require(CadenceSourceScan.declarationBody("struct LinksView: View", in: mac))
+        let panel = try #require(CadenceSourceScan.declarationBody("struct iOSListLinksPanel: View", in: ios))
+        for (name, body, button) in [("LinksView", view, "CadenceActionButton"), ("iOSListLinksPanel", panel, "iOSActionButton")] {
+            let header = try #require(
+                CadenceSourceScan.captures(button + #"\(\s*title:\s*addForm\.headerTitle[\s\S]*?Spacer\(\)"#, in: body, group: 0).first?.text,
+                "\(name) has no header button"
+            )
+            #expect(CadenceSourceScan.matchCount(#"if addForm\.toggle\(\) \{ actionError = nil \}"#, in: header) == 1,
+                    "\(name)'s header does not clear the notice on close alone")
+            #expect(CadenceSourceScan.matchCount(#"actionError = nil"#, in: header) == 1,
+                    "\(name)'s header clears the notice on open too")
+        }
+    }
+
     @Test func theHeaderButtonDrawsAndNamesWhatItDoes() {
         var form = SavedLinkAddForm()
         #expect(form.headerTitle == "Add Link")

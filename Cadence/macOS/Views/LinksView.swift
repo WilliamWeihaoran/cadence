@@ -274,10 +274,13 @@ private struct LinkRow: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
-                Text(link.url)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
+                // [[T-17125]]: an untitled link's title line already is its URL.
+                if let detail = CadenceSavedLinkRowText.detail(title: link.title, url: link.url) {
+                    Text(detail)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
+                }
             }
 
             Spacer()

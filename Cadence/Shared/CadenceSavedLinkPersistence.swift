@@ -150,10 +150,18 @@ enum CadenceSavedLinkPersistence {
 /// is a valid URL and stays as it is; rewriting it would be a second guess stacked on the first,
 /// and the defect here was guessing, not casing.
 nonisolated enum CadenceSavedLinkURL {
-    /// The schemes a typed link may already carry. Anything else — including a scheme this list
-    /// does not know, like `ftp://` — is treated as scheme-less and gets `https://`, which is what
-    /// both platforms already did.
-    static let recognisedSchemes = ["http://", "https://"]
+    /// The schemes a typed link may already carry. Anything else is treated as scheme-less and
+    /// gets `https://`.
+    ///
+    /// **[[T-17126]]: `ftp://`, `mailto:` and `tel:` joined the list.** Each was stored as
+    /// `https://mailto:...` and opened a broken page. The ticket's proposal was to accept *any*
+    /// RFC 3986 scheme (`^[A-Za-z][A-Za-z0-9+.-]*:`), and that is deliberately **not** done: this
+    /// one rule is also what keeps an archive import ([[T-3106]]) and an MCP write from minting a
+    /// live `file:///Applications/...` or third-party-scheme link the Mac opens on one click, so
+    /// the list stays a list of schemes whose open is harmless. A list also settles the ticket's
+    /// own caveat for free: `localhost:8080` and `example.com:443/x` parse as schemes
+    /// `localhost:` and `example.com:`, neither is listed, so both still get `https://`.
+    static let recognisedSchemes = ["http://", "https://", "ftp://", "mailto:", "tel:"]
 
     /// The default for a link typed without one. Not `http://`: a link the user did not
     /// scheme should not be downgraded to cleartext on their behalf.
@@ -175,6 +183,24 @@ nonisolated enum CadenceSavedLinkURL {
         recognisedSchemes.contains { scheme in
             value.range(of: scheme, options: [.caseInsensitive, .anchored]) != nil
         }
+    }
+}
+
+// MARK: - Link Row Text
+
+/// The two lines a saved link's row draws, on both platforms ([[T-17125]]).
+///
+/// A link saved with no title stores its URL as the title ([[T-509]]), and a blank title written
+/// outside the form is drawn as the URL ([[T-12793]]), so both rows drew the same string twice:
+/// the title line, then `link.url` beneath it. The second line is now drawn only when it says
+/// something the first does not. The comparison is made after the trim the title line itself
+/// gets, so `" https://example.com "` stored as a title does not count as different.
+nonisolated enum CadenceSavedLinkRowText {
+    /// The URL line, or `nil` when it would repeat the title line, which both rows draw as
+    /// `CadenceTitleNormalization.display(link.title, fallback: link.url)`.
+    static func detail(title: String, url: String) -> String? {
+        let shown = CadenceTitleNormalization.display(title, fallback: url)
+        return shown == CadenceTitleNormalization.normalized(url) ? nil : url
     }
 }
 

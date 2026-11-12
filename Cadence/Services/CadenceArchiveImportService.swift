@@ -135,8 +135,9 @@ nonisolated enum CadenceArchiveImportService {
 
     /// The stored URL for an archived saved link: `CadenceSavedLinkURL.normalized`'s rule, so an
     /// archive cannot restore a `file://` or third-party scheme the Mac would open on one click
-    /// (T-3106). A scheme other than `http(s)://` is demoted to `https://<raw>`, exactly as a typed
-    /// one is; a blank field stays blank rather than becoming `https://`.
+    /// (T-3106). A scheme `CadenceSavedLinkURL.recognisedSchemes` does not name is demoted to
+    /// `https://<raw>`, exactly as a typed one is; a blank field stays blank rather than becoming
+    /// `https://`.
     nonisolated static func importedSavedLinkURL(_ raw: String) -> String {
         CadenceSavedLinkURL.normalized(raw) ?? ""
     }

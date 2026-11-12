@@ -1032,10 +1032,11 @@ struct iOSListLinksPanel: View {
                     role: addForm.isOpen ? .ghost : .secondary,
                     size: .compact
                 ) {
+                    // [[T-17127]]: the Mac's rule -- opening keeps a failure notice, closing
+                    // clears it, as the form's own Cancel does.
                     withAnimation(.easeInOut(duration: 0.18)) {
-                        _ = addForm.toggle()
+                        if addForm.toggle() { actionError = nil }
                     }
-                    actionError = nil
                 }
 
                 Spacer()
@@ -1302,11 +1303,14 @@ private struct iOSLinkRow: View {
                     .lineLimit(wraps ? nil : 1)
                     .fixedSize(horizontal: false, vertical: wraps)
 
-                Text(link.url)
-                    .cadenceFont(.metadata)
-                    .foregroundStyle(Theme.subdued)
-                    .lineLimit(wraps ? nil : 1)
-                    .fixedSize(horizontal: false, vertical: wraps)
+                // [[T-17125]]: an untitled link's title line already is its URL.
+                if let detail = CadenceSavedLinkRowText.detail(title: link.title, url: link.url) {
+                    Text(detail)
+                        .cadenceFont(.metadata)
+                        .foregroundStyle(Theme.subdued)
+                        .lineLimit(wraps ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: wraps)
+                }
             }
 
             if !wraps { Spacer(minLength: 8) }
