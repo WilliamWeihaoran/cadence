@@ -1134,25 +1134,33 @@ struct CadenceSearchCandidateSupportTests {
         #expect(!stripped.contains("\"1 task\""))
     }
 
-    /// **[[T-8523]].** A note opened from a Search row, or from a `[[link]]`, is titled by the name
-    /// that row drew. `searchTitle` itself is pinned in `CadenceNoteReferencePanelSurfaceTests`; this
-    /// is the editor both routes open reading it, and the relation that makes it matter. Since
-    /// [[T-9663]] both routes open `iOSNoteEditorCover(reachedFrom:)` rather than a sheet each.
+    /// **[[T-8523]], [[T-16666]].** A note opened from a Search row is titled by the name that row
+    /// drew; a note opened from a `[[link]]` by the editor's own dated-note title, the one the
+    /// Notes-tab cover and every Mac route read ([[T-15493]], [[T-8201]]). `searchTitle` itself is
+    /// pinned in `CadenceNoteReferencePanelSurfaceTests`. Since [[T-9663]] both routes open
+    /// `iOSNoteEditorCover(reachedFrom:)` rather than a sheet each.
     @Test func aNoteSheetOpenedFromSearchTitlesItselfAsTheRowDid() throws {
         let daily = Note(kind: .daily, title: "2026-10-26", dateKey: "2026-10-26")
-        // The relation: the storage key is what `displayTitle` would have put in the title bar.
+        // The relations: the storage key is what `displayTitle` would have put in the title bar,
+        // and the editor's title is not the row's short day.
         #expect(daily.displayTitle == "2026-10-26")
         #expect(NoteReferencePanelSupport.searchTitle(daily) != daily.displayTitle)
+        let editorTitle = try #require(CadenceNoteDateNavigation.noteTitle(for: daily))
+        #expect(editorTitle != NoteReferencePanelSupport.searchTitle(daily))
+        #expect(editorTitle != daily.displayTitle)
 
         let notes = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSNotesView.swift"))
-        let reached = try #require(CadenceSourceScan.declarationBody("init(reachedFrom note: Note)", in: notes))
-        #expect(reached.contains("title: NoteReferencePanelSupport.searchTitle(note)"))
+        let reached = try #require(CadenceSourceScan.declarationBody("init(reachedFrom note: Note", in: notes))
+        // A caller's title wins; otherwise the dated-note title, then the row's name for a kind with no date.
+        let compact = reached.filter { !$0.isWhitespace }
+        #expect(compact.contains("title:title??CadenceNoteDateNavigation.noteTitle(for:note)??NoteReferencePanelSupport.searchTitle(note)"))
         #expect(!reached.contains("note.displayTitle"))
 
-        for path in [Self.iOSSearchViewPath, "Cadence/iOS/iOSMarkdownReferenceSupport.swift"] {
-            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
-            #expect(code.contains("iOSNoteEditorCover(reachedFrom: note)"), "\(path) opens a note in some other editor")
-        }
+        let search = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath))
+        #expect(search.contains("iOSNoteEditorCover(reachedFrom: note, title: NoteReferencePanelSupport.searchTitle(note))"),
+                "a Search row's note no longer opens titled as its row")
+        let link = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownReferenceSupport.swift"))
+        #expect(link.contains("iOSNoteEditorCover(reachedFrom: note)"), "a [[link]] opens a note in some other editor, or with Search's title")
     }
 }
 

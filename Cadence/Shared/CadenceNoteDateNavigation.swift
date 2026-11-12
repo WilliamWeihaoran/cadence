@@ -78,7 +78,8 @@ enum CadenceNoteDateNavigation {
     /// platform difference has to answer to the hardware, and that one answered to nothing.
     ///
     /// Callers: the macOS editor header (`NoteEditorPane.headerTitle`) and the iOS editor cover
-    /// (`iOSNotesView.coverTitle`). The iOS Notes header's date button reaches it through
+    /// (`iOSNotesView.coverTitle`, and `iOSNoteEditorCover(reachedFrom:)` for a `[[link]]`,
+    /// [[T-16666]]). The iOS Notes header's date button reaches it through
     /// `wideTitle`, drawn where it fits; see `title(for:dayKey:)` for the width-bound short form.
     nonisolated static func noteTitle(
         kind: NoteKind,

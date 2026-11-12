@@ -509,8 +509,8 @@ struct iOSSearchView: View {
             )
         } else {
             // [[T-9663]]: the Notes tab's editor, with its Export, tags, AI actions and
-            // Move/Delete, not a thinner sheet of Search's own.
-            iOSNoteEditorCover(reachedFrom: note)
+            // Move/Delete, not a thinner sheet of Search's own. Titled as the row was ([[T-8523]]).
+            iOSNoteEditorCover(reachedFrom: note, title: NoteReferencePanelSupport.searchTitle(note))
         }
     }
 

@@ -1097,15 +1097,23 @@ extension iOSNoteEditorCover {
     /// `[[link]]` — which used to open one of two thinner sheets with no Export, no tag control,
     /// no AI actions and no Move/Delete. A note does not gain or lose chrome depending on where
     /// you reached it, so it is this editor, configured from the note itself rather than from a
-    /// tab: the template menu for the note's own kind (a meeting note has none here), the title
-    /// the Search row drew ([[T-8523]]), a list note's tasks captured into its list, and Delete
-    /// where the Mac's hosts offer it — the Notepad and a list's Notes, never a dated note.
-    init(reachedFrom note: Note) {
+    /// tab: the template menu for the note's own kind (a meeting note has none here), a list
+    /// note's tasks captured into its list, and Delete where the Mac's hosts offer it — the
+    /// Notepad and a list's Notes, never a dated note.
+    ///
+    /// The title is the editor's own by default ([[T-16666]]): a daily note reached from a
+    /// `[[link]]` reads "Monday, August 17", as the Notes-tab cover (`coverTitle`) and every Mac
+    /// route (`NoteEditorPane.headerTitle`) do, through the one dated-note title ([[T-15493]]).
+    /// The navigation bar has the row to itself, so no width reason asks for "Aug 17" ([[T-8201]]).
+    /// Search passes `title:` to keep the name its row drew ([[T-8523]]).
+    init(reachedFrom note: Note, title: String? = nil) {
         let isListNote = note.kind == .list
         self.init(
             note: note,
             templateKind: note.kind == .meeting ? nil : note.kind,
-            title: NoteReferencePanelSupport.searchTitle(note),
+            title: title
+                ?? CadenceNoteDateNavigation.noteTitle(for: note)
+                ?? NoteReferencePanelSupport.searchTitle(note),
             embeddedTaskArea: isListNote ? note.area : nil,
             embeddedTaskProject: isListNote ? note.project : nil,
             allowsDelete: isListNote || note.kind == .permanent
