@@ -124,7 +124,8 @@ struct CadenceListPagesObservedDayTests {
             ("Cadence/iOS/iOSListSupportViews.swift", "showsContainer: false,\n                            todayKey: todayKey\n", 1),
             ("Cadence/iOS/iOSTodayTaskSections.swift", "dayAlreadyStatedBySurface: todayKey,\n                    todayKey: todayKey,", 1),
             ("Cadence/iOS/iOSTodayTaskSections.swift", "dayAlreadyStatedBySurface: todayKey,\n                todayKey: todayKey,", 1),
-            ("Cadence/iOS/iOSCalendarInspectorView.swift", "todayKey: todayKey)", 3),
+            // Four since [[T-18051]]: the Due eyebrow's tint reads the handed day too.
+            ("Cadence/iOS/iOSCalendarInspectorView.swift", "todayKey: todayKey)", 4),
             ("Cadence/iOS/iOSCalendarView.swift", "dueOnlyTasks: selectedDueOnlyTasks,\n            todayKey: observedDay.todayKey,", 1),
             ("Cadence/iOS/iOSCalendarMonthAgendaViews.swift", "dayAlreadyStatedBySurface: dayKey, todayKey: todayKey)", 1),
         ]
