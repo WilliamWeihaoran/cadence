@@ -66,10 +66,6 @@ nonisolated enum CadenceLedgerCardMetrics: Sendable {
     /// without re-typing the glyph.
     static let separator = " · "
 
-    /// How a due-date token says it is the **due** date, now that the run carries no glyphs. Without
-    /// it `… · Tue · Fri` states two bare days and names neither field.
-    static let duePrefix = "Due "
-
     /// The gutter's wash over the list colour. Dimmer once the task is settled, the way the iOS
     /// card's leading strip already dimmed its tint.
     static func gutterWashOpacity(isSettled: Bool) -> Double {
@@ -142,11 +138,17 @@ nonisolated enum CadenceLedgerCardSupport {
     /// prevent. iOS passes `false`: its tokens are inert, so a token standing for nothing would be
     /// noise with no purpose. This is the same asymmetry `CadenceBoardCardMetadata` already records
     /// for the empty `Due` chip, kept on the same side of the line — in the interaction shell.
+    ///
+    /// `hiddenTagCount` is how many tags `tagNames` left out (`CadenceLedgerTagTokens.hiddenCount`).
+    /// [[T-17762]]: the run states them as one `+N` tag token after the names, so a task's fourth
+    /// tag is counted rather than silently gone -- the "+N" `rowTagLimit` has always promised. It
+    /// is a `.tag` token, so on macOS it opens the tag editor like the names beside it.
     static func tokens(
         startMinute: Int,
         estimatedMinutes: Int,
         chips: [CadenceBoardCardChip],
         tagNames: [String],
+        hiddenTagCount: Int = 0,
         placeholders: Bool = false,
         showsEmptyDueDate: Bool = false,
         locale: Locale = .current
@@ -201,7 +203,10 @@ nonisolated enum CadenceLedgerCardSupport {
                     CadenceLedgerToken(
                         kind: .dueDay,
                         id: Kind.dueDay.rawValue,
-                        text: CadenceLedgerCardMetrics.duePrefix + chip.text,
+                        // The chip's own words already name the field -- "Due Nov 14", "Due today",
+                        // "Overdue Nov 9" ([[T-15491]]) -- so the run adds nothing. It prefixed
+                        // "Due " as well until [[T-17761]], which read "Due Due today".
+                        text: chip.text,
                         emphasis: chip.emphasis
                     )
                 )
@@ -239,6 +244,16 @@ nonisolated enum CadenceLedgerCardSupport {
                     kind: .tag,
                     id: "tag-\(name)",
                     text: "#\(name)",
+                    emphasis: .neutral
+                )
+            )
+        }
+        if hiddenTagCount > 0 {
+            tokens.append(
+                CadenceLedgerToken(
+                    kind: .tag,
+                    id: "tags-overflow", // not "tag-…": a tag slugged "overflow" holds that id
+                    text: "+\(hiddenTagCount)",
                     emphasis: .neutral
                 )
             )
@@ -511,9 +526,20 @@ struct CadenceLedgerCard<Ring: View, TokenView: View, Subtasks: View, SettlingOv
 /// rather than the display name: `#deep-work` is one token and `#deep work` is two words that read
 /// as the end of the run plus a stray.
 enum CadenceLedgerTagTokens {
+    private static let limit = CadenceTaskPresentationSupport.rowTagLimit
+
     static func names(for task: AppTask) -> [String] {
+        Array(allNames(for: task).prefix(limit))
+    }
+
+    /// The tags `names(for:)` leaves out, for the run's `+N` token ([[T-17762]]). Zero when every
+    /// tag is named.
+    static func hiddenCount(for task: AppTask) -> Int {
+        max(0, allNames(for: task).count - limit)
+    }
+
+    private static func allNames(for task: AppTask) -> [String] {
         TagSupport.uniqueBySlug(task.sortedTags)
-            .prefix(CadenceTaskPresentationSupport.rowTagLimit)
             .map { $0.slug.isEmpty ? $0.name : $0.slug }
             .filter { !$0.isEmpty }
     }

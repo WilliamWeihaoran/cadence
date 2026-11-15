@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import SwiftUI
 import Testing
 @testable import Cadence
@@ -77,15 +78,33 @@ struct CadenceBoardLedgerCardTests {
     /// **The run carries no glyphs, so the due token has to name its own field.** The chips it
     /// replaces were identifiable before you read them — a sun and a flag — and a bare
     /// `… · Tue · Fri` states two days and names neither.
+    ///
+    /// **[[T-17761]]: the field word comes from the chip, once.** Since [[T-15491]] the due chip's
+    /// own text is the one due-date vocabulary -- "Due Nov 14", "Due today", "Overdue Nov 9" -- so
+    /// a run that prefixed "Due " as well read "Due Due today" and "Due Overdue Nov 9" on both
+    /// boards. Built from real chips, so the test follows what `dueDateChip` actually says.
     @Test func theDueTokenNamesItsFieldBecauseTheRunCarriesNoGlyph() {
-        let tokens = CadenceLedgerCardSupport.tokens(
-            startMinute: -1,
-            estimatedMinutes: 0,
-            chips: [chip(.doDate, "Tue"), chip(.dueDate, "Fri")],
-            tagNames: []
-        )
+        let todayKey = "2026-11-10"
+        for (dueDate, expected) in [
+            ("2026-11-14", "Due Nov 14"),
+            ("2026-11-10", "Due today"),
+            ("2026-11-09", "Overdue Nov 9"),
+        ] {
+            let tokens = CadenceLedgerCardSupport.tokens(
+                startMinute: -1,
+                estimatedMinutes: 0,
+                chips: CadenceBoardCardMetadata.chips(
+                    for: task(doDate: "2026-11-11", dueDate: dueDate),
+                    showsContainer: false,
+                    todayKey: todayKey
+                ),
+                tagNames: []
+            )
 
-        #expect(tokens.map(\.text) == ["Tue", "Due Fri"])
+            let due = tokens.first { $0.kind == .dueDay }
+            #expect(due?.text == expected, "due \(dueDate) read \(due?.text ?? "nil")")
+            #expect(tokens.first { $0.kind == .doDay }?.text.hasPrefix("Due") == false)
+        }
     }
 
     /// A tag reads as one token. `#deep-work` is a word; `#deep work` is the end of the run plus a
@@ -99,6 +118,60 @@ struct CadenceBoardLedgerCardTests {
         )
 
         #expect(tokens.map(\.text) == ["#deep-work"])
+    }
+
+    /// **[[T-17762]]: a tag past the cap is counted, not dropped.** The run names
+    /// `rowTagLimit` tags and used to say nothing of the rest, so a task's fourth and fifth tags
+    /// were simply absent from both boards' cards. The rest are one `+N` tag token after the names;
+    /// a task at or under the cap gets none.
+    @Test func tagsPastTheCapAreCountedInOnePlusNToken() throws {
+        let context = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let task = AppTask(title: "T")
+        context.insert(task)
+        let tags = ["alpha", "bravo", "charlie", "delta", "echo"].enumerated().map { index, name in
+            Tag(name: name, order: index)
+        }
+        tags.forEach(context.insert)
+        task.tags = tags
+        try context.save()
+
+        let limit = CadenceTaskPresentationSupport.rowTagLimit
+        #expect(CadenceLedgerTagTokens.names(for: task).count == limit)
+        #expect(CadenceLedgerTagTokens.hiddenCount(for: task) == tags.count - limit)
+
+        let run = CadenceLedgerCardSupport.tokens(
+            startMinute: -1,
+            estimatedMinutes: 0,
+            chips: [],
+            tagNames: CadenceLedgerTagTokens.names(for: task),
+            hiddenTagCount: CadenceLedgerTagTokens.hiddenCount(for: task)
+        )
+        #expect(run.count == limit + 1)
+        #expect(run.last?.kind == .tag)
+        #expect(run.last?.text == "+\(tags.count - limit)")
+        #expect(Set(run.map(\.id)).count == run.count, "token ids must stay unique")
+
+        task.tags = Array(tags.prefix(limit))
+        #expect(CadenceLedgerTagTokens.hiddenCount(for: task) == 0)
+        let atCap = CadenceLedgerCardSupport.tokens(
+            startMinute: -1,
+            estimatedMinutes: 0,
+            chips: [],
+            tagNames: CadenceLedgerTagTokens.names(for: task),
+            hiddenTagCount: CadenceLedgerTagTokens.hiddenCount(for: task)
+        )
+        #expect(atCap.map(\.text) == ["#alpha", "#bravo", "#charlie"])
+    }
+
+    /// Both boards hand the shared hidden count to the run, so neither card drops the `+N`.
+    @Test func bothBoardCardsPassTheHiddenTagCount() throws {
+        for path in ["Cadence/macOS/Views/KanbanCardView.swift", "Cadence/iOS/iOSBoardCards.swift"] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(
+                code.components(separatedBy: "hiddenTagCount: CadenceLedgerTagTokens.hiddenCount(for: task)").count - 1 == 1,
+                "\(path) does not pass the hidden tag count"
+            )
+        }
     }
 
     /// A field with no value contributes no token — the same rule `CadenceBoardCardMetadata`

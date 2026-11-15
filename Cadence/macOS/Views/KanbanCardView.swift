@@ -183,6 +183,7 @@ struct KanbanCard: View {
                 todayKey: todayKey
             ),
             tagNames: tagTokenNames,
+            hiddenTagCount: CadenceLedgerTagTokens.hiddenCount(for: task),
             placeholders: true,
             showsEmptyDueDate: task.shouldShowDueDateField
         )

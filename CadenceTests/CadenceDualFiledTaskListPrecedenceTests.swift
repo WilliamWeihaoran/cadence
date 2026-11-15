@@ -175,6 +175,20 @@ struct CadenceDualFiledTaskListPrecedenceTests {
         #expect(!stripped.contains("task.area?.sectionNames"))
     }
 
+    /// **[[T-17763]]: the iOS row's list chip opens its picker on the list it names.** The chip's
+    /// title is `listTitle(for:)`, project first; the popover's checked row came from a
+    /// `currentToken` that read `task.area` first, so a dual-filed task's chip said "Kitchen Reno"
+    /// and opened with "Home" checked. iOS-only source, so it is read: the token is the shared
+    /// `container(of:)` -- the selection `thePickerBadgeSelectionIsTheProject` pins -- and no
+    /// area-first spelling is left in the file.
+    @Test func theIOSRowListChipsPickerChecksTheListTheChipNames() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskRowActionViews.swift")
+        let stripped = CadenceSourceScan.strippingComments(raw)
+        #expect(stripped.contains("private var currentToken"), "non-vacuity: the reader did not reach the chip's picker")
+        #expect(stripped.contains("CadenceTaskComposerSupport.token(for: CadenceTaskComposerSupport.container(of: task))"))
+        #expect(!stripped.contains("if let area = task.area"))
+    }
+
     /// The Mac row menu's Move Section reads the same shared choices ([[T-16173]]): its inline
     /// area-first spelling offered the area's columns for a task the Mac shows on the project's
     /// board.

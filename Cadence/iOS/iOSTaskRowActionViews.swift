@@ -142,14 +142,11 @@ private struct iOSTaskRowContainerPickerContent: View {
         )
     }
 
+    /// [[T-17763]]: project before area, `container(of:)`'s rule ([[T-15553]]) -- the list the
+    /// chip above names. It read the area first, so a dual-filed task's chip said the project and
+    /// its picker opened with the area checked.
     private var currentToken: String {
-        if let area = task.area {
-            return CadenceTaskComposerSupport.token(for: .area(area.id))
-        }
-        if let project = task.project {
-            return CadenceTaskComposerSupport.token(for: .project(project.id))
-        }
-        return CadenceTaskComposerSupport.token(for: .inbox)
+        CadenceTaskComposerSupport.token(for: CadenceTaskComposerSupport.container(of: task))
     }
 
     /// A token naming a list that is not in the store moves nothing. `selection(fromToken:)` reads

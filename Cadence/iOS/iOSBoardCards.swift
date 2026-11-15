@@ -304,7 +304,8 @@ struct iOSBoardTaskCard: View {
                 dateChipsArePickers: false,
                 todayKey: todayKey
             ),
-            tagNames: CadenceLedgerTagTokens.names(for: task)
+            tagNames: CadenceLedgerTagTokens.names(for: task),
+            hiddenTagCount: CadenceLedgerTagTokens.hiddenCount(for: task)
         )
     }
 
