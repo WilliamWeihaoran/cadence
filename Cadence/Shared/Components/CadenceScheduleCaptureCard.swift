@@ -375,6 +375,12 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
     @State private var kindMemory = CadenceCaptureKindMemory()
     @State private var actionError: String?
     @State private var newTagName = ""
+    /// [[T-17747]]: the day the card's Today / Tomorrow words are measured from. A card left open
+    /// across midnight -- the Mac quick-capture panel keeps a half-typed draft for its next open
+    /// ([[T-5302]]) -- still called yesterday's do date "Today", drew it amber with the sun, and
+    /// saved a task that was already a day late. Reading the day through this makes the body
+    /// depend on it, so the observer below redraws the chips when the day turns.
+    @State private var observedDay = CadenceObservedDay()
     @FocusState private var titleIsFocused: Bool
     @FocusState private var notesIsFocused: Bool
 
@@ -399,6 +405,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
         .cadenceScaledTypography()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("capture-card")
+        .cadenceTracksDayChanges($observedDay)
         // The popover belongs to the card, not to an icon that disappears when its field is set.
         .popover(item: $activeField) { field in
             CadenceCapturePopoverScroll {
@@ -797,11 +804,16 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
     }
 
     /// The inspector's own Do row label, so the card and the inspector word a day alike ([[T-17081]]).
-    private var doDayText: String { draft.doRowLabel }
+    private var doDayText: String { draft.doRowLabel(relativeTo: observedToday) }
+
+    /// Today as the observer last saw it ([[T-17747]]), the reference both date chips are worded from.
+    private var observedToday: Date {
+        DateFormatters.date(from: observedDay.todayKey) ?? DateFormatters.now()
+    }
 
     /// Whether the do date is today, which is the one day it gets its own glyph and hue.
     private var doDateIsToday: Bool {
-        !draft.startDateKey.isEmpty && draft.startDateKey == DateFormatters.todayKey()
+        !draft.startDateKey.isEmpty && draft.startDateKey == observedDay.todayKey
     }
 
     /// The glyph a chip draws, which is the field's own except on the day the do date is today.
@@ -856,7 +868,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
             // No "Due" in front of it. The glyph beside it is the app's red due-date flag, and on
             // a line that sits the two dates side by side a word on one chip and not the other
             // reads as a difference between the fields rather than as a label.
-            return draft.dueRowLabel
+            return draft.dueRowLabel(relativeTo: observedToday)
         case .list:
             let list = listChoices.first { $0.id == draft.listToken }?.name ?? "Inbox"
             return draft.sectionName == TaskSectionDefaults.defaultName ? list : "\(list) · \(draft.sectionName)"

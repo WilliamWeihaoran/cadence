@@ -28,9 +28,10 @@ struct CadenceIOSAIDraftTitleReturnTests {
                 "Return in the draft's title must submit (ending the field), not insert a line break")
     }
 
-    /// The trim that let the break through: ends only. If creation ever folds inner line breaks
-    /// itself, this pin can go; until then the field is the only guard.
-    @Test func creationTrimsOnlyTheTitlesEnds() {
+    /// The trim that let the break through trimmed the ends only. [[T-17745]] folds an inner line
+    /// break at creation, so the field is no longer the only guard: a break that still arrives
+    /// (pasted) is written as one space.
+    @Test func creationFoldsAnInnerLineBreakIntoASpace() {
         let draft = TaskCreationDraft(
             title: "Buy\nmilk\n",
             notes: "",
@@ -42,6 +43,6 @@ struct CadenceIOSAIDraftTitleReturnTests {
             subtaskTitles: [],
             tags: []
         )
-        #expect(draft.trimmedTitle == "Buy\nmilk")
+        #expect(draft.trimmedTitle == "Buy milk")
     }
 }

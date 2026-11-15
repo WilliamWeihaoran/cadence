@@ -30,11 +30,22 @@ struct TaskCreationDraft {
     var seriesEndDateKey: String = ""
     var seriesEndCount: Int = 0
 
+    /// **[[T-17745]]: one line.** A task title is a line: every capture field submits on Return,
+    /// so a break can only arrive pasted -- two lines copied from a mail or a note into the capture
+    /// card on either platform. It was stored as typed (this trimmed only the ends), and the rows
+    /// that draw a title on one line showed the first line and hid the rest. Each break, with the
+    /// spaces around it, now reads as one space; blank lines go.
     var trimmedTitle: String {
-        if let shortcut = TaskTitleSupport.priorityShortcut(in: title) {
-            return shortcut.title
-        }
-        return TaskTitleSupport.normalized(title)
+        let name = TaskTitleSupport.priorityShortcut(in: title)?.title ?? TaskTitleSupport.normalized(title)
+        return Self.joiningLines(name)
+    }
+
+    static func joiningLines(_ title: String) -> String {
+        title
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
     var trimmedNotes: String {

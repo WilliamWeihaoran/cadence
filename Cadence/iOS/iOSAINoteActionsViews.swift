@@ -472,7 +472,8 @@ private struct iOSAITaskDraftCard: View {
 
             // [[T-10220]]: Return ends the title instead of typing a line break into it. A
             // vertical-axis field with no `onSubmit` inserts "\n" on Return, and the break went
-            // into the task as typed -- `TaskCreationDraft.trimmedTitle` trims only the ends. The
+            // into the task as typed -- `TaskCreationDraft.trimmedTitle` trimmed only the ends
+            // then ([[T-17745]] folds one into a space now, so this is no longer the only guard). The
             // Mac card's title is single-line and cannot hold one; the axis stays so a long title
             // still wraps, the rule `CadenceSchedulePanel.titleField` already follows.
             TextField("Task title", text: $draft.title, axis: .vertical)

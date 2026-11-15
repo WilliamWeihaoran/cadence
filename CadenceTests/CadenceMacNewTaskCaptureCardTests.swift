@@ -191,6 +191,58 @@ struct CadenceMacNewTaskCaptureCardTests {
         #expect(compact.contains("fieldRequest=.dueDate"))
     }
 
+    /// **[[T-17746]]: Cmd+Return on a title of marks alone says why, as Return does.** The chord is
+    /// the keyboard layer's own button and calls the sheet's `commit()` without passing the card's
+    /// title gate, so `!!!` reached the service, which made nothing, and the chord said nothing.
+    /// No unit test can press a key, so the gate's place is read from source: first in `commit()`,
+    /// ahead of `canCreate`, answering with the card's sentence.
+    @Test func commandReturnOnAMarksOnlyTitleSaysAddATitleFirst() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Sheets/CreateTaskSheet.swift")
+        )
+        let body = try #require(CadenceSourceScan.declarationBody("private func commit() -> String?", in: source))
+        let compact = body.filter { !$0.isWhitespace }
+        let gate = try #require(
+            compact.range(of: "guarddraft.hasCommittableTitleelse{returnInlineTaskComposerSupport.noNameNotice}"),
+            "commit() does not refuse a title the card would refuse"
+        )
+        let canCreate = try #require(compact.range(of: "guardcanCreateelse"))
+        #expect(gate.lowerBound < canCreate.lowerBound, "the title gate must run before the silent canCreate guard")
+
+        var marksOnly = Self.blankTask()
+        marksOnly.title = "!!!"
+        #expect(!marksOnly.hasCommittableTitle, "non-vacuity: the gate refuses a marks-only title")
+        #expect(InlineTaskComposerSupport.noNameNotice == "Add a title first.")
+    }
+
+    /// **[[T-17747]]: a card left open across midnight words its dates from the new day.** The
+    /// quick-capture panel keeps its card standing for the next open ([[T-5302]]); its Do and Due
+    /// chips read the clock only when something else redrew them, so yesterday's do date still
+    /// read "Today". Both chips are worded from the day the card's observer holds
+    /// (`CadenceDayChangeAdoptionTests` pins the observer itself).
+    @Test func theCardsDateChipsAreWordedFromTheObservedDay() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift")
+        )
+        let card = try #require(CadenceSourceScan.declarationBody(
+            "struct CadenceScheduleCaptureCard<NotesField: View>: View", in: source
+        )).filter { !$0.isWhitespace }
+        #expect(card.contains("draft.doRowLabel(relativeTo:observedToday)"))
+        #expect(card.contains("draft.dueRowLabel(relativeTo:observedToday)"))
+        #expect(!card.contains("draft.doRowLabel}"), "a chip still reads the clock's day")
+        #expect(!card.contains("returndraft.dueRowLabelcase"),
+                "a chip still reads the clock's day")
+
+        // What the reference changes: the same do date, worded from the day it was set and the next.
+        var draft = Self.blankTask()
+        draft.startDateKey = "2026-11-14"
+        draft.endDateKey = "2026-11-14"
+        let setOn = try #require(DateFormatters.date(from: "2026-11-14"))
+        let nextDay = try #require(DateFormatters.date(from: "2026-11-15"))
+        #expect(draft.doRowLabel(relativeTo: setOn) == "Today")
+        #expect(draft.doRowLabel(relativeTo: nextDay) != "Today")
+    }
+
     /// The quick-capture panel is its own SwiftUI root, so the card's Event arm needs the calendar
     /// manager handed to it there; the main window's root already installs it.
     @Test func theQuickCapturePanelInstallsTheCalendarManager() throws {

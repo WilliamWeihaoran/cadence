@@ -182,4 +182,23 @@ struct TaskCreationServiceTests {
         let second = try #require(service.insertion(from: draft("Second", into: .project(project.id)), into: modelContext))
         #expect([first.task.order, second.task.order] == [6, 7])
     }
+
+    /// **[[T-17745]]: a pasted line break is written as a space.** Every capture field submits on
+    /// Return, so a break arrives only pasted, and a one-line row then showed the first line alone.
+    @Test func aPastedLineBreakInTheTitleIsWrittenAsOneSpace() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let service = TaskCreationService(areas: [], projects: [])
+
+        let pasted = try #require(service.insertion(
+            from: draft("Reply to Sam  \n\n  about the venue\r\nand dates !!", into: .inbox), into: modelContext
+        ))
+        #expect(pasted.task.title == "Reply to Sam about the venue and dates")
+        #expect(pasted.task.priority == .medium, "a trailing mark is still read")
+
+        let typed = try #require(service.insertion(from: draft("  Plain  title  ", into: .inbox), into: modelContext))
+        #expect(typed.task.title == "Plain  title", "a one-line title keeps its inner spacing")
+
+        #expect(service.insertion(from: draft(" \n \n", into: .inbox), into: modelContext) == nil)
+    }
 }

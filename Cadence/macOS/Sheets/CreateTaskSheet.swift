@@ -314,7 +314,13 @@ struct CreateTaskSheet: View {
 
     /// The card's Add, its title's Return, and Cmd+Return. `nil` when the draft left the sheet,
     /// the sentence to draw when it did not.
+    ///
+    /// [[T-17746]]: Cmd+Return reaches this without the card, so the card's title gate is asked
+    /// here too. On a title of priority marks alone (`!!!`) `canCreate` passed, the service made
+    /// nothing, and the chord did nothing with no word said, while Return on the same title said
+    /// "Add a title first." ([[T-14042]]).
     private func commit() -> String? {
+        guard draft.hasCommittableTitle else { return InlineTaskComposerSupport.noNameNotice }
         guard canCreate else { return nil }
         switch draft.kind {
         case .task:
