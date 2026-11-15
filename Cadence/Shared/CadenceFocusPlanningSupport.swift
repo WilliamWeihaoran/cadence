@@ -389,6 +389,16 @@ enum CadenceFocusSupport {
         max(0, Int((Double(seconds) / 60.0).rounded()))
     }
 
+    /// Whether the stopwatch holds anything the log form would bank ([[T-18024]]).
+    ///
+    /// The one rule behind "Nothing to log yet" in `logHint` and the green-versus-muted tint of
+    /// both platforms' Log Session controls. The tints used to key on raw seconds (`> 0`) while
+    /// the hint and the form's seed round to the nearest minute, so for the first 29 seconds of
+    /// every session the checkmark was green under a line saying there was nothing to log.
+    static func hasLoggableTime(elapsedSeconds seconds: Int) -> Bool {
+        minutes(fromElapsedSeconds: seconds) > 0
+    }
+
     /// The line under the focus clock that says what finishing will bank (T-9201), on both
     /// platforms since [[T-11209]]: the Mac's `FocusTimerPanel` had no such line.
     ///
@@ -397,8 +407,8 @@ enum CadenceFocusSupport {
     /// fixed in the Mac Log Session button. It now spells the total through
     /// `TimeFormatters.durationLabel(minutes:emptyPlaceholder:)`, the app's one duration spelling.
     static func logHint(elapsedSeconds seconds: Int) -> String {
+        guard hasLoggableTime(elapsedSeconds: seconds) else { return "Nothing to log yet" }
         let minutes = minutes(fromElapsedSeconds: seconds)
-        guard minutes > 0 else { return "Nothing to log yet" }
         return "Logs \(TimeFormatters.durationLabel(minutes: minutes, emptyPlaceholder: "")) when you finish"
     }
 

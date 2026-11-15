@@ -27,12 +27,12 @@ struct CadenceMacTaskBoardAccessibilityTests {
         let mac = try source("Cadence/macOS/Views/ListDetailView.swift")
         let header = try #require(CadenceSourceScan.declarationBody("private var header: some View", in: mac))
         #expect(header.contains("project.dueDate"), "non-vacuity: the deadline chip is still drawn here")
-        #expect(header.contains(".accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: project.dueDate, todayKey: observedDay.todayKey))"),
+        #expect(header.contains(".accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: project.dueDate, todayKey: observedDay.todayKey, isSettled: dueIsSettled))"),
                 "the Mac deadline chip reads as a bare date again")
         #expect(header.contains(".accessibilityElement(children: .ignore)"))
 
         let iOS = try source("Cadence/iOS/iOSListDetailView.swift")
-        #expect(iOS.contains(".accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: projectDueDate, todayKey: todayKey))"),
+        #expect(iOS.contains(".accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: projectDueDate, todayKey: todayKey, isSettled: projectDueDateIsSettled))"),
                 "iOS spells its own deadline label again")
     }
 

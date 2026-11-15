@@ -88,14 +88,14 @@ struct CadenceSidebarObservedDayTests {
         #expect(ListDetailHeaderAccessibility.deadlineLabel(dueDate: "2026-11-09", todayKey: today) == "Deadline, Overdue Nov 9")
         #expect(ListDetailHeaderAccessibility.deadlineLabel(dueDate: today, todayKey: today) == "Deadline, Due today")
 
-        let headers: [(path: String, declaration: String, dueDate: String, todayKey: String)] = [
-            ("Cadence/macOS/Views/ListDetailView.swift", "private var header: some View", "project.dueDate", "observedDay.todayKey"),
-            ("Cadence/iOS/iOSListDetailView.swift", "private struct iOSListDetailHeader: View", "projectDueDate", "todayKey"),
+        let headers: [(path: String, declaration: String, dueDate: String, todayKey: String, settled: String)] = [
+            ("Cadence/macOS/Views/ListDetailView.swift", "private var header: some View", "project.dueDate", "observedDay.todayKey", "dueIsSettled"),
+            ("Cadence/iOS/iOSListDetailView.swift", "private struct iOSListDetailHeader: View", "projectDueDate", "todayKey", "projectDueDateIsSettled"),
         ]
         for header in headers {
             let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(header.path))
             let chip = try #require(CadenceSourceScan.declarationBody(header.declaration, in: source), "\(header.path)")
-            let args = "\(header.dueDate), todayKey: \(header.todayKey))"
+            let args = "\(header.dueDate), todayKey: \(header.todayKey), isSettled: \(header.settled))"
             #expect(chip.contains("Image(systemName: \"flag.fill\")"), "\(header.path): the chip is not the sidebar's flag")
             #expect(!chip.contains("Image(systemName: \"calendar\")"), "\(header.path): the chip is a calendar glyph again")
             #expect(chip.contains("Text(CadenceSidebarLayout.listDueDateLabel(\(args))"), "\(header.path): the chip words its date itself again")
@@ -109,7 +109,35 @@ struct CadenceSidebarObservedDayTests {
         }
         // The iPhone and iPad header is handed the page's observed day, never the clock.
         let page = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListDetailView.swift"))
-        #expect(page.contains("projectDueDate: project?.dueDate,\n                todayKey: observedDay.todayKey,"))
+        #expect(page.contains("projectDueDate: project?.dueDate,\n                projectDueDateIsSettled: CadenceSidebarLayout.listDueDateIsSettled(project: project),\n                todayKey: observedDay.todayKey,"))
+        // [[T-18025]]: the Mac header derives the same input through the same rule.
+        let mac = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListDetailView.swift"))
+        #expect(mac.contains("let dueIsSettled = CadenceSidebarLayout.listDueDateIsSettled(project: project)"))
+    }
+
+    /// **[[T-18025]]: a settled project's header stops flagging its deadline late.** A project
+    /// finished after its deadline still drew "Overdue Nov 9" in red under its own "Completed"
+    /// eyebrow. Completed, cancelled and archived are settled and read "Due Nov 9" in the neutral
+    /// tint, as a settled task and a completed board column do; paused still owes its deadline.
+    @Test func aSettledListsDeadlineIsNeverLateButAPausedOneStillIs() {
+        let today = "2026-11-10"
+        let past = "2026-11-09"
+        let settled: [CadenceListSearchLifecycle] = [.completed, .cancelled, .archived]
+        let unsettled: [CadenceListSearchLifecycle] = [.active, .paused]
+        for lifecycle in settled {
+            let isSettled = CadenceSidebarLayout.listDueDateIsSettled(lifecycle)
+            #expect(isSettled, "\(lifecycle) should be settled")
+            #expect(!CadenceSidebarLayout.listDueDateIsPast(past, todayKey: today, isSettled: isSettled))
+            #expect(CadenceSidebarLayout.listDueDateLabel(past, todayKey: today, isSettled: isSettled) == "Due Nov 9")
+            #expect(ListDetailHeaderAccessibility.deadlineLabel(dueDate: past, todayKey: today, isSettled: isSettled) == "Deadline, Due Nov 9")
+        }
+        for lifecycle in unsettled {
+            let isSettled = CadenceSidebarLayout.listDueDateIsSettled(lifecycle)
+            #expect(!isSettled, "\(lifecycle) should not be settled")
+            #expect(CadenceSidebarLayout.listDueDateIsPast(past, todayKey: today, isSettled: isSettled))
+            #expect(CadenceSidebarLayout.listDueDateLabel(past, todayKey: today, isSettled: isSettled) == "Overdue Nov 9")
+        }
+        #expect(!CadenceSidebarLayout.listDueDateIsSettled(project: nil))
     }
 
     // MARK: - iPad

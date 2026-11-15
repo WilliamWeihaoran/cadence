@@ -311,6 +311,7 @@ struct iOSListDetailView: View {
                 title: title,
                 colorHex: colorHex,
                 projectDueDate: project?.dueDate,
+                projectDueDateIsSettled: CadenceSidebarLayout.listDueDateIsSettled(project: project),
                 todayKey: observedDay.todayKey,
                 onBack: (isPresentedModally || horizontalSizeClass == .compact) ? { dismiss() } : nil,
                 onEdit: presentEditor
@@ -772,6 +773,8 @@ private struct iOSListDetailHeader: View {
     let title: String
     let colorHex: String
     let projectDueDate: String?
+    /// [[T-18025]]: a completed, cancelled or archived project; its deadline is no longer late.
+    let projectDueDateIsSettled: Bool
     /// The page's observed day, which the deadline chip reads ([[T-17905]]).
     let todayKey: String
     var onBack: (() -> Void)? = nil
@@ -793,12 +796,12 @@ private struct iOSListDetailHeader: View {
                 if let projectDueDate, !projectDueDate.isEmpty {
                     // [[T-17905]]: the sidebar row's rule -- its glyph, its words, red once past --
                     // against the page's observed day, as the Mac header reads it.
-                    let dueTint = CadenceSidebarLayout.listDueDateIsPast(projectDueDate, todayKey: todayKey) ? Theme.red : Theme.dim
+                    let dueTint = CadenceSidebarLayout.listDueDateIsPast(projectDueDate, todayKey: todayKey, isSettled: projectDueDateIsSettled) ? Theme.red : Theme.dim
                     HStack(spacing: 4) {
                         Image(systemName: "flag.fill")
                             .cadenceFont(.metadata, base: 10, weight: .regular)
                             .accessibilityHidden(true)
-                        Text(CadenceSidebarLayout.listDueDateLabel(projectDueDate, todayKey: todayKey))
+                        Text(CadenceSidebarLayout.listDueDateLabel(projectDueDate, todayKey: todayKey, isSettled: projectDueDateIsSettled))
                             .cadenceFont(.metadata, base: 11, weight: .regular)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -808,7 +811,7 @@ private struct iOSListDetailHeader: View {
                     .background(Theme.surfaceElevated)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: projectDueDate, todayKey: todayKey))
+                    .accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: projectDueDate, todayKey: todayKey, isSettled: projectDueDateIsSettled))
                 }
                 // [[T-12602]]: the Mac's control -- the shared pencil, in the list's own colour.
                 iOSIconButton(

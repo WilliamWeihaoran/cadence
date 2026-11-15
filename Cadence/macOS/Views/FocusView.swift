@@ -158,7 +158,7 @@ struct FocusView: View {
 
             FocusIconButton(
                 systemName: "checkmark",
-                foreground: focusManager.elapsed > 0 ? Theme.green : Theme.muted,
+                foreground: CadenceFocusSupport.hasLoggableTime(elapsedSeconds: focusManager.elapsed) ? Theme.green : Theme.muted,
                 background: Theme.surfaceElevated,
                 size: 38,
                 // [[T-8732]]: one label on both platforms' Log Session controls.

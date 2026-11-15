@@ -331,8 +331,30 @@ extension CadenceSidebarLayout {
     /// [[T-15502]]: it was `DateFormatters.relativeDate` ("Yesterday" / "Today"), so a project due
     /// today said "Today" in the sidebar beside its own tasks saying "Due today" ([[T-15491]]).
     /// Only reached with a non-empty key; the raw key is the fallback rather than an empty badge.
-    static func listDueDateLabel(_ dueDateKey: String, todayKey: String) -> String {
-        CadenceWidgetDateSupport.dueLabel(for: dueDateKey, todayKey: todayKey) ?? dueDateKey
+    ///
+    /// [[T-18025]]: `isSettled` is the project page header's input -- a settled list's past
+    /// deadline reads "Due Nov 9", as a settled task's and a completed board column's do
+    /// ([[T-15522]], [[T-16891]], [[T-16893]]). The sidebar rows show only active lists and keep
+    /// the default.
+    static func listDueDateLabel(_ dueDateKey: String, todayKey: String, isSettled: Bool = false) -> String {
+        CadenceWidgetDateSupport.dueLabel(for: dueDateKey, todayKey: todayKey, isSettled: isSettled) ?? dueDateKey
+    }
+
+    /// [[T-18025]]: whether a list's deadline is over and done with, so its header stops flagging
+    /// it late. Completed, cancelled and archived lists are settled; a PAUSED one is not -- it is
+    /// set aside, not finished, and still owes its deadline (keeper call on T-18025). One rule,
+    /// read by the Mac and iOS list headers alike.
+    static func listDueDateIsSettled(_ lifecycle: CadenceListSearchLifecycle) -> Bool {
+        switch lifecycle {
+        case .completed, .cancelled, .archived: true
+        case .active, .paused: false
+        }
+    }
+
+    /// `listDueDateIsSettled(_:)` for a page's project; no project (an area page) is never settled.
+    static func listDueDateIsSettled(project: Project?) -> Bool {
+        guard let project else { return false }
+        return listDueDateIsSettled(CadenceListSearchSupport.lifecycle(of: project))
     }
 
     /// The count for one area/project row. Always neutral — a list is a place, not a deadline.
@@ -346,8 +368,10 @@ extension CadenceSidebarLayout {
     /// row body re-runs only when its inputs change, and a list's due date is the same on both
     /// sides of midnight, so a clock read there kept yesterday's colour until something else
     /// redrew the column. Shared by the macOS and iPad rows so the two cannot disagree.
-    static func listDueDateIsPast(_ dueDateKey: String, todayKey: String) -> Bool {
-        dueDateKey < todayKey
+    ///
+    /// [[T-18025]]: a settled list (`listDueDateIsSettled`) is never late, whatever its date.
+    static func listDueDateIsPast(_ dueDateKey: String, todayKey: String, isSettled: Bool = false) -> Bool {
+        !isSettled && dueDateKey < todayKey
     }
 
     /// Open work whose deadline has already passed.

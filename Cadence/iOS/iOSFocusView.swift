@@ -649,7 +649,7 @@ struct iOSFocusView: View {
                     // the Mac's does -- so the Mac's cue is the true one: nothing to bank yet. The
                     // control is still not disabled on either platform, because the form can still
                     // correct the figure or finish the task.
-                    foreground: elapsedSeconds > 0 ? Theme.green : Theme.muted,
+                    foreground: CadenceFocusSupport.hasLoggableTime(elapsedSeconds: elapsedSeconds) ? Theme.green : Theme.muted,
                     background: Theme.surfaceElevated,
                     diameter: 48
                 ) {

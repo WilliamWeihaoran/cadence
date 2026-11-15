@@ -333,8 +333,8 @@ enum ListDetailKanbanBoard {
 /// [[T-17905]]: the chip now draws the sidebar row's words ("Overdue Nov 9" / "Due today"), so the
 /// label reads those words too, against the same observed day.
 enum ListDetailHeaderAccessibility {
-    static func deadlineLabel(dueDate: String, todayKey: String) -> String {
-        "Deadline, \(CadenceSidebarLayout.listDueDateLabel(dueDate, todayKey: todayKey))"
+    static func deadlineLabel(dueDate: String, todayKey: String, isSettled: Bool = false) -> String {
+        "Deadline, \(CadenceSidebarLayout.listDueDateLabel(dueDate, todayKey: todayKey, isSettled: isSettled))"
     }
 
     /// The header's edit control, named for the list it edits ([[T-8563]] (e)). iOS said a bare

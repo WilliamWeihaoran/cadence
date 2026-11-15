@@ -324,11 +324,13 @@ private struct ListDetailChromeView: View {
                 if let project = project, !project.dueDate.isEmpty {
                     // [[T-17905]]: the sidebar row's rule -- its glyph, its words, red once past --
                     // against this page's observed day, so the page agrees with the row it opened from.
-                    let dueTint = CadenceSidebarLayout.listDueDateIsPast(project.dueDate, todayKey: observedDay.todayKey) ? Theme.red : Theme.dim
+                    // [[T-18025]]: a completed, cancelled or archived project's deadline is settled.
+                    let dueIsSettled = CadenceSidebarLayout.listDueDateIsSettled(project: project)
+                    let dueTint = CadenceSidebarLayout.listDueDateIsPast(project.dueDate, todayKey: observedDay.todayKey, isSettled: dueIsSettled) ? Theme.red : Theme.dim
                     HStack(spacing: 4) {
                         Image(systemName: "flag.fill").font(.system(size: 10))
                             .accessibilityHidden(true)
-                        Text(CadenceSidebarLayout.listDueDateLabel(project.dueDate, todayKey: observedDay.todayKey)).font(.system(size: 11))
+                        Text(CadenceSidebarLayout.listDueDateLabel(project.dueDate, todayKey: observedDay.todayKey, isSettled: dueIsSettled)).font(.system(size: 11))
                     }
                     .foregroundStyle(dueTint)
                     .padding(.horizontal, 8)
@@ -337,8 +339,8 @@ private struct ListDetailChromeView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     // T-7080: a bare "Oct 30" to VoiceOver; iOS's chip says whose date it is.
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: project.dueDate, todayKey: observedDay.todayKey))
-                    .help(ListDetailHeaderAccessibility.deadlineLabel(dueDate: project.dueDate, todayKey: observedDay.todayKey))
+                    .accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: project.dueDate, todayKey: observedDay.todayKey, isSettled: dueIsSettled))
+                    .help(ListDetailHeaderAccessibility.deadlineLabel(dueDate: project.dueDate, todayKey: observedDay.todayKey, isSettled: dueIsSettled))
                 }
 
                 CadenceIconButton(

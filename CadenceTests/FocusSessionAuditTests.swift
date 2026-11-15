@@ -62,6 +62,23 @@ struct FocusSessionSeedTests {
         }
     }
 
+    /// [[T-18024]]: the Log Session tint and the hint under the clock read one predicate, so the
+    /// checkmark is never green under "Nothing to log yet". It used to key on raw seconds, so
+    /// 1-29 s was green while the hint and the form's 0 h 0 min seed said there was nothing.
+    @Test func logControlTintAndHintAgreeOnWhetherAnythingIsLoggable() {
+        #expect(!CadenceFocusSupport.hasLoggableTime(elapsedSeconds: 0))
+        #expect(!CadenceFocusSupport.hasLoggableTime(elapsedSeconds: 1))
+        #expect(!CadenceFocusSupport.hasLoggableTime(elapsedSeconds: 29))
+        #expect(CadenceFocusSupport.hasLoggableTime(elapsedSeconds: 30))
+        #expect(CadenceFocusSupport.hasLoggableTime(elapsedSeconds: 61))
+        for seconds in stride(from: 0, through: 3_600, by: 1) {
+            let loggable = CadenceFocusSupport.hasLoggableTime(elapsedSeconds: seconds)
+            #expect(loggable == (CadenceFocusSupport.logHint(elapsedSeconds: seconds) != "Nothing to log yet"))
+            let seed = CadenceFocusSupport.logFieldSeed(elapsedSeconds: seconds)
+            #expect(loggable == (seed.hours * 60 + seed.minutes > 0))
+        }
+    }
+
     /// Every seed must agree with `CadenceFocusSupport.minutes(fromElapsedSeconds:)`, which is the
     /// one definition of "how many minutes is this stopwatch worth".
     @Test func logFieldSeedTotalAlwaysMatchesTheSharedMinuteConversion() {

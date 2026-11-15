@@ -295,7 +295,7 @@ struct CadenceFocusLogFormParityTests {
             !controls.contains("Log session and mark done"),
             "the iOS control still promises to finish the task"
         )
-        #expect(controls.contains("foreground: elapsedSeconds > 0 ? Theme.green : Theme.muted"))
+        #expect(controls.contains("foreground: CadenceFocusSupport.hasLoggableTime(elapsedSeconds: elapsedSeconds) ? Theme.green : Theme.muted"))
         // The clock is paused before the form reads it, as the Mac pauses before its popover.
         #expect(controls.contains("if timerState.isRunning { timerState.toggle() }"))
         #expect(controls.contains("loggingTask = task"))
@@ -305,7 +305,7 @@ struct CadenceFocusLogFormParityTests {
         // this is a parity claim rather than one platform asserted twice.
         let macView = try Self.code(Self.macViewPath)
         #expect(macView.contains("accessibilityLabel: CadenceFocusSupport.logFormControlLabel"))
-        #expect(macView.contains("foreground: focusManager.elapsed > 0 ? Theme.green : Theme.muted"))
+        #expect(macView.contains("foreground: CadenceFocusSupport.hasLoggableTime(elapsedSeconds: focusManager.elapsed) ? Theme.green : Theme.muted"))
     }
 
     /// **[[T-12321]]: the rule above has to be drawn on a tick, or it never fires.**
@@ -324,7 +324,7 @@ struct CadenceFocusLogFormParityTests {
         let controls = try #require(CadenceSourceScan.declarationBody("private func focusControls(", in: view))
 
         let tint = try #require(
-            controls.range(of: "foreground: elapsedSeconds > 0 ? Theme.green : Theme.muted"),
+            controls.range(of: "foreground: CadenceFocusSupport.hasLoggableTime(elapsedSeconds: elapsedSeconds) ? Theme.green : Theme.muted"),
             "non-vacuity: the muted-at-zero rule is in this declaration"
         )
         let tick = try #require(
