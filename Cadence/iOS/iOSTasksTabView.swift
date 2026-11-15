@@ -134,6 +134,9 @@ struct iOSTasksTabView: View {
                         seededContext: contextID.flatMap { id in contexts.first { $0.id == id } }
                     )
                 },
+                contextsHoldingInactiveLists: CadenceSidebarLists.contextsHoldingInactiveLists(
+                    areas: areas, projects: projects
+                ),
                 hasInactiveLists: CadenceSidebarLists.hasInactiveLists(areas: areas, projects: projects)
             )
         }

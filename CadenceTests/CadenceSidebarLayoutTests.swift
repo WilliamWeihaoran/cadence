@@ -530,10 +530,14 @@ struct SidebarStaticDestinationBridgeTests {
                 "the lists region takes no create closure, so list creation is unreachable from the sidebar")
         #expect(region.contains("onCreateList(section.contextID)"),
                 "no context header offers a + any more, so list creation is unreachable from a populated sidebar")
-        #expect(region.contains("private var addFirstListButton: some View"),
+        // [[T-17811]]: one button, drawn by the empty region on no context and by an empty
+        // context under its header on that context.
+        #expect(region.contains("private func createListButton(title: String, contextID: UUID?) -> some View"),
                 "the first-list door is gone, so list creation is unreachable on a fresh install")
-        #expect(region.contains("onCreateList(nil)"),
+        #expect(region.contains("createListButton(title: emptyLists.action, contextID: nil)"),
                 "the first-list door asks for nothing, so list creation is unreachable on a fresh install")
+        #expect(region.contains("onCreateList(contextID)"),
+                "the create row's button does not open the editor")
 
         // The `+` is the column's existing 26pt plate with a 44pt hit area, not a new control and
         // not a 44pt box that would push `CadenceSidebarContextHeaderRhythm`'s four terms around.

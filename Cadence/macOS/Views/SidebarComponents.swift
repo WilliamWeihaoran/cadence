@@ -162,10 +162,13 @@ struct ContextSection: View {
     @Binding var selection: SidebarItem?
     /// Every header has one, the catch-all included since T-559 made `CreateListSheet`'s context
     /// optional — before that it was `(() -> Void)?` and `nil` there, because the sheet could not
-    /// be opened without a context to open it in. On macOS this button is the only way to make a
-    /// list in a given context, which is also why an empty context still gets a section here and
-    /// gets none on iPad.
+    /// be opened without a context to open it in. An empty context keeps its section here and, since
+    /// [[T-14793]], on the touch columns too.
     let onAddList: () -> Void
+    /// Whether this context files an archived or completed list ([[T-17811]]), so the row an empty
+    /// section draws says "New list" rather than "Add first list" -- membership in
+    /// `CadenceSidebarLists.contextsHoldingInactiveLists(areas:projects:)`.
+    var holdsInactiveLists: Bool = false
     @Environment(\.modelContext) private var modelContext
     @State private var areaForEdit: Area? = nil
     @State private var projectForEdit: Project? = nil
@@ -256,7 +259,12 @@ struct ContextSection: View {
                     }
                 }
             } else {
-                SidebarAddFirstListButton(action: onAddList)
+                // [[T-17811]]: one shape on both columns (`iOSSidebarListsRegion.listSection`
+                // draws the same row), titled by whether the context already held lists.
+                SidebarAddFirstListButton(
+                    title: CadenceEmptyStateCopy.sidebarEmptyContextAction(holdsInactiveLists: holdsInactiveLists),
+                    action: onAddList
+                )
             }
         }
         .padding(.bottom, SidebarMetrics.contextSectionBottomSpacing)
@@ -635,8 +643,8 @@ nonisolated enum SidebarListDropPlacement {
 /// `nil`, so the sheet opens on "No context" — the state `CreateListSheet` has accepted since
 /// T-559 and the state the resulting list is filed under ("Other") if it is saved that way.
 struct SidebarAddFirstListButton: View {
-    /// "Add first list" everywhere but the empty-store row over a store whose every list is
-    /// inactive, which reads `CadenceEmptyStateCopy.sidebarEmptyLists` ([[T-17789]]).
+    /// Both callers pass their own: the empty-store row reads `CadenceEmptyStateCopy.sidebarEmptyLists`
+    /// ([[T-17789]]), the empty-context row `sidebarEmptyContextAction` ([[T-17811]]).
     var title: String = CadenceEmptyStateCopy.addFirstListAction
     let action: () -> Void
 

@@ -505,6 +505,9 @@ struct iOSSidebar: View {
                     )
                 )
             },
+            contextsHoldingInactiveLists: CadenceSidebarLists.contextsHoldingInactiveLists(
+                areas: areas, projects: projects
+            ),
             hasInactiveLists: CadenceSidebarLists.hasInactiveLists(areas: areas, projects: projects)
         )
     }
@@ -559,6 +562,10 @@ struct iOSSidebarListsRegion: View {
     /// this view holds values, not model objects, and two hosts draw it. Each resolves the id
     /// against its own query.
     let onCreateList: (UUID?) -> Void
+    /// The contexts that file an archived or completed list, so an empty context's create row says
+    /// "New list" rather than "Add first list" ([[T-17811]]). Each host asks
+    /// `CadenceSidebarLists.contextsHoldingInactiveLists(areas:projects:)` of its own query.
+    let contextsHoldingInactiveLists: Set<UUID>
     /// Whether the store holds a list `sections` leaves out, so `emptyListsRow` says "No active
     /// lists" rather than "No lists yet" over an archived-only store ([[T-17789]]). Each host asks
     /// `CadenceSidebarLists.hasInactiveLists(areas:projects:)` of its own query.
@@ -701,6 +708,18 @@ struct iOSSidebarListsRegion: View {
                     horizontalInset: iOSSidebarMetrics.rowHorizontalPadding
                 )
             }
+
+            // [[T-17811]]: an empty context draws the Mac's create row under its header
+            // (`ContextSection`'s `SidebarAddFirstListButton`), not the header alone -- one
+            // shape on both columns, titled by whether the context already held lists.
+            if section.items.isEmpty {
+                createListButton(
+                    title: CadenceEmptyStateCopy.sidebarEmptyContextAction(
+                        holdsInactiveLists: section.contextID.map(contextsHoldingInactiveLists.contains) ?? false
+                    ),
+                    contextID: section.contextID
+                )
+            }
         }
         .padding(.bottom, iOSSidebarMetrics.contextSectionBottomPadding)
         .iOSNewTaskDropTarget(
@@ -776,7 +795,7 @@ struct iOSSidebarListsRegion: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Theme.dim)
 
-            addFirstListButton
+            createListButton(title: emptyLists.action, contextID: nil)
         }
         .padding(.horizontal, iOSSidebarMetrics.rowHorizontalPadding)
         .padding(.vertical, 6)
@@ -786,19 +805,20 @@ struct iOSSidebarListsRegion: View {
         CadenceEmptyStateCopy.sidebarEmptyLists(hasInactiveLists: hasInactiveLists)
     }
 
-    /// The macOS column's "Add first list" row, in this column's vocabulary: an
-    /// `iOSSidebarListRow`-shaped plate on no context, so an empty region and a populated one
-    /// share a left edge and a corner radius.
-    private var addFirstListButton: some View {
+    /// The macOS column's `SidebarAddFirstListButton`, in this column's vocabulary: an
+    /// `iOSSidebarListRow`-shaped plate, so an empty region or context and a populated one share
+    /// a left edge and a corner radius. `contextID` is `nil` from the empty region and the
+    /// context's own id under an empty context's header ([[T-17811]]).
+    private func createListButton(title: String, contextID: UUID?) -> some View {
         Button {
-            onCreateList(nil)
+            onCreateList(contextID)
         } label: {
             HStack(spacing: iOSSidebarMetrics.iconLabelSpacing) {
                 Image(systemName: "plus.circle")
                     .font(.system(size: iOSSidebarMetrics.iconSize, weight: .semibold))
                     .frame(width: iOSSidebarMetrics.iconSlotWidth)
 
-                Text(emptyLists.action)
+                Text(title)
                     .font(.system(size: iOSSidebarMetrics.labelFontSize, weight: .medium))
                     .lineLimit(1)
 

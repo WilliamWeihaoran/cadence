@@ -238,4 +238,17 @@ extension CadenceSidebarLists {
     static func hasInactiveLists(areas: [Area], projects: [Project]) -> Bool {
         areas.contains { !$0.isActive } || projects.contains { !$0.isActive }
     }
+
+    /// **The same question, asked per context** ([[T-17811]]): the ids of the contexts that file
+    /// at least one archived or completed list. A context whose section draws no rows (sections
+    /// keep empty contexts, `keepingEmptyContexts: true`) asks this before titling its create row,
+    /// so a context whose every list was wound down does not offer its "first" one. A context-less
+    /// inactive list counts toward no id: the catch-all is dropped when it has no active rows, so
+    /// it never draws that row.
+    static func contextsHoldingInactiveLists(areas: [Area], projects: [Project]) -> Set<UUID> {
+        Set(
+            areas.filter { !$0.isActive }.compactMap { $0.context?.id }
+                + projects.filter { !$0.isActive }.compactMap { $0.context?.id }
+        )
+    }
 }

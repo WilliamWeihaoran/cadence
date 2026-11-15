@@ -173,7 +173,7 @@ struct iOSListsPageHeader: View {
 ///
 /// The copy and the glyph are the ones already in use for a type-neutral list door: "New List" is
 /// the sheet's own `navigationTitle`, and `plus.circle` is what `SidebarAddFirstListButton` and
-/// the iPad column's `addFirstListButton` draw. The tint is `Theme.blue` because that is the
+/// the iPad column's `createListButton` draw. The tint is `Theme.blue` because that is the
 /// Lists page's own accent — a list's colour is the user's, and it arrives with the list.
 ///
 /// Before that it was two full-width `.borderedProminent` slabs, one blue and one green — the

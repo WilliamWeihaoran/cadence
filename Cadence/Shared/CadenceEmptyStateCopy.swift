@@ -367,7 +367,7 @@ nonisolated enum CadenceEmptyStateCopy {
     }
 
     /// **The create row both sidebars draw when their lists region holds nothing** — macOS's
-    /// `SidebarAddFirstListButton` (T-1113) and the touch column's `addFirstListButton` (T-3073).
+    /// `SidebarAddFirstListButton` (T-1113) and the touch column's `createListButton` (T-3073).
     ///
     /// Here rather than on either component, for the reason this type exists at all: the two
     /// columns cannot share the *button* — one is sized for a pointer off `SidebarMetrics` and one
@@ -403,6 +403,18 @@ nonisolated enum CadenceEmptyStateCopy {
         hasInactiveLists
             ? SidebarListsRegionCopy(statement: activeListsTitle, action: newListAction)
             : SidebarListsRegionCopy(statement: listsTitle(isNarrowed: false), action: addFirstListAction)
+    }
+
+    /// **The create row under a context header with no rows** ([[T-17811]]), on both sidebars.
+    ///
+    /// "Add first list" only when the context has never held a list it still keeps; over a
+    /// context whose every list is archived or completed, "New list" -- the action the empty
+    /// region takes over an inactive-only store (`sidebarEmptyLists`). No statement above it: the
+    /// header already names the context, and the region's statement answers for the whole store.
+    /// `holdsInactiveLists` is membership in
+    /// `CadenceSidebarLists.contextsHoldingInactiveLists(areas:projects:)`.
+    static func sidebarEmptyContextAction(holdsInactiveLists: Bool) -> String {
+        holdsInactiveLists ? newListAction : addFirstListAction
     }
 
     /// **An empty note body's ghost text, one sentence on both platforms** ([[T-8586]], under

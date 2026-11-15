@@ -271,7 +271,10 @@ struct SidebarView: View {
             context: owner,
             entries: section.elements,
             selection: $selection,
-            onAddList: { newListTarget = SidebarNewListTarget(context: owner) }
+            onAddList: { newListTarget = SidebarNewListTarget(context: owner) },
+            holdsInactiveLists: section.contextID.map {
+                CadenceSidebarLists.contextsHoldingInactiveLists(areas: areas, projects: projects).contains($0)
+            } ?? false
         )
     }
 
