@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -151,6 +152,35 @@ struct TaskSortHelperTests {
             for other in groups[(index + 1)...] {
                 #expect(group.accent != other.accent, "\(group.title) and \(other.title) share an accent")
             }
+        }
+    }
+
+    /// [[T-18056]]: only Overdue is red. Due Today drew `Theme.red.opacity(0.8)`, which passes the
+    /// pairwise check above (a different alpha is a different `Color`) yet reads on screen as a
+    /// second Overdue. So the relation compares the resolved RGB with the alpha thrown away: no
+    /// heading but `overdue` may be any opacity of Overdue's red.
+    @Test func onlyTheOverdueHeadingIsRed() {
+        let todayKey = "2026-05-11"
+        let tasks = [
+            task(title: "overdue", dueDate: "2026-05-01", order: 0),
+            task(title: "leftover", scheduledDate: "2026-05-10", order: 1),
+            task(title: "due-today", dueDate: todayKey, order: 2),
+            task(title: "do-today", scheduledDate: todayKey, order: 3),
+            task(title: "scheduled", scheduledDate: "2026-05-25", order: 4),
+            task(title: "unscheduled", order: 5),
+        ]
+        let groups = CadenceTaskQuerySupport.dateDisplayGroups(from: tasks, todayKey: todayKey)
+        #expect(groups.count == 6, "non-vacuity: every By Date heading is drawn")
+
+        let environment = EnvironmentValues()
+        func rgb(_ color: Color) -> [Float] {
+            let resolved = color.resolve(in: environment)
+            return [resolved.red, resolved.green, resolved.blue]
+        }
+        let red = rgb(Theme.red)
+        for group in groups {
+            let isRed = zip(rgb(group.accent), red).allSatisfy { abs($0 - $1) < 0.01 }
+            #expect(isRed == (group.id == "overdue"), "\(group.title) red: \(isRed)")
         }
     }
 

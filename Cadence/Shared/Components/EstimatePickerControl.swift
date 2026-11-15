@@ -380,6 +380,11 @@ struct EstimatePickerPopoverContent: View {
         let plateHeight = EstimateRollerMetrics.footerPlateHeight(at: dynamicTypeSize, scaling: .enabled)
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
+                // [[T-18057]]: Clear is offered only over an estimate there is to clear, the rule
+                // the date panel's `CadenceDateSelectionState.drawsClear` already keeps. It stays
+                // in the layout, hidden and inert, rather than leaving it: the footer keeps its
+                // height and Done keeps its place as the rollers move off and back onto 0.
+                let drawsClear = EstimateRollerMetrics.drawsClear(total: total)
                 Button {
                     apply(0)
                     closeIfLanded()
@@ -393,6 +398,10 @@ struct EstimatePickerPopoverContent: View {
                 }
                 .buttonStyle(.plain)
                 .cadenceHoverHighlight(cornerRadius: 6, fillColor: Theme.surfaceElevated, strokeColor: .clear)
+                .opacity(drawsClear ? 1 : 0)
+                .disabled(!drawsClear)
+                .allowsHitTesting(drawsClear)
+                .accessibilityHidden(!drawsClear)
 
                 Spacer(minLength: 0)
 
@@ -523,6 +532,14 @@ enum EstimateRollerMetrics {
     /// The value the two columns add up to, clamped the same way.
     static func total(hours: Int, minutes: Int) -> Int {
         min(max(0, hours * 60 + minutes), maxMinutes)
+    }
+
+    /// **[[T-18057]]: the footer's red Clear is drawn only over an estimate there is to clear.**
+    /// Reads the live `total`, not the seed the panel opened on: the rollers commit on settle, so
+    /// the total is what the field holds (or is about to), which is what the date panel's
+    /// `hasSelection` means. At 0 the readout already says "No estimate".
+    static func drawsClear(total: Int) -> Bool {
+        total > 0
     }
 
     /// **[[T-16141]]: the minutes the column offers beside `hours` -- only the ones `total` keeps.**

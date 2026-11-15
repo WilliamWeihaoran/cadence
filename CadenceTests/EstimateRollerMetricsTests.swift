@@ -12,6 +12,31 @@ import Testing
 @MainActor
 struct EstimateRollerMetricsTests {
 
+    // MARK: - Clear ([[T-18057]])
+
+    /// The footer's red Clear is drawn only over an estimate there is to clear: on a task with no
+    /// estimate the readout says "No estimate" and there is nothing for Clear to do.
+    @Test
+    func clearIsDrawnOnlyOverAnEstimate() {
+        #expect(!EstimateRollerMetrics.drawsClear(total: 0))
+        #expect(EstimateRollerMetrics.drawsClear(total: 5))
+        #expect(EstimateRollerMetrics.drawsClear(total: EstimateRollerMetrics.maxMinutes))
+    }
+
+    /// **Source shape.** The footer reads that gate off the live total, and the Clear button
+    /// both hides and goes inert behind it.
+    @Test
+    func theFooterGatesItsClearOnTheLiveTotal() throws {
+        let source = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/Components/EstimatePickerControl.swift")
+        let start = try #require(source.range(of: "private var footer: some View {"), "the footer is gone")
+        let end = try #require(source.range(of: "private func doneButton(", range: start.upperBound..<source.endIndex))
+        let footer = String(source[start.upperBound..<end.lowerBound])
+        #expect(footer.contains("let drawsClear = EstimateRollerMetrics.drawsClear(total: total)"))
+        #expect(footer.contains(".opacity(drawsClear ? 1 : 0)"))
+        #expect(footer.contains(".disabled(!drawsClear)"))
+        #expect(footer.contains(".allowsHitTesting(drawsClear)"))
+    }
+
     // MARK: - Columns
 
     @Test

@@ -481,7 +481,13 @@ enum CadenceTaskQuerySupport {
             CadenceTaskDisplayGroup(id: "past-do", title: "Leftover", accent: Theme.amber, tasks: pastDo)
         ]
         if includeDueToday {
-            groups.append(CadenceTaskDisplayGroup(id: "due-today", title: "Due Today", accent: Theme.red.opacity(0.8), tasks: dueToday))
+            // [[T-18056]]: `text`, not red. Red is Overdue's -- a deadline is red only once it has
+            // passed, which is the rule the rows under this heading keep (their "Due today" chips
+            // are grey). At 80% red it read as a second Overdue. Amber is Leftover's, blue Do
+            // Today's, `dim` and `muted` Scheduled's and Unscheduled's; `subdued` sits between
+            // those two greys and would not read as a different heading. The bright neutral says
+            // "today, attend to it" without the alarm, and stays distinct from the other five.
+            groups.append(CadenceTaskDisplayGroup(id: "due-today", title: "Due Today", accent: Theme.text, tasks: dueToday))
         }
         groups.append(contentsOf: [
             CadenceTaskDisplayGroup(id: "do-today", title: "Do Today", accent: Theme.blue, tasks: doToday),
