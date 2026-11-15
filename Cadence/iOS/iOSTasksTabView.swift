@@ -133,7 +133,8 @@ struct iOSTasksTabView: View {
                         mode: .newArea,
                         seededContext: contextID.flatMap { id in contexts.first { $0.id == id } }
                     )
-                }
+                },
+                hasInactiveLists: CadenceSidebarLists.hasInactiveLists(areas: areas, projects: projects)
             )
         }
     }

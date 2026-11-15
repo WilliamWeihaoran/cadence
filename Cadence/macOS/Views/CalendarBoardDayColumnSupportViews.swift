@@ -17,6 +17,8 @@ struct CalendarBoardDayColumn: View {
     /// day — but the decision still comes from `CalendarBoardPlannerSupport.addAction(for:)` so the
     /// board's columns and rails answer it in one place.
     let add: KanbanColumnAddBehavior?
+    /// The line an empty day says, `CadenceCalendarAccessNotice.dayEmptyText` ([[T-17787]]).
+    let emptyDayText: String
     /// **Answers whether the store took the drop ([[T-1980]]), and `Void` is what hid the defect.**
     /// `handleDrop` below reads this to decide what `.dropDestination` is told, and while these two
     /// answered nothing it told it `true` unconditionally — over a `try? modelContext.save()` one
@@ -143,8 +145,18 @@ struct CalendarBoardDayColumn: View {
         )
     }
 
+    /// **An empty day says so, as the iOS column does** ([[T-17787]]): one line above the ghost
+    /// "Add task" row, through the rule both columns ask. It said nothing here, so a fresh board
+    /// was a row of blank columns under "0" headers while the iPad said why each was empty.
     @ViewBuilder
     private var content: some View {
+        if let emptyLine = CadenceCalendarAccessNotice.dayColumnEmptyLine(
+            text: emptyDayText,
+            activeItemCount: activeItems.count,
+            completedTaskCount: completedTasks.count
+        ) {
+            CadenceInlineEmpty(text: emptyLine, surface: .desktop)
+        }
         ForEach(activeItems) { item in
             columnItemView(item)
         }

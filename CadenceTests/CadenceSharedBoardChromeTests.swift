@@ -565,6 +565,8 @@ struct CadenceSharedBoardChromeTests {
             // [[T-5013]](a), the Calendar Board's Overdue rail — the desktop caller the zero below
             // was holding the place for.
             ("Cadence/macOS/Views/CalendarBoardRailSupportViews.swift", "surface: .desktop"),
+            // [[T-17787]], the Mac board's empty day column, saying what the iOS column says.
+            ("Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift", "surface: .desktop"),
         ]
 
         try expectCallSites(

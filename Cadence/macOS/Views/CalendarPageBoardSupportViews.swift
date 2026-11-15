@@ -296,6 +296,9 @@ struct CalendarPageBoardView: View {
     /// The month grid and the timeline viewport were always given it; the board was the one
     /// presentation reading `EKEventStore` straight through, once per realized column per render.
     let eventCache: CalendarEventDayCache
+    /// Each empty day column's one line, `CadenceCalendarAccessNotice.dayEmptyText` -- the
+    /// sentence the iOS board's columns say ([[T-17787]]).
+    let emptyDayText: String
 
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
@@ -452,6 +455,7 @@ struct CalendarPageBoardView: View {
                             areas: areas,
                             projects: projects,
                             add: addBehavior(for: .day(dateKey)),
+                            emptyDayText: emptyDayText,
                             onDropTaskOnDay: { task in handleDayColumnDrop(task, on: dateKey) },
                             isCompletedExpanded: Binding(
                                 get: { dayDisclosures.isCompletedExpanded(dateKey) },

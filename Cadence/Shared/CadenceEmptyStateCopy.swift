@@ -377,6 +377,34 @@ nonisolated enum CadenceEmptyStateCopy {
     /// the other.
     static let addFirstListAction = "Add first list"
 
+    /// The create row's action once lists exist but none is active.
+    static let newListAction = "New list"
+
+    /// **What both sidebars draw when their lists region holds no section** ([[T-17789]]).
+    ///
+    /// The region's sections come from *active* lists plus contexts, so a store whose every list
+    /// is archived or completed, with no contexts, resolves to no sections -- and both columns
+    /// drew the fresh-install row over it: "Add first list" on the Mac, "No lists yet" over it on
+    /// iOS, a claim that nothing has ever been made in a store full of lists. With an inactive
+    /// list in the store the row says what is true, in the Lists page's own words
+    /// (`activeListsTitle`, as [[T-17786]]'s eyebrow does), and offers a plain "New list".
+    ///
+    /// **One shape on both platforms** ([[T-8201]]): the statement over the action. iOS drew both
+    /// and the Mac drew the action alone; nothing about a pointer asks for the missing line, so the
+    /// Mac gained it. A value rather than two functions so a column cannot take one half of the
+    /// answer without the other.
+    nonisolated struct SidebarListsRegionCopy: Equatable {
+        let statement: String
+        let action: String
+    }
+
+    /// `hasInactiveLists` is `CadenceSidebarLists.hasInactiveLists(areas:projects:)`.
+    static func sidebarEmptyLists(hasInactiveLists: Bool) -> SidebarListsRegionCopy {
+        hasInactiveLists
+            ? SidebarListsRegionCopy(statement: activeListsTitle, action: newListAction)
+            : SidebarListsRegionCopy(statement: listsTitle(isNarrowed: false), action: addFirstListAction)
+    }
+
     /// **An empty note body's ghost text, one sentence on both platforms** ([[T-8586]], under
     /// [[T-8201]]): `Start writing, or press / for commands.` on the Mac. iOS drew the host's
     /// placeholder over a second, smaller `Type / for commands.` line; the split answered nothing,

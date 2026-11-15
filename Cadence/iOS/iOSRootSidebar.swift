@@ -504,7 +504,8 @@ struct iOSSidebar: View {
                         seededContext: contextID.flatMap { id in contexts.first { $0.id == id } }
                     )
                 )
-            }
+            },
+            hasInactiveLists: CadenceSidebarLists.hasInactiveLists(areas: areas, projects: projects)
         )
     }
 
@@ -558,6 +559,10 @@ struct iOSSidebarListsRegion: View {
     /// this view holds values, not model objects, and two hosts draw it. Each resolves the id
     /// against its own query.
     let onCreateList: (UUID?) -> Void
+    /// Whether the store holds a list `sections` leaves out, so `emptyListsRow` says "No active
+    /// lists" rather than "No lists yet" over an archived-only store ([[T-17789]]). Each host asks
+    /// `CadenceSidebarLists.hasInactiveLists(areas:projects:)` of its own query.
+    let hasInactiveLists: Bool
 
     /// The one writer this view has: list order within a section ([[T-7260]](a)). The rows are
     /// values, so the move resolves them in the store through `CadenceSidebarListReorder`, the
@@ -761,9 +766,13 @@ struct iOSSidebarListsRegion: View {
     /// The statement stays above the button rather than being replaced by it, because it is
     /// `CadenceEmptyStateCopy`'s one spelling of *what is missing* and the button says only what
     /// to do about it.
+    ///
+    /// **Its words know whether lists exist** ([[T-17789]]): over a store whose every list is
+    /// archived or completed it said "No lists yet" over "Add first list". Both now come from
+    /// `CadenceEmptyStateCopy.sidebarEmptyLists`, the value the Mac's empty-store row reads too.
     private var emptyListsRow: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(CadenceEmptyStateCopy.listsTitle(isNarrowed: false))
+            Text(emptyLists.statement)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Theme.dim)
 
@@ -771,6 +780,10 @@ struct iOSSidebarListsRegion: View {
         }
         .padding(.horizontal, iOSSidebarMetrics.rowHorizontalPadding)
         .padding(.vertical, 6)
+    }
+
+    private var emptyLists: CadenceEmptyStateCopy.SidebarListsRegionCopy {
+        CadenceEmptyStateCopy.sidebarEmptyLists(hasInactiveLists: hasInactiveLists)
     }
 
     /// The macOS column's "Add first list" row, in this column's vocabulary: an
@@ -785,7 +798,7 @@ struct iOSSidebarListsRegion: View {
                     .font(.system(size: iOSSidebarMetrics.iconSize, weight: .semibold))
                     .frame(width: iOSSidebarMetrics.iconSlotWidth)
 
-                Text(CadenceEmptyStateCopy.addFirstListAction)
+                Text(emptyLists.action)
                     .font(.system(size: iOSSidebarMetrics.labelFontSize, weight: .medium))
                     .lineLimit(1)
 

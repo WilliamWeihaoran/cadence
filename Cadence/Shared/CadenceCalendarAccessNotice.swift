@@ -129,6 +129,18 @@ nonisolated enum CadenceCalendarAccessNotice: Equatable {
         notice == nil ? CadenceEmptyStateCopy.nothingScheduledTitle : "No tasks scheduled"
     }
 
+    /// **When a board day column draws that line, on both platforms** ([[T-17787]]).
+    ///
+    /// iOS's column said it whenever a day held no open item and no completed task; the Mac's
+    /// said nothing, so a fresh Mac board was a row of empty columns under "0" headers while the
+    /// iPad said why each was empty. The Mac's reason -- the ghost "Add task" row fills the space
+    /// -- was no input difference: the iOS column has that row too. So one rule, here, and both
+    /// columns ask it with `dayEmptyText(notice:)`'s answer as `text`. `nil` when the day holds
+    /// anything, a finished task included: its Completed fold is what the column draws then.
+    static func dayColumnEmptyLine(text: String, activeItemCount: Int, completedTaskCount: Int) -> String? {
+        activeItemCount == 0 && completedTaskCount == 0 ? text : nil
+    }
+
     static let notConnectedSentence = "Apple Calendar is not connected, so its events are not shown."
 }
 

@@ -310,6 +310,9 @@ enum SidebarMetrics {
     static let listIconSize: CGFloat = 12
     static let listLabelFontSize: CGFloat = shared.listLabelFontSize
     static let listRowVerticalPadding: CGFloat = 7
+    /// From the empty-store row's statement to its create button ([[T-17789]]) -- the touch
+    /// column's `emptyListsRow` stacks the same two at 6.
+    static let emptyListsStatementSpacing: CGFloat = 6
     /// Minimum gap between a truncating list name and its trailing metadata.
     static let listTrailingGap: CGFloat = 8
     /// Gap between the trailing due-date flag and the trailing count.

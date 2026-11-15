@@ -124,7 +124,8 @@ struct CalendarPageView: View {
                     allTasks: allTasks,
                     areas: areas,
                     projects: projects,
-                    eventCache: calendarEventDayCache
+                    eventCache: calendarEventDayCache,
+                    emptyDayText: CadenceCalendarAccessNotice.dayEmptyText(notice: accessNotice)
                 )
             } else if viewMode == .month {
                 MonthGridView(

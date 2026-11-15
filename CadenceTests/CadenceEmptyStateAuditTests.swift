@@ -1409,8 +1409,13 @@ struct CadenceEmptyStateAuditTests {
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootSidebar.swift")
         )
         #expect(sidebar.contains("struct iOSSidebar: View"), "non-vacuity: wrong file read")
-        #expect(sidebar.contains("CadenceEmptyStateCopy.listsTitle(isNarrowed: false)"),
+        // [[T-17789]]: the row reads `sidebarEmptyLists`, whose fresh-store answer is this helper's.
+        #expect(sidebar.contains("CadenceEmptyStateCopy.sidebarEmptyLists("),
                 "emptyListsRow no longer reads the shared helper")
+        #expect(CadenceEmptyStateCopy.sidebarEmptyLists(hasInactiveLists: false).statement
+                == CadenceEmptyStateCopy.listsTitle(isNarrowed: false))
+        #expect(sidebar.contains("\"No lists yet\"") == false,
+                "emptyListsRow spells the sentence instead of reading it")
     }
 
     // **T-525's two tests left with [[T-5002]]:**

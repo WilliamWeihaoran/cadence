@@ -635,6 +635,9 @@ nonisolated enum SidebarListDropPlacement {
 /// `nil`, so the sheet opens on "No context" — the state `CreateListSheet` has accepted since
 /// T-559 and the state the resulting list is filed under ("Other") if it is saved that way.
 struct SidebarAddFirstListButton: View {
+    /// "Add first list" everywhere but the empty-store row over a store whose every list is
+    /// inactive, which reads `CadenceEmptyStateCopy.sidebarEmptyLists` ([[T-17789]]).
+    var title: String = CadenceEmptyStateCopy.addFirstListAction
     let action: () -> Void
 
     var body: some View {
@@ -644,7 +647,7 @@ struct SidebarAddFirstListButton: View {
             HStack(spacing: 6) {
                 Image(systemName: "plus.circle")
                     .font(.system(size: SidebarMetrics.listIconSize, weight: .semibold))
-                Text(CadenceEmptyStateCopy.addFirstListAction)
+                Text(title)
                     .font(.system(size: SidebarMetrics.listLabelFontSize, weight: .medium))
                 Spacer(minLength: SidebarMetrics.listTrailingGap)
             }

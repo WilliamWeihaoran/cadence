@@ -37,6 +37,7 @@ struct CadenceCodexKanbanRenderingTests {
                 dayIndex: 0, date: day, dateKey: "2026-10-06", todayKey: "2026-10-06", tasks: tasks,
                 events: [], allTasks: tasks, areas: [], projects: [],
                 add: .compose(.day(dateKey: "2026-10-06", startMin: 540)),
+                emptyDayText: CadenceEmptyStateCopy.nothingScheduledTitle,
                 onDropTaskOnDay: { _ in false },
                 isCompletedExpanded: .constant(false), isComposing: .constant(false)
             ))),

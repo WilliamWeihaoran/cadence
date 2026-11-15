@@ -175,6 +175,10 @@ struct CalendarBoardRailColumn: View {
 /// Derived from "no cards and no add row" rather than written as `rail == .overdue`: the rule is
 /// about what the column actually draws, and a second rail that ever loses its add row would want
 /// this for the same reason.
+///
+/// **Rails only.** The day columns once leaned on the same "an add row fills it" argument and drew
+/// nothing, while the iOS day column -- which has the add row too -- said "Nothing scheduled"; they
+/// now say it through `CadenceCalendarAccessNotice.dayColumnEmptyLine` ([[T-17787]]).
 nonisolated enum CalendarBoardRailEmptySupport {
     /// `nil` when the rail has cards, or has an add row to fill the space with.
     static func line(for rail: CalendarBoardRail, taskCount: Int, add: KanbanColumnAddBehavior?) -> String? {

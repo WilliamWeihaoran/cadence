@@ -220,8 +220,19 @@ struct SidebarView: View {
             VStack(alignment: .leading, spacing: 0) {
                 switch SidebarListRegionContent.resolve(sectionCount: sections.count) {
                 case .firstListAction:
-                    SidebarAddFirstListButton {
-                        newListTarget = SidebarNewListTarget(context: nil)
+                    // [[T-17789]]: the statement over the action, as the touch column draws it,
+                    // in words that know whether the store already holds lists.
+                    let empty = CadenceEmptyStateCopy.sidebarEmptyLists(
+                        hasInactiveLists: CadenceSidebarLists.hasInactiveLists(areas: areas, projects: projects)
+                    )
+                    VStack(alignment: .leading, spacing: SidebarMetrics.emptyListsStatementSpacing) {
+                        Text(empty.statement)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.dim)
+                            .padding(.horizontal, SidebarMetrics.listRowHorizontalPadding)
+                        SidebarAddFirstListButton(title: empty.action) {
+                            newListTarget = SidebarNewListTarget(context: nil)
+                        }
                     }
                     .padding(.vertical, SidebarMetrics.contextSectionOuterVerticalPadding)
                 case .sections:

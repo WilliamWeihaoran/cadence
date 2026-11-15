@@ -226,3 +226,16 @@ extension CadenceSidebarLists {
             + projects.map { ListRow(kind: .project, modelID: $0.persistentModelID, isActive: $0.isActive, slot: ($0.context?.id, $0.order)) }
     }
 }
+
+/// **Whether the store holds a list the sidebar's sections leave out** ([[T-17789]]).
+///
+/// Both sidebars build their sections from *active* lists plus contexts, so a store whose every
+/// list is archived or completed resolves to no sections exactly as a fresh install does. This is
+/// the one predicate both columns ask before choosing the words of the row they draw then
+/// (`CadenceEmptyStateCopy.sidebarEmptyLists(hasInactiveLists:)`). "Inactive" rather than
+/// "archived": a completed list exists just as surely, and "No lists yet" is as false over it.
+extension CadenceSidebarLists {
+    static func hasInactiveLists(areas: [Area], projects: [Project]) -> Bool {
+        areas.contains { !$0.isActive } || projects.contains { !$0.isActive }
+    }
+}

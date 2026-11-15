@@ -806,7 +806,8 @@ struct CadenceContextlessListSurfaceTests {
 
         #expect(region.contains("SidebarListRegionContent.resolve(sectionCount: sections.count)"))
         #expect(region.contains("case .firstListAction:"))
-        #expect(region.contains("SidebarAddFirstListButton {"))
+        // [[T-17789]]: titled by the value that knows whether the store already holds lists.
+        #expect(region.contains("SidebarAddFirstListButton(title: empty.action) {"))
         // On no context, so the sheet opens on the row `CreateListSheet` has accepted since T-559
         // rather than on some unrelated context the reader would have to clear.
         #expect(region.contains("newListTarget = SidebarNewListTarget(context: nil)"))
@@ -854,10 +855,18 @@ struct CadenceContextlessListSurfaceTests {
         #expect(callers.sorted() == [componentsPath, "Cadence/macOS/Views/SidebarView.swift"])
         // The literal is declared once and typed nowhere else.
         #expect(spellsTheWords == [copyPath])
-        // And read by exactly the two buttons that draw the row — the Mac's and the touch column's.
-        #expect(readsTheCopy.sorted() == [
+        // Read directly only by the Mac button's default title. Since [[T-17789]] the empty-store
+        // rows of both columns take their words from `CadenceEmptyStateCopy.sidebarEmptyLists`,
+        // which answers this constant on a fresh store -- one declaration still, one resolver.
+        #expect(readsTheCopy == [componentsPath])
+        var readsTheResolver: [String] = []
+        for path in files where CadenceSourceScan.strippingComments(try cadenceTestSource(path))
+            .contains("CadenceEmptyStateCopy.sidebarEmptyLists(") {
+            readsTheResolver.append(path)
+        }
+        #expect(readsTheResolver.sorted() == [
             "Cadence/iOS/iOSRootSidebar.swift",
-            componentsPath,
+            "Cadence/macOS/Views/SidebarView.swift",
         ].sorted())
     }
 }
