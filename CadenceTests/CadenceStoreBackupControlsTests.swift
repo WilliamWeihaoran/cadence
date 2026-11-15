@@ -58,7 +58,10 @@ struct CadenceStoreBackupControlsTests {
             let backup = try #require(backups.first)
             #expect(backup.reason == StoreBackupReason.manual.displayName)
             #expect(isInside(backup.url, store), "the backup landed outside the disposable store")
-            #expect(status == CadenceStoreBackupPresentation.created(backup.url))
+            #expect(status == CadenceStoreBackupPresentation.created(backup))
+            // [[T-18047]]: the status names the backup the way its row does, never by its folder.
+            #expect(status == "Backup created: \(CadenceStoreBackupPresentation.rowTitle(backup)).")
+            #expect(!status.contains(backup.url.lastPathComponent), "the status names the backup by its folder")
             #expect(marker(in: store) == "live", "creating a backup changed the store")
         }
     }
@@ -71,8 +74,20 @@ struct CadenceStoreBackupControlsTests {
             let controls = CadenceStoreBackupControls(storeDirectoryURL: store, defaults: defaults)
 
             #expect(controls.createBackup() == CadenceStoreBackupPresentation.noActiveStore)
+            #expect(CadenceStoreBackupPresentation.noActiveStore == "There is nothing to back up yet.")
             #expect(controls.backups().isEmpty)
         }
+    }
+
+    /// [[T-18047]]: the card's wording. The clean-up button names a thing, not an adjective, and
+    /// stays short enough for T-10023's iPhone measurement (143.7pt plate, ~40pt to spare).
+    @Test func backupCardCopyNamesThingsTheUserSees() {
+        #expect(CadenceStoreBackupPresentation.cleanUpButtonTitle == "Thin Backups")
+        #expect(
+            CadenceStoreBackupPresentation.cleanUpButtonTitle.count <= "Clean Automatic".count,
+            "the clean-up title grew past the width T-10023 measured on an iPhone"
+        )
+        #expect(CadenceStoreBackupPresentation.created(nil) == "Backup created.")
     }
 
     // MARK: - Stage, then the launch that applies it

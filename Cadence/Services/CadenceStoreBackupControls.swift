@@ -80,7 +80,10 @@ struct CadenceStoreBackupControls {
             ) else {
                 return CadenceStoreBackupPresentation.noActiveStore
             }
-            return CadenceStoreBackupPresentation.created(url)
+            let path = url.standardizedFileURL.path
+            return CadenceStoreBackupPresentation.created(
+                backups().first { $0.url.standardizedFileURL.path == path }
+            )
         } catch {
             return CadenceStoreBackupPresentation.backupFailed(error.localizedDescription)
         }

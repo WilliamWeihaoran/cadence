@@ -149,7 +149,7 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         case .focus: return "Run focused sessions"
         case .inbox: return "Capture and triage"
         case .calendar: return "Schedule tasks and events"
-        case .notes: return "Daily and permanent notes"
+        case .notes: return "Daily notes and Notepad"
         case .lists: return "Areas, projects, and lists"
         case .search: return "Find tasks and notes"
         case .settings: return "Workspace preferences"
@@ -163,7 +163,8 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
     ///
     /// It names contents where the subtitle names the activity — "Run focused sessions" /
     /// "Timer and current work" — or, where the subtitle is already a contents line, it is the
-    /// fuller enumeration: "Daily and permanent notes" / "Daily, weekly, and permanent notes".
+    /// fuller enumeration: "Daily notes and Notepad" / "Daily, weekly, Notepad, and event notes".
+    /// [[T-18041]]: "permanent" is the storage name; it stays only in `searchKeywords`.
     /// Either way it has to say something the subtitle does not, because on iOS both are drawn.
     ///
     /// **Cmd+K drew its own string for seven of these until T-1782** — Today was "Daily dashboard
@@ -178,10 +179,10 @@ nonisolated enum CadenceFeatureDestination: String, CaseIterable, Identifiable, 
         case .focus: return "Timer and current work"
         case .inbox: return "Unsorted capture tasks"
         case .calendar: return "Timeline, month, and board"
-        case .notes: return "Daily, weekly, and permanent notes"
+        case .notes: return "Daily, weekly, Notepad, and event notes"
         case .lists: return "Active and archived lists"
         case .search: return "Find anything in Cadence"
-        case .settings: return "Preferences and diagnostics"
+        case .settings: return "Appearance, sync, and data"
         }
     }
 

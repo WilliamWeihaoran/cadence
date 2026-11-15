@@ -47,7 +47,11 @@ enum CadenceStoreBackupPresentation {
     static let description = "Cadence copies the local store — including CloudKit assets and external files — at every launch, before a restore, and whenever you ask. Automatic copies are thinned over time."
 
     static let createButtonTitle = "Create Backup"
-    static let cleanUpButtonTitle = "Clean Automatic"
+    /// [[T-18047]]: was "Clean Automatic", an adjective with no noun. Not "Thin Automatic Backups":
+    /// [[T-10023]] measured this plate at 143.7pt on a 393pt iPhone with ~40pt to spare, and seven
+    /// more characters would spend all of it. What gets thinned is named by `description` directly
+    /// above ("Automatic copies are thinned over time") and by `cleanedUp(removedCount:)` after.
+    static let cleanUpButtonTitle = "Thin Backups"
     static let restoreButtonTitle = "Restore"
     static let availableBackupsLabel = "Available Backups"
     static let noBackupsText = "No backups available."
@@ -117,11 +121,15 @@ enum CadenceStoreBackupPresentation {
 
     // MARK: - Status sentences
 
-    static func created(_ backupURL: URL) -> String {
-        "Created \(backupURL.lastPathComponent)."
+    /// [[T-18047]]: names the new backup the way its row in the list below does (`rowTitle`), not
+    /// by its on-disk folder name ("Created 20261115-154501-manual."). `nil` when the backup was
+    /// written but the list cannot find it — the sentence still says it happened.
+    static func created(_ backup: StoreBackupSnapshot?) -> String {
+        guard let backup else { return "Backup created." }
+        return "Backup created: \(rowTitle(backup))."
     }
 
-    static let noActiveStore = "No active store exists yet."
+    static let noActiveStore = "There is nothing to back up yet."
 
     static func backupFailed(_ reason: String) -> String {
         "Backup failed: \(reason)"

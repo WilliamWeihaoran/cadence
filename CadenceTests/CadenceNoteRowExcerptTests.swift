@@ -191,6 +191,24 @@ struct CadenceFeatureDestinationCopyTests {
         #expect(CadenceFeatureDestination.lists.searchSummary == "Active and archived lists")
     }
 
+    /// [[T-18041]]: the Notepad is "Notepad" on every surface that draws it; "permanent" is the
+    /// storage name and survives only as a search keyword, so the old word still finds the page.
+    /// Settings has no diagnostics screen, so its summary no longer promises one.
+    @Test func notesAndSettingsCopyNamesWhatThePagesHold() {
+        let notes = CadenceFeatureDestination.notes
+        #expect(notes.subtitle == "Daily notes and Notepad")
+        #expect(notes.searchSummary == "Daily, weekly, Notepad, and event notes")
+        #expect(!notes.subtitle.localizedCaseInsensitiveContains("permanent"))
+        #expect(!notes.searchSummary.localizedCaseInsensitiveContains("permanent"))
+        #expect(notes.searchKeywords.contains("permanent"))
+        #expect(NoteKind.permanent.templateDisplayName == "Notepad")
+
+        let settings = CadenceFeatureDestination.settings
+        #expect(settings.searchSummary == "Appearance, sync, and data")
+        #expect(!settings.searchSummary.localizedCaseInsensitiveContains("diagnostics"))
+        #expect(settings.searchKeywords.contains("diagnostics"))
+    }
+
     /// Both sentences are matched against, so neither may quietly drop out of `searchAliases` —
     /// a summary nobody can search for would make the second line free to be anything.
     @Test func bothSentencesAreStillSearchableText() {

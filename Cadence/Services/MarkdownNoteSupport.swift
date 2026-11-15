@@ -379,7 +379,8 @@ extension NoteKind {
         case .weekly:
             return "Weekly"
         case .permanent:
-            return "Permanent"
+            // [[T-18041]]: the name every other surface draws; "permanent" is the storage name.
+            return "Notepad"
         case .list:
             return "List"
         case .meeting:
