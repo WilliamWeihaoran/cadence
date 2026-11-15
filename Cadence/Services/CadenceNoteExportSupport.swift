@@ -115,6 +115,120 @@ nonisolated enum NoteExportSupport {
         MarkdownTaskEmbedTitleCache.resolving(content, tasks: embeddedTasks)
     }
 
+    // MARK: - The markdown file (T-17990)
+
+    /// **The text of an exported `.md` file: plain Markdown any other app can read.**
+    ///
+    /// The stored note text is Cadence's own dialect, and three of its forms mean nothing outside
+    /// Cadence. Exporting it as stored wrote every picture as `![](cadence-image://<UUID>)` — a
+    /// link only Cadence can follow, so Quick Look, Obsidian or a gist showed nothing where each
+    /// picture was — and every task card as raw `[[task:<UUID>|Title]]`, while the PDF from the
+    /// same menu drew both. The format is keeper `keeper1038`'s call, and it keeps the export ONE
+    /// self-contained file so the Export menu needs no folder or bundle:
+    ///
+    /// - **A task card alone on its line** becomes a checklist item from the task's live state,
+    ///   `- [ ] Title` or `- [x] Title` (done; a cancelled task is not done). A task reference
+    ///   inside a sentence becomes its title, because a checklist item cannot start mid-line.
+    ///   A task the export could not find keeps its cached title, unchecked.
+    /// - **A note link** (`[[note:<id>|Title]]`, `[[note:Title]]`, `[[Title]]`) becomes its title as
+    ///   plain text: the file has nowhere to link to.
+    /// - **A picture** becomes `![alt](data:<mime>;base64,…)` from the asset's bytes. One the
+    ///   export was not handed (or whose bytes are empty) degrades to `[Image: alt]` or `[Image]`
+    ///   — never the `cadence-image://` link.
+    ///
+    /// Both exporters call this and nothing else for markdown, which is why it takes the assets
+    /// for markdown too: iOS used to fetch them for PDF only.
+    nonisolated static func markdownFileContent(
+        _ content: String,
+        embeddedTasks: [AppTask],
+        imageAssets: [MarkdownImageAsset]
+    ) -> String {
+        let withReferences = replacingWikiReferences(
+            in: content,
+            tasks: CadenceIdentityMap.firstWins(embeddedTasks.map { ($0.id, $0) })
+        )
+        return replacingImageReferences(
+            in: withReferences,
+            assets: CadenceIdentityMap.firstWins(imageAssets.map { ($0.id, $0) })
+        )
+    }
+
+    private nonisolated static let wikiReferenceRegex = try? NSRegularExpression(
+        pattern: NoteReferenceParser.wikiReferencePattern
+    )
+
+    private nonisolated static func replacingWikiReferences(in content: String, tasks: [UUID: AppTask]) -> String {
+        guard content.contains("[["), let regex = wikiReferenceRegex else { return content }
+        let ns = content as NSString
+        let output = NSMutableString(string: content)
+        // Reversed so each replacement leaves the ranges of the matches before it valid.
+        for match in regex.matches(in: content, range: NSRange(location: 0, length: ns.length)).reversed() {
+            guard match.numberOfRanges > 1 else { continue }
+            let inner = ns.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !inner.isEmpty else { continue }
+            let replacement: String
+            if NoteReferenceParser.isTaskReferencePayload(inner) {
+                let reference = NoteReferenceParser.parseTaskReference(String(inner.dropFirst(5)))
+                let task = reference.taskID.flatMap { tasks[$0] }
+                let title = task.map(\.title) ?? reference.fallbackTitle
+                let displayTitle = plainReferenceTitle(title, fallback: CadenceTitleNormalization.defaultTaskTitle)
+                if isAloneOnItsLine(match.range, in: ns) {
+                    replacement = "- [\(task?.isDone == true ? "x" : " ")] \(displayTitle)"
+                } else {
+                    replacement = displayTitle
+                }
+            } else {
+                let reference = NoteReferenceParser.parseNoteReference(inner)
+                replacement = plainReferenceTitle(
+                    reference.fallbackTitle,
+                    fallback: CadenceTitleNormalization.defaultCompactTitle
+                )
+            }
+            output.replaceCharacters(in: match.range, with: replacement)
+        }
+        return output as String
+    }
+
+    /// A reference's label as file text. A label that is itself an id (`[[note:<id>]]`, the bare
+    /// `[[<id>]]`) names nothing a reader can use, so it falls back to the untitled name.
+    private nonisolated static func plainReferenceTitle(_ title: String, fallback: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || UUID(uuidString: trimmed) != nil { return fallback }
+        return trimmed
+    }
+
+    private nonisolated static func isAloneOnItsLine(_ range: NSRange, in text: NSString) -> Bool {
+        let line = text.lineRange(for: range)
+        let before = text.substring(with: NSRange(location: line.location, length: range.location - line.location))
+        let afterStart = range.location + range.length
+        let after = text.substring(with: NSRange(location: afterStart, length: line.location + line.length - afterStart))
+        return before.allSatisfy(\.isWhitespace) && after.allSatisfy(\.isWhitespace)
+    }
+
+    private nonisolated static func replacingImageReferences(
+        in content: String,
+        assets: [UUID: MarkdownImageAsset]
+    ) -> String {
+        let references = MarkdownImageAssetService.allReferences(in: content)
+        guard !references.isEmpty else { return content }
+        let output = NSMutableString(string: content)
+        for reference in references.reversed() {
+            let alt = reference.altText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let replacement: String
+            if let asset = assets[reference.id], !asset.data.isEmpty {
+                let mime = asset.mimeType.trimmingCharacters(in: .whitespacesAndNewlines)
+                let escapedAlt = alt
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "]", with: "\\]")
+                replacement = "![\(escapedAlt)](data:\(mime.isEmpty ? "image/jpeg" : mime);base64,\(asset.data.base64EncodedString()))"
+            } else {
+                replacement = alt.isEmpty ? "[Image]" : "[Image: \(alt)]"
+            }
+            output.replaceCharacters(in: reference.range, with: replacement)
+        }
+        return output as String
+    }
+
     /// The embed map a PDF renderer needs.
     ///
     /// A renderer handed an empty map draws every task embed through

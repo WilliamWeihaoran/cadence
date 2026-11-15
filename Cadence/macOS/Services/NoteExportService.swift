@@ -16,7 +16,9 @@ enum NoteExportService {
     /// Writes the note out, with every `[[task:UUID|Title]]` embed named by its **live** task.
     ///
     /// `embeddedTasks` is what makes that possible, and it does two jobs. The markdown file gets the
-    /// resolved text, so an export does not carry a title the task was renamed out of months ago.
+    /// resolved text, so an export does not carry a title the task was renamed out of months ago —
+    /// as plain Markdown via `NoteExportSupport.markdownFileContent` (T-17990): task cards as
+    /// checklist items, pictures embedded from `imageAssets` as `data:` URIs.
     /// The PDF gets the same text *and* the render infos: the PDF is produced by running the live
     /// editor styling over an offscreen text view, and a text view with no `markdownTaskEmbeds` map
     /// draws every embed through `MarkdownTaskEmbedRenderInfo.missing(reference:)` — so before this,
@@ -38,7 +40,11 @@ enum NoteExportService {
             do {
                 switch format {
                 case .markdown:
-                    try content.write(to: url, atomically: true, encoding: .utf8)
+                    try NoteExportSupport.markdownFileContent(
+                        content,
+                        embeddedTasks: embeddedTasks,
+                        imageAssets: imageAssets
+                    ).write(to: url, atomically: true, encoding: .utf8)
                 case .pdf:
                     guard let pdfData = renderedPDFData(
                         content: content,

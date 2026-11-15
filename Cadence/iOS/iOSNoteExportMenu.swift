@@ -112,9 +112,10 @@ struct iOSNoteExportMenu: View {
     private func prepareExport(as format: NoteExportFormat) {
         flush?.flush()
         let embeddedTasks = NoteExportSupport.embeddedTasks(in: note, modelContext: modelContext)
-        let imageAssets = format == .pdf
-            ? NoteExportSupport.referencedImageAssets(in: note, modelContext: modelContext)
-            : []
+        // Both formats draw the pictures: the PDF renders them and the markdown file embeds their
+        // bytes as `data:` URIs (T-17990). Fetching for PDF only exported every picture as a
+        // placeholder.
+        let imageAssets = NoteExportSupport.referencedImageAssets(in: note, modelContext: modelContext)
 
         guard let data = iOSNoteExportService.exportData(
             for: note,

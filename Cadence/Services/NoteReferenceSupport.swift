@@ -201,7 +201,10 @@ nonisolated enum NoteReferenceParser {
         return (output as String, redirected)
     }
 
-    nonisolated private static func parseNoteReference(_ raw: String) -> NoteLinkReference {
+    /// One `[[…]]` payload (the text between the brackets), parsed as a note reference. Not
+    /// private since [[T-17990]]: the markdown export walks `wikiReferencePattern` itself and has
+    /// to read each match exactly as every resolver reads it.
+    nonisolated static func parseNoteReference(_ raw: String) -> NoteLinkReference {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let payload: String
         if trimmed.lowercased().hasPrefix("note:") {
@@ -219,7 +222,8 @@ nonisolated enum NoteReferenceParser {
         return NoteLinkReference(rawValue: trimmed, target: .parsing(payload), title: payload)
     }
 
-    nonisolated private static func parseTaskReference(_ raw: String) -> NoteTaskReference {
+    /// The task-reference half of the same question; `raw` is the payload after `task:`.
+    nonisolated static func parseTaskReference(_ raw: String) -> NoteTaskReference {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let parts = trimmed.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
         if parts.count == 2 {
@@ -230,7 +234,7 @@ nonisolated enum NoteReferenceParser {
         return NoteTaskReference(rawValue: trimmed, target: .parsing(trimmed), title: trimmed)
     }
 
-    nonisolated private static func isTaskReferencePayload(_ payload: String) -> Bool {
+    nonisolated static func isTaskReferencePayload(_ payload: String) -> Bool {
         payload.trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
             .hasPrefix("task:")

@@ -33,8 +33,9 @@ import UIKit
 enum iOSNoteExportService {
     /// The bytes for `format`, or `nil` if a PDF could not be rendered.
     ///
-    /// Markdown cannot fail: the resolved content is a `String` and UTF-8 encoding of a Swift
-    /// string is total.
+    /// Markdown cannot fail: the file text is a `String` and UTF-8 encoding of a Swift string is
+    /// total. It is `NoteExportSupport.markdownFileContent` (T-17990), so `imageAssets` matters for
+    /// markdown too: each picture is embedded from those bytes.
     @MainActor
     static func exportData(
         for note: Note,
@@ -46,7 +47,11 @@ enum iOSNoteExportService {
 
         switch format {
         case .markdown:
-            return Data(content.utf8)
+            return Data(NoteExportSupport.markdownFileContent(
+                content,
+                embeddedTasks: embeddedTasks,
+                imageAssets: imageAssets
+            ).utf8)
         case .pdf:
             return renderedPDFData(
                 content: content,

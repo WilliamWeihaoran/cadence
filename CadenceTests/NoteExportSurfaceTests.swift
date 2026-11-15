@@ -120,12 +120,81 @@ struct NoteExportSurfaceTests {
         #expect(!resolved.contains("Ship the beta"))
     }
 
-    /// A note that embeds nothing comes out byte-identical, which is what makes markdown export
-    /// lossless for the overwhelming majority of notes.
+    /// A note that embeds nothing comes out byte-identical. That is the only case where the file is
+    /// the stored text: a note with pictures, task cards or note links is rewritten into plain
+    /// Markdown (below), which is a translation, not a lossless copy.
     @Test func aNoteWithNoEmbedsIsExportedUnchanged() {
         let content = "# Heading\n\nA paragraph with `code` and a [link](https://example.com).\n"
 
         #expect(NoteExportSupport.resolvedContent(content, embeddedTasks: []) == content)
+        #expect(NoteExportSupport.markdownFileContent(content, embeddedTasks: [], imageAssets: []) == content)
+    }
+
+    /// **[[T-17990]].** The exported `.md` carried `![](cadence-image://<UUID>)` for every picture and
+    /// raw `[[task:<UUID>|Title]]` for every task card, so the file was broken in any other app.
+    /// Format per keeper `keeper1038`: task cards become checklist items from live state, pictures
+    /// become `data:` URIs, note links become their titles.
+    @Test func theMarkdownFileIsPlainMarkdownWithNoCadenceOnlySyntax() throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let open = AppTask(title: "Draft the agenda")
+        let done = AppTask(title: "Book the room")
+        done.status = .done
+        let picture = imageAsset(0x7)
+        picture.altText = "Whiteboard"
+        context.insert(open)
+        context.insert(done)
+        context.insert(picture)
+        let linked = UUID()
+
+        let content = """
+        # Meeting
+
+        [[task:\(open.id.uuidString)|Old agenda title]]
+        [[task:\(done.id.uuidString)|Book the room]]
+
+        ![Whiteboard](cadence-image://\(picture.id.uuidString))
+
+        See [[note:\(linked.uuidString)|Budget]] and [[Roadmap]].
+        """
+        let file = NoteExportSupport.markdownFileContent(content, embeddedTasks: [open, done], imageAssets: [picture])
+
+        #expect(!file.contains("cadence-image://"), "\(file)")
+        #expect(!file.contains("[[task:"), "\(file)")
+        #expect(!file.contains("[["), "\(file)")
+        #expect(file.contains("\n- [ ] Draft the agenda\n"), "\(file)")
+        #expect(file.contains("\n- [x] Book the room\n"), "\(file)")
+        #expect(!file.contains("Old agenda title"))
+        #expect(file.contains("![Whiteboard](data:image/png;base64,\(Data([0x7]).base64EncodedString()))"), "\(file)")
+        #expect(file.contains("See Budget and Roadmap."), "\(file)")
+    }
+
+    /// A picture the export was not handed degrades to its alt text, never the Cadence-only link;
+    /// a task reference inside a sentence becomes its title, since a checklist item cannot start
+    /// mid-line; a missing task keeps its cached title, unchecked.
+    @Test func aMissingPictureOrTaskDegradesToTextNotCadenceSyntax() {
+        let content = """
+        ![Receipt](cadence-image://\(UUID().uuidString))
+        ![](cadence-image://\(UUID().uuidString))
+        Remember [[task:\(UUID().uuidString)|Call Sam]] today.
+        [[task:\(UUID().uuidString)|Gone task]]
+        """
+        let file = NoteExportSupport.markdownFileContent(content, embeddedTasks: [], imageAssets: [])
+
+        #expect(file == "[Image: Receipt]\n[Image]\nRemember Call Sam today.\n- [ ] Gone task", "\(file)")
+    }
+
+    /// Both exporters write that function's output for markdown, and iOS fetches the pictures for
+    /// markdown too — it used to fetch them for PDF only, which would export every one as a
+    /// placeholder.
+    @Test func bothExportersWriteTheSharedMarkdownFileContent() throws {
+        for path in Self.renderers {
+            let code = strippingNoteExportComments(try noteExportSource(path))
+            #expect(code.contains("NoteExportSupport.markdownFileContent("), "\(path) writes its own markdown")
+        }
+        let menu = strippingNoteExportComments(try noteExportSource("Cadence/iOS/iOSNoteExportMenu.swift"))
+        #expect(menu.contains("let imageAssets = NoteExportSupport.referencedImageAssets(in: note, modelContext: modelContext)"))
+        #expect(!menu.contains("format == .pdf"), "iOS still fetches pictures for PDF only")
     }
 
     /// The embed map a PDF renderer needs. Handed an empty one, a renderer draws every task embed
