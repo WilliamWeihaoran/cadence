@@ -19,8 +19,8 @@ import UIKit
 /// The fix is a dependency, not a timer: a view holds a `CadenceObservedDay` in `@State`, reads
 /// `todayKey` through it, and installs `.cadenceTracksDayChanges($observedDay)`. The key still
 /// comes from the clock on every read, so a body pass for any other reason stays correct, and the
-/// observer writes the state only when the key it sees has really changed, so a notification that
-/// does not move the day costs no body pass.
+/// observer writes the state only when the key (or, [[T-17442]], the zone) has really changed, so
+/// a notification that moves neither costs no body pass.
 nonisolated enum CadenceDayChangeSupport {
     /// Every system signal after which "today" may be a different key.
     ///
@@ -63,19 +63,30 @@ nonisolated struct CadenceObservedDay: Equatable {
     /// `todayKey` reads the clock, so a missed notification can delay a redraw but never make a
     /// redraw wrong.
     private(set) var observedKey: String
+    /// The zone this view last laid out in ([[T-17442]]).
+    private(set) var observedTimeZoneIdentifier: String
 
-    init(observedKey: String = DateFormatters.todayKey()) {
+    init(observedKey: String = DateFormatters.todayKey(), observedTimeZone: TimeZone = Calendar.current.timeZone) {
         self.observedKey = observedKey
+        observedTimeZoneIdentifier = observedTimeZone.identifier
     }
 
     var todayKey: String { DateFormatters.todayKey() }
 
     /// Records `key` and says whether it moved. A `false` must leave the value untouched, which is
     /// what keeps a same-day notification from costing a body pass.
+    ///
+    /// **[[T-17442]]: a new zone is a change too, even on the same day.** Flying New York ->
+    /// Chicago at 10:00 keeps the key, so a key-only comparison cost no body pass and every timed
+    /// surface kept its events laid out and labelled in the old zone while the now-line, which
+    /// ticks on its own schedule, moved. `timeZone` is the zone the caller lays out in; `nil`
+    /// compares the key alone.
     @discardableResult
-    mutating func observe(_ key: String) -> Bool {
-        guard key != observedKey else { return false }
+    mutating func observe(_ key: String, timeZone: TimeZone? = nil) -> Bool {
+        let zoneMoved = timeZone.map { $0.identifier != observedTimeZoneIdentifier } ?? false
+        guard key != observedKey || zoneMoved else { return false }
         observedKey = key
+        if let timeZone { observedTimeZoneIdentifier = timeZone.identifier }
         return true
     }
 }
@@ -120,7 +131,7 @@ extension View {
     ) -> some View {
         onReceive(stream.publisher) { _ in
             var next = day.wrappedValue
-            if next.observe(DateFormatters.todayKey()) {
+            if next.observe(DateFormatters.todayKey(), timeZone: Calendar.current.timeZone) {
                 day.wrappedValue = next
             }
         }

@@ -275,7 +275,43 @@ nonisolated enum DateFormatters {
 
     /// Parses a `yyyy-MM-dd` storage key back to a `Date`
     static func date(from key: String) -> Date? {
-        ymd.date(from: key)
+        date(from: key, using: ymd)
+    }
+
+    /// `date(from:)` over an explicit formatter, the seam a test reaches it through.
+    ///
+    /// **[[T-17441]]: a day whose midnight does not exist is still a day.** Chile, Cuba, Lebanon,
+    /// Egypt and the Azores spring forward *at midnight*, so on that day the clock goes from
+    /// 23:59:59 to 01:00:00, and a `DateFormatter` answers `nil` for the missing 00:00 -- measured
+    /// for `2026-09-06` in America/Santiago, `2026-03-08` in America/Havana and `2026-03-29` in
+    /// Asia/Beirut. Every reader took that `nil` as a malformed key: a task due that day showed
+    /// its raw key instead of `Today`, a daily repeat ticked that day respawned on the same day,
+    /// and `normalizedDateKey` refused the day. Only when the formatter refuses does this fall
+    /// back to the day's **first instant** (01:00 there), built from components in the
+    /// formatter's own zone, and only for a `yyyy-M-d`-shaped key whose components survive the
+    /// round trip -- so `2026-02-30` and `2026-13-01` stay refused.
+    static func date(from key: String, using formatter: DateFormatter) -> Date? {
+        if let parsed = formatter.date(from: key) { return parsed }
+        return firstInstant(ofDayKey: key, timeZone: formatter.timeZone)
+    }
+
+    /// The first instant of the day `key` names in `timeZone`, or `nil` when `key` is not a
+    /// `yyyy-M-d` spelling of a real Gregorian day. See `date(from:using:)`.
+    private static func firstInstant(ofDayKey key: String, timeZone: TimeZone) -> Date? {
+        let parts = key.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3,
+              parts[0].count == 4, (1...2).contains(parts[1].count), (1...2).contains(parts[2].count),
+              parts.allSatisfy({ $0.allSatisfy { $0.isASCII && $0.isNumber } }),
+              let year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2])
+        else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        guard let date = calendar.date(from: DateComponents(year: year, month: month, day: day)) else {
+            return nil
+        }
+        let back = calendar.dateComponents([.year, .month, .day], from: date)
+        guard back.year == year, back.month == month, back.day == day else { return nil }
+        return date
     }
 
     /// Parses a date the way `date(from:)` does and returns the **canonical** `yyyy-MM-dd` spelling
@@ -301,7 +337,7 @@ nonisolated enum DateFormatters {
     /// this helper existed; it stays as the empty-string-returning wrapper its call sites want.
     static func normalizedDateKey(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let date = ymd.date(from: trimmed) else { return nil }
+        guard let date = Self.date(from: trimmed) else { return nil }
         guard trimmed.prefix(while: \.isNumber).count == 4 else { return nil }
         return dateKey(from: date)
     }
@@ -331,7 +367,7 @@ nonisolated enum DateFormatters {
     /// what "today" is (the widget's `todayKey`, a drop's `todayKey`); everyone else gets `now()`,
     /// the same "today" `todayKey()` names under the Debug today override ([[T-16860]]).
     static func shortDateString(from key: String, relativeTo referenceDate: Date = DateFormatters.now()) -> String {
-        guard let date = ymd.date(from: key) else { return key }
+        guard let date = Self.date(from: key) else { return key }
         return absoluteDay(date, relativeTo: referenceDate)
     }
 
@@ -339,11 +375,27 @@ nonisolated enum DateFormatters {
     /// check, the composer's selected do-date choice) measures from `todayKey()`'s day under the
     /// Debug today override ([[T-16860]]). Identical to `Date()` in every Release build.
     static func dayOffset(from key: String, relativeTo referenceDate: Date = DateFormatters.now()) -> Int? {
-        guard let date = ymd.date(from: key) else { return nil }
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: referenceDate)
-        let target = cal.startOfDay(for: date)
-        return cal.dateComponents([.day], from: today, to: target).day
+        dayOffset(from: key, relativeTo: referenceDate, calendar: .current)
+    }
+
+    /// `dayOffset` in an explicit calendar ([[T-17441]]). The key is parsed in `cal`'s own zone,
+    /// so an injected calendar measures the day it names and a midnight-less day still parses
+    /// (its components answer the day's first instant). The distance is counted between the two
+    /// days' **Gregorian components, laid on UTC**, which has no transitions: on a day whose
+    /// midnight is skipped the start of day is 01:00, and `dateComponents([.day])` from there to
+    /// the next midnight is 23 hours -- zero days -- so "Tomorrow" read "Today". Day ordinals are
+    /// no way out: measured on this toolchain, `ordinality(of: .day, in: .era)` in Santiago gives
+    /// 2026-09-05 23:00 and 2026-09-06 12:00 the same ordinal.
+    static func dayOffset(from key: String, relativeTo referenceDate: Date, calendar cal: Calendar) -> Int? {
+        guard let date = firstInstant(ofDayKey: key, timeZone: cal.timeZone),
+              let utc = TimeZone(secondsFromGMT: 0) else { return nil }
+        let local = storageCalendar(inheritingTimeZoneFrom: cal)
+        var flat = Calendar(identifier: .gregorian)
+        flat.timeZone = utc
+        guard let today = flat.date(from: local.dateComponents([.year, .month, .day], from: referenceDate)),
+              let target = flat.date(from: local.dateComponents([.year, .month, .day], from: date))
+        else { return nil }
+        return flat.dateComponents([.day], from: today, to: target).day
     }
 
     /// Converts a `yyyy-MM-dd` storage key to a relative string using task-friendly rules:
@@ -361,7 +413,7 @@ nonisolated enum DateFormatters {
     /// rows read `Yesterday`, not `Today` ([[T-16801]]). Identical to `Date()` wherever
     /// `CadenceTodayOverride.live` is `nil`, which is every Release build.
     static func relativeDate(from key: String, relativeTo referenceDate: Date = DateFormatters.now()) -> String {
-        guard let date = ymd.date(from: key) else { return key }
+        guard let date = Self.date(from: key) else { return key }
         let diff = dayOffset(from: key, relativeTo: referenceDate) ?? Int.max
         // The original window, unchanged: forward as far as a fortnight, backward without a limit.
         guard diff <= 13 else { return absoluteDay(date, relativeTo: referenceDate) }
@@ -380,7 +432,7 @@ nonisolated enum DateFormatters {
     /// Inside the window the words are the same ones, spelled in the same place, so the two forms
     /// cannot drift into saying `Tomorrow` differently.
     static func relativeDate(from key: String, relativeTo referenceDate: Date = DateFormatters.now(), withinDays: Int) -> String {
-        guard let date = ymd.date(from: key) else { return key }
+        guard let date = Self.date(from: key) else { return key }
         guard let diff = dayOffset(from: key, relativeTo: referenceDate), abs(diff) <= withinDays else {
             return absoluteDay(date, relativeTo: referenceDate)
         }
