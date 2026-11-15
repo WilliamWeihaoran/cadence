@@ -506,7 +506,7 @@ struct GlobalSearchEmptyState: View {
     static func subtitle(withheldCompletedTaskCount: Int) -> String {
         // The sentence is shared with iOS Search's "No results" panel ([[T-6975]]).
         return CadenceEmptyStateCopy.searchWithheldCompletedTasks(count: withheldCompletedTaskCount)
-            ?? "Try a different title or list name, or a command like New Task."
+            ?? CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: true)
     }
 
     /// [[T-7205]] (b): a failed search is titled "No results", the title iOS Search's panel reads
@@ -522,9 +522,13 @@ struct GlobalSearchEmptyState: View {
             Text(Self.title)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.text)
+            // [[T-17466]]: the shared advice is two sentences here, so it may wrap; centred lines
+            // under the centred title, not a ragged-left block.
             Text(Self.subtitle(withheldCompletedTaskCount: withheldCompletedTaskCount))
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.dim)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

@@ -370,9 +370,24 @@ struct TaskSectionPickerBadge: View {
     }
 
     private var filteredSections: [String] {
-        guard !searchQuery.isEmpty else { return resolvedSections }
-        return resolvedSections.filter { $0.lowercased().hasPrefix(searchQuery.lowercased()) }
+        Self.filteredSections(resolvedSections, query: searchQuery)
     }
+
+    /// **[[T-17465]]: the section picker reads its field the way the list picker beside it does.**
+    /// This was `hasPrefix` on the raw, untrimmed field, so a stray leading or trailing space hid
+    /// every row -- "back " found no "Backlog". It now forwards to the rule the list chip next to it
+    /// already searches by (`ContainerPickerFilterSupport.matches`): trimmed, case-insensitive,
+    /// prefix, a blank field listing every section. Prefix rather than substring on purpose -- that
+    /// rule's own note says why, and two chips in one row that disagree about what "des" finds
+    /// would be a fresh drift.
+    static func filteredSections(_ sections: [String], query: String) -> [String] {
+        sections.filter { CadenceTaskComposerSupport.matchesQuery($0, query: query) }
+    }
+
+    /// What the popover says when the field matches no section. It drew nothing under the field
+    /// at all, which reads as a picker with no sections rather than a search that missed
+    /// ([[T-17465]]); the calendar picker already answers the same miss in words.
+    static let noMatchesText = "No matching sections"
 
     private var highlightedSection: String? {
         guard !filteredSections.isEmpty else { return nil }
@@ -450,6 +465,14 @@ struct TaskSectionPickerBadge: View {
                 Divider().background(Theme.borderSubtle)
 
                 VStack(alignment: .leading, spacing: 2) {
+                    if filteredSections.isEmpty {
+                        Text(Self.noMatchesText)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.dim)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     ForEach(filteredSections, id: \.self) { section in
                         SectionPickerRow(
                             section: section,

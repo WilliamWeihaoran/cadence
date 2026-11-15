@@ -1083,7 +1083,7 @@ struct CadenceSearchCandidateSupportTests {
         #expect(stripped.contains("title: \"No results\""))
 
         let flat = stripped.filter { !$0.isWhitespace }
-        #expect(flat.contains("title:\"Noresults\",subtitle:CadenceEmptyStateCopy.searchWithheldCompletedTasks(count:withheldCompletedTaskCount)??\"Tryatask,note,area,project,event,tag,orsectionname.\""),
+        #expect(flat.contains("title:\"Noresults\",subtitle:CadenceEmptyStateCopy.searchWithheldCompletedTasks(count:withheldCompletedTaskCount)??CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands:false)"),
                 "the No results panel no longer reads the withheld count")
 
         let counter = try #require(CadenceSourceScan.declarationBody("private var withheldCompletedTaskCount: Int", in: stripped))

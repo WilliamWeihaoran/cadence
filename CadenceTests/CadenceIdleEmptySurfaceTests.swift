@@ -89,6 +89,17 @@ struct CadenceSearchIdleLineTests {
         }
     }
 
+    /// **[[T-17467]].** The Lists chip draws two headings, Areas and Projects ([[T-8765]]), so its
+    /// idle line names those two -- not "lists and areas", which named an area twice and a project
+    /// never.
+    @Test func theListsChipNamesTheTwoSectionsItDraws() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchSupportViews.swift")
+        let body = try #require(CadenceSourceScan.declarationBody("var idleNoun: String?", in: source))
+        let noun = "\(CadenceSearchSection.areas.title.lowercased()) and \(CadenceSearchSection.projects.title.lowercased())"
+        #expect(body.contains("case .lists: return \"\(noun)\""), "the Lists idle line does not name Areas and Projects")
+        #expect(CadenceEmptyStateCopy.searchIdleTitle(scopeNoun: noun) == "Start typing to search areas and projects")
+    }
+
     /// **More** is a chip label, not a noun: "start typing to search more" is not a sentence, so
     /// `.progress` must not answer its own title.
     @Test func theMoreChipDoesNotNameItselfInTheSentence() throws {

@@ -444,6 +444,24 @@ struct CadenceGlobalSearchCapContinuationTests {
         #expect(!ordinary.contains("cleaner"))
     }
 
+    /// **[[T-17466]].** The ordinary advice under a failed search is one sentence on both
+    /// platforms, naming every kind both of them search; the Mac adds only the command clause,
+    /// because only the keyboard palette has a Commands section ([[T-8201]]).
+    @Test func failedSearchAdviceIsSharedAndOnlyTheMacOffersCommands() throws {
+        let mac = GlobalSearchEmptyState.subtitle(withheldCompletedTaskCount: 0)
+        let touch = CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: false)
+        #expect(mac == CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: true))
+        #expect(mac.hasPrefix(touch), "the Mac's advice is not the iOS sentence plus a command clause")
+        for kind in ["task", "note", "area", "project", "event", "tag", "section"] {
+            #expect(touch.contains(kind), "the advice leaves out \(kind), which both surfaces search")
+        }
+        #expect(mac.contains("New Task"))
+        #expect(!touch.contains("command") && !touch.contains("Command"), "iOS draws no Commands section")
+
+        let ios = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchView.swift"))
+        #expect(ios.contains("CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: false)"))
+    }
+
     /// **[[T-7205]] (b).** A failed search is titled "No results" -- the literal iOS Search's
     /// panel carries, pinned there by `theIOSNoResultsPanelSaysWhenCompletedHoldsMatchesBack` --
     /// not "No matches found".

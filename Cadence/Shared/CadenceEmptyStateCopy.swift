@@ -163,12 +163,24 @@ nonisolated enum CadenceEmptyStateCopy {
         return "Start typing to search \(scopeNoun)"
     }
 
+    /// **[[T-17466]]: the ordinary advice under a failed search, one sentence on both platforms.**
+    /// iOS said "Try a task, note, area, project, event, tag, or section name." and the Mac palette
+    /// "Try a different title or list name, or a command like New Task." -- over the same search of
+    /// the same kinds, so the Mac's left out notes, events and tags that it does search. The
+    /// command clause is the one difference with an input behind it ([[T-8201]]): Commands is the
+    /// keyboard palette's section and iOS draws none, the split `CadenceSearchFieldPrompt` already
+    /// makes for the field's placeholder.
+    static func searchNoResultsAdvice(offersCommands: Bool) -> String {
+        let kinds = "Try a task, note, area, project, event, tag, or section name."
+        return offersCommands ? "\(kinds) Commands work too, like New Task." : kinds
+    }
+
     /// **[[T-6971]] / [[T-6975]].** A failed search whose matches are all finished tasks, with the
     /// Completed filter off — the default on both platforms. Without this line the Mac palette said
     /// "No matches found" and iOS "No results" over generic advice, which is false: the tasks exist
     /// and the Completed control beside the field shows them. Both surfaces name that control by
     /// its label, so one sentence is true on both. `nil` when nothing is held back, so each surface
-    /// keeps its own ordinary advice.
+    /// falls back to `searchNoResultsAdvice(offersCommands:)`.
     static func searchWithheldCompletedTasks(count: Int) -> String? {
         switch count {
         case ..<1:

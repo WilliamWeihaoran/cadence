@@ -31,13 +31,15 @@ enum iOSSearchScope: String, CaseIterable, Identifiable {
     /// kind of thing to name and "search all" would say less than "search".
     ///
     /// Spelled out rather than `title.lowercased()`, which would say "search lists" for a chip
-    /// that also finds areas. The Pages chip gates the Pages section — the screens themselves — so
-    /// that is what it says.
+    /// whose two headings are Areas and Projects. The Pages chip gates the Pages section — the
+    /// screens themselves — so that is what it says.
     var idleNoun: String? {
         switch self {
         case .all: return nil
         case .tasks: return "tasks"
-        case .lists: return "lists and areas"
+        // [[T-17467]]: the two headings this chip draws (`sections` below), not "lists and
+        // areas", which predates [[T-8765]]'s split and named an area twice and a project never.
+        case .lists: return "areas and projects"
         case .notes: return "notes"
         case .events: return "calendar events"
         case .progress: return "pages"
