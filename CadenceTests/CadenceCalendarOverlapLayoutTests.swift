@@ -816,7 +816,7 @@ struct CadenceCalendarOverlapLayoutTests {
         }
         #expect(phone.contains("hasClearTimeControl: onClearTime != nil"),
                 "the task block measures its title as if the trailing control were never there")
-        #expect(phone.contains("endMin: range.end, blockWidth: slot.width, onOpen:"), "the event block is not handed its column width")
+        #expect(phone.contains("endMin: label.end, blockWidth: slot.width, onOpen:"), "the event block is not handed its column width")
         #expect(phone.contains("endMin: range.end,\n                    blockWidth: slot.width,"), "the task block is not handed its column width")
     }
 

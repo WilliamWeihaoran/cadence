@@ -1596,13 +1596,15 @@ private struct iOSCalendarTimelineDayColumn: View {
             ForEach(keyedTimedEvents) { keyed in
                 // The column's own day, so an event that crosses midnight draws the part that
                 // belongs here. `frame` uses the range clamped into the drawn hours; the block
-                // still labels itself with the true one.
+                // labels and speaks `label`, the true span with the Mac's 5-minute floor, not
+                // `range`'s 15-minute geometry floor ([[T-17872]]).
                 let event = keyed.event
                 let range = iOSCalendarEventSupport.minuteRange(for: event, on: date)
+                let label = iOSCalendarEventSupport.labelMinuteRange(for: event, on: date)
                 let drawn = CadenceScheduleSupport.timelineVisibleRange(start: range.start, end: range.end)
                 let key = BlockKey.event(keyed.id)
                 let slot = horizontalFrame(placements[.event(keyed.id)], kind: .event)
-                iOSCalendarEventBlock(event: event, startMin: range.start, endMin: range.end, blockWidth: slot.width, onOpen: { openEvent(event) })
+                iOSCalendarEventBlock(event: event, startMin: label.start, endMin: label.end, blockWidth: slot.width, onOpen: { openEvent(event) })
                     .frame(width: slot.width, height: blockHeight(start: drawn.start, end: drawn.end))
                     .offset(x: slot.x, y: yOffset(for: drawn.start))
                     .zIndex(solved.zIndexes[key] ?? 1)

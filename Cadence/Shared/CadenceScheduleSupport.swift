@@ -512,7 +512,8 @@ enum CadenceScheduleSupport {
     /// 01:30 EST both draw at 90, overlapping on the single 1:30 row, and the earlier one is the
     /// one that rung belongs to — the same "take the first" T-3048 chose. A pair wholly inside the
     /// repeated hour can therefore come back with `end` below `start`; the pre-existing 15-minute
-    /// floor below is what makes it drawable, at its true start, with a label that matches.
+    /// floor below is what makes it drawable, at its true start, and `timelineEventLabelRange`'s
+    /// 5-minute floor labels it.
     /// *Out of range* diverges, and only because nothing here is written: the two writing fixes
     /// **refuse** a `startMin >= 1440` rather than mis-date a real calendar event, while an instant
     /// outside this column is clamped to the column's own edge (`0` or `1440`) and drawn, because
@@ -548,6 +549,37 @@ enum CadenceScheduleSupport {
         let dayMinutes = calendarEndHour * 60
         let start = min(max(0, span.start), dayMinutes - 5)
         return (start, min(dayMinutes, max(start + 5, span.end)))
+    }
+
+    /// The end the iOS Board card hands `boardCardMinuteRange`: the event's real end, or
+    /// `start + 5` when it has none or ends no later than that ([[T-17871]]).
+    ///
+    /// The card used a 30-minute fallback and kept it as a floor on every real end, so a 9:00-9:15
+    /// stand-up read "9:00 AM – 9:30 AM" while the Mac Board card (`CalendarEventItem`'s 5-minute
+    /// fallback), the iOS inspector and the agenda row said 9:15. The 5-minute floor stays so a
+    /// zero-length event still intersects its day and is not dropped by `boardCardMinuteRange`'s
+    /// guard.
+    static func boardCardEventEnd(start: Date, end: Date?) -> Date {
+        let floor = start.addingTimeInterval(5 * 60)
+        return max(end ?? floor, floor)
+    }
+
+    /// A timed event's **label** minutes on one timeline column: `wallClockMinuteSpan` with the
+    /// Mac timeline's 5-minute floor, capped at the column's last minute ([[T-17872]]).
+    ///
+    /// `minuteRange`'s 15-minute floor is geometry — a tappable height, overlap layout and
+    /// hit-testing. The iOS block used to print and speak that floored range, so a 9:00-9:05 event
+    /// read "9:00 AM – 9:15 AM" while the Mac block (`CalendarEventItem.durationMinutes`) and the
+    /// iOS inspector said 9:05. The block's frame still reads `minuteRange`; its text reads this.
+    static func timelineEventLabelRange(
+        from startDate: Date,
+        to endDate: Date,
+        on day: Date,
+        calendar: Calendar = .current
+    ) -> (start: Int, end: Int) {
+        let span = wallClockMinuteSpan(from: startDate, to: endDate, on: day, calendar: calendar)
+        let start = max(0, span.start)
+        return (start, min(calendarEndHour * 60, max(start + 5, span.end)))
     }
 
     /// `minuteRange` without its 15-minute floor: the clamp-in-instant-space, read-in-wall-clock

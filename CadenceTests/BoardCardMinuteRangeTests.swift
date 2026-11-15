@@ -66,3 +66,74 @@ struct BoardCardMinuteRangeTests {
         #expect(range.start == 9 * 60 && range.end == 9 * 60 + 5)
     }
 }
+
+/// [[T-17871]] / [[T-17872]]: a short timed event is labelled with its true end on both iOS
+/// calendar surfaces, as the Mac's board card and timeline block already are.
+///
+/// The Board card fed `boardCardMinuteRange` an end floored at start + 30, so a 15-minute event
+/// read as 30; the timeline block printed and spoke `minuteRange`, whose end is floored at
+/// start + 15 for geometry, so a 5-minute event read as 15. Both callers are iOS-only, so the rules
+/// are the two shared helpers they call, and the source checks below pin that they call them.
+@Suite("Short events keep their true end on iOS labels")
+struct ShortEventLabelEndTests {
+    private static func nineAM(_ calendar: Calendar) throws -> Date {
+        try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 11, hour: 9)))
+    }
+
+    @Test("A 15-minute event's board card ends at 9:15, a 0-minute or endless one at 9:05")
+    func theBoardCardKeepsAShortEventsTrueEnd() throws {
+        let calendar = try CadenceTestTimeZones.calendar("America/New_York")
+        let start = try Self.nineAM(calendar)
+        func card(_ end: Date?) throws -> (start: Int, end: Int) {
+            let floored = CadenceScheduleSupport.boardCardEventEnd(start: start, end: end)
+            return try #require(
+                CadenceScheduleSupport.boardCardMinuteRange(from: start, to: floored, on: start, calendar: calendar)
+            )
+        }
+        let quarter = try card(start.addingTimeInterval(15 * 60))
+        #expect(quarter.start == 9 * 60 && quarter.end == 9 * 60 + 15, "a 15-minute card labelled to \(quarter.end)")
+        let ten = try card(start.addingTimeInterval(10 * 60))
+        #expect(ten.end == 9 * 60 + 10, "a 10-minute card labelled to \(ten.end)")
+        // A zero-length event and one with no end are floored, and still intersect their day.
+        #expect(try card(start).end == 9 * 60 + 5)
+        #expect(try card(nil).end == 9 * 60 + 5)
+        // A long event is untouched.
+        #expect(try card(start.addingTimeInterval(90 * 60)).end == 10 * 60 + 30)
+    }
+
+    @Test("A 5- and 10-minute timeline block labels its true end, a 0-minute one the 5-minute floor")
+    func theTimelineLabelKeepsAShortEventsTrueEnd() throws {
+        let calendar = try CadenceTestTimeZones.calendar("America/New_York")
+        let start = try Self.nineAM(calendar)
+        for minutes in [5, 10] {
+            let end = start.addingTimeInterval(TimeInterval(minutes * 60))
+            let label = CadenceScheduleSupport.timelineEventLabelRange(from: start, to: end, on: start, calendar: calendar)
+            #expect(label.start == 9 * 60 && label.end == 9 * 60 + minutes, "a \(minutes)-minute block labelled to \(label.end)")
+            // The geometry keeps its 15-minute floor; only the label moved.
+            #expect(CadenceScheduleSupport.minuteRange(from: start, to: end, on: start, calendar: calendar).end == 9 * 60 + 15)
+        }
+        let zero = CadenceScheduleSupport.timelineEventLabelRange(from: start, to: start, on: start, calendar: calendar)
+        #expect(zero.start == 9 * 60 && zero.end == 9 * 60 + 5)
+        // A short event at the end of the day stops at midnight, as the Mac's block does.
+        let late = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 11, hour: 23, minute: 58)))
+        #expect(CadenceScheduleSupport.timelineEventLabelRange(from: late, to: late, on: late, calendar: calendar).end == 24 * 60)
+    }
+
+    @Test("The iOS card and timeline block read the two helpers")
+    func theIOSCallersReadTheHelpers() throws {
+        let cards = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSBoardCards.swift"))
+        #expect(cards.contains("CadenceScheduleSupport.boardCardEventEnd(start: eventStart, end: event.endDate)"))
+        #expect(!cards.contains("30 * 60"), "the Board card floors a real end at 30 minutes again")
+
+        let support = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarEventSupport.swift"))
+        let labelRange = try #require(CadenceSourceScan.functionBody(named: "labelMinuteRange", in: support))
+        #expect(labelRange.contains("CadenceScheduleSupport.timelineEventLabelRange("))
+
+        let grid = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift"))
+        let column = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayColumn: View", in: grid)
+        )
+        #expect(column.contains("let label = iOSCalendarEventSupport.labelMinuteRange(for: event, on: date)"))
+        #expect(column.contains("iOSCalendarEventBlock(event: event, startMin: label.start, endMin: label.end,"))
+    }
+}

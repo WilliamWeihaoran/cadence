@@ -1582,7 +1582,7 @@ struct CadenceTimelineEventOpenTests {
         )
         #expect(column.contains("let onOpenEvent: (EKEvent) -> Void"))
         #expect(column.contains(
-            "iOSCalendarEventBlock(event: event, startMin: range.start, endMin: range.end, blockWidth: slot.width, onOpen: { openEvent(event) })"
+            "iOSCalendarEventBlock(event: event, startMin: label.start, endMin: label.end, blockWidth: slot.width, onOpen: { openEvent(event) })"
         ))
         let open = try #require(CadenceSourceScan.functionBody(named: "openEvent", in: column))
         let guardRange = try #require(open.range(of: "guard !putDownLiftedBlock() else { return }"))

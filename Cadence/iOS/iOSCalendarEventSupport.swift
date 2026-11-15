@@ -56,6 +56,19 @@ enum iOSCalendarEventSupport {
             calendar: calendar
         )
     }
+
+    /// The minutes a timeline block **prints and speaks** on `day`: the true wall-clock span with
+    /// a 5-minute floor, where `minuteRange` floors the end at 15 for geometry ([[T-17872]]).
+    static func labelMinuteRange(for event: EKEvent, on day: Date? = nil) -> (start: Int, end: Int) {
+        let startDate = event.startDate ?? Date()
+        let endDate = event.endDate ?? startDate.addingTimeInterval(30 * 60)
+        return CadenceScheduleSupport.timelineEventLabelRange(
+            from: startDate,
+            to: endDate,
+            on: day ?? startDate,
+            calendar: Calendar.current
+        )
+    }
 }
 
 extension Sequence where Element == EKEvent {

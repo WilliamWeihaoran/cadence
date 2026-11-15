@@ -84,8 +84,8 @@ struct iOSCalendarBoardEventItem: Identifiable {
         } else {
             let dayStart = calendar.startOfDay(for: date)
             let eventStart = event.startDate ?? dayStart
-            let fallbackEnd = eventStart.addingTimeInterval(30 * 60)
-            let eventEnd = max(event.endDate ?? fallbackEnd, fallbackEnd)
+            // The Mac card's 5-minute fallback and floor, not 30 minutes ([[T-17871]]).
+            let eventEnd = CadenceScheduleSupport.boardCardEventEnd(start: eventStart, end: event.endDate)
             // Wall-clock ends, not start + elapsed, so a DST-day card agrees with the grid ([[T-17021]]).
             guard let range = CadenceScheduleSupport.boardCardMinuteRange(
                 from: eventStart,
