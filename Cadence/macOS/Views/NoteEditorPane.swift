@@ -105,8 +105,13 @@ struct NoteEditorPane: View {
                 // a refusal the note is put back, so the picker's own binding still reads the tags
                 // the store holds, the tapped chip does not change, and the notice already shown
                 // for a refused inline create (`tagFailureNotice`) says why.
+                //
+                // [[T-17971]]: a removal the body's inline `#tag` keeps is named on the same line,
+                // read before the write because the write is what puts the tag back.
+                let names = newTags.map(\.name)
+                let keptNotice = TagSupport.inlineMentionNotice(requesting: names, on: note)
                 guard TagSupport.setTagsCommittingInsertions(
-                    named: newTags.map(\.name),
+                    named: names,
                     on: note,
                     in: modelContext,
                     writeFrontmatter: true
@@ -114,7 +119,7 @@ struct NoteEditorPane: View {
                     tagFailureNotice = CadencePendingChangePersistence.editFailureNotice
                     return
                 }
-                tagFailureNotice = nil
+                tagFailureNotice = keptNotice
                 editorContent = note.content
                 loadedNoteID = note.id
                 refreshDerivedState(for: note.content)

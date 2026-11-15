@@ -226,6 +226,68 @@ struct CadenceNoteTagEditingTests {
         #expect(Set(try ModelContext(container).fetch(FetchDescriptor<Cadence.Tag>()).map(\.slug)) == ["alpha", "beta"])
     }
 
+    // MARK: - A removal the text keeps is named (T-17971)
+
+    /// **[[T-17971]].** A note whose body says `#work` keeps its `work` chip however often the chip
+    /// is removed — the rule — and the shared helper both platforms read names it, so the chip's
+    /// `x` no longer silently does nothing. A tag the text does not mention is not named.
+    @Test func removingATagTheBodyStillMentionsKeepsItAndNamesIt() throws {
+        let (container, context) = try makeContext()
+        let work = Tag(name: "work", slug: "work")
+        let home = Tag(name: "home", slug: "home")
+        let note = Note(kind: .permanent, title: "Plan", content: "Ship it with #work today")
+        for tag in [work, home] { context.insert(tag) }
+        context.insert(note)
+        try context.save()
+        #expect(CadenceNoteTagEditing.setTags([work, home], on: note, in: context))
+        #expect(Set(note.tags?.map(\.slug) ?? []) == ["home", "work"], "precondition: both tags set")
+
+        let remainingAfterWork = (note.tags ?? []).filter { $0.id != work.id }.map(\.name)
+        let notice = TagSupport.inlineMentionNotice(requesting: remainingAfterWork, on: note)
+        #expect(notice == "#work is still in the note's text, so the tag stays.")
+        #expect(CadenceNoteTagEditing.remove(work, from: note, in: context))
+        #expect(Set(note.tags?.map(\.slug) ?? []) == ["home", "work"], "the inline mention keeps the tag")
+
+        // The frontmatter now lists `home` alone, and frontmatter plus inline is still the chips.
+        #expect(MarkdownMetadataParser.frontmatterTagNames(in: note.content) == ["home"])
+        #expect(Set(MarkdownMetadataParser.metadata(in: note.content).tags.map { TagSupport.slug(for: $0) })
+            == Set(note.tags?.map(\.slug) ?? []), "the YAML and inline tags disagree with note.tags")
+
+        // `home` is not in the text, so its removal is real and names nothing.
+        let remainingAfterHome = (note.tags ?? []).filter { $0.id != home.id }.map(\.name)
+        #expect(TagSupport.inlineMentionNotice(requesting: remainingAfterHome, on: note) == nil)
+        #expect(CadenceNoteTagEditing.remove(home, from: note, in: context))
+        #expect(note.tags?.map(\.slug) == ["work"])
+        let stored = try #require(try ModelContext(container).fetch(FetchDescriptor<Note>()).first)
+        #expect(stored.tags?.map(\.slug) == ["work"])
+    }
+
+    /// The decision alone: by slug, in the note's order, once per tag, and only for names the
+    /// write was asked to drop.
+    @Test func theKeptNamesAreTheDroppedOnesTheTextMentions() {
+        let content = "---\ntags: [alpha]\n---\nNotes on #Work and #home, #work again"
+        #expect(
+            TagSupport.namesKeptByInlineMentions(
+                requested: ["alpha"],
+                current: ["alpha", "Work", "home", "beta"],
+                content: content
+            ) == ["Work", "home"]
+        )
+        #expect(
+            TagSupport.namesKeptByInlineMentions(
+                requested: ["alpha", "home", "work"],
+                current: ["alpha", "Work", "home"],
+                content: content
+            ).isEmpty,
+            "nothing was asked to be dropped"
+        )
+        #expect(TagSupport.inlineMentionNotice(keeping: []) == nil)
+        #expect(
+            TagSupport.inlineMentionNotice(keeping: ["Work", "home"])
+                == "#Work and #home are still in the note's text, so the tags stay."
+        )
+    }
+
     // MARK: - The iOS chrome
 
     /// The control writes only through `CadenceNoteTagEditing`, and resigns the editor before it

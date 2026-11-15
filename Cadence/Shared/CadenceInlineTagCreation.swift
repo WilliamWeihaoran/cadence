@@ -328,6 +328,62 @@ extension TagSupport {
         return true
     }
 
+    /// **[[T-17971]] — the tags a chip removal cannot remove, decided once for both platforms.**
+    ///
+    /// `setTagsCommittingInsertions(... writeFrontmatter: true)` folds the body's inline `#tags`
+    /// back into the requested set, so a tag the prose still mentions survives a chip's `x` or an
+    /// unticked picker row. That rule is deliberate; what was missing is telling the user. This
+    /// answers which of `current` (the note's tags before the write) are not in `requested` and
+    /// come back only because `content` mentions them inline, in `current`'s order, matched by slug
+    /// as the write's own resolution matches.
+    ///
+    /// The frontmatter that write leaves is consistent with this: it lists `requested` alone, and
+    /// `MarkdownMetadataParser.metadata(in:)` reads frontmatter plus inline tags, so the note's
+    /// derived tags are still exactly `note.tags`. Deleting the `#work` from the text later is then
+    /// what removes the tag, which is what the user asked for.
+    nonisolated static func namesKeptByInlineMentions(
+        requested: [String],
+        current: [String],
+        content: String
+    ) -> [String] {
+        let requestedSlugs = Set(requested.map { slug(for: $0) })
+        let inlineSlugs = Set(MarkdownMetadataParser.inlineTagNames(in: content).map { slug(for: $0) })
+        var seen = Set<String>()
+        return current.filter { name in
+            let candidate = slug(for: name)
+            return !requestedSlugs.contains(candidate)
+                && inlineSlugs.contains(candidate)
+                && seen.insert(candidate).inserted
+        }
+    }
+
+    /// The one sentence both platforms draw beside the chips when a removal was kept by the text,
+    /// or `nil` when nothing was ([[T-17971]]): "#work is still in the note's text, so the tag
+    /// stays."
+    nonisolated static func inlineMentionNotice(keeping names: [String]) -> String? {
+        guard !names.isEmpty else { return nil }
+        let spelled = names.map { "#\($0)" }
+        let list = spelled.count == 1
+            ? spelled[0]
+            : spelled.dropLast().joined(separator: ", ") + " and " + spelled[spelled.count - 1]
+        return spelled.count == 1
+            ? "\(list) is still in the note's text, so the tag stays."
+            : "\(list) are still in the note's text, so the tags stay."
+    }
+
+    /// `inlineMentionNotice(keeping:)` for a write of `requested` onto `note`, read **before** the
+    /// write: the Mac's `NoteEditorPane.noteTagsBinding` and iOS's `iOSNoteTagControl` both ask
+    /// this, so the two cannot disagree about which removals the text kept.
+    static func inlineMentionNotice(requesting requested: [String], on note: Note) -> String? {
+        inlineMentionNotice(
+            keeping: namesKeptByInlineMentions(
+                requested: requested,
+                current: (note.tags ?? []).map(\.name),
+                content: note.content
+            )
+        )
+    }
+
     /// `seedDefaultTags`, **committed** (T-653).
     ///
     /// `seedDefaultTags(in:saveChanges:)` is handed its `ModelContext`, and its default

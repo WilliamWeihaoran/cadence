@@ -127,8 +127,10 @@ struct iOSNoteTagControl: View {
                 selectedTags: Binding(
                     get: { TagSupport.sorted(note.tags ?? []) },
                     set: { tags in
+                        // [[T-17971]]: read before the write, which is what puts a kept tag back.
+                        let keptNotice = TagSupport.inlineMentionNotice(requesting: tags.map(\.name), on: note)
                         lastWrite.succeeded = CadenceNoteTagEditing.setTags(tags, on: note, in: modelContext)
-                        if lastWrite.succeeded { report(nil) }
+                        if lastWrite.succeeded { report(keptNotice) }
                     }
                 ),
                 allTags: allTags,
@@ -153,8 +155,13 @@ struct iOSNoteTagControl: View {
     }
 
     private func commitRemoval(of tag: Tag) {
+        // [[T-17971]]: a chip whose `#tag` is still in the body stays, and the host's line says so.
+        let keptNotice = TagSupport.inlineMentionNotice(
+            requesting: (note.tags ?? []).filter { $0.id != tag.id }.map(\.name),
+            on: note
+        )
         if CadenceNoteTagEditing.remove(tag, from: note, in: modelContext) {
-            report(nil)
+            report(keptNotice)
         } else {
             report(CadencePendingChangePersistence.editFailureNotice)
         }
