@@ -605,7 +605,18 @@ nonisolated enum CadenceWidgetDateSupport {
     /// column plan's `isOverdue`) already says a finished item is not late and tints it neutral;
     /// "Overdue Nov 9" in that neutral tint contradicted it. Open items are unchanged, and the
     /// default keeps every caller that has no settled state (widgets, sidebar, reminders) as it was.
-    nonisolated static func dueLabel(for dueDate: String, todayKey: String, isSettled: Bool = false) -> String? {
+    ///
+    /// [[T-17766]]: "tomorrow" is `DateFormatters.dayOffset(from:relativeTo:calendar:)` == 1, the
+    /// day counter [[T-17441]] fixed, and no longer a `dateComponents([.day])` between two parsed
+    /// day starts. On a day whose midnight is skipped (Santiago, 2026-09-06) that day starts at
+    /// 01:00 and the next at 00:00, 23 hours apart -- zero days -- so tomorrow read "Due Sep 7".
+    /// `calendar` is injectable for that test and defaults to the one every caller already used.
+    nonisolated static func dueLabel(
+        for dueDate: String,
+        todayKey: String,
+        isSettled: Bool = false,
+        calendar: Calendar = .current
+    ) -> String? {
         let key = dueDate.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { return nil }
         if key == todayKey { return "Due today" }
@@ -613,9 +624,8 @@ nonisolated enum CadenceWidgetDateSupport {
         let day = dayLabel(fromKey: key, relativeTo: parsedDate(fromKey: todayKey) ?? Date())
         if key < todayKey { return isSettled ? "Due \(day)" : "Overdue \(day)" }
 
-        if let today = parsedDate(fromKey: todayKey),
-           let date = parsedDate(fromKey: key),
-           Calendar.current.dateComponents([.day], from: today, to: date).day == 1 {
+        if let today = DateFormatters.date(from: todayKey, in: calendar),
+           DateFormatters.dayOffset(from: key, relativeTo: today, calendar: calendar) == 1 {
             return "Due tomorrow"
         }
         return "Due \(day)"

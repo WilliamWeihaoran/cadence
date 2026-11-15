@@ -154,6 +154,7 @@ struct SchedulePanel: View {
     var body: some View {
         let allDayEvents = allDayEvents
         let allDayDraftTitle = allDayDraftTitle
+        let externalEventItems = externalEventItems
         VStack(alignment: .leading, spacing: 0) {
             if presentation.drawsOwnHeader {
                 SchedulePanelHeader(
@@ -172,6 +173,20 @@ struct SchedulePanel: View {
             // block moved here out of the hour ladder, so the band has to be able to appear for it.
             if !allDayEvents.isEmpty || allDayDraftTitle != nil {
                 SchedulePanelAllDayBand(events: allDayEvents, draftTitle: allDayDraftTitle)
+            }
+
+            // [[T-17788]]: the line iOS's Today timeline has always drawn, with this grid's verb.
+            if SchedulePanelDataSupport.isTimelineEmpty(
+                scheduledTaskCount: scheduledTasks.count,
+                timedEventCount: externalEventItems.count
+            ) {
+                Text(CadenceTodayPresentationSupport.emptyTimelineHint(.drag))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 10)
             }
 
             GeometryReader { geo in

@@ -93,11 +93,34 @@ enum CadenceTodayPresentationSupport {
 
     // `emptyScheduleHint` used to sit here (T-520). It ends "…tap an hour to schedule one", which
     // is a sentence only a touch surface can say, and it had exactly one reader —
-    // `iOSSchedulePanel`. macOS's own `SchedulePanel` draws no empty state at all, so nothing about
+    // `iOSSchedulePanel`. macOS's own `SchedulePanel` drew no empty state then, so nothing about
     // it was ever shared: it was iOS copy filed under `Shared/`, one Mac reader away from telling a
-    // desktop user to tap. It lives in `Cadence/iOS/iOSSchedulePanelCopy.swift` now, and
+    // desktop user to tap. (The Mac draws one now, [[T-17788]], built below with its own verb.) It lives in `Cadence/iOS/iOSSchedulePanelCopy.swift` now, and
     // `CadenceEmptyStateAuditTests.noMacReachableCopyAsksForATouchGesture` walks this folder as
     // well as `Cadence/macOS/`, so the next one cannot land here quietly.
+
+    /// **What an empty Today timeline says, on both hosts ([[T-17788]]).** iOS has said it since
+    /// T-520; the Mac's `SchedulePanel` drew nothing, so a fresh install showed a blank hour grid
+    /// with no word on how a block is made. One sentence, and only the gesture is per-input: the
+    /// line exists on both hosts, and each names the gesture its own grid answers.
+    nonisolated enum EmptyTimelineGesture {
+        /// iOS: a press draws a draft block in place ([[T-3169]]).
+        case pressAndHold
+        /// macOS: `TimelineCreateGridLayer` creates from a `DragGesture`; a plain click on the
+        /// grid clears the selection instead, so a click is not the verb to teach.
+        case drag
+
+        var clause: String {
+            switch self {
+            case .pressAndHold: "press and hold an hour"
+            case .drag: "drag across the hours"
+            }
+        }
+    }
+
+    nonisolated static func emptyTimelineHint(_ gesture: EmptyTimelineGesture) -> String {
+        "No timed blocks yet — \(gesture.clause) to add one."
+    }
 }
 
 /// **Everything Today's task list draws, read from the store once per page body** (T-3159).

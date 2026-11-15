@@ -5,7 +5,7 @@ import Foundation
 /// **iOS-only, and filed where that is true (T-520).** This was
 /// `CadenceTodayPresentationSupport.emptyScheduleHint`: a `Cadence/Shared/` constant ending "…tap
 /// an hour to schedule one" with exactly one reader, `iOSSchedulePanel`. macOS's `SchedulePanel`
-/// draws no empty state at all, so the sentence was never shared — it was correct only because the
+/// drew no empty state then ([[T-17788]] gave it one, with its own verb), so the sentence was never shared — it was correct only because the
 /// one Mac surface that could have picked it up had not yet. Copy naming a touch gesture belongs in
 /// the tree whose readers have fingers, which is also what makes
 /// `CadenceEmptyStateAuditTests.noMacReachableCopyAsksForATouchGesture` able to sweep `Shared/`.
@@ -24,5 +24,8 @@ nonisolated enum iOSSchedulePanelCopy {
     /// fills the grid, and what fills it changed: a press draws a draft block in place and opens
     /// the schedule panel on it. A tap still opens the same draft, so the gesture named here is the
     /// one worth learning rather than the only one that works.
-    static let emptyScheduleHint = "No timed blocks yet — press and hold an hour to add one."
+    ///
+    /// Built from `CadenceTodayPresentationSupport.emptyTimelineHint(_:)` now ([[T-17788]]), the
+    /// sentence the Mac's timeline draws with its own verb.
+    static let emptyScheduleHint = CadenceTodayPresentationSupport.emptyTimelineHint(.pressAndHold)
 }

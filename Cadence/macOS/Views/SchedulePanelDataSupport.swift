@@ -4,6 +4,16 @@ import EventKit
 import SwiftData
 
 enum SchedulePanelDataSupport {
+    /// Whether today's ladder has nothing timed on it, which is when `SchedulePanel` draws
+    /// `CadenceTodayPresentationSupport.emptyTimelineHint(_:)` above the hours ([[T-17788]]).
+    ///
+    /// iOS's rule, read on this host's inputs: a scheduled task or a timed event is a block, and an
+    /// all-day event is not -- it sits in `SchedulePanelAllDayBand`, and the hours under it are
+    /// still empty. The hint goes the moment the first block lands.
+    static func isTimelineEmpty(scheduledTaskCount: Int, timedEventCount: Int) -> Bool {
+        scheduledTaskCount == 0 && timedEventCount == 0
+    }
+
     static func scheduledTasks(from allTasks: [AppTask], todayKey: String) -> [AppTask] {
         CadenceScheduleSupport.scheduledTasks(
             on: todayKey,

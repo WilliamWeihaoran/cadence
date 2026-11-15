@@ -68,4 +68,25 @@ struct StorageKeyMissingMidnightTests {
         #expect(DateFormatters.dayOffset(from: "2026-09-07", relativeTo: noon, calendar: calendar) == 1)
         #expect(DateFormatters.dayOffset(from: "2026-09-05", relativeTo: noon, calendar: calendar) == -1)
     }
+
+    /// [[T-17766]]: the due-date vocabulary's "tomorrow" on that day. `dueLabel` counted
+    /// `dateComponents([.day])` between the two parsed day starts, and 2026-09-06 starts at 01:00
+    /// in Santiago while 2026-09-07 starts at 00:00 -- 23 hours, zero days -- so every row, card,
+    /// widget and sidebar badge said "Due Sep 7" for tomorrow.
+    @Test func dueTomorrowOnTheDayWhoseMidnightIsSkipped() throws {
+        let calendar = try CadenceTestTimeZones.calendar("America/Santiago")
+        // The premise: the two day starts really are less than a day apart, or the test is free.
+        let today = try #require(DateFormatters.date(from: "2026-09-06", in: calendar))
+        let tomorrow = try #require(DateFormatters.date(from: "2026-09-07", in: calendar))
+        #expect(calendar.dateComponents([.day], from: today, to: tomorrow).day == 0)
+
+        #expect(
+            CadenceWidgetDateSupport.dueLabel(for: "2026-09-07", todayKey: "2026-09-06", calendar: calendar)
+                == "Due tomorrow"
+        )
+        // The neighbours keep their words: today, the day after tomorrow, and the night before.
+        #expect(CadenceWidgetDateSupport.dueLabel(for: "2026-09-06", todayKey: "2026-09-06", calendar: calendar) == "Due today")
+        #expect(CadenceWidgetDateSupport.dueLabel(for: "2026-09-08", todayKey: "2026-09-06", calendar: calendar) != "Due tomorrow")
+        #expect(CadenceWidgetDateSupport.dueLabel(for: "2026-09-06", todayKey: "2026-09-05", calendar: calendar) == "Due tomorrow")
+    }
 }
