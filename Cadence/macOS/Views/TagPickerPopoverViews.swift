@@ -418,7 +418,7 @@ private struct TagEditSheet: View {
             // T-7335: Settings' strip, not a copy of it — this one named no swatch to VoiceOver
             // and never said which color was chosen.
             HStack(spacing: 8) {
-                TagColorSwatches(selectedHex: $colorHex)
+                TagColorSwatches(selectedHex: $colorHex, fallbackHex: tag.colorHex)
                 editField("#hex", text: $colorHex)
                     .frame(width: 96)
             }

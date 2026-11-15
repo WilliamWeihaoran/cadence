@@ -248,8 +248,7 @@ struct iOSSettingsColorSwatchRow: View {
     }
 
     private func isSelected(_ option: String) -> Bool {
-        TagSupport.swatchPreviewHex(selectedHex, fallback: fallbackHex ?? TagSupport.normalizedColorHex(""))
-            .caseInsensitiveCompare(option) == .orderedSame
+        TagSupport.swatchIsSelected(option, draft: selectedHex, fallback: fallbackHex)
     }
 }
 

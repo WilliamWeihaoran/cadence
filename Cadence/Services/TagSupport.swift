@@ -96,6 +96,15 @@ nonisolated enum TagSupport {
         return options + [previewed]
     }
 
+    /// Whether a swatch strip rings `option` for `draft`: the colour `swatchPreviewHex` previews, so
+    /// a half-typed draft rings the saved colour (`fallback`) rather than `normalizedColorHex`'s grey
+    /// default. Shared by iOS's `iOSSettingsColorSwatchRow` and the Mac's `TagColorSwatches`
+    /// ([[T-17936]]); with no `fallback` an invalid draft still rings the default grey.
+    nonisolated static func swatchIsSelected(_ option: String, draft: String, fallback: String?) -> Bool {
+        swatchPreviewHex(draft, fallback: fallback ?? normalizedColorHex(""))
+            .caseInsensitiveCompare(option) == .orderedSame
+    }
+
     /// The one tag ordering, and the reason it ends on `id`.
     ///
     /// `order` then `name` is not a total order: `order` defaults to 0 on every hand-made tag, and

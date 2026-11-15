@@ -114,11 +114,17 @@ struct CadenceTagPickerAccessibilityTests {
 
     @Test func macEditTagSheetUsesTheNamedSettingsStrip() throws {
         let sheet = try Self.compactBody("private struct TagEditSheet: View", in: Self.macPopoverPath)
-        #expect(sheet.contains("TagColorSwatches(selectedHex:$colorHex)"))
+        #expect(sheet.contains("TagColorSwatches(selectedHex:$colorHex,fallbackHex:tag.colorHex)"))
         #expect(
             !sheet.contains("ForEach(TagSupport.colorOptions"),
             "The Edit tag sheet must not draw its own unnamed swatch copy again"
         )
+
+        // [[T-17936]]: both Mac edit strips sit beside a `#hex` field, so both ring the saved colour
+        // for a half-typed draft; the create card has no field and passes none.
+        let settings = try CadenceSourceScan.sourceFile(Self.macSettingsPath).filter { !$0.isWhitespace }
+        #expect(settings.contains("TagColorSwatches(selectedHex:$draftColorHex,fallbackHex:tag.colorHex)"))
+        #expect(settings.contains("TagColorSwatches(selectedHex:$newTagColorHex)"))
 
         let strip = try Self.compactBody("struct TagColorSwatches: View", in: Self.macSettingsPath)
         #expect(strip.contains(#".accessibilityLabel(isSelected?"Selectedcolor":"Usethiscolor")"#))

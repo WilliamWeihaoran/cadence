@@ -105,7 +105,7 @@ struct CadenceListEditorSheetKeyboardTests {
         #expect(!compact.contains("Button(\""), "No stock push button: the footer is CadenceActionButton")
         #expect(compact.contains(#"Text("EditTag")"#), "Title Case, as every other Mac sheet title")
         #expect(compact.components(separatedBy: "editField(").count - 1 == 4, "three calls and the helper")
-        #expect(compact.contains(##"TagColorSwatches(selectedHex:$colorHex)editField("#hex",text:$colorHex).frame(width:96)"##))
+        #expect(compact.contains(##"TagColorSwatches(selectedHex:$colorHex,fallbackHex:tag.colorHex)editField("#hex",text:$colorHex).frame(width:96)"##))
         #expect(compact.contains(".padding(18).frame(width:320).background(Theme.surface)"))
 
         // The well is the Settings tag editor's, not a third spelling of it.

@@ -386,7 +386,7 @@ private struct SettingsTagRow: View {
                     }
 
                     HStack(spacing: 8) {
-                        TagColorSwatches(selectedHex: $draftColorHex)
+                        TagColorSwatches(selectedHex: $draftColorHex, fallbackHex: tag.colorHex)
                         editField("#hex", text: $draftColorHex)
                             .frame(width: 96)
                     }
@@ -547,14 +547,27 @@ private struct TagUsageBadge: View {
 
 /// One tag swatch strip on the Mac: Settings' tag editors and the tag picker's Edit tag sheet
 /// (T-7335), which drew its own copy with no name and no selected trait.
+///
+/// [[T-17936]]: beside a free-text `#hex` field, `fallbackHex` is the tag's saved colour -- the one
+/// Save keeps for a half-typed draft -- so an empty or half-typed field rings that colour, not
+/// `normalizedColorHex`'s grey default, and a custom colour gets a trailing swatch of its own, as
+/// iOS's `iOSSettingsColorSwatchRow` has done since T-4113 (b).
 struct TagColorSwatches: View {
     @Binding var selectedHex: String
+    var fallbackHex: String? = nil
+
+    var offered: [String] {
+        TagSupport.swatchStripOptions(TagSupport.colorOptions, draft: selectedHex, fallback: fallbackHex)
+    }
+
+    func rings(_ option: String) -> Bool {
+        TagSupport.swatchIsSelected(option, draft: selectedHex, fallback: fallbackHex)
+    }
 
     var body: some View {
         HStack(spacing: 8) {
-            ForEach(TagSupport.colorOptions, id: \.self) { option in
-                let isSelected = TagSupport.normalizedColorHex(selectedHex)
-                    .caseInsensitiveCompare(option) == .orderedSame
+            ForEach(offered, id: \.self) { option in
+                let isSelected = rings(option)
                 Button {
                     selectedHex = option
                 } label: {
