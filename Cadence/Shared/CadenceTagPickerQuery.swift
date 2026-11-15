@@ -134,3 +134,18 @@ extension TagSupport {
         return .resolve(name: name)
     }
 }
+
+extension TagSupport {
+    /// **[[T-17935]] — whether the iOS popover's field commits as the popover closes.**
+    ///
+    /// [[T-5175]] (owner option (a)) made dismissal add a name typed into "New tag" and never sent;
+    /// [[T-12744]] then turned that field into a filter, so the dismiss-add minted whatever was
+    /// typed to *find* a tag: `wor` typed, `work` tapped, the popover dismissed, and a stray `wor`
+    /// attached. The keeper's ruling keeps T-5175 for a name that matches nothing and drops it for a
+    /// search: the dismiss commits only when the list drew no active row for the query, and only
+    /// what the `+` would commit (`pickerFieldCommit`). An archived exact match still un-archives,
+    /// since archived tags are never rows. The Mac popover never commits on dismiss, an open owner call.
+    static func pickerDismissCommits(_ query: String, in allTags: [Tag]) -> Bool {
+        pickerQuery(query, in: allTags).matches.isEmpty && pickerFieldCommit(query, in: allTags).commits
+    }
+}

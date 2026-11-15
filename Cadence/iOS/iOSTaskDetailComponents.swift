@@ -478,6 +478,9 @@ struct iOSTaskTagPickerPopover: View {
         // It goes through `addTag()` itself, so blank or `#`-only input, an existing name in any
         // case, and a refused store all behave exactly as the `+` would: a refusal leaves the name
         // in the field, which is sheet state, for the next time the popover opens.
+        //
+        // **[[T-17935]].** The field is a search field since [[T-12744]], so the dismiss adds the
+        // name only when it matched no row: a partial query typed to find a tag is not a new tag.
         .onDisappear(perform: addTagOnDismiss)
     }
 
@@ -485,7 +488,11 @@ struct iOSTaskTagPickerPopover: View {
     /// refusal, if it makes one, handed to `onDismissRefusal`. The notice is cleared first so an
     /// older refusal from a tick while the popover was open is not re-reported by a dismiss that
     /// had nothing typed.
+    ///
+    /// **[[T-17935]].** Only for a query `pickerDismissCommits` allows: one that drew no active
+    /// row. A query that narrowed the list to `work` is a search, and dismissing it creates nothing.
     private func addTagOnDismiss() {
+        guard TagSupport.pickerDismissCommits(newTagName, in: allTags) else { return }
         tagFailureNotice = nil
         addTag()
         if let tagFailureNotice {
@@ -554,7 +561,11 @@ struct iOSTaskTagPickerPopover: View {
     /// **T-1070.** The checkmark this draws is the report, so it may not outrun the commit: the
     /// caller undoes the write before answering `false`, and the sentence below the list is the
     /// only thing left saying anything happened.
+    ///
+    /// **[[T-17935]].** A tapped row answers the query, so the field is cleared: the leftover text
+    /// would otherwise re-filter the list on the next open, which is sheet (or control) state.
     private func toggle(_ tag: Tag) {
+        newTagName = ""
         let previous = selectedTags
         if isSelected(tag) {
             selectedTags = selectedTags.filter { $0.id != tag.id }

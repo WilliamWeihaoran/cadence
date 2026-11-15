@@ -135,8 +135,21 @@ struct CadenceTaskSheetUnsavedWorkTests {
         #expect(body.contains(".onDisappear(perform: addTagOnDismiss)"))
         let onDismiss = try #require(CadenceSourceScan.functionBody(named: "addTagOnDismiss", in: popover))
         #expect(onDismiss.contains("addTag()"), "the dismiss path no longer goes through addTag itself")
+        // [[T-17935]]: the field is a search field, so the dismiss adds only a name that matched no
+        // row, and asks that before anything else -- the decision `CadenceTagPickerQueryTests`
+        // drives as values.
+        let gated = try #require(
+            onDismiss.range(of: "guard TagSupport.pickerDismissCommits(newTagName, in: allTags) else { return }"),
+            "the dismiss commits a partial query that matched a row (T-17935)"
+        )
+        let added = try #require(onDismiss.range(of: "addTag()"))
+        #expect(gated.lowerBound < added.lowerBound, "addTag runs before the dismiss gate")
         #expect(CadenceSourceScan.matchCount(#"\.onDisappear"#, in: popover) == 1)
-        let strip = try #require(CadenceSourceScan.declarationBody("struct iOSTaskTagStrip: View", in: file))
+        // Read with string literals intact: `codeOnly` blanks them, which made this a check of
+        // nothing (found while landing [[T-17935]]).
+        let literals = CadenceSourceScan.strippingComments(raw)
+        let strip = try #require(CadenceSourceScan.declarationBody("struct iOSTaskTagStrip: View", in: literals))
+        #expect(strip.contains("newTagName"), "non-vacuity: wrong strip read")
         #expect(!strip.contains("newTagName = \"\""), "the strip clears the typed tag (option (b), declined)")
         let add = try #require(CadenceSourceScan.functionBody(named: "addTag", in: popover))
         // [[T-12772]]: blank input still returns early, now through the list's own decision, and
@@ -150,6 +163,27 @@ struct CadenceTaskSheetUnsavedWorkTests {
         )
         let resolved = try #require(add.range(of: "TagSupport.committedTag(named: name, in: modelContext)"))
         #expect(unarchived.lowerBound < resolved.lowerBound, "an archived match reaches committedTag")
+    }
+
+    /// [[T-17935]]: tapping a row answers the query, so `toggle(_:)` clears the field. Left in
+    /// place, `wor` typed to find `work` re-filtered the next open and fed the dismiss-add. Both
+    /// callers -- the task sheet's strip and the note tag control -- present this one popover.
+    @Test func tappingATagRowClearsTheSearchField() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailComponents.swift")
+        #expect(raw.count > 1_000)
+        // Comments stripped, string literals kept: `codeOnly` blanks the `""` this looks for.
+        let file = CadenceSourceScan.strippingComments(raw)
+        let popover = try #require(
+            CadenceSourceScan.declarationBody("struct iOSTaskTagPickerPopover: View", in: file)
+        )
+        let toggle = try #require(CadenceSourceScan.functionBody(named: "toggle", in: popover))
+        #expect(toggle.contains("selectedTags"), "non-vacuity: wrong toggle read")
+        #expect(toggle.contains("newTagName = \"\""), "a tapped row leaves its query in the field (T-17935)")
+
+        let note = CadenceSourceScan.codeOnly(CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSNoteTagControl.swift")
+        ))
+        #expect(note.contains("iOSTaskTagPickerPopover("), "the note control no longer shares the popover")
     }
 
     // MARK: - T-6471: a refusal on the dismiss path is named by the strip, which is still on screen

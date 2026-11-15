@@ -158,6 +158,30 @@ struct CadenceTagPickerQueryTests {
         #expect(restored.slug == "tag")
     }
 
+    /// [[T-17935]]: the iOS dismiss-add ([[T-5175]]) commits only a query that drew no active row.
+    /// `wor` narrows the list to `Work` and `Homework`, so dismissing it creates nothing -- while the
+    /// `+` would still mint `wor`, which is what the dismiss used to do.
+    @Test func dismissingCommitsOnlyAQueryThatMatchedNoRow() throws {
+        let (_, tags) = try makeTags()
+        for partial in ["wor", "WORK", "Deep", " errand "] {
+            #expect(!TagSupport.pickerQuery(partial, in: tags).matches.isEmpty, "non-vacuity: \(partial)")
+            #expect(TagSupport.pickerFieldCommit(partial, in: tags).commits, "non-vacuity: \(partial)")
+            #expect(
+                !TagSupport.pickerDismissCommits(partial, in: tags),
+                "dismissing a search for \(partial) creates or attaches it (T-17935)"
+            )
+        }
+        // A name that matches nothing is still the user's work (owner option (a), T-5175), and an
+        // archived exact name -- never a row -- still un-archives through the field.
+        #expect(TagSupport.pickerDismissCommits("Garden", in: tags))
+        #expect(TagSupport.pickerDismissCommits("Old Project", in: tags))
+        // Nothing the `+` refuses is committed on dismiss either.
+        for refused in ["", "  ", "--"] {
+            #expect(!TagSupport.pickerDismissCommits(refused, in: tags))
+        }
+        #expect(!TagSupport.pickerDismissCommits("", in: []), "an empty store and an empty field")
+    }
+
     /// [[T-13501]]: the iOS footer `+` is enabled by the field's commit decision, not by a bare
     /// non-empty test, so it cannot be live for a name the field refuses.
     @Test func theIOSFooterPlusIsGatedByTheFieldCommitDecision() throws {
