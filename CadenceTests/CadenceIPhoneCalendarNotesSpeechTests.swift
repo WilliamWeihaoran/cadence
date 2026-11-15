@@ -127,7 +127,8 @@ struct CadenceTimelineTaskBlockSpeechTests {
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
         )
         #expect(CadenceSourceScan.matchCount(#"if task\.isDone \{\s*DiagonalStripeOverlay\(\)"#, in: source) == 1)
-        #expect(CadenceSourceScan.matchCount(#"\.strikethrough\("#, in: source) == 0)
+        // [[T-18007]]: the one strikethrough allowed is the organizer-cancelled EVENT block's.
+        #expect(CadenceSourceScan.matchCount(#"\.strikethrough\((?!isCancelled\))"#, in: source) == 0)
         #expect(
             CadenceSourceScan.matchCount(
                 #"CadenceCalendarDayAccessibility\.timedTaskLabel\([\s\S]{0,400}?isDone: task\.isDone"#,

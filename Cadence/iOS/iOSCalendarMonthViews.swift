@@ -640,7 +640,8 @@ private struct iOSCalendarMonthDayCell: View {
                     icon: event.isAllDay ? "calendar" : "calendar.badge.clock",
                     color: iOSCalendarEventSupport.color(for: event.calendar),
                     isEvent: true,
-                    timeLabel: timeLabel(for: event)
+                    timeLabel: timeLabel(for: event),
+                    isCancelled: CadenceCalendarEventVisibility.isCancelled(event)
                 )
                 .modifier(iOSCalendarMonthChipOpen(onOpen: opens ? { onOpenEvent(event) } : nil))
             }
@@ -770,6 +771,10 @@ struct iOSCalendarMiniChip: View {
     let color: Color
     var isEvent = false
     var timeLabel: String? = nil
+    /// An organizer-cancelled event ([[T-18014]]): the title struck through and spoken with
+    /// "cancelled", and the whole chip dimmed, as `iOSCalendarEventBlock` draws one on the grid.
+    /// The caller reads `CadenceCalendarEventVisibility.isCancelled`; a task chip leaves it `false`.
+    var isCancelled = false
 
     static func height(hasTime: Bool, at size: DynamicTypeSize = .large, scaling: CadenceTypographyScaling = .fixed) -> CGFloat {
         iOSCalendarTypographyMetrics.chipHeight(hasTime: hasTime, at: size, scaling: scaling)
@@ -950,12 +955,14 @@ struct iOSCalendarMiniChip: View {
                 style: rimStyle
             )
         }
+        .cadenceCancelledEventDim(isCancelled)
     }
 
     private var titleRow: some View {
         HStack(spacing: Self.glyphSpacing) {
             if glyphRow == .title { glyph }
             Text(title)
+                .cadenceCancelledEventTitle(title, isCancelled: isCancelled)
                 .cadenceFont(.metadata, base: 10, weight: .medium)
                 .foregroundStyle(titleInk)
                 .lineLimit(1)

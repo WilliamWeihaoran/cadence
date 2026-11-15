@@ -425,7 +425,8 @@ enum GlobalSearchIndexSupport {
             subtitle: subtitle,
             icon: CadenceSearchEventGlyph.systemImage,
             tintHex: item.calendarColor.globalSearchHexString() ?? Theme.purpleHex,
-            destination: .event(item.id)
+            destination: .event(item.id),
+            isCancelled: CadenceCalendarEventVisibility.isCancelled(event)
         )
     }
 

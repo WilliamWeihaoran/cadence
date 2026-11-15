@@ -74,6 +74,12 @@ struct iOSCalendarEventEditSheet: View {
         calendarManager.canModify(event)
     }
 
+    /// [[T-18014]]: an organizer-cancelled event is view-only here -- no Save, no Delete -- the
+    /// Mac popover's rule, read from the same predicate.
+    private var isCancelled: Bool {
+        CadenceCalendarEventVisibility.isCancelled(event)
+    }
+
     private var writableCalendarIDs: [String] {
         calendarManager.writableCalendars.map(\.calendarIdentifier)
     }
@@ -86,6 +92,7 @@ struct iOSCalendarEventEditSheet: View {
         CadenceCalendarEventEditingSupport.canSave(
             title: draft.title,
             isEventEditable: isEditable,
+            isEventCancelled: isCancelled,
             selectedCalendarID: draft.calendarID,
             writableCalendarIDs: writableCalendarIDs
         )
@@ -184,9 +191,11 @@ struct iOSCalendarEventEditSheet: View {
                     draft: $draft,
                     calendarChoices: calendarChoices,
                     calendarUnavailableNotice: calendarUnavailableNotice,
-                    readOnlyNotice: isEditable
-                        ? nil
-                        : CadenceCalendarEventEditingSupport.readOnlyNotice(calendarName: eventCalendarName),
+                    readOnlyNotice: CadenceCalendarEventEditingSupport.viewOnlyNotice(
+                        calendarName: eventCalendarName,
+                        isEventEditable: isEditable,
+                        isEventCancelled: isCancelled
+                    ),
                     // T-497: every failure this sheet reports — a refused EventKit save, a refused
                     // delete, a refused event-note commit — is drawn by the panel, in one place,
                     // whatever the width. Most of them arrive after a confirmation dialog rather

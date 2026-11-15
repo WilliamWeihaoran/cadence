@@ -516,6 +516,7 @@ struct CalendarTimelineRangeTests {
             CadenceCalendarEventEditingSupport.canSave(
                 title: "Someone's birthday",
                 isEventEditable: false,
+                isEventCancelled: false,
                 selectedCalendarID: "personal",
                 writableCalendarIDs: writable
             ) == false
@@ -524,6 +525,7 @@ struct CalendarTimelineRangeTests {
             CadenceCalendarEventEditingSupport.canSave(
                 title: "Team sync",
                 isEventEditable: true,
+                isEventCancelled: false,
                 selectedCalendarID: "personal",
                 writableCalendarIDs: writable
             ) == true
@@ -532,6 +534,7 @@ struct CalendarTimelineRangeTests {
             CadenceCalendarEventEditingSupport.canSave(
                 title: "   ",
                 isEventEditable: true,
+                isEventCancelled: false,
                 selectedCalendarID: "personal",
                 writableCalendarIDs: writable
             ) == false
@@ -540,6 +543,7 @@ struct CalendarTimelineRangeTests {
             CadenceCalendarEventEditingSupport.canSave(
                 title: "Team sync",
                 isEventEditable: true,
+                isEventCancelled: false,
                 selectedCalendarID: "birthdays",
                 writableCalendarIDs: writable
             ) == false

@@ -164,6 +164,9 @@ struct MonthEventChip: View {
     /// ([[T-5240]]).
     @State private var showEditor = false
 
+    /// [[T-18014]]: an organizer-cancelled event, drawn as the timed block draws it.
+    private var isCancelled: Bool { CadenceCalendarEventVisibility.isCancelled(event.ekEvent) }
+
     var body: some View {
         // Every tier below is solved against `railChipFill`'s own plate, so none of them is a
         // constant any more: the title clears `railTitleContrastTarget` and the time range
@@ -172,6 +175,7 @@ struct MonthEventChip: View {
         // and, for which chip reads which family, by `CadenceCalendarChipTreatmentTests`.
         HStack(spacing: 4) {
             Text(event.title)
+                .cadenceCancelledEventTitle(event.title, isCancelled: isCancelled)
                 .font(.system(size: 10))
                 .foregroundStyle(CadenceCalendarEventStyle.railTitleColor(for: event.calendarColor))
                 .lineLimit(1)
@@ -194,6 +198,7 @@ struct MonthEventChip: View {
             border: CadenceCalendarEventStyle.railColor(for: event.calendarColor)
                 .opacity(CadenceCalendarEventStyle.chipBorderOpacity())
         )
+        .cadenceCancelledEventDim(isCancelled)
         .calendarEventChipEditor(isPresented: $showEditor) { event }
     }
 }
@@ -760,11 +765,15 @@ struct AllDayEventChip: View {
         Color(cgColor: event.calendar?.cgColor ?? Theme.nsDim.cgColor)
     }
 
+    /// [[T-18014]]: an organizer-cancelled event, drawn as the timed block draws it.
+    private var isCancelled: Bool { CadenceCalendarEventVisibility.isCancelled(event) }
+
     var body: some View {
         // Title in the calendar's own hue, solved against the plate below it — same family and
         // same reasoning as `MonthEventChip`, including why the border is `railColor` rather than
         // the raw calendar colour.
         Text(CadenceEventTitleSupport.displayTitle(event.title))
+            .cadenceCancelledEventTitle(CadenceEventTitleSupport.displayTitle(event.title), isCancelled: isCancelled)
             .font(.system(size: 10))
             .foregroundStyle(CadenceCalendarEventStyle.railTitleColor(for: eventColor))
             .lineLimit(1)
@@ -784,6 +793,7 @@ struct AllDayEventChip: View {
                 )
         )
         .shadow(color: Theme.chipShadow, radius: 3, y: 1)
+        .cadenceCancelledEventDim(isCancelled)
         // The all-day form of the item, as `CalendarBoardEventDisplayItem.editItem` builds it.
         .calendarEventChipEditor(isPresented: $showEditor) { CalendarEventItem(event: event) }
         // A read-only calendar cannot take the all-day → timed conversion the drop asks for

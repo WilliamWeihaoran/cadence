@@ -853,7 +853,8 @@ struct iOSSearchView: View {
             detail: eventDetail(event),
             icon: CadenceSearchEventGlyph.systemImage,
             color: iOSCalendarEventSupport.color(for: event.calendar),
-            score: score
+            score: score,
+            isCancelled: CadenceCalendarEventVisibility.isCancelled(event)
         )
     }
 

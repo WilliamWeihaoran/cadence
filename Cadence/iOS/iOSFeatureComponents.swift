@@ -536,6 +536,9 @@ struct iOSFeatureSummaryRow: View {
     /// "12" after the subtitle says nothing about what is twelve. `nil` reads `detail` as drawn.
     var detailAccessibilityLabel: String? = nil
     var isSelected = false
+    /// An organizer-cancelled event's row ([[T-18014]]): `iOSCalendarEventSummaryRow` reads
+    /// `CadenceCalendarEventVisibility.isCancelled` into it. Every other row leaves it `false`.
+    var isCancelledEvent = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -543,6 +546,7 @@ struct iOSFeatureSummaryRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
+                    .cadenceCancelledEventTitle(title, isCancelled: isCancelledEvent)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
@@ -562,6 +566,7 @@ struct iOSFeatureSummaryRow: View {
                     .accessibilityLabel(detailAccessibilityLabel ?? detail)
             }
         }
+        .cadenceCancelledEventDim(isCancelledEvent)
         .frame(minHeight: 44)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)

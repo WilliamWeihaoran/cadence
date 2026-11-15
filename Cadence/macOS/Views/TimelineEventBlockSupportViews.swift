@@ -190,6 +190,9 @@ struct CalendarEventEditPopover: View {
 
     private var isEditable: Bool { Self.isEditable(item.ekEvent) }
 
+    /// [[T-18014]]: an organizer-cancelled event is view-only here -- no Save, no Delete.
+    private var isCancelled: Bool { CadenceCalendarEventVisibility.isCancelled(item.ekEvent) }
+
     /// Whether the panel draws Repeat: only over rules it can read back — see
     /// `CadenceEventRepeatSetting(rules:…)`.
     private var offersRepeat: Bool { CadenceEventRepeatSetting(event: item.ekEvent) != nil }
@@ -207,6 +210,7 @@ struct CalendarEventEditPopover: View {
         CadenceCalendarEventEditingSupport.canSave(
             title: draft.title,
             isEventEditable: isEditable,
+            isEventCancelled: isCancelled,
             selectedCalendarID: draft.calendarID,
             writableCalendarIDs: writableCalendarIDs
         )
@@ -243,9 +247,11 @@ struct CalendarEventEditPopover: View {
                 draft: $draft,
                 calendarChoices: calendarChoices,
                 calendarUnavailableNotice: calendarUnavailableNotice,
-                readOnlyNotice: isEditable
-                    ? nil
-                    : CadenceCalendarEventEditingSupport.readOnlyNotice(calendarName: item.calendarTitle),
+                readOnlyNotice: CadenceCalendarEventEditingSupport.viewOnlyNotice(
+                    calendarName: item.calendarTitle,
+                    isEventEditable: isEditable,
+                    isEventCancelled: isCancelled
+                ),
                 failureNotice: actionFailureNotice,
                 canCommit: canSave,
                 offersEventRepeat: offersRepeat,

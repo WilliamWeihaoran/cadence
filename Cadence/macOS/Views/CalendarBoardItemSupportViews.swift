@@ -23,6 +23,9 @@ struct CalendarBoardEventCard: View {
         item.calendarColor
     }
 
+    /// [[T-18014]]: an organizer-cancelled event, drawn as the timed block draws it.
+    private var isCancelled: Bool { CadenceCalendarEventVisibility.isCancelled(item.ekEvent) }
+
     var body: some View {
         Button {
             showPopover = true
@@ -119,6 +122,7 @@ struct CalendarBoardEventCard: View {
 
             VStack(alignment: .leading, spacing: 7) {
                 Text(item.title)
+                    .cadenceCancelledEventTitle(item.title, isCancelled: isCancelled)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(2)
@@ -168,6 +172,7 @@ struct CalendarBoardEventCard: View {
                     lineWidth: isHovered || showPopover ? 1.25 : 1
                 )
         }
+        .cadenceCancelledEventDim(isCancelled)
     }
 
     private var cardBackground: some View {

@@ -128,6 +128,10 @@ struct iOSCalendarBoardEventCard: View {
         return TimeFormatters.timeRange(startMin: item.startMin, endMin: item.endMin)
     }
 
+    /// [[T-18014]]: an organizer-cancelled event, drawn as the timed block draws it -- the Mac
+    /// `CalendarBoardEventCard`'s treatment, from the same predicate.
+    private var isCancelled: Bool { CadenceCalendarEventVisibility.isCancelled(item.event) }
+
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             // [[T-14151]]: the hue, floored to the 3:1 a glyph owes against this card's plate; the
@@ -139,6 +143,7 @@ struct iOSCalendarBoardEventCard: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(item.title)
+                    .cadenceCancelledEventTitle(item.title, isCancelled: isCancelled)
                     .cadenceFont(.rowTitle, base: 14, weight: .semibold)
                     .foregroundStyle(Theme.text)
                     .lineLimit(scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize) ? nil : 2)
@@ -183,6 +188,7 @@ struct iOSCalendarBoardEventCard: View {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .strokeBorder(item.color.opacity(CadenceCalendarEventStyle.borderOpacity()), lineWidth: 1)
         }
+        .cadenceCancelledEventDim(isCancelled)
         .accessibilityElement(children: .combine)
     }
 }

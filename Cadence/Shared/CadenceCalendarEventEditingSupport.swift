@@ -114,6 +114,20 @@ enum CadenceCalendarEventEditingSupport {
     /// Shown in place of the calendar picker and the delete button when the event cannot be
     /// written. It names the calendar so the sentence is about *this* event rather than a
     /// general disclaimer.
+    /// The sentence the editor's read-only slot carries for an organizer-cancelled event
+    /// ([[T-18014]]).
+    static let cancelledNotice = "The organizer canceled this event, so it can only be viewed here."
+
+    /// **What the shared panel's `readOnlyNotice:` is handed, on both platforms** ([[T-18014]]).
+    /// `nil` for an event that can be edited; the cancelled sentence for an organizer-cancelled
+    /// one (whether or not its calendar is writable -- the cancellation is the fact the user needs);
+    /// otherwise `readOnlyNotice(calendarName:)`. A non-nil answer is what makes the panel draw no
+    /// Save and no Delete, so a cancelled event is view-only exactly as a Birthdays event is.
+    static func viewOnlyNotice(calendarName: String, isEventEditable: Bool, isEventCancelled: Bool) -> String? {
+        if isEventCancelled { return cancelledNotice }
+        return isEventEditable ? nil : readOnlyNotice(calendarName: calendarName)
+    }
+
     static func readOnlyNotice(calendarName: String) -> String {
         let name = calendarName.trimmingCharacters(in: .whitespacesAndNewlines)
         if name.isEmpty {
@@ -140,13 +154,18 @@ enum CadenceCalendarEventEditingSupport {
 
     /// Whether the Save button should be enabled. A read-only event can never be saved, however
     /// complete the form is.
+    ///
+    /// [[T-18014]]: an organizer-cancelled event offers no Save either. It is still on the
+    /// calendar, but the organizer has withdrawn it, and an edit would only re-time a meeting
+    /// nobody is holding -- `viewOnlyNotice` says so in the panel's read-only slot.
     static func canSave(
         title: String,
         isEventEditable: Bool,
+        isEventCancelled: Bool,
         selectedCalendarID: String,
         writableCalendarIDs: [String]
     ) -> Bool {
-        guard isEventEditable else { return false }
+        guard isEventEditable, !isEventCancelled else { return false }
         guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         return writableCalendarIDs.contains(selectedCalendarID)
     }

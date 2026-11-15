@@ -60,7 +60,8 @@ struct CadenceCalendarTaskDoneStyleTests {
         let iOS = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.iOSTimelineFile))
         #expect(!iOS.contains("struct DiagonalStripeOverlay"), "iOS grew its own stripe overlay")
         #expect(CadenceSourceScan.matchCount(#"if task\.isDone \{\s*DiagonalStripeOverlay\(\)"#, in: iOS) == 1)
-        #expect(CadenceSourceScan.matchCount(#"\.strikethrough\("#, in: iOS) == 0, "the iOS calendar struck a title through again")
+        // [[T-18007]]: the one strikethrough allowed is the organizer-cancelled EVENT block's.
+        #expect(CadenceSourceScan.matchCount(#"\.strikethrough\((?!isCancelled\))"#, in: iOS) == 0, "the iOS calendar struck a title through again")
         #expect(
             iOS.contains("CadenceCalendarTaskDoneStyle.dimsTitle(for: .resolve(task: task)) ? secondaryInk : primaryInk"),
             "the iOS timed block no longer drops a done title through the shared rule"

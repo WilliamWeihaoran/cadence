@@ -203,11 +203,23 @@ nonisolated enum CadenceCalendarDayAccessibility {
     /// says so — the one state word an event has.
     static func timedEventLabel(title: String, timeRange: String, isCancelled: Bool = false) -> String {
         let label = "\(title), \(timeRange)"
-        return isCancelled ? "\(label), \(cancelledPhrase)" : label
+        return isCancelled ? "\(label), \(canceledPhrase)" : label
+    }
+
+    /// **An event's title as every other surface speaks it** ([[T-18014]]): the all-day and month
+    /// chips, the Board cards, and both Search rows. `"Standup"`, and `"Standup, canceled"` for an
+    /// organizer-cancelled one -- `timedEventLabel`'s state word, without the time range those
+    /// surfaces draw (or omit) on their own lines.
+    static func eventTitleLabel(title: String, isCancelled: Bool) -> String {
+        isCancelled ? "\(title), \(canceledPhrase)" : title
     }
 
     /// The state word `timedEventLabel` appends to a cancelled event. Lowercase, spoken after a comma.
-    static let cancelledPhrase = "cancelled"
+    ///
+    /// US spelling, as all display copy is ([[T-5003]], [[T-5522]]): [[T-18007]] spelled it the
+    /// British way, which `noDisplayLiteralKeepsTheBritishSpellingOfCancelled` could not see only
+    /// because a bare literal of that word is the sweep's carve-out for the persisted raw value.
+    static let canceledPhrase = "canceled"
 
     /// The state word `timedTaskLabel` appends. Lowercase because it is spoken after a comma.
     static let completedPhrase = "completed"

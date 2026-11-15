@@ -181,7 +181,10 @@ struct iOSCalendarEventSummaryRow: View {
             subtitle: subtitle,
             detail: event.calendar?.title ?? CadenceAppleCalendarNaming.unnamedCalendarTitle,
             icon: event.isAllDay ? "calendar" : "calendar.badge.clock",
-            color: color
+            color: color,
+            // [[T-18014]]: the compact month agenda and the inspector list draw a cancelled event
+            // as every other surface does.
+            isCancelledEvent: CadenceCalendarEventVisibility.isCancelled(event)
         )
     }
 }

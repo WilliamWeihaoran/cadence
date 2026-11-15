@@ -972,7 +972,11 @@ struct CadenceEventEditorPanelAdoptionTests {
         // T-7075: Delete enters the scope-then-confirm order; CadenceEventDeleteStepTests and
         // CadenceIPhoneCalendarNotesSpeechTests pin that every path ends in the confirmation.
         #expect(actions.contains("beginDelete()"), "Delete skipped its confirmation")
-        #expect(editor.contains("readOnlyNotice: isEditable"))
+        // [[T-18014]]: the read-only slot is the shared `viewOnlyNotice`, which also makes an
+        // organizer-cancelled event view-only.
+        #expect(editor.contains("readOnlyNotice: CadenceCalendarEventEditingSupport.viewOnlyNotice("))
+        #expect(editor.contains("isEventEditable: isEditable,\n"))
+        #expect(editor.contains("isEventCancelled: isCancelled"))
 
         let panel = try code("Cadence/Shared/Components/CadenceSchedulePanel.swift")
         let footer = try #require(CadenceSourceScan.declarationBody("private var footer: some View", in: panel))

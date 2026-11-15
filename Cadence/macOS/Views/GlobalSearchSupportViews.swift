@@ -222,6 +222,10 @@ struct GlobalSearchResult: Identifiable, Hashable {
     /// [[T-15491]]'s "Overdue Nov 9" does not start with: an overdue task -- the one whose date
     /// matters most -- lost its amber capsule and its date sank into the dim, truncating line.
     var dueLabel: String? = nil
+    /// An organizer-cancelled event's row, drawn struck through and dimmed ([[T-18014]]) -- the
+    /// `CadenceCalendarEventVisibility.isCancelled` answer, as iOS's `iOSSearchResult.isCancelled`
+    /// carries it. `false` for every other kind.
+    var isCancelled = false
 
     var tint: Color { Color(hex: tintHex) }
 }
@@ -563,6 +567,7 @@ struct GlobalSearchResultRow: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(result.title)
+                        .cadenceCancelledEventTitle(result.title, isCancelled: result.isCancelled)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
@@ -603,6 +608,7 @@ struct GlobalSearchResultRow: View {
 
                 Spacer()
             }
+            .cadenceCancelledEventDim(result.isCancelled)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)

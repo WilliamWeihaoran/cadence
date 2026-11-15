@@ -1252,7 +1252,8 @@ private struct iOSCalendarAllDayBandChips: View {
                     title: iOSCalendarEventSupport.title(for: event),
                     icon: "calendar",
                     color: iOSCalendarEventSupport.color(for: event.calendar),
-                    isEvent: true
+                    isEvent: true,
+                    isCancelled: CadenceCalendarEventVisibility.isCancelled(event)
                 )
                 .modifier(iOSCalendarAllDayChipOpen(onOpen: onOpenEvent.map { open in { open(event) } }))
             }

@@ -188,7 +188,11 @@ struct CadenceMacEventEditorPanelAdoptionTests {
         // Repeat is offered over rules the popover can read ([[T-3171]] (ii));
         // `CadenceEventRepeatEditTests` owns what it writes.
         #expect(popover.contains("offersEventRepeat: offersRepeat"))
-        #expect(popover.contains("readOnlyNotice: isEditable"))
+        // [[T-18014]]: the read-only slot is the shared `viewOnlyNotice`, which also makes an
+        // organizer-cancelled event view-only.
+        #expect(popover.contains("readOnlyNotice: CadenceCalendarEventEditingSupport.viewOnlyNotice("))
+        #expect(popover.contains("isEventEditable: isEditable,\n"))
+        #expect(popover.contains("isEventCancelled: isCancelled"))
         #expect(popover.contains("canCommit: canSave"))
         // **[[T-8161]]: one Notes field, and it is the rich Cadence note.** The panel's plain
         // notes row and the Create/Open card above it were two surfaces for one thing; the popover

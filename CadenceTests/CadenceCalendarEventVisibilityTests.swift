@@ -58,7 +58,7 @@ struct CadenceCalendarEventVisibilityTests {
     @Test func aCancelledEventSaysSoAndAnOrdinaryOneDoesNot() {
         #expect(
             CadenceCalendarDayAccessibility.timedEventLabel(title: "Standup", timeRange: "9:00 – 9:30 AM", isCancelled: true)
-                == "Standup, 9:00 – 9:30 AM, cancelled"
+                == "Standup, 9:00 – 9:30 AM, canceled"
         )
         #expect(
             CadenceCalendarDayAccessibility.timedEventLabel(title: "Standup", timeRange: "9:00 – 9:30 AM", isCancelled: false)

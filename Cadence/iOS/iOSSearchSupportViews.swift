@@ -203,6 +203,10 @@ struct iOSSearchResult: Identifiable {
     /// long list name plus tags truncated it away entirely. Carried separately, the row can lay
     /// it out with priority.
     var dueLabel: String?
+    /// An organizer-cancelled event's row, drawn struck through and dimmed ([[T-18014]]) -- the
+    /// `CadenceCalendarEventVisibility.isCancelled` answer, as macOS's
+    /// `GlobalSearchResult.isCancelled` carries it. `false` for every other kind.
+    var isCancelled = false
 }
 
 /// The one funnel every scored section on this screen ranks through.
@@ -418,6 +422,7 @@ struct iOSSearchResultRow: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(result.title)
+                    .cadenceCancelledEventTitle(result.title, isCancelled: result.isCancelled)
                     .cadenceFont(.rowTitle, base: 16, weight: .semibold)
                     .foregroundStyle(Theme.text)
                     .lineLimit(wraps ? nil : 2)
@@ -457,6 +462,7 @@ struct iOSSearchResultRow: View {
 
             if !wraps { Spacer(minLength: 0) }
         }
+        .cadenceCancelledEventDim(result.isCancelled)
         .padding(.vertical, 10)
         .frame(minHeight: 44)
         .searchKeyboardHighlight(isHighlighted, tint: result.color)
