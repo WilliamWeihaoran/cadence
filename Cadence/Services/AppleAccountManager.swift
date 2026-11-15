@@ -125,6 +125,23 @@ enum AppleAccountCredentialStatus: Equatable {
         case .unavailable: return "Signed out"
         }
     }
+
+    /// Whether Settings → Account draws the Credential Status row at all ([[T-17818]]), on both
+    /// platforms alike ([[T-8201]]: nothing about it is hardware-shaped).
+    ///
+    /// Only the states the card above cannot say for itself. "Signed out" sat under the signed-out
+    /// card's own sentence and "Authorized" under a signed-in name, so for every ordinary user the
+    /// row restated the card; "Not checked" is the instant before `refreshCredentialState()` answers.
+    /// Revoked and Not found clear the profile, so the card falls back to signed-out and only this
+    /// row says Apple withdrew the identity rather than the user signing out (the two share one
+    /// status message, so they are drawn alike); Transferred keeps a signed-in card whose identity
+    /// is mid-move between teams.
+    var drawsStatusRow: Bool {
+        switch self {
+        case .revoked, .notFound, .transferred: return true
+        case .unchecked, .authorized, .unavailable: return false
+        }
+    }
 }
 
 struct AppleSignInEntitlementStatus: Equatable {
@@ -136,6 +153,14 @@ struct AppleSignInEntitlementStatus: Equatable {
 
     var title: String {
         isConfigured ? "Available" : "Missing"
+    }
+
+    /// Whether the Mac's Account card draws the entitlement row ([[T-17818]]): only when Sign in
+    /// with Apple cannot work in this build, the one state the row explains. A configured build read
+    /// "Available" over the raw entitlement value "Default" to every user — a build diagnostic, and
+    /// a row iOS never draws — so a healthy Mac now shows what iOS shows.
+    var drawsStatusRow: Bool {
+        !isConfigured
     }
 
     var detail: String {

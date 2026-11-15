@@ -98,6 +98,65 @@ struct CadenceIOSAccountSettingsSurfaceTests {
         #expect(iosBranch.contains(".environment(AppleAccountManager.shared)"), "iOS never injects the Apple account manager")
     }
 
+    /// **[[T-17818]].** The entitlement row explains exactly one state — a build without the Sign
+    /// in with Apple entitlement — so a configured build draws none, and the raw "Default" value
+    /// never reaches a user who can sign in.
+    @Test func theEntitlementRowDrawsOnlyForABuildThatLacksTheEntitlement() {
+        #expect(AppleSignInEntitlementStatus.parsed(from: ["Default"]).drawsStatusRow == false)
+        #expect(AppleSignInEntitlementStatus.parsed(from: "Default").drawsStatusRow == false)
+        #expect(AppleSignInEntitlementStatus.parsed(from: nil).drawsStatusRow)
+        #expect(AppleSignInEntitlementStatus.parsed(from: ["Other"]).drawsStatusRow)
+    }
+
+    /// **[[T-17818]].** Credential Status draws only where the card cannot say it: Revoked and Not
+    /// found clear the profile, so the card reads signed-out; Transferred keeps it signed in. The
+    /// other three restated the card (or are the instant before the check answers).
+    @Test func theCredentialStatusRowDrawsOnlyWhereTheCardCannotSayIt() {
+        let drawn: [AppleAccountCredentialStatus] = [.revoked, .notFound, .transferred]
+        let hidden: [AppleAccountCredentialStatus] = [.unchecked, .authorized, .unavailable]
+        for status in drawn {
+            #expect(status.drawsStatusRow, "\(status.title) restates nothing, but no longer draws")
+        }
+        for status in hidden {
+            #expect(status.drawsStatusRow == false, "\(status.title) restates the card above it")
+        }
+    }
+
+    /// **[[T-17818]].** Both cards read the predicates rather than drawing each row unconditionally,
+    /// and each draws its divider only over a row — so a healthy, signed-in-or-out account card is
+    /// the identity and its actions alone, on both platforms.
+    @Test func bothAccountCardsGateTheirStatusRowsOnThePredicates() throws {
+        let mac = try code("Cadence/macOS/Views/SettingsSectionViews.swift")
+        let macBody = try #require(CadenceSourceScan.declarationBody("struct SettingsAccountSection: View", in: mac))
+        #expect(macBody.contains("let drawsCredentialRow = appleAccountManager.credentialStatus.drawsStatusRow"))
+        #expect(macBody.contains("let drawsEntitlementRow = appleAccountManager.entitlementStatus.drawsStatusRow"))
+        let macRows = try #require(
+            CadenceSourceScan.declarationBody("if drawsCredentialRow || drawsEntitlementRow", in: macBody),
+            "the Mac card draws its status block unconditionally again"
+        )
+        #expect(macRows.contains("CadenceRowDivider()"), "the Mac card's divider left the gated block")
+        let outsideRows = macBody.replacingOccurrences(of: macRows, with: "")
+        #expect(!outsideRows.contains("CadenceRowDivider()"), "the Mac card draws a divider over no row")
+        // Outside the gated block only the helper's own declaration may name it.
+        #expect(outsideRows.contains("private func accountDiagnosticRow("), "non-vacuity: the row helper moved")
+        #expect(outsideRows.components(separatedBy: "accountDiagnosticRow(").count - 1 == 1, "the Mac card draws a status row outside the gate")
+        let credential = try #require(CadenceSourceScan.declarationBody("if drawsCredentialRow", in: macRows))
+        let entitlement = try #require(CadenceSourceScan.declarationBody("if drawsEntitlementRow", in: macRows))
+        #expect(credential.contains("CadenceAccountSettingsCopy.credentialStatusTitle"), "the Mac Credential Status row is not behind its predicate")
+        #expect(entitlement.contains("CadenceAccountSettingsCopy.entitlementStatusTitle"), "the Mac entitlement row is not behind its predicate")
+
+        let ios = try code("Cadence/iOS/iOSAccountSettingsSection.swift")
+        let iosBody = try #require(CadenceSourceScan.declarationBody("struct iOSAccountSettingsSection: View", in: ios))
+        let iosRow = try #require(
+            CadenceSourceScan.declarationBody("if appleAccountManager.credentialStatus.drawsStatusRow", in: iosBody),
+            "the iOS Credential Status row draws unconditionally again"
+        )
+        #expect(iosRow.contains("iOSRowDivider()"), "the iOS divider left the gated block")
+        #expect(iosRow.contains("CadenceAccountSettingsCopy.credentialStatusTitle"))
+        #expect(iosBody.components(separatedBy: "iOSRowDivider()").count - 1 == 1, "the iOS card draws a divider over no row")
+        #expect(iosBody.components(separatedBy: "credentialStatusTitle").count - 1 == 1)
+    }
+
     /// The copy itself, pinned where both platforms read it.
     @Test func theAccountCopyIsTheMacCardsWords() {
         #expect(CadenceAccountSettingsCopy.accountTitle == "Apple Account")

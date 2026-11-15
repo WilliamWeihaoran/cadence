@@ -99,20 +99,30 @@ struct SettingsAccountSection: View {
                         }
                     }
 
-                    CadenceRowDivider()
+                    // [[T-17818]]: each row only in the state it explains, and the divider only
+                    // over a row. Both used to draw for every user and restate the card.
+                    let drawsCredentialRow = appleAccountManager.credentialStatus.drawsStatusRow
+                    let drawsEntitlementRow = appleAccountManager.entitlementStatus.drawsStatusRow
+                    if drawsCredentialRow || drawsEntitlementRow {
+                        CadenceRowDivider()
 
-                    VStack(spacing: 8) {
-                        accountDiagnosticRow(
-                            title: CadenceAccountSettingsCopy.credentialStatusTitle,
-                            value: appleAccountManager.credentialStatus.title,
-                            color: appleAccountManager.credentialStatus == .authorized ? Theme.green : Theme.dim
-                        )
-                        accountDiagnosticRow(
-                            title: CadenceAccountSettingsCopy.entitlementStatusTitle,
-                            value: appleAccountManager.entitlementStatus.title,
-                            color: appleAccountManager.entitlementStatus.isConfigured ? Theme.green : Theme.amber,
-                            detail: appleAccountManager.entitlementStatus.detail
-                        )
+                        VStack(spacing: 8) {
+                            if drawsCredentialRow {
+                                accountDiagnosticRow(
+                                    title: CadenceAccountSettingsCopy.credentialStatusTitle,
+                                    value: appleAccountManager.credentialStatus.title,
+                                    color: Theme.dim
+                                )
+                            }
+                            if drawsEntitlementRow {
+                                accountDiagnosticRow(
+                                    title: CadenceAccountSettingsCopy.entitlementStatusTitle,
+                                    value: appleAccountManager.entitlementStatus.title,
+                                    color: Theme.amber,
+                                    detail: appleAccountManager.entitlementStatus.detail
+                                )
+                            }
+                        }
                     }
                 }
             }

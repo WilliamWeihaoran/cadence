@@ -14,7 +14,8 @@ import SwiftUI
 /// for a stated reason: the actions stack under the copy, the mobile settings idiom for a
 /// finger-sized button on a narrow row (`iOSRemindersSettingsSection` records the same choice),
 /// and there is no entitlement row, because the iOS SDK has no `SecTask` to read one with
-/// (`AppleSignInEntitlementStatus.current()`).
+/// (`AppleSignInEntitlementStatus.current()`) — the Mac draws its row only for a build that lacks
+/// the entitlement ([[T-17818]]), so on a healthy build the two cards match.
 ///
 /// **Delete Account… deletes nothing here.** It opens Data Safety, where
 /// `iOSDataResetSettingsSection` runs the one shared reset behind its typed-phrase gate — and that
@@ -47,16 +48,19 @@ struct iOSAccountSettingsSection: View {
 
                     actions
 
-                    iOSRowDivider()
+                    // [[T-17818]]: only in the states the card cannot say for itself, as on the Mac.
+                    if appleAccountManager.credentialStatus.drawsStatusRow {
+                        iOSRowDivider()
 
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(CadenceAccountSettingsCopy.credentialStatusTitle)
-                            .cadenceFont(.metadata, base: 11, weight: .semibold)
-                            .foregroundStyle(Theme.muted)
-                        Spacer(minLength: 0)
-                        Text(appleAccountManager.credentialStatus.title)
-                            .cadenceFont(.metadata, base: 11, weight: .semibold)
-                            .foregroundStyle(appleAccountManager.credentialStatus == .authorized ? Theme.green : Theme.dim)
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(CadenceAccountSettingsCopy.credentialStatusTitle)
+                                .cadenceFont(.metadata, base: 11, weight: .semibold)
+                                .foregroundStyle(Theme.muted)
+                            Spacer(minLength: 0)
+                            Text(appleAccountManager.credentialStatus.title)
+                                .cadenceFont(.metadata, base: 11, weight: .semibold)
+                                .foregroundStyle(Theme.dim)
+                        }
                     }
                 }
             }
