@@ -40,6 +40,28 @@ struct CadenceSubtaskEditorParityTests {
         #expect(!row.contains("Theme.muted"))
     }
 
+    /// [[T-17764]]: the Mac preview (the row's non-editing branch, under a task row and on a Kanban
+    /// card) takes iOS's `iOSTaskRowSubtaskRow` metadata role; the inspector's editable field keeps
+    /// its 13pt. Exactly one fixed 13pt font remains in the row, and it is the field's.
+    @Test func theMacSubtaskPreviewTakesTheIOSMetadataRole() throws {
+        let row = try body("struct SubtaskRow: View", in: Self.tasksPanelSupportPath)
+        let preview = try #require(row.range(of: "Text(displayTitle)"))
+        let field = try #require(row.range(of: "TextField(\"Subtask\", text: $subtask.title)"))
+        let previewTail = row[preview.upperBound...]
+        let previewFont = try #require(previewTail.range(of: ".cadenceFont(.metadata)"))
+        // The role sits on the preview Text itself, before the row's next element.
+        let previewEnd = try #require(previewTail.range(of: "Spacer(minLength: 0)"))
+        #expect(previewFont.lowerBound < previewEnd.lowerBound)
+        #expect(!previewTail[..<previewEnd.lowerBound].contains(".font(.system(size: 13))"))
+        // The editor's field keeps its size.
+        #expect(CadenceSourceScan.matchCount(#"\.font\(\.system\(size: 13\)\)"#, in: row) == 1)
+        let fieldTail = row[field.upperBound..<preview.lowerBound]
+        #expect(fieldTail.contains(".font(.system(size: 13))"))
+
+        let iOSPreview = try body("struct iOSTaskRowSubtaskRow: View", in: Self.iOSTaskRowActionViewsPath)
+        #expect(iOSPreview.contains(".cadenceFont(.metadata)"))
+    }
+
     @Test func everyOtherSubtaskTitleReadsTheSharedInk() throws {
         let sheetRow = try body("struct iOSSubtaskRow: View", in: Self.iOSTaskDetailComponentsPath)
         #expect(sheetRow.contains(".foregroundStyle(CadenceSubtaskTitleInk.editor.color(isDone: subtask.isDone))"))

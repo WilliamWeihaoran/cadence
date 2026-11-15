@@ -155,8 +155,11 @@ struct SubtaskRow: View {
                     .onSubmit { Self.commitTitle(in: modelContext) }
                     .onChange(of: subtask.title) { _, _ in Self.commitTitle(in: modelContext) }
             } else {
+                // [[T-17764]]: a preview (under a task row, on a Kanban card) takes the metadata
+                // role iOS's `iOSTaskRowSubtaskRow` draws, so the checklist reads a step under the
+                // task's own title. The inspector's editable field above keeps its 13pt.
                 Text(displayTitle)
-                    .font(.system(size: 13))
+                    .cadenceFont(.metadata)
                     .foregroundStyle(titleInk.color(isDone: subtask.isDone))
                     .strikethrough(subtask.isDone, color: Theme.dim)
                     .lineLimit(1)
