@@ -579,6 +579,9 @@ struct CadenceTagChipScaleTests {
             "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
             "Cadence/iOS/iOSTaskDetailSheet.swift",
             "Cadence/iOS/iOSSearchView.swift",
+            // [[T-17906]]: an inactive list's notice draws the Settings > Lists row's compact
+            // `iOSActionButton` (Unarchive / Reopen); the page's body is already size-aware.
+            "Cadence/iOS/iOSListDetailView.swift",
         ]
         let controlSites = try controls.sweep(paths, atLeast: 300,
                                              including: "Cadence/iOS/iOSTodayCompactViews.swift", read: read)

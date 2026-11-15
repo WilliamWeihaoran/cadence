@@ -306,7 +306,8 @@ struct iOSListDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             iOSListDetailHeader(
-                eyebrow: subtitle.isEmpty ? (area == nil ? "Project" : "Area") : subtitle,
+                eyebrow: headerEyebrow.eyebrow ?? "",
+                eyebrowDetail: headerEyebrow.detail,
                 title: title,
                 colorHex: colorHex,
                 projectDueDate: project?.dueDate,
@@ -314,6 +315,14 @@ struct iOSListDetailView: View {
                 onBack: (isPresentedModally || horizontalSizeClass == .compact) ? { dismiss() } : nil,
                 onEdit: presentEditor
             )
+
+            // [[T-17906]]: a list opened from Search may be completed, archived, paused or
+            // canceled; the page says so and offers Settings' own verb, as the Mac's page does.
+            if let inactiveNotice {
+                iOSListDetailInactiveNotice(notice: inactiveNotice, onReopen: reopenList)
+                    .padding(.horizontal, horizontalSizeClass == .regular ? 18 : 12)
+                    .padding(.bottom, 8)
+            }
 
             iOSListDetailPagePicker(
                 page: pageBinding,
@@ -362,6 +371,25 @@ struct iOSListDetailView: View {
             iOSListEditorSheet(mode: mode)
                 .cadenceFixedTypography()
         }
+    }
+
+    /// `nil` while the list is active ([[T-17906]]).
+    private var inactiveNotice: CadenceInactiveListNotice? {
+        CadenceInactiveListNotice.notice(area: area, project: project)
+    }
+
+    /// The context path, or the list's kind; led by the status word once the list is inactive.
+    private var headerEyebrow: (eyebrow: String?, detail: String?) {
+        CadenceInactiveListNotice.eyebrow(
+            baseEyebrow: subtitle.isEmpty ? (area == nil ? "Project" : "Area") : subtitle,
+            notice: inactiveNotice
+        )
+    }
+
+    /// Settings > Lists' reopen ([[T-16658]]): in-place status and order edits only.
+    private func reopenList() {
+        CadenceInactiveListNotice.reopen(area: area, project: project)
+        try? modelContext.save()
     }
 
     private func presentEditor() {
@@ -708,8 +736,39 @@ private enum iOSListDetailTaskMetrics {
 /// It replaces a `.navigationBarTitleDisplayMode(.large)` title *plus* a second `iOSPanelHeader`
 /// inside the Tasks tab that repeated the same name and context one row lower, and it carries the
 /// edit control that a `ToolbarItem` could not render on iPad.
+/// The inactive list's notice ([[T-17906]]), the Mac's `ListDetailInactiveNoticeBar` in touch
+/// metrics: the status word in Settings > Lists' tint, the shared sentence and the Settings row's
+/// own button.
+private struct iOSListDetailInactiveNotice: View {
+    let notice: CadenceInactiveListNotice
+    let onReopen: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(notice.statusLabel)
+                    .cadenceFont(.metadata, base: 11, weight: .semibold)
+                    .foregroundStyle(notice.usesCompletedTint ? Theme.green : Theme.amber)
+                Text(notice.message)
+                    .cadenceFont(.metadata, base: 12, weight: .regular)
+                    .foregroundStyle(Theme.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            iOSActionButton(title: notice.actionTitle, role: .secondary, size: .compact, action: onReopen)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Theme.surfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+        .accessibilityElement(children: .contain)
+    }
+}
+
 private struct iOSListDetailHeader: View {
     let eyebrow: String
+    /// The context path once the eyebrow leads with an inactive list's status ([[T-17906]]).
+    var eyebrowDetail: String? = nil
     let title: String
     let colorHex: String
     let projectDueDate: String?
@@ -725,6 +784,7 @@ private struct iOSListDetailHeader: View {
         // every page header on both platforms; it lands on the count capsule now, same as macOS.
         iOSPageHeader(
             eyebrow: eyebrow,
+            eyebrowDetail: eyebrowDetail,
             title: ListDetailHeaderAccessibility.displayTitle(listName: title),
             color: Color(hex: colorHex),
             onBack: onBack

@@ -256,6 +256,7 @@ private struct ListDetailChromeView: View {
     @State private var observedDay = CadenceObservedDay()
 
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
+    @Environment(\.modelContext) private var modelContext
 
     private var name: String { area?.name ?? project?.name ?? "" }
     private var colorHex: String { area?.colorHex ?? project?.colorHex ?? Theme.blueHex }
@@ -272,6 +273,12 @@ private struct ListDetailChromeView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+
+            // [[T-17906]]: a list opened from Cmd+K may be completed, archived, paused or
+            // canceled; the page says so and offers Settings' own verb, as iOS's page does.
+            if let inactiveNotice {
+                ListDetailInactiveNoticeBar(notice: inactiveNotice, onReopen: reopenList)
+            }
 
             ListDetailTabBarView(
                 tab: $tab,
@@ -309,6 +316,7 @@ private struct ListDetailChromeView: View {
         // it on an identity tile; with page tiles gone it lands on the count capsule, which is the
         // only thing `tint` colours now.
         DesktopPageHeader(
+            eyebrow: CadenceInactiveListNotice.eyebrow(baseEyebrow: nil, notice: inactiveNotice).eyebrow,
             title: ListDetailHeaderAccessibility.displayTitle(listName: name),
             tint: Color(hex: colorHex)
         ) {
@@ -351,6 +359,17 @@ private struct ListDetailChromeView: View {
                 hoveredEditableManager.endHovering(id: editableHoverID)
             }
         }
+    }
+
+    /// `nil` while the list is active ([[T-17906]]).
+    private var inactiveNotice: CadenceInactiveListNotice? {
+        CadenceInactiveListNotice.notice(area: area, project: project)
+    }
+
+    /// Settings > Lists' reopen ([[T-16658]]): in-place status and order edits only.
+    private func reopenList() {
+        CadenceInactiveListNotice.reopen(area: area, project: project)
+        try? modelContext.save()
     }
 
     @ViewBuilder
@@ -396,6 +415,33 @@ private struct ListDetailChromeView: View {
         case .completed:
             return AnyView(ListLogView(tasks: tasks))
         }
+    }
+}
+
+/// The inactive list's notice ([[T-17906]]): the status word in Settings > Lists' tint, the one
+/// sentence `CadenceInactiveListNotice` vends, and the Settings row's own button.
+private struct ListDetailInactiveNoticeBar: View {
+    let notice: CadenceInactiveListNotice
+    let onReopen: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(notice.statusLabel)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(notice.usesCompletedTint ? Theme.green : Theme.amber)
+            Text(notice.message)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.dim)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 8)
+            CadenceActionButton(title: notice.actionTitle, role: .secondary, size: .compact, tint: Theme.text, action: onReopen)
+                .fixedSize()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Theme.surfaceElevated)
+        .accessibilityElement(children: .contain)
     }
 }
 
