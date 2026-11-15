@@ -160,6 +160,10 @@ enum CadenceTaskComposerSupport {
     /// [[T-17748]]: with no seeded day the next hour is `nextHourSlot(after:)`'s, so past 11 PM it
     /// is tomorrow's midnight -- the Event arm opens on Tomorrow, and the task arm's added time
     /// lands there through `timeFallbackDateKey`. A seeded day keeps its day, clamped inside it.
+    ///
+    /// [[T-17781]]: on a seeded TODAY that clamp landed on 11 PM after 11 PM -- a time already
+    /// past. There the offer is now's next 15-minute step instead, held at 11:45 PM; a seeded
+    /// other day keeps the clamped next hour.
     static func captureDraft(
         seed: CadenceTaskComposerSeed,
         initialKind: CadenceScheduleDraftKind = .task,
@@ -172,11 +176,17 @@ enum CadenceTaskComposerSupport {
             max(calendar.component(.hour, from: now) + 1, CadenceScheduleSupport.calendarStartHour),
             CadenceScheduleSupport.calendarEndHour - 1
         ) * 60
+        let nowMinute = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
+        let grid = CadenceScheduleSupport.touchTimeGridMinutes
+        let seededStart = seed.doDateKey == DateFormatters.dateKey(from: now, calendar: calendar)
+                && seededDayStart < nowMinute
+            ? min((nowMinute + grid - 1) / grid * grid, CadenceScheduleSupport.calendarEndHour * 60 - grid)
+            : seededDayStart
         var draft = CadenceScheduleDraft.quickCreate(
             dateKey: seed.doDateKey.isEmpty ? nextHour.dateKey : seed.doDateKey,
             startMin: seed.scheduledStartMin >= 0
                 ? seed.scheduledStartMin
-                : (seed.doDateKey.isEmpty ? nextHour.startMin : seededDayStart),
+                : (seed.doDateKey.isEmpty ? nextHour.startMin : seededStart),
             opensTimed: seed.scheduledStartMin >= 0,
             kind: initialKind
         )

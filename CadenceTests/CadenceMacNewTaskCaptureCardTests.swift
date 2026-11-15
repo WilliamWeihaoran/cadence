@@ -141,16 +141,44 @@ struct CadenceMacNewTaskCaptureCardTests {
         #expect(task.scheduledStartMin == 23 * 60)
     }
 
-    /// A seeded day is the user's: it is kept, and the offered time stays inside it.
-    @Test func aSeededDayIsKeptLateAtNight() {
+    private static func seededDraft(
+        _ dayKey: String, _ kind: CadenceScheduleDraftKind, hour: Int = 23, minute: Int = 40
+    ) -> CadenceScheduleDraft {
         var seed = TaskCreationSeed()
-        seed.doDateKey = "2026-06-10"
-        let event = CadenceTaskComposerSupport.captureDraft(
-            seed: seed.composerSeed, initialKind: .event, now: Self.at(23, 40), calendar: Self.nightCalendar
+        seed.doDateKey = dayKey
+        return CadenceTaskComposerSupport.captureDraft(
+            seed: seed.composerSeed, initialKind: kind, now: Self.at(hour, minute), calendar: Self.nightCalendar
         )
+    }
+
+    /// A seeded day is the user's: it is kept. On a seeded TODAY after 11 PM the offered time is
+    /// now's next 15-minute step, never the 11 PM already gone ([[T-17781]]).
+    @Test func aSeededTodayIsKeptLateAtNightAtTheNextQuarterHour() {
+        let event = Self.seededDraft("2026-06-10", .event)
         #expect(event.startDateKey == "2026-06-10")
-        #expect(event.startMin == 23 * 60)
+        #expect(event.startMin == 23 * 60 + 45)
         #expect(event.timeFallbackDateKey.isEmpty)
+        var task = Self.seededDraft("2026-06-10", .task, minute: 5)
+        #expect(task.startDateKey == "2026-06-10")
+        task.addTime(today: "2026-06-10")
+        #expect(task.startDateKey == "2026-06-10")
+        #expect(task.scheduledStartMin == 23 * 60 + 15)
+    }
+
+    /// The next step is held inside the day: at 11:50 PM it is 11:45, not tomorrow's midnight.
+    @Test func aSeededTodayAtTheVeryEndOfTheDayIsHeldAtElevenFortyFive() {
+        let event = Self.seededDraft("2026-06-10", .event, minute: 50)
+        #expect(event.startDateKey == "2026-06-10")
+        #expect(event.startMin == 23 * 60 + 45)
+    }
+
+    /// A seeded day that is not today keeps the clamped next hour, and so does today before 11 PM.
+    @Test func aSeededOtherDayOrEarlierTodayKeepsTheNextHour() {
+        let tomorrow = Self.seededDraft("2026-06-11", .event)
+        #expect(tomorrow.startDateKey == "2026-06-11")
+        #expect(tomorrow.startMin == 23 * 60)
+        let earlier = Self.seededDraft("2026-06-10", .event, hour: 21, minute: 40)
+        #expect(earlier.startMin == 22 * 60)
     }
 
     // MARK: - The keyboard layer
