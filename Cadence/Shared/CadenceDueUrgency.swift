@@ -27,6 +27,19 @@ enum CadenceDueUrgency {
         return dueDateKey == todayKey ? .dueToday : .later
     }
 
+    /// **[[T-18051]]: the heading over a day's Due section, tinted by the day it is drawn for.**
+    ///
+    /// The iOS Calendar day inspector lists the tasks whose deadline is the *inspected* day --
+    /// past, today or any day ahead. A fixed red eyebrow called next Thursday an alarm over rows
+    /// whose own chips read a grey "Due Thu". Red means a deadline has passed: the heading is red
+    /// only when `dayKey` is before `todayKey` AND an open task is still in the section; otherwise
+    /// it takes the app's resting due colour, amber -- the schedule panel's Due field rule.
+    static func dueSectionTint(dayKey: String, tasks: [AppTask], todayKey: String) -> Color {
+        let hasOpenTask = tasks.contains { !CadenceTaskQuerySupport.isFinishedTask($0) }
+        let urgency = evaluate(dueDateKey: dayKey, isDone: !hasOpenTask, todayKey: todayKey)
+        return urgency == .overdue ? Theme.red : Theme.amber
+    }
+
     var tint: Color {
         switch self {
         case .overdue: return Theme.red

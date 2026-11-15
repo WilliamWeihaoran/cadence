@@ -129,7 +129,11 @@ struct iOSCalendarDayInspector: View {
                             // would be aimed at is the one fact this section does not state, that
                             // work due today is planned for Thursday. Passing the argument here
                             // would be dead code that reads like a rule.
-                            iOSCalendarInspectorSection(title: "Due", color: Theme.red) {
+                            // [[T-18051]]: red only for a past day that still holds open work.
+                            iOSCalendarInspectorSection(
+                                title: "Due",
+                                color: CadenceDueUrgency.dueSectionTint(dayKey: dayKey, tasks: dueOnlyTasks, todayKey: todayKey)
+                            ) {
                                 ForEach(dueOnlyTasks) { task in
                                     iOSTaskRow(task: task, todayKey: todayKey)
                                 }

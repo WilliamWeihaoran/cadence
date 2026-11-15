@@ -84,6 +84,14 @@ nonisolated enum CadenceViewMenu {
         let shortcut: Character
         /// The root monitor's arm for the same key, which consumes it first.
         let keyCode: UInt16
+
+        /// [[T-18052]]: a button's tooltip naming this item's key the way the menu draws it --
+        /// "Hide Sidebar (⌘O)", the Search button's "Search (⌘K)" shape. Read from `shortcut`, so a
+        /// rebind cannot leave the tooltip naming the old key. The key never goes in the button's
+        /// accessibility name: VoiceOver would read it as part of what the button is.
+        func tooltip(_ name: String) -> String {
+            "\(name) (⌘\(String(shortcut).uppercased()))"
+        }
     }
 
     static let search = Item(command: .search, title: "Search", shortcut: "k", keyCode: 40)

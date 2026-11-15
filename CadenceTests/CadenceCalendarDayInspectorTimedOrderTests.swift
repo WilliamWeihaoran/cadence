@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -55,5 +56,40 @@ import Testing
         let body = try #require(CadenceSourceScan.declarationBody("private var timedTasks: [AppTask]", in: source))
         #expect(body.contains("CadenceScheduleSupport.scheduledTasks(on: dayKey, from: tasks, includeCompleted: true)"))
         #expect(!body.contains(".filter"), "the Timed section went back to filtering the priority-ordered input")
+    }
+    // MARK: - [[T-18051]]: the Due heading's colour
+
+    /// The Due section lists the deadlines of whatever day is inspected, so its eyebrow is red only
+    /// for a past day that still holds open work; a today or later day, or a past day whose
+    /// deadlines are all settled, reads in the resting due amber. *Failing-first:* the constant
+    /// `Theme.red` the section shipped with fails the today, future and all-settled legs.
+    @Test func theDueHeadingIsRedOnlyForAPastDayStillHoldingOpenWork() throws {
+        let context = ModelContext(try CadenceTestStore.container())
+        func task(_ status: TaskStatus) -> AppTask {
+            let task = AppTask(title: "Due")
+            task.dueDate = "2026-06-10"
+            task.status = status
+            context.insert(task)
+            return task
+        }
+        let open = task(.todo)
+        let done = task(.done)
+        let cancelled = task(.cancelled)
+        let today = Self.dayKey
+        func tint(_ day: String, _ tasks: [AppTask]) -> Color {
+            CadenceDueUrgency.dueSectionTint(dayKey: day, tasks: tasks, todayKey: today)
+        }
+
+        #expect(tint("2026-06-10", [done, open]) == Theme.red, "a past day with open work is not red")
+        #expect(tint(today, [open]) == Theme.amber, "today's Due heading is not amber")
+        #expect(tint("2026-06-18", [open]) == Theme.amber, "a later day's Due heading is not amber")
+        #expect(tint("2026-06-10", [done, cancelled]) == Theme.amber, "a past day whose deadlines are settled is still red")
+    }
+
+    @Test func theInspectorsDueSectionAsksTheSharedTint() throws {
+        let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarInspectorView.swift"))
+        #expect(source.contains("struct iOSCalendarDayInspector: View"), "non-vacuity: wrong file read")
+        #expect(source.contains("CadenceDueUrgency.dueSectionTint(dayKey: dayKey, tasks: dueOnlyTasks, todayKey: todayKey)"))
+        #expect(!source.contains("title: \"Due\", color: Theme.red"), "the Due heading went back to a fixed red")
     }
 }

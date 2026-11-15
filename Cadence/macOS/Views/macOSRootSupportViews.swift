@@ -324,13 +324,23 @@ struct RootSidebarToggleButton: View {
     let isSidebarHidden: Bool
     let action: () -> Void
 
+    /// [[T-18052]]: the plain name, as the iPad's toggle is named; the key lives in the tooltip.
+    static func accessibilityLabel(isSidebarHidden: Bool) -> String {
+        isSidebarHidden ? "Show Sidebar" : "Hide Sidebar"
+    }
+
+    static func help(isSidebarHidden: Bool) -> String {
+        CadenceViewMenu.toggleSidebar.tooltip(accessibilityLabel(isSidebarHidden: isSidebarHidden))
+    }
+
     var body: some View {
         CadenceIconButton(
             systemImage: isSidebarHidden ? "sidebar.left" : "sidebar.leading",
-            accessibilityLabel: isSidebarHidden ? "Show Sidebar (Cmd+O)" : "Hide Sidebar (Cmd+O)",
+            accessibilityLabel: Self.accessibilityLabel(isSidebarHidden: isSidebarHidden),
             tint: Theme.blue,
             size: CadenceDesktopMetrics.compactControlHeight,
             iconSize: 12,
+            help: Self.help(isSidebarHidden: isSidebarHidden),
             action: action
         )
     }
@@ -338,6 +348,10 @@ struct RootSidebarToggleButton: View {
 
 struct RootTimelineSidebarPane: View {
     let onClose: () -> Void
+
+    /// [[T-18052]]: title case like the View menu's "Toggle Timeline", with ⌘\ in the tooltip.
+    static let closeAccessibilityLabel = "Close Timeline"
+    static var closeHelp: String { CadenceViewMenu.toggleTimeline.tooltip(closeAccessibilityLabel) }
 
     /// The hosted panel's zoom, drawn here because the panel draws no header of its own ([[T-10052]]):
     /// the calendar density, the key the panel reads ([[T-10712]]).
@@ -357,9 +371,10 @@ struct RootTimelineSidebarPane: View {
                 SchedulePanelHeaderControls(zoomLevel: CadenceCalendarZoom.timelineLevelBinding($sharedZoom), onExport: { exportRequest += 1 })
                 CadenceIconButton(
                     systemImage: "xmark",
-                    accessibilityLabel: "Close timeline",
+                    accessibilityLabel: Self.closeAccessibilityLabel,
                     size: 24,
                     iconSize: 10,
+                    help: Self.closeHelp,
                     action: onClose
                 )
             }

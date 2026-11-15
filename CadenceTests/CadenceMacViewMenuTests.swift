@@ -20,6 +20,21 @@ import Testing
 @MainActor
 struct CadenceMacViewMenuTests {
 
+    // MARK: - [[T-18052]]: the window chrome's toggles name their key in the tooltip only
+
+    /// The corner sidebar toggle and the timeline's close button are named plainly -- the iPad's
+    /// "Show Sidebar" / "Hide Sidebar" -- and spell their key the way the Search button does,
+    /// "Search (⌘K)", read from the menu item so a rebind carries the tooltip with it.
+    @Test func theChromeTogglesKeepTheirKeyOutOfTheirNameAndInTheTooltip() {
+        #expect(RootSidebarToggleButton.accessibilityLabel(isSidebarHidden: true) == "Show Sidebar")
+        #expect(RootSidebarToggleButton.accessibilityLabel(isSidebarHidden: false) == "Hide Sidebar")
+        #expect(RootSidebarToggleButton.help(isSidebarHidden: true) == "Show Sidebar (⌘O)")
+        #expect(RootSidebarToggleButton.help(isSidebarHidden: false) == "Hide Sidebar (⌘O)")
+        #expect(RootTimelineSidebarPane.closeAccessibilityLabel == "Close Timeline")
+        #expect(RootTimelineSidebarPane.closeHelp == "Close Timeline (⌘\\)")
+        #expect(CadenceViewMenu.search.tooltip("Search") == "Search (⌘K)", "the model tooltip and the helper disagree")
+    }
+
     // MARK: - The items
 
     @Test func theViewMenuNamesSearchSidebarAndTimelineWithTheirKeys() {
