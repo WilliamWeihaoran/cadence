@@ -187,6 +187,23 @@ struct CadenceTaskSortGroupParityTests {
         #expect(!byPriority.isEmpty)
     }
 
+    /// **[[T-17908]]: the By Priority heading over unprioritised tasks names what they share.**
+    /// "None" was `TaskPriority.none.label`, a picker word that reads as "no tasks" over a group.
+    /// The id and drop key keep the raw value, so folds and header drops are untouched, and the
+    /// picker label stays "None".
+    @Test func byPriorityHeadsUnprioritisedTasksNoPriority() throws {
+        let urgent = AppTask(title: "Urgent")
+        urgent.priority = .high
+        let loose = AppTask(title: "Loose")
+        let groups = CadenceTaskQuerySupport.priorityDisplayGroups(from: [loose, urgent])
+        #expect(groups.map(\.title) == ["High", "No Priority"])
+        let unprioritised = try #require(groups.last)
+        #expect(unprioritised.id == "priority-none")
+        #expect(unprioritised.dropKey == "priority:none")
+        #expect(unprioritised.tasks.map(\.title) == ["Loose"])
+        #expect(TaskPriority.none.label == "None", "the picker word changed along with the heading")
+    }
+
     /// **[[T-12323]], on the path the iPhone and iPad draw.** By Date through `displayGroups` (the
     /// call `iOSTaskCollectionPage` makes) files a do date already gone by under "Leftover", never
     /// under "Scheduled" beside work planned weeks ahead. `TaskSortHelperTests` pins the same rule

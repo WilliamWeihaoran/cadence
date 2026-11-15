@@ -501,13 +501,18 @@ enum CadenceTaskQuerySupport {
     // gone, as macOS's was: the Calendar Board's Overdue and Unscheduled rails and its day columns
     // are where that bucketing lives now.
 
+    /// The heading over unprioritised tasks when grouped By Priority ([[T-17908]]).
+    /// `TaskPriority.none.label` is "None", right in a picker and wrong as a heading, where it
+    /// reads as "no tasks"; every other group names what its rows share.
+    static let noPriorityGroupTitle = "No Priority"
+
     static func priorityDisplayGroups(from tasks: [AppTask]) -> [CadenceTaskDisplayGroup] {
         TaskPriority.allCases.reversed().compactMap { priority in
             let priorityTasks = tasks.filter { $0.priority == priority }
             guard !priorityTasks.isEmpty else { return nil }
             return CadenceTaskDisplayGroup(
                 id: "priority-\(priority.rawValue)",
-                title: priority.label,
+                title: priority == .none ? noPriorityGroupTitle : priority.label,
                 accent: Theme.priorityColor(priority),
                 tasks: priorityTasks,
                 dropKey: "priority:\(priority.rawValue)"

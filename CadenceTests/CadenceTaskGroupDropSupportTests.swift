@@ -157,7 +157,9 @@ struct CadenceTaskGroupDropSupportTests {
         }
 
         for group in CadenceTaskQuerySupport.priorityDisplayGroups(from: tasks) {
-            let priority = try #require(TaskPriority.allCases.first { $0.label == group.title })
+            // Keyed by the group's id, not its title: the `.none` group is headed "No Priority",
+            // not the picker's "None" ([[T-17908]]).
+            let priority = try #require(TaskPriority.allCases.first { "priority-\($0.rawValue)" == group.id })
             #expect(group.dropKey == CadenceTaskDropSupport.dropKey(forGroup: .priority(priority)))
         }
     }
