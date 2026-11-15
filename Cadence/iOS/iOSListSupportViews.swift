@@ -124,6 +124,8 @@ struct iOSListIconBadge: View {
 struct iOSListsPageHeader: View {
     let areaCount: Int
     let projectCount: Int
+    /// Whether the page draws an Archived section -- the page's own `hasArchivedLists` ([[T-17786]]).
+    let hasArchived: Bool
     /// Set on iPhone, where this page is pushed with its navigation bar hidden. See
     /// `iOSHidesCompactNavigationBar()`.
     var onBack: (() -> Void)? = nil
@@ -144,7 +146,11 @@ struct iOSListsPageHeader: View {
         // detail it is choosing for.
         iOSPageHeader(
             role: onBack == nil ? .pane : .page,
-            eyebrow: CadenceListsSummary.eyebrow(areaCount: areaCount, projectCount: projectCount),
+            eyebrow: CadenceListsSummary.eyebrow(
+                areaCount: areaCount,
+                projectCount: projectCount,
+                hasArchived: hasArchived
+            ),
             title: "Lists",
             color: Theme.blue,
             count: totalCount > 0 ? totalCount : nil,

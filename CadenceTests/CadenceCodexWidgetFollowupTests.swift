@@ -409,6 +409,30 @@ struct CadenceCodexWidgetFollowupTests {
         }
     }
 
+    /// [[T-17785]]: the empty Today tile a fresh install shows said "Your hot path is clear right
+    /// now.", and the large tile's queue "Keep the hot path moving." -- engineering slang on the
+    /// home screen. The words are values now, and the view reads them rather than typing its own.
+    @Test func theTodayWidgetSpeaksPlainWordsOnAnEmptyStore() throws {
+        #expect(CadenceTodayWidgetCopy.emptyTitle == "Nothing planned today")
+        #expect(CadenceTodayWidgetCopy.emptyMessage == "Your day is clear right now.")
+        #expect(CadenceTodayWidgetCopy.queueSubtitle(overdueCount: 2, dueTodayCount: 1)
+            == "Start with the overdue work, then clear what is due today.")
+        #expect(CadenceTodayWidgetCopy.queueSubtitle(overdueCount: 0, dueTodayCount: 1)
+            == "Tasks are due today. Clear those first.")
+        #expect(CadenceTodayWidgetCopy.queueSubtitle(overdueCount: 0, dueTodayCount: 0)
+            == "Planned work is lined up. Finish the top item, then keep momentum.")
+        let sentences = [CadenceTodayWidgetCopy.emptyTitle, CadenceTodayWidgetCopy.emptyMessage]
+            + [(1, 0), (0, 1), (0, 0)].map { CadenceTodayWidgetCopy.queueSubtitle(overdueCount: $0, dueTodayCount: $1) }
+        for sentence in sentences {
+            #expect(!sentence.localizedCaseInsensitiveContains("hot path"), "\(sentence)")
+        }
+
+        let read = CadenceSourceScan.strippedSourceReader()
+        let today = try read("CadenceWidgets/TodayTasksWidgetView.swift")
+        #expect(!today.localizedCaseInsensitiveContains("hot path"), "the Today widget types \"hot path\" again")
+        #expect(CadenceSourceScan.matchCount("CadenceTodayWidgetCopy\\.(emptyTitle|emptyMessage|queueSubtitle)", in: today) == 3)
+    }
+
     /// T-10001: two cards lay flat among lifted siblings -- the Today extra-large focus strip's
     /// tiles, under a shadowed priority card and beside shadowed column panels, and the Calendar
     /// extra-large agenda's next-up card, under three shadowed metric cards. Held here: the focus

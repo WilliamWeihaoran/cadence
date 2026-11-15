@@ -544,8 +544,8 @@ struct TodayTasksWidgetView: View {
 
     private func emptyState(alignment: HorizontalAlignment) -> some View {
         CadenceWidgetStateCard(
-            title: "Nothing planned today",
-            message: alignment == .leading ? "Your hot path is clear right now." : nil,
+            title: CadenceTodayWidgetCopy.emptyTitle,
+            message: alignment == .leading ? CadenceTodayWidgetCopy.emptyMessage : nil,
             actionLabel: "Open Today",
             actionURL: entry.snapshot.todayURL,
             alignment: alignment
@@ -601,13 +601,10 @@ struct TodayTasksWidgetView: View {
     }
 
     private var queueSubtitle: String {
-        if entry.snapshot.overdueCount > 0 {
-            return "Start with the overdue work, then clear what is due today."
-        }
-        if entry.snapshot.dueTodayCount > 0 {
-            return "You are on the clock for today. Keep the hot path moving."
-        }
-        return "Planned work is lined up. Finish the top item, then keep momentum."
+        CadenceTodayWidgetCopy.queueSubtitle(
+            overdueCount: entry.snapshot.overdueCount,
+            dueTodayCount: entry.snapshot.dueTodayCount
+        )
     }
 
     private var topStatus: CadenceTodayTaskStatusPresentation {

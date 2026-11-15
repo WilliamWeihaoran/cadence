@@ -196,6 +196,31 @@ nonisolated enum CadenceWidgetCountWords {
     }
 }
 
+/// **The Today widget's sentences, in plain words ([[T-17785]]).**
+///
+/// The empty tile on a fresh install -- the first thing a home-screen Today widget says to anyone --
+/// read "Your hot path is clear right now.", and the large tile's queue said "Keep the hot path
+/// moving." "Hot path" is engineering slang for the code a program runs most; no screen in the
+/// app says it, and a reader who is not a programmer has no way to know it means today's work.
+/// Both lived as literals inside `TodayTasksWidgetView`, which the test target cannot compile, so
+/// they sit here where a test can read the values.
+nonisolated enum CadenceTodayWidgetCopy {
+    static let emptyTitle = "Nothing planned today"
+    /// Drawn at `systemSmall` only, under `emptyTitle` (the centred card on larger tiles drops it).
+    static let emptyMessage = "Your day is clear right now."
+
+    /// The subtitle of the large tile's queue card, by the most urgent state the snapshot holds.
+    static func queueSubtitle(overdueCount: Int, dueTodayCount: Int) -> String {
+        if overdueCount > 0 {
+            return "Start with the overdue work, then clear what is due today."
+        }
+        if dueTodayCount > 0 {
+            return "Tasks are due today. Clear those first."
+        }
+        return "Planned work is lined up. Finish the top item, then keep momentum."
+    }
+}
+
 nonisolated enum CadenceTodayWidgetSupport {
     nonisolated static func snapshot(
         modelContext: ModelContext,

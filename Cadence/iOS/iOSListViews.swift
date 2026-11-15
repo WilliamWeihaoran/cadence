@@ -115,6 +115,7 @@ struct iOSListsView: View {
             iOSListsPageHeader(
                 areaCount: activeAreas.count,
                 projectCount: activeProjects.count,
+                hasArchived: hasArchivedLists,
                 onBack: showsBack ? { dismiss() } : nil
             )
 
