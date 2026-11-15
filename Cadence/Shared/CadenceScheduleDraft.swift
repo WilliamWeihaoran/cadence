@@ -120,6 +120,11 @@ struct CadenceScheduleDraft: Equatable {
     var endMin: Int
     /// All-day for an event; "no time" for a task. See the type note.
     var isAllDay: Bool
+    /// The day a time added to a draft with **no** do date lands on; empty means today
+    /// ([[T-17748]]). The capture card sets it past 11 PM, when the next hour it offers is
+    /// tomorrow's midnight -- a task opened then has no day to carry that, and adopting today
+    /// would put the offered time almost a day in the past.
+    var timeFallbackDateKey: String = ""
 
     // MARK: Task only
 
@@ -434,11 +439,13 @@ struct CadenceScheduleDraft: Equatable {
     }
 
     /// The Do section's Time row, tapped while the task has no time. A time needs a day under it,
-    /// so a task with no do date adopts today first — what the inspector's time picker always did.
+    /// so a task with no do date adopts today first — what the inspector's time picker always did —
+    /// or `timeFallbackDateKey` when the draft carries one ([[T-17748]]).
     mutating func addTime(today: String = DateFormatters.todayKey()) {
         if startDateKey.isEmpty {
-            startDateKey = today
-            endDateKey = today
+            let day = timeFallbackDateKey.isEmpty ? today : timeFallbackDateKey
+            startDateKey = day
+            endDateKey = day
         }
         isAllDay = false
     }

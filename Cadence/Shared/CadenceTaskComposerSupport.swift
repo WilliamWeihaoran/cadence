@@ -153,24 +153,36 @@ enum CadenceTaskComposerSupport {
     /// The capture card's opening draft for a seed: iOS's `+` sheet and the Mac's Cmd+N composer
     /// read this one rule ([[T-13792]]), so a seed opens the same card on both platforms.
     ///
-    /// A seeded slot opens timed at it; with no slot the card offers the next hour, inside the
-    /// calendar's day, should a time be added. A task seeded with no do date opens with none, so
-    /// a bare Cmd+N or `+` files nothing on today unasked.
+    /// A seeded slot opens timed at it; with no slot the card offers the next hour, should a time
+    /// be added. A task seeded with no do date opens with none, so a bare Cmd+N or `+` files
+    /// nothing on today unasked.
+    ///
+    /// [[T-17748]]: with no seeded day the next hour is `nextHourSlot(after:)`'s, so past 11 PM it
+    /// is tomorrow's midnight -- the Event arm opens on Tomorrow, and the task arm's added time
+    /// lands there through `timeFallbackDateKey`. A seeded day keeps its day, clamped inside it.
     static func captureDraft(
         seed: CadenceTaskComposerSeed,
         initialKind: CadenceScheduleDraftKind = .task,
         subtaskTitles: [String] = [],
-        now: Date = Date()
+        now: Date = DateFormatters.now(),
+        calendar: Calendar = .current
     ) -> CadenceScheduleDraft {
+        let nextHour = nextHourSlot(after: now, calendar: calendar)
+        let seededDayStart = min(
+            max(calendar.component(.hour, from: now) + 1, CadenceScheduleSupport.calendarStartHour),
+            CadenceScheduleSupport.calendarEndHour - 1
+        ) * 60
         var draft = CadenceScheduleDraft.quickCreate(
-            dateKey: seed.doDateKey.isEmpty ? DateFormatters.todayKey() : seed.doDateKey,
-            startMin: seed.scheduledStartMin >= 0 ? seed.scheduledStartMin : min(
-                max(Calendar.current.component(.hour, from: now) + 1, CadenceScheduleSupport.calendarStartHour),
-                CadenceScheduleSupport.calendarEndHour - 1
-            ) * 60,
+            dateKey: seed.doDateKey.isEmpty ? nextHour.dateKey : seed.doDateKey,
+            startMin: seed.scheduledStartMin >= 0
+                ? seed.scheduledStartMin
+                : (seed.doDateKey.isEmpty ? nextHour.startMin : seededDayStart),
             opensTimed: seed.scheduledStartMin >= 0,
             kind: initialKind
         )
+        if seed.doDateKey.isEmpty, nextHour.dateKey != DateFormatters.dateKey(from: now, calendar: calendar) {
+            draft.timeFallbackDateKey = nextHour.dateKey
+        }
         draft.title = seed.title
         draft.notes = seed.notes
         draft.dueDateKey = seed.dueDateKey
@@ -182,6 +194,22 @@ enum CadenceTaskComposerSupport {
         draft.estimateIsExplicit = seed.estimatedMinutes != defaultEstimatedMinutes
         if initialKind == .task, seed.doDateKey.isEmpty { draft.clearDoDate() }
         return draft
+    }
+
+    /// The next whole hour after `now`, and the day it falls on ([[T-17748]]). Past 11 PM that is
+    /// tomorrow's midnight, as Apple Calendar offers it -- the calendar's day runs to 24:00, so
+    /// clamping inside today landed on the hour already under way, a default that was already past.
+    static func nextHourSlot(after now: Date, calendar: Calendar = .current) -> (dateKey: String, startMin: Int) {
+        let today = calendar.startOfDay(for: now)
+        let hour = calendar.component(.hour, from: now) + 1
+        if hour >= CadenceScheduleSupport.calendarEndHour,
+           let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) {
+            return (DateFormatters.dateKey(from: tomorrow, calendar: calendar), CadenceScheduleSupport.calendarStartHour * 60)
+        }
+        return (
+            DateFormatters.dateKey(from: today, calendar: calendar),
+            max(hour, CadenceScheduleSupport.calendarStartHour) * 60
+        )
     }
 
     /// What a capture card's **task** draft hands `TaskCreationService` ([[T-13792]]): the

@@ -80,6 +80,79 @@ struct CadenceMacNewTaskCaptureCardTests {
         #expect(draft.subtaskTitles == ["Notes"])
     }
 
+    // MARK: - The default time late at night ([[T-17748]])
+
+    /// A fixed calendar and zone, so the hour and the day keys are the host's in no run.
+    private static let nightCalendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        return calendar
+    }()
+
+    private static func at(_ hour: Int, _ minute: Int) -> Date {
+        nightCalendar.date(from: DateComponents(year: 2026, month: 6, day: 10, hour: hour, minute: minute))!
+    }
+
+    private static func lateDraft(_ kind: CadenceScheduleDraftKind, hour: Int = 23, minute: Int = 40) -> CadenceScheduleDraft {
+        CadenceTaskComposerSupport.captureDraft(
+            seed: TaskCreationSeed().composerSeed, initialKind: kind,
+            now: at(hour, minute), calendar: nightCalendar
+        )
+    }
+
+    /// Opened at 11:40 PM, the Event arm offers tomorrow's midnight, not 11 PM tonight.
+    @Test func anEventOpenedAfterElevenOffersTomorrowsMidnight() {
+        let event = Self.lateDraft(.event)
+        #expect(event.startDateKey == "2026-06-11")
+        #expect(event.endDateKey == "2026-06-11")
+        #expect(event.startMin == 0)
+        #expect(event.endMin == CadenceScheduleDraft.quickCreateLengthMinutes)
+    }
+
+    /// The task arm opens with no do date, and a time added to it lands on that same midnight --
+    /// not on today, where it would be almost a day gone.
+    @Test func aTimeAddedToATaskAfterElevenLandsOnTomorrow() {
+        var task = Self.lateDraft(.task)
+        #expect(task.startDateKey.isEmpty, "the bare card still files nothing on a day")
+        task.addTime(today: "2026-06-10")
+        #expect(task.startDateKey == "2026-06-11")
+        #expect(task.scheduledStartMin == 0)
+    }
+
+    /// Switching the late task to Event takes the same day the Event arm would have opened on.
+    @Test func aLateTaskSwitchedToEventOpensOnTomorrow() {
+        var draft = Self.lateDraft(.task)
+        var memory = CadenceCaptureKindMemory()
+        memory.select(.event, draft: &draft)
+        #expect(draft.startDateKey == "2026-06-11")
+        #expect(draft.startMin == 0)
+        #expect(!draft.isAllDay)
+    }
+
+    /// Before 11 PM nothing moves: the next hour is still today's.
+    @Test func beforeElevenTheNextHourIsTodays() {
+        let event = Self.lateDraft(.event, hour: 22, minute: 10)
+        #expect(event.startDateKey == "2026-06-10")
+        #expect(event.startMin == 23 * 60)
+        var task = Self.lateDraft(.task, hour: 22, minute: 10)
+        #expect(task.timeFallbackDateKey.isEmpty)
+        task.addTime(today: "2026-06-10")
+        #expect(task.startDateKey == "2026-06-10")
+        #expect(task.scheduledStartMin == 23 * 60)
+    }
+
+    /// A seeded day is the user's: it is kept, and the offered time stays inside it.
+    @Test func aSeededDayIsKeptLateAtNight() {
+        var seed = TaskCreationSeed()
+        seed.doDateKey = "2026-06-10"
+        let event = CadenceTaskComposerSupport.captureDraft(
+            seed: seed.composerSeed, initialKind: .event, now: Self.at(23, 40), calendar: Self.nightCalendar
+        )
+        #expect(event.startDateKey == "2026-06-10")
+        #expect(event.startMin == 23 * 60)
+        #expect(event.timeFallbackDateKey.isEmpty)
+    }
+
     // MARK: - The keyboard layer
 
     private static func blankTask() -> CadenceScheduleDraft {

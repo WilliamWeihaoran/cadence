@@ -290,11 +290,9 @@ struct CadenceCaptureKindMemory {
         next.title = draft.title
         next.notes = draft.notes
         if kind == .event, remembered == nil {
-            next.isAllDay = false
-            if next.startDateKey.isEmpty {
-                next.startDateKey = DateFormatters.todayKey()
-                next.endDateKey = next.startDateKey
-            }
+            // An event opens timed, on the task's day or the day an added time would take
+            // ([[T-17748]]: tomorrow, past 11 PM) -- the same rule as the task's own Add time.
+            next.addTime()
         }
         draft = next
     }
