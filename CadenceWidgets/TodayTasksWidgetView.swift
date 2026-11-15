@@ -153,7 +153,7 @@ struct TodayTasksWidgetView: View {
                 let queueTasks = Array(entry.snapshot.tasks.dropFirst().prefix(widgetFamily.cadenceLayout.todayTaskLimit - 1))
                 if !queueTasks.isEmpty {
                     taskStackCard(
-                        title: "Actionable queue",
+                        title: CadenceTodayWidgetCopy.upNextTitle,
                         subtitle: queueSubtitle,
                         tasks: queueTasks
                     )
@@ -406,7 +406,7 @@ struct TodayTasksWidgetView: View {
                     .foregroundStyle(Theme.text)
 
                 if tasks.isEmpty {
-                    Text("No more tasks in this lane.")
+                    Text(CadenceTodayWidgetCopy.emptyColumnMessage)
                         .font(.system(size: scale.bodyFontSize, weight: .medium))
                         .foregroundStyle(Theme.subdued)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

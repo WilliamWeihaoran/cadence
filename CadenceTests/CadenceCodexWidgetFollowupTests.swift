@@ -426,11 +426,24 @@ struct CadenceCodexWidgetFollowupTests {
         for sentence in sentences {
             #expect(!sentence.localizedCaseInsensitiveContains("hot path"), "\(sentence)")
         }
+        // [[T-17790]]: the large tile's second card was "Actionable queue" and an empty
+        // extra-large column "No more tasks in this lane." -- no app screen calls today's tasks
+        // a queue or a lane.
+        #expect(CadenceTodayWidgetCopy.upNextTitle == "Up next")
+        #expect(CadenceTodayWidgetCopy.emptyColumnMessage == "Nothing else here.")
+        for sentence in [CadenceTodayWidgetCopy.upNextTitle, CadenceTodayWidgetCopy.emptyColumnMessage] {
+            for jargon in ["queue", "lane", "actionable"] {
+                #expect(!sentence.localizedCaseInsensitiveContains(jargon), "\(sentence) says \(jargon)")
+            }
+        }
 
         let read = CadenceSourceScan.strippedSourceReader()
         let today = try read("CadenceWidgets/TodayTasksWidgetView.swift")
         #expect(!today.localizedCaseInsensitiveContains("hot path"), "the Today widget types \"hot path\" again")
-        #expect(CadenceSourceScan.matchCount("CadenceTodayWidgetCopy\\.(emptyTitle|emptyMessage|queueSubtitle)", in: today) == 3)
+        #expect(CadenceSourceScan.matchCount("CadenceTodayWidgetCopy\\.(emptyTitle|emptyMessage|queueSubtitle|upNextTitle|emptyColumnMessage)", in: today) == 5)
+        for retired in ["\"Actionable queue\"", "\"No more tasks in this lane.\""] {
+            #expect(!today.contains(retired), "the Today widget types \(retired) again")
+        }
     }
 
     /// T-10001: two cards lay flat among lifted siblings -- the Today extra-large focus strip's

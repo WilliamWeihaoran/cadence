@@ -208,6 +208,10 @@ nonisolated enum CadenceTodayWidgetCopy {
     static let emptyTitle = "Nothing planned today"
     /// Drawn at `systemSmall` only, under `emptyTitle` (the centred card on larger tiles drops it).
     static let emptyMessage = "Your day is clear right now."
+    /// The large tile's second card, under the top task ([[T-17790]]: it read "Actionable queue").
+    static let upNextTitle = "Up next"
+    /// An empty column on the extra-large tile ([[T-17790]]: it read "No more tasks in this lane.").
+    static let emptyColumnMessage = "Nothing else here."
 
     /// The subtitle of the large tile's queue card, by the most urgent state the snapshot holds.
     static func queueSubtitle(overdueCount: Int, dueTodayCount: Int) -> String {
