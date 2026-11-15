@@ -1065,7 +1065,7 @@ struct CadenceMacPageAccessibilityAuditTests {
         let event = try dense("Cadence/macOS/Views/TimelineEventBlock.swift", "struct TimelineEventBlock")
         #expect(event.contains(".onTapGesture{handleBlockTap()}"), "non-vacuity: the event block's click moved")
         #expect(event.contains(
-            ".accessibilityElement(children:.ignore).accessibilityLabel(CadenceCalendarDayAccessibility.timedEventLabel(title:item.title,timeRange:timeRangeLabel)).accessibilityAddTraits(.isButton).accessibilityAction{handleBlockTap()}"
+            ".accessibilityElement(children:.ignore).accessibilityLabel(CadenceCalendarDayAccessibility.timedEventLabel(title:item.title,timeRange:timeRangeLabel,isCancelled:isCancelled)).accessibilityAddTraits(.isButton).accessibilityAction{handleBlockTap()}"
         ), "the Mac event block is not one named button acting through handleBlockTap")
 
         let task = try dense("Cadence/macOS/Views/TimelineTaskBlock.swift", "struct TimelineTaskBlock")

@@ -198,9 +198,16 @@ nonisolated enum CadenceCalendarDayAccessibility {
     /// **A timed event's block** — iOS's `iOSCalendarEventBlock` spelling since [[T-5356]], and the
     /// Mac `TimelineEventBlock`'s since [[T-8721]]: `"Standup, 9:00 – 9:30 AM"`. The same shape as
     /// `timedTaskLabel` without the state word, because an event has no done state to announce.
-    static func timedEventLabel(title: String, timeRange: String) -> String {
-        "\(title), \(timeRange)"
+    ///
+    /// [[T-18007]]: an organizer-cancelled event stays on the grid, struck through and dimmed, and
+    /// says so — the one state word an event has.
+    static func timedEventLabel(title: String, timeRange: String, isCancelled: Bool = false) -> String {
+        let label = "\(title), \(timeRange)"
+        return isCancelled ? "\(label), \(cancelledPhrase)" : label
     }
+
+    /// The state word `timedEventLabel` appends to a cancelled event. Lowercase, spoken after a comma.
+    static let cancelledPhrase = "cancelled"
 
     /// The state word `timedTaskLabel` appends. Lowercase because it is spoken after a comma.
     static let completedPhrase = "completed"

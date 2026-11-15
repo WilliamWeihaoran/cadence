@@ -2507,6 +2507,9 @@ private struct iOSCalendarEventBlock: View {
     /// nothing on Day, Week or Today's pane while the same event opened from Month and the Board.
     let onOpen: () -> Void
 
+    /// [[T-18007]]: an organizer-cancelled event is drawn struck through and dimmed.
+    private var isCancelled: Bool { CadenceCalendarEventVisibility.isCancelled(event) }
+
     private var calendarColor: Color {
         iOSCalendarEventSupport.color(for: event.calendar)
     }
@@ -2529,6 +2532,7 @@ private struct iOSCalendarEventBlock: View {
         Text(iOSCalendarEventSupport.title(for: event))
             .cadenceFont(.metadata, base: 11, weight: .semibold)
             .foregroundStyle(CadenceCalendarEventStyle.railTitleColor(for: calendarColor))
+            .strikethrough(isCancelled)
     }
 
     /// T-3323: a word too wide for the title's line ends the title in an ellipsis on one line
@@ -2599,13 +2603,15 @@ private struct iOSCalendarEventBlock: View {
                 lineWidth: 1
             )
         }
+        .opacity(isCancelled ? CadenceCalendarEventVisibility.cancelledOpacity : 1)
         .contentShape(blockShape)
         .onTapGesture { onOpen() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             CadenceCalendarDayAccessibility.timedEventLabel(
                 title: iOSCalendarEventSupport.title(for: event),
-                timeRange: CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin)
+                timeRange: CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin),
+                isCancelled: isCancelled
             )
         )
         .accessibilityAddTraits(.isButton)

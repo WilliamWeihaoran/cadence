@@ -121,7 +121,8 @@ final class iOSCalendarManager {
         guard !isEventKitDisarmed, isAuthorized, !availableCalendars.isEmpty else { return [] }
         let bounds = dayBounds(for: date)
         let predicate = store.predicateForEvents(withStart: bounds.start, end: bounds.end, calendars: availableCalendars)
-        return store.events(matching: predicate)
+        // [[T-18007]]: a declined invitation is hidden, as the Mac day cache hides it.
+        return CadenceCalendarEventVisibility.shown(store.events(matching: predicate))
             .sorted(by: CadenceCalendarEventSearchSupport.precedes)
     }
 
@@ -163,7 +164,7 @@ final class iOSCalendarManager {
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: availableCalendars)
 
         return CadenceCalendarEventSearchSupport.results(
-            from: store.events(matching: predicate),
+            from: CadenceCalendarEventVisibility.shown(store.events(matching: predicate)),
             query: query,
             now: now
         )

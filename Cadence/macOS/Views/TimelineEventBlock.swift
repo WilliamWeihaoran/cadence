@@ -57,6 +57,9 @@ struct TimelineEventBlock: View {
     /// offers no gesture that would ask for one ([[T-5241]]).
     private var isEditable: Bool { CalendarEventEditPopover.isEditable(item.ekEvent) }
 
+    /// [[T-18007]]: an organizer-cancelled event is drawn struck through and dimmed.
+    private var isCancelled: Bool { CadenceCalendarEventVisibility.isCancelled(item.ekEvent) }
+
     var body: some View {
         eventBlockBody
             .frame(width: frame.width, height: frame.height)
@@ -93,7 +96,11 @@ struct TimelineEventBlock: View {
             // `handleBlockTap()` as its action. Before the overlays, so the resize strips stay out.
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(
-                CadenceCalendarDayAccessibility.timedEventLabel(title: item.title, timeRange: timeRangeLabel)
+                CadenceCalendarDayAccessibility.timedEventLabel(
+                    title: item.title,
+                    timeRange: timeRangeLabel,
+                    isCancelled: isCancelled
+                )
             )
             .accessibilityAddTraits(.isButton)
             .accessibilityAction { handleBlockTap() }
@@ -450,6 +457,7 @@ struct TimelineEventBlock: View {
                         .foregroundStyle(secondaryLabelColor)
                     Text(item.title)
                         .font(.system(size: 11, weight: .semibold))
+                        .strikethrough(isCancelled)
                         .foregroundStyle(
                             CadenceCalendarEventStyle.railTitleColor(
                                 for: item.calendarColor,
@@ -555,6 +563,7 @@ struct TimelineEventBlock: View {
             x: 0,
             y: TimelineHoverVisuals.shadowY(isActive: isHovered || isSelected, active: 5, idle: 3)
         )
+        .opacity(isCancelled ? CadenceCalendarEventVisibility.cancelledOpacity : 1)
     }
 
     private var timeRangeLabel: String {

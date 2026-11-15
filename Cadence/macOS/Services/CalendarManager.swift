@@ -429,7 +429,8 @@ final class CalendarManager {
         guard !calendars.isEmpty else { return [] }
         let bounds = dayBounds(for: date)
         let predicate = store.predicateForEvents(withStart: bounds.start, end: bounds.end, calendars: calendars)
-        return store.events(matching: predicate).filter { !$0.isAllDay }
+        // [[T-18007]]: a declined invitation is hidden on both platforms.
+        return CadenceCalendarEventVisibility.shown(store.events(matching: predicate)).filter { !$0.isAllDay }
     }
 
     /// Fetch all all-day events for a specific day.
@@ -439,7 +440,7 @@ final class CalendarManager {
         guard !calendars.isEmpty else { return [] }
         let bounds = dayBounds(for: date)
         let predicate = store.predicateForEvents(withStart: bounds.start, end: bounds.end, calendars: calendars)
-        return store.events(matching: predicate).filter { $0.isAllDay }
+        return CadenceCalendarEventVisibility.shown(store.events(matching: predicate)).filter { $0.isAllDay }
     }
 
     /// Returns an EKEvent from the store by its identifier.
@@ -542,7 +543,7 @@ final class CalendarManager {
         let start = Calendar.current.date(byAdding: .day, value: -max(0, pastDays), to: now) ?? now
         let end = Calendar.current.date(byAdding: .day, value: max(0, futureDays), to: now) ?? now
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: calendars)
-        return store.events(matching: predicate)
+        return CadenceCalendarEventVisibility.shown(store.events(matching: predicate))
     }
 
     // MARK: - Update External Event (iCal event edited in Cadence)
