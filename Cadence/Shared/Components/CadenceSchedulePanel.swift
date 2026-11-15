@@ -481,11 +481,15 @@ struct CadenceSchedulePanel<NotesField: View>: View {
 
                 CadenceFieldDivider()
                 doTimeRow
-                if offersTaskRepeat {
-                    CadenceFieldDivider()
-                    repeatRow
-                    seriesEndRows
-                }
+            }
+
+            // [[T-17851]]: the series is stated on the plate, outside the Do disclosure, as the
+            // iOS task sheet draws it. Inside the expansion, a repeating task's Mac inspector read
+            // "Do  Today" with nothing saying it repeats until the grid was opened.
+            if offersTaskRepeat {
+                CadenceFieldDivider()
+                repeatRow
+                seriesEndRows
             }
         }
 
@@ -752,8 +756,9 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         if draft.showsSeriesEndRows {
             CadenceFieldDivider()
             CadenceFieldRow(label: "Ends", systemImage: draft.effectiveSeriesEndMode.systemImage, color: Theme.purple) {
+                // [[T-17851]]: "3 of 5" / "Until Nov 20" on an existing series, as iOS reads it.
                 CadenceChoiceValueButton(
-                    title: draft.effectiveSeriesEndMode.label,
+                    title: draft.seriesEndValueLabel,
                     color: draft.effectiveSeriesEndMode == .never ? Theme.dim : Theme.text
                 ) {
                     showSeriesEndPicker = true
@@ -1239,6 +1244,20 @@ extension CadenceScheduleDraft {
     /// The Ends rows are drawn only under a Repeat that repeats.
     var showsSeriesEndRows: Bool {
         CadenceTaskRecurrenceEndPresentation.showsEndControls(rule: repeatRule)
+    }
+
+    /// **The Ends row's value, on every platform** ([[T-17851]]). An existing series reads
+    /// `CadenceTaskRecurrenceEndPresentation.valueLabel` -- "3 of 5", "Until Nov 20" -- because
+    /// where the series is is the one fact no other row states. A series being created has no
+    /// position yet, so it names its mode ("After", "On Date"), which the row beneath it fills in.
+    var seriesEndValueLabel: String {
+        guard subject.isEditing else { return effectiveSeriesEndMode.label }
+        return CadenceTaskRecurrenceEndPresentation.valueLabel(
+            mode: effectiveSeriesEndMode,
+            endDateKey: seriesEndDateKey,
+            occurrenceNumber: seriesOccurrenceNumber,
+            endCount: seriesEndCount
+        )
     }
 
     /// The After stepper's bounds: never below one or the occurrence already reached, and never

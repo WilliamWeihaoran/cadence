@@ -86,10 +86,10 @@ struct iOSTaskFieldListSection: View {
 
     // MARK: - Ends
 
-    /// States the bound and opens the mode picker. The value is
-    /// `CadenceTaskRecurrenceEndPresentation.valueLabel`, which is the same sentence macOS's
-    /// inspector puts under its Repeat row — including "3 of 5", which is the one fact about a
-    /// counted series that this sheet has nowhere else to say.
+    /// States the bound and opens the mode picker. The value is `draft.seriesEndValueLabel` --
+    /// `CadenceTaskRecurrenceEndPresentation.valueLabel` on an existing series, the same value the
+    /// Mac inspector's Ends row reads since [[T-17851]] -- including "3 of 5", which is the one fact
+    /// about a counted series that this sheet has nowhere else to say.
     ///
     /// It reads `effectiveSeriesEndMode`, not the stored mode: a mode whose value cannot
     /// be honoured (an `.onDate` with no date) already behaves as `.never` everywhere else, so
@@ -101,12 +101,7 @@ struct iOSTaskFieldListSection: View {
             color: Theme.purple
         ) {
             iOSChoiceValueButton(
-                title: CadenceTaskRecurrenceEndPresentation.valueLabel(
-                    mode: draft.effectiveSeriesEndMode,
-                    endDateKey: draft.seriesEndDateKey,
-                    occurrenceNumber: draft.seriesOccurrenceNumber,
-                    endCount: draft.seriesEndCount
-                ),
+                title: draft.seriesEndValueLabel,
                 color: draft.effectiveSeriesEndMode == .never ? Theme.dim : Theme.text,
                 minHeight: 44
             ) {

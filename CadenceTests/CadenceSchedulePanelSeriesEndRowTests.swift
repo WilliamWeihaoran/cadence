@@ -217,6 +217,59 @@ struct CadenceSchedulePanelSeriesEndRowTests {
         #expect(panel.contains("set: { draft.setSeriesEndDate($0) }"))
         #expect(panel.contains("set: { draft.setSeriesEndCount($0) }"))
     }
+
+    // MARK: The series is stated, and says where it is ([[T-17851]])
+
+    /// An existing series' Ends value is `valueLabel` -- the position ("3 of 5") or the last day --
+    /// and a series being created, which has no position, names its mode.
+    @Test func theEndsValueSaysWhereAnExistingSeriesIsAndNamesTheModeOnANewOne() throws {
+        var editing = Self.weekly(.task)
+        editing.subject = .editingTask(UUID())
+        editing.seriesOccurrenceNumber = 3
+        editing.selectSeriesEnd(.afterCount)
+        editing.setSeriesEndCount(5)
+        #expect(editing.seriesEndValueLabel == "3 of 5")
+
+        editing.selectSeriesEnd(.onDate, reference: try Self.day("2026-10-21"), calendar: Self.calendar)
+        #expect(editing.seriesEndValueLabel.hasPrefix("Until "), "\(editing.seriesEndValueLabel)")
+
+        editing.selectSeriesEnd(.never)
+        #expect(editing.seriesEndValueLabel == TaskRecurrenceEndMode.never.label)
+
+        var creating = Self.weekly(.task)
+        creating.selectSeriesEnd(.afterCount)
+        #expect(creating.seriesEndValueLabel == TaskRecurrenceEndMode.afterCount.label)
+    }
+
+    /// The Mac Ends row and the iOS sheet's read the one value.
+    @Test func bothEndsRowsReadTheOneValue() throws {
+        let panel = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+        )
+        let rows = try #require(CadenceSourceScan.declarationBody("private var seriesEndRows: some View", in: panel))
+        #expect(rows.contains("title: draft.seriesEndValueLabel"))
+        #expect(!rows.contains("title: draft.effectiveSeriesEndMode.label"), "the Mac Ends row names only the mode again")
+        let sheet = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailSheetSections.swift")
+        )
+        let ends = try #require(CadenceSourceScan.declarationBody("private var endsRow: some View", in: sheet))
+        #expect(ends.contains("title: draft.seriesEndValueLabel"))
+    }
+
+    /// **Repeat and Ends sit outside the Do disclosure** -- a repeating task's inspector opens with
+    /// every row closed, and inside the expansion nothing said the task repeats.
+    @Test func theTaskArmStatesTheSeriesOutsideTheDoDisclosure() throws {
+        let panel = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+        )
+        let arm = try #require(CadenceSourceScan.declarationBody("private var taskSchedule: some View", in: panel))
+        let expanded = try #require(CadenceSourceScan.declarationBody("if isDoExpanded", in: arm))
+        #expect(expanded.contains("doTimeRow"), "non-vacuity: this is not the Do expansion")
+        #expect(!expanded.contains("repeatRow"), "Repeat is hidden until Do is opened again")
+        #expect(!expanded.contains("seriesEndRows"), "Ends is hidden until Do is opened again")
+        let series = try #require(CadenceSourceScan.declarationBody("if offersTaskRepeat", in: arm))
+        #expect(series.filter { !$0.isWhitespace }.contains("repeatRowseriesEndRows"))
+    }
 }
 
 /// **The After stepper row is on the Ends row's rhythm** ([[T-8901]]).
