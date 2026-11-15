@@ -533,8 +533,10 @@ struct CadenceUnmanagedStoreDirectoryTests {
             !source.contains("not even when you delete all Cadence data"),
             "the Other Backup Folders card still says the reset spares these, which T-8981 made false"
         )
+        // [[T-17817]]: the sentence is a shared constant now, and names the reset by its button.
         #expect(
-            source.contains("deleting all Cadence data deletes them"),
+            source.contains("Text(CadenceUnmanagedStoreCopy.macBackupFoldersDetail)")
+                && CadenceUnmanagedStoreCopy.macBackupFoldersDetail.contains("\(CadenceDataResetCopy.title) deletes them"),
             "the Other Backup Folders card does not say the reset takes them (T-8981)"
         )
     }

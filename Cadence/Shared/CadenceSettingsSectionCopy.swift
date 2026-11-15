@@ -268,7 +268,12 @@ nonisolated enum CadenceNotificationSettingsCopy {
     /// than two: T-484 named the toggle after its own row precisely so the two could not drift, and
     /// spelling them separately is how that drift starts. Pinned by
     /// `CadenceControlAccessibilityLabelTests.theFiveNamedTogglesTakeTheirNameFromTheirOwnRow`.
-    static let remindersToggleTitle = "Enable reminders"
+    ///
+    /// **[[T-17815]].** It said "Enable reminders", two rows from the Settings category named
+    /// "Reminders" -- which is Apple Reminders, the same one-word-two-meanings clash [[T-578]]
+    /// removed from this pane's heading -- and an "Enable" verb on a switch reads the same whether
+    /// the switch is on or off. It names the thing the switch governs: the notifications tasks send.
+    static let remindersToggleTitle = "Task notifications"
 
     /// Says what is scheduled and that it stays on the device. "Locally" is load-bearing: nothing
     /// here goes through a push server, and the reader has just been asked for a system permission.
@@ -617,6 +622,16 @@ nonisolated enum CadenceUnmanagedStoreCopy {
     /// Where to copy one to is deliberately unsaid: macOS can open Finder on the folder and iOS
     /// has no Files route into Cadence's container, which is the same split `whatCadenceDoesNotDo`
     /// records, and a sentence vague enough to be true on both would say nothing on either.
+    /// The Mac's "Other Backup Folders" card sentence ([[T-17817]]). Since [[T-8981]] it read
+    /// "nothing on this screen removes them" and then "deleting all Cadence data deletes them" --
+    /// on the screen that holds the Delete Account & Data button. True now: the rows only reveal,
+    /// and the reset, named by its button title, is the one control here that deletes them.
+    static let macBackupFoldersDetail =
+        "Earlier versions of Cadence kept the store somewhere else and left these copies behind. "
+        + "Cadence does not add to them, thin them, or read them on a normal launch. Each is a "
+        + "complete copy of a Cadence store, so \(CadenceDataResetCopy.title) deletes them; nothing "
+        + "else on this screen removes them. Remove them in Finder if you want the space back sooner."
+
     static let backupsBesideThem =
         "It also deletes the Cadence Store Backups folders sitting beside those earlier store "
         + "locations. Each of those is a complete copy of a Cadence store, so if you are keeping "
@@ -648,6 +663,10 @@ nonisolated enum CadenceDataSafetyPrivacyCopy {
 /// is recorded separately as an owner call.
 nonisolated enum CadenceSidebarSettingsCopy {
     static let sectionTitle = "Sidebar Rows"
+
+    /// The Mac row editor's Visible switch detail ([[T-17816]]). It said "hide the tab" under a
+    /// card this enum had already renamed to rows, beside a store refusal that says rows too.
+    static let visibilityDetail = "Turn this off to hide the row without losing its place."
 }
 
 /// Glyphs for the Settings buttons that are not access requests ([[T-11199]], under [[T-8201]]).

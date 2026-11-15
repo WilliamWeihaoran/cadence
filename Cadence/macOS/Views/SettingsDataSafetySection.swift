@@ -206,7 +206,7 @@ struct SettingsDataSafetySection: View {
                             // the reset takes these now, and a screen that says otherwise beside
                             // the button that does it is worse than one that says nothing. The
                             // row still carries no delete ([[T-1532]]); what changed is the reset.
-                            Text("Earlier versions of Cadence kept the store somewhere else and left these copies behind. Cadence does not add to them, thin them, or read them on a normal launch, and nothing on this screen removes them. Each is a complete copy of a Cadence store, so deleting all Cadence data deletes them. Remove them in Finder if you want the space back sooner.")
+                            Text(CadenceUnmanagedStoreCopy.macBackupFoldersDetail)
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)

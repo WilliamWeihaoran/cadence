@@ -164,4 +164,40 @@ struct CadenceSettingsSurfaceParityTests {
         #expect(card.lowerBound < export.lowerBound, "the Privacy card is no longer above the export card")
         #expect(CadenceSourceScan.matchCount("iOSPrivacyStatementSettingsSection\\(\\)", in: screen) == 1)
     }
+
+    // MARK: - hunt0201b: three Settings sentences that said something false
+
+    /// [[T-17815]]: the Notifications switch said "Enable reminders" two rows from the Settings
+    /// category "Reminders", which is Apple Reminders. It names what it governs, and the word
+    /// that belongs to the other pane is gone from it.
+    @Test func theNotificationsSwitchDoesNotBorrowTheRemindersPanesName() {
+        let title = CadenceNotificationSettingsCopy.remindersToggleTitle
+        #expect(title == "Task notifications")
+        #expect(!title.localizedCaseInsensitiveContains("reminder"), "the switch says reminders again")
+        #expect(!title.hasPrefix("Enable"), "the switch label is a verb again")
+    }
+
+    /// [[T-17816]]: the Mac row editor's Visible switch said "hide the tab" under the card this
+    /// file's first test renamed to rows.
+    @Test func theSidebarRowEditorSaysRowNotTab() throws {
+        let detail = CadenceSidebarSettingsCopy.visibilityDetail
+        #expect(detail.contains("the row"))
+        #expect(!detail.localizedCaseInsensitiveContains("tab"), "the detail says tab again")
+        let sheet = try Self.body("struct SidebarTabEditorSheet: View", in: "Cadence/macOS/Views/SettingsSupportViews.swift")
+        #expect(sheet.contains("detail: CadenceSidebarSettingsCopy.visibilityDetail"), "the sheet no longer reads the shared detail")
+        #expect(!sheet.contains("hide the tab"), "the sheet types its own detail beside the shared one")
+    }
+
+    /// [[T-17817]]: the Mac's Other Backup Folders sentence said "nothing on this screen removes
+    /// them" and, two clauses later, that deleting all data deletes them -- on the screen holding
+    /// that button. It names the button, and claims only that nothing ELSE here removes them.
+    @Test func theMacBackupFoldersSentenceDoesNotContradictTheResetBesideIt() throws {
+        let detail = CadenceUnmanagedStoreCopy.macBackupFoldersDetail
+        #expect(detail.contains("so \(CadenceDataResetCopy.title) deletes them"), "the sentence no longer names the reset that deletes them")
+        #expect(!detail.contains("nothing on this screen removes them"), "the sentence denies the reset beside it again")
+        #expect(detail.contains("nothing else on this screen removes them"))
+        let pane = try Self.code("Cadence/macOS/Views/SettingsDataSafetySection.swift")
+        #expect(pane.contains("Text(CadenceUnmanagedStoreCopy.macBackupFoldersDetail)"), "the pane no longer reads the shared sentence")
+        #expect(!pane.contains("Earlier versions of Cadence kept"), "the pane types its own sentence beside the shared one")
+    }
 }

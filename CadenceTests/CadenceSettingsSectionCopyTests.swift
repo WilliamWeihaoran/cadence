@@ -110,7 +110,7 @@ struct CadenceSettingsSectionCopyTests {
     ]
 
     private static let notificationPairs: [(expression: String, literal: String)] = [
-        ("CadenceNotificationSettingsCopy.remindersToggleTitle", "Enable reminders"),
+        ("CadenceNotificationSettingsCopy.remindersToggleTitle", "Task notifications"),
         (
             "CadenceNotificationSettingsCopy.remindersToggleDetail",
             "A task's scheduled start and due date notify you locally."
@@ -1135,7 +1135,7 @@ struct CadenceSettingsSectionCopyTests {
         #expect(CadenceAISettingsCopy.deleteAPIKeyAction == "Delete API Key")
         #expect(CadenceAISettingsCopy.testingConnectionStatus == "Testing…")
 
-        #expect(CadenceNotificationSettingsCopy.remindersToggleTitle == "Enable reminders")
+        #expect(CadenceNotificationSettingsCopy.remindersToggleTitle == "Task notifications")
         #expect(
             CadenceNotificationSettingsCopy.remindersToggleDetail
                 == "A task's scheduled start and due date notify you locally."

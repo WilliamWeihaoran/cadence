@@ -492,7 +492,7 @@ struct SidebarTabEditorSheet: View {
 
             CadenceSettingsNoticeRow(
                 title: "Visible in Sidebar",
-                detail: "Turn this off to hide the tab without losing its place."
+                detail: CadenceSidebarSettingsCopy.visibilityDetail
             ) {
                 // `.labelsHidden()` is new alongside the name: an empty label already drew
                 // nothing, and a named one without it would put the title on screen twice.
