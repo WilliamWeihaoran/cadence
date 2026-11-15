@@ -91,7 +91,8 @@ struct CadenceTaskInlinePanel: View {
                 projects: projects,
                 selection: containerChoice
             ),
-            sectionChoices: CadenceTaskMutationSupport.sectionNames(forArea: selectedArea, project: selectedProject),
+            // [[T-17852]]: empty for the Inbox, as on create, so the Section row greys out.
+            sectionChoices: CadenceScheduleDraftChoices.sectionChoices(for: draft, areas: areas, projects: projects),
             failureNotice: saveFailureNotice,
             titleStatus: titleStatus,
             offersTaskRepeat: true,

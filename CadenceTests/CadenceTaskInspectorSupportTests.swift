@@ -263,4 +263,30 @@ struct CadenceTaskInspectorSupportTests {
         #expect(!macBody.contains("task.isDone ? Theme.dim : Theme.green"),
                 "the Mac spells its own completion tint again")
     }
+
+    // MARK: - The Mac inspector's refusals ([[T-17853]])
+
+    /// A refused Save reads the multi-field sentence its iOS and note-embed siblings read for the
+    /// same refusal of the same commit, and a refused pending subtask is said once -- by the
+    /// Subtasks section, never again by the panel's failure line.
+    @Test
+    func theMacInspectorsRefusalsMatchItsSiblingsAndSayTheSubtaskOnce() throws {
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift")
+        )
+        let editor = try #require(CadenceSourceScan.declarationBody("struct TaskInspectorScheduleEditor<", in: mac))
+        let apply = try #require(CadenceSourceScan.functionBody(named: "applySave", in: editor))
+        #expect(apply.contains("else { return CadencePendingChangePersistence.editFailureNotice }"))
+        #expect(!apply.contains("CadenceTaskFieldEditCommit.saveFailureNotice"), "the one-field sentence again")
+        let save = try #require(CadenceSourceScan.functionBody(named: "save", in: editor))
+        #expect(save.contains("guard beforeSave() else { return nil }"))
+        #expect(!save.contains("subtaskAddFailureNotice"), "the panel repeats the Subtasks section's notice")
+
+        // The one place it is said: the popover's own insert, drawn under its Subtasks section.
+        let popover = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SchedulePanelComponents.swift")
+        )
+        #expect(CadenceSourceScan.matchCount(#"CadenceTaskInspectorSupport\.subtaskAddFailureNotice"#, in: popover) == 1)
+        #expect(popover.contains("if let subtaskFailureNotice { CadenceInlineFailureNotice(text: subtaskFailureNotice) }"))
+    }
 }

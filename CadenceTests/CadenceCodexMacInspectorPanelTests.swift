@@ -274,7 +274,7 @@ struct CadenceCodexMacInspectorPanelTests {
         #expect(editor.contains("@State private var openedDraft"))
         let applySave = try #require(CadenceSourceScan.functionBody(named: "applySave", in: editor))
         #expect(applySave.contains("guard TaskInspectorScheduleCommit.save("))
-        #expect(applySave.contains("else { return CadenceTaskFieldEditCommit.saveFailureNotice }"))
+        #expect(applySave.contains("else { return CadencePendingChangePersistence.editFailureNotice }")) // [[T-17853]]
         #expect(try #require(applySave.range(of: "TaskInspectorScheduleCommit.save(")).lowerBound
                 < #require(applySave.range(of: "dismiss()")).lowerBound)
         #expect(support.contains("flush?.action = flushPendingEditorContent"))

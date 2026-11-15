@@ -77,7 +77,7 @@ struct CadenceSchedulePanelSectionFollowsListTests {
             #expect(!host.isEmpty, "\(path) was not read")
             #expect(host.contains("CadenceTaskComposerSupport.selection(fromToken: draft.listToken)"), "\(path)")
             #expect(
-                host.contains("CadenceTaskMutationSupport.sectionNames(forArea: selectedArea, project: selectedProject)"),
+                host.contains("CadenceScheduleDraftChoices.sectionChoices(for: draft, areas: areas, projects: projects)"),
                 "\(path)"
             )
         }
@@ -113,8 +113,7 @@ struct CadenceSchedulePanelSectionFollowsListTests {
             ("Cadence/macOS/Views/QuickCreateChoicePopover.swift", byDraft),
             ("Cadence/iOS/iOSCreateTaskSheet.swift", byDraft),
             ("Cadence/iOS/iOSCalendarQuickCreateSheet.swift", byDraft),
-            ("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift",
-             "sectionChoices: CadenceTaskMutationSupport.sectionNames(forArea: selectedArea, project: selectedProject)"),
+            ("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift", "sectionChoices: " + byDraft),
         ]
         for host in hosts {
             let code = CadenceSourceScan.codeOnly(source(host.path))
@@ -122,5 +121,55 @@ struct CadenceSchedulePanelSectionFollowsListTests {
             #expect(code.contains("CadenceSchedulePanel("), "\(host.path) no longer hosts the panel")
             #expect(code.contains(host.needle), "\(host.path)")
         }
+    }
+
+    // MARK: Edit hosts grey the Inbox's Section row too ([[T-17852]])
+
+    /// The value: an Inbox draft gets no choices -- the panel's `isEmpty` test is what greys the
+    /// row -- and a list draft gets that list's sections.
+    @Test func anInboxDraftHasNoSectionChoicesAndAListDraftHasItsSections() {
+        var inbox = CadenceScheduleDraft(dateKey: "2026-11-15", startMin: 540)
+        inbox.listToken = CadenceTaskComposerSupport.token(for: .inbox)
+        #expect(CadenceScheduleDraftChoices.sectionChoices(for: inbox, areas: [], projects: []).isEmpty)
+        #expect(!CadenceTaskMutationSupport.sectionNames(forArea: nil, project: nil).isEmpty,
+                "non-vacuity: the raw names are the one-row list the edit hosts used to pass")
+    }
+
+    /// **Every panel host's `sectionChoices:` is the draft rule.** The three EDIT hosts (Mac
+    /// inspector, iOS task sheet, note-embed inline panel) passed `sectionNames(forArea:project:)`,
+    /// which answers `["Default"]` for the Inbox, so the row was live over a one-row picker while
+    /// every create host greyed it out. Counted over every app file, so a new host that re-spells
+    /// the raw names fails here.
+    @Test func everyPanelHostHandsTheDraftRuleAsSectionChoices() throws {
+        let byDraft = "CadenceScheduleDraftChoices.sectionChoices(for: draft, areas: areas, projects: projects)"
+        let files = try CadenceSourceScan.swiftFiles(under: "Cadence")
+        #expect(files.count > 400, "the walk found \(files.count) files, not the app")
+        var hosts: [String] = []
+        var rawCallers: [String] = []
+        for path in files {
+            let code = CadenceSourceScan.codeOnly(source(path))
+            if CadenceSourceScan.matchCount(#"sectionNames\(forArea:"#, in: code) > 0 {
+                rawCallers.append(path)
+            }
+            guard path != "Cadence/Shared/Components/CadenceSchedulePanel.swift",
+                  code.contains("CadenceSchedulePanel("),
+                  CadenceSourceScan.matchCount(#"\bsectionChoices:"#, in: code) > 0 else { continue }
+            hosts.append(path)
+            #expect(code.contains(byDraft), "\(path) hands the panel another section list")
+        }
+        for edit in [
+            "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift",
+            "Cadence/iOS/iOSTaskDetailSheet.swift",
+            "Cadence/Shared/Components/CadenceTaskInlinePanel.swift",
+        ] {
+            #expect(hosts.contains(edit), "non-vacuity: \(edit) was not counted as a host")
+        }
+        #expect(
+            rawCallers.sorted() == [
+                "Cadence/Shared/CadenceScheduleDraftChoices.swift",
+                "Cadence/Shared/CadenceTaskMutationSupport.swift",
+            ],
+            "\(rawCallers.sorted())"
+        )
     }
 }

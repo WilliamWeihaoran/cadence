@@ -697,7 +697,9 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
                 listChoices: CadenceSchedulePanelChoice.editableTaskListChoices(
                     areas: areas, projects: projects, selection: selection
                 ),
-                sectionChoices: CadenceTaskMutationSupport.sectionNames(forArea: selectedArea, project: selectedProject),
+                // [[T-17852]]: the create hosts' rule -- empty for the Inbox, so the row greys out
+                // rather than offering a one-row "Default" picker.
+                sectionChoices: CadenceScheduleDraftChoices.sectionChoices(for: draft, areas: areas, projects: projects),
                 failureNotice: saveFailureNotice,
                 titleStatus: CadenceSchedulePanelTitleStatus(
                     // Cancelled alone since [[T-5015]] (b) retired In Progress; the sibling
@@ -743,8 +745,11 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
         // over the `sectionChoices` above ([[T-8591]], host copy removed under [[T-8601]]).
     }
 
+    /// [[T-17853]]: a refused pending subtask returns `nil` -- the Subtasks section already says
+    /// "Couldn't add this subtask." beneath its field, and the panel's own failure line saying it
+    /// again drew the sentence twice. The popover stays open either way; only Save's dismiss closes it.
     private func save() -> String? {
-        guard beforeSave() else { return CadenceTaskInspectorSupport.subtaskAddFailureNotice }
+        guard beforeSave() else { return nil }
         if TaskInspectorScheduleCommit.needsRecurrenceScope(draft, opened: openedDraft, task: task) {
             isAskingRecurrenceScope = true
             return nil
@@ -756,7 +761,7 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
         guard TaskInspectorScheduleCommit.save(
             draft, opened: openedDraft, to: task, areas: areas, projects: projects, allTasks: allTasks,
             scope: scope, in: modelContext, commit: { try $0.save() }
-        ) else { return CadenceTaskFieldEditCommit.saveFailureNotice }
+        ) else { return CadencePendingChangePersistence.editFailureNotice } // [[T-17853]]: as iOS and the embed say
         dismiss()
         return nil
     }

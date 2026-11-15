@@ -108,8 +108,10 @@ struct iOSTaskDetailSheet: View {
         )
     }
 
+    /// [[T-17852]]: the create hosts' rule -- **empty for the Inbox**, so the panel greys its
+    /// Section row out there instead of offering a picker whose only row is "Default".
     private var sectionChoices: [String] {
-        CadenceTaskMutationSupport.sectionNames(forArea: selectedArea, project: selectedProject)
+        CadenceScheduleDraftChoices.sectionChoices(for: draft, areas: areas, projects: projects)
     }
 
     /// The state the old title card drew beside the words: an eyebrow for the one status a
