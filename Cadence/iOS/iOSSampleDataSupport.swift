@@ -151,6 +151,9 @@ enum iOSSampleDataSupport {
 
     private static func seedReviewNotes(tasks: [AppTask], modelContext: ModelContext) -> Int {
         let notes = CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: modelContext)
+        // [[T-17970]]: the load reads the notepad without creating it; seeding is a writer, so it
+        // asks for the note explicitly.
+        let notepad = notes.notepad ?? (try? NoteMigrationService.permanentNote(in: modelContext))
         var inserted = 0
         let layoutTaskReference = taskReference(
             titled: "[Sample] Review iPad Today layout",
@@ -229,7 +232,7 @@ enum iOSSampleDataSupport {
             inserted += 1
         }
 
-        if let notepad = notes.notepad, shouldReplaceSampleNoteContent(notepad.content) {
+        if let notepad, shouldReplaceSampleNoteContent(notepad.content) {
             CadenceCoreNoteSupport.update(
                 notepad,
                 content: """

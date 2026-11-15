@@ -397,6 +397,9 @@ struct CadenceTagChipScaleTests {
                     "Cadence/macOS/Views/ListDetailView.swift",
                     "Cadence/macOS/Views/ListNotesViewSupportViews.swift",
                     "Cadence/macOS/Views/NoteActionReviewSheets.swift",
+                    // [[T-17970]]: the Today panel's Notepad tab with no note, which it no longer
+                    // creates on open.
+                    "Cadence/macOS/Views/NotePanel.swift",
                     "Cadence/macOS/Views/NotesView.swift",
                     "Cadence/macOS/Views/TasksListView.swift",
                     // T-3197 took `TasksPanel` off this list: Today's "Nothing planned" box is
@@ -576,6 +579,9 @@ struct CadenceTagChipScaleTests {
             "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
             "Cadence/iOS/iOSTaskDetailSheet.swift",
             "Cadence/iOS/iOSSearchView.swift",
+            // [[T-17906]]: an inactive list's notice draws the Settings > Lists row's compact
+            // `iOSActionButton` (Unarchive / Reopen); the page's body is already size-aware.
+            "Cadence/iOS/iOSListDetailView.swift",
         ]
         let controlSites = try controls.sweep(paths, atLeast: 300,
                                              including: "Cadence/iOS/iOSTodayCompactViews.swift", read: read)

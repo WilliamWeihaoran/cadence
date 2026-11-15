@@ -12,7 +12,7 @@ import Testing
 /// `ProgressView()` that a failure would never resolve, with nothing on screen ever saying a
 /// fetch had gone wrong.
 ///
-/// These tests exercise the hoisted overload, `loadOrCreateCoreNotes(today:week:notepad:)`,
+/// These tests exercise the hoisted overload, `loadOrCreateCoreNotes(today:week:notepad:notepadReadFailed:)`,
 /// the same seam `HabitNotificationReconcileSupport.scheduleReconcile` uses for the same reason: an
 /// in-memory `ModelContext` will not reliably fail a fetch or a save on demand, so the failure
 /// path is only reachable by injecting the `nil` a throw would have produced.
@@ -22,7 +22,7 @@ struct CadenceCoreNoteLoadFailureTests {
         let week = Note(kind: .weekly, title: "Week")
         let notepad = Note(kind: .permanent, title: "Notepad")
 
-        let state = CadenceCoreNoteSupport.loadOrCreateCoreNotes(today: today, week: week, notepad: notepad)
+        let state = CadenceCoreNoteSupport.loadOrCreateCoreNotes(today: today, week: week, notepad: notepad, notepadReadFailed: false)
 
         #expect(state.today?.id == today.id)
         #expect(state.week?.id == week.id)
@@ -36,7 +36,7 @@ struct CadenceCoreNoteLoadFailureTests {
         let week = Note(kind: .weekly, title: "Week")
         let notepad = Note(kind: .permanent, title: "Notepad")
 
-        let state = CadenceCoreNoteSupport.loadOrCreateCoreNotes(today: nil, week: week, notepad: notepad)
+        let state = CadenceCoreNoteSupport.loadOrCreateCoreNotes(today: nil, week: week, notepad: notepad, notepadReadFailed: false)
 
         #expect(state.today == nil)
         #expect(state.failedTabs == [.today])
@@ -47,15 +47,15 @@ struct CadenceCoreNoteLoadFailureTests {
     @Test func eachOfTheThreeTabsCanFailIndependently() {
         let today = Note(kind: .daily, title: "Today")
 
-        let weekFailed = CadenceCoreNoteSupport.loadOrCreateCoreNotes(today: today, week: nil, notepad: today)
+        let weekFailed = CadenceCoreNoteSupport.loadOrCreateCoreNotes(today: today, week: nil, notepad: today, notepadReadFailed: false)
         #expect(weekFailed.failedTabs == [.week])
 
-        let notepadFailed = CadenceCoreNoteSupport.loadOrCreateCoreNotes(today: today, week: today, notepad: nil)
+        let notepadFailed = CadenceCoreNoteSupport.loadOrCreateCoreNotes(today: today, week: today, notepad: nil, notepadReadFailed: true)
         #expect(notepadFailed.failedTabs == [.notepad])
     }
 
     @Test func allThreeFailingNamesAllThree() {
-        let state = CadenceCoreNoteSupport.loadOrCreateCoreNotes(today: nil, week: nil, notepad: nil)
+        let state = CadenceCoreNoteSupport.loadOrCreateCoreNotes(today: nil, week: nil, notepad: nil, notepadReadFailed: true)
         #expect(state.failedTabs == Set(CadenceCoreNoteTab.allCases))
         #expect(state.today == nil)
         #expect(state.week == nil)
@@ -67,6 +67,71 @@ struct CadenceCoreNoteLoadFailureTests {
     /// "every fetch threw" matters the same way it does in `CadenceNoteDeletionSummary`.
     @Test func aFreshStateHasNoFailedTabsByDefault() {
         #expect(CadenceCoreNoteState().failedTabs.isEmpty)
+    }
+
+    // MARK: - T-17970: the notepad is read on load, never created
+
+    /// A notepad with no note is "none", not "failed": it lands in `emptyTabs`, and nothing else.
+    @Test func aNotepadThatReadsAsNoneIsEmptyNotFailed() {
+        let today = Note(kind: .daily, title: "Today")
+        let week = Note(kind: .weekly, title: "Week")
+
+        let state = CadenceCoreNoteSupport.loadOrCreateCoreNotes(today: today, week: week, notepad: nil, notepadReadFailed: false)
+
+        #expect(state.notepad == nil)
+        #expect(state.failedTabs.isEmpty)
+        #expect(state.emptyTabs == [.notepad])
+    }
+
+    /// **The defect.** Deleting the last notepad note, then loading the page (an appear, a tab
+    /// switch, a foregrounding), used to insert a blank "Notepad" through `permanentNote(in:)`.
+    @MainActor @Test func loadingAfterTheLastNotepadNoteIsDeletedCreatesNone() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let only = try NoteMigrationService.createPermanentNote(in: context)
+        context.delete(only)
+        try context.save()
+
+        let first = CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: context, dayKey: "2026-11-15")
+        let second = CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: ModelContext(container), dayKey: "2026-11-15")
+
+        let permanent = try ModelContext(container).fetch(FetchDescriptor<Note>()).filter { $0.kind == .permanent }
+        #expect(permanent.isEmpty)
+        #expect(first.notepad == nil && second.notepad == nil)
+        #expect(first.emptyTabs == [.notepad])
+        #expect(first.failedTabs.isEmpty)
+        // The day and week notes keep their create-on-browse.
+        #expect(first.today != nil && first.week != nil)
+    }
+
+    /// With notepad notes present the load returns the oldest — the note `permanentNote(in:)`
+    /// hands every single-editor surface — and still creates nothing.
+    @MainActor @Test func loadingWithNotepadNotesReturnsTheOldestAndAddsNone() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let oldest = try NoteMigrationService.permanentNote(in: context)
+        _ = try NoteMigrationService.createPermanentNote(in: context, title: "Later")
+
+        let state = CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: context, dayKey: "2026-11-15")
+
+        #expect(state.notepad?.id == oldest.id)
+        #expect(state.emptyTabs.isEmpty)
+        #expect(try ModelContext(container).fetch(FetchDescriptor<Note>()).filter { $0.kind == .permanent }.count == 2)
+    }
+
+    /// The Mac pages read without creating too: the Notepad page's appear only selects, and the
+    /// Today panel draws an empty state whose button is its one create.
+    @Test func theMacNotepadSurfacesReadWithoutCreating() throws {
+        let page = CadenceSourceScan.codeOnly(try sourceFile("Cadence/macOS/Views/NotesView.swift"))
+        #expect(page.contains("if !applyRequestedSelection() { selectNewestNotepadNote() }"))
+        #expect(!page.contains("CadenceCoreNoteSupport.note(for: .notepad"))
+        #expect(!page.contains("loadOrCreateNotepad"))
+
+        let panel = CadenceSourceScan.codeOnly(try sourceFile("Cadence/macOS/Views/NotePanel.swift"))
+        #expect(panel.contains("emptyNoteTabs = snapshot.emptyTabs"))
+        #expect(panel.contains("} else if emptyNoteTabs.contains(tab) {"))
+        #expect(CadenceSourceScan.matchCount("NoteMigrationService\\.permanentNote\\(", in: panel) == 1)
+        #expect(panel.contains("{ createNotepadNote() }"))
     }
 
     // MARK: - NotePanel actually reads and shows failedTabs (source scan; macOS-only view)

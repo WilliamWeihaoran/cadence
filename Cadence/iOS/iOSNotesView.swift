@@ -751,9 +751,10 @@ struct iOSNotesView: View {
         showsInlineEditor = false
     }
 
-    /// Keeps the three standing notes for `selectedDayKey` on disk. Creating a day's note by
+    /// Keeps the day and week notes for `selectedDayKey` on disk. Creating a day's note by
     /// browsing to it is deliberate and matches macOS: a blank note is invisible in every list,
-    /// because the lists filter to notes with content.
+    /// because the lists filter to notes with content. The notepad is only read ([[T-17970]]): a
+    /// load that created it brought back a deleted last notepad note on every tab switch.
     @discardableResult
     private func loadCoreNotes() -> CadenceCoreNoteState {
         CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: modelContext, dayKey: selectedDayKey)

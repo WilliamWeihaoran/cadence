@@ -426,9 +426,10 @@ private struct WeeklyNotesPage: View {
 /// It used to be a single editor at full width, because `NoteKind.permanent` was reached only
 /// through `NoteMigrationService.permanentNote(in:)`, which returns *the* permanent note or makes
 /// it. That accessor still exists and still returns one note — the Today panel's Notepad tab and
-/// iOS both want exactly one — but it is no longer the only way in: this page lists
+/// the MCP writer want exactly one — but it is no longer the only way in: this page lists
 /// `permanentNotes` and adds to them. An upgrading user's one notepad note is the oldest, so it is
-/// the last row and the note every other surface still opens.
+/// the last row and the note every other surface still opens. Opening the page never creates one
+/// ([[T-17970]]).
 ///
 /// No new `NoteKind` was introduced.
 private struct NotepadPage: View {
@@ -520,7 +521,7 @@ private struct NotepadPage: View {
             }
         }
         .onAppear {
-            if !applyRequestedSelection() { loadOrCreateNotepad() }
+            if !applyRequestedSelection() { selectNewestNotepadNote() }
         }
         .onChange(of: requestedNoteID) { _, _ in
             applyRequestedSelection()
@@ -536,15 +537,15 @@ private struct NotepadPage: View {
         NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, notes: notes)
     }
 
-    /// Opens the newest note, creating the first one if the store has none. Uses the shared
-    /// singleton accessor for that first note rather than inserting directly, so a user upgrading
-    /// into this page lands on the note they already had instead of a second, empty one.
-    private func loadOrCreateNotepad() {
-        if let existing = notes.first {
-            selectedNoteID = existing.id
-            return
-        }
-        selectedNoteID = (try? CadenceCoreNoteSupport.note(for: .notepad, in: modelContext))?.id
+    /// Opens the newest note, or nothing when there is none. [[T-17970]]: this used to create the
+    /// first note through `permanentNote(in:)` when the store had none, so a user upgrading into
+    /// this page would land on a note — but an appear cannot tell "never had one" from "deleted
+    /// the last one", so it re-created a blank "Notepad" on every visit after the user deleted
+    /// theirs. An upgrading user's note already exists and is listed; with none, the page shows
+    /// its empty state and the header's `+` makes one. Same rule as iOS and the Today panel,
+    /// through `CadenceCoreNoteSupport.loadOrCreateCoreNotes`'s read-only notepad.
+    private func selectNewestNotepadNote() {
+        selectedNoteID = notes.first?.id
     }
 
     /// **[[T-5301]].** This was `guard let note = try? … else { return }` — the Mac twin of the

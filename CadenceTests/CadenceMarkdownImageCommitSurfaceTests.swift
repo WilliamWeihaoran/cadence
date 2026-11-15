@@ -568,7 +568,10 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // [[T-17329]] makes it 88, both bare: Settings > Tags names a refused Archive / Unarchive
         // under the row on both platforms -- the retry is the same button, and the next archive
         // that lands clears it.
-        #expect(total == 88, "the inline notice has \(total) call sites, not the 88 this test was written over")
+        // [[T-17970]] makes it 89, and bare: the Mac Today panel's empty Notepad tab names a
+        // refused New Note under its button -- the retry is the same button, and the next create
+        // that lands (or the next load) clears it.
+        #expect(total == 89, "the inline notice has \(total) call sites, not the 89 this test was written over")
         #expect(withDismissal == 9, "\(withDismissal) call sites offer a dismissal, not 9")
 
         // And each of the nine is named, so one swapping places with another is still a failure.

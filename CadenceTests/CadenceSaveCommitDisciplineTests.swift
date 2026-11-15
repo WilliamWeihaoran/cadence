@@ -348,25 +348,24 @@ struct CadenceSaveCommitDisciplineTests {
     /// The separation the half above claims to draw, on the real sites [[T-1299]] measured it
     /// against — the evidence that it is *declining* them rather than blind to the shape.
     ///
-    /// Two files, each holding a `try?` over one of the helpers in question. A detector that had
+    /// One file holding a `try?` over one of the helpers in question. A detector that had
     /// stopped reading `try?` call sites at all would satisfy the emptiness assertion below
-    /// trivially, so each file also has to still contain the call it is listed for.
+    /// trivially, so the file also has to still contain the call it is listed for.
     ///
     /// It was three. The Calendar Board's row — `try? CadenceTaskMutationSupport.moveBundle(`, the
     /// in-place move of a Block onto another day — went with the Board's Block card in [[T-3170]],
     /// and so did its `addTask` sibling. The shape they stood for, a `try?` over an in-place field
-    /// edit the store already holds, is still measured by the two rows below.
+    /// edit the store already holds, is still measured by the row below. The Mac Notes page's row
+    /// went with [[T-17970]].
     @Test func theUnrepairedCommitHalfDeclinesTheCleanSwallowsItWasMeasuredAgainst() throws {
         let repairing = try repairIndexOverTheApp()
         for (path, call) in [
-            // An insert committed through `commitInsert`, reached through a pass-through: the Mac
-            // Notes page's first-notepad accessor. It replaced the iOS row's
-            // `try? CadenceTaskMutationSupport.duplicate(` row, which [[T-13843]] turned into a
-            // `do`/`catch` that reports the refusal; same shape (an insert whose callee undoes),
-            // one frame further from the commit. Its `insertBundle` sibling row went with
-            // [[T-3170]]: the one `try?` over it was SchedulingActions.createBundle(from:adding:in:),
-            // removed with the Mac timeline's drop-a-task-on-a-task gesture.
-            ("Cadence/macOS/Views/NotesView.swift", "try? CadenceCoreNoteSupport.note("),
+            // There was a second row here, the Mac Notes page's first-notepad accessor
+            // (`try? CadenceCoreNoteSupport.note(` in `NotesView.swift`, an insert committed
+            // through `commitInsert` behind a pass-through). [[T-17970]] removed the call: opening
+            // the Notepad page no longer creates a note, so the shape left that file. It had
+            // replaced the iOS `try? CadenceTaskMutationSupport.duplicate(` row ([[T-13843]]) and
+            // an `insertBundle` row ([[T-3170]]); the row below still measures the same shape.
             // The three core-note accessors, routed through `commitInsert` by [[T-1181]].
             ("Cadence/Shared/CadenceNotePlanningSupport.swift", "try? NoteMigrationService.dailyNote("),
         ] {

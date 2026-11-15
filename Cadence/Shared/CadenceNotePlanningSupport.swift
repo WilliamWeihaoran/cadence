@@ -169,6 +169,11 @@ struct CadenceCoreNoteState {
     /// for yet" (T-849). Empty on every call site that predates this — `loadOrCreateCoreNotes`
     /// is the only writer.
     var failedTabs: Set<CadenceCoreNoteTab> = []
+    /// [[T-17970]]: tabs whose read succeeded and found no note — only `.notepad` can be here,
+    /// because the load path reads the notepad without creating one. A third meaning of `nil`,
+    /// beside "not asked yet" and "failed": the user has no notepad note (never had one, or
+    /// deleted the last), and the surface shows its empty state instead of a spinner.
+    var emptyTabs: Set<CadenceCoreNoteTab> = []
 
     func note(for tab: CadenceCoreNoteTab) -> Note? {
         switch tab {
@@ -193,24 +198,41 @@ enum CadenceCoreNoteSupport {
     ///
     /// **`nil` used to mean two different things (T-849).** `try?` on each of the three collapses
     /// "the fetch-or-create threw" into the same `nil` a caller would see if the note simply had
-    /// not loaded yet — except the latter cannot happen here: `dailyNote`, `weeklyNote` and
-    /// `permanentNote` all create the note on a miss, so a `nil` reaching this function is always
-    /// a failure. Every caller used to read it as the harmless case anyway and showed a spinner
-    /// that was never going to resolve. The three `try?`s stay — they are the simplest way to ask
-    /// "did this throw" — but the hoisted overload below turns each `nil` into a named entry in
-    /// `failedTabs` instead of silently discarding it, and does so per note, so one throwing fetch
-    /// does not stop the other two from loading.
+    /// not loaded yet. `dailyNote` and `weeklyNote` create the note on a miss, so their `nil` is
+    /// always a failure; the hoisted overload below turns each into a named entry in `failedTabs`
+    /// instead of silently discarding it, and does so per note, so one throwing fetch does not
+    /// stop the other two from loading.
+    ///
+    /// **The notepad is read, never created, here ([[T-17970]]).** This runs on every page load,
+    /// tab switch and foregrounding, and it used to call `permanentNote(in:)`, which inserts a
+    /// blank "Notepad" when none exists — so deleting the last notepad note lasted until the next
+    /// visit. A load cannot tell "never had one" from "deleted the last one", so it does not
+    /// guess: it reads the oldest (`permanentNotes(in:)`, the same note `permanentNote` returns
+    /// when one exists) and reports none in `emptyTabs`. A note is made only when someone writes
+    /// to the notepad: a `+`, the Today panel's empty-state button, `append_core_note`, sample
+    /// data. The day and week notes keep their create-on-browse — that is deliberate, and a blank
+    /// one is invisible in every list.
     static func loadOrCreateCoreNotes(
         in modelContext: ModelContext,
         dayKey: String = DateFormatters.todayKey()
     ) -> CadenceCoreNoteState {
-        loadOrCreateCoreNotes(
+        let notepad: Note?
+        let notepadReadFailed: Bool
+        do {
+            notepad = try NoteMigrationService.permanentNotes(in: modelContext).first
+            notepadReadFailed = false
+        } catch {
+            notepad = nil
+            notepadReadFailed = true
+        }
+        return loadOrCreateCoreNotes(
             today: try? NoteMigrationService.dailyNote(for: dayKey, in: modelContext),
             week: try? NoteMigrationService.weeklyNote(
                 for: CadenceNoteDateNavigation.weekKey(forDayKey: dayKey),
                 in: modelContext
             ),
-            notepad: try? NoteMigrationService.permanentNote(in: modelContext)
+            notepad: notepad,
+            notepadReadFailed: notepadReadFailed
         )
     }
 
@@ -219,15 +241,27 @@ enum CadenceCoreNoteSupport {
     /// fail a fetch or a save on demand. Same shape as
     /// `HabitNotificationReconcileSupport.scheduleReconcile`, for the same reason: `nil` here can
     /// only mean the caller's fetch threw, because `note(for:)` below never returns `nil` on its
-    /// own account.
-    static func loadOrCreateCoreNotes(today: Note?, week: Note?, notepad: Note?) -> CadenceCoreNoteState {
+    /// own account. The notepad is the exception ([[T-17970]]): its read never creates, so its
+    /// `nil` is "none" unless `notepadReadFailed` says the fetch threw.
+    static func loadOrCreateCoreNotes(
+        today: Note?,
+        week: Note?,
+        notepad: Note?,
+        notepadReadFailed: Bool
+    ) -> CadenceCoreNoteState {
         var state = CadenceCoreNoteState()
         state.today = today
         state.week = week
         state.notepad = notepad
         if today == nil { state.failedTabs.insert(.today) }
         if week == nil { state.failedTabs.insert(.week) }
-        if notepad == nil { state.failedTabs.insert(.notepad) }
+        if notepad == nil {
+            if notepadReadFailed {
+                state.failedTabs.insert(.notepad)
+            } else {
+                state.emptyTabs.insert(.notepad)
+            }
+        }
         return state
     }
 

@@ -37,6 +37,11 @@ struct NotePanel: View {
     /// every tab starts in before the first load lands, which `ProgressView()` still correctly
     /// describes.
     @State private var failedNoteTabs: Set<CadenceCoreNoteTab> = []
+    /// [[T-17970]]: tabs whose read found no note — only Notepad, which the load reads without
+    /// creating. Drawn as the Notepad empty state with a button that makes one, not a spinner.
+    @State private var emptyNoteTabs: Set<CadenceCoreNoteTab> = []
+    /// The empty Notepad's create was refused ([[T-5301]]'s sentence); cleared by the next load.
+    @State private var notepadCreateFailureNotice: String?
     /// [[T-7983]]: the day the Today and This Week tabs are resolved against. Every other pane on
     /// Mac Today observes the day; this one resolved its notes only on appear, activation and a
     /// tab switch, so a page left open overnight kept editing — and saving into — yesterday's
@@ -156,6 +161,8 @@ struct NotePanel: View {
             noteEditor(for: note)
         } else if failedNoteTabs.contains(tab) {
             noteLoadFailureView(for: tab)
+        } else if emptyNoteTabs.contains(tab) {
+            emptyNotepadView
         } else {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -164,9 +171,8 @@ struct NotePanel: View {
     /// **Distinguishable from "still loading" (T-849).** A `nil` note used to draw the same
     /// `ProgressView()` whether the fetch had not finished yet or had already failed and was
     /// never going to finish — the second case looked identical to the first forever, with
-    /// nothing on screen saying so. `dailyNote`/`weeklyNote`/`permanentNote` all `throws` rather
-    /// than returning `nil` for "not found" (they create it instead), so a `nil` reaching here
-    /// is always a genuine failure, never an empty state.
+    /// nothing on screen saying so. Only a tab in `failedNoteTabs` reaches here; a Notepad with
+    /// no note is `emptyNoteTabs` and draws `emptyNotepadView` ([[T-17970]]).
     private func noteLoadFailureView(for tab: CadenceCoreNoteTab) -> some View {
         VStack(spacing: 10) {
             CadenceInlineFailureNotice(text: "Couldn't load this note.")
@@ -175,6 +181,38 @@ struct NotePanel: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 24)
+    }
+
+    /// [[T-17970]]: the user has no notepad note — never had one, or deleted the last. Opening the
+    /// tab used to create a blank "Notepad" here, which undid a confirmed delete on every visit;
+    /// now the same words the Notes page's Notepad column shows, and a button that makes the note.
+    private var emptyNotepadView: some View {
+        VStack(spacing: 12) {
+            EmptyStateView(
+                message: CadenceEmptyStateCopy.notepadTitle,
+                subtitle: CadenceEmptyStateCopy.notepadSubtitle,
+                icon: "doc.text"
+            )
+            CadenceActionButton(title: "New Note", role: .secondary, size: .compact) { createNotepadNote() }
+            if let notepadCreateFailureNotice {
+                CadenceInlineFailureNotice(text: notepadCreateFailureNotice)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 24)
+    }
+
+    /// The one place this panel creates a notepad note, and only because the user asked: the
+    /// shared singleton accessor, so it lands on the oldest note if one appeared meanwhile (sync).
+    private func createNotepadNote() {
+        do {
+            permNote = try NoteMigrationService.permanentNote(in: currentNotesContext)
+        } catch {
+            notepadCreateFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        notepadCreateFailureNotice = nil
+        emptyNoteTabs.remove(.notepad)
     }
 
     /// The core notes' embed policy ([[T-6721]]): a card created here goes to the Inbox, default
@@ -261,6 +299,8 @@ struct NotePanel: View {
         weekNote = snapshot.week
         permNote = snapshot.notepad
         failedNoteTabs = snapshot.failedTabs
+        emptyNoteTabs = snapshot.emptyTabs
+        notepadCreateFailureNotice = nil
     }
 
     private func refreshFromStore() {

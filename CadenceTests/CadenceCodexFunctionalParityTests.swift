@@ -278,7 +278,7 @@ struct CadenceCodexFunctionalParityTests {
         }
         #expect(view.contains("if !applyRequestedSelection() { openNote(forDateKey: observedDay.todayKey) }"))
         #expect(view.contains("if !applyRequestedSelection() { openNote(forWeekKey: currentWeekKey) }"))
-        #expect(view.contains("if !applyRequestedSelection() { loadOrCreateNotepad() }"))
+        #expect(view.contains("if !applyRequestedSelection() { selectNewestNotepadNote() }"))
         #expect(view.components(separatedBy: "NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, notes: notes)").count - 1 == 3)
     }
 
