@@ -1118,6 +1118,28 @@ struct CadenceEmptyStateAuditTests {
         }
     }
 
+    /// **[[T-17907]]: both Lists shells draw the empty panel ABOVE Archived.** The iPad pane put
+    /// it in place of the active sections with Archived after it; the iPhone `compactList`
+    /// stacked it after Archived, under the very rows it points at. Source-shape, since
+    /// `Cadence/iOS/` is not compiled by this target.
+    @Test func bothListShellsDrawTheEmptyPanelAboveArchived() throws {
+        let phone = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListViews.swift"))
+        let list = try #require(bodyOfComputedProperty("compactList", in: phone),
+                                "non-vacuity: iOSListViews.swift has no compactList")
+        let phoneEmpty = try #require(list.range(of: "emptyStateSection"), "non-vacuity: compactList draws no empty state")
+        let phoneArchived = try #require(list.range(of: "archivedSection"), "non-vacuity: compactList draws no Archived section")
+        #expect(phoneEmpty.lowerBound < phoneArchived.lowerBound,
+                "the iPhone Lists page draws its empty panel below Archived again")
+
+        let paneFile = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListsRegularPane.swift"))
+        let pane = try #require(bodyOfComputedProperty("body", in: paneFile), "non-vacuity: the iPad pane has no body")
+        let paneEmpty = try #require(pane.range(of: "title: CadenceEmptyStateCopy.activeListsTitle"),
+                                     "non-vacuity: the iPad pane lost its empty state")
+        let paneArchived = try #require(pane.range(of: "archivedSection", range: paneEmpty.upperBound..<pane.endIndex),
+                                        "the iPad pane no longer draws Archived after its empty panel")
+        #expect(paneEmpty.lowerBound < paneArchived.lowerBound)
+    }
+
     // MARK: T-6003 — the Focus empty state states the rule, once, on both platforms
 
     /// **The Focus empty state names what is missing: an open task.** The picker lists every task

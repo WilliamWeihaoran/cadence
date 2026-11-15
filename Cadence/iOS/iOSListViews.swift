@@ -137,8 +137,10 @@ struct iOSListsView: View {
         List {
             activeAreaSection
             activeProjectSection
-            archivedSection
+            // Above Archived, as on the iPad pane ([[T-17907]]): the panel stands in for the
+            // active sections, right under the create row its "here" points at.
             emptyStateSection
+            archivedSection
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
