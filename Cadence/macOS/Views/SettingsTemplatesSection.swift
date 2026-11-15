@@ -55,13 +55,10 @@ struct SettingsTemplatesSection: View {
                     Image(systemName: "info.circle.fill")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Theme.blue)
-                    // The first clause names the note sidebar, a surface this platform has and
-                    // the phone does not, so it stays spelled here rather than in the shared
-                    // constant both surfaces read (T-599(b)).
-                    Text(
-                        "Templates appear in the note sidebar for matching note types. "
-                            + CadenceTemplateSettingsCopy.editScopeFootnote
-                    )
+                    // The same shared sentence the iPhone/iPad card reads. A Mac-only first clause
+                    // used to name a templates sidebar that was removed with
+                    // the note side panel (T-17969, reversing T-599(b)).
+                    Text(CadenceTemplateSettingsCopy.editScopeFootnote)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)

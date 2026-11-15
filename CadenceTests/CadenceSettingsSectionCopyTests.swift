@@ -282,11 +282,8 @@ struct CadenceSettingsSectionCopyTests {
     /// the claim is identical, and so is the reason it is two assertions rather than one — a file
     /// can read the constant in one branch and still spell the literal in another.
     ///
-    /// The templates footnote is the interesting member: macOS still spells a **first clause**
-    /// this does not touch ("Templates appear in the note sidebar for matching note types."),
-    /// because the note sidebar is a real macOS surface and a false one on a phone. So the
-    /// assertion below is deliberately about the shared second sentence only, and the clause that
-    /// stays macOS-only is pinned by `theTemplatesFootnoteKeepsItsSidebarClauseOnMacOSAlone`.
+    /// The templates footnote used to carry a Mac-only first clause naming a note sidebar; T-17969
+    /// deleted it, and `theTemplatesFootnoteNamesNoNoteSidebarOnEitherSurface` keeps it deleted.
     @Test func bothSurfacesOfEachTaggedTemplateAndAICardReadTheConvergedString() throws {
         for (surfaces, pairs) in [
             (Self.tagSurfaces, Self.tagPairs),
@@ -310,23 +307,28 @@ struct CadenceSettingsSectionCopyTests {
         }
     }
 
-    /// **T-599(b)'s decision, held as a difference rather than as a convergence.**
+    /// **T-17969: neither templates footnote names a note sidebar.**
     ///
-    /// The obvious "fix" for a footnote written twice is one constant read twice. That would have
-    /// shipped a sentence telling an iPhone reader to look in the note sidebar, which is not a
-    /// surface that phone has. So only the second sentence is shared, and this pins both halves:
-    /// the Mac keeps the clause, and the phone must never grow it.
-    @Test func theTemplatesFootnoteKeepsItsSidebarClauseOnMacOSAlone() throws {
-        let clause = "Templates appear in the note sidebar for matching note types."
+    /// T-599(b) kept "Templates appear in the note sidebar for matching note types." on the Mac
+    /// alone, because the sidebar was then a real Mac surface. It was removed with the
+    /// note side panel; templates now show in the empty body's "Start with" line, the `/`
+    /// menu and the Actions popover on both platforms, so the clause was false and the two
+    /// footnotes described the same templates differently. Both now read the one shared sentence.
+    @Test func theTemplatesFootnoteNamesNoNoteSidebarOnEitherSurface() throws {
         let mac = try Self.strippedSource(at: Self.templateSurfaces[0])
         let phone = try Self.strippedSource(at: Self.templateSurfaces[1])
 
         #expect(mac.contains("struct SettingsTemplatesSection"), "non-vacuity: wrong file")
-        #expect(mac.contains(clause), "the Mac's footnote lost the surface it is describing")
-        #expect(
-            phone.contains("note sidebar") == false,
-            "the phone's templates footnote now names a surface the phone does not have"
-        )
+        for (name, code) in [("Mac", mac), ("phone", phone)] {
+            #expect(
+                code.contains("note sidebar") == false,
+                "the \(name) templates footnote names a note sidebar, which neither platform has"
+            )
+            #expect(
+                code.contains("Text(CadenceTemplateSettingsCopy.editScopeFootnote)"),
+                "the \(name) templates footnote no longer reads the shared sentence alone"
+            )
+        }
         // [[T-8542]]: the Description placeholder named the same sidebar on both surfaces.
         for code in [mac, phone] {
             #expect(code.contains("sidebar description") == false, "a template placeholder names a sidebar again")
