@@ -74,6 +74,44 @@ struct CadenceSidebarObservedDayTests {
         }
     }
 
+    // MARK: - The list page headers
+
+    /// **[[T-17905]]: a project page's deadline chip reads the sidebar row's rule.** Both headers
+    /// drew a grey calendar glyph and a bare "Nov 9" once the day had passed, while the row they
+    /// were opened from said "Overdue Nov 9" in red beside a red flag. Now both draw `flag.fill`,
+    /// `listDueDateLabel` and a `listDueDateIsPast` tint against the page's observed day, and the
+    /// chip's spoken label says the same words.
+    @Test func bothListPageHeadersReadTheSidebarDueRuleAgainstTheObservedDay() throws {
+        let today = "2026-11-10"
+        #expect(ListDetailHeaderAccessibility.deadlineLabel(dueDate: "2026-11-09", todayKey: today)
+                == "Deadline, \(CadenceSidebarLayout.listDueDateLabel("2026-11-09", todayKey: today))")
+        #expect(ListDetailHeaderAccessibility.deadlineLabel(dueDate: "2026-11-09", todayKey: today) == "Deadline, Overdue Nov 9")
+        #expect(ListDetailHeaderAccessibility.deadlineLabel(dueDate: today, todayKey: today) == "Deadline, Due today")
+
+        let headers: [(path: String, declaration: String, dueDate: String, todayKey: String)] = [
+            ("Cadence/macOS/Views/ListDetailView.swift", "private var header: some View", "project.dueDate", "observedDay.todayKey"),
+            ("Cadence/iOS/iOSListDetailView.swift", "private struct iOSListDetailHeader: View", "projectDueDate", "todayKey"),
+        ]
+        for header in headers {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(header.path))
+            let chip = try #require(CadenceSourceScan.declarationBody(header.declaration, in: source), "\(header.path)")
+            let args = "\(header.dueDate), todayKey: \(header.todayKey))"
+            #expect(chip.contains("Image(systemName: \"flag.fill\")"), "\(header.path): the chip is not the sidebar's flag")
+            #expect(!chip.contains("Image(systemName: \"calendar\")"), "\(header.path): the chip is a calendar glyph again")
+            #expect(chip.contains("Text(CadenceSidebarLayout.listDueDateLabel(\(args))"), "\(header.path): the chip words its date itself again")
+            #expect(!chip.contains("DateFormatters.shortDateString"), "\(header.path): the chip draws a bare date again")
+            #expect(chip.contains("let dueTint = CadenceSidebarLayout.listDueDateIsPast(\(args) ? Theme.red : Theme.dim"),
+                    "\(header.path): the chip's tint no longer reads the sidebar rule")
+            #expect(chip.contains(".foregroundStyle(dueTint)"), "\(header.path): the chip is not drawn in the rule's tint")
+            #expect(!chip.contains(".foregroundStyle(Theme.dim)\n                    .padding(.horizontal, 8)"),
+                    "\(header.path): the chip is fixed grey again")
+            #expect(chip.contains("ListDetailHeaderAccessibility.deadlineLabel(dueDate: \(args)"), "\(header.path): the label is not the chip's words")
+        }
+        // The iPhone and iPad header is handed the page's observed day, never the clock.
+        let page = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListDetailView.swift"))
+        #expect(page.contains("projectDueDate: project?.dueDate,\n                todayKey: observedDay.todayKey,"))
+    }
+
     // MARK: - iPad
 
     @Test func theIPadColumnHandsItsObservedDayToTheListRows() throws {

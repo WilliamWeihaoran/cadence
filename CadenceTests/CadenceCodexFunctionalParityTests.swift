@@ -22,20 +22,21 @@ struct CadenceCodexFunctionalParityTests {
         let header = try #require(CadenceSourceScan.declarationBody("private struct iOSListDetailHeader: View", in: source))
         #expect(header.contains("let projectDueDate: String?"))
         #expect(header.contains("if let projectDueDate, !projectDueDate.isEmpty {"))
-        #expect(header.contains("Text(DateFormatters.shortDateString(from: projectDueDate))"))
+        // [[T-17905]]: the sidebar row's words, against the page's observed day.
+        #expect(header.contains("Text(CadenceSidebarLayout.listDueDateLabel(projectDueDate, todayKey: todayKey))"))
         #expect(header.contains(".cadenceFont(.metadata, base: 11, weight: .regular)"))
         #expect(header.contains(".cadenceFont(.metadata, base: 10, weight: .regular)"))
         #expect(header.contains(".fixedSize(horizontal: false, vertical: true)"))
         // The label moved to the shared helper with [[T-7080]]; it still reads the Mac formatter.
-        #expect(ListDetailHeaderAccessibility.deadlineLabel(dueDate: "2026-10-14") == "Deadline \(DateFormatters.shortDateString(from: "2026-10-14"))")
-        #expect(header.contains(".accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: projectDueDate))"))
+        #expect(ListDetailHeaderAccessibility.deadlineLabel(dueDate: "2026-10-14", todayKey: "2026-10-01") == "Deadline, Due Oct 14")
+        #expect(header.contains(".accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: projectDueDate, todayKey: todayKey))"))
         // [[T-8563]] (e): named for the list, as the Mac's is, rather than a bare "Edit list".
         #expect(header.contains("accessibilityLabel: ListDetailHeaderAccessibility.editLabel(listName: title),\n                    tint: Color(hex: colorHex),\n                    action: onEdit"))
         #expect(!header.contains("relativeDate"))
         #expect(!header.contains("fullShortDate"))
         let mac = try read("Cadence/macOS/Views/ListDetailView.swift")
         #expect(mac.contains("if let project = project, !project.dueDate.isEmpty {"))
-        #expect(mac.contains("Text(DateFormatters.shortDateString(from: project.dueDate))"))
+        #expect(mac.contains("Text(CadenceSidebarLayout.listDueDateLabel(project.dueDate, todayKey: observedDay.todayKey))"))
     }
 
     @Test func macNotesUsesFullSharedVocabularyWithoutChangingKindsOrOrder() throws {

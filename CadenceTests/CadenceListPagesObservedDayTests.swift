@@ -118,7 +118,8 @@ struct CadenceListPagesObservedDayTests {
             // too (`headerTaskDrop` and the closure that calls it), never the clock.
             ("Cadence/iOS/iOSTaskCollectionPage.swift", "todayKey: todayKey,\n", 5),
             // Five since [[T-14581]]: the board panel takes the page's day for its cards too.
-            ("Cadence/iOS/iOSListDetailView.swift", "todayKey: observedDay.todayKey", 5),
+            // Six since [[T-17905]]: the header's deadline chip reads it too.
+            ("Cadence/iOS/iOSListDetailView.swift", "todayKey: observedDay.todayKey", 6),
             // Split one argument per line since `3bf97ddc` ([[T-16461]]); [[T-16504]].
             ("Cadence/iOS/iOSListSupportViews.swift", "showsContainer: false,\n                            todayKey: todayKey\n", 1),
             ("Cadence/iOS/iOSTodayTaskSections.swift", "dayAlreadyStatedBySurface: todayKey,\n                    todayKey: todayKey,", 1),

@@ -41,6 +41,9 @@ struct CadenceDayChangeAdoptionTests {
         // [[T-12791]]: a list's Completed tab draws `MacTaskRow`, which takes the day with no
         // default, and its host `ListDetailView` holds none.
         ("Cadence/macOS/Views/ListDetailSupportViews.swift", "struct ListLogView: View"),
+        // [[T-17905]]: the list page header's deadline chip says "Overdue" once its day passes,
+        // and a project's due date is the same on both sides of midnight.
+        ("Cadence/macOS/Views/ListDetailView.swift", "private struct ListDetailChromeView: View"),
         ("Cadence/macOS/Views/KanbanSupportViews.swift", "struct TaskListsKanbanView: View"),
         ("Cadence/macOS/Views/KanbanListSectionSupportViews.swift", "struct ListSectionsKanbanView: View"),
         ("Cadence/macOS/Views/ListNotesView.swift", "struct ListNotesView: View"),

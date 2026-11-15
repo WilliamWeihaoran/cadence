@@ -329,9 +329,12 @@ enum ListDetailKanbanBoard {
 /// The project deadline chip is a calendar glyph and a bare "Oct 30". iOS labelled it "Deadline
 /// Oct 30" ([[T-3091]]); the Mac header drew the same chip unlabelled, so VoiceOver read a date
 /// with nothing to say whose date it was. One spelling, read by both headers.
+///
+/// [[T-17905]]: the chip now draws the sidebar row's words ("Overdue Nov 9" / "Due today"), so the
+/// label reads those words too, against the same observed day.
 enum ListDetailHeaderAccessibility {
-    static func deadlineLabel(dueDate: String) -> String {
-        "Deadline \(DateFormatters.shortDateString(from: dueDate))"
+    static func deadlineLabel(dueDate: String, todayKey: String) -> String {
+        "Deadline, \(CadenceSidebarLayout.listDueDateLabel(dueDate, todayKey: todayKey))"
     }
 
     /// The header's edit control, named for the list it edits ([[T-8563]] (e)). iOS said a bare

@@ -251,6 +251,9 @@ private struct ListDetailChromeView: View {
     let highlightedKanbanSectionName: String?
     @Binding var requestedEventNoteID: UUID?
     @Binding var requestedListNoteID: UUID?
+    /// The header's deadline chip says "Overdue" once its day passes ([[T-17905]]); a project's due
+    /// date is the same on both sides of midnight, so the page observes the day itself.
+    @State private var observedDay = CadenceObservedDay()
 
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
 
@@ -298,6 +301,7 @@ private struct ListDetailChromeView: View {
         .sheet(isPresented: $showEdit) {
             editSheetContent
         }
+        .cadenceTracksDayChanges($observedDay)
     }
 
     private var header: some View {
@@ -310,20 +314,23 @@ private struct ListDetailChromeView: View {
         ) {
             HStack(spacing: 8) {
                 if let project = project, !project.dueDate.isEmpty {
+                    // [[T-17905]]: the sidebar row's rule -- its glyph, its words, red once past --
+                    // against this page's observed day, so the page agrees with the row it opened from.
+                    let dueTint = CadenceSidebarLayout.listDueDateIsPast(project.dueDate, todayKey: observedDay.todayKey) ? Theme.red : Theme.dim
                     HStack(spacing: 4) {
-                        Image(systemName: "calendar").font(.system(size: 10))
+                        Image(systemName: "flag.fill").font(.system(size: 10))
                             .accessibilityHidden(true)
-                        Text(DateFormatters.shortDateString(from: project.dueDate)).font(.system(size: 11))
+                        Text(CadenceSidebarLayout.listDueDateLabel(project.dueDate, todayKey: observedDay.todayKey)).font(.system(size: 11))
                     }
-                    .foregroundStyle(Theme.dim)
+                    .foregroundStyle(dueTint)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(Theme.surfaceElevated)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     // T-7080: a bare "Oct 30" to VoiceOver; iOS's chip says whose date it is.
                     .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: project.dueDate))
-                    .help(ListDetailHeaderAccessibility.deadlineLabel(dueDate: project.dueDate))
+                    .accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: project.dueDate, todayKey: observedDay.todayKey))
+                    .help(ListDetailHeaderAccessibility.deadlineLabel(dueDate: project.dueDate, todayKey: observedDay.todayKey))
                 }
 
                 CadenceIconButton(

@@ -20,18 +20,19 @@ struct CadenceMacTaskBoardAccessibilityTests {
     // MARK: T-7080
 
     @Test func theDeadlineChipSaysWhoseDateItIsOnBothHeaders() throws {
-        #expect(ListDetailHeaderAccessibility.deadlineLabel(dueDate: "2026-10-30")
-                == "Deadline \(DateFormatters.shortDateString(from: "2026-10-30"))")
+        // [[T-17905]]: the label says the chip's words, the sidebar row's, against the page's day.
+        #expect(ListDetailHeaderAccessibility.deadlineLabel(dueDate: "2026-10-30", todayKey: "2026-10-31")
+                == "Deadline, Overdue Oct 30")
 
         let mac = try source("Cadence/macOS/Views/ListDetailView.swift")
         let header = try #require(CadenceSourceScan.declarationBody("private var header: some View", in: mac))
         #expect(header.contains("project.dueDate"), "non-vacuity: the deadline chip is still drawn here")
-        #expect(header.contains(".accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: project.dueDate))"),
+        #expect(header.contains(".accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: project.dueDate, todayKey: observedDay.todayKey))"),
                 "the Mac deadline chip reads as a bare date again")
         #expect(header.contains(".accessibilityElement(children: .ignore)"))
 
         let iOS = try source("Cadence/iOS/iOSListDetailView.swift")
-        #expect(iOS.contains(".accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: projectDueDate))"),
+        #expect(iOS.contains(".accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: projectDueDate, todayKey: todayKey))"),
                 "iOS spells its own deadline label again")
     }
 

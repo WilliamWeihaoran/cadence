@@ -310,6 +310,7 @@ struct iOSListDetailView: View {
                 title: title,
                 colorHex: colorHex,
                 projectDueDate: project?.dueDate,
+                todayKey: observedDay.todayKey,
                 onBack: (isPresentedModally || horizontalSizeClass == .compact) ? { dismiss() } : nil,
                 onEdit: presentEditor
             )
@@ -712,6 +713,8 @@ private struct iOSListDetailHeader: View {
     let title: String
     let colorHex: String
     let projectDueDate: String?
+    /// The page's observed day, which the deadline chip reads ([[T-17905]]).
+    let todayKey: String
     var onBack: (() -> Void)? = nil
     let onEdit: () -> Void
 
@@ -728,21 +731,24 @@ private struct iOSListDetailHeader: View {
         ) {
             HStack(spacing: 8) {
                 if let projectDueDate, !projectDueDate.isEmpty {
+                    // [[T-17905]]: the sidebar row's rule -- its glyph, its words, red once past --
+                    // against the page's observed day, as the Mac header reads it.
+                    let dueTint = CadenceSidebarLayout.listDueDateIsPast(projectDueDate, todayKey: todayKey) ? Theme.red : Theme.dim
                     HStack(spacing: 4) {
-                        Image(systemName: "calendar")
+                        Image(systemName: "flag.fill")
                             .cadenceFont(.metadata, base: 10, weight: .regular)
                             .accessibilityHidden(true)
-                        Text(DateFormatters.shortDateString(from: projectDueDate))
+                        Text(CadenceSidebarLayout.listDueDateLabel(projectDueDate, todayKey: todayKey))
                             .cadenceFont(.metadata, base: 11, weight: .regular)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    .foregroundStyle(Theme.dim)
+                    .foregroundStyle(dueTint)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(Theme.surfaceElevated)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: projectDueDate))
+                    .accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: projectDueDate, todayKey: todayKey))
                 }
                 // [[T-12602]]: the Mac's control -- the shared pencil, in the list's own colour.
                 iOSIconButton(
