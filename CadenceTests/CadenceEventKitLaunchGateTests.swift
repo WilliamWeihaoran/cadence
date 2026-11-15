@@ -184,6 +184,13 @@ struct CadenceEventKitLaunchGateTests {
         #expect(answer != nil)
         #expect(answer != .notAuthorized)
         #expect(answer != .noWritableCalendar)
+        // [[T-17461]]: the all-day conversion has the same guard. The failed update's `reset()`
+        // dropped the never-saved scratch calendar, so it is handed one again.
+        foreignEvent.calendar = EKCalendar(for: .event, eventStore: scratchStore)
+        let converted = armed.convertAllDayEventToTimed(foreignEvent, startMin: 120, dateKey: "2026-06-01")
+        #expect(converted != nil)
+        #expect(converted != .notAuthorized)
+        #expect(converted != .noWritableCalendar)
     }
     #endif
 

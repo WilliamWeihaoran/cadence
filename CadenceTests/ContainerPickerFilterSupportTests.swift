@@ -497,6 +497,35 @@ struct ContainerPickerFilterSupportTests {
         #expect(popover.contains("highlightIdx = ContainerPickerFilterSupport.openingHighlightIndex("))
     }
 
+    /// **[[T-17468]].** A query that matches no list -- not even the task's own, which the field
+    /// narrows like any other -- leaves no row at all, and the popover says so in words rather
+    /// than drawing nothing under the field, as the section picker beside it does ([[T-17465]]).
+    @Test func aListSearchMissSaysSoInWords() throws {
+        let fixture = try makeFixture()
+        let errands = try #require(fixture.areas.first { $0.name == "Errands" })
+        func rows(_ query: String) -> [TaskContainerSelection] {
+            ContainerPickerFilterSupport.flatSelections(
+                inGroups: ContainerPickerFilterSupport.groups(
+                    contexts: fixture.contexts, areas: fixture.areas, projects: fixture.projects,
+                    selection: .area(errands.id), query: query
+                ),
+                includingInbox: ContainerPickerFilterSupport.matchesInbox(query: query)
+            )
+        }
+        #expect(rows("zzz").isEmpty)
+        // Non-vacuity: a hit and a blank field both leave rows, so the line stays away.
+        #expect(!rows("de").isEmpty)
+        #expect(rows("").first == .inbox)
+        #expect(ContainerPickerPopoverContent.noMatchesText == "No matching lists")
+
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ContainerPickerSupportViews.swift")
+        )
+        let popover = try #require(CadenceSourceScan.declarationBody("struct ContainerPickerPopoverContent: View", in: source))
+        #expect(popover.contains("if flatFiltered.isEmpty {"), "the popover draws nothing for a miss again")
+        #expect(popover.contains("Text(Self.noMatchesText)"))
+    }
+
     /// The `~` panel follows the same rule: its highlight opens on the draft's list, and with no
     /// list (or one the panel does not offer) on the first row.
     @Test func theTildePanelHighlightOpensOnTheDraftsList() throws {

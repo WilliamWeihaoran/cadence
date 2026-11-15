@@ -489,6 +489,12 @@ final class CalendarManager {
         calendar: Calendar = .current
     ) -> CalendarWriteFailure? {
         guard isAuthorized else { return record(.notAuthorized) }
+        // [[T-17461]]: the read-only refusal every other Mac event write gives ([[T-17388]],
+        // [[T-17422]]), before the event is touched, rather than letting EventKit refuse it as
+        // `.saveFailed`. The disarm check comes first so a disarmed launch still answers
+        // `.notAuthorized`.
+        guard !isEventKitDisarmed else { return record(.notAuthorized) }
+        guard canModify(event) else { return record(.noWritableCalendar) }
         guard let startDate = CadenceCalendarEventTiming.startDate(
             dateKey: dateKey,
             startMin: startMin,

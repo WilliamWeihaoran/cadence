@@ -233,8 +233,10 @@ struct CalendarManagerScenarioTests {
             manager.updateEvent(event, title: "Moved", startMin: 60, durationMinutes: 30, dateKey: "2026-06-01"),
             manager.updateEventNotes(event, notes: "Changed"),
             manager.updateEventNotes(event, notes: "Kept"),
+            // [[T-17461]]: the all-day drop's conversion refuses the same way.
+            manager.convertAllDayEventToTimed(event, startMin: 9 * 60, dateKey: "2026-06-01"),
         ]
-        #expect(answers.count == 4)
+        #expect(answers.count == 5)
         for (index, answer) in answers.enumerated() {
             #expect(answer == .noWritableCalendar, "write #\(index) answered \(String(describing: answer))")
         }
@@ -299,9 +301,14 @@ struct CalendarManagerScenarioTests {
         let dateKey = "2026-06-15"
         let baseDate = try #require(DateFormatters.date(from: dateKey))
 
-        let allDayEvent = EKEvent(eventStore: EKEventStore())
+        let scratchStore = EKEventStore()
+        let allDayEvent = EKEvent(eventStore: scratchStore)
         allDayEvent.title = "All-day errand"
         allDayEvent.isAllDay = true
+        // [[T-17461]]: a writable scratch calendar, so the conversion gets past its read-only
+        // guard and reaches the save this test is about. It is never saved.
+        allDayEvent.calendar = EKCalendar(for: .event, eventStore: scratchStore)
+        #expect(manager.canModify(allDayEvent), "precondition: the scratch calendar is writable")
 
         // A second, unrelated event already occupying the exact same slot on the same day —
         // overlapping calendar events are normal (Apple Calendar itself allows this), so

@@ -197,6 +197,12 @@ struct ContainerPickerPopoverContent: View {
         ContainerPickerFilterSupport.highlighted(at: highlightIdx, in: flatFiltered)
     }
 
+    /// What the popover says when the field matches no list ([[T-17468]]). It drew nothing under
+    /// the field at all, which reads as a picker with no lists rather than a search that missed --
+    /// the miss [[T-17465]] fixed in the section picker beside it. The house sentence the `~` panel
+    /// already draws for the same miss ([[T-9823]]).
+    static let noMatchesText = CadenceEmptyStateCopy.listsTitle(isNarrowed: true)
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             searchBar
@@ -205,6 +211,16 @@ struct ContainerPickerPopoverContent: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
+                    // Inbox matches an empty field, so this only draws once something is typed.
+                    if flatFiltered.isEmpty {
+                        Text(Self.noMatchesText)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.dim)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
                     if showsInbox {
                         ContainerPickerRow(
                             icon: CadenceListKindIcon.inbox,
