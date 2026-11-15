@@ -134,8 +134,13 @@ struct CalendarManagerScenarioTests {
         // internally fails with an EventKit error rather than persisting anywhere real — this
         // keeps the test isolated from any live calendar while still exercising the exact guard
         // logic used for an unresolvable/read-only destination calendar.
-        let event = EKEvent(eventStore: EKEventStore())
+        let scratchStore = EKEventStore()
+        let event = EKEvent(eventStore: scratchStore)
         event.title = "Original title"
+        // [[T-17422]]: a writable scratch calendar, so the update gets past the read-only guard
+        // and reaches the save this test is about. It is never saved, and belongs to no account.
+        event.calendar = EKCalendar(for: .event, eventStore: scratchStore)
+        #expect(manager.canModify(event), "precondition: the scratch calendar is writable")
         let originalCalendar = event.calendar
 
         // EKEvent rounds stored dates to whole seconds, so start from a whole-second `Date` —
@@ -152,8 +157,11 @@ struct CalendarManagerScenarioTests {
         )
 
         // No crash reaching here is itself part of the assertion. The unresolved calendarID must
-        // not have corrupted the event's calendar assignment...
-        #expect(event.calendar === originalCalendar)
+        // not have corrupted the event's calendar assignment. The failed save's `reset()` also
+        // drops the never-saved scratch calendar, so the event is back on its original one or on
+        // none -- and never on the identifier that did not resolve...
+        #expect(event.calendar === originalCalendar || event.calendar == nil)
+        #expect(event.calendar?.calendarIdentifier != "definitely-not-a-real-calendar-identifier")
 
         // ...and the save against a throwaway store cannot succeed, which is now reported rather
         // than swallowed by a `print`.
@@ -191,13 +199,50 @@ struct CalendarManagerScenarioTests {
         #expect(manager.deleteEvent(event, scope: .futureOccurrences) == .noWritableCalendar)
         #expect(manager.lastWriteFailure == .noWritableCalendar)
 
+        // A write that reaches EventKit and is refused: a writable scratch calendar gets the
+        // update past its own read-only guard ([[T-17422]]).
+        let scratchStore = EKEventStore()
+        let writable = EKEvent(eventStore: scratchStore)
+        writable.calendar = EKCalendar(for: .event, eventStore: scratchStore)
         let start = Date()
-        let failure = manager.updateEvent(event, title: "Rejected", startDate: start, endDate: start.addingTimeInterval(1800))
+        let failure = manager.updateEvent(writable, title: "Rejected", startDate: start, endDate: start.addingTimeInterval(1800))
         guard case .saveFailed = failure else {
             Issue.record("expected EventKit to refuse the foreign event, got \(String(describing: failure))")
             return
         }
         #expect(manager.storeVersion == before, "a refused write bumped storeVersion")
+        manager.lastWriteFailure = nil
+    }
+
+    /// **[[T-17422]]**: the desktop update and note writes refuse a read-only event before they
+    /// touch it, with the `noWritableCalendar` cause `iOSCalendarManager` gives ([[T-8201]]),
+    /// rather than mutating the event and letting EventKit refuse it as `.saveFailed`. The note
+    /// write refuses even when the text is unchanged, as iOS's does.
+    @Test func aReadOnlyUpdateOrNoteWriteIsRefusedBeforeTheEventIsTouched() {
+        let manager = makeManager(authorized: true)
+        // A foreign-store event has no calendar, so `canModify` answers false for it.
+        let event = EKEvent(eventStore: EKEventStore())
+        event.title = "Untouched"
+        event.notes = "Kept"
+        #expect(!manager.canModify(event), "precondition: the scratch event is read-only")
+        let before = manager.storeVersion
+        let start = Date(timeIntervalSinceReferenceDate: Date().timeIntervalSinceReferenceDate.rounded(.down))
+
+        let answers: [CalendarWriteFailure?] = [
+            manager.updateEvent(event, title: "Moved", startDate: start, endDate: start.addingTimeInterval(1800), notes: "Changed"),
+            manager.updateEvent(event, title: "Moved", startMin: 60, durationMinutes: 30, dateKey: "2026-06-01"),
+            manager.updateEventNotes(event, notes: "Changed"),
+            manager.updateEventNotes(event, notes: "Kept"),
+        ]
+        #expect(answers.count == 4)
+        for (index, answer) in answers.enumerated() {
+            #expect(answer == .noWritableCalendar, "write #\(index) answered \(String(describing: answer))")
+        }
+        #expect(manager.lastWriteFailure == .noWritableCalendar)
+        #expect(event.title == "Untouched")
+        #expect(event.notes == "Kept")
+        #expect(event.startDate == nil)
+        #expect(manager.storeVersion == before)
         manager.lastWriteFailure = nil
     }
 

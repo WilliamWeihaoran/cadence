@@ -603,6 +603,11 @@ final class CalendarManager {
     ) -> CalendarWriteFailure? {
         guard isAuthorized else { return record(.notAuthorized) }
         guard endDate > startDate else { return record(.invalidRange) }
+        // [[T-17422]]: a read-only calendar is refused before the event is touched, with the
+        // shared `noWritableCalendar` cause, as `iOSCalendarManager.updateEvent` does ([[T-8201]]).
+        // The disarm check comes first so a disarmed launch still answers `.notAuthorized`.
+        guard !isEventKitDisarmed else { return record(.notAuthorized) }
+        guard canModify(event) else { return record(.noWritableCalendar) }
         event.title = CadenceEventTitleSupport.storedTitle(title)
         if let isAllDay {
             event.isAllDay = isAllDay
@@ -635,6 +640,12 @@ final class CalendarManager {
     @discardableResult
     func updateEventNotes(_ event: EKEvent, notes: String) -> CalendarWriteFailure? {
         guard isAuthorized else { return record(.notAuthorized) }
+        // [[T-17422]]: the read-only refusal iOS gives. Both callers (`MacEventNoteCommit` and
+        // `EventNoteSupport.syncNativeCalendarNotes`) skip a read-only event through
+        // `CadenceEventNoteSupport.canMirrorNotes` first, so the debounced flush never reaches this
+        // and cannot raise `calendarWriteFailureAlert` on a loop; this is the sink's own answer.
+        guard !isEventKitDisarmed else { return record(.notAuthorized) }
+        guard canModify(event) else { return record(.noWritableCalendar) }
         let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let nextNotes = trimmed.isEmpty ? nil : notes
         guard event.notes != nextNotes else { return nil }
