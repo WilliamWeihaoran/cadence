@@ -441,7 +441,7 @@ struct CalendarSnapshotWidgetView: View {
     /// told them apart least (T-10000).
     @ViewBuilder
     private var metricCards: some View {
-        CadenceWidgetMetricCard(title: "Overdue", value: "\(entry.snapshot.overdueCount)", valueTint: Theme.red)
+        CadenceWidgetMetricCard(title: "Overdue", value: "\(entry.snapshot.overdueCount)", valueTint: CadenceWidgetOverdueTint.value(for: entry.snapshot.overdueCount))
         CadenceWidgetMetricCard(title: CadenceWidgetCountWords.dueTitle, value: "\(dueCount)", valueTint: Theme.amber)
         CadenceWidgetMetricCard(title: CadenceWidgetCountWords.plannedTitle, value: "\(scheduledCount)", valueTint: Theme.blueLight)
     }
@@ -537,7 +537,6 @@ struct CalendarSnapshotWidgetView: View {
     }
 
     private var headerBadges: [WidgetHeaderBadge] {
-        let overdueTint = Theme.red
         let upcomingTint = Theme.blueLight
         let upcomingCount = visibleSpan.taskCount
 
@@ -554,19 +553,21 @@ struct CalendarSnapshotWidgetView: View {
             return [WidgetHeaderBadge(text: "unavailable", tint: Theme.amber)]
         }
 
+        // [[T-18040]]: no red `0 overdue` when nothing is late, at either family that draws badges.
+        let overdueBadges = CadenceWidgetCountWords.overdueBadge(entry.snapshot.overdueCount)
+            .map { [WidgetHeaderBadge(text: $0, tint: Theme.red)] } ?? []
+
         if widgetFamily == .systemMedium {
             // The three numbers the metric-card row used to carry at this family, in the one line
             // the tile can actually afford. `mediumLayout` says why the cards went (T-7122); the
             // total they sat under is still the count in the header's trailing corner.
-            return [
-                WidgetHeaderBadge(text: "\(entry.snapshot.overdueCount) overdue", tint: overdueTint),
+            return overdueBadges + [
                 WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(dueCount, CadenceWidgetCountWords.due), tint: Theme.amber),
                 WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(scheduledCount, CadenceWidgetCountWords.planned), tint: upcomingTint),
             ]
         }
 
-        return [
-            WidgetHeaderBadge(text: "\(entry.snapshot.overdueCount) overdue", tint: overdueTint),
+        return overdueBadges + [
             WidgetHeaderBadge(text: "\(upcomingCount) upcoming", tint: upcomingTint),
         ]
     }

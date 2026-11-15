@@ -190,9 +190,26 @@ nonisolated enum CadenceWidgetCountWords {
     static let dueTitle = "Due"
     static let plannedTitle = "Planned"
 
+    static let overdue = "overdue"
+
     /// "3 due", "1 planned": the badge line's spelling of a count.
     static func badge(_ count: Int, _ word: String) -> String {
         "\(count) \(word)"
+    }
+
+    /// **Overdue is an alarm only when something is late ([[T-18040]]).** Both widgets drew a red
+    /// `0 overdue` capsule, and red `Overdue 0` cards, on every medium and large tile of a
+    /// caught-up user, while the Today tile's own small family already left the badge out at zero
+    /// and the app itself says a calm "Nothing overdue". One rule for every family of both widgets:
+    /// the badge is dropped at zero (as the small Today tile always did), and the fixed-slot metric
+    /// card keeps its `0` but draws it in a quiet tint instead of red (`CadenceWidgetOverdueTint`).
+    static func isOverdue(_ count: Int) -> Bool {
+        count > 0
+    }
+
+    /// "2 overdue" when something is late, `nil` when nothing is -- the badge line leaves it out.
+    static func overdueBadge(_ count: Int) -> String? {
+        isOverdue(count) ? badge(count, overdue) : nil
     }
 }
 

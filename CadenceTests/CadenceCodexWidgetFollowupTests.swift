@@ -368,16 +368,46 @@ struct CadenceCodexWidgetFollowupTests {
         #expect(CadenceSourceScan.matchCount("(?m)^\\s*metricCards$", in: calendar) == 2)
         let start = try #require(calendar.range(of: "private var metricCards: some View {"))
         let cards = String(calendar[start.upperBound...])
-        let overdue = try #require(cards.range(of: "title: \"Overdue\", value: \"\\(entry.snapshot.overdueCount)\", valueTint: Theme.red)"))
+        // [[T-18040]]: red only when something is late -- `CadenceWidgetOverdueTint` says so.
+        let overdue = try #require(cards.range(of: "title: \"Overdue\", value: \"\\(entry.snapshot.overdueCount)\", valueTint: CadenceWidgetOverdueTint.value(for: entry.snapshot.overdueCount))"))
         let due = try #require(cards.range(of: "title: CadenceWidgetCountWords.dueTitle, value: \"\\(dueCount)\", valueTint: Theme.amber)"))
         let scheduled = try #require(cards.range(of: "title: CadenceWidgetCountWords.plannedTitle, value: \"\\(scheduledCount)\", valueTint: Theme.blueLight)"))
         #expect(overdue.upperBound <= due.lowerBound && due.upperBound <= scheduled.lowerBound)
         let panelStart = try #require(today.range(of: "private var summaryPanel: some View {"))
         let panel = String(today[panelStart.upperBound...])
-        let red = try #require(panel.range(of: "tint: Theme.red"))
+        let red = try #require(panel.range(of: "tint: CadenceWidgetOverdueTint.value(for: entry.snapshot.overdueCount)"))
         let amber = try #require(panel.range(of: "tint: Theme.amber"))
         let blue = try #require(panel.range(of: "tint: Theme.blueLight"))
         #expect(red.upperBound <= amber.lowerBound && amber.upperBound <= blue.lowerBound)
+    }
+
+    /// [[T-18040]]: both widgets drew a red `0 overdue` capsule on every medium and large tile, and
+    /// red `Overdue 0` cards, when nothing was late -- while the Today tile's own small family left
+    /// the badge out at zero. One rule now: the badge is dropped at zero at every family of both
+    /// widgets, and the fixed-slot card keeps its `0` in the quiet label tint instead of red.
+    @Test func neitherWidgetRaisesARedAlarmWhenNothingIsOverdue() throws {
+        #expect(CadenceWidgetCountWords.overdueBadge(0) == nil)
+        #expect(CadenceWidgetCountWords.overdueBadge(1) == "1 overdue")
+        #expect(CadenceWidgetCountWords.overdueBadge(4) == "4 overdue")
+        #expect(!CadenceWidgetCountWords.isOverdue(0))
+        #expect(CadenceWidgetCountWords.isOverdue(1))
+
+        let read = CadenceSourceScan.strippedSourceReader()
+        // Not `codeOnly`: the retired spelling is a string literal.
+        let today = try read("CadenceWidgets/TodayTasksWidgetView.swift")
+        let calendar = try read("CadenceWidgets/CalendarSnapshotWidget.swift")
+        for (path, code) in [("TodayTasksWidgetView", today), ("CalendarSnapshotWidget", calendar)] {
+            let badges = try #require(CadenceSourceScan.declarationBody("private var headerBadges", in: code))
+            // Every family's overdue badge comes from the one optional, never a hand-typed count.
+            #expect(CadenceSourceScan.matchCount(#"CadenceWidgetCountWords\.overdueBadge\(\s*entry\.snapshot\.overdueCount\s*\)"#, in: badges) == 1, "\(path) badge rule")
+            #expect(CadenceSourceScan.matchCount(#"overdue\"\s*,\s*tint:"#, in: code) == 0, "\(path) types an unconditional overdue badge again")
+            #expect(CadenceSourceScan.matchCount(#"overdueCount\s*>\s*0"#, in: badges) == 0, "\(path) guards zero by hand instead of the shared rule")
+            // The one overdue card/tile in each file reads the shared tint, not a bare `Theme.red`.
+            #expect(CadenceSourceScan.matchCount(#"CadenceWidgetOverdueTint\.value\(for:\s*entry\.snapshot\.overdueCount\)"#, in: code) == 1, "\(path) metric tint")
+        }
+        let chrome = try read("CadenceWidgets/WidgetChrome.swift")
+        let tint = try #require(CadenceSourceScan.declarationBody("static func value(for count: Int) -> Color", in: chrome))
+        #expect(CadenceSourceScan.matchCount(#"CadenceWidgetCountWords\.isOverdue\(count\)\s*\?\s*Theme\.red\s*:\s*Theme\.subdued"#, in: tint) == 1)
     }
 
     /// T-10002: the two widgets named the due-today count "due now" / "due" / "Due today" / "Due"

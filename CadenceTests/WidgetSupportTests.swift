@@ -322,7 +322,7 @@ struct WidgetSupportTests {
         let unavailableGuard = #"if\s+entry\.snapshot\.isUnavailable\s*\{\s*return\s*\[\s*WidgetHeaderBadge\(\s*text:\s*"unavailable",[^\]]*\]\s*\}"#
         #expect(CadenceSourceScan.matchCount(unavailableGuard, in: badges) == 1)
         let guardAt = try #require(badges.range(of: unavailableGuard, options: .regularExpression))
-        let firstCount = try #require(badges.range(of: "overdue\", tint:"))
+        let firstCount = try #require(badges.range(of: "CadenceWidgetCountWords.overdueBadge("))
         #expect(guardAt.lowerBound < firstCount.lowerBound)
     }
 

@@ -212,7 +212,7 @@ struct TodayTasksWidgetView: View {
                 metricTile(
                     title: "Overdue",
                     value: entry.snapshot.overdueCount,
-                    tint: Theme.red
+                    tint: CadenceWidgetOverdueTint.value(for: entry.snapshot.overdueCount)
                 )
                 metricTile(
                     title: CadenceWidgetCountWords.dueTitle,
@@ -627,27 +627,27 @@ struct TodayTasksWidgetView: View {
             ]
         }
 
-        let overdueTint = Theme.red
         let dueTint = Theme.amber
         let scheduledTint = Theme.blueLight
+        // [[T-18040]]: no `0 overdue` at any family -- the small tile's rule, now everyone's.
+        let overdueBadges = CadenceWidgetCountWords.overdueBadge(entry.snapshot.overdueCount)
+            .map { [WidgetHeaderBadge(text: $0, tint: Theme.red)] } ?? []
 
         switch widgetFamily {
         case .systemSmall:
-            if entry.snapshot.overdueCount > 0 {
-                return [WidgetHeaderBadge(text: "\(entry.snapshot.overdueCount) overdue", tint: overdueTint)]
+            if !overdueBadges.isEmpty {
+                return overdueBadges
             }
             if entry.snapshot.dueTodayCount > 0 {
                 return [WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(entry.snapshot.dueTodayCount, CadenceWidgetCountWords.due), tint: dueTint)]
             }
             return [WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(entry.snapshot.scheduledTodayCount, CadenceWidgetCountWords.planned), tint: scheduledTint)]
         case .systemMedium:
-            return [
-                WidgetHeaderBadge(text: "\(entry.snapshot.overdueCount) overdue", tint: overdueTint),
+            return overdueBadges + [
                 WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(entry.snapshot.dueTodayCount, CadenceWidgetCountWords.due), tint: dueTint),
             ]
         default:
-            return [
-                WidgetHeaderBadge(text: "\(entry.snapshot.overdueCount) overdue", tint: overdueTint),
+            return overdueBadges + [
                 WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(entry.snapshot.dueTodayCount, CadenceWidgetCountWords.due), tint: dueTint),
                 WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(entry.snapshot.scheduledTodayCount, CadenceWidgetCountWords.planned), tint: scheduledTint),
             ]

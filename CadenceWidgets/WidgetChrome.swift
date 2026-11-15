@@ -199,6 +199,15 @@ extension View {
     }
 }
 
+/// The overdue figure's colour on a metric card or tile ([[T-18040]]): red only when something is
+/// late, the quiet label tint for a genuine zero. The badge line drops a zero outright
+/// (`CadenceWidgetCountWords.overdueBadge`); a card is a fixed slot, so it keeps the `0` and calms it.
+enum CadenceWidgetOverdueTint {
+    static func value(for count: Int) -> Color {
+        CadenceWidgetCountWords.isOverdue(count) ? Theme.red : Theme.subdued
+    }
+}
+
 struct CadenceWidgetBadge: View {
     let text: String
     let tint: Color
