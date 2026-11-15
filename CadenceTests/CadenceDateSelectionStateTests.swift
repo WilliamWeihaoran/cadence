@@ -67,6 +67,8 @@ struct CadenceDateSelectionStateTests {
             ("Cadence/macOS/Sheets/CreateTaskSheetSupportViews.swift", ["hasSelection: isOn"]),
             ("Cadence/Shared/Components/CadenceSchedulePanel.swift", ["hasSelection: !draft.dueDateKey.isEmpty", "hasSelection: draft.hasDoDate"]),
             ("Cadence/iOS/iOSTaskRowActionViews.swift", ["hasSelection: !dateKey.isEmpty"]),
+            // [[T-18011]]: the capture card's Do/Due panel and its repeat Ends On panel.
+            ("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift", ["hasSelection: field == .dueDate ? !draft.dueDateKey.isEmpty : draft.hasDoDate", "hasSelection: !draft.seriesEndDateKey.isEmpty"]),
         ]
         for (path, needles) in callers {
             let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))

@@ -924,7 +924,10 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                 selection: dateBinding(field), viewMonth: $dateMonth, isOpen: .constant(true),
                 showsClear: false, inlineStyle: true,
                 markedDay: field == .doDate && draft.kind == .task
-                    ? DateFormatters.date(from: draft.dueDateKey) : nil
+                    ? DateFormatters.date(from: draft.dueDateKey) : nil,
+                // [[T-18011]]: an unset field's binding answers today only to place the grid;
+                // without this the Today pill and cell drew as picked over a dateless draft.
+                hasSelection: field == .dueDate ? !draft.dueDateKey.isEmpty : draft.hasDoDate
             )
             if field == .doDate {
                 Toggle(draft.kind == .event ? "All day" : "Without time", isOn: Binding(
@@ -1091,7 +1094,8 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                 if draft.seriesEndMode == .onDate {
                     CadenceQuickDatePopover(
                         selection: recurrenceEndBinding, viewMonth: $repeatEndMonth, isOpen: .constant(true),
-                        showsClear: false, inlineStyle: true
+                        showsClear: false, inlineStyle: true,
+                        hasSelection: !draft.seriesEndDateKey.isEmpty
                     )
                 } else if draft.seriesEndMode == .afterCount {
                     Stepper(CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(draft.seriesEndCount), value: Binding(get: { draft.seriesEndCount }, set: { draft.setSeriesEndCount($0) }), in: draft.seriesEndCountRange)
