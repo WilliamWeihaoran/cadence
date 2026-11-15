@@ -315,7 +315,8 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
         CadenceBoardColumnDueDatePlan.plan(
             dueDate: section.dueDate,
             hideWhenEmpty: hideColumnDueDateIfEmpty,
-            isCompleted: section.isCompleted
+            // [[T-18034]]: archiving cancels the open work, so an archived column is settled too.
+            isSettled: section.isCompleted || section.isArchived
         )
     }
 
@@ -338,11 +339,13 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
         }
 
         // [[T-11221]]: the shared words and drawing, which the iOS board's column now says too.
-        if let lifecycle = CadenceBoardColumnLifecycleCopy.label(
+        // [[T-18034]]: an archived column says "Archived".
+        if let lifecycle = CadenceBoardColumnLifecycleCopy.line(
             isCompleted: section.isCompleted,
+            isArchived: section.isArchived,
             isPendingCompletion: isPendingCompletion
         ) {
-            CadenceBoardColumnLifecycleLine(label: lifecycle)
+            CadenceBoardColumnLifecycleLine(line: lifecycle)
                 .padding(.leading, CadenceBoardColumnHeaderMetrics.detailLeadingInset)
         }
 

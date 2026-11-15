@@ -64,10 +64,24 @@ nonisolated enum CadenceBoardColumnLifecycleCopy {
     static let completed = CadenceBoardColumnLifecycleState.completed.label
     static let completing = "Completing…"
 
+    /// The words and the state whose colour draws them.
+    nonisolated struct Line: Equatable, Sendable {
+        let label: String
+        let state: CadenceBoardColumnLifecycleState
+    }
+
     /// `nil` for an open column, which draws no line.
-    static func label(isCompleted: Bool, isPendingCompletion: Bool = false) -> String? {
-        if isCompleted { return completed }
-        if isPendingCompletion { return completing }
+    ///
+    /// [[T-18034]]: the settled state is `CadenceBoardColumnLifecycleState.of(isCompleted:isArchived:)`,
+    /// the iPad list editor's answer ([[T-16132]]), so a column archived without being completed --
+    /// every column on the Show Archived board that is not also completed -- says "Archived" in
+    /// amber instead of nothing. "Completing…" is the countdown before completion and draws in
+    /// completion's colour; an archived column offers no completion ([[T-13101]]), so it cannot
+    /// be counting down.
+    static func line(isCompleted: Bool, isArchived: Bool, isPendingCompletion: Bool = false) -> Line? {
+        let state = CadenceBoardColumnLifecycleState.of(isCompleted: isCompleted, isArchived: isArchived)
+        if state != .active { return Line(label: state.label, state: state) }
+        if isPendingCompletion { return Line(label: completing, state: .completed) }
         return nil
     }
 }
@@ -132,11 +146,11 @@ nonisolated enum CadenceBoardColumnLifecycleOffer {
 /// The one drawing of that line, as `CadenceBoardColumnDueDateLine` is the one drawing of the due
 /// date above it.
 struct CadenceBoardColumnLifecycleLine: View {
-    let label: String
+    let line: CadenceBoardColumnLifecycleCopy.Line
 
     var body: some View {
-        Text(label)
+        Text(line.label)
             .cadenceFont(.metadata, base: 9, weight: .semibold)
-            .foregroundStyle(CadenceBoardColumnLifecycleState.completed.color)
+            .foregroundStyle(line.state.color)
     }
 }

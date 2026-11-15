@@ -83,9 +83,10 @@ nonisolated enum CadenceEmptyStateCopy {
     /// sentence, which is the same distinction `CadenceSharedConstantReuseSweepTests` makes when it
     /// drops SF Symbol names from its harvest.
     static let missingListTitle = "List not found"
-    /// Names all three ways a list goes missing, including the one that happens where this reader
-    /// cannot see it: another device. "Deleted" on its own would be a guess about which.
-    static let missingListSubtitle = "This list may have been archived, deleted, or changed on another device."
+    /// Names where a list goes missing, including the place this reader cannot see: another device.
+    /// [[T-18035]]: not "archived" -- every loader that falls through to this page looks the id up
+    /// in an unfiltered query, so an archived list still opens its own page. Deletion is the cause.
+    static let missingListSubtitle = "This list may have been deleted here or on another device."
 
     /// The iPad/iPhone list Kanban tab when the list has **no columns at all** — every section
     /// archived. It used to read "No kanban cards" whenever the list had no open tasks, which hid

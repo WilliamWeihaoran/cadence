@@ -324,6 +324,15 @@ let cadenceRetiredCopy: [CadenceRetiredPhrase] = [
         on, which the AGENTS.md page-header rule forbids; iOS's header over the same list had none.
         """
     ),
+    CadenceRetiredPhrase(
+        "This list may have been archived, deleted, or changed on another device.",
+        retiredBy: "T-18035",
+        why: """
+        The "List not found" page blamed archiving, which can never produce it: every loader that \
+        falls through to the page looks the id up unfiltered, so an archived list opens its own \
+        page. CadenceEmptyStateCopy.missingListSubtitle names deletion only.
+        """
+    ),
 ]
 
 // MARK: - The sweep

@@ -167,8 +167,9 @@ nonisolated struct CadenceBoardColumnDueDatePlan: Equatable, Sendable {
     /// The text of the line: Cadence's one due-date vocabulary ("Overdue Nov 9" / "Due today" /
     /// "Due tomorrow" / "Due Nov 14", [[T-15502]]), or `emptyLabel`.
     let label: String
-    /// Past due and not settled. A completed column is never overdue — the date it missed stopped
-    /// mattering when the column wound down.
+    /// Past due and not settled. A completed or archived column is never overdue — the date it
+    /// missed stopped mattering when the column wound down ([[T-18034]]: archiving cancels the
+    /// column's open work, so it settles the column as completing does).
     let isOverdue: Bool
 
     /// What a column with no due date says when it is shown anyway. macOS has always drawn this
@@ -178,7 +179,7 @@ nonisolated struct CadenceBoardColumnDueDatePlan: Equatable, Sendable {
     static func plan(
         dueDate: String,
         hideWhenEmpty: Bool,
-        isCompleted: Bool,
+        isSettled: Bool,
         relativeTo referenceDate: Date = Date()
     ) -> CadenceBoardColumnDueDatePlan {
         let hasDueDate = !dueDate.isEmpty
@@ -189,11 +190,12 @@ nonisolated struct CadenceBoardColumnDueDatePlan: Equatable, Sendable {
             // [[T-15502]]: `dueLabel`, the words the column's own task cards say ([[T-15491]]),
             // not `DateFormatters.relativeDate` ("Yesterday" / "Today"). [[T-15522]]: a completed
             // column is settled, so its past date says "Due Nov 9", agreeing with `isOverdue` below.
+            // [[T-18034]]: so is an archived one -- callers hand `isCompleted || isArchived`.
             label: hasDueDate
-                ? CadenceWidgetDateSupport.dueLabel(for: dueDate, todayKey: todayKey, isSettled: isCompleted) ?? dueDate
+                ? CadenceWidgetDateSupport.dueLabel(for: dueDate, todayKey: todayKey, isSettled: isSettled) ?? dueDate
                 : emptyLabel,
             isOverdue: hasDueDate
-                && !isCompleted
+                && !isSettled
                 && dueDate < todayKey
         )
     }

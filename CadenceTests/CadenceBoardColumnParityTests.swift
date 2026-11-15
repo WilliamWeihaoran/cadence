@@ -69,10 +69,26 @@ struct CadenceBoardColumnParityTests {
     // MARK: - Lifecycle line
 
     @Test func theLifecycleLineSaysCompletedThenCompletingThenNothing() {
-        #expect(CadenceBoardColumnLifecycleCopy.label(isCompleted: true) == "Completed")
-        #expect(CadenceBoardColumnLifecycleCopy.label(isCompleted: true, isPendingCompletion: true) == "Completed")
-        #expect(CadenceBoardColumnLifecycleCopy.label(isCompleted: false, isPendingCompletion: true) == "Completing…")
-        #expect(CadenceBoardColumnLifecycleCopy.label(isCompleted: false) == nil)
+        typealias Copy = CadenceBoardColumnLifecycleCopy
+        #expect(Copy.line(isCompleted: true, isArchived: true)?.label == "Completed")
+        #expect(Copy.line(isCompleted: true, isArchived: false, isPendingCompletion: true)?.label == "Completed")
+        #expect(Copy.line(isCompleted: false, isArchived: false, isPendingCompletion: true)?.label == "Completing…")
+        // The countdown draws in completion's colour, as it always has.
+        #expect(Copy.line(isCompleted: false, isArchived: false, isPendingCompletion: true)?.state == .completed)
+        #expect(Copy.line(isCompleted: false, isArchived: false) == nil)
+    }
+
+    /// **[[T-18034]].** Every column on the Show Archived board is archived; one archived without
+    /// being completed said nothing at all under its header on either board. It says the iPad list
+    /// editor's word for the same state ([[T-16132]]), in that state's amber.
+    @Test func anArchivedColumnThatWasNeverCompletedSaysArchivedInAmber() throws {
+        let line = try #require(CadenceBoardColumnLifecycleCopy.line(isCompleted: false, isArchived: true))
+        #expect(line.label == "Archived")
+        #expect(line.state == .archived)
+        #expect(line.state.color == Theme.amber)
+        let completed = try #require(CadenceBoardColumnLifecycleCopy.line(isCompleted: true, isArchived: true))
+        #expect(completed.label == "Completed" && completed.state == .completed, "completed still wins over archived")
+        #expect(completed.state.color == Theme.green)
     }
 
     /// [[T-16132]]: completing a column archives it ([[T-15722]]), so the order is the whole
@@ -84,7 +100,7 @@ struct CadenceBoardColumnParityTests {
         #expect(State.of(isCompleted: true, isArchived: false) == .completed)
         #expect(State.of(isCompleted: false, isArchived: true) == .archived)
         #expect(State.of(isCompleted: false, isArchived: false) == .active)
-        #expect(State.of(isCompleted: true, isArchived: true).label == CadenceBoardColumnLifecycleCopy.label(isCompleted: true))
+        #expect(State.of(isCompleted: true, isArchived: true).label == CadenceBoardColumnLifecycleCopy.line(isCompleted: true, isArchived: true)?.label)
         #expect(State.completed.color == CadenceBoardColumnTint.completed.color(listAccent: Theme.dim))
         #expect(State.archived.label == "Archived")
         #expect(State.active.label == "Active")
@@ -102,14 +118,20 @@ struct CadenceBoardColumnParityTests {
 
     @Test func bothBoardsDrawTheSharedLifecycleLine() throws {
         let header = try code(Self.macHeaderFile)
-        #expect(header.contains("CadenceBoardColumnLifecycleCopy.label("))
-        #expect(header.contains("CadenceBoardColumnLifecycleLine(label: lifecycle)"))
+        #expect(header.contains("CadenceBoardColumnLifecycleCopy.line("))
+        #expect(header.contains("isArchived: section.isArchived,"), "the Mac header hands the line no archived state ([[T-18034]])")
+        #expect(header.contains("CadenceBoardColumnLifecycleLine(line: lifecycle)"))
         #expect(!header.contains("\"Completing…\""), "the Mac header spells its own words again")
 
         let iOS = try code(Self.iOSBoardFile)
-        #expect(iOS.contains("CadenceBoardColumnLifecycleCopy.label(isCompleted: config(for: name)?.isCompleted ?? false)"))
-        #expect(iOS.contains("lifecycleLabel: lifecycleLabel(for: column.title)"), "the iOS board never hands the column its line")
-        #expect(iOS.contains("CadenceBoardColumnLifecycleLine(label: lifecycleLabel)"), "the iOS column never draws the line")
+        #expect(iOS.contains("CadenceBoardColumnLifecycleCopy.line("))
+        #expect(iOS.contains("isArchived: config?.isArchived ?? false"), "the iOS board hands the line no archived state ([[T-18034]])")
+        #expect(iOS.contains("lifecycleLine: lifecycleLine(for: column.title)"), "the iOS board never hands the column its line")
+        #expect(iOS.contains("CadenceBoardColumnLifecycleLine(line: lifecycleLine)"), "the iOS column never draws the line")
+
+        // [[T-18034]]: the line draws in its state's colour, so "Archived" is amber, not green.
+        let line = try code("Cadence/Shared/CadenceBoardColumnTint.swift")
+        #expect(line.contains(".foregroundStyle(line.state.color)"), "the lifecycle line paints every state one colour again")
     }
 
     // MARK: - Lifecycle offer

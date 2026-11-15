@@ -710,10 +710,10 @@ struct CadenceSharedBoardChromeTests {
     /// The hide flag is the whole reason a column with no date can still draw a line. macOS read it
     /// from the list; iOS drew no line at all, so the flag had nothing to govern there.
     @Test func anEmptyColumnDueDateIsDrawnOnlyWhenTheListDidNotAskToHideIt() {
-        let hidden = CadenceBoardColumnDueDatePlan.plan(dueDate: "", hideWhenEmpty: true, isCompleted: false)
+        let hidden = CadenceBoardColumnDueDatePlan.plan(dueDate: "", hideWhenEmpty: true, isSettled: false)
         #expect(hidden.isVisible == false)
 
-        let shown = CadenceBoardColumnDueDatePlan.plan(dueDate: "", hideWhenEmpty: false, isCompleted: false)
+        let shown = CadenceBoardColumnDueDatePlan.plan(dueDate: "", hideWhenEmpty: false, isSettled: false)
         #expect(shown.isVisible)
         #expect(shown.hasDueDate == false)
         #expect(shown.label == "No due date")
@@ -731,7 +731,7 @@ struct CadenceSharedBoardChromeTests {
             let plan = CadenceBoardColumnDueDatePlan.plan(
                 dueDate: "2026-09-02",
                 hideWhenEmpty: hideWhenEmpty,
-                isCompleted: false,
+                isSettled: false,
                 relativeTo: reference
             )
             #expect(plan.isVisible, "a dated column vanished at hideWhenEmpty: \(hideWhenEmpty)")
@@ -754,7 +754,7 @@ struct CadenceSharedBoardChromeTests {
         ]
         for (key, words) in expected {
             let plan = CadenceBoardColumnDueDatePlan.plan(
-                dueDate: key, hideWhenEmpty: false, isCompleted: false, relativeTo: reference
+                dueDate: key, hideWhenEmpty: false, isSettled: false, relativeTo: reference
             )
             #expect(plan.label == words, "\(key)")
             #expect(plan.label == CadenceWidgetDateSupport.dueLabel(for: key, todayKey: "2026-11-10"), "\(key)")
@@ -771,7 +771,7 @@ struct CadenceSharedBoardChromeTests {
             CadenceBoardColumnDueDatePlan.plan(
                 dueDate: dueDate,
                 hideWhenEmpty: false,
-                isCompleted: isCompleted,
+                isSettled: isCompleted,
                 relativeTo: reference
             )
         }
@@ -802,6 +802,20 @@ struct CadenceSharedBoardChromeTests {
                 "Cadence/macOS/Views/KanbanColumnSupportViews.swift": 1,
                 "Cadence/iOS/iOSListSupportViews.swift": 1
             ]
+        )
+
+        // [[T-18034]]: both boards hand the rule an ARCHIVED column as settled, not just a completed
+        // one -- archiving cancels the column's open work, and every column on the Show Archived
+        // board is archived. Handing `isCompleted` alone painted "Overdue Nov 9" in red there.
+        let macBoard = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanColumnSupportViews.swift"))
+        #expect(
+            macBoard.contains("isSettled: section.isCompleted || section.isArchived"),
+            "the Mac board calls an archived column's past date overdue again"
+        )
+        let iOSBoard = try strippingComments(sourceFile("Cadence/iOS/iOSListSupportViews.swift"))
+        #expect(
+            iOSBoard.contains("isSettled: (config?.isCompleted ?? false) || (config?.isArchived ?? false)"),
+            "the iOS board calls an archived column's past date overdue again"
         )
 
         // Neither board may re-spell the empty label or the overdue comparison it used to own.

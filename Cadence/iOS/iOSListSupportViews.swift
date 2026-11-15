@@ -639,7 +639,7 @@ struct iOSListKanbanPanel: View {
                                     title: column.title,
                                     dotColor: dotColor(for: column.title),
                                     dueDatePlan: dueDatePlan(for: column.title),
-                                    lifecycleLabel: lifecycleLabel(for: column.title),
+                                    lifecycleLine: lifecycleLine(for: column.title),
                                     tasks: column.tasks,
                                     completedTasks: finished[column.title] ?? [],
                                     todayKey: todayKey,
@@ -734,9 +734,14 @@ struct iOSListKanbanPanel: View {
         CadenceBoardColumnTint.dot(for: config(for: name)).color(listAccent: accent)
     }
 
-    /// "Completed" under a completed column's header, the Mac's words ([[T-11221]]).
-    private func lifecycleLabel(for name: String) -> String? {
-        CadenceBoardColumnLifecycleCopy.label(isCompleted: config(for: name)?.isCompleted ?? false)
+    /// "Completed" under a completed column's header, the Mac's words ([[T-11221]]); "Archived"
+    /// under one archived without being completed ([[T-18034]]).
+    private func lifecycleLine(for name: String) -> CadenceBoardColumnLifecycleCopy.Line? {
+        let config = config(for: name)
+        return CadenceBoardColumnLifecycleCopy.line(
+            isCompleted: config?.isCompleted ?? false,
+            isArchived: config?.isArchived ?? false
+        )
     }
 
     /// A column the list no longer configures has no due date to show, but it still obeys the
@@ -747,7 +752,8 @@ struct iOSListKanbanPanel: View {
         return CadenceBoardColumnDueDatePlan.plan(
             dueDate: config?.dueDate ?? "",
             hideWhenEmpty: hideSectionDueDateIfEmpty,
-            isCompleted: config?.isCompleted ?? false
+            // [[T-18034]]: archiving cancels the open work, so an archived column is settled too.
+            isSettled: (config?.isCompleted ?? false) || (config?.isArchived ?? false)
         )
     }
 
@@ -776,8 +782,8 @@ private struct iOSListKanbanColumn: View {
     /// way macOS sets it from the header popover.
     let dueDatePlan: CadenceBoardColumnDueDatePlan
     /// "Completed" for a completed column, under the due date as the Mac's header draws it
-    /// ([[T-11221]]); `nil` for an open one.
-    var lifecycleLabel: String? = nil
+    /// ([[T-11221]]), "Archived" for an archived one ([[T-18034]]); `nil` for an open one.
+    var lifecycleLine: CadenceBoardColumnLifecycleCopy.Line? = nil
     let tasks: [AppTask]
     /// **The column's finished cards, drawn behind a collapsed "Completed N" toggle at the foot of
     /// the stack** ([[T-9837]]) -- where macOS's `ListSectionKanbanColumn` closes with
@@ -842,8 +848,8 @@ private struct iOSListKanbanColumn: View {
                         CadenceBoardColumnDueDateLine(plan: dueDatePlan)
                             .padding(.leading, CadenceBoardColumnHeaderMetrics.detailLeadingInset)
                     }
-                    if let lifecycleLabel {
-                        CadenceBoardColumnLifecycleLine(label: lifecycleLabel)
+                    if let lifecycleLine {
+                        CadenceBoardColumnLifecycleLine(line: lifecycleLine)
                             .padding(.leading, CadenceBoardColumnHeaderMetrics.detailLeadingInset)
                     }
                 }

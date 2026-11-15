@@ -134,13 +134,21 @@ struct CadenceDueDateVocabularyTests {
         #expect(embedDue == "Due Nov 9", "embed chip")
 
         let completed = CadenceBoardColumnDueDatePlan.plan(
-            dueDate: past, hideWhenEmpty: false, isCompleted: true, relativeTo: reference
+            dueDate: past, hideWhenEmpty: false, isSettled: true, relativeTo: reference
         )
         #expect(completed.label == "Due Nov 9" && !completed.isOverdue, "completed column")
         let running = CadenceBoardColumnDueDatePlan.plan(
-            dueDate: past, hideWhenEmpty: false, isCompleted: false, relativeTo: reference
+            dueDate: past, hideWhenEmpty: false, isSettled: false, relativeTo: reference
         )
         #expect(running.label == "Overdue Nov 9" && running.isOverdue, "open column")
+        // [[T-18034]]: a column archived without being completed is settled as well -- archiving
+        // cancelled its open work. Both boards hand `isCompleted || isArchived`.
+        let archived = TaskSectionConfig(name: "Archived only", isCompleted: false, isArchived: true)
+        let archivedPlan = CadenceBoardColumnDueDatePlan.plan(
+            dueDate: past, hideWhenEmpty: false,
+            isSettled: archived.isCompleted || archived.isArchived, relativeTo: reference
+        )
+        #expect(archivedPlan.label == "Due Nov 9" && !archivedPlan.isOverdue, "archived, never completed column")
     }
 
     /// The three note-reference surfaces are a SwiftUI body each, so their wiring is read as source:

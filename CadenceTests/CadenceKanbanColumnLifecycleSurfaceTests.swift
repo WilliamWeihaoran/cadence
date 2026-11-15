@@ -1194,7 +1194,7 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
         // uses — this is a failure, and it must not be quieter than the "Completing…" it replaces.
         let detail = try #require(bodyOfComputed("headerDetail", in: support))
         // [[T-11221]]: the words are `CadenceBoardColumnLifecycleCopy`'s, which iOS reads too.
-        #expect(detail.contains("CadenceBoardColumnLifecycleCopy.label("), "non-vacuity: wrong slice read")
+        #expect(detail.contains("CadenceBoardColumnLifecycleCopy.line("), "non-vacuity: wrong slice read")
         #expect(detail.contains("CadenceInlineFailureNotice(text: failureNotice)"))
         let countdown = try #require(detail.range(of: "isPendingCompletion"))
         let notice = try #require(detail.range(of: "CadenceInlineFailureNotice(text: failureNotice)"))

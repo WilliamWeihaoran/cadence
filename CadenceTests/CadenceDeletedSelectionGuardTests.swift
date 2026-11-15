@@ -296,11 +296,12 @@ struct CadenceDeletedSelectionGuardTests {
         }
 
         // Reading one constant twice is not a convergence if the constant has quietly become
-        // something else, so the sentence is pinned by value too — and it is iOS's, unchanged.
+        // something else, so the sentence is pinned by value too. [[T-18035]] dropped "archived":
+        // an archived list still opens its own page, so archiving never lands here.
         #expect(CadenceEmptyStateCopy.missingListTitle == "List not found")
         #expect(
             CadenceEmptyStateCopy.missingListSubtitle
-                == "This list may have been archived, deleted, or changed on another device."
+                == "This list may have been deleted here or on another device."
         )
 
         // The panel component is allowed to differ — `iOSEmptyPanel` is behind `#if os(iOS)` — and
