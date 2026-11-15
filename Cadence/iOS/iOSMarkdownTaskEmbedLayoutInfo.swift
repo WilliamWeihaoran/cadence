@@ -85,8 +85,29 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
     static let subtaskRowMinX: CGFloat = 44 + 38
     static let subtaskRowY: CGFloat = 66
     static let subtaskRowHeight: CGFloat = 16
-    /// The `+N` chip's drawn width.
-    static let subtaskOverflowWidth: CGFloat = 34
+    /// The overflow chip's narrowest width: the room the bare `+N` it drew before [[T-17765]] took.
+    static let subtaskOverflowMinWidth: CGFloat = 34
+
+    /// [[T-17765]]: the overflow chip says `+N more`, the shared `moreLabel(hidden:)` the Mac card
+    /// and every other overflow line read. It read a bare `+N` in a fixed 34pt slot; no hardware
+    /// constraint answered that -- the row reserves the chip's room and gives up an item to it --
+    /// so the slot is now sized from the label, as the Mac card's is.
+    static func subtaskOverflowLabel(count: Int) -> String {
+        CadenceTaskSurfaceOptions.moreLabel(hidden: count)
+    }
+
+    /// The overflow chip's width for `count`, measured in the card's 10pt font, never under
+    /// `subtaskOverflowMinWidth`. Layout reserves it and drawing fills it, so the label always fits.
+    func subtaskOverflowWidth(count: Int) -> CGFloat {
+        let label = Self.subtaskOverflowLabel(count: count)
+        return max(Self.subtaskOverflowMinWidth, ceil(NSString(string: label).size(withAttributes: smallTextAttributes).width))
+    }
+
+    /// [[T-17765]]: the `done/total` text before the row, `CadenceSubtaskProgress.compactLabel` --
+    /// the figure the Mac card's chip and every task row's badge draw.
+    static func subtaskProgressLabel(for task: MarkdownTaskEmbedRenderInfo) -> String? {
+        task.subtaskProgress?.compactLabel
+    }
 
     /// The shared row geometry (`CadenceTaskEmbedSubtaskRow`), measured in this card's 10pt font.
     /// [[T-9331]]: laid out with the `+N` chip's room reserved, as the Mac card is since
@@ -101,7 +122,7 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
             maxX: width - 12,
             rowY: Self.subtaskRowY,
             rowHeight: Self.subtaskRowHeight,
-            overflowWidth: { _ in Self.subtaskOverflowWidth }
+            overflowWidth: { count in subtaskOverflowWidth(count: count) }
         ) { title, _ in
             ceil(NSString(string: title).size(withAttributes: smallTextAttributes).width)
         }
@@ -211,8 +232,9 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
 
     private func drawSubtasks(width: CGFloat) {
         guard task.hasSubtasks else { return }
-        let summary = "\(task.completedSubtaskCount)/\(task.subtaskTotalCount)"
-        drawSmallText(summary, color: UIColor(Theme.dim), rect: CGRect(x: 44, y: Self.subtaskRowY, width: 34, height: 16))
+        if let summary = Self.subtaskProgressLabel(for: task) {
+            drawSmallText(summary, color: UIColor(Theme.dim), rect: CGRect(x: 44, y: Self.subtaskRowY, width: 34, height: 16))
+        }
 
         let layout = subtaskRow(width: width)
         for item in layout.row.items {
@@ -223,7 +245,7 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
         // 393pt phone the third subtask often does not fit, and leaving it uncounted lost it.
         // [[T-9331]]: the layout reserved the chip's room, so a full row still says so.
         if let overflow = layout.overflow {
-            drawSmallText("+\(overflow.count)", color: UIColor(Theme.dim), rect: overflow.full)
+            drawSmallText(Self.subtaskOverflowLabel(count: overflow.count), color: UIColor(Theme.dim), rect: overflow.full)
         }
     }
 

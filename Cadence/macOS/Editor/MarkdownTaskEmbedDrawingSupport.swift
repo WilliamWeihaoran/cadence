@@ -333,7 +333,9 @@ enum MarkdownTaskEmbedDrawing {
         separator.stroke()
 
         let progressRect = NSRect(x: cardRect.minX + 15, y: cardRect.minY + 70, width: 36, height: 18)
-        drawProgressChip(label: "\(task.completedSubtaskCount)/\(task.subtaskTotalCount)", rect: progressRect)
+        if let progress = subtaskProgressLabel(for: task) {
+            drawProgressChip(label: progress, rect: progressRect)
+        }
 
         for subtask in task.visibleSubtasks {
             guard let rect = rects.first(where: { $0.subtaskID == subtask.id }) else { continue }
@@ -344,6 +346,17 @@ enum MarkdownTaskEmbedDrawing {
         if let overflow = subtaskRow(task: task, cardRect: cardRect).overflow {
             drawOverflowChip(count: overflow.count, rect: overflow.full)
         }
+    }
+
+    /// [[T-17765]]: the `done/total` chip, `CadenceSubtaskProgress.compactLabel` -- the figure the
+    /// iOS card and every task row's badge draw, never a second spelling typed here.
+    static func subtaskProgressLabel(for task: MarkdownTaskEmbedRenderInfo) -> String? {
+        task.subtaskProgress?.compactLabel
+    }
+
+    /// [[T-17765]]: `+N more`, the shared overflow line the iOS card now draws too.
+    static func subtaskOverflowLabel(count: Int) -> String {
+        CadenceTaskSurfaceOptions.moreLabel(hidden: count)
     }
 
     /// [[T-9322]]: the `+N` chip counts every subtask the row did not draw — past the third, and
@@ -368,7 +381,7 @@ enum MarkdownTaskEmbedDrawing {
             rowY: cardRect.minY + 70,
             rowHeight: 18,
             overflowWidth: { count in
-                let label = CadenceTaskSurfaceOptions.moreLabel(hidden: count)
+                let label = subtaskOverflowLabel(count: count)
                 return min(max(48, label.size(withAttributes: subtaskMetaAttributes).width + 16), 84)
             }
         ) { title, isDone in
@@ -408,7 +421,7 @@ enum MarkdownTaskEmbedDrawing {
         MarkdownStylist.codeBorder.withAlphaComponent(0.52).setStroke()
         path.lineWidth = 0.7
         path.stroke()
-        (CadenceTaskSurfaceOptions.moreLabel(hidden: count) as NSString).draw(in: rect.insetBy(dx: 6, dy: 3), withAttributes: subtaskMetaAttributes)
+        (subtaskOverflowLabel(count: count) as NSString).draw(in: rect.insetBy(dx: 6, dy: 3), withAttributes: subtaskMetaAttributes)
     }
 
     private static func drawSubtask(

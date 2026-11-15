@@ -69,7 +69,8 @@ struct iOSMarkdownTaskEmbedSubtaskOverflowTests {
                     let chip = try #require(layout.overflow, "width \(width): \(fixture.subtaskTotalCount - placed) subtasks missing and no +N")
                     chipsDrawn += 1
                     #expect(chip.count == fixture.subtaskTotalCount - placed, "width \(width)")
-                    #expect(chip.full.width == iOSMarkdownTaskEmbedLayoutInfo.subtaskOverflowWidth, "width \(width)")
+                    // [[T-17765]]: sized from the `+N more` label rather than a fixed 34pt.
+                    #expect(chip.full.width == card.subtaskOverflowWidth(count: chip.count), "width \(width)")
                     #expect(chip.full.maxX <= width - 12, "width \(width): the chip crosses the card's edge")
                     if let last = layout.row.items.last {
                         #expect(chip.full.minX > last.full.maxX, "width \(width): the chip overlaps the last item")

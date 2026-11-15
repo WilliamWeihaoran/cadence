@@ -49,6 +49,14 @@ nonisolated struct MarkdownTaskEmbedRenderInfo: Hashable {
         subtasks.filter(\.isDone).count
     }
 
+    /// [[T-17765]]: the card's `done/total` chip, as the shared `CadenceSubtaskProgress` spells it --
+    /// one figure for both platforms' cards and every task row, so none of them types its own
+    /// `"\(done)/\(total)"`. Nil when the task has no subtasks, as the cards draw no chip then.
+    var subtaskProgress: CadenceSubtaskProgress? {
+        guard !subtasks.isEmpty else { return nil }
+        return CadenceSubtaskProgress(completed: completedSubtaskCount, total: subtaskTotalCount)
+    }
+
     var visibleSubtasks: [MarkdownTaskEmbedSubtaskRenderInfo] {
         Array(subtasks.prefix(3))
     }
