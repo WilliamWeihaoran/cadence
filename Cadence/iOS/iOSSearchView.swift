@@ -308,13 +308,25 @@ struct iOSSearchView: View {
     /// Fields and aliases come from `CadenceTaskSearchSupport`; this view keeps the row. The list
     /// this used to build by hand had no lifecycle aliases and no tag slugs, so *done*,
     /// *completed* and a hand-set slug found tasks on the Mac and nothing here (T-377).
+    ///
+    /// [[T-18131]]: ranked by `CadenceTaskSearchSupport.rankMatches`, the comparator Cmd+K's
+    /// `taskResults` shares -- open before done, then the occurrence's date -- not the generic
+    /// funnel, whose identity leg shuffled a repeating task's open occurrence among its done copies.
     private var rankedTaskResults: [iOSSearchResult] {
-        iOSSearchIndexSupport.rankedResults(searchableTasks.compactMap { task in
+        let matches: [(task: AppTask, row: iOSSearchResult)] = searchableTasks.compactMap { task in
             guard let score = CadenceTaskSearchSupport.matchScore(query: trimmedQuery, task: task) else {
                 return nil
             }
-            return taskResult(task, score: score)
-        })
+            return (task, taskResult(task, score: score))
+        }
+        return CadenceTaskSearchSupport.rankMatches(
+            matches,
+            task: { $0.task },
+            score: { $0.row.score },
+            title: { $0.row.title },
+            identity: { $0.row.id }
+        )
+        .map(\.row)
     }
 
     private func taskResult(_ task: AppTask, score: Int) -> iOSSearchResult {

@@ -824,10 +824,12 @@ struct CadenceSearchCandidateSupportTests {
         // And the one that left is really gone, so this count cannot quietly be five of six.
         #expect(!stripped.contains("private var progressResults"))
 
-        // [[T-14622]]: four through the generic funnel and Events through its own, which breaks a
-        // score tie on time -- still one call per scoring pass, five in all.
-        #expect(CadenceSourceScan.matchCount("iOSSearchIndexSupport\\.rankedResults\\(", in: stripped) == 4)
+        // [[T-14622]]: Events through its own funnel, which breaks a score tie on time; [[T-18131]]:
+        // Tasks through `CadenceTaskSearchSupport.rankMatches`, which breaks one on open-before-done
+        // and date -- three through the generic funnel, still one call per scoring pass, five in all.
+        #expect(CadenceSourceScan.matchCount("iOSSearchIndexSupport\\.rankedResults\\(", in: stripped) == 3)
         #expect(CadenceSourceScan.matchCount("iOSSearchIndexSupport\\.rankedEventResults\\(", in: stripped) == 1)
+        #expect(CadenceSourceScan.matchCount("CadenceTaskSearchSupport\\.rankMatches\\(", in: stripped) == 1)
 
         // The bare comparators this ticket removed, and a self-check that the pattern still
         // matches the shape it is looking for.
@@ -1014,9 +1016,11 @@ struct CadenceSearchCandidateSupportTests {
         // The score funnel is still the *searching* branches' and only theirs: five sections, five
         // calls. An idle list is chronological or manual on purpose, and routing it through the
         // funnel would re-sort all three to alphabetical, since with no query every row scores 0.
-        // Events ranks through its own funnel since [[T-14622]], so four plus one.
-        #expect(CadenceSourceScan.matchCount("iOSSearchIndexSupport\\.rankedResults\\(", in: stripped) == 4)
+        // Events ranks through its own funnel since [[T-14622]] and Tasks through theirs since
+        // [[T-18131]], so three plus two.
+        #expect(CadenceSourceScan.matchCount("iOSSearchIndexSupport\\.rankedResults\\(", in: stripped) == 3)
         #expect(CadenceSourceScan.matchCount("iOSSearchIndexSupport\\.rankedEventResults\\(", in: stripped) == 1)
+        #expect(CadenceSourceScan.matchCount("CadenceTaskSearchSupport\\.rankMatches\\(", in: stripped) == 1)
     }
 
     // MARK: - T-6975: both surfaces say when Completed is holding matches back

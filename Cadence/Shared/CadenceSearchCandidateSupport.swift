@@ -174,6 +174,69 @@ nonisolated enum CadenceTaskSearchSupport {
         CadenceSearchMatcher.matchScore(query: query, fields: searchFields(for: task))
     }
 
+    /// The legs a searching Tasks section ranks a match on, built once per item.
+    struct SearchRankKey: Equatable {
+        let score: Int
+        let isDone: Bool
+        /// The occurrence's date: its do date, else its due date (`YYYY-MM-DD`, or "" for none).
+        let date: String
+        let occurrenceIndex: Int
+        let title: String
+        let identity: String
+    }
+
+    /// **[[T-18131]]: a score tie breaks on open-before-done, then on the occurrence's date.**
+    /// Every occurrence of a repeating task carries the same title, notes, list, tags and priority
+    /// (`makeNextRecurringTask`), so they score alike for any title query, and the generic
+    /// `CadenceSearchMatcher.rank` fell through title to identity -- a random UUID. With the
+    /// Completed filter on, the one open occurrence was shuffled among a month of done copies and
+    /// often pushed past the section's cut. So: score descending; open before done; date newest
+    /// first, a dateless task last; `recurrenceOccurrenceIndex` descending as the series leg; then
+    /// title and identity, so the order stays total (T-372a). Cmd+K and iOS Search both rank
+    /// through `rankMatches` ([[T-8201]]: one rule, not two).
+    static func isRankedBefore(_ lhs: SearchRankKey, _ rhs: SearchRankKey) -> Bool {
+        if lhs.score != rhs.score { return lhs.score > rhs.score }
+        if lhs.isDone != rhs.isDone { return !lhs.isDone }
+        if lhs.date != rhs.date {
+            if lhs.date.isEmpty || rhs.date.isEmpty { return rhs.date.isEmpty }
+            return lhs.date > rhs.date
+        }
+        if lhs.occurrenceIndex != rhs.occurrenceIndex { return lhs.occurrenceIndex > rhs.occurrenceIndex }
+        let titles = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+        if titles != .orderedSame { return titles == .orderedAscending }
+        return lhs.identity < rhs.identity
+    }
+
+    static func rankKey(task: AppTask, score: Int, title: String, identity: String) -> SearchRankKey {
+        SearchRankKey(
+            score: score,
+            isDone: task.isDone,
+            date: task.scheduledDate.isEmpty ? task.dueDate : task.scheduledDate,
+            occurrenceIndex: task.recurrenceOccurrenceIndex,
+            title: title,
+            identity: identity
+        )
+    }
+
+    /// Rank pre-scored task matches by `isRankedBefore`. Decorate-sort-undecorate, as
+    /// `CadenceSearchMatcher.rank` does; the row's own drawn title and id are passed in, so the
+    /// title and identity legs are the ones the row shows. Shaped like
+    /// `CadenceCalendarEventSearchSupport.rankMatches`.
+    static func rankMatches<Item>(
+        _ items: [Item],
+        task: (Item) -> AppTask,
+        score: (Item) -> Int,
+        title: (Item) -> String,
+        identity: (Item) -> String
+    ) -> [Item] {
+        items
+            .map { item in
+                (item: item, key: rankKey(task: task(item), score: score(item), title: title(item), identity: identity(item)))
+            }
+            .sorted { isRankedBefore($0.key, $1.key) }
+            .map(\.item)
+    }
+
     /// **Completion is asked first** ([[T-14012]]), the order `TaskCompletionAnimationManager.glyph(for:)`
     /// already uses. A finished task keeps its timeline slot, so asking the slot first drew a done
     /// task -- visible once the Completed filter is on -- with the open-work clock instead of the

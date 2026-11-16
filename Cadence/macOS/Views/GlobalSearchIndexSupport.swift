@@ -302,12 +302,23 @@ enum GlobalSearchIndexSupport {
         }
 
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
-        return rankedByScore(base.compactMap { task in
+        // [[T-18131]]: ranked by the task comparator iOS Search shares -- a score tie breaks on
+        // open before done, then the occurrence's date -- not `rankedByScore`, whose identity leg
+        // shuffled a repeating task's open occurrence among its done copies by UUID.
+        let matches: [(task: AppTask, result: GlobalSearchResult, score: Int)] = base.compactMap { task in
             guard let score = CadenceSearchMatcher.matchScore(
                 query: preparedQuery, fields: CadenceTaskSearchSupport.searchFields(for: task)
             ) else { return nil }
-            return (taskResult(for: task, todayKey: today), score)
-        })
+            return (task, taskResult(for: task, todayKey: today), score)
+        }
+        return CadenceTaskSearchSupport.rankMatches(
+            matches,
+            task: { $0.task },
+            score: { $0.score },
+            title: { $0.result.title },
+            identity: { $0.result.id }
+        )
+        .map(\.result)
     }
 
     /// One palette task row.
