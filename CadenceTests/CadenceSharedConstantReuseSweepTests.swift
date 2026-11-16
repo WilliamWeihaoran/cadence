@@ -673,7 +673,13 @@ struct CadenceSharedConstantReuseSweepTests {
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListDeletionSupport.swift")
         )
         #expect(deletion.contains("enum iOSListDeletionTarget"), "non-vacuity: file unread")
-        #expect(deletion.contains("kind.untitledName"))
+        // [[T-18077]]: the blank-name rule moved onto the shared kind, so the Mac dialogs read it
+        // too; the iOS target reads it there, and the evaluated half is below.
+        #expect(deletion.contains("kind.displayName("))
+        for kind in CadenceListDeletionKind.allCases {
+            #expect(kind.displayName(" \n") == kind.untitledName)
+            #expect(kind.displayName("Home") == "Home")
+        }
 
         let windDown = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListWindDownSupport.swift")

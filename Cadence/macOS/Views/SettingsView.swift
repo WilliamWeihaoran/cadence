@@ -100,7 +100,10 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { pendingDeleteArea = nil }
         } message: {
-            Text(CadenceListDeletionKind.area.cascadeSentence)
+            // [[T-18077]]: named, with what it holds -- the row that raised this lists many.
+            if let area = pendingDeleteArea {
+                Text(CadenceListDeletionSummary.confirmationMessage(for: area, in: modelContext))
+            }
         }
         .confirmationDialog(
             "Delete Project?",
@@ -116,7 +119,10 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { pendingDeleteProject = nil }
         } message: {
-            Text(CadenceListDeletionKind.project.cascadeSentence)
+            // [[T-18077]]: named, with what it holds -- the row that raised this lists many.
+            if let project = pendingDeleteProject {
+                Text(CadenceListDeletionSummary.confirmationMessage(for: project, in: modelContext))
+            }
         }
         .confirmationDialog(
             "Delete Context?",
@@ -132,7 +138,10 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { pendingDeleteContext = nil }
         } message: {
-            Text(CadenceListDeletionKind.context.cascadeSentence)
+            // [[T-18077]]: named, with what it holds -- the row that raised this lists many.
+            if let context = pendingDeleteContext {
+                Text(CadenceListDeletionSummary.confirmationMessage(for: context, in: modelContext))
+            }
         }
         .onAppear { cloudAccount.refreshIfNeeded() }
         // T-361: the toggle used to write `UserDefaults` and stop, leaving pending notifications

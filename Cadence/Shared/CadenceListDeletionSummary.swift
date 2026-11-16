@@ -40,6 +40,12 @@ enum CadenceListDeletionKind: String, CaseIterable, Sendable {
         }
     }
 
+    /// The name a delete confirmation shows: the list's own, or `untitledName` for a blank one.
+    /// One rule for both platforms ([[T-18077]]) -- iOS's sheet and the Mac's dialogs both read it.
+    func displayName(_ rawName: String) -> String {
+        rawName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? untitledName : rawName
+    }
+
     /// Shown **inside** the still-open confirmation when the delete could not be completed
     /// (T-320). It names the kind for the same reason `cascadeSentence` does: the sheet is one
     /// view used for three deletes, and "Couldn't delete this list" is not a thing the app calls
@@ -122,9 +128,10 @@ enum CadenceListDeletionKind: String, CaseIterable, Sendable {
 ///
 /// **Why counts at all.** Deleting an area is recursive — it takes its tasks, its list notes, its
 /// links, its legacy documents *and its nested projects*, and a context takes every area and
-/// project under it plus their goals and habits. macOS's confirmation names those *categories*;
-/// it cannot tell you that this particular area is holding 140 tasks. The iOS confirmation shows
-/// both, which is the one respect in which it is deliberately stronger than the desktop dialog.
+/// project under it plus their goals and habits. `cascadeSentence` names those *categories*; it
+/// cannot tell you that this particular area is holding 140 tasks. Both platforms show both: the
+/// iOS sheet draws them, and the Mac dialogs read `confirmationMessage(kind:listName:)` -- they
+/// showed the categories alone until [[T-18077]], with no hardware reason for the difference.
 ///
 /// **The counts mirror `ModelContext.deleteArea/deleteProject/deleteContext`**, including the two
 /// things a naive count would get wrong:
@@ -217,6 +224,45 @@ struct CadenceListDeletionSummary: Equatable, Sendable {
     private static func line(_ count: Int, _ singular: String, _ plural: String) -> String? {
         guard count > 0 else { return nil }
         return CadencePluralization.phrase(count, singular: singular, plural: plural)
+    }
+
+    /// The Mac confirmation's message: the iOS sheet's content as one block of text ([[T-18077]]).
+    ///
+    /// The Mac dialogs used to show `cascadeSentence` alone -- "the area", no name, no counts --
+    /// while iOS's sheet for the same cascade names the list and what it holds. Settings > Lists
+    /// raises its dialog from rows listing many lists at once, so a nameless "Delete Area?" did not
+    /// even say which one. No hardware reason for that ([[T-8201]]); this is the note dialog's
+    /// shape (`CadenceNoteDeletionSummary.confirmationMessage(noteTitle:)`) for a list: the list
+    /// named, then what goes with it (or the nothing-else sentence), then the doubt about the
+    /// counts, then the categorical sentence.
+    func confirmationMessage(kind: CadenceListDeletionKind, listName: String) -> String {
+        var lines = ["This will permanently delete \"\(kind.displayName(listName))\"."]
+        if isEmpty {
+            lines.append(kind.nothingElseFiledSentence)
+        } else if !lostItemLines.isEmpty {
+            lines.append("It takes \(Self.series(lostItemLines)) with it.")
+        }
+        lines += [unknownImpactLine, kind.cascadeSentence].compactMap { $0 }
+        return lines.joined(separator: "\n")
+    }
+
+    /// The three Mac call sites, so none of them can pair one kind's summary with another's words.
+    static func confirmationMessage(for area: Area, in modelContext: ModelContext) -> String {
+        forArea(area, in: modelContext).confirmationMessage(kind: .area, listName: area.name)
+    }
+
+    static func confirmationMessage(for project: Project, in modelContext: ModelContext) -> String {
+        forProject(project, in: modelContext).confirmationMessage(kind: .project, listName: project.name)
+    }
+
+    static func confirmationMessage(for context: Context, in modelContext: ModelContext) -> String {
+        forContext(context, in: modelContext).confirmationMessage(kind: .context, listName: context.name)
+    }
+
+    /// "a", "a and b", "a, b and c".
+    private static func series(_ items: [String]) -> String {
+        guard items.count > 1, let last = items.last else { return items.first ?? "" }
+        return "\(items.dropLast().joined(separator: ", ")) and \(last)"
     }
 
     /// **The `ModelContext` is what `images` costs.** The other seven counts are walked off the

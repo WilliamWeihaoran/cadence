@@ -43,7 +43,7 @@ enum iOSListDeletionTarget: Identifiable {
         case .project(let project): raw = project.name
         case .context(let context): raw = context.name
         }
-        return raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? kind.untitledName : raw
+        return kind.displayName(raw)
     }
 
     var icon: String {

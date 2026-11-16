@@ -129,7 +129,7 @@ struct EditAreaSheet: View {
             Button("Delete Area", role: .destructive) { deleteArea() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(CadenceListDeletionKind.area.cascadeSentence)
+            Text(CadenceListDeletionSummary.confirmationMessage(for: area, in: modelContext))
         }
     }
 
@@ -413,7 +413,7 @@ struct EditProjectSheet: View {
             Button("Delete Project", role: .destructive) { deleteProject() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(CadenceListDeletionKind.project.cascadeSentence)
+            Text(CadenceListDeletionSummary.confirmationMessage(for: project, in: modelContext))
         }
     }
 

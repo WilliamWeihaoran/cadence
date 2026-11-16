@@ -615,13 +615,74 @@ struct CadenceListDeletionSurfaceTests {
         }
     }
 
+    /// [[T-18077]]: the Mac dialog names the list and says what it holds, in the same words the
+    /// iOS sheet draws -- `lostItemLines`, `nothingElseFiledSentence`, `unknownImpactLine` -- with
+    /// the categorical `cascadeSentence` after them.
+    @Test func theMacListDeleteMessageNamesTheListAndWhatItHolds() throws {
+        let modelContext = ModelContext(try container())
+        let area = Area(name: "Home")
+        let project = Project(name: "Ship", area: area)
+        modelContext.insert(area)
+        modelContext.insert(project)
+        for title in ["One", "Two"] {
+            let task = AppTask(title: title)
+            task.area = area
+            modelContext.insert(task)
+        }
+        try modelContext.save()
+
+        let message = CadenceListDeletionSummary.confirmationMessage(for: area, in: modelContext)
+        #expect(message == [
+            "This will permanently delete \"Home\".",
+            "It takes 1 project and 2 tasks with it.",
+            CadenceListDeletionKind.area.cascadeSentence
+        ].joined(separator: "\n"))
+
+        // The project's own message is about the project, not its area.
+        let projectMessage = CadenceListDeletionSummary.confirmationMessage(for: project, in: modelContext)
+        #expect(projectMessage.hasPrefix("This will permanently delete \"Ship\"."))
+        #expect(projectMessage.hasSuffix(CadenceListDeletionKind.project.cascadeSentence))
+
+        // Three or more kinds read as a series.
+        var full = CadenceListDeletionSummary()
+        full.projects = 2
+        full.tasks = 140
+        full.notes = 3
+        #expect(
+            full.confirmationMessage(kind: .context, listName: "Work").contains(
+                "It takes 2 projects, 140 tasks and 3 notes with it."
+            )
+        )
+
+        // A blank name reads the shared placeholder; an empty list says nothing else goes.
+        let empty = CadenceListDeletionSummary().confirmationMessage(kind: .context, listName: "  ")
+        #expect(empty == [
+            "This will permanently delete \"\(CadenceListDeletionKind.context.untitledName)\".",
+            CadenceListDeletionKind.context.nothingElseFiledSentence,
+            CadenceListDeletionKind.context.cascadeSentence
+        ].joined(separator: "\n"))
+
+        // An unread store is reported, and never with the nothing-else claim beside it.
+        var unknown = CadenceListDeletionSummary()
+        unknown.hasUnknownImpact = true
+        let unknownMessage = unknown.confirmationMessage(kind: .area, listName: "Home")
+        #expect(unknownMessage.contains(CadenceNoteDeletionSummary.unknownImpactNotice))
+        #expect(!unknownMessage.contains(CadenceListDeletionKind.area.nothingElseFiledSentence))
+    }
+
     /// The confirmation copy is the shared one, so the two platforms cannot come to describe the
-    /// same cascade differently. macOS's three dialogs read it; nothing spells the sentence twice.
+    /// same cascade differently. macOS's five dialogs read it through
+    /// `CadenceListDeletionSummary.confirmationMessage` ([[T-18077]]), which appends it; iOS's sheet
+    /// draws it directly. Nothing spells the sentence twice.
     @Test func bothPlatformsReadTheSameCascadeSentence() throws {
         try expectOccurrences(of: "cascadeSentence", at: [
-            "Cadence/macOS/Views/SettingsView.swift": 3,
-            "Cadence/macOS/Sheets/EditListSheet.swift": 2,
+            "Cadence/macOS/Views/SettingsView.swift": 0,
+            "Cadence/macOS/Sheets/EditListSheet.swift": 0,
             "Cadence/iOS/iOSListDeletionSupport.swift": 1
+        ])
+        try expectCallSites(of: "CadenceListDeletionSummary.confirmationMessage", at: [
+            "Cadence/macOS/Views/SettingsView.swift": 3,
+            "Cadence/macOS/Sheets/EditListSheet.swift": 2
         ])
 
         // Scoped to the three list cascades, not to the words "permanently deletes" — Data Safety's
@@ -661,7 +722,8 @@ struct CadenceListDeletionSurfaceTests {
     @Test func theEmptyListDeleteSentenceIsSpelledOnceOnTheSharedKind() throws {
         // The declaration is on the shared kind; the one surface that draws it reads it.
         try expectOccurrences(of: "nothingElseFiledSentence", at: [
-            "Cadence/Shared/CadenceListDeletionSummary.swift": 1,
+            // The declaration, and the Mac message builder that reads it ([[T-18077]]).
+            "Cadence/Shared/CadenceListDeletionSummary.swift": 2,
             "Cadence/iOS/iOSListDeletionSupport.swift": 1
         ])
 
