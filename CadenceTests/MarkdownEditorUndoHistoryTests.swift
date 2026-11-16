@@ -233,22 +233,5 @@ struct MarkdownEditorUndoHistoryTests {
         harness.manager.redo()
         #expect(try harness.tasks(titled: "Milk").count == 1, "redo duplicated a task undo had kept")
     }
-
-    /// The Mac's instant `( ) ` trigger ([[T-18141]]) mints an "Untitled Task" the same way, and
-    /// its undo takes that task back out too.
-    @Test func undoOfTheUntitledTriggerTakesItsTaskBackOut() throws {
-        let harness = try Self.embedHarness("")
-        let untitled = MarkdownTaskEmbedRenderInfo.untitledTaskTitle
-
-        harness.manager.beginUndoGrouping()
-        harness.view.insertText("( ) ", replacementRange: NSRange(location: 0, length: 0))
-        harness.manager.endUndoGrouping()
-        #expect(try harness.tasks(titled: untitled).count == 1)
-        #expect(harness.view.string.hasPrefix("[[task:"))
-
-        harness.manager.undo()
-        #expect(!harness.view.string.contains("[[task:"))
-        #expect(try harness.tasks(titled: untitled).isEmpty, "undo left the untitled task in the store")
-    }
 }
 #endif

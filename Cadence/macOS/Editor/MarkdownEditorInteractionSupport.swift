@@ -57,7 +57,6 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     private var draggingTaskEmbedID: UUID?
     private var inlineTaskTitleEditor: NSTextField?
     private var inlineTaskTitleTaskID: UUID?
-    private var pendingInlineTaskTitleEditID: UUID?
     private var isEndingInlineTaskTitleEdit = false
     private let taskEmbedDragThreshold: CGFloat = 4
 
@@ -77,10 +76,6 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     var tableCellEditAddress: MarkdownTableCellAddress?
     var tableCellEditAnchor: Int?
     var isEndingTableCellEdit = false
-
-    var hasPendingInlineTaskTitleEdit: Bool {
-        pendingInlineTaskTitleEditID != nil
-    }
 
     /// The main-actor half of the editor's decoration layer.
     ///
@@ -677,20 +672,6 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         inlineTaskTitleTaskID = id
         window?.makeFirstResponder(editor)
         editor.selectText(nil)
-    }
-
-    /// Internal rather than `fileprivate` because `MarkdownEditorCoordinator` calls it and
-    /// now lives in its own file.
-    func queueInlineTaskTitleEdit(id: UUID) {
-        pendingInlineTaskTitleEditID = id
-    }
-
-    /// Internal rather than `fileprivate` because `MarkdownEditorCoordinator` calls it and
-    /// now lives in its own file.
-    func performPendingInlineTaskTitleEditIfNeeded() {
-        guard let pendingInlineTaskTitleEditID else { return }
-        self.pendingInlineTaskTitleEditID = nil
-        beginInlineTaskTitleEdit(id: pendingInlineTaskTitleEditID)
     }
 
     @objc private func commitInlineTaskTitleEditor() {

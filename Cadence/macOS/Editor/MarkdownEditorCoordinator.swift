@@ -376,29 +376,8 @@ extension MarkdownEditorCoordinator {
 
 extension MarkdownEditorCoordinator {
     private func applyInputTransforms(to textView: NSTextView) {
-        let nsText = textView.string as NSString
         let cursor = textView.selectedRange().location
         guard cursor > 0 else { return }
-
-        if cursor >= 4 {
-            let range = NSRange(location: cursor - 4, length: 4)
-            let snippet = nsText.substring(with: range)
-            if snippet == "( ) ",
-               MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil,
-               createUntitledEmbeddedTask(fromTriggerRange: range, in: textView) {
-                return
-            }
-        }
-
-        if cursor >= 3 {
-            let range = NSRange(location: cursor - 3, length: 3)
-            let snippet = nsText.substring(with: range)
-            if snippet == "() ",
-               MarkdownListSupport.indentationPrefix(in: nsText, replacingRange: range) != nil,
-               createUntitledEmbeddedTask(fromTriggerRange: range, in: textView) {
-                return
-            }
-        }
 
         if let mutation = MarkdownTypingTransformSupport.mutation(in: textView.string, cursor: cursor) {
             replaceText(
@@ -411,39 +390,21 @@ extension MarkdownEditorCoordinator {
         }
     }
 
-    private func createUntitledEmbeddedTask(fromTriggerRange range: NSRange, in textView: NSTextView) -> Bool {
-        guard let cadenceTextView = textView as? CadenceTextView,
-              let creation = cadenceTextView.onCreateEmbeddedMarkdownTask?(MarkdownTaskEmbedRenderInfo.untitledTaskTitle),
-              creation.reference.kind == .task,
-              MarkdownTaskEmbedParser.standaloneTaskReference(in: creation.reference.markdown) != nil else {
-            return false
-        }
-        let suggestion = creation.reference
-
-        undoManager.beginUndoGrouping()
-        defer { undoManager.endUndoGrouping() }
-        guard textView.shouldChangeText(in: range, replacementString: suggestion.markdown) else {
-            return true
-        }
-        textView.textStorage?.replaceCharacters(in: range, with: suggestion.markdown)
-        creation.undo?.register(on: undoManager)
-        if let titleRange = MarkdownTaskEmbedParser.referenceTitleRange(in: suggestion.markdown, lineStart: range.location) {
-            textView.setSelectedRange(titleRange)
-        } else {
-            textView.setSelectedRange(NSRange(location: range.location + (suggestion.markdown as NSString).length, length: 0))
-        }
-        cadenceTextView.queueInlineTaskTitleEdit(id: suggestion.targetID)
-        textView.typingAttributes = MarkdownStylist.baseAttributes
-        textView.didChangeText()
-        return true
-    }
-
+    /// Turns the `( ) …` line under the caret into a real task embed, on Return.
+    ///
+    /// Return is the only trigger, the rule iOS's `createEmbeddedTaskIfNeeded` records
+    /// ([[T-18141]]). Typing `( ) ` used to mint an "Untitled Task" the instant the space landed,
+    /// so a marker typed and then deleted left a task in the store; now a bare `( ) ` becomes an
+    /// "Untitled Task" on Return and `( ) Title` a task already named.
     private func createEmbeddedTaskIfNeeded(in textView: NSTextView, lineRange: NSRange, line: String) -> Bool {
         let selection = textView.selectedRange()
         guard selection.length == 0,
               selection.location >= lineRange.location + (line as NSString).length,
               let cadenceTextView = textView as? CadenceTextView,
-              let title = MarkdownTaskEmbedParser.draftTitle(in: line),
+              let title = MarkdownTaskEmbedParser.draftTitle(in: line)
+                ?? (MarkdownTaskEmbedParser.isUntitledDraftLine(line)
+                    ? MarkdownTaskEmbedRenderInfo.untitledTaskTitle
+                    : nil),
               let creation = cadenceTextView.onCreateEmbeddedMarkdownTask?(title),
               creation.reference.kind == .task,
               MarkdownTaskEmbedParser.standaloneTaskReference(in: creation.reference.markdown) != nil else {
@@ -495,9 +456,6 @@ extension MarkdownEditorCoordinator {
         }
         if let scrollView {
             MarkdownEditorScrollSupport.refreshLayout(in: scrollView)
-        }
-        if let cadenceTextView = textView as? CadenceTextView {
-            cadenceTextView.performPendingInlineTaskTitleEditIfNeeded()
         }
     }
 }
