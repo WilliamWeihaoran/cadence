@@ -124,8 +124,9 @@ struct iOSListIconBadge: View {
 struct iOSListsPageHeader: View {
     let areaCount: Int
     let projectCount: Int
-    /// Whether the page draws an Archived section -- the page's own `hasArchivedLists` ([[T-17786]]).
-    let hasArchived: Bool
+    /// Whether the store holds an archived, completed, paused or cancelled list ([[T-18072]]) --
+    /// `CadenceSidebarLists.hasInactiveLists(areas:projects:)` over the page's unfiltered query.
+    let hasInactive: Bool
     /// Set on iPhone, where this page is pushed with its navigation bar hidden. See
     /// `iOSHidesCompactNavigationBar()`.
     var onBack: (() -> Void)? = nil
@@ -149,7 +150,7 @@ struct iOSListsPageHeader: View {
             eyebrow: CadenceListsSummary.eyebrow(
                 areaCount: areaCount,
                 projectCount: projectCount,
-                hasArchived: hasArchived
+                hasInactive: hasInactive
             ),
             title: "Lists",
             color: Theme.blue,

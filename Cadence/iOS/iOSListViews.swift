@@ -49,6 +49,13 @@ struct iOSListsView: View {
         !archivedAreas.isEmpty || !archivedProjects.isEmpty
     }
 
+    /// **Whether a list exists that the active sections leave out** ([[T-18072]]): the eyebrow's
+    /// question, wider than `hasArchivedLists` -- a completed or paused list is no more "not yet"
+    /// than an archived one. Asked over the unfiltered queries, as both sidebars ask it.
+    private var hasInactiveLists: Bool {
+        CadenceSidebarLists.hasInactiveLists(areas: areas, projects: projects)
+    }
+
     private var isCompact: Bool {
         horizontalSizeClass == .compact
     }
@@ -115,7 +122,7 @@ struct iOSListsView: View {
             iOSListsPageHeader(
                 areaCount: activeAreas.count,
                 projectCount: activeProjects.count,
-                hasArchived: hasArchivedLists,
+                hasInactive: hasInactiveLists,
                 onBack: showsBack ? { dismiss() } : nil
             )
 
@@ -159,6 +166,7 @@ struct iOSListsView: View {
                 activeProjects: activeProjects,
                 archivedAreas: archivedAreas,
                 archivedProjects: archivedProjects,
+                hasInactiveLists: hasInactiveLists,
                 selectedRoute: $selectedRoute,
                 editorMode: $editorMode,
                 projectSubtitle: projectSubtitle,

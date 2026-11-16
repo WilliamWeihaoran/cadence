@@ -18,7 +18,14 @@ nonisolated enum CadenceListsSummary {
     /// the Archived section listing them, on the same screen. With something archived the eyebrow
     /// says what is true, in the empty panel's own words; the caller passes the same predicate
     /// that draws the Archived section (`hasArchivedLists`), as `activeListsSubtitle` asks.
-    static func eyebrow(areaCount: Int, projectCount: Int, hasArchived: Bool) -> String {
+    ///
+    /// **`hasInactive` is [[T-18072]].** Archived-only was still too narrow: a store whose every
+    /// list is completed (or whose every project is paused or cancelled) and nothing archived fell
+    /// back to "No lists yet" over the page's own "No active lists" panel. The caller now passes
+    /// [[T-17789]]'s `CadenceSidebarLists.hasInactiveLists(areas:projects:)`, the predicate both
+    /// sidebars already ask; `activeListsSubtitle(hasArchived:)` stays archived-only, because its
+    /// "restore one from Archived" points at a section only archived lists draw.
+    static func eyebrow(areaCount: Int, projectCount: Int, hasInactive: Bool) -> String {
         // No `max(_, 0)` clamp: the `> 0` guards below already exclude a negative, so a clamp was
         // dead code — a mutation test that deleted it left every assertion passing, which is how it
         // was found. The negative case is still pinned; it is these guards that pin it.
@@ -27,7 +34,7 @@ nonisolated enum CadenceListsSummary {
         if projectCount > 0 { parts.append("\(projectCount) \(projectCount == 1 ? "project" : "projects")") }
 
         guard !parts.isEmpty else {
-            return hasArchived
+            return hasInactive
                 ? CadenceEmptyStateCopy.activeListsTitle
                 : CadenceEmptyStateCopy.listsTitle(isNarrowed: false)
         }

@@ -6,6 +6,9 @@ struct iOSListsRegularPane: View {
     let activeProjects: [Project]
     let archivedAreas: [Area]
     let archivedProjects: [Project]
+    /// The host's `hasInactiveLists` ([[T-18072]]): this pane is handed filtered arrays, so it
+    /// cannot see a completed or paused list itself. Read only by the eyebrow.
+    let hasInactiveLists: Bool
     @Binding var selectedRoute: iOSListRoute?
     @Binding var editorMode: iOSListEditorMode?
     let projectSubtitle: (Project) -> String
@@ -37,7 +40,7 @@ struct iOSListsRegularPane: View {
             iOSListsPageHeader(
                 areaCount: activeAreas.count,
                 projectCount: activeProjects.count,
-                hasArchived: hasArchivedLists
+                hasInactive: hasInactiveLists
             )
 
             iOSListCreateButtonsRow(editorMode: $editorMode)
