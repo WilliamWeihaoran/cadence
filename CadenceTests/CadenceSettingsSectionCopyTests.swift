@@ -82,6 +82,12 @@ struct CadenceSettingsSectionCopyTests {
         ("CadenceAISettingsCopy.saveAPIKeyAction", "Save API Key"),
         ("CadenceAISettingsCopy.testConnectionAction", "Test Connection"),
         ("CadenceAISettingsCopy.deleteAPIKeyAction", "Delete API Key"),
+        // T-18102: the confirmation both Delete API Key buttons now raise.
+        ("CadenceAISettingsCopy.deleteAPIKeyConfirmationTitle", "Delete API Key?"),
+        (
+            "CadenceAISettingsCopy.deleteAPIKeyConfirmationMessage",
+            "Cadence will forget the OpenAI API key saved in this device's Keychain. No other device keeps a copy, so you will need to paste the key again to use AI actions."
+        ),
     ]
 
     /// **T-5000.** The Test Connection button's in-flight title: macOS typed "Testing..." and iOS

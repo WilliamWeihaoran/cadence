@@ -253,6 +253,14 @@ nonisolated enum CadenceAISettingsCopy {
     static let saveAPIKeyGlyph = "key.fill"
     static let testConnectionGlyph = "network"
     static let deleteAPIKeyGlyph = "trash"
+
+    /// The confirmation **Delete API Key** raises on both panes ([[T-18102]]). The button used to
+    /// delete the Keychain item on one click and say "API key removed." only afterwards, the shape
+    /// [[T-574]] removed from the Save path and left on the explicit button. The item is
+    /// `ThisDeviceOnly`, so nothing else holds a copy, and a provider key is usually shown once.
+    /// The message names the key and the cost, as the other Settings deletes name what they take.
+    static let deleteAPIKeyConfirmationTitle = "Delete API Key?"
+    static let deleteAPIKeyConfirmationMessage = "Cadence will forget the OpenAI API key saved in this device's Keychain. No other device keeps a copy, so you will need to paste the key again to use AI actions."
 }
 
 /// Settings → Notifications, which is one row in two states on both surfaces.

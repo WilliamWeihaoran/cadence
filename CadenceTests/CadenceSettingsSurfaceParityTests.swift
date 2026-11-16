@@ -200,4 +200,37 @@ struct CadenceSettingsSurfaceParityTests {
         #expect(pane.contains("Text(CadenceUnmanagedStoreCopy.macBackupFoldersDetail)"), "the pane no longer reads the shared sentence")
         #expect(!pane.contains("Earlier versions of Cadence kept"), "the pane types its own sentence beside the shared one")
     }
+
+    // MARK: - Delete API Key asks first
+
+    /// [[T-18102]]: both Delete API Key buttons removed the Keychain item on one click. Each now
+    /// only raises a confirmation, and `removeAPIKey` is reached from that dialog's destructive
+    /// button alone. Sliced so the claim is about the button and the dialog, not the whole file.
+    @Test func bothDeleteAPIKeyButtonsAskBeforeRemovingTheKey() throws {
+        let surfaces = [
+            ("Cadence/macOS/Views/SettingsSectionViews.swift", "struct SettingsAISection: View"),
+            ("Cadence/iOS/iOSSettingsTemplateAndListSections.swift", "struct iOSAISettingsSection: View"),
+        ]
+        for (path, declaration) in surfaces {
+            let body = try Self.body(declaration, in: path)
+            let button = try #require(body.range(of: "title: CadenceAISettingsCopy.deleteAPIKeyAction"), "\(path): the Delete API Key button is gone")
+            let dialog = try #require(body.range(of: ".confirmationDialog("), "\(path): the Delete API Key confirmation is gone")
+            #expect(button.upperBound < dialog.lowerBound, "\(path): the dialog no longer follows the button")
+            let buttonToDialog = String(body[button.upperBound..<dialog.lowerBound])
+            #expect(!buttonToDialog.contains("removeAPIKey"), "\(path): the button removes the key itself again")
+            #expect(buttonToDialog.contains("isConfirmingAPIKeyDeletion = true"), "\(path): the button no longer raises the confirmation")
+            let dialogTail = String(body[dialog.lowerBound...])
+            let message = try #require(dialogTail.range(of: "} message: {"), "\(path): the dialog has no message")
+            let actions = String(dialogTail[..<message.lowerBound])
+            #expect(actions.contains("CadenceAISettingsCopy.deleteAPIKeyConfirmationTitle"))
+            #expect(actions.contains("isPresented: $isConfirmingAPIKeyDeletion"))
+            #expect(actions.contains("Button(CadenceAISettingsCopy.deleteAPIKeyAction, role: .destructive"))
+            #expect(actions.contains("removeAPIKey"), "\(path): confirming no longer removes the key")
+            #expect(actions.contains("role: .cancel"), "\(path): the dialog has no Cancel")
+            #expect(dialogTail[message.upperBound...].contains("Text(CadenceAISettingsCopy.deleteAPIKeyConfirmationMessage)"))
+        }
+        #expect(CadenceAISettingsCopy.deleteAPIKeyConfirmationTitle == "Delete API Key?")
+        #expect(CadenceAISettingsCopy.deleteAPIKeyConfirmationMessage.contains("OpenAI API key"), "the message no longer names the key")
+        #expect(CadenceAISettingsCopy.deleteAPIKeyConfirmationMessage.contains("paste the key again"), "the message no longer says what it costs")
+    }
 }

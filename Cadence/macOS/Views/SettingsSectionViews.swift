@@ -160,6 +160,8 @@ struct SettingsAccountSection: View {
 struct SettingsAISection: View {
     let aiSettingsManager: AISettingsManager
     @Binding var aiAPIKeyDraft: String
+    /// [[T-18102]]: Delete API Key asks first; only the dialog's destructive button removes it.
+    @State private var isConfirmingAPIKeyDeletion = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -265,11 +267,7 @@ struct SettingsAISection: View {
                                 role: .destructive,
                                 size: .compact
                             ) {
-                                do {
-                                    try aiSettingsManager.removeAPIKey()
-                                } catch {
-                                    aiSettingsManager.statusMessage = AIErrorPresenter.message(for: error)
-                                }
+                                isConfirmingAPIKeyDeletion = true
                             }
                         }
                     }
@@ -278,6 +276,22 @@ struct SettingsAISection: View {
         }
         .onAppear {
             aiSettingsManager.refreshKeyStatus()
+        }
+        .confirmationDialog(
+            CadenceAISettingsCopy.deleteAPIKeyConfirmationTitle,
+            isPresented: $isConfirmingAPIKeyDeletion,
+            titleVisibility: .visible
+        ) {
+            Button(CadenceAISettingsCopy.deleteAPIKeyAction, role: .destructive) {
+                do {
+                    try aiSettingsManager.removeAPIKey()
+                } catch {
+                    aiSettingsManager.statusMessage = AIErrorPresenter.message(for: error)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(CadenceAISettingsCopy.deleteAPIKeyConfirmationMessage)
         }
     }
 
