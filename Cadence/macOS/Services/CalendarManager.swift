@@ -163,6 +163,23 @@ final class CalendarManager {
         }
     }
 
+    /// **[[T-18145]]. Which statuses `requestAccess` takes to the system rather than reapplying.**
+    ///
+    /// `.notDetermined`, and `.writeOnly` ("Add Only"): `requestFullAccessToEvents()` is EventKit's
+    /// documented upgrade path from write-only to full access, and `iOSCalendarManager` has asked
+    /// from both all along. The Mac asked from `.notDetermined` alone, so under Add Only access both
+    /// Mac notices offered Allow Access over a button that reapplied the same status and returned
+    /// `false` -- nothing on screen, on one platform only. `.denied` and `.restricted` never
+    /// re-prompt, which is why their notice sends the user to System Settings instead.
+    nonisolated static func asksSystem(for status: EKAuthorizationStatus) -> Bool {
+        switch status {
+        case .notDetermined, .writeOnly:
+            return true
+        default:
+            return false
+        }
+    }
+
     func requestAccess() async -> Bool {
         // [[T-3031]]: no prompt and no grant on a disarmed launch, whatever TCC would say.
         guard !isEventKitDisarmed else {
@@ -172,15 +189,13 @@ final class CalendarManager {
             return false
         }
         let status = EKEventStore.authorizationStatus(for: .event)
-        switch status {
-        case .fullAccess:
+        if status == .fullAccess {
             await MainActor.run {
                 applyAuthorizationStatus(status)
             }
             return true
-        case .notDetermined:
-            break
-        default:
+        }
+        guard Self.asksSystem(for: status) else {
             await MainActor.run {
                 applyAuthorizationStatus(status)
             }

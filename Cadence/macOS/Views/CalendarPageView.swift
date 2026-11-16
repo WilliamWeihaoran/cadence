@@ -199,6 +199,9 @@ struct CalendarPageView: View {
         // [[T-11196]] (1): this page's event blocks and chips open the editor Cmd+K asked for.
         // Only here -- the same blocks draw in Today's pane and the timeline overlay.
         .environment(\.honoursCalendarEventEditorRequests, true)
+        // [[T-18144]]: the access notice re-reads Calendar access on appear and on a return to
+        // the app, so granting it in System Settings brings the events back without a relaunch.
+        .calendarAuthorizationLifecycle(calendarManager)
         .onAppear {
             // A remembered Board opens on the remembered day, the way switching to it does,
             // rather than on the `@State` default of today ([[T-8737]]).

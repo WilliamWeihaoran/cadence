@@ -1,5 +1,8 @@
 import Foundation
 import Testing
+#if os(macOS)
+import EventKit
+#endif
 @testable import Cadence
 
 /// [[T-5954]]: the Calendar page's notice when Apple Calendar cannot be read, and the empty copy
@@ -280,3 +283,53 @@ struct CadenceCalendarAccessNoticeTests {
         }
     }
 }
+
+#if os(macOS)
+/// [[T-18144]] and [[T-18145]]: the Mac's two calendar-access surfaces re-read access when they
+/// appear and when the app comes back, and Allow Access asks the system from Add Only access as
+/// iOS does. Nothing here requests access or reads TCC: the decision is a pure function and the
+/// wiring is read as source.
+struct CadenceMacCalendarAccessLifecycleTests {
+
+    @Test func allowAccessAsksTheSystemFromNotYetAskedAndFromAddOnly() {
+        #expect(CalendarManager.asksSystem(for: .notDetermined))
+        #expect(CalendarManager.asksSystem(for: .writeOnly), "Add Only access is a dead Allow Access button again")
+        #expect(!CalendarManager.asksSystem(for: .denied))
+        #expect(!CalendarManager.asksSystem(for: .restricted))
+        #expect(!CalendarManager.asksSystem(for: .fullAccess))
+    }
+
+    @Test func theMacRequestAccessDecidesThroughTheOneTable() throws {
+        let code = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Services/CalendarManager.swift")
+        )
+        let body = try #require(CadenceSourceScan.functionBody(named: "requestAccess", in: code), "no requestAccess body")
+        #expect(body.contains("guard Self.asksSystem(for: status) else {"), "requestAccess no longer reads asksSystem")
+        #expect(!body.contains("case .notDetermined"), "requestAccess spells its own prompt statuses again")
+        // Non-vacuity: the prompt is still behind that guard.
+        #expect(body.contains("requestFullAccessToEvents()"))
+    }
+
+    @Test func bothMacCalendarAccessSurfacesRederiveThroughTheSharedHook() throws {
+        for path in [
+            "Cadence/macOS/Views/SettingsListManagementSections.swift",
+            "Cadence/macOS/Views/CalendarPageView.swift",
+        ] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(
+                code.components(separatedBy: ".calendarAuthorizationLifecycle(calendarManager)").count - 1 == 1,
+                "\(path) does not re-read Calendar access on appear and on return exactly once"
+            )
+        }
+        let hook = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceAuthorizationLifecycle.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "calendarAuthorizationLifecycle", in: hook),
+            "the calendar hook is gone"
+        )
+        #expect(body.contains("CadenceAuthorizationLifecycleModifier(isEnabled: isEnabled)"))
+        #expect(body.contains("manager.refreshAuthorizationState()"))
+    }
+}
+#endif

@@ -24,7 +24,8 @@ nonisolated enum CadenceAuthorizationLifecycle {
     }
 }
 
-/// The modifier itself. Applied by all four reminders surfaces and both notifications surfaces;
+/// The modifier itself. Applied by all four reminders surfaces, both notifications surfaces and
+/// both Mac calendar-access surfaces;
 /// see `CadenceAuthorizationLifecycle` for why there is only one of it.
 struct CadenceAuthorizationLifecycleModifier: ViewModifier {
     /// `false` where the host view exists on more than one page and only one of them shows the
@@ -83,3 +84,22 @@ extension View {
         )
     }
 }
+
+#if os(macOS)
+extension View {
+    /// **[[T-18144]].** The same two halves for Calendar access on the Mac: Settings > Calendar
+    /// and the Calendar page's notice strip. `CalendarManager.isAuthorized` changed only at launch
+    /// and in `requestAccess`, so granting access in System Settings and switching back left
+    /// "Calendar access denied" up and the events missing until a relaunch. iOS needs no hook --
+    /// it terminates the app on a privacy change, and its section re-reads on appear already.
+    ///
+    /// Under `#if os(macOS)` because `CalendarManager` is the Mac's manager; iOS has its own.
+    func calendarAuthorizationLifecycle(_ manager: CalendarManager, isEnabled: Bool = true) -> some View {
+        modifier(
+            CadenceAuthorizationLifecycleModifier(isEnabled: isEnabled) {
+                manager.refreshAuthorizationState()
+            }
+        )
+    }
+}
+#endif

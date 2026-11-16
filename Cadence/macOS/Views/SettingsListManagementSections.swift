@@ -61,6 +61,9 @@ struct SettingsCalendarSection: View {
         }
         .onAppear { refreshCalendarObservations() }
         .onChange(of: calendarManager.storeVersion) { refreshCalendarObservations() }
+        // [[T-18144]]: the access card re-reads Calendar access on appear and on a return to the
+        // app, so a change made in System Settings shows without a relaunch.
+        .calendarAuthorizationLifecycle(calendarManager)
     }
 
     private var activeAreas: [Area] {
