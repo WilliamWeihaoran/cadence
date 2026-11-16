@@ -29,7 +29,9 @@ struct iOSCalendarView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var anchorDate = Calendar.current.startOfDay(for: Date())
-    @State private var quickCreateSeed: iOSCalendarQuickCreateSeed?
+    /// [[T-18227]]: the empty-slot quick create opens on the root's host, never on this page -- an
+    /// iPad resize across the compact/regular boundary rebuilds this page and would dismiss it.
+    @Environment(\.iOSPageEditor) private var pageEditor
     @State private var didRestorePersistedDates = false
     /// The fetched events, cached against `eventWindowKey`. See that property for why this is not
     /// computed on demand any more.
@@ -365,9 +367,6 @@ struct iOSCalendarView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { flushCalendarPosition() }
         }
-        .sheet(item: $quickCreateSeed) { seed in
-            iOSCalendarQuickCreateSheet(dateKey: seed.dateKey, initialStartMinute: seed.startMinute)
-        }
         .cadenceTracksDayChanges($observedDay)
         // [[T-18186]]: `selectedDate` and `anchorDate` are midnight instants of the zone they were
         // taken in, and `selectedKey` reads them in the CURRENT zone, so a westward change slid the
@@ -558,14 +557,14 @@ struct iOSCalendarView: View {
     }
 
     private func openQuickCreate(on dateKey: String) {
-        quickCreateSeed = iOSCalendarQuickCreateSeed(dateKey: dateKey)
+        pageEditor(.calendarQuickCreate(dateKey: dateKey, startMinute: nil))
     }
 
     private func openQuickCreate(on dateKey: String, startMinute: Int) {
         if let date = DateFormatters.date(from: dateKey) {
             selectedDate = calendar.startOfDay(for: date)
         }
-        quickCreateSeed = iOSCalendarQuickCreateSeed(dateKey: dateKey, startMinute: startMinute)
+        pageEditor(.calendarQuickCreate(dateKey: dateKey, startMinute: startMinute))
     }
 
     private func setViewMode(_ newMode: CadenceCalendarViewMode) {
@@ -654,17 +653,6 @@ struct iOSCalendarView: View {
 
     private func flushCalendarPosition() {
         positionWriter.flush(anchor: anchorDate, selection: selectedDate, calendar: calendar)
-    }
-}
-
-private struct iOSCalendarQuickCreateSeed: Identifiable {
-    let dateKey: String
-    var startMinute: Int? = nil
-    var id: String {
-        if let startMinute {
-            return "\(dateKey)-\(startMinute)"
-        }
-        return dateKey
     }
 }
 

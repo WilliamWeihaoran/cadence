@@ -541,11 +541,13 @@ struct iOSListKanbanPanel: View {
     /// request outlives the emphasis: the ring fades after a beat and the request is still the
     /// reason this board is on screen, so clearing one must not clear the other.
     @State private var activeHighlightName: String?
-    /// The composer a column's "Add task" row asked for ([[T-8184]]). The same `iOSCreateTaskSheet`
+    /// Where a column's "Add task" row sends its composer ([[T-8184]]). The same `iOSCreateTaskSheet`
     /// the capture `+` opens, seeded rather than reimplemented: a board column on iOS opens the
     /// sheet, as the Calendar Board's day columns do, where macOS composes inline — a touch
-    /// keyboard rises over the column an inline field would sit in.
-    @State private var addRequest: iOSListKanbanAddRequest?
+    /// keyboard rises over the column an inline field would sit in. Presented by the root's capture
+    /// host, not this board ([[T-18227]]): an iPad resize rebuilds the board and would dismiss a
+    /// half-typed task with it.
+    @Environment(iOSCapturePresenter.self) private var capturePresenter: iOSCapturePresenter?
 
     /// **Every configured column, filled or not.** An unfilled column is the case the drop rule
     /// exists for, and it was the one case that could not happen here: `sectionGroups` discarded
@@ -649,9 +651,7 @@ struct iOSListKanbanPanel: View {
                                     // [[T-8184]]: the header's drop identity, so a tap on the row
                                     // and a `+` dropped on the header seed the same list and section.
                                     onAddTask: {
-                                        addRequest = iOSListKanbanAddRequest(
-                                            seed: ListDetailKanbanBoard.addTaskSeed(for: identity)
-                                        )
+                                        openComposer(seed: ListDetailKanbanBoard.addTaskSeed(for: identity))
                                     },
                                     onDropCard: { items, target in
                                         dropCard(items, .before(target))
@@ -687,9 +687,14 @@ struct iOSListKanbanPanel: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bg)
-        .sheet(item: $addRequest) { request in
-            iOSCreateTaskSheet(seed: request.seed)
+    }
+
+    private func openComposer(seed: CadenceTaskComposerSeed) {
+        guard let capturePresenter else {
+            assertionFailure("the list board is mounted outside iOSRootView's capture presentation host")
+            return
         }
+        capturePresenter.forward(iOSCaptureRequest(kind: .task(seed)), onCreated: nil)
     }
 
     private func isHighlighted(_ name: String) -> Bool {
@@ -761,13 +766,6 @@ struct iOSListKanbanPanel: View {
     private func config(for name: String) -> TaskSectionConfig? {
         sectionConfigs.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
     }
-}
-
-/// One press of a column's "Add task" row: the seed the composer opens with. Identified per press
-/// so a second press on the same column presents again rather than matching the last one.
-private struct iOSListKanbanAddRequest: Identifiable {
-    let id = UUID()
-    let seed: CadenceTaskComposerSeed
 }
 
 /// The end slot's height: a fingertip's worth of target under the last card ([[T-16503]]), short

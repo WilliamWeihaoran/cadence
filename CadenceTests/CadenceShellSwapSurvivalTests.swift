@@ -146,7 +146,7 @@ struct CadenceShellSwapWiringTests {
         let (body, shells) = try Self.rootBodyAndShells()
         for modifier in [
             ".iOSCapturePresentationHost(capturePresenter)",
-            ".sheet(item: $sidebarListEditorRequest)",
+            ".iOSPageEditorHost()",
             ".environment(placeCarry)"
         ] {
             #expect(body.contains(modifier), "iOSRootView's body no longer applies \(modifier)")
@@ -158,12 +158,73 @@ struct CadenceShellSwapWiringTests {
         #expect(keyboard.upperBound <= presentation.lowerBound)
     }
 
-    /// [[T-18157]]: the iPad sidebar's own list editor is presented by the root, not the shell.
+    /// [[T-18157]]: the iPad sidebar's own list editor is presented by the root, not the shell --
+    /// since [[T-18227]] through the same page-editor host every page uses.
     @Test func theSidebarShellPresentsNoListEditorOfItsOwn() throws {
         let shell = try Self.code("Cadence/iOS/iOSRootSidebar.swift")
         let body = try cadenceFunctionBody("struct iPadMacStyleRootShell<Content: View>: View", in: shell)
-        #expect(body.contains("@Binding var listEditorRequest: iOSSidebarListEditorRequest?"))
+        #expect(body.contains("@Environment(\\.iOSPageEditor) private var pageEditor"))
+        #expect(body.contains("onCreateList: { pageEditor(.list($0)) }"))
         #expect(!body.contains(".sheet("), "the iPad shell presents a sheet a resize would dismiss")
+    }
+
+    /// [[T-18227]]: the page-editor host is mounted once in the iOS tree, on the root, and presents
+    /// one editor at a time -- a second request must not swap the draft on screen out.
+    @Test func thePageEditorHostIsMountedOnceAndDropsASecondRequest() throws {
+        var perFile: [String: Int] = [:]
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence/iOS") {
+            let count = try Self.code(path).components(separatedBy: ".iOSPageEditorHost()").count - 1
+            if count > 0 { perFile[(path as NSString).lastPathComponent] = count }
+        }
+        #expect(perFile == ["iOSRootView.swift": 1])
+
+        let source = try Self.code("Cadence/iOS/iOSPageEditorHost.swift")
+        let host = try cadenceFunctionBody("private struct iOSPageEditorHostModifier: ViewModifier", in: source)
+        #expect(host.contains(".sheet(item: $request)"))
+        #expect(host.contains("guard request == nil else { return }"))
+        for editor in ["iOSListEditorSheet(", "iOSContextEditorSheet(", "iOSCalendarQuickCreateSheet("] {
+            #expect(host.contains(editor), "the host no longer presents \(editor)")
+        }
+    }
+
+    /// [[T-18227]]: the census's draft-holding editors are constructed ONLY by a root host. A page
+    /// that presents one of these itself again -- `.sheet(item: $editorMode) { iOSListEditorSheet(...) }`
+    /// -- puts the draft back inside a shell, where a resize dismisses it. The capture host keeps
+    /// its own list editor (a sidebar drop) and the task composer.
+    @Test func noPageConstructsAHoistedEditorItself() throws {
+        let allowed: [String: Set<String>] = [
+            "iOSListEditorSheet(": ["iOSPageEditorHost.swift", "iOSCaptureRadialMenu.swift"],
+            "iOSContextEditorSheet(": ["iOSPageEditorHost.swift"],
+            "iOSCalendarQuickCreateSheet(": ["iOSPageEditorHost.swift"],
+            "iOSCreateTaskSheet(": ["iOSCaptureRadialMenu.swift"],
+        ]
+        var found: [String: Set<String>] = [:]
+        let paths = try CadenceSourceScan.swiftFiles(under: "Cadence/iOS")
+        #expect(paths.count > 100, "the sweep no longer reaches the iOS sources")
+        for path in paths {
+            let code = try Self.code(path)
+            for editor in allowed.keys where code.contains(editor) {
+                found[editor, default: []].insert((path as NSString).lastPathComponent)
+            }
+        }
+        // A file's own `init(` or a `struct X: View` does not match `X(`, so each hit is a construction.
+        for (editor, files) in allowed {
+            #expect(found[editor] == files, "\(editor) is constructed by \(found[editor] ?? [])")
+        }
+    }
+
+    /// [[T-18227]]: the five pages route to the hosts rather than presenting.
+    @Test func thePagesOpenTheirEditorsOnTheRootHosts() throws {
+        for (path, call) in [
+            ("Cadence/iOS/iOSListViews.swift", "pageEditor(.list(iOSSidebarListEditorRequest(mode: .editArea(area))))"),
+            ("Cadence/iOS/iOSListDetailView.swift", "pageEditor(.list(iOSSidebarListEditorRequest(mode: .editProject(project))))"),
+            ("Cadence/iOS/iOSTasksTabView.swift", "pageEditor(.list(iOSSidebarListEditorRequest(mode: mode)))"),
+            ("Cadence/iOS/iOSSettingsView.swift", "pageEditor(.context(.new))"),
+            ("Cadence/iOS/iOSCalendarView.swift", "pageEditor(.calendarQuickCreate(dateKey: dateKey, startMinute: startMinute))"),
+            ("Cadence/iOS/iOSListSupportViews.swift", "capturePresenter.forward(iOSCaptureRequest(kind: .task(seed)), onCreated: nil)"),
+        ] {
+            #expect(try Self.code(path).contains(call), "\(path) no longer opens its editor on a root host")
+        }
     }
 
     /// [[T-18158]]: the two shells' Notes destinations opt in; Today's inspector does not.

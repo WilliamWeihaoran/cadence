@@ -31,7 +31,9 @@ struct iOSSettingsView: View {
     @Query private var notes: [Note]
     @Query(sort: \Tag.order) private var tags: [Tag]
     @State private var cloudAccount = CadenceCloudAccountProbe()
-    @State private var contextEditorMode: iOSContextEditorMode?
+    /// [[T-18227]]: New / Edit Context open on the root's host, never on this page -- an iPad
+    /// resize across the compact/regular boundary rebuilds this page and would dismiss the draft.
+    @Environment(\.iOSPageEditor) private var pageEditor
     /// Set when a context reorder was refused by the store. See `moveContext(_:by:)` — the row
     /// order has already been put back by then, so the card and this sentence agree.
     @State private var contextOrderFailureNotice: String?
@@ -107,9 +109,6 @@ struct iOSSettingsView: View {
         .cadenceScaledTypography()
         .iOSHidesCompactNavigationBar()
         .background(Theme.bg.ignoresSafeArea())
-        .sheet(item: $contextEditorMode) { mode in
-            iOSContextEditorSheet(mode: mode)
-        }
         .iOSListDeletion(target: $pendingDeletion)
         .onAppear { cloudAccount.refreshIfNeeded() }
         // T-361: the toggle used to write `UserDefaults` and stop, leaving pending notifications
@@ -352,7 +351,7 @@ struct iOSSettingsView: View {
                     role: .primary,
                     size: .compact
                 ) {
-                    contextEditorMode = .new
+                    pageEditor(.context(.new))
                 }
             }
 
@@ -367,14 +366,14 @@ struct iOSSettingsView: View {
                     } else {
                         ForEach(activeContexts) { context in
                             Button {
-                                contextEditorMode = .edit(context)
+                                pageEditor(.context(.edit(context)))
                             } label: {
                                 iOSSettingsContextRow(context: context)
                             }
                             .buttonStyle(.iosPressable)
                             .contextMenu {
                                 Button {
-                                    contextEditorMode = .edit(context)
+                                    pageEditor(.context(.edit(context)))
                                 } label: {
                                     Label("Edit Context", systemImage: "square.and.pencil")
                                 }

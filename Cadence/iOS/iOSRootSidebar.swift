@@ -6,9 +6,9 @@ import UIKit
 struct iPadMacStyleRootShell<Content: View>: View {
     @Binding var selection: iOSSidebarItem?
     /// The editor's presenter must survive hiding the navigation -- and, since [[T-18157]], the
-    /// shell itself: `iOSRootView` owns and presents it, because a resize into compact width
-    /// destroys this shell and would dismiss a half-filled editor with it.
-    @Binding var listEditorRequest: iOSSidebarListEditorRequest?
+    /// shell itself: `iOSRootView`'s page-editor host presents it ([[T-18227]]), because a resize
+    /// into compact width destroys this shell and would dismiss a half-filled editor with it.
+    @Environment(\.iOSPageEditor) private var pageEditor
     @ViewBuilder let detail: () -> Content
 
     /// Only the user's docked fold choice persists. Window measurements and drawer taps do not.
@@ -45,7 +45,7 @@ struct iPadMacStyleRootShell<Content: View>: View {
             ZStack(alignment: .leading) {
                 iOSSidebar(
                     selection: navigationSelection(isDrawerMode: isDrawerMode),
-                    onCreateList: { listEditorRequest = $0 },
+                    onCreateList: { pageEditor(.list($0)) },
                     onCollapse: { setSidebarVisible(false, isDrawerMode: isDrawerMode) }
                 )
                 .padding(.top, sidebarTopReserve)

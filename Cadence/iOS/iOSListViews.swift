@@ -31,7 +31,9 @@ struct iOSListsView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
-    @State private var editorMode: iOSListEditorMode?
+    /// [[T-18227]]: New List / Edit open on the root's host, never on this page -- an iPad resize
+    /// across the compact/regular boundary rebuilds this page and would dismiss a half-typed editor.
+    @Environment(\.iOSPageEditor) private var pageEditor
     @State private var selectedRoute: iOSListRoute?
     @State private var pendingDeletion: iOSListDeletionTarget?
     /// Set only when `CadenceContainerWindDownSummary.requiresConfirmation` says the wind-down
@@ -106,10 +108,6 @@ struct iOSListsView: View {
         .cadenceScaledTypography()
         .toolbar(.hidden, for: .navigationBar)
         .background(Theme.bg)
-        .sheet(item: $editorMode) { mode in
-            iOSListEditorSheet(mode: mode)
-                .cadenceFixedTypography()
-        }
         .iOSListDeletion(target: $pendingDeletion)
         .iOSListWindDown(target: $pendingWindDown)
         .iOSListWindDownFailureAlert(refused: $refusedWindDown)
@@ -152,7 +150,7 @@ struct iOSListsView: View {
                 onBack: showsBack ? { dismiss() } : nil
             )
 
-            iOSListCreateButtonsRow(editorMode: $editorMode)
+            iOSListCreateButtonsRow(editorMode: pageEditor.listEditorMode)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
 
@@ -194,7 +192,7 @@ struct iOSListsView: View {
                 archivedProjects: archivedProjects,
                 hasInactiveLists: hasInactiveLists,
                 selectedRoute: $selectedRoute,
-                editorMode: $editorMode,
+                editorMode: pageEditor.listEditorMode,
                 projectSubtitle: projectSubtitle,
                 archiveArea: archive,
                 archiveProject: archive,
@@ -247,7 +245,7 @@ struct iOSListsView: View {
         .iOSListRowChrome()
         .contextMenu {
             Button {
-                editorMode = .editArea(area)
+                pageEditor(.list(iOSSidebarListEditorRequest(mode: .editArea(area))))
             } label: {
                 Label("Edit Area", systemImage: "square.and.pencil")
             }
@@ -289,7 +287,7 @@ struct iOSListsView: View {
         .iOSListRowChrome()
         .contextMenu {
             Button {
-                editorMode = .editProject(project)
+                pageEditor(.list(iOSSidebarListEditorRequest(mode: .editProject(project))))
             } label: {
                 Label("Edit Project", systemImage: "square.and.pencil")
             }

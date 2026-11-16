@@ -42,10 +42,11 @@ struct CadenceCodexLeasedFollowupTests {
         #expect(chip.contains(".minimumScaleFactor(wraps ? 1 : CadenceBoardMetadataChipMetrics.minimumScale)"))
         #expect(!chip.contains(".cadenceScaledTypography()"))
         for path in ["Cadence/iOS/iOSListViews.swift", "Cadence/iOS/iOSListDetailView.swift"] {
-            let source = try read(path)
-            #expect(source.contains(".cadenceScaledTypography()"))
-            #expect(source.contains("iOSListEditorSheet(mode: mode)\n                .cadenceFixedTypography()"))
+            #expect(try read(path).contains(".cadenceScaledTypography()"))
         }
+        // [[T-18227]]: the pages' list editor moved to the root's page-editor host, fixed there.
+        #expect(try read("Cadence/iOS/iOSPageEditorHost.swift")
+            .contains("iOSListEditorSheet(mode: list.mode, seededContext: list.seededContext)\n                        .cadenceFixedTypography()"))
         let detail = try read("Cadence/iOS/iOSListDetailView.swift")
         #expect(detail.contains("iOSListNotesView(area: area, project: project)\n                .cadenceFixedTypography()"))
     }

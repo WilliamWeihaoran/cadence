@@ -180,7 +180,8 @@ struct iOSEditSheetDismissGuardTests {
                 }
             }
         }
-        #expect(presenters >= 9)
+        // Six since [[T-18227]] folded the pages' own presenters into the root's page-editor host.
+        #expect(presenters >= 6)
     }
 
     /// The guard's own file must stay out of `Cadence/iOS/`, or these tests go dark again without

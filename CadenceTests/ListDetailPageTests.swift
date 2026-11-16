@@ -350,7 +350,9 @@ struct ListDetailPageTests {
         )
         #expect(panel.contains("dropIdentity: identity"), "the header and the add row no longer share one identity")
         #expect(panel.contains("ListDetailKanbanBoard.addTaskSeed(for: identity)"))
-        #expect(panel.contains("iOSCreateTaskSheet(seed: request.seed)"), "the row opens no shared composer")
+        // [[T-18227]]: through the root's capture host, so an iPad resize keeps the half-typed task.
+        #expect(panel.contains("capturePresenter.forward(iOSCaptureRequest(kind: .task(seed)), onCreated: nil)"),
+                "the row opens no shared composer")
     }
 
     /// [[T-8460]]: the add row's spoken label names the column it sits in. VoiceOver cannot be

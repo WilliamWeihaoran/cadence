@@ -141,11 +141,11 @@ struct CadenceCodexPageCompletionTypographyTests {
         #expect(documents.lowerBound < links.lowerBound)
         let notes = String(page[documents.upperBound..<links.lowerBound]).filter { !$0.isWhitespace }
         #expect(notes.contains("iOSListNotesView(area:area,project:project).cadenceFixedTypography()"))
-        for path in ["iOSListDetailView.swift", "iOSListViews.swift"] {
-            let source = try read("Cadence/iOS/" + path)
-            let sheet = try #require(CadenceSourceScan.declarationBody(".sheet(item: $editorMode)", in: source))
-            #expect(sheet.filter { !$0.isWhitespace }.contains("iOSListEditorSheet(mode:mode).cadenceFixedTypography()"))
-        }
+        // [[T-18227]]: both pages' list editor is presented by the root's page-editor host now, and
+        // still declares fixed there.
+        let host = try read("Cadence/iOS/iOSPageEditorHost.swift")
+        let sheet = try #require(CadenceSourceScan.declarationBody(".sheet(item: $request)", in: host))
+        #expect(sheet.filter { !$0.isWhitespace }.contains("iOSListEditorSheet(mode:list.mode,seededContext:list.seededContext).cadenceFixedTypography()"))
         for (path, type, drawing) in [
             ("iOSListDeletionSupport.swift", "iOSListDeletionModifier", "iOSListDeleteConfirmationSheet("),
             ("iOSListWindDownSupport.swift", "iOSListWindDownModifier", "iOSWindDownConfirmationSheet(")

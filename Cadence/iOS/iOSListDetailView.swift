@@ -20,7 +20,9 @@ struct iOSListDetailView: View {
     /// form sheet on iPad with no visible way out is the same class of defect as a chevron that
     /// looks wired and does nothing.
     let isPresentedModally: Bool
-    @State private var editorMode: iOSListEditorMode?
+    /// [[T-18227]]: New List / Edit open on the root's host, never on this page -- an iPad resize
+    /// across the compact/regular boundary rebuilds this page and would dismiss a half-typed editor.
+    @Environment(\.iOSPageEditor) private var pageEditor
     /// `nil` until the reader taps a tab — the page they see before that is this list's remembered
     /// tab, or failing that the one they chose in Settings, both read live rather than copied into
     /// `@State` in `onAppear`, so changing the preference does not need a relaunch to take effect
@@ -368,10 +370,6 @@ struct iOSListDetailView: View {
         // toolbar: as a `ToolbarItem` it had nowhere to render and the list editor was unreachable
         // from the detail pane.
         .iOSHidesCompactNavigationBar()
-        .sheet(item: $editorMode) { mode in
-            iOSListEditorSheet(mode: mode)
-                .cadenceFixedTypography()
-        }
     }
 
     /// `nil` while the list is active ([[T-17906]]).
@@ -395,9 +393,9 @@ struct iOSListDetailView: View {
 
     private func presentEditor() {
         if let area {
-            editorMode = .editArea(area)
+            pageEditor(.list(iOSSidebarListEditorRequest(mode: .editArea(area))))
         } else if let project {
-            editorMode = .editProject(project)
+            pageEditor(.list(iOSSidebarListEditorRequest(mode: .editProject(project))))
         }
     }
 

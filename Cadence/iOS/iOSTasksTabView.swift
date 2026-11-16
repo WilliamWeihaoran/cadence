@@ -44,10 +44,11 @@ struct iOSTasksTabView: View {
     // each way per New task sheet. `iOSTasksIndexDestinationRows` owns that fetch and its counting.
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
-    /// The same request the iPad column hands its shell, and the same reason for it being one
+    /// The same request the iPad column hands the root, and the same reason for it being one
     /// value: this index draws `iOSSidebarListsRegion` too, so its `+` seeds a context the same
-    /// way or it seeds nothing.
-    @State private var editorRequest: iOSSidebarListEditorRequest?
+    /// way or it seeds nothing. Presented by the root's host ([[T-18227]]): widening the window
+    /// destroys this compact-only page, and would dismiss a half-typed editor with it.
+    @Environment(\.iOSPageEditor) private var pageEditor
     /// The day this index is drawn for ([[T-5011]]): the Today row's overdue count, the list rows'
     /// due-date flags and the header's date all read it. Every one of them has inputs that are the
     /// same on both sides of midnight, and the count sits behind `.equatable()` besides, so without
@@ -71,10 +72,6 @@ struct iOSTasksTabView: View {
         .background(Theme.bg.ignoresSafeArea())
         .cadenceScaledTypography()
         .iOSHidesCompactNavigationBar()
-        .sheet(item: $editorRequest) { request in
-            iOSListEditorSheet(mode: request.mode, seededContext: request.seededContext)
-                .cadenceFixedTypography()
-        }
         // **Mandatory, and silent when it is missing.** A `NavigationPath` push of a type the
         // stack has not registered is discarded with no warning and no push — which is exactly
         // what made every row on the Lists page dead on iPhone. `iOSCompactTabShell` registers
@@ -122,17 +119,17 @@ struct iOSTasksTabView: View {
                 onSelect: { path.append(route(for: $0)) },
                 onEdit: { item in
                     if let mode = listEditorMode(for: item) {
-                        editorRequest = iOSSidebarListEditorRequest(mode: mode)
+                        pageEditor(.list(iOSSidebarListEditorRequest(mode: mode)))
                     }
                 },
                 // The phone reaches Lists through the More tab rather than through a row in this
                 // index, so this `+` is a second door here and the only one on iPad. It is drawn
                 // from the same view either way: one region, one create affordance, one spelling.
                 onCreateList: { contextID in
-                    editorRequest = iOSSidebarListEditorRequest(
+                    pageEditor(.list(iOSSidebarListEditorRequest(
                         mode: .newArea,
                         seededContext: contextID.flatMap { id in contexts.first { $0.id == id } }
-                    )
+                    )))
                 },
                 contextsHoldingInactiveLists: CadenceSidebarLists.contextsHoldingInactiveLists(
                     areas: areas, projects: projects

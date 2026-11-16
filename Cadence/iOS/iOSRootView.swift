@@ -60,9 +60,6 @@ struct iOSRootView: View {
     /// switch, so a resize across the compact/regular boundary cannot dismiss a half-typed composer
     /// by destroying the shell whose host presented it.
     @State private var capturePresenter = iOSCapturePresenter()
-    /// [[T-18157]]: the iPad sidebar's own list editor (its New List / Edit rows), hoisted out of
-    /// `iPadMacStyleRootShell` for the same reason -- narrowing destroys that shell.
-    @State private var sidebarListEditorRequest: iOSSidebarListEditorRequest?
     /// [[T-18158]]: where the user was inside Notes and Lists, carried into whichever shell the
     /// size class builds next. Scene-scoped `@State`, never persisted -- see `CadenceShellPlaceCarry`.
     @State private var placeCarry = CadenceShellPlaceCarry()
@@ -86,7 +83,7 @@ struct iOSRootView: View {
     var body: some View {
         Group {
             if horizontalSizeClass == .regular {
-                iPadMacStyleRootShell(selection: $selection, listEditorRequest: $sidebarListEditorRequest) {
+                iPadMacStyleRootShell(selection: $selection) {
                     detailView(for: selection ?? .today)
                 }
             } else {
@@ -109,11 +106,10 @@ struct iOSRootView: View {
         .environment(searchFocusRequest)
         // [[T-18158]]: both shells' Notes and Lists read and write the carried place.
         .environment(placeCarry)
-        // [[T-18157]]: presented from the root rather than from `iPadMacStyleRootShell`, whose
-        // lifetime is one size class.
-        .sheet(item: $sidebarListEditorRequest) { request in
-            iOSListEditorSheet(mode: request.mode, seededContext: request.seededContext)
-        }
+        // [[T-18157]] / [[T-18227]]: the editors a page or the iPad sidebar opens for itself (New
+        // List / Edit, New / Edit Context, the Calendar's quick create) are presented from the
+        // root rather than from a page, whose lifetime is one size class.
+        .iOSPageEditorHost()
         // T-636, and `macOSRootView` says the same thing in the same place for the same reason:
         // the completion control is reached from six surfaces here and owned by none of them, so
         // a refused settle is named once at the shell rather than six times badly. Both shells,
