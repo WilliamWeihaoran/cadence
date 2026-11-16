@@ -73,17 +73,21 @@ struct TimelineEventBlock: View {
             .onHover { hovering in
                 isHovered = hovering
                 if hovering {
-                    hoveredEditableManager.beginHovering(id: "timeline-event-\(item.id)") {
+                    hoveredEditableManager.beginHovering(id: "timeline-event-\(item.id)", onEdit: {
                         selectedTaskID = nil
                         selectedEventID = item.id
-                    } onDelete: {
+                    }, onDelete: TimelineEventBlockEditGate.allowsDelete(isEditable: isEditable, isCancelled: isCancelled) ? {
                         // No confirmation here. `requestEventMutation(.delete)` is the single
                         // delete path and it confirms — with a message that knows whether the
                         // recurrence scope makes this one event or all future ones. Confirming
                         // first meant a non-recurring event asked "Delete Calendar Event?" twice
                         // in a row.
+                        //
+                        // [[T-18175]]: a view-only event (read-only calendar or organizer-
+                        // cancelled) registers none, so Cmd+Delete falls through as it does over
+                        // any surface with nothing to delete -- the popover offers no Delete either.
                         requestEventMutation(.delete)
-                    }
+                    } : nil)
                 } else {
                     hoveredEditableManager.endHovering(id: "timeline-event-\(item.id)")
                 }

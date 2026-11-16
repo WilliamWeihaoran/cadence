@@ -27,6 +27,22 @@ enum TimelineEventBlockEditGate {
         isEditable
     }
 
+    /// Whether the hovered block registers a Cmd+Delete action ([[T-18175]]).
+    ///
+    /// The popover draws no Delete for a read-only event (Birthdays, Holidays, subscribed feeds)
+    /// nor for an organizer-cancelled one ([[T-18014]]); the keyboard used to ask "Delete Calendar
+    /// Event?" for both anyway -- a confirmation that could only end in a refusal on a read-only
+    /// calendar, and that really deleted a cancelled invite the editor treats as view-only. This is
+    /// the editor's own rule, read from `viewOnlyNotice` rather than restated: a view-only notice
+    /// means no delete, from any surface.
+    static func allowsDelete(isEditable: Bool, isCancelled: Bool) -> Bool {
+        CadenceCalendarEventEditingSupport.viewOnlyNotice(
+            calendarName: "",
+            isEventEditable: isEditable,
+            isEventCancelled: isCancelled
+        ) == nil
+    }
+
     /// Whether `edge` draws a resize handle on this segment.
     static func drawsResizeHandle(
         edge: TimelineResizeEdge,

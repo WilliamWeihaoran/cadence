@@ -85,6 +85,37 @@ struct CadenceCalendarEventChipEditingTests {
         #expect(TimelineEventBlockEditGate.clearsLiveState(after: nil, requested: current, current: current))
     }
 
+    // MARK: - T-18175: Cmd+Delete offers what the popover offers
+
+    @Test("Only a live event on a writable calendar takes a keyboard delete")
+    func onlyAnEditableLiveEventTakesAKeyboardDelete() {
+        #expect(TimelineEventBlockEditGate.allowsDelete(isEditable: true, isCancelled: false))
+        #expect(!TimelineEventBlockEditGate.allowsDelete(isEditable: false, isCancelled: false), "a Birthdays event asks to be deleted")
+        #expect(!TimelineEventBlockEditGate.allowsDelete(isEditable: true, isCancelled: true), "a cancelled invite is deletable from the keyboard")
+        #expect(!TimelineEventBlockEditGate.allowsDelete(isEditable: false, isCancelled: true))
+        // One rule with the popover: a delete exactly where the editor shows no view-only notice.
+        for isEditable in [true, false] {
+            for isCancelled in [true, false] {
+                let notice = CadenceCalendarEventEditingSupport.viewOnlyNotice(
+                    calendarName: "Birthdays", isEventEditable: isEditable, isEventCancelled: isCancelled
+                )
+                #expect(TimelineEventBlockEditGate.allowsDelete(isEditable: isEditable, isCancelled: isCancelled) == (notice == nil))
+            }
+        }
+    }
+
+    @Test("The block registers its hover delete only when the gate allows it")
+    func theBlockGatesItsHoverDelete() throws {
+        let code = try Self.code(Self.block)
+        #expect(
+            CadenceSourceScan.matchCount(#"onDelete: TimelineEventBlockEditGate\.allowsDelete\(isEditable: isEditable, isCancelled: isCancelled\) \? \{\s*requestEventMutation\(\.delete\)\s*\} : nil\)"#, in: code) == 1,
+            "Cmd+Delete over a view-only event still reaches the delete confirmation"
+        )
+        // The only hover registration on the block is the gated one.
+        #expect(CadenceSourceScan.matchCount(#"hoveredEditableManager\.beginHovering\("#, in: code) == 1)
+        #expect(CadenceSourceScan.matchCount(#"\} onDelete: \{"#, in: code) == 0, "an unconditional trailing onDelete is back")
+    }
+
     // MARK: - Wiring
 
     private static let block = "Cadence/macOS/Views/TimelineEventBlock.swift"
