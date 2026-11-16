@@ -505,9 +505,10 @@ struct CadenceTasksPanelMetricsTests {
         #expect(!panel.contains(".padding(.horizontal, 16)"))
 
         let sections = try Self.sectionSource()
-        // Three: the two headings, and the row inset that is documented as matching them.
+        // Four: the two headings, the row inset that is documented as matching them, and the
+        // heading drop's line ([[T-18062]]), which spans the heading and not the gutter around it.
         #expect(
-            CadenceSourceScan.matchCount("TasksPanelMetrics\\.horizontalInset", in: sections) == 3
+            CadenceSourceScan.matchCount("TasksPanelMetrics\\.horizontalInset", in: sections) == 4
         )
         #expect(!sections.contains(".padding(.horizontal, 16)"))
         #expect(!sections.contains("todayRowLeadingInset: CGFloat = 16"))
@@ -662,7 +663,8 @@ struct CadenceTasksPanelMetricsTests {
             !intentView.contains(".listRowSeparator("),
             "TasksPanelIntentSectionView's header still carries a no-op List row modifier"
         )
-        #expect(intentView.contains(".dropDestination(for: String.self)"), "the header's real drop target went with the no-ops")
+        // [[T-18062]]: the header's drop is the shared heading drop now.
+        #expect(intentView.contains(".cadenceTaskHeadingRowDrop("), "the header's real drop target went with the no-ops")
 
         let listDetail = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListDetailSupportViews.swift")

@@ -762,7 +762,8 @@ struct CadenceTodayUnificationTests {
             )
         }
         #expect(
-            occurrences(of: ".dropDestination(for: String.self)", in: intent) == 1,
+            // [[T-18062]]: through the shared heading drop, which owns the `isTargeted:` line.
+            occurrences(of: ".cadenceTaskHeadingRowDrop(", in: intent) == 1,
             "the group header's own drop target is gone, or a row's has grown back"
         )
 

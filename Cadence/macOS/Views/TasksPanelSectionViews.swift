@@ -133,10 +133,13 @@ struct TasksPanelIntentSectionView: View {
                 // removing, because `TaskListDisplayRow` carries the same two modifiers and *is*
                 // load-bearing for its other caller, `ListTasksCompletedSectionView` on the All
                 // Tasks page, which sits inside a real `List`.
-                .dropDestination(for: String.self) { items, _ in
-                    guard let onDropOnSectionPayload, let payload = items.first else { return false }
-                    return onDropOnSectionPayload(payload)
-                }
+                // [[T-18062]]: the shared heading drop -- registered only with a handler, and
+                // drawing the group-tinted line while a row hovers.
+                .cadenceTaskHeadingRowDrop(
+                    tint: tint,
+                    horizontalInset: TasksPanelMetrics.horizontalInset,
+                    onDrop: onDropOnSectionPayload
+                )
 
             if !isCollapsed {
                 ForEach(tasks) { task in

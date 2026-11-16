@@ -25,7 +25,7 @@ struct CadenceCodexTaskListVirtualizationTests {
         let active = try #require(CadenceSourceScan.declarationBody("struct TasksListSectionView: View", in: source))
         #expect(active.contains("ForEach(section.tasks)"))
         #expect(active.contains("TaskListInteractiveRow("))
-        #expect(active.contains(".dropDestination(for: String.self)"))
+        #expect(active.contains(".cadenceTaskHeadingRowDrop("))
         #expect(active.contains("onDropOnTaskPayload: onDropOnTaskPayload"))
         let completed = try #require(CadenceSourceScan.declarationBody("struct TasksListCompletedSectionView: View", in: source))
         #expect(completed.contains("ForEach(tasks)"))

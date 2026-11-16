@@ -72,23 +72,13 @@ struct iOSTaskGroupHeader: View {
         // The `+` above reaches this heading through a published-frame hit test, never a system
         // drop, so the two cannot claim one gesture: a lifted row is a system drag and only this
         // destination reads it.
-        .iOSTaskRowDropTarget(onDropTaskPayload)
-    }
-}
-
-extension View {
-    /// The heading's row drop, registered only when there is something to apply -- a heading that
-    /// accepted the row and filed it nowhere would be T-591's silent accept.
-    @ViewBuilder
-    func iOSTaskRowDropTarget(_ onDropTaskPayload: ((String) -> Bool)?) -> some View {
-        if let onDropTaskPayload {
-            dropDestination(for: String.self) { items, _ in
-                guard let payload = items.first else { return false }
-                return onDropTaskPayload(payload)
-            }
-        } else {
-            self
-        }
+        //
+        // [[T-18062]]: the shared heading drop the Mac's three headings use -- registered only when
+        // there is something to apply (a heading that accepted the row and filed it nowhere would
+        // be T-591's silent accept), and drawing the group-tinted line while a row hovers. The
+        // `+`'s ghost is the header's one FILL; this is a line, and the two gestures cannot be in
+        // flight at once.
+        .cadenceTaskHeadingRowDrop(tint: color, onDrop: onDropTaskPayload)
     }
 }
 

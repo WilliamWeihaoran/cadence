@@ -47,17 +47,13 @@ struct ListTasksGroupSectionView: View {
             .padding(.top, 16)
             .padding(.bottom, 8)
             // [[T-5840]]: a task let go over the header joins the group, as on All Tasks.
-            .dropDestination(for: String.self) { items, _ in
-                guard let payload = items.first,
-                      let droppedID = TaskDragPayload.listTaskID(from: payload)
-                else { return false }
-                if let targetID = ListTasksGroupDrop.headerDropTarget(droppedID: droppedID, in: group) {
-                    return onReorderTask(droppedID, targetID)
-                }
-                // [[T-15821]]: an empty section has no first row to aim at.
-                guard let refiling = ListTasksGroupDrop.emptySectionRefiling(in: group) else { return false }
-                return onRefileTask(droppedID, refiling)
-            }
+            // [[T-18062]]: through the shared heading drop, which draws the group-tinted line while
+            // a row hovers -- and registers nothing on a heading that refuses every row.
+            .cadenceTaskHeadingRowDrop(
+                tint: group.tint,
+                horizontalInset: TaskListDisplayMetrics.headerHorizontalInset,
+                onDrop: headingRowDrop
+            )
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(.init())
@@ -79,6 +75,22 @@ struct ListTasksGroupSectionView: View {
                     )
                 }
             }
+        }
+    }
+
+    /// The heading's row drop, or `nil` on a heading that files no row (the ungrouped "Tasks",
+    /// Overdue / Due Today by date, a non-section empty group) -- so it registers no destination and
+    /// draws no line ([[T-18062]]; T-591). The same question iOS's tab asks, `takesDroppedRow`.
+    private var headingRowDrop: ((String) -> Bool)? {
+        guard ListTasksGroupDrop.takesDroppedRow(group) else { return nil }
+        return { payload in
+            guard let droppedID = TaskDragPayload.listTaskID(from: payload) else { return false }
+            if let targetID = ListTasksGroupDrop.headerDropTarget(droppedID: droppedID, in: group) {
+                return onReorderTask(droppedID, targetID)
+            }
+            // [[T-15821]]: an empty section has no first row to aim at.
+            guard let refiling = ListTasksGroupDrop.emptySectionRefiling(in: group) else { return false }
+            return onRefileTask(droppedID, refiling)
         }
     }
 }

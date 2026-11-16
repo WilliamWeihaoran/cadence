@@ -571,10 +571,12 @@ private struct TasksListSectionView: View {
             .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
             .padding(.top, section.isListGroup ? 20 : 16)
             .padding(.bottom, 8)
-            .dropDestination(for: String.self) { items, _ in
-                guard let onDropOnSectionPayload, let payload = items.first else { return false }
-                return onDropOnSectionPayload(payload)
-            }
+            // [[T-18062]]: registered only when the section names a place, and draws its line.
+            .cadenceTaskHeadingRowDrop(
+                tint: section.tint,
+                horizontalInset: TaskListDisplayMetrics.headerHorizontalInset,
+                onDrop: onDropOnSectionPayload
+            )
 
             if !isCollapsed {
                 ForEach(section.tasks) { task in

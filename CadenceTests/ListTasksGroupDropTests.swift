@@ -246,7 +246,8 @@ struct ListTasksGroupDropTests {
         let body = String(source[start.upperBound..<end.lowerBound])
         let header = try #require(body.range(of: "TaskListGroupHeader("))
         let rows = try #require(body.range(of: "ForEach(group.tasks)"))
-        let drop = try #require(body.range(of: ".dropDestination(for: String.self)"), "the header has no drop target")
+        // [[T-18062]]: the shared heading drop, gated on `takesDroppedRow`.
+        let drop = try #require(body.range(of: ".cadenceTaskHeadingRowDrop("), "the header has no drop target")
         #expect(header.lowerBound < drop.lowerBound && drop.lowerBound < rows.lowerBound,
                 "the drop target is not on the header")
         #expect(body.contains("ListTasksGroupDrop.headerDropTarget(droppedID: droppedID, in: group)"))
