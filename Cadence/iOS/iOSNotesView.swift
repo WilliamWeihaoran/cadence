@@ -773,9 +773,15 @@ struct iOSNotesView: View {
 
     /// The date picker is this surface's "go to date", the same job macOS's `NotesDateJumpButton`
     /// does — so picking a day opens that day's note rather than only re-filtering the column.
+    ///
+    /// [[T-18085]]: a day whose note the store refused to make used to fall out of the guard with
+    /// nothing on screen — the picker moved and the editor stayed on the previous day's note. It
+    /// now says so, in the sentence macOS's Notes pages show for the same refusal.
     private func openNoteForSelectedDay() {
-        guard let coreTab = activeTab.coreTab, coreTab != .notepad,
-              let note = loadCoreNotes().note(for: coreTab) else { return }
+        guard let coreTab = activeTab.coreTab, coreTab != .notepad else { return }
+        let state = loadCoreNotes()
+        createFailureNotice = state.createFailureNotice(for: coreTab)
+        guard let note = state.note(for: coreTab) else { return }
         open(note)
     }
 

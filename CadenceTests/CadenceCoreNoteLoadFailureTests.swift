@@ -134,6 +134,34 @@ struct CadenceCoreNoteLoadFailureTests {
         #expect(panel.contains("{ createNotepadNote() }"))
     }
 
+    // MARK: - [[T-18085]]: iOS's Notes date pick names a refused create
+
+    /// The sentence a refused tab gets, and `nil` — which clears an earlier notice — for every tab
+    /// that loaded.
+    @Test func aFailedTabsNoticeIsTheMacSentenceAndOnlyForTheFailedTab() {
+        let today = Note(kind: .daily, title: "Today")
+        let state = CadenceCoreNoteSupport.loadOrCreateCoreNotes(today: today, week: nil, notepad: today, notepadReadFailed: false)
+
+        #expect(state.createFailureNotice(for: .week) == CadencePendingChangePersistence.editFailureNotice)
+        #expect(state.createFailureNotice(for: .today) == nil)
+        #expect(state.createFailureNotice(for: .notepad) == nil)
+        #expect(CadenceCoreNoteState().createFailureNotice(for: .today) == nil)
+    }
+
+    /// The date pick used to `guard … let note = loadCoreNotes().note(for: coreTab) else { return }`,
+    /// dropping the refusal. It now sets the page's drawn notice from the loaded state before the
+    /// guard, so a refusal is said and a success clears it. `Cadence/iOS/` is not compiled into
+    /// this target, so this reads the source.
+    @Test func theIOSDatePickSetsTheNoticeFromTheLoadedState() throws {
+        let source = CadenceSourceScan.codeOnly(try sourceFile("Cadence/iOS/iOSNotesView.swift"))
+        let open = try #require(CadenceSourceScan.declarationBody("private func openNoteForSelectedDay()", in: source))
+        let notice = try #require(open.range(of: "createFailureNotice = state.createFailureNotice(for: coreTab)"))
+        let guarded = try #require(open.range(of: "guard let note = state.note(for: coreTab) else { return }"))
+        #expect(notice.upperBound < guarded.lowerBound, "the notice must be set before the guard returns")
+        #expect(!open.contains("loadCoreNotes().note(for:"))
+        #expect(source.contains("CadenceInlineFailureNotice(text: createFailureNotice)"))
+    }
+
     // MARK: - NotePanel actually reads and shows failedTabs (source scan; macOS-only view)
 
     /// `Cadence/macOS/` is invisible to this test target the way `Cadence/iOS/` is, so this reads

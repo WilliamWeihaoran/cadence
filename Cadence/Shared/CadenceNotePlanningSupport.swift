@@ -182,6 +182,14 @@ struct CadenceCoreNoteState {
         case .notepad: return notepad
         }
     }
+
+    /// [[T-18085]]: the sentence a surface shows when it asked for `tab`'s note and the store
+    /// refused to make it, or `nil` — which is also what clears a notice an earlier refusal left.
+    /// iOS's Notes date pick reads it; macOS's Notes pages set the same sentence from the throw
+    /// they catch themselves (`NotesView.openNote(forDateKey:)` / `openNote(forWeekKey:)`).
+    func createFailureNotice(for tab: CadenceCoreNoteTab) -> String? {
+        failedTabs.contains(tab) ? CadencePendingChangePersistence.editFailureNotice : nil
+    }
 }
 
 enum CadenceCoreNoteSupport {

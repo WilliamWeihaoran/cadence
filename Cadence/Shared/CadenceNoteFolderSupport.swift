@@ -162,6 +162,9 @@ struct NoteFolderListRow: View {
     /// claims focus on appear because it only exists while editing.
     var editingTitle: Binding<String>?
     var onSubmitTitle: (() -> Void)?
+    /// [[T-18082]]: the field lost focus — a click on another row, or anywhere else. The row owns
+    /// the focus, so it is the one that can tell; the caller decides what leaving means.
+    var onTitleFocusLost: (() -> Void)?
 
     @State private var isHovered = false
     @FocusState private var isTitleFocused: Bool
@@ -201,6 +204,10 @@ struct NoteFolderListRow: View {
                         .focused($isTitleFocused)
                         .onAppear { isTitleFocused = true }
                         .onSubmit { onSubmitTitle?() }
+                        .onChange(of: isTitleFocused) { wasFocused, isFocused in
+                            guard wasFocused, !isFocused else { return }
+                            onTitleFocusLost?()
+                        }
                 } else {
                     Text(title)
                         .font(.system(size: metrics.titleSize, weight: isSelected ? .semibold : .regular))

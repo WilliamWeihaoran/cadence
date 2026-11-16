@@ -148,19 +148,28 @@ struct NoteFolderSheet: View {
 /// `Theme.blue.opacity(0.15)` *underneath* a `cadenceHoverHighlight` fill and stroke at the same
 /// radius: two hover layers for one row, which is the standing violation the shared row exists to
 /// end. Escape still leaves the field, from out here — `onExitCommand` is AppKit-only and the
-/// shared row has no platform guards.
+/// shared row has no platform guards. Since [[T-18082]] the field edits a draft: Escape restores
+/// the stored name, Return or leaving the field commits it, and a blank name is refused.
 ///
 /// One deliberate change in the move: the tag strip caps at 3 rather than 2. That is
 /// `NoteListDayRow`'s figure — the *other* shared note row — so the two rows in the same column
 /// stop disagreeing about how many tags a note gets to show.
 struct ListNoteRow: View {
-    @Bindable var note: Note
+    let note: Note
     let isSelected: Bool
     /// [[T-7077]]. The accessibility path to the click `ListNoteFolderRow` puts on this row. Only
     /// the assistive action calls it: the pointer still reaches `onSelect` through that outer tap
     /// gesture, untouched, so single-click open and double-click rename keep their event routing.
     var onOpen: () -> Void = {}
+    @Environment(\.modelContext) private var modelContext
     @State private var isEditingTitle = false
+    /// [[T-18082]]: what the field edits. The field used to bind `note.title` itself, so every
+    /// keystroke was the stored name: Escape "left the field" with the typed text kept, a cleared
+    /// field saved as "Untitled", and nothing committed. The draft is seeded when the rename
+    /// starts and reaches the note only through `commitRename`.
+    @State private var draftTitle = ""
+    /// [[T-18082]]: the store refused the rename; the note keeps its old name and this says so.
+    @State private var renameFailureNotice: String?
 
     /// [[T-7077]]. What the row is to assistive tech. A button, selected when it is the open note
     /// — but **not while renaming**: then the row is a container and its `TextField` is the
@@ -176,23 +185,102 @@ struct ListNoteRow: View {
     /// The double-click rename's assistive path.
     nonisolated static let renameActionName = "Rename note"
 
-    var body: some View {
-        NoteFolderListRow(
-            title: note.displayTitle,
-            detail: NoteRowText.previewBelowTitleHeading(note),
-            tags: note.sortedTags,
-            isSelected: isSelected,
-            editingTitle: isEditingTitle ? $note.title : nil,
-            onSubmitTitle: { isEditingTitle = false }
-        )
-        .onExitCommand { isEditingTitle = false }
-        .onTapGesture(count: 2) {
-            isEditingTitle = true
+    /// How a rename ended. A blank draft is refused rather than stored: the row would otherwise
+    /// read "Untitled", a name nobody typed.
+    nonisolated enum RenameOutcome: Equatable {
+        case saved
+        case unchanged
+        case refusedBlank
+    }
+
+    /// [[T-18082]]: the rename's one write. Normalises the draft, refuses a blank one, writes the
+    /// title and `updatedAt`, and commits, putting both back if the commit throws — the
+    /// `ContextSettingsRow.commitRename` shape. Static, and the commit a parameter, so the refused
+    /// path is reachable from a test; the view has no seam.
+    ///
+    /// Only the title is written, as `NoteEditorPane`'s own title field writes it.
+    static func commitRename(
+        _ note: Note,
+        draft: String,
+        in modelContext: ModelContext,
+        now: Date = Date(),
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> RenameOutcome {
+        guard !CadenceTitleNormalization.isBlank(draft) else { return .refusedBlank }
+        let title = CadenceTitleNormalization.normalized(draft)
+        guard title != note.title else { return .unchanged }
+        let previousTitle = note.title
+        let previousUpdatedAt = note.updatedAt
+        note.title = title
+        note.updatedAt = now
+        try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+            note.title = previousTitle
+            note.updatedAt = previousUpdatedAt
         }
-        .accessibilityElement(children: isEditingTitle ? .contain : .combine)
-        .accessibilityAddTraits(Self.accessibilityTraits(isEditing: isEditingTitle, isSelected: isSelected))
-        .accessibilityAction { onOpen() }
-        .accessibilityAction(named: Self.renameActionName) { isEditingTitle = true }
+        return .saved
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            NoteFolderListRow(
+                title: note.displayTitle,
+                detail: NoteRowText.previewBelowTitleHeading(note),
+                tags: note.sortedTags,
+                isSelected: isSelected,
+                editingTitle: isEditingTitle ? $draftTitle : nil,
+                onSubmitTitle: { finishRename(leavingField: false) },
+                onTitleFocusLost: { finishRename(leavingField: true) }
+            )
+            // [[T-18082]]: Escape restores the stored name, through both spellings the Settings
+            // context row uses (`onExitCommand` and `onKeyPress(.escape)`, [[T-10033]]).
+            .onExitCommand(perform: cancelRename)
+            .onKeyPress(.escape) {
+                guard isEditingTitle else { return .ignored }
+                cancelRename()
+                return .handled
+            }
+            .onTapGesture(count: 2) {
+                beginRename()
+            }
+            .accessibilityElement(children: isEditingTitle ? .contain : .combine)
+            .accessibilityAddTraits(Self.accessibilityTraits(isEditing: isEditingTitle, isSelected: isSelected))
+            .accessibilityAction { onOpen() }
+            .accessibilityAction(named: Self.renameActionName) { beginRename() }
+
+            if let renameFailureNotice {
+                CadenceInlineFailureNotice(text: renameFailureNotice)
+            }
+        }
+    }
+
+    /// A double-click inside an open field selects a word; it must not reseed the draft.
+    private func beginRename() {
+        guard !isEditingTitle else { return }
+        draftTitle = note.title
+        renameFailureNotice = nil
+        isEditingTitle = true
+    }
+
+    private func cancelRename() {
+        isEditingTitle = false
+    }
+
+    /// Return keeps the field open on a refusal, so the draft can be fixed; leaving the field
+    /// cannot keep it open, so a blank draft is dropped and a refused commit closes on the stored
+    /// name with the notice beneath it.
+    private func finishRename(leavingField: Bool) {
+        guard isEditingTitle else { return }
+        let outcome: RenameOutcome
+        do {
+            outcome = try Self.commitRename(note, draft: draftTitle, in: modelContext)
+        } catch {
+            renameFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            if leavingField { isEditingTitle = false }
+            return
+        }
+        renameFailureNotice = nil
+        if outcome == .refusedBlank && !leavingField { return }
+        isEditingTitle = false
     }
 }
 #endif

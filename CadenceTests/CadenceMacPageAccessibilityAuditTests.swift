@@ -946,10 +946,10 @@ struct CadenceMacPageAccessibilityAuditTests {
         )
         let inner = try CadenceControlAccessibilityLabelTests.bodyOfStruct("ListNoteRow", in: list)
             .filter { !$0.isWhitespace }
-        #expect(inner.contains(".onTapGesture(count:2){isEditingTitle=true}"), "the double-click rename is gone")
+        #expect(inner.contains(".onTapGesture(count:2){beginRename()}"), "the double-click rename is gone")
         #expect(inner.contains(".accessibilityElement(children:isEditingTitle?.contain:.combine)"))
         #expect(inner.contains(".accessibilityAction{onOpen()}"))
-        #expect(inner.contains(".accessibilityAction(named:Self.renameActionName){isEditingTitle=true}"))
+        #expect(inner.contains(".accessibilityAction(named:Self.renameActionName){beginRename()}"))
     }
 
     // MARK: - T-8643: the Mac sidebar's list row speaks its open-task count
