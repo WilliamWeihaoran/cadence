@@ -9,6 +9,9 @@ nonisolated enum MarkdownTypingTransformSupport {
         let nsText = text as NSString
         let safeCursor = min(max(cursor, 0), nsText.length)
         guard safeCursor > 0 else { return nil }
+        // [[T-18139]]: inside a fenced code block what is typed is code. `- ` stays `- `, `[ ] `
+        // stays `[ ] `, `3. ` keeps its number and `/` opens no command menu.
+        guard !MarkdownListSupport.isInsideFencedCodeBlock(text, at: safeCursor) else { return nil }
 
         if let simpleListMutation = simpleListMutation(in: nsText, cursor: safeCursor) {
             return simpleListMutation

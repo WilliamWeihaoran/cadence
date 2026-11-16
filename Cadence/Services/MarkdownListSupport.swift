@@ -99,12 +99,12 @@ nonisolated enum MarkdownListSupport {
         var counters: [Int: Int] = [:]
         var previousOrderedLevel: Int?
         var changed = false
-        let frontmatterLines = MarkdownMetadataParser.frontmatterLineCount(in: text)
+        let protectedLines = protectedLineIndexes(in: text)
 
         for (lineIndex, line) in originalLines.enumerated() {
-            // [[T-18138]]: the frontmatter is YAML, not body. A skipped line is read as a non-list
-            // line, so it ends any run the way prose does.
-            guard lineIndex >= frontmatterLines, let match = listPrefixMatch(in: line) else {
+            // [[T-18138]]: the frontmatter is YAML, not body; [[T-18139]]: a fenced code block is
+            // code. A skipped line is read as a non-list line, so it ends any run the way prose does.
+            guard !protectedLines.contains(lineIndex), let match = listPrefixMatch(in: line) else {
                 rebuiltLines.append(line)
                 // A line that is not a list item at all ends the run, so the next one starts at 1.
                 counters.removeAll()
@@ -174,6 +174,30 @@ nonisolated enum MarkdownListSupport {
         )
     }
 
+    /// The line indexes no list normalizer may rewrite: the frontmatter block ([[T-18138]]) and
+    /// every line of a fenced code block, fences included ([[T-18139]]). An unclosed fence runs to
+    /// the end of the note, as the iOS styler draws it. Both sets index the `"\n"` split the
+    /// normalizers walk (`MarkdownSourceLines`), so the indexes line up.
+    private static func protectedLineIndexes(in text: String) -> Set<Int> {
+        var protected = Set(0..<MarkdownMetadataParser.frontmatterLineCount(in: text))
+        for block in MarkdownBlockSupport.fencedCodeBlocks(in: text) {
+            protected.formUnion(block.lineIndexes)
+        }
+        return protected
+    }
+
+    /// True when the line holding UTF-16 offset `location` sits inside a fenced code block
+    /// (fences included; an unclosed fence runs to the end). The typing transforms ask this so
+    /// `- ` typed inside a code block stays `- ` ([[T-18139]]).
+    static func isInsideFencedCodeBlock(_ text: String, at location: Int) -> Bool {
+        let nsText = text as NSString
+        let safeLocation = min(max(0, location), nsText.length)
+        // Count UTF-16 line feeds, not `Character`s: `\r\n` is one grapheme, so a Character
+        // comparison would miss every CRLF break and land on the wrong line.
+        let lineIndex = nsText.substring(to: safeLocation).utf16.lazy.filter { $0 == 0x0A }.count
+        return MarkdownBlockSupport.fencedCodeBlocks(in: text).contains { $0.lineIndexes.contains(lineIndex) }
+    }
+
     static func normalizedMarkdownListPrefixes(in text: String) -> String {
         normalizedMarkdownListPrefixes(in: text, selection: NSRange(location: 0, length: 0)).text
     }
@@ -184,10 +208,12 @@ nonisolated enum MarkdownListSupport {
         // [[T-18138]]: the frontmatter block is YAML, and its `tags:` block list is spelled
         // `  - work`. The Mac runs this over the whole note on every keystroke, block included
         // (it is only hidden there), so rewriting those lines to `  ◦ work` stripped the note's
-        // tags the moment anything was typed. Frontmatter lines pass through verbatim.
-        let frontmatterLines = MarkdownMetadataParser.frontmatterLineCount(in: text)
+        // tags the moment anything was typed. Frontmatter lines pass through verbatim, and so do
+        // the lines of a fenced code block ([[T-18139]]): `- name: build` pasted into a YAML block
+        // is code, and rewriting it to `• name: build` silently changed what the copy button gives.
+        let protectedLines = protectedLineIndexes(in: text)
         let normalizedLines = originalLines.enumerated().map { lineIndex, line -> String in
-            guard lineIndex >= frontmatterLines,
+            guard !protectedLines.contains(lineIndex),
                   let normalized = normalizedMarkdownListLine(line) else { return line }
             changed = true
             return normalized

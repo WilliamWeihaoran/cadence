@@ -13,6 +13,22 @@ struct MarkdownTypingTransformSupportTests {
         #expect(mutation.selection == NSRange(location: 2, length: 0))
     }
 
+    /// [[T-18139]]: inside a fenced code block what is typed is code; `- ` stays `- `.
+    @Test func typedShortcutsInsideAFencedCodeBlockStayAsTyped() {
+        #expect(MarkdownTypingTransformSupport.mutation(in: "```\n- ", cursor: 6) == nil)
+        #expect(MarkdownTypingTransformSupport.mutation(in: "```\n[ ] ", cursor: 8) == nil)
+        #expect(MarkdownTypingTransformSupport.mutation(in: "```\n3. ", cursor: 7) == nil)
+        // A CRLF note counts its line breaks by `\n`, not by grapheme.
+        #expect(MarkdownTypingTransformSupport.mutation(in: "```\r\n- ", cursor: 7) == nil)
+    }
+
+    /// The same shortcut after the fence has closed is a list item again.
+    @Test func typedShortcutsAfterAClosedFenceStillTransform() throws {
+        let mutation = try #require(MarkdownTypingTransformSupport.mutation(in: "```\nx\n```\n- ", cursor: 12))
+
+        #expect(mutation.text == "```\nx\n```\n• ")
+    }
+
     @Test func leavesSentenceOpeningAbbreviationsAlone() {
         // "a."/"b." lettered lists are a single letter; a whole word before the period is prose.
         #expect(MarkdownTypingTransformSupport.mutation(in: "Mr. ", cursor: 4) == nil)

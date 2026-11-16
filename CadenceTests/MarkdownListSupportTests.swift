@@ -327,6 +327,49 @@ struct MarkdownListSupportTests {
         #expect(result.text == "---\ntitle: x\nsteps: |\n  2. y\n---\n1. a")
     }
 
+    // MARK: - A fenced code block is code ([[T-18139]])
+
+    /// Pasted YAML, shell or Markdown samples sit in a fence; the Mac runs both normalizers over
+    /// the whole note on every keystroke, and they used to rewrite `- a` to `• a`, `3.` to `2.`
+    /// and `● ` to `✓ ` inside it, so the copy button gave back altered code.
+    private static let fencedSample = "```\n- a\n* b\n1. x\n3. y\n● z\n```"
+
+    @Test func theBulletNormalizerLeavesAFencedCodeBlockAlone() {
+        let text = Self.fencedSample + "\n- after"
+
+        let result = MarkdownListSupport.normalizedMarkdownListPrefixes(in: text)
+
+        #expect(result == Self.fencedSample + "\n• after")
+    }
+
+    @Test func theOrderedRenumberLeavesAFencedCodeBlockAlone() {
+        let result = MarkdownListSupport.normalizedOrderedListMarkers(
+            in: Self.fencedSample,
+            selection: NSRange(location: 0, length: 0)
+        )
+
+        #expect(result.text == Self.fencedSample)
+    }
+
+    /// A code block breaks an ordered run the way prose does: the item after it starts at 1.
+    @Test func aFencedCodeBlockEndsAnOrderedRun() {
+        let result = MarkdownListSupport.normalizedOrderedListMarkers(
+            in: "1. a\n```\n2. code\n```\n5. b",
+            selection: NSRange(location: 0, length: 0)
+        )
+
+        #expect(result.text == "1. a\n```\n2. code\n```\n1. b")
+    }
+
+    /// An unclosed fence runs to the end of the note, as the iOS styler draws it.
+    @Test func anUnclosedFenceProtectsEverythingBelowIt() {
+        let text = "- a\n```\n- b"
+
+        let result = MarkdownListSupport.normalizedMarkdownListPrefixes(in: text)
+
+        #expect(result == "• a\n```\n- b")
+    }
+
     // MARK: - Ordered marker renumbering
 
     @Test func renumbersOrderedMarkersWithinOneRun() {
