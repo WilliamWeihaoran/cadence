@@ -351,7 +351,7 @@ struct TodayTasksWidgetView: View {
         }
         .padding(compact ? scale.compactCardPadding : scale.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
+        .cadenceWidgetCardBackground(
             LinearGradient(
                 colors: [
                     Theme.surfaceHighlight,
@@ -467,7 +467,7 @@ struct TodayTasksWidgetView: View {
         }
         .padding(.horizontal, scale.panelPadding)
         .padding(.vertical, dense ? max(scale.panelPadding - 2, 6) : max(scale.panelPadding - 1, 7))
-        .background(Theme.surfaceElevated)
+        .cadenceWidgetCardBackground(Theme.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: scale.cardCornerRadius, style: .continuous))
         .cadenceWidgetElevation(scale)
     }
@@ -534,7 +534,7 @@ struct TodayTasksWidgetView: View {
         }
         .padding(scale.panelPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surfaceElevated)
+        .cadenceWidgetCardBackground(Theme.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: scale.panelCornerRadius, style: .continuous))
         // Lifted like every other card on the extra-large tile -- the priority card above it, the
         // column cards beside it and the footer link under it all carry the shared shadow, and
@@ -575,6 +575,7 @@ struct TodayTasksWidgetView: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: size, weight: .semibold))
                 .foregroundStyle(Theme.green)
+                .widgetAccentable()
                 .padding(3)
                 .contentShape(Rectangle())
         }
@@ -596,7 +597,7 @@ struct TodayTasksWidgetView: View {
             .minimumScaleFactor(0.85)
             .padding(.horizontal, scale.badgeHorizontalPadding)
             .padding(.vertical, scale.badgeVerticalPadding)
-            .background(Theme.surfaceHighlight)
+            .cadenceWidgetCardBackground(Theme.surfaceHighlight)
             .clipShape(Capsule())
     }
 

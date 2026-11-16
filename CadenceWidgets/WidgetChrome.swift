@@ -148,6 +148,54 @@ extension View {
     }
 }
 
+/// **Every card, cell and pill fill in both widgets goes through here, so the accented rendering
+/// mode has one answer (T-18201).** On a Tinted or Clear Home Screen (and a tinted Mac desktop)
+/// WidgetKit drops the container background and paints every non-accentable view in one tint while
+/// KEEPING its opacity. An opaque near-black card therefore becomes an opaque tinted block, and the
+/// white title on it becomes the same tint -- a blank pill. Under `.accented` the fill drops to a
+/// low-alpha plate, so the card still reads as a card and the text on it reads at full tint.
+/// `.fullColor` keeps the designed fill; `.vibrant` (Lock Screen, StandBy, a backgrounded Mac
+/// desktop) is luminance-to-alpha, where a near-black fill already resolves to a faint plate.
+///
+/// `emphasized` is for the one fill that MARKS something -- Calendar's today cell -- which takes a
+/// heavier plate and is accentable, so today is still told from the other days in one tint.
+enum CadenceWidgetCardFill {
+    static let accentedPlateOpacity: Double = 0.14
+    static let accentedEmphasizedPlateOpacity: Double = 0.34
+
+    static func resolved(
+        _ fill: AnyShapeStyle,
+        renderingMode: WidgetRenderingMode,
+        emphasized: Bool = false
+    ) -> AnyShapeStyle {
+        guard renderingMode == .accented else { return fill }
+        return AnyShapeStyle(Color.white.opacity(emphasized ? accentedEmphasizedPlateOpacity : accentedPlateOpacity))
+    }
+}
+
+private struct CadenceWidgetCardBackground: ViewModifier {
+    let fill: AnyShapeStyle
+    let emphasized: Bool
+    @Environment(\.widgetRenderingMode) private var renderingMode
+
+    func body(content: Content) -> some View {
+        content.background {
+            Rectangle()
+                .fill(CadenceWidgetCardFill.resolved(fill, renderingMode: renderingMode, emphasized: emphasized))
+                .widgetAccentable(emphasized)
+        }
+    }
+}
+
+extension View {
+    /// The widget spelling of `.background(fill)` for an opaque card, cell or pill; see
+    /// `CadenceWidgetCardFill`. A bare `.background(Theme.surface…)` in `CadenceWidgets/` is
+    /// refused by `CadenceWidgetAccentedRenderingTests`.
+    func cadenceWidgetCardBackground<S: ShapeStyle>(_ fill: S, emphasized: Bool = false) -> some View {
+        modifier(CadenceWidgetCardBackground(fill: AnyShapeStyle(fill), emphasized: emphasized))
+    }
+}
+
 /// Which corner of the container gradient carries the heavy end of the accent wash. Today and
 /// Calendar both key off `Theme.blue`, so they are told apart by anchoring rather than by two
 /// different blues: Today's wash arrives with the header at the top-leading corner and fades out
@@ -224,6 +272,9 @@ struct CadenceWidgetBadge: View {
             .padding(.vertical, scale.badgeVerticalPadding)
             .background(tint.opacity(0.20))
             .clipShape(Capsule())
+            // The status a badge carries (overdue, today, planned) is the meaning on the row, so in
+            // the accented mode it takes the accent tint rather than the body text's (T-18201).
+            .widgetAccentable()
     }
 }
 
@@ -247,7 +298,7 @@ struct CadenceWidgetMetricCard: View {
         }
         .padding(scale.panelPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surfaceElevated)
+        .cadenceWidgetCardBackground(Theme.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: scale.panelCornerRadius, style: .continuous))
         .cadenceWidgetElevation(scale)
     }
@@ -268,7 +319,7 @@ struct CadenceWidgetFooterLink: View {
                 .minimumScaleFactor(0.85)
                 .padding(.horizontal, scale.panelPadding)
                 .padding(.vertical, max(scale.panelPadding - 4, 5))
-                .background(Theme.surfaceHighlight)
+                .cadenceWidgetCardBackground(Theme.surfaceHighlight)
                 .clipShape(Capsule())
                 .cadenceWidgetElevation(scale)
         }
@@ -332,7 +383,7 @@ struct CadenceWidgetPanel<Content: View>: View {
         let scale = CadenceWidgetScale.forFamily(widgetFamily)
         content
             .padding(scale.panelPadding)
-            .background(Theme.surfaceElevated)
+            .cadenceWidgetCardBackground(Theme.surfaceElevated)
             .clipShape(RoundedRectangle(cornerRadius: scale.panelCornerRadius, style: .continuous))
             .cadenceWidgetElevation(scale)
     }

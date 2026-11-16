@@ -333,6 +333,7 @@ struct CalendarSnapshotWidgetView: View {
             Text(day.weekdayLabel)
                 .font(.system(size: scale.captionFontSize, weight: .semibold))
                 .foregroundStyle(day.isToday ? Theme.blueLight : Theme.subdued)
+                .widgetAccentable(day.isToday)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
@@ -371,7 +372,7 @@ struct CalendarSnapshotWidgetView: View {
         .padding(.horizontal, dayCellHorizontalInset)
         .padding(.vertical, dayCellVerticalInset(compact: compact))
         .frame(maxWidth: .infinity, minHeight: dayCellMinHeight(compact: compact), alignment: .topLeading)
-        .background(dayBackground(for: day))
+        .cadenceWidgetCardBackground(dayBackground(for: day), emphasized: day.isToday)
         .clipShape(RoundedRectangle(cornerRadius: scale.cardCornerRadius, style: .continuous))
         .cadenceWidgetElevation(scale)
     }
