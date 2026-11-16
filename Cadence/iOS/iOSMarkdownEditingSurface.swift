@@ -169,8 +169,8 @@ struct iOSMarkdownEditingSurface: View {
     }
 
     private var editorSurface: some View {
-        let createEmbeddedTask: ((String) -> String?)? = allowsEmbeddedTaskCreation
-            ? { title in createEmbeddedTaskReference(title: title) }
+        let createEmbeddedTask: ((String) -> MarkdownEmbeddedTaskCreation<String>?)? = allowsEmbeddedTaskCreation
+            ? { title in createUndoableEmbeddedTaskReference(title: title) }
             : nil
         // Bound here rather than written inline in `iOSMarkdownFormatToolbar(...)` below, for the
         // reason the line above is: a ternary producing an optional closure inside one of these
@@ -844,7 +844,9 @@ struct iOSMarkdownEditingSurface: View {
         selectedEmbeddedTask = task
     }
 
-    private func createEmbeddedTaskReference(title: String) -> String? {
+    /// The draft a new embed is created from, and the lists it may file into. One builder for the
+    /// creation and for the re-creation an undone embed's redo makes ([[T-18174]]).
+    private func embedDraft(title: String) -> (draft: TaskCreationDraft, areas: [Area], projects: [Project]) {
         let container: TaskContainerSelection
         let areas: [Area]
         let projects: [Project]
@@ -873,6 +875,35 @@ struct iOSMarkdownEditingSurface: View {
             subtaskTitles: [],
             tags: []
         )
+        return (draft, areas, projects)
+    }
+
+    /// What the editor calls on Return over a `( ) Title` line: the creation below, plus the
+    /// inverse the editor registers in the same undo group as the line swap ([[T-18174]]), so
+    /// undo takes the minted task back out of the store and redo puts it back under the same id.
+    private func createUndoableEmbeddedTaskReference(title: String) -> MarkdownEmbeddedTaskCreation<String>? {
+        guard let markdown = createEmbeddedTaskReference(title: title) else { return nil }
+        let modelContext = modelContext
+        guard let id = MarkdownTaskEmbedParser.standaloneTaskReference(in: markdown)?.id,
+              let task = try? modelContext.fetch(FetchDescriptor<AppTask>(predicate: #Predicate { $0.id == id })).first else {
+            return MarkdownEmbeddedTaskCreation(reference: markdown, undo: nil)
+        }
+        let source = embedDraft(title: title)
+        let cache = $recentEmbeddedTasks
+        let undo = MarkdownEmbeddedTaskCreationUndo(
+            task: task,
+            draft: source.draft,
+            areas: source.areas,
+            projects: source.projects,
+            modelContext: modelContext,
+            didWithdraw: { cache.wrappedValue[$0] = nil },
+            didRestore: { cache.wrappedValue[$0.id] = $0 }
+        )
+        return MarkdownEmbeddedTaskCreation(reference: markdown, undo: undo)
+    }
+
+    private func createEmbeddedTaskReference(title: String) -> String? {
+        let (draft, areas, projects) = embedDraft(title: title)
         // T-364: commit first, hand the markdown back second. `iOSMarkdownEditor` replaces the
         // typed line with this string exactly when it is non-nil, so a refused commit has to
         // return nil — otherwise the draft keeps a `[[task:UUID|Title]]` for a task the store

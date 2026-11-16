@@ -413,16 +413,20 @@ extension MarkdownEditorCoordinator {
 
     private func createUntitledEmbeddedTask(fromTriggerRange range: NSRange, in textView: NSTextView) -> Bool {
         guard let cadenceTextView = textView as? CadenceTextView,
-              let suggestion = cadenceTextView.onCreateEmbeddedMarkdownTask?(MarkdownTaskEmbedRenderInfo.untitledTaskTitle),
-              suggestion.kind == .task,
-              MarkdownTaskEmbedParser.standaloneTaskReference(in: suggestion.markdown) != nil else {
+              let creation = cadenceTextView.onCreateEmbeddedMarkdownTask?(MarkdownTaskEmbedRenderInfo.untitledTaskTitle),
+              creation.reference.kind == .task,
+              MarkdownTaskEmbedParser.standaloneTaskReference(in: creation.reference.markdown) != nil else {
             return false
         }
+        let suggestion = creation.reference
 
+        undoManager.beginUndoGrouping()
+        defer { undoManager.endUndoGrouping() }
         guard textView.shouldChangeText(in: range, replacementString: suggestion.markdown) else {
             return true
         }
         textView.textStorage?.replaceCharacters(in: range, with: suggestion.markdown)
+        creation.undo?.register(on: undoManager)
         if let titleRange = MarkdownTaskEmbedParser.referenceTitleRange(in: suggestion.markdown, lineStart: range.location) {
             textView.setSelectedRange(titleRange)
         } else {
@@ -440,16 +444,23 @@ extension MarkdownEditorCoordinator {
               selection.location >= lineRange.location + (line as NSString).length,
               let cadenceTextView = textView as? CadenceTextView,
               let title = MarkdownTaskEmbedParser.draftTitle(in: line),
-              let suggestion = cadenceTextView.onCreateEmbeddedMarkdownTask?(title),
-              suggestion.kind == .task,
-              MarkdownTaskEmbedParser.standaloneTaskReference(in: suggestion.markdown) != nil else {
+              let creation = cadenceTextView.onCreateEmbeddedMarkdownTask?(title),
+              creation.reference.kind == .task,
+              MarkdownTaskEmbedParser.standaloneTaskReference(in: creation.reference.markdown) != nil else {
             return false
         }
 
+        // [[T-18174]]: the text swap and the inverse of the creation are one undo step, so Cmd+Z
+        // puts the `( ) Title` line back AND takes the task it minted out of the store; redo
+        // restores both. Grouped explicitly rather than trusting the event's group, which a
+        // headless caller does not have.
+        undoManager.beginUndoGrouping()
+        defer { undoManager.endUndoGrouping() }
         let contentRange = NSRange(location: lineRange.location, length: (line as NSString).length)
-        let replacement = suggestion.markdown + "\n"
+        let replacement = creation.reference.markdown + "\n"
         guard textView.shouldChangeText(in: contentRange, replacementString: replacement) else { return true }
         textView.textStorage?.replaceCharacters(in: contentRange, with: replacement)
+        creation.undo?.register(on: undoManager)
         textView.setSelectedRange(NSRange(location: contentRange.location + (replacement as NSString).length, length: 0))
         textView.typingAttributes = MarkdownStylist.baseAttributes
         textView.didChangeText()

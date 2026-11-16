@@ -134,7 +134,7 @@ final class TaskNotesEmbedHandlers {
 
     struct Callbacks {
         let openTaskReference: (UUID?, String) -> Void
-        let createEmbeddedTask: (String) -> MarkdownReferenceSuggestion?
+        let createEmbeddedTask: (String) -> MarkdownEmbeddedTaskCreation<MarkdownReferenceSuggestion>?
         let toggleEmbeddedTask: (UUID) -> Void
         let toggleEmbeddedSubtask: (UUID, UUID) -> Void
         let renameEmbeddedTask: (UUID, String) -> Void
@@ -151,7 +151,7 @@ final class TaskNotesEmbedHandlers {
     ) -> Callbacks {
         Callbacks(
             openTaskReference: { [weak self] in self?.openTaskReference(id: $0, title: $1, in: scope) },
-            createEmbeddedTask: { [weak self] in self?.createEmbeddedTask(title: $0, in: scope) },
+            createEmbeddedTask: { [weak self] in self?.createUndoableEmbeddedTask(title: $0, in: scope) },
             toggleEmbeddedTask: { [weak self] in self?.toggleEmbeddedTask(id: $0, in: scope) },
             toggleEmbeddedSubtask: { [weak self] in self?.toggleEmbeddedSubtask(taskID: $0, subtaskID: $1, in: scope) },
             renameEmbeddedTask: { [weak self] in self?.renameEmbeddedTask(id: $0, title: $1, in: scope) },
@@ -192,8 +192,13 @@ final class TaskNotesEmbedHandlers {
         linkedTaskForPopover = linkedTask
     }
 
-    /// A new embed goes into the scope's target area or project (else the Inbox), in its section.
-    func createEmbeddedTask(title: String, in scope: TaskNotesEmbedScope) -> MarkdownReferenceSuggestion? {
+    /// The draft a new embed is created from, and the lists it may file into: the scope's target
+    /// area or project (else the Inbox), in its section. One builder for the creation and for the
+    /// re-creation an undone embed's redo makes ([[T-18174]]), so the two file it the same way.
+    private func embedDraft(
+        title: String,
+        in scope: TaskNotesEmbedScope
+    ) -> (draft: TaskCreationDraft, areas: [Area], projects: [Project]) {
         let target = scope.embedTarget
         let container: TaskContainerSelection
         let areas: [Area]
@@ -224,6 +229,44 @@ final class TaskNotesEmbedHandlers {
             subtaskTitles: [],
             tags: []
         )
+        return (draft, areas, projects)
+    }
+
+    /// What the editor calls on Return over a `( ) Title` line: the creation below, plus the
+    /// inverse the editor registers in the same undo group as the text swap ([[T-18174]]), so Cmd+Z
+    /// takes the minted task back out of the store and Cmd+Shift+Z puts it back under the same id.
+    func createUndoableEmbeddedTask(
+        title: String,
+        in scope: TaskNotesEmbedScope
+    ) -> MarkdownEmbeddedTaskCreation<MarkdownReferenceSuggestion>? {
+        guard let suggestion = createEmbeddedTask(title: title, in: scope) else { return nil }
+        guard let task = recentEmbeddedTasks[suggestion.targetID] else {
+            return MarkdownEmbeddedTaskCreation(reference: suggestion, undo: nil)
+        }
+        let source = embedDraft(title: title, in: scope)
+        let modelContext = scope.modelContext
+        let commit = self.commit
+        let undo = MarkdownEmbeddedTaskCreationUndo(
+            task: task,
+            draft: source.draft,
+            areas: source.areas,
+            projects: source.projects,
+            modelContext: modelContext,
+            commit: commit,
+            deleteTasks: { modelContext.deleteTasks(withIDs: $0, commit: commit) },
+            didWithdraw: { [weak self] id in self?.recentEmbeddedTasks[id] = nil },
+            didRestore: { [weak self] task in
+                self?.recentEmbeddedTasks[task.id] = task
+                self?.editorTextView?.markdownTaskEmbeds[task.id] = MarkdownTaskEmbedRenderInfo.task(task)
+            }
+        )
+        return MarkdownEmbeddedTaskCreation(reference: suggestion, undo: undo)
+    }
+
+    /// A new embed goes into the scope's target area or project (else the Inbox), in its section.
+    func createEmbeddedTask(title: String, in scope: TaskNotesEmbedScope) -> MarkdownReferenceSuggestion? {
+        let target = scope.embedTarget
+        let (draft, areas, projects) = embedDraft(title: title, in: scope)
 
         // T-364, two orderings in one. The reference is handed back only after the commit lands,
         // because the editor writes `[[task:UUID|Title]]` into the note exactly when this returns

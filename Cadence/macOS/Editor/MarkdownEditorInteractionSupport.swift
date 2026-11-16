@@ -14,7 +14,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     var referenceSuggestions: [MarkdownReferenceSuggestion] = []
     var tagSuggestions: [MarkdownTagSuggestion] = []
     var onOpenMarkdownReference: ((MarkdownReferenceTarget) -> Void)?
-    var onCreateEmbeddedMarkdownTask: ((String) -> MarkdownReferenceSuggestion?)?
+    var onCreateEmbeddedMarkdownTask: ((String) -> MarkdownEmbeddedTaskCreation<MarkdownReferenceSuggestion>?)?
     var onToggleEmbeddedMarkdownTask: ((UUID) -> Void)?
     var onToggleEmbeddedMarkdownSubtask: ((UUID, UUID) -> Void)?
     var onRenameEmbeddedMarkdownTask: ((UUID, String) -> Void)?

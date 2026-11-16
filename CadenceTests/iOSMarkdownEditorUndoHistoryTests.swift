@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 #if os(iOS)
+import SwiftData
 import SwiftUI
 import UIKit
 #endif
@@ -195,6 +196,107 @@ struct iOSMarkdownEditorUndoHistoryTests {
         if hosted.manager.canUndo { Self.undo(hosted) }
         #expect(hosted.view.text == "# Groceries\n\nMilk")
     }
+
+    // MARK: - [[T-18174]]: undo of the Return that made a task card
+
+    /// The editor with a store behind `onCreateEmbeddedTask`, built the way
+    /// `iOSMarkdownEditingSurface.createUndoableEmbeddedTaskReference` builds it: commit through
+    /// `TaskCreationService`, hand back the reference and its inverse.
+    private static func hostWithStore(
+        _ text: String,
+        modelContext: ModelContext
+    ) throws -> Hosted {
+        let onCreate: (String) -> MarkdownEmbeddedTaskCreation<String>? = { title in
+            let draft = TaskCreationDraft(
+                title: title, notes: "", priority: .none, container: .inbox,
+                sectionName: TaskSectionDefaults.defaultName, dueDateKey: "", scheduledDateKey: "",
+                subtaskTitles: [], tags: []
+            )
+            guard let task = try? TaskCreationService(areas: [], projects: [])
+                .createTask(from: draft, into: modelContext) else { return nil }
+            let undo = MarkdownEmbeddedTaskCreationUndo(
+                task: task, draft: draft, areas: [], projects: [], modelContext: modelContext
+            )
+            return MarkdownEmbeddedTaskCreation(reference: NoteReferenceParser.taskReferenceMarkdown(for: task), undo: undo)
+        }
+        let editor = iOSMarkdownEditor(text: .constant(""), isFocused: .constant(true), onCreateEmbeddedTask: onCreate)
+        let coordinator = editor.makeCoordinator()
+        let window = UIWindow(windowScene: try #require(scene))
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 600)
+        let view = iOSMarkdownTextView()
+        view.frame = window.bounds
+        view.delegate = coordinator
+        window.addSubview(view)
+        window.makeKeyAndVisible()
+        _ = view.becomeFirstResponder()
+        let manager = try #require(view.undoManager)
+        manager.removeAllActions()
+        coordinator.applyRewrite(text, to: view)
+        turnRunLoop()
+        return Hosted(window: window, view: view, coordinator: coordinator, manager: manager)
+    }
+
+    /// Return at the end of the text, as the keyboard proposes it: through the delegate, which
+    /// answers `false` when it has turned the line into a card itself.
+    private static func pressReturn(_ hosted: Hosted) {
+        let end = NSRange(location: (hosted.view.text as NSString).length, length: 0)
+        hosted.view.selectedRange = end
+        if hosted.coordinator.textView(hosted.view, shouldChangeTextIn: end, replacementText: "\n") {
+            hosted.view.insertText("\n")
+        }
+        turnRunLoop()
+    }
+
+    private static func tasks(titled title: String, in modelContext: ModelContext) throws -> [AppTask] {
+        try modelContext.fetch(FetchDescriptor<AppTask>()).filter { $0.title == title }
+    }
+
+    /// The defect, on iOS: Return on `( ) Milk` made a "Milk" task; undo put the line back and
+    /// left "Milk" in the store, so Return again made a second. Undo now takes the task with the
+    /// card and redo puts the same task back.
+    @Test func undoOfAnIOSReturnThatMadeATaskCardTakesTheTaskBackOut() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let hosted = try Self.hostWithStore("( ) Milk", modelContext: modelContext)
+        Self.pressReturn(hosted)
+
+        let made = try Self.tasks(titled: "Milk", in: modelContext)
+        #expect(made.count == 1, "Return made \(made.count) tasks; text is \(hosted.view.text ?? "nil")")
+        let id = try #require(made.first?.id)
+        #expect(hosted.view.text.contains("[[task:\(id.uuidString)|Milk]]"))
+
+        Self.undo(hosted)
+        #expect(hosted.view.text == "( ) Milk")
+        #expect(try Self.tasks(titled: "Milk", in: modelContext).isEmpty, "undo left the minted task in the store")
+
+        Self.redo(hosted)
+        #expect(hosted.view.text.contains("[[task:\(id.uuidString)|Milk]]"))
+        #expect(try Self.tasks(titled: "Milk", in: modelContext).map(\.id) == [id], "redo did not restore the same task")
+
+        Self.undo(hosted)
+        #expect(hosted.view.text == "( ) Milk")
+        #expect(try Self.tasks(titled: "Milk", in: modelContext).isEmpty)
+
+        Self.pressReturn(hosted)
+        #expect(try Self.tasks(titled: "Milk", in: modelContext).count == 1, "Return after undo made a duplicate")
+        _ = container
+    }
+
+    /// Undo never deletes a task the user has since changed.
+    @Test func iOSUndoLeavesAMintedTaskTheUserHasSinceEdited() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let hosted = try Self.hostWithStore("( ) Milk", modelContext: modelContext)
+        Self.pressReturn(hosted)
+        let task = try #require(try Self.tasks(titled: "Milk", in: modelContext).first)
+        task.dueDate = "2026-11-20"
+        try modelContext.save()
+
+        Self.undo(hosted)
+        #expect(hosted.view.text == "( ) Milk")
+        #expect(try Self.tasks(titled: "Milk", in: modelContext).count == 1, "undo deleted an edited task")
+        _ = container
+    }
 }
 #endif
 
@@ -218,6 +320,17 @@ struct iOSMarkdownEditorUndoHistoryTests {
             #expect(body.contains("applyRewrite("), "\(declaration) rewrites the body outside the undoable write")
             #expect(!body.contains("applyMarkdownStyle("), "\(declaration) restyles new text wholesale")
         }
+
+        // [[T-18174]]: the surface hands the editor the creation WITH its inverse, and the editor
+        // registers it in the line swap's undo group. Pinned behaviourally above on iOS.
+        let surface = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownEditingSurface.swift")
+        )
+        #expect(surface.contains("{ title in createUndoableEmbeddedTaskReference(title: title) }"))
+        let undoable = try cadenceFunctionBody("private func createUndoableEmbeddedTaskReference(", in: surface)
+        #expect(undoable.contains("MarkdownEmbeddedTaskCreationUndo("))
+        let embed = try cadenceFunctionBody("private func createEmbeddedTaskIfNeeded(", in: source)
+        #expect(embed.contains("creation.undo?.register(on: manager)"))
 
         let rewrite = try cadenceFunctionBody("func applyRewrite(", in: source)
         #expect(rewrite.contains("MarkdownProgrammaticEditSupport.minimalEdit("))

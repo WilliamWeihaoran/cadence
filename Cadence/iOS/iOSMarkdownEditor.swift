@@ -20,7 +20,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
     var onToggleChecklistLine: ((Int) -> Void)?
     var onToggleEmbeddedTask: ((UUID) -> MarkdownTaskEmbedRenderInfo?)?
     var onToggleEmbeddedSubtask: ((UUID, UUID) -> MarkdownTaskEmbedRenderInfo?)?
-    var onCreateEmbeddedTask: ((String) -> String?)?
+    var onCreateEmbeddedTask: ((String) -> MarkdownEmbeddedTaskCreation<String>?)?
     var onOpenEmbeddedTask: ((UUID) -> Void)?
     /// When set, a tap on an embedded task's card opens this panel **inside the note**, under the
     /// card, instead of calling `onOpenEmbeddedTask` ([[T-1481]]). `nil` from the factory (the task
@@ -52,7 +52,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         onToggleChecklistLine: ((Int) -> Void)? = nil,
         onToggleEmbeddedTask: ((UUID) -> MarkdownTaskEmbedRenderInfo?)? = nil,
         onToggleEmbeddedSubtask: ((UUID, UUID) -> MarkdownTaskEmbedRenderInfo?)? = nil,
-        onCreateEmbeddedTask: ((String) -> String?)? = nil,
+        onCreateEmbeddedTask: ((String) -> MarkdownEmbeddedTaskCreation<String>?)? = nil,
         onOpenEmbeddedTask: ((UUID) -> Void)? = nil,
         inlineTaskPanelContent: iOSMarkdownInlineTaskPanelContent? = nil,
         onInlineTaskPanelPresenceChange: ((Bool) -> Void)? = nil,
@@ -628,14 +628,21 @@ struct iOSMarkdownEditor: UIViewRepresentable {
 
             guard selection.location >= lineRange.location + (line as NSString).length,
                   let title = draftTitle,
-                  let taskReference = onCreateEmbeddedTask(title),
-                  MarkdownTaskEmbedParser.standaloneTaskReference(in: taskReference) != nil else {
+                  let creation = onCreateEmbeddedTask(title),
+                  MarkdownTaskEmbedParser.standaloneTaskReference(in: creation.reference) != nil else {
                 return false
             }
 
+            // [[T-18174]]: the line swap and the inverse of the creation are one undo step, so
+            // undo puts the `( ) Title` line back AND takes the task it minted out of the store;
+            // redo restores both.
+            let manager = textView.undoManager
+            manager?.beginUndoGrouping()
+            defer { manager?.endUndoGrouping() }
             let contentRange = NSRange(location: lineRange.location, length: (line as NSString).length)
-            let replacement = taskReference + "\n"
+            let replacement = creation.reference + "\n"
             guard replaceProgrammatically(contentRange, with: replacement, in: textView) else { return false }
+            if let manager { creation.undo?.register(on: manager) }
             textView.selectedRange = clamped(
                 NSRange(location: contentRange.location + (replacement as NSString).length, length: 0),
                 in: textView.textStorage

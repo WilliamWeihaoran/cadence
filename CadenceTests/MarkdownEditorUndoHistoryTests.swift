@@ -2,6 +2,7 @@ import Foundation
 import Testing
 #if os(macOS)
 import AppKit
+import SwiftData
 import SwiftUI
 #endif
 
@@ -141,6 +142,113 @@ struct MarkdownEditorUndoHistoryTests {
 
         _ = view.tryToPerform(Selector(("undo:")), with: nil)
         #expect(view.string == "Note")
+    }
+
+    // MARK: - [[T-18174]]: undo of the edit that made a task card
+
+    @MainActor
+    private struct EmbedHarness {
+        let container: ModelContainer
+        let modelContext: ModelContext
+        let handlers: TaskNotesEmbedHandlers
+        let coordinator: MarkdownEditorCoordinator
+        let view: CadenceTextView
+        var manager: UndoManager { coordinator.undoManager }
+
+        func tasks(titled title: String) throws -> [AppTask] {
+            try modelContext.fetch(FetchDescriptor<AppTask>()).filter { $0.title == title }
+        }
+
+        /// One Return keystroke, grouped as the event loop would group it.
+        func pressReturn() {
+            manager.beginUndoGrouping()
+            _ = coordinator.textView(view, doCommandBy: #selector(NSResponder.insertNewline(_:)))
+            manager.endUndoGrouping()
+        }
+    }
+
+    /// A real in-memory store, the real handlers every Mac host uses, and the real editor.
+    private static func embedHarness(_ text: String) throws -> EmbedHarness {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let handlers = TaskNotesEmbedHandlers(hoverIDPrefix: "undo-test-")
+        let scope = TaskNotesEmbedScope(referenceTasks: [], embedTarget: .coreNotes, modelContext: modelContext)
+        let coordinator = MarkdownEditorCoordinator(parent: MarkdownEditorView(text: .constant("")))
+        let view = makeTextView(text)
+        view.delegate = coordinator
+        view.onCreateEmbeddedMarkdownTask = { handlers.createUndoableEmbeddedTask(title: $0, in: scope) }
+        coordinator.undoManager.groupsByEvent = false
+        view.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
+        return EmbedHarness(
+            container: container,
+            modelContext: modelContext,
+            handlers: handlers,
+            coordinator: coordinator,
+            view: view
+        )
+    }
+
+    /// The defect: Return on `( ) Milk` makes a "Milk" task and a card; Cmd+Z put the line back
+    /// and left "Milk" in the store, so Return again made a second one. Undo now takes the task
+    /// out with the card, redo puts the same task back, and the cycle repeats.
+    @Test func undoOfTheReturnThatMadeATaskCardTakesTheTaskBackOut() throws {
+        let harness = try Self.embedHarness("( ) Milk")
+
+        harness.pressReturn()
+        let made = try harness.tasks(titled: "Milk")
+        #expect(made.count == 1)
+        let id = try #require(made.first?.id)
+        #expect(harness.view.string.contains("[[task:\(id.uuidString)|Milk]]"))
+
+        harness.manager.undo()
+        #expect(harness.view.string == "( ) Milk")
+        #expect(try harness.tasks(titled: "Milk").isEmpty, "undo left the minted task in the store")
+
+        harness.manager.redo()
+        #expect(harness.view.string.contains("[[task:\(id.uuidString)|Milk]]"))
+        #expect(try harness.tasks(titled: "Milk").map(\.id) == [id], "redo did not restore the same task")
+
+        harness.manager.undo()
+        #expect(harness.view.string == "( ) Milk")
+        #expect(try harness.tasks(titled: "Milk").isEmpty, "a second undo after redo left the task")
+
+        // And Return again makes one task, not a second beside a survivor.
+        harness.view.setSelectedRange(NSRange(location: 8, length: 0))
+        harness.pressReturn()
+        #expect(try harness.tasks(titled: "Milk").count == 1)
+    }
+
+    /// Undo never deletes a task the user has since changed: the text reverts, the task stays.
+    @Test func undoLeavesAMintedTaskTheUserHasSinceEdited() throws {
+        let harness = try Self.embedHarness("( ) Milk")
+        harness.pressReturn()
+        let task = try #require(try harness.tasks(titled: "Milk").first)
+        task.priority = .high
+        try harness.modelContext.save()
+
+        harness.manager.undo()
+        #expect(harness.view.string == "( ) Milk")
+        #expect(try harness.tasks(titled: "Milk").count == 1, "undo deleted a task the user had edited")
+
+        harness.manager.redo()
+        #expect(try harness.tasks(titled: "Milk").count == 1, "redo duplicated a task undo had kept")
+    }
+
+    /// The Mac's instant `( ) ` trigger ([[T-18141]]) mints an "Untitled Task" the same way, and
+    /// its undo takes that task back out too.
+    @Test func undoOfTheUntitledTriggerTakesItsTaskBackOut() throws {
+        let harness = try Self.embedHarness("")
+        let untitled = MarkdownTaskEmbedRenderInfo.untitledTaskTitle
+
+        harness.manager.beginUndoGrouping()
+        harness.view.insertText("( ) ", replacementRange: NSRange(location: 0, length: 0))
+        harness.manager.endUndoGrouping()
+        #expect(try harness.tasks(titled: untitled).count == 1)
+        #expect(harness.view.string.hasPrefix("[[task:"))
+
+        harness.manager.undo()
+        #expect(!harness.view.string.contains("[[task:"))
+        #expect(try harness.tasks(titled: untitled).isEmpty, "undo left the untitled task in the store")
     }
 }
 #endif
