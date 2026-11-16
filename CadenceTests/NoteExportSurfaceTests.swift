@@ -32,7 +32,9 @@ struct NoteExportSurfaceTests {
         #expect(NoteExportFormat.allCases == [.markdown, .pdf])
         #expect(NoteExportFormat.markdown.pathExtension == "md")
         #expect(NoteExportFormat.pdf.pathExtension == "pdf")
-        #expect(NoteExportFormat.markdown.contentType == .plainText)
+        // [[T-18115]]: the Markdown type, whose extension is `md`, not `.plainText` (`txt`).
+        #expect(NoteExportFormat.markdown.contentType == NoteExportSupport.markdownContentType)
+        #expect(NoteExportFormat.markdown.contentType.preferredFilenameExtension == "md")
         #expect(NoteExportFormat.pdf.contentType == .pdf)
     }
 

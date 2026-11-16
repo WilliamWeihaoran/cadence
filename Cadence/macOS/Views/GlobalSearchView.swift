@@ -124,6 +124,7 @@ struct GlobalSearchOverlay: View {
                 GlobalSearchHighlightList(
                     sections: sections,
                     withheldCompletedTaskCount: withheldCompletedTaskCount,
+                    includesEvents: calendarManager.isAuthorized,
                     highlightedResultID: $highlightedResultID,
                     hoverGate: $hoverGate,
                     onSelect: onSelect,
@@ -268,6 +269,7 @@ struct GlobalSearchOverlay: View {
 struct GlobalSearchHighlightList: View {
     let sections: [GlobalSearchVisibleSection]
     var withheldCompletedTaskCount: Int = 0
+    var includesEvents: Bool = true
     @Binding var highlightedResultID: String?
     @Binding var hoverGate: GlobalSearchHoverGate
     let onSelect: (GlobalSearchResult) -> Void
@@ -277,6 +279,7 @@ struct GlobalSearchHighlightList: View {
         GlobalSearchSectionsList(
             sections: sections,
             withheldCompletedTaskCount: withheldCompletedTaskCount,
+            includesEvents: includesEvents,
             highlightedResultID: highlightedResultID,
             onSelect: onSelect,
             onHover: hover,

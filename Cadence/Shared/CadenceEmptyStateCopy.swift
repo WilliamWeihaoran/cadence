@@ -171,8 +171,15 @@ nonisolated enum CadenceEmptyStateCopy {
     /// command clause is the one difference with an input behind it ([[T-8201]]): Commands is the
     /// keyboard palette's section and iOS draws none, the split `CadenceSearchFieldPrompt` already
     /// makes for the field's placeholder.
-    static func searchNoResultsAdvice(offersCommands: Bool) -> String {
-        let kinds = "Try a task, note, area, project, event, tag, or section name."
+    ///
+    /// **[[T-18086]]: "event" only when events can be found.** With Apple Calendar not connected
+    /// neither surface searches events (the Mac's `scheduleEventSearch` answers `[]`, iOS's
+    /// `showsEvents` guard does the same), so advising an event's name sent the user after a
+    /// result that cannot come. `includesEvents` is each surface's `calendarManager.isAuthorized`.
+    static func searchNoResultsAdvice(offersCommands: Bool, includesEvents: Bool) -> String {
+        let kinds = includesEvents
+            ? "Try a task, note, area, project, event, tag, or section name."
+            : "Try a task, note, area, project, tag, or section name."
         return offersCommands ? "\(kinds) Commands work too, like New Task." : kinds
     }
 
@@ -181,7 +188,7 @@ nonisolated enum CadenceEmptyStateCopy {
     /// "No matches found" and iOS "No results" over generic advice, which is false: the tasks exist
     /// and the Completed control beside the field shows them. Both surfaces name that control by
     /// its label, so one sentence is true on both. `nil` when nothing is held back, so each surface
-    /// falls back to `searchNoResultsAdvice(offersCommands:)`.
+    /// falls back to `searchNoResultsAdvice(offersCommands:includesEvents:)`.
     static func searchWithheldCompletedTasks(count: Int) -> String? {
         switch count {
         case ..<1:

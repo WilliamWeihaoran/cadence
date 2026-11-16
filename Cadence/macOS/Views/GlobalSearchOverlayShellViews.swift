@@ -5,6 +5,8 @@ struct GlobalSearchSectionsList: View {
     let sections: [GlobalSearchVisibleSection]
     /// Completed tasks the query matches that the Completed filter holds back ([[T-6971]]).
     var withheldCompletedTaskCount: Int = 0
+    /// Whether events are searchable at all, for the empty state's advice ([[T-18086]]).
+    var includesEvents: Bool = true
     let highlightedResultID: String?
     let onSelect: (GlobalSearchResult) -> Void
     let onHover: (String) -> Void
@@ -13,7 +15,7 @@ struct GlobalSearchSectionsList: View {
 
     var body: some View {
         if sections.isEmpty {
-            GlobalSearchEmptyState(withheldCompletedTaskCount: withheldCompletedTaskCount)
+            GlobalSearchEmptyState(withheldCompletedTaskCount: withheldCompletedTaskCount, includesEvents: includesEvents)
         } else {
             // [[T-8063]]: the palette is a fixed 760x620 card and `onMoveCommand` only rewrites
             // `highlightedResultID`, so Down walked the highlight off the bottom edge within about

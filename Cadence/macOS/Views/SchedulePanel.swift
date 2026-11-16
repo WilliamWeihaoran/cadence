@@ -5,8 +5,10 @@ import EventKit
 import AppKit
 import UniformTypeIdentifiers
 
-private struct PlainTextExportDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.plainText] }
+/// The schedule export's file: Markdown, saved under `NoteExportSupport.markdownContentType` and an
+/// `.md` name like a note's Export Markdown ([[T-18115]]).
+private struct MarkdownExportDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [NoteExportSupport.markdownContentType, .plainText] }
 
     let text: String
 
@@ -97,7 +99,7 @@ struct SchedulePanel: View {
     /// ([[T-655]], [[T-3171]]). Its sibling on the Calendar page's `CalDayColumn` is the same flag
     /// drawn the same way, for the reason stated beside that alert.
     @State private var taskCreateFailed = false
-    @State private var exportDocument: PlainTextExportDocument?
+    @State private var exportDocument: MarkdownExportDocument?
     @State private var isExportingTimeline = false
 
     /// The invalidation token for the day this timeline draws (T-3120, after [[T-3104]]). Every
@@ -277,8 +279,8 @@ struct SchedulePanel: View {
         .fileExporter(
             isPresented: $isExportingTimeline,
             document: exportDocument,
-            contentType: .plainText,
-            defaultFilename: "Cadence Schedule \(todayKey)"
+            contentType: NoteExportSupport.markdownContentType,
+            defaultFilename: SchedulePanelDataSupport.exportFilename(todayKey: todayKey)
         ) { _ in
             exportDocument = nil
         }
@@ -361,7 +363,7 @@ struct SchedulePanel: View {
         ## Calendar Events
         \(eventLines.isEmpty ? "- None" : eventLines.joined(separator: "\n"))
         """
-        exportDocument = PlainTextExportDocument(text: markdown)
+        exportDocument = MarkdownExportDocument(text: markdown)
         isExportingTimeline = true
     }
 }

@@ -502,15 +502,18 @@ struct GlobalSearchEmptyState: View {
     /// Completed tasks this query matches that the Completed filter is holding back
     /// (`GlobalSearchIndexSupport.withheldCompletedTaskMatchCount`).
     var withheldCompletedTaskCount: Int = 0
+    /// Whether the palette can return calendar events -- `CalendarManager.isAuthorized`, handed
+    /// down from `GlobalSearchView` -- so the advice names events only when it can ([[T-18086]]).
+    var includesEvents: Bool = true
 
     /// [[T-6971]]: with Completed off — the default since [[T-1476]] — a search whose only matches
     /// are finished tasks used to read "No matches found" and advise a "cleaner title", which is
     /// false: the tasks exist and one click on the filter beside the field shows them. The
     /// subtitle now says how many are held back and names that control.
-    static func subtitle(withheldCompletedTaskCount: Int) -> String {
+    static func subtitle(withheldCompletedTaskCount: Int, includesEvents: Bool) -> String {
         // The sentence is shared with iOS Search's "No results" panel ([[T-6975]]).
         return CadenceEmptyStateCopy.searchWithheldCompletedTasks(count: withheldCompletedTaskCount)
-            ?? CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: true)
+            ?? CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: true, includesEvents: includesEvents)
     }
 
     /// [[T-7205]] (b): a failed search is titled "No results", the title iOS Search's panel reads
@@ -528,7 +531,7 @@ struct GlobalSearchEmptyState: View {
                 .foregroundStyle(Theme.text)
             // [[T-17466]]: the shared advice is two sentences here, so it may wrap; centred lines
             // under the centred title, not a ragged-left block.
-            Text(Self.subtitle(withheldCompletedTaskCount: withheldCompletedTaskCount))
+            Text(Self.subtitle(withheldCompletedTaskCount: withheldCompletedTaskCount, includesEvents: includesEvents))
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.dim)
                 .multilineTextAlignment(.center)

@@ -62,6 +62,14 @@ enum SchedulePanelDataSupport {
         cache.allDayEvents(for: date, calendarManager: calendarManager)
     }
 
+    /// The schedule export's suggested name, `.md` included ([[T-18115]]). The file is Markdown
+    /// (`# Schedule for ...`, `- [x] ...`) and was suggested with no extension under `.plainText`,
+    /// so it saved as `.txt` while a note's Markdown export saves as `.md`. The extension is the
+    /// note export's own, `NoteExportFormat.markdown.pathExtension`, not a second literal.
+    static func exportFilename(todayKey: String) -> String {
+        "Cadence Schedule \(todayKey).\(NoteExportFormat.markdown.pathExtension)"
+    }
+
     /// The schedule export's "Calendar Events" lines: all-day events first, spelled "All day",
     /// then the timed ones in start order ([[T-7982]]). Pulled out of `exportTodayPlan` so the
     /// export can be asserted without raising a file exporter.

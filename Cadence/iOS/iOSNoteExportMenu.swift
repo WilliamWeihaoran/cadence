@@ -13,7 +13,9 @@ import UniformTypeIdentifiers
 /// does: a document that can read what it writes is what makes a round trip assertable. Nothing
 /// imports a note today.
 nonisolated struct NoteExportDocument: FileDocument {
-    nonisolated static var readableContentTypes: [UTType] { [.plainText, .pdf] }
+    // `NoteExportFormat.markdown.contentType` is the Markdown type since [[T-18115]]; listed so the
+    // exporter's type is one this document declares.
+    nonisolated static var readableContentTypes: [UTType] { [NoteExportSupport.markdownContentType, .plainText, .pdf] }
 
     var data: Data
 

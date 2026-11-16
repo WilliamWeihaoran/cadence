@@ -2,6 +2,7 @@
 import EventKit
 import Foundation
 import Testing
+import UniformTypeIdentifiers
 @testable import Cadence
 
 /// An authorised calendar source whose day holds all-day events and nothing timed — the day
@@ -124,6 +125,26 @@ struct MacTodayTimelineAllDayBandTests {
         #expect(lines.last?.hasPrefix("- [ ] ") == true)
         #expect(lines.last?.hasSuffix("• Write report") == true)
         #expect(SchedulePanelDataSupport.exportTaskLines([]).isEmpty)
+    }
+
+    /// [[T-18115]]: the export is Markdown and used to be suggested as `Cadence Schedule <date>`
+    /// under `.plainText`, so it saved as `.txt`. It is now named `.md` and typed as Markdown --
+    /// the note export's extension and type, read from the same place.
+    @Test("The schedule export is named .md and saved as the note export's Markdown type")
+    func theExportIsSavedAsMarkdown() throws {
+        let name = SchedulePanelDataSupport.exportFilename(todayKey: "2026-11-16")
+        #expect(name == "Cadence Schedule 2026-11-16.md")
+        #expect(NoteExportSupport.markdownContentType.preferredFilenameExtension == "md")
+        #expect(NoteExportSupport.markdownContentType.conforms(to: .plainText))
+        #expect(NoteExportSupport.markdownContentType != .plainText)
+
+        let code = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SchedulePanel.swift")
+        )
+        let flat = code.filter { !$0.isWhitespace }
+        #expect(flat.contains("contentType:NoteExportSupport.markdownContentType,defaultFilename:SchedulePanelDataSupport.exportFilename(todayKey:todayKey)"),
+                "the schedule exporter does not save under the Markdown type and the .md name")
+        #expect(!flat.contains("contentType:.plainText"), "the schedule exporter still saves as plain text")
     }
 
     /// The data above is only worth anything if the pane draws it and the export reads it.

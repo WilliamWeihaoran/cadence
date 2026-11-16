@@ -32,7 +32,7 @@ nonisolated enum NoteExportFormat: String, CaseIterable, Identifiable, Sendable 
 
     nonisolated var contentType: UTType {
         switch self {
-        case .markdown: return .plainText
+        case .markdown: return NoteExportSupport.markdownContentType
         case .pdf: return .pdf
         }
     }
@@ -97,6 +97,16 @@ nonisolated struct NotePDFRenderOptions: Equatable, Sendable {
 
 /// The decisions both note exporters make before either one draws anything.
 nonisolated enum NoteExportSupport {
+    /// **[[T-18115]]: the one type every Markdown file Cadence writes is saved as** -- a note's
+    /// Export Markdown on both platforms and the Mac Today schedule export. It was `.plainText`,
+    /// whose preferred extension is `txt`: a save panel handed an extension-less name under it
+    /// writes `.txt`, which is how the schedule export landed as `Cadence Schedule <date>.txt`.
+    /// The system-declared Markdown type ("net.daringfireball.markdown", which conforms to plain
+    /// text) prefers `md`; where a system does not declare it, the lookup still yields a type
+    /// whose extension is `md`, and plain text is only the last resort.
+    nonisolated static let markdownContentType: UTType =
+        UTType(filenameExtension: "md", conformingTo: .plainText) ?? .plainText
+
     /// The suggested file name, extension included.
     ///
     /// An untitled note gets a name rather than a bare `.md`, because the destination on iOS is a

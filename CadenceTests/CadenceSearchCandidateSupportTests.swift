@@ -1069,7 +1069,7 @@ struct CadenceSearchCandidateSupportTests {
             == "1 completed task matches. Turn on Completed to show it.")
         #expect(CadenceEmptyStateCopy.searchWithheldCompletedTasks(count: 3)
             == "3 completed tasks match. Turn on Completed to show them.")
-        #expect(GlobalSearchEmptyState.subtitle(withheldCompletedTaskCount: 3)
+        #expect(GlobalSearchEmptyState.subtitle(withheldCompletedTaskCount: 3, includesEvents: true)
             == CadenceEmptyStateCopy.searchWithheldCompletedTasks(count: 3))
     }
 
@@ -1083,7 +1083,7 @@ struct CadenceSearchCandidateSupportTests {
         #expect(stripped.contains("title: \"No results\""))
 
         let flat = stripped.filter { !$0.isWhitespace }
-        #expect(flat.contains("title:\"Noresults\",subtitle:CadenceEmptyStateCopy.searchWithheldCompletedTasks(count:withheldCompletedTaskCount)??CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands:false)"),
+        #expect(flat.contains("title:\"Noresults\",subtitle:CadenceEmptyStateCopy.searchWithheldCompletedTasks(count:withheldCompletedTaskCount)??CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands:false,includesEvents:calendarManager.isAuthorized)"),
                 "the No results panel no longer reads the withheld count")
 
         let counter = try #require(CadenceSourceScan.declarationBody("private var withheldCompletedTaskCount: Int", in: stripped))

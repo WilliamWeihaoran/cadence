@@ -434,12 +434,12 @@ struct CadenceGlobalSearchCapContinuationTests {
         #expect(!sections.contains { $0.category == .tasks })
 
         let count = GlobalSearchIndexSupport.withheldCompletedTaskMatchCount(tasks: finished, query: "roadmap", includingCompleted: false)
-        #expect(GlobalSearchEmptyState.subtitle(withheldCompletedTaskCount: count)
+        #expect(GlobalSearchEmptyState.subtitle(withheldCompletedTaskCount: count, includesEvents: true)
             == "2 completed tasks match. Turn on Completed to show them.")
-        #expect(GlobalSearchEmptyState.subtitle(withheldCompletedTaskCount: 1)
+        #expect(GlobalSearchEmptyState.subtitle(withheldCompletedTaskCount: 1, includesEvents: true)
             == "1 completed task matches. Turn on Completed to show it.")
 
-        let ordinary = GlobalSearchEmptyState.subtitle(withheldCompletedTaskCount: 0)
+        let ordinary = GlobalSearchEmptyState.subtitle(withheldCompletedTaskCount: 0, includesEvents: true)
         #expect(!ordinary.contains("Completed"))
         #expect(!ordinary.contains("cleaner"))
     }
@@ -448,9 +448,9 @@ struct CadenceGlobalSearchCapContinuationTests {
     /// platforms, naming every kind both of them search; the Mac adds only the command clause,
     /// because only the keyboard palette has a Commands section ([[T-8201]]).
     @Test func failedSearchAdviceIsSharedAndOnlyTheMacOffersCommands() throws {
-        let mac = GlobalSearchEmptyState.subtitle(withheldCompletedTaskCount: 0)
-        let touch = CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: false)
-        #expect(mac == CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: true))
+        let mac = GlobalSearchEmptyState.subtitle(withheldCompletedTaskCount: 0, includesEvents: true)
+        let touch = CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: false, includesEvents: true)
+        #expect(mac == CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: true, includesEvents: true))
         #expect(mac.hasPrefix(touch), "the Mac's advice is not the iOS sentence plus a command clause")
         for kind in ["task", "note", "area", "project", "event", "tag", "section"] {
             #expect(touch.contains(kind), "the advice leaves out \(kind), which both surfaces search")
@@ -459,7 +459,31 @@ struct CadenceGlobalSearchCapContinuationTests {
         #expect(!touch.contains("command") && !touch.contains("Command"), "iOS draws no Commands section")
 
         let ios = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchView.swift"))
-        #expect(ios.contains("CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: false)"))
+        #expect(ios.contains("CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: false, includesEvents: calendarManager.isAuthorized)"))
+    }
+
+    /// **[[T-18086]].** With Apple Calendar not connected neither surface can return an event, so
+    /// the advice stops naming one -- and names it again once access is granted. Same sentence
+    /// otherwise, on both platforms, and the Mac palette and iOS panel both pass their manager's
+    /// `isAuthorized` rather than a constant.
+    @Test func failedSearchAdviceNamesEventsOnlyWhenCalendarAccessIsGranted() throws {
+        for offersCommands in [false, true] {
+            let granted = CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: offersCommands, includesEvents: true)
+            let notConnected = CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: offersCommands, includesEvents: false)
+            #expect(granted.contains("event"))
+            #expect(!notConnected.contains("event"), "the advice names events the search cannot return")
+            #expect(notConnected == granted.replacingOccurrences(of: "event, ", with: ""))
+        }
+        #expect(CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: false, includesEvents: false)
+            == "Try a task, note, area, project, tag, or section name.")
+        #expect(!GlobalSearchEmptyState.subtitle(withheldCompletedTaskCount: 0, includesEvents: false).contains("event"))
+        #expect(GlobalSearchEmptyState.subtitle(withheldCompletedTaskCount: 0, includesEvents: true).contains("event"))
+
+        let view = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GlobalSearchView.swift"))
+        #expect(view.contains("includesEvents: calendarManager.isAuthorized"), "the palette never tells the empty state whether events are searchable")
+        #expect(view.contains("includesEvents: includesEvents"))
+        let shell = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GlobalSearchOverlayShellViews.swift"))
+        #expect(shell.contains("GlobalSearchEmptyState(withheldCompletedTaskCount: withheldCompletedTaskCount, includesEvents: includesEvents)"))
     }
 
     /// **[[T-7205]] (b).** A failed search is titled "No results" -- the literal iOS Search's
@@ -489,7 +513,7 @@ struct CadenceGlobalSearchCapContinuationTests {
     /// is a sentence nothing ever draws.
     @Test func overlayPassesTheWithheldCountToTheEmptyState() throws {
         let shell = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GlobalSearchOverlayShellViews.swift"))
-        #expect(shell.contains("GlobalSearchEmptyState(withheldCompletedTaskCount: withheldCompletedTaskCount)"))
+        #expect(shell.contains("GlobalSearchEmptyState(withheldCompletedTaskCount: withheldCompletedTaskCount, includesEvents: includesEvents)"))
         let view = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GlobalSearchView.swift"))
         #expect(CadenceSourceScan.matchCount("withheldCompletedTaskCount: withheldCompletedTaskCount", in: view) == 2)
         #expect(view.contains("GlobalSearchIndexSupport.withheldCompletedTaskMatchCount("))
