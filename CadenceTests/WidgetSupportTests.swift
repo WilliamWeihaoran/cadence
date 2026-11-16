@@ -3,6 +3,7 @@
 // exactly the coverage this file had before; narrowing it so any cross-platform half runs on iOS
 // too is follow-up, not part of making the target iOS-capable.
 #if os(macOS)
+import AppIntents
 import Foundation
 import SwiftData
 import Testing
@@ -444,6 +445,14 @@ struct WidgetSupportTests {
         #expect(active.isDone)
         #expect(active.completedAt != nil)
         #expect(done.completedAt == Date(timeIntervalSince1970: 100))
+    }
+
+    /// [[T-18097]]: the widget's checkmark runs `CompleteTaskIntent` through `Button(intent:)`,
+    /// which needs no discoverable intent. Published, Shortcuts offered a "Complete Task" action
+    /// whose only field was a raw task UUID; the sibling `CaptureTaskIntent` stays a real action.
+    @Test func completeTaskIntentIsHiddenFromShortcutsButCaptureIsNot() {
+        #expect(CompleteTaskIntent.isDiscoverable == false)
+        #expect(CaptureTaskIntent.isDiscoverable == true)
     }
 
     @Test func completeTaskIntentSpawnsNextOccurrenceForRecurringTasks() throws {

@@ -68,6 +68,11 @@ struct CompleteTaskIntent: AppIntent {
     static var title: LocalizedStringResource { "Complete Task" }
     static var description: IntentDescription { IntentDescription("Marks a Cadence task as done.") }
     static var supportedModes: IntentModes { .background }
+    /// [[T-18097]]: this intent exists for the Today widget's checkmark (`Button(intent:)` in
+    /// `TodayTasksWidgetView`), which runs it without it being discoverable. Published, Shortcuts
+    /// and Spotlight offered a "Complete Task" action whose only field is a raw task UUID no screen
+    /// shows, and which reported success while completing nothing for any other input.
+    static var isDiscoverable: Bool { false }
 
     @Parameter(title: "Task ID")
     var taskID: String
