@@ -995,6 +995,43 @@ struct AppStoreReviewReadinessTests {
         return byConfiguration
     }
 
+    /// **An iOS cold launch in system Light mode draws the app's own near-black, not white (T-18202).**
+    ///
+    /// `Theme.preferredColorScheme` is a SwiftUI modifier, so it lands only with the first SwiftUI
+    /// frame. Before that the system draws the launch screen, and an empty `UILaunchScreen` means
+    /// the system background colour -- white on a Light-mode device -- and a window styled light until the
+    /// override arrives. Two keys in this shared plist close it (macOS reads neither, as it reads
+    /// none of the file's other UIKit keys): the launch screen names a colour set, and the
+    /// interface style is fixed to Dark. The colour set must equal `Theme.bg`, or the flash just
+    /// changes colour; both are read from source here rather than restated.
+    @Test func iOSLaunchScreenIsDarkBeforeTheFirstSwiftUIFrame() throws {
+        let info = try plistDictionary(at: "Cadence/Info.plist")
+        #expect(info["UIUserInterfaceStyle"] as? String == "Dark", "the iOS window is not declared dark before SwiftUI's override lands; see T-18202")
+        let launch = try #require(info["UILaunchScreen"] as? [String: Any], "Cadence/Info.plist has no UILaunchScreen dictionary")
+        let colorName = try #require(launch["UIColorName"] as? String, "the launch screen names no background colour, so it draws systemBackground; see T-18202")
+
+        let colorSet = try #require(
+            try JSONSerialization.jsonObject(
+                with: Data(contentsOf: repositoryRoot().appendingPathComponent("Cadence/Assets.xcassets/\(colorName).colorset/Contents.json"))
+            ) as? [String: Any]
+        )
+        let entries = try #require(colorSet["colors"] as? [[String: Any]])
+        #expect(entries.count == 1, "the launch colour set gained an appearance variant; it must stay Theme.bg in every appearance")
+        let components = try #require((entries.first?["color"] as? [String: Any])?["components"] as? [String: String])
+        func byte(_ key: String) throws -> Int {
+            let raw = try #require(components[key]).lowercased()
+            return try #require(raw.hasPrefix("0x") ? Int(raw.dropFirst(2), radix: 16) : Double(raw).map { Int(($0 * 255).rounded()) })
+        }
+        let launchHex = String(format: "#%02x%02x%02x", try byte("red"), try byte("green"), try byte("blue"))
+
+        let theme = try textFile(at: "Cadence/Shared/Theme.swift")
+        let match = try #require(
+            theme.firstMatch(of: #/static let bg = Color\(hex: "(#[0-9a-fA-F]{6})"\)/#),
+            "Theme.bg is no longer a literal hex, so the launch colour cannot be compared to it"
+        )
+        #expect(launchHex == String(match.1).lowercased(), "the launch background \(launchHex) is not Theme.bg \(match.1); see T-18202")
+    }
+
     private func plistDictionary(at relativePath: String) throws -> [String: Any] {
         let data = try Data(contentsOf: repositoryRoot().appendingPathComponent(relativePath))
         let value = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
