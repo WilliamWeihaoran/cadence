@@ -681,17 +681,42 @@ enum CadenceScheduleSupport {
         let endDay = calendar.startOfDay(for: lastInstant)
         let dayGap = calendar.dateComponents([.day], from: startDay, to: endDay).day ?? 0
         guard dayGap > 0 else { return range }
+        return "\(range) \(listEndDayName(end, dayGap: dayGap, calendar: calendar))"
+    }
 
+    /// An ALL-DAY event's range as a list row spells it ([[T-18093]]): "All day" for one day, and
+    /// "All day → Wed" / "All day → Nov 28" when it runs past its start day -- the timed rule's
+    /// weekday-or-date end, so a three-day trip no longer reads as one day in Cmd+K or iOS Search.
+    ///
+    /// The named day is the event's LAST day: EventKit's all-day end is exclusive (next midnight)
+    /// or the last day's 23:59:59 depending on source, and one second before either is that day.
+    static func eventListAllDayLabel(
+        from startDate: Date,
+        to endDate: Date,
+        calendar: Calendar = .current
+    ) -> String {
+        let lastInstant = endDate > startDate ? endDate.addingTimeInterval(-1) : startDate
+        let dayGap = calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: startDate),
+            to: calendar.startOfDay(for: lastInstant)
+        ).day ?? 0
+        guard dayGap > 0 else { return allDayListLabel }
+        return "\(allDayListLabel) → \(listEndDayName(lastInstant, dayGap: dayGap, calendar: calendar))"
+    }
+
+    static let allDayListLabel = "All day"
+
+    /// The end day a list row names: its short weekday within six days of the start, where a
+    /// weekday is unambiguous, and a month and day beyond ("Nov 9").
+    private static func listEndDayName(_ day: Date, dayGap: Int, calendar: Calendar) -> String {
         var english = calendar
         english.locale = Locale(identifier: "en_US_POSIX")
-        let endDayLabel: String
         if dayGap <= 6 {
-            endDayLabel = english.shortWeekdaySymbols[calendar.component(.weekday, from: end) - 1]
-        } else {
-            let month = english.shortMonthSymbols[calendar.component(.month, from: end) - 1]
-            endDayLabel = "\(month) \(calendar.component(.day, from: end))"
+            return english.shortWeekdaySymbols[calendar.component(.weekday, from: day) - 1]
         }
-        return "\(range) \(endDayLabel)"
+        let month = english.shortMonthSymbols[calendar.component(.month, from: day) - 1]
+        return "\(month) \(calendar.component(.day, from: day))"
     }
 
     private static func listMinuteOfDay(_ instant: Date, calendar: Calendar) -> Int {

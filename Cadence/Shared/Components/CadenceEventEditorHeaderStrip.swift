@@ -92,12 +92,21 @@ enum CadenceEventEditorHeaderFacts {
     /// a multi-day event reads its real length rather than the one day a block was drawn on.
     ///
     /// `nil` for an all-day event — the panel's schedule row already says "All day" — and for a
-    /// schedule that names no instant. The format is the shared estimate label, with its
-    /// non-breaking space, and `"–"` where the two instants coincide.
+    /// schedule that names no instant. Under a day the format is the shared estimate label, with
+    /// its non-breaking space, and `"–"` where the two instants coincide. From 24 hours on it
+    /// counts days first ("2d\u{00A0}8h", "3d") rather than "56h" ([[T-18094]]); that arm lives here,
+    /// not in `TimeFormatters.durationLabel`, which the task estimate chips share.
     static func durationLabel(for draft: CadenceScheduleDraft, calendar: Calendar = .current) -> String? {
         guard !draft.isAllDay, let range = draft.eventDateRange(calendar: calendar) else { return nil }
         let minutes = Int(range.end.timeIntervalSince(range.start) / 60)
-        return CadenceTaskPresentationSupport.estimateLabel(minutes: minutes, emptyPlaceholder: "–")
+        let minutesPerDay = 24 * 60
+        guard minutes >= minutesPerDay else {
+            return CadenceTaskPresentationSupport.estimateLabel(minutes: minutes, emptyPlaceholder: "–")
+        }
+        let remainder = minutes % minutesPerDay
+        return (["\(minutes / minutesPerDay)d"]
+            + (remainder > 0 ? [CadenceTaskPresentationSupport.estimateLabel(minutes: remainder, emptyPlaceholder: "")] : []))
+            .joined(separator: "\u{00A0}")
     }
 
     /// The capsule is a bare duration on screen; VoiceOver hears what the duration is of.

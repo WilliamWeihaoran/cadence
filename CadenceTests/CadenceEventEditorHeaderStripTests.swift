@@ -58,6 +58,29 @@ struct CadenceEventEditorHeaderStripTests {
                 "a two-day event prints the same length as the 45 minutes drawn on its first day")
     }
 
+    /// T-18094: a Mon 9 AM -> Wed 5 PM conference read "56h". From 24 hours on the capsule counts
+    /// days first; under a day it is byte-for-byte the shared estimate label it always was.
+    @Test func aMultiDayTimedEventsLengthIsCountedInDays() {
+        func label(endDateKey: String, start: Int, end: Int) -> String? {
+            var draft = timedDraft(start: start, end: end)
+            draft.endDateKey = endDateKey
+            return CadenceEventEditorHeaderFacts.durationLabel(for: draft, calendar: utc)
+        }
+        #expect(label(endDateKey: "2026-03-06", start: 9 * 60, end: 17 * 60) == "2d\u{00A0}8h")
+        #expect(label(endDateKey: "2026-03-08", start: 9 * 60, end: 17 * 60) == "4d\u{00A0}8h")
+        #expect(label(endDateKey: "2026-03-07", start: 9 * 60, end: 9 * 60) == "3d")
+        #expect(label(endDateKey: "2026-03-05", start: 9 * 60, end: 9 * 60 + 30) == "1d\u{00A0}30m")
+        // Just under a day stays in hours, exactly as before.
+        #expect(label(endDateKey: "2026-03-05", start: 9 * 60, end: 8 * 60 + 45)
+                == CadenceTaskPresentationSupport.estimateLabel(minutes: 23 * 60 + 45, emptyPlaceholder: "–"))
+    }
+
+    private var utc: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+        return calendar
+    }
+
     /// The strip draws nothing when it has nothing to say, so an untimed one-off event on iOS
     /// keeps the sheet it had rather than gaining an empty band above the panel.
     @Test func theHeaderStripIsEmptyOnlyWhenItHasNoFactToState() {

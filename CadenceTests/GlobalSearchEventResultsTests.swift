@@ -153,6 +153,18 @@ struct GlobalSearchEventResultsTests {
         #expect(!result.subtitle.contains("12:00 AM – 12:00 AM"))
     }
 
+    /// T-18093: a three-day all-day trip is one EKEvent, so its Cmd+K row is the only result for
+    /// the whole span and must say it runs to Wednesday.
+    @Test func aMultiDayAllDayEventNamesItsLastDay() {
+        let trip = event(title: "Trip", start: localDay(2027, 10, 25, hour: 0))  // Mon
+        trip.isAllDay = true
+        trip.endDate = localDay(2027, 10, 27, hour: 23).addingTimeInterval(59 * 60 + 59)
+
+        let result = GlobalSearchIndexSupport.eventResult(for: trip, relativeTo: localDay(2027, 10, 25))
+
+        #expect(result.subtitle.hasSuffix(" • All day → Wed"), "\(result.subtitle)")
+    }
+
     @Test func aResultCarriesTheEventDestinationItResolvesThrough() {
         let standup = event(title: "Standup", start: now.addingTimeInterval(3_600))
         let result = GlobalSearchIndexSupport.eventResult(for: standup)

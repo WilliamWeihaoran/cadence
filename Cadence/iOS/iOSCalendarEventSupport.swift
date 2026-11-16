@@ -29,12 +29,13 @@ enum iOSCalendarEventSupport {
     }
 
     static func timeRangeLabel(for event: EKEvent) -> String {
+        let startDate = event.startDate ?? Date()
         if event.isAllDay {
-            return "All day"
+            // The same words as Cmd+K's row: "All day", or "All day → Wed" for a span ([[T-18093]]).
+            return CadenceScheduleSupport.eventListAllDayLabel(from: startDate, to: event.endDate ?? startDate)
         }
         // A list row names the whole event, not one day of it ([[T-8574]]): `minuteRange` clamps
         // to the start day and printed "10 PM – 12 AM" under both days of a 10 PM -> 2 AM event.
-        let startDate = event.startDate ?? Date()
         let endDate = event.endDate ?? startDate.addingTimeInterval(30 * 60)
         return CadenceScheduleSupport.eventListTimeRangeLabel(from: startDate, to: endDate)
     }

@@ -71,6 +71,42 @@ struct CalendarTimelineRangeTests {
         ) == "10 PM – 2 AM Jun 27")
     }
 
+    /// T-18093: a MULTI-DAY all-day event (a Nov 16-18 trip) read "All day" in Cmd+K and iOS
+    /// Search, its one row the only result for the whole span. The row now names its last day by
+    /// the timed rule's weekday-or-date spelling; a one-day all-day event keeps the bare "All day".
+    private let oldAllDaySpelling = #"\? "All day"|return "All day""#
+
+    @Test func aListRowForAMultiDayAllDayEventNamesItsLastDay() throws {
+        let start = try date("2026-11-16", hour: 0)   // a Monday
+        func label(_ end: Date) -> String {
+            CadenceScheduleSupport.eventListAllDayLabel(from: start, to: end, calendar: calendar)
+        }
+
+        // One day, whether the source ends it at the exclusive next midnight or at 23:59:59.
+        #expect(label(try date("2026-11-17", hour: 0)) == "All day")
+        #expect(label(try date("2026-11-16", hour: 23, minute: 59).addingTimeInterval(59)) == "All day")
+        #expect(label(start) == "All day", "a degenerate zero-length all-day event is still one day")
+
+        // Three days: the last day is Wednesday under either end convention.
+        #expect(label(try date("2026-11-19", hour: 0)) == "All day → Wed")
+        #expect(label(try date("2026-11-18", hour: 23, minute: 59).addingTimeInterval(59)) == "All day → Wed")
+
+        // Beyond six days the end reads as a month and day, as the timed rule's does.
+        #expect(label(try date("2026-11-29", hour: 0)) == "All day → Nov 28")
+
+        // Both search rows ask this one owner, so Mac and iOS say the same words.
+        for path in ["Cadence/macOS/Views/GlobalSearchIndexSupport.swift", "Cadence/iOS/iOSCalendarEventSupport.swift"] {
+            // Raw text, not `codeOnly`: that blanks string literals, and the old spelling is one.
+            let source = try CadenceSourceScan.sourceFile(path)
+            #expect(CadenceSourceScan.codeOnly(source).contains("CadenceScheduleSupport.eventListAllDayLabel("),
+                    "\(path) spells an all-day row's range itself instead of asking the shared owner")
+            #expect(CadenceSourceScan.matchCount(oldAllDaySpelling, in: source) == 0,
+                    "\(path) still answers a bare \"All day\" for every all-day event")
+        }
+        // Non-vacuity: the needle matches both old spellings it exists to catch.
+        #expect(CadenceSourceScan.matchCount(oldAllDaySpelling, in: #"x ? "All day" : y; return "All day""#) == 2)
+    }
+
     /// Every column of a multi-day timed event drew the same sliver. Each column now shows the
     /// part of the event that belongs to it, and a day fully inside the event spans it.
     @Test func aMultiDayEventFillsTheColumnsItCovers() throws {
