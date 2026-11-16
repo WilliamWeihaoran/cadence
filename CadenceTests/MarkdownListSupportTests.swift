@@ -303,6 +303,30 @@ struct MarkdownListSupportTests {
         #expect(MarkdownLineBreakSupport.continuedListPrefix(after: "        c. hundredth", precededBy: "        xcix.") == "        ci. ")
     }
 
+    // MARK: - Frontmatter is not body ([[T-18138]])
+
+    /// The Mac runs both whole-note normalizers on every keystroke over text that still holds the
+    /// (hidden) frontmatter. A YAML `tags:` block list is spelled `  - work`; rewriting it to
+    /// `  ◦ work` took the note's tags away the first time anything was typed.
+    @Test func theBulletNormalizerLeavesAFrontmatterBlockListAlone() {
+        let text = "---\ntitle: x\ntags:\n  - work\n---\n- a"
+
+        let result = MarkdownListSupport.normalizedMarkdownListPrefixes(in: text)
+
+        #expect(result == "---\ntitle: x\ntags:\n  - work\n---\n• a")
+    }
+
+    /// An indented line is YAML filler (a block scalar here), so the block still parses as
+    /// frontmatter, and the renumber must not reach into it.
+    @Test func theOrderedRenumberLeavesFrontmatterLinesAlone() {
+        let result = MarkdownListSupport.normalizedOrderedListMarkers(
+            in: "---\ntitle: x\nsteps: |\n  2. y\n---\n3. a",
+            selection: NSRange(location: 0, length: 0)
+        )
+
+        #expect(result.text == "---\ntitle: x\nsteps: |\n  2. y\n---\n1. a")
+    }
+
     // MARK: - Ordered marker renumbering
 
     @Test func renumbersOrderedMarkersWithinOneRun() {

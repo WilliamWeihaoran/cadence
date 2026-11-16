@@ -56,6 +56,19 @@ struct TagFrontmatterListTests {
         #expect(MarkdownMetadataParser.frontmatterTagNames(in: rewritten) == ["x"])
     }
 
+    /// [[T-18138]]: the Mac editor normalizes list markers over the whole note on every keystroke,
+    /// frontmatter included. A block-listed note still reads its tags after that pass.
+    @Test func aBlockListSurvivesTheEditorsListNormalizers() {
+        let content = "---\ntitle: x\ntags:\n  - work\n---\n- a"
+        let bullets = MarkdownListSupport.normalizedMarkdownListPrefixes(in: content)
+        let ordered = MarkdownListSupport.normalizedOrderedListMarkers(
+            in: bullets,
+            selection: NSRange(location: 0, length: 0)
+        ).text
+
+        #expect(MarkdownMetadataParser.metadata(in: ordered).tags == ["work"])
+    }
+
     /// The sweep reads a block-listed note's tags rather than finding none.
     @Test func theSweepAttachesABlockListsTags() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()

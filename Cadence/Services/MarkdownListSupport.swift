@@ -99,9 +99,12 @@ nonisolated enum MarkdownListSupport {
         var counters: [Int: Int] = [:]
         var previousOrderedLevel: Int?
         var changed = false
+        let frontmatterLines = MarkdownMetadataParser.frontmatterLineCount(in: text)
 
-        for line in originalLines {
-            guard let match = listPrefixMatch(in: line) else {
+        for (lineIndex, line) in originalLines.enumerated() {
+            // [[T-18138]]: the frontmatter is YAML, not body. A skipped line is read as a non-list
+            // line, so it ends any run the way prose does.
+            guard lineIndex >= frontmatterLines, let match = listPrefixMatch(in: line) else {
                 rebuiltLines.append(line)
                 // A line that is not a list item at all ends the run, so the next one starts at 1.
                 counters.removeAll()
@@ -178,8 +181,14 @@ nonisolated enum MarkdownListSupport {
     static func normalizedMarkdownListPrefixes(in text: String, selection: NSRange) -> MarkdownListNormalizationResult {
         let originalLines = text.components(separatedBy: "\n")
         var changed = false
-        let normalizedLines = originalLines.map { line -> String in
-            guard let normalized = normalizedMarkdownListLine(line) else { return line }
+        // [[T-18138]]: the frontmatter block is YAML, and its `tags:` block list is spelled
+        // `  - work`. The Mac runs this over the whole note on every keystroke, block included
+        // (it is only hidden there), so rewriting those lines to `  ◦ work` stripped the note's
+        // tags the moment anything was typed. Frontmatter lines pass through verbatim.
+        let frontmatterLines = MarkdownMetadataParser.frontmatterLineCount(in: text)
+        let normalizedLines = originalLines.enumerated().map { lineIndex, line -> String in
+            guard lineIndex >= frontmatterLines,
+                  let normalized = normalizedMarkdownListLine(line) else { return line }
             changed = true
             return normalized
         }
