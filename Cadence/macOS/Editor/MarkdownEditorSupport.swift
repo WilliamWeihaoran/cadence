@@ -306,6 +306,24 @@ enum MarkdownStylist {
         let nsText = text as NSString
         let fullRange = NSRange(location: 0, length: storage.length)
         let tableStyles = MarkdownTableParser.rowStyles(in: text)
+        // [[T-18140]]: a fenced code block is code. The per-line block pass and every inline sweep
+        // below used to run over it, so `# comment` in a shell block became a heading with its
+        // `# ` hidden and `print("**done**")` lost its `**` to blank gaps; `applyCodeFences` reset
+        // the font and colour afterwards but never un-hid a marker. Inline-code spans protect what
+        // they wholly contain, exactly as `MarkdownInlineSpanSupport.spans(in:excluding:)` does on
+        // iOS. Only the code blocks are excluded here, not the table rows iOS also passes: a
+        // revealed table (`revealedTableAnchor`) is raw source that has always kept its inline
+        // styling on the Mac, and the rendered ones are hidden whole by `applyRenderedTables`.
+        let codeBlocks = MarkdownBlockSupport.fencedCodeBlocks(in: text)
+        let codeLineIndexes = Set(codeBlocks.flatMap { Array($0.lineIndexes) })
+        let sourceLines = MarkdownSourceLines.lines(in: text)
+        let codeBlockExclusions: [NSRange] = codeBlocks.compactMap { block in
+            guard block.startLineIndex < sourceLines.count, block.endLineIndex < sourceLines.count else { return nil }
+            let start = sourceLines[block.startLineIndex].range.location
+            return NSRange(location: start, length: NSMaxRange(sourceLines[block.endLineIndex].range) - start)
+        }
+        let inlineCodeRanges = MarkdownInlineSpanSupport.codeRanges(in: text)
+        let exclusion = InlineExclusion(excluded: codeBlockExclusions, protected: inlineCodeRanges)
 
         storage.beginEditing()
 
@@ -318,6 +336,11 @@ enum MarkdownStylist {
         var pos = 0
         for (lineIndex, line) in text.components(separatedBy: "\n").enumerated() {
             let len = (line as NSString).length
+            // A code-block line (fences included) is left to `applyCodeFences`.
+            guard !codeLineIndexes.contains(lineIndex) else {
+                pos += len + 1
+                continue
+            }
             applyLine(
                 storage: storage,
                 line: line,
@@ -331,34 +354,34 @@ enum MarkdownStylist {
             pos += len + 1
         }
 
-        applyInline(storage: storage, text: nsText,
+        applyInline(storage: storage, text: nsText, exclusion: exclusion,
                     regex: boldItalicRegex, markerLen: 3,
                     contentStyle: { range, s in
                         let existing = s.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont ?? baseFont
                         let italic = NSFontManager.shared.convert(existing, toHaveTrait: .italicFontMask)
                         s.addAttribute(.font, value: NSFontManager.shared.convert(italic, toHaveTrait: .boldFontMask), range: range)
                     })
-        applyInline(storage: storage, text: nsText,
+        applyInline(storage: storage, text: nsText, exclusion: exclusion,
                     regex: boldRegex, markerLen: 2,
                     contentStyle: { range, s in
                         let existing = s.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont ?? baseFont
                         s.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: existing.pointSize), range: range)
                     })
-        applyInline(storage: storage, text: nsText,
+        applyInline(storage: storage, text: nsText, exclusion: exclusion,
                     regex: italicRegex, markerLen: 1,
                     contentStyle: { range, s in
                         let existing = s.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont ?? baseFont
                         let italic = NSFontManager.shared.convert(existing, toHaveTrait: .italicFontMask)
                         s.addAttribute(.font, value: italic, range: range)
                     })
-        applyCode(storage, text: nsText)
-        applyInline(storage: storage, text: nsText,
+        applyCode(storage, text: nsText, excluding: codeBlockExclusions)
+        applyInline(storage: storage, text: nsText, exclusion: exclusion,
                     regex: strikethroughRegex, markerLen: 2,
                     contentStyle: { range, s in
                         s.addAttribute(.foregroundColor, value: dimColor, range: range)
                         s.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
                     })
-        applyInline(storage: storage, text: nsText,
+        applyInline(storage: storage, text: nsText, exclusion: exclusion,
                     regex: highlightRegex, markerLen: 2,
                     contentStyle: { range, s in
                         s.addAttributes([
@@ -366,13 +389,13 @@ enum MarkdownStylist {
                             .foregroundColor: highlightTextColor
                         ], range: range)
                     })
-        applyLinks(storage, text: nsText)
-        applyWikiLinks(storage, text: nsText)
+        applyLinks(storage, text: nsText, exclusion: exclusion)
+        applyWikiLinks(storage, text: nsText, exclusion: exclusion)
         applyCodeFences(storage, text: nsText)
         // After every inline pass, for the reason `applyFrontmatter` is last: a rendered table's
         // source is *hidden*, and `applyInline` would happily put a 20pt bold font back on the
         // `**Total**` inside a cell and stand the collapsed line back up.
-        applyRenderedTables(storage, text: text, textView: textView)
+        applyRenderedTables(storage, text: text, textView: textView, excluding: codeBlockExclusions)
         // Last, so no earlier pass can style the block back into view.
         applyFrontmatter(storage, text: text)
 
@@ -466,7 +489,12 @@ enum MarkdownStylist {
     ///
     /// Skips whichever table `revealedTableAnchor` points at — the deliberate raw-source escape,
     /// which falls back to the banded per-row styling `applyTableRow` has always drawn.
-    private static func applyRenderedTables(_ storage: NSTextStorage, text: String, textView: NSTextView) {
+    private static func applyRenderedTables(
+        _ storage: NSTextStorage,
+        text: String,
+        textView: NSTextView,
+        excluding codeBlocks: [NSRange]
+    ) {
         let cadenceTextView = textView as? CadenceTextView
         cadenceTextView?.markdownTableHits.removeAll()
         let revealedAnchor = cadenceTextView?.revealedTableAnchor
@@ -477,6 +505,9 @@ enum MarkdownStylist {
             let range = NSIntersectionRange(grid.storageRange, documentRange)
             guard range.length > 0 else { continue }
             if let revealedAnchor, revealedAnchor == grid.storageRange.location { continue }
+            // [[T-18140]]: a pipe table pasted inside a fenced code block is code; drawing it as a
+            // grid hid the source the block is there to show.
+            if codeBlocks.contains(where: { NSIntersectionRange($0, grid.storageRange).length > 0 }) { continue }
 
             // The banded per-row decoration and the grid are two spellings of the same table, so
             // the row attribute has to come off or `drawTableRows` paints stripes through the
@@ -1045,15 +1076,29 @@ enum MarkdownStylist {
         hide(storage, markerRange)
     }
 
+    /// What the inline passes leave alone ([[T-18140]]): `excluded` runs (fenced code blocks,
+    /// table rows, standalone image/embed/divider lines) reject any match that touches them, and
+    /// `protected` inline-code spans reject a match they wholly contain, so `` `**b**` `` keeps
+    /// its `**` while `**Review `API` today**` is still bold. The shared rule iOS applies.
+    private struct InlineExclusion {
+        let excluded: [NSRange]
+        let protected: [NSRange]
+
+        func allows(_ range: NSRange) -> Bool {
+            MarkdownInlineSpanSupport.shouldStyle(range, excluding: excluded, protecting: protected)
+        }
+    }
+
     private static func applyInline(
         storage: NSTextStorage,
         text: NSString,
+        exclusion: InlineExclusion,
         regex: NSRegularExpression,
         markerLen: Int,
         contentStyle: (NSRange, NSTextStorage) -> Void
     ) {
         regex.enumerateMatches(in: text as String, range: NSRange(location: 0, length: text.length)) { match, _, _ in
-            guard let m = match, m.range.length > markerLen * 2 else { return }
+            guard let m = match, m.range.length > markerLen * 2, exclusion.allows(m.range) else { return }
             let full = m.range
             let open = NSRange(location: full.location, length: markerLen)
             let close = NSRange(location: full.location + full.length - markerLen, length: markerLen)
@@ -1064,9 +1109,11 @@ enum MarkdownStylist {
         }
     }
 
-    private static func applyCode(_ storage: NSTextStorage, text: NSString) {
+    private static func applyCode(_ storage: NSTextStorage, text: NSString, excluding excluded: [NSRange]) {
         inlineCodeRegex.enumerateMatches(in: text as String, range: NSRange(location: 0, length: text.length)) { match, _, _ in
-            guard let m = match, m.range.length >= 3 else { return }
+            // Backticks inside a fenced block are code characters, not an inline span's markers.
+            guard let m = match, m.range.length >= 3,
+                  MarkdownInlineSpanSupport.shouldStyle(m.range, excluding: excluded) else { return }
             let full = m.range
             let open = NSRange(location: full.location, length: 1)
             let close = NSRange(location: full.location + full.length - 1, length: 1)
@@ -1085,8 +1132,8 @@ enum MarkdownStylist {
         }
     }
 
-    private static func applyLinks(_ storage: NSTextStorage, text: NSString) {
-        for link in MarkdownLinkSupport.linkRanges(in: text as String) {
+    private static func applyLinks(_ storage: NSTextStorage, text: NSString, exclusion: InlineExclusion) {
+        for link in MarkdownLinkSupport.linkRanges(in: text as String) where exclusion.allows(link.fullRange) {
             let labelRange = link.labelRange
             let urlRange = link.urlRange
             let fullRange = link.fullRange
@@ -1104,9 +1151,9 @@ enum MarkdownStylist {
         }
     }
 
-    private static func applyWikiLinks(_ storage: NSTextStorage, text: NSString) {
+    private static func applyWikiLinks(_ storage: NSTextStorage, text: NSString, exclusion: InlineExclusion) {
         wikiLinkRegex.enumerateMatches(in: text as String, range: NSRange(location: 0, length: text.length)) { match, _, _ in
-            guard let match, match.numberOfRanges >= 2 else { return }
+            guard let match, match.numberOfRanges >= 2, exclusion.allows(match.range(at: 0)) else { return }
             let fullRange = match.range(at: 0)
             let labelRange = match.range(at: 1)
             guard labelRange.location != NSNotFound else { return }

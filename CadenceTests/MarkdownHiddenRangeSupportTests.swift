@@ -181,6 +181,60 @@ struct MarkdownHiddenRangeSupportTests {
             #expect(MarkdownHiddenRangeSupport.bodyStartLocation(in: storage) == 0)
         }
     }
+
+    // MARK: - A fenced code block is code ([[T-18140]])
+
+    /// Locations inside `text` between the end of the first line and the last "```" that the
+    /// stylist hid.
+    @MainActor
+    private func hiddenLocationsInsideTheFence(of text: String) throws -> [Int] {
+        let storage = try styled(text)
+        let nsText = text as NSString
+        let bodyStart = nsText.range(of: "\n").location + 1
+        let closingFence = nsText.range(of: "```", options: .backwards).location
+        return (bodyStart..<closingFence).filter {
+            storage.attribute(.cadenceMarkdownHidden, at: $0, effectiveRange: nil) as? Bool == true
+        }
+    }
+
+    /// The inline sweeps used to run over code: `print("**done**")` drew with blank gaps where its
+    /// `**` was, and a link, strike or highlight inside the block lost its markers the same way.
+    @MainActor
+    @Test func inlineMarkersInsideAFencedCodeBlockStayVisible() throws {
+        let text = "```\nprint(\"**done**\") and *x*\n[a](b) ~~t~~ ==h== `c` [[n]]\n```"
+
+        #expect(try hiddenLocationsInsideTheFence(of: text) == [])
+    }
+
+    /// The per-line block pass used to read a shell comment as a heading and hide its `# `.
+    @MainActor
+    @Test func aHashCommentInsideAFencedCodeBlockIsNotAHeading() throws {
+        let text = "```sh\n# comment\n> not a quote\n```"
+
+        #expect(try hiddenLocationsInsideTheFence(of: text) == [])
+    }
+
+    /// A pipe table inside a fence is code too: it used to be drawn as a grid with its source hidden.
+    @MainActor
+    @Test func aPipeTableInsideAFencedCodeBlockIsNotRendered() throws {
+        let text = "```\n| a | b |\n|---|---|\n| 1 | 2 |\n```"
+
+        #expect(try hiddenLocationsInsideTheFence(of: text) == [])
+    }
+
+    /// Emphasis wholly inside an inline-code span is code; it keeps its `**`. Outside one, and after
+    /// a closed fence, emphasis is still styled, so the exclusion is scoped to code.
+    @MainActor
+    @Test func inlineCodeProtectsEmphasisButOnlyWhatItContains() throws {
+        let inCode = try styled("a `**b**` c")
+        #expect(inCode.attribute(.cadenceMarkdownHidden, at: 3, effectiveRange: nil) == nil)
+        #expect(inCode.attribute(.cadenceMarkdownHidden, at: 4, effectiveRange: nil) == nil)
+
+        let afterFence = "```\nx\n```\n**bold**"
+        let bold = (afterFence as NSString).range(of: "**bold**").location
+        let storage = try styled(afterFence)
+        #expect(storage.attribute(.cadenceMarkdownHidden, at: bold, effectiveRange: nil) as? Bool == true)
+    }
 #endif
 
     @Test func plainTextLocationsAreUnchanged() {
