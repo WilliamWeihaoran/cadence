@@ -104,6 +104,28 @@ struct MacTodayTimelineAllDayBandTests {
         #expect(SchedulePanelDataSupport.exportEventLines(allDayTitles: [], timedEvents: []).isEmpty)
     }
 
+    /// [[T-18109]]: the panel includes completed tasks, and the export used to write a done task
+    /// exactly like an open one. It now uses the note export's checklist spelling.
+    @Test("The export checks a done task and leaves an open one unchecked, in start order")
+    func theExportMarksDoneTasks() {
+        let open = AppTask(title: "Write report")
+        open.scheduledStartMin = 600
+        open.estimatedMinutes = 60
+        let done = AppTask(title: "Standup")
+        done.scheduledStartMin = 540
+        done.estimatedMinutes = 30
+        done.status = .done
+
+        let lines = SchedulePanelDataSupport.exportTaskLines([open, done])
+
+        #expect(lines.count == 2)
+        #expect(lines.first?.hasPrefix("- [x] ") == true)
+        #expect(lines.first?.hasSuffix("• Standup") == true)
+        #expect(lines.last?.hasPrefix("- [ ] ") == true)
+        #expect(lines.last?.hasSuffix("• Write report") == true)
+        #expect(SchedulePanelDataSupport.exportTaskLines([]).isEmpty)
+    }
+
     /// The data above is only worth anything if the pane draws it and the export reads it.
     @Test("SchedulePanel draws the band from the all-day read and exports through the shared lines")
     func schedulePanelUsesTheAllDayRead() throws {
@@ -113,6 +135,7 @@ struct MacTodayTimelineAllDayBandTests {
         #expect(code.components(separatedBy: "SchedulePanelDataSupport.allDayEvents(").count - 1 == 1)
         #expect(code.components(separatedBy: "SchedulePanelAllDayBand(events:").count - 1 == 1)
         #expect(code.components(separatedBy: "SchedulePanelDataSupport.exportEventLines(").count - 1 == 1)
+        #expect(code.components(separatedBy: "SchedulePanelDataSupport.exportTaskLines(").count - 1 == 1)
     }
 }
 #endif

@@ -80,6 +80,20 @@ enum SchedulePanelDataSupport {
 
     static let allDayExportLabel = "All day"
 
+    /// The schedule export's "Tasks" lines, in start order, each a Markdown checklist item:
+    /// `- [x] 9:00 AM - 10:00 AM • Title` for a done task, `- [ ] ...` for an open one
+    /// ([[T-18109]]). The panel includes completed tasks (it draws them greyed), and the export used
+    /// to write them exactly like open ones, so a schedule exported at 5pm read as if nothing was
+    /// done. The `[x]`/`[ ]` spelling is the note export's (`CadenceNoteExportSupport`, [[T-17990]]).
+    static func exportTaskLines(_ tasks: [AppTask]) -> [String] {
+        tasks
+            .sorted { $0.scheduledStartMin < $1.scheduledStartMin }
+            .map { task in
+                let range = TimeFormatters.timeRange(startMin: task.scheduledStartMin, endMin: task.scheduledEndMin)
+                return "- [\(task.isDone ? "x" : " ")] \(range) • \(TaskTitleSupport.displayTitle(task.title))"
+            }
+    }
+
     static func syncLinkedTasks(
         allTasks: [AppTask],
         modelContext: ModelContext,

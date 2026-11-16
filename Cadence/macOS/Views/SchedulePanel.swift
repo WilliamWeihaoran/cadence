@@ -343,11 +343,8 @@ struct SchedulePanel: View {
     }
 
     private func exportTodayPlan() {
-        let taskLines = scheduledTasks
-            .sorted { $0.scheduledStartMin < $1.scheduledStartMin }
-            .map { task in
-                "- \(TimeFormatters.timeRange(startMin: task.scheduledStartMin, endMin: task.scheduledEndMin)) • \(TaskTitleSupport.displayTitle(task.title))"
-            }
+        // Done tasks are checked, open ones not, in the note export's checklist form ([[T-18109]]).
+        let taskLines = SchedulePanelDataSupport.exportTaskLines(scheduledTasks)
 
         // All-day events lead, as "All day" ([[T-7982]]); they used to be left out entirely.
         let eventLines = SchedulePanelDataSupport.exportEventLines(
