@@ -242,7 +242,9 @@ struct iOSCalendarEventEditSheet: View {
             )
         }
         .confirmationDialog(
-            CadenceRecurrenceScopeCopy.eventScopeTitle,
+            pendingAction == .delete
+                ? CadenceRecurrenceScopeCopy.eventDeleteScopeTitle
+                : CadenceRecurrenceScopeCopy.eventScopeTitle,
             isPresented: Binding(
                 get: { pendingAction != nil },
                 set: { if !$0 { pendingAction = nil } }
@@ -264,7 +266,9 @@ struct iOSCalendarEventEditSheet: View {
             Text(
                 savesRecurrenceChange
                     ? CadenceRecurrenceScopeCopy.eventRepeatScopeMessage
-                    : CadenceRecurrenceScopeCopy.eventScopeMessage
+                    : pendingAction == .delete
+                        ? CadenceRecurrenceScopeCopy.eventDeleteScopeMessage
+                        : CadenceRecurrenceScopeCopy.eventScopeMessage
             )
         }
         .onAppear(perform: ensureWritableCalendar)

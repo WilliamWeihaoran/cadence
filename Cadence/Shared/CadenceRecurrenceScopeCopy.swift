@@ -46,6 +46,17 @@ nonisolated enum CadenceRecurrenceScopeCopy {
     static let eventRepeatScopeMessage =
         "A repeat change applies to this and future events."
 
+    /// The same dialog when the action is a **Delete** ([[T-18101]]). All three event dialogs
+    /// asked "Change recurring event?" / "...this calendar change..." of a reader who had pressed
+    /// Delete; they now read this pair whenever the pending action is the delete. Title Case for
+    /// the reason `deleteScopeTitle` gives — the delete family is title-cased, and the
+    /// confirmation that follows says "Delete Calendar Event?". The buttons are unchanged:
+    /// `CalendarRecurrenceEditScope.label` names a span, which is right for both.
+    static let eventDeleteScopeTitle = "Delete Repeating Event?"
+
+    static let eventDeleteScopeMessage =
+        "Choose whether to delete only this occurrence or this and future events."
+
     /// Title of the confirmation dialog raised when a repeat rule changes on a repeating **task**.
     static let taskScopeTitle = "Change repeating task?"
 

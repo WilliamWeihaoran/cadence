@@ -33,6 +33,12 @@ struct TimelineEventBlock: View {
     @State private var resizeSession: TimelineResizeSession? = nil
     @State private var isHovered = false
     @State private var pendingMutation: PendingEventMutation?
+
+    /// Whether the scope question is about a delete, so it asks in delete words ([[T-18101]]).
+    private var pendingMutationIsDelete: Bool {
+        if case .delete = pendingMutation { return true }
+        return false
+    }
     @State private var actionFailureNotice: String?
 
     private var effectiveStartMin: Int  { liveStartMin      ?? item.startMin       }
@@ -230,7 +236,9 @@ struct TimelineEventBlock: View {
                 dragGrabOffset = 0
             }
             .confirmationDialog(
-                CadenceRecurrenceScopeCopy.eventScopeTitle,
+                pendingMutationIsDelete
+                    ? CadenceRecurrenceScopeCopy.eventDeleteScopeTitle
+                    : CadenceRecurrenceScopeCopy.eventScopeTitle,
                 isPresented: Binding(
                     get: { pendingMutation != nil },
                     set: { if !$0 { cancelPendingEventMutation() } }
@@ -247,7 +255,11 @@ struct TimelineEventBlock: View {
                     cancelPendingEventMutation()
                 }
             } message: {
-                Text(CadenceRecurrenceScopeCopy.eventScopeMessage)
+                Text(
+                    pendingMutationIsDelete
+                        ? CadenceRecurrenceScopeCopy.eventDeleteScopeMessage
+                        : CadenceRecurrenceScopeCopy.eventScopeMessage
+                )
             }
     }
 

@@ -311,6 +311,44 @@ struct CadenceRecurrenceEndSurfaceTests {
         )
     }
 
+    /// **[[T-18101]]: a delete asks in delete words.** All three event scope dialogs raised
+    /// "Change recurring event?" for a Delete as well as for a move, resize or Save. Each now picks
+    /// the delete pair when, and only when, its pending action is the delete -- one read of each
+    /// new constant per file, gated on that file's own delete state.
+    @Test func everyEventScopeDialogAsksADeleteInDeleteWords() throws {
+        #expect(CadenceRecurrenceScopeCopy.eventDeleteScopeTitle == "Delete Repeating Event?")
+        #expect(
+            CadenceRecurrenceScopeCopy.eventDeleteScopeMessage
+                == "Choose whether to delete only this occurrence or this and future events."
+        )
+        for sentence in [CadenceRecurrenceScopeCopy.eventDeleteScopeTitle, CadenceRecurrenceScopeCopy.eventDeleteScopeMessage] {
+            #expect(!sentence.localizedCaseInsensitiveContains("change"), "\"\(sentence)\" asks a delete in edit words")
+        }
+        let gates = [
+            "Cadence/iOS/iOSCalendarEventEditSheet.swift": "pendingAction == .delete",
+            "Cadence/macOS/Views/TimelineEventBlock.swift": "pendingMutationIsDelete",
+            "Cadence/macOS/Views/TimelineEventBlockSupportViews.swift": "pendingAction == .delete",
+        ]
+        for name in ["CadenceRecurrenceScopeCopy.eventDeleteScopeTitle", "CadenceRecurrenceScopeCopy.eventDeleteScopeMessage"] {
+            try expectConstantReads(of: name, at: gates.mapValues { _ in 1 })
+        }
+        for (path, gate) in gates {
+            let code = try strippingComments(sourceFile(path))
+            let squashed = code.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            #expect(
+                squashed.contains(".confirmationDialog( \(gate) ? CadenceRecurrenceScopeCopy.eventDeleteScopeTitle : CadenceRecurrenceScopeCopy.eventScopeTitle,"),
+                "\(path): the scope dialog's title no longer turns on the delete"
+            )
+            #expect(
+                squashed.contains("\(gate) ? CadenceRecurrenceScopeCopy.eventDeleteScopeMessage : CadenceRecurrenceScopeCopy.eventScopeMessage"),
+                "\(path): the scope dialog's message no longer turns on the delete"
+            )
+        }
+        let block = try strippingComments(sourceFile("Cadence/macOS/Views/TimelineEventBlock.swift"))
+        let isDelete = try #require(CadenceSourceScan.declarationBody("private var pendingMutationIsDelete: Bool", in: block))
+        #expect(isDelete.contains("if case .delete = pendingMutation { return true }"))
+    }
+
     /// Nothing outside the declaration types any of the six sentences again.
     ///
     /// The absence half, over the whole tree rather than the six files above: a seventh surface
@@ -334,6 +372,9 @@ struct CadenceRecurrenceEndSurfaceTests {
             // the task sheet, and both now have to say the same thing when it does not land.
             CadenceRecurrenceScopeCopy.taskScopeFailureTitle,
             CadenceRecurrenceScopeCopy.taskScopeLookupFailureNotice,
+            // T-18101's delete pair.
+            CadenceRecurrenceScopeCopy.eventDeleteScopeTitle,
+            CadenceRecurrenceScopeCopy.eventDeleteScopeMessage,
         ] {
             var typedIn: [String] = []
             for path in files {
