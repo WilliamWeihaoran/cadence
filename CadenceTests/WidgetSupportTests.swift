@@ -895,6 +895,30 @@ struct WidgetSupportTests {
         #expect(tasks.first?.priority == .medium)
     }
 
+    /// [[T-18098]]: a blank or marks-only title has to make the system ask for the title again
+    /// (`$title.needsValueError`), not end the run with "Add a task title." -- which is what a
+    /// voice "Add a task in Cadence" met, with no way to answer. A real title still resolves.
+    @Test func captureTaskIntentAsksAgainForABlankTitle() throws {
+        struct AskedForTitle: Error {}
+        var asked = 0
+        for blank in ["", "   ", "!!!"] {
+            #expect(throws: AskedForTitle.self) {
+                try CaptureTaskIntent.requiredCapture(from: blank) {
+                    asked += 1
+                    return AskedForTitle()
+                }
+            }
+        }
+        #expect(asked == 3)
+
+        let capture = try CaptureTaskIntent.requiredCapture(from: "!! call mom") {
+            Issue.record("A real title must not ask again")
+            return AskedForTitle()
+        }
+        #expect(capture.title == "call mom")
+        #expect(capture.priority == .medium)
+    }
+
     // MARK: - T-369: the calendar link names a date
 
     /// The widget draws a fortnight starting at its snapshot's `date`; its "Open Calendar" link

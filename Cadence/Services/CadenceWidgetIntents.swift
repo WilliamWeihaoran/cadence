@@ -120,16 +120,19 @@ struct CaptureTaskIntent: AppIntent {
     static var description: IntentDescription { IntentDescription("Adds a quick task to Cadence.") }
     static var supportedModes: IntentModes { .background }
 
-    @Parameter(title: "Title")
+    /// [[T-18098]]: `requestValueDialog` is what Siri says when this is missing, and it is only
+    /// ever missing because `init()` leaves it unassigned. It used to be pre-filled with `""`,
+    /// which counts as a value: "Add a task in Cadence" (no title in either phrase) never asked,
+    /// answered "Add a task title." and ended with nothing created.
+    @Parameter(title: "Title", requestValueDialog: "What's the task?")
     var title: String
 
-    @Parameter(title: "Plan for Today")
+    @Parameter(title: "Plan for Today", default: false)
     var planForToday: Bool
 
-    init() {
-        self.title = ""
-        self.planForToday = false
-    }
+    /// Leaves `title` unset on purpose ([[T-18098]]) so the system asks for it -- the App Shortcut
+    /// phrases construct the intent through this.
+    init() {}
 
     init(title: String, planForToday: Bool = false) {
         self.title = title
@@ -137,8 +140,8 @@ struct CaptureTaskIntent: AppIntent {
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        guard let capture = Self.resolvedCapture(from: title) else {
-            return .result(dialog: "Add a task title.")
+        let capture = try Self.requiredCapture(from: title) {
+            $title.needsValueError("What's the task?")
         }
 
         let container = try CadenceStoreSupport.makeSharedWriteContainer()
@@ -171,6 +174,21 @@ struct CaptureTaskIntent: AppIntent {
         let title = TaskTitleShortcutParsing.titleApplyingPriorityShortcut(typed, priority: &priority)
         guard !title.isEmpty else { return nil }
         return (title, priority)
+    }
+
+    /// The capture `perform()` writes, or the error that makes the system ask for the title again.
+    ///
+    /// **[[T-18098]].** A blank or marks-only title (`"   "`, `"!!!"`) used to return the dialog
+    /// "Add a task title." and end the run -- an instruction a voice user has no way to follow.
+    /// Throwing `$title.needsValueError` instead re-asks inside the same run, in Siri and in a
+    /// Shortcuts run with the field left blank. `ask` is a parameter only so a test can reach this
+    /// without `perform()`, which opens the real shared store.
+    static func requiredCapture(
+        from typed: String,
+        orAsk ask: () -> any Error
+    ) throws -> (title: String, priority: TaskPriority) {
+        guard let capture = resolvedCapture(from: typed) else { throw ask() }
+        return capture
     }
 
     static func captureTask(title: String, planForToday: Bool, in modelContext: ModelContext) throws {
