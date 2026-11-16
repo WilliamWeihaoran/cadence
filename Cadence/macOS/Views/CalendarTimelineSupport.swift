@@ -121,14 +121,19 @@ final class CalendarEventDayCache {
     /// cells and two or three blocks can be alive in the lazy stack at once. At the old bound of
     /// 42 the grid evicted its own working set within a single pass and every rebuild went back
     /// to EventKit for all of them. Correctness does not depend on this number — the whole cache
-    /// is dropped when `CalendarManager.storeVersion` changes.
+    /// is dropped when `CalendarManager.storeVersion` or the zone changes.
     private let maxCachedDays = 256
     private var cachedStoreVersion: Int?
+    /// The zone every cached bucket was fetched in ([[T-18187]]). A bucket is the day's bounds in
+    /// the zone current at fetch time, keyed by the bare `yyyy-MM-dd`, so after a same-day zone
+    /// change the key still matches and the bounds no longer do: an evening event went missing
+    /// from Today and the Calendar until EventKit happened to post a store change.
+    private var cachedTimeZoneIdentifier: String?
     private var timedEventsByDate: [String: [EKEvent]] = [:]
     private var allDayEventsByDate: [String: [EKEvent]] = [:]
     private var recentlyAccessedDateKeys: [String] = []
 
-    func timedEvents(for date: Date, calendarManager: any CalendarEventDaySource) -> [EKEvent] {
+    func timedEvents(for date: Date, calendarManager: any CalendarEventDaySource, timeZone: TimeZone = .current) -> [EKEvent] {
         // **The fixture seam, and it is first on purpose** ([[T-3186]]). An agent or UI-test launch
         // is disarmed by `CadenceEventKitLaunchGate`, so the guard below answers `[]` for every day
         // and no calendar event has ever been on screen outside the owner's own session. When — and
@@ -142,7 +147,7 @@ final class CalendarEventDayCache {
             clear()
             return []
         }
-        refreshIfNeeded(storeVersion: calendarManager.storeVersion)
+        refreshIfNeeded(storeVersion: calendarManager.storeVersion, timeZone: timeZone)
         let key = DateFormatters.dateKey(from: date)
         touch(key)
         if let cached = timedEventsByDate[key] { return cached }
@@ -152,7 +157,7 @@ final class CalendarEventDayCache {
         return events
     }
 
-    func allDayEvents(for date: Date, calendarManager: any CalendarEventDaySource) -> [EKEvent] {
+    func allDayEvents(for date: Date, calendarManager: any CalendarEventDaySource, timeZone: TimeZone = .current) -> [EKEvent] {
         // The all-day door, same seam and same contract as `timedEvents` above. Both are wired
         // because the all-day banner is a surface of its own and a harness that could only show the
         // timed lane would send the next agent back to hand-building the other half.
@@ -161,7 +166,7 @@ final class CalendarEventDayCache {
             clear()
             return []
         }
-        refreshIfNeeded(storeVersion: calendarManager.storeVersion)
+        refreshIfNeeded(storeVersion: calendarManager.storeVersion, timeZone: timeZone)
         let key = DateFormatters.dateKey(from: date)
         touch(key)
         if let cached = allDayEventsByDate[key] { return cached }
@@ -183,9 +188,10 @@ final class CalendarEventDayCache {
         events.sorted(by: CadenceCalendarEventSearchSupport.precedes)
     }
 
-    private func refreshIfNeeded(storeVersion: Int) {
-        guard cachedStoreVersion != storeVersion else { return }
+    private func refreshIfNeeded(storeVersion: Int, timeZone: TimeZone) {
+        guard cachedStoreVersion != storeVersion || cachedTimeZoneIdentifier != timeZone.identifier else { return }
         cachedStoreVersion = storeVersion
+        cachedTimeZoneIdentifier = timeZone.identifier
         timedEventsByDate.removeAll(keepingCapacity: true)
         allDayEventsByDate.removeAll(keepingCapacity: true)
         recentlyAccessedDateKeys.removeAll(keepingCapacity: true)
@@ -193,6 +199,7 @@ final class CalendarEventDayCache {
 
     private func clear() {
         cachedStoreVersion = nil
+        cachedTimeZoneIdentifier = nil
         timedEventsByDate.removeAll(keepingCapacity: true)
         allDayEventsByDate.removeAll(keepingCapacity: true)
         recentlyAccessedDateKeys.removeAll(keepingCapacity: true)

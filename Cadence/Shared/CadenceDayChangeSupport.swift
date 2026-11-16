@@ -137,3 +137,47 @@ extension View {
         }
     }
 }
+
+/// What a page holding a DAY, or a cache keyed by one, must do when the zone moves under it
+/// ([[T-18186]], [[T-18187]]).
+///
+/// [[T-17442]] made a zone change cost a body pass, and the pass re-read whatever the page held.
+/// Two kinds of held state outlive the zone they were taken in:
+///
+/// - **A day held as an instant.** The Calendar pages keep their selected and anchor days as the
+///   midnight `Date` of the zone the page was opened in. Every reader turns it back into a day in
+///   the CURRENT zone, so after a westward change (New York -> Los Angeles) Nov 16 00:00 EST reads
+///   as Nov 15: the selected day, its inspector and the Mac timeline's columns slide a day back.
+///   `resnappedDay` keeps the day and moves the instant.
+/// - **A day cache keyed by `yyyy-MM-dd` alone.** Each day's events are fetched between that day's
+///   bounds in the zone current at FETCH time, so a bucket filled in New York holds
+///   [21:00, 21:00) Pacific once the device is in Los Angeles -- an evening event is missing and
+///   the previous evening is clamped in as a sliver. `zoneScopedKey` puts the zone into the
+///   identity, so a cache keyed on it refetches.
+nonisolated enum CadenceTimeZoneChangeSupport {
+    /// `key`, scoped to `timeZone`: a cache identity that changes when the zone does.
+    static func zoneScopedKey(_ key: String, timeZone: TimeZone = .current) -> String {
+        "\(key)@\(timeZone.identifier)"
+    }
+
+    /// The first instant, in `newZone`, of the calendar day `instant` named in `oldZone`.
+    ///
+    /// Identity when the zones are the same, so a caller may run it on every day-change signal.
+    static func resnappedDay(_ instant: Date, from oldZone: TimeZone, to newZone: TimeZone) -> Date {
+        guard oldZone.identifier != newZone.identifier else { return instant }
+        var oldCalendar = Calendar(identifier: .gregorian)
+        oldCalendar.timeZone = oldZone
+        var newCalendar = Calendar(identifier: .gregorian)
+        newCalendar.timeZone = newZone
+        let key = DateFormatters.dateKey(from: instant, calendar: oldCalendar)
+        return DateFormatters.date(from: key, in: newCalendar) ?? instant
+    }
+
+    /// `resnappedDay` across one `CadenceObservedDay` transition, the form a page's
+    /// `.onChange(of: observedDay)` hands it. An unknown identifier leaves the instant alone.
+    static func resnappedDay(_ instant: Date, from old: CadenceObservedDay, to new: CadenceObservedDay) -> Date {
+        guard let oldZone = TimeZone(identifier: old.observedTimeZoneIdentifier),
+              let newZone = TimeZone(identifier: new.observedTimeZoneIdentifier) else { return instant }
+        return resnappedDay(instant, from: oldZone, to: newZone)
+    }
+}

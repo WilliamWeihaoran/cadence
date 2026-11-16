@@ -48,7 +48,8 @@ struct iOSCalendarView: View {
     /// iPad left on Calendar overnight kept yesterday's header, wash, now-line and amber column.
     @State private var observedDay = CadenceObservedDay()
 
-    private let calendar = Calendar.current
+    /// Read per access, never stored ([[T-18186]]): a snapshot keeps the zone the page was built in.
+    private var calendar: Calendar { Calendar.current }
     /// Where the calendar left off. Read once on appear; written once the scroll settles rather
     /// than once per column — see `CadenceCalendarDateMemory` for what the per-column write cost.
     private let dateMemory = CadenceCalendarDateMemory()
@@ -155,7 +156,15 @@ struct iOSCalendarView: View {
     /// fetch several times a second, on the main thread, mid-gesture. Keying the fetch on a *coarse*
     /// window and caching the result is what makes scrolling free: on the grids the key only changes
     /// when the leading column crosses into another week.
+    ///
+    /// **[[T-18187]]: the zone is part of it.** Each day is fetched between its bounds in the zone
+    /// current at fetch time, so after a same-day zone change the same window held the old zone's
+    /// days -- an evening event missing, the previous evening clamped in as a sliver.
     private var eventWindowKey: String {
+        CadenceTimeZoneChangeSupport.zoneScopedKey(eventWindowDayKey)
+    }
+
+    private var eventWindowDayKey: String {
         if presentation == .board {
             return "board:\(DateFormatters.dateKey(from: anchorDate))"
         }
@@ -360,6 +369,14 @@ struct iOSCalendarView: View {
             iOSCalendarQuickCreateSheet(dateKey: seed.dateKey, initialStartMinute: seed.startMinute)
         }
         .cadenceTracksDayChanges($observedDay)
+        // [[T-18186]]: `selectedDate` and `anchorDate` are midnight instants of the zone they were
+        // taken in, and `selectedKey` reads them in the CURRENT zone, so a westward change slid the
+        // selected day back one. Re-snapped, they keep the day; the window refetch follows from
+        // `eventWindowKey`, which names the zone ([[T-18187]]).
+        .onChange(of: observedDay) { old, new in
+            selectedDate = CadenceTimeZoneChangeSupport.resnappedDay(selectedDate, from: old, to: new)
+            anchorDate = CadenceTimeZoneChangeSupport.resnappedDay(anchorDate, from: old, to: new)
+        }
     }
 
     @ViewBuilder

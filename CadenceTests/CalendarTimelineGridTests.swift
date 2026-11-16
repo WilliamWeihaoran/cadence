@@ -1230,7 +1230,8 @@ struct CadenceTodayTimelinePaneTests {
         // Re-run when the store changes, when access changes, and when the day does.
         #expect(pane.contains("onChange(of: calendarManager.storeVersion, initial: true)"))
         #expect(pane.contains("onChange(of: calendarManager.isAuthorized)"))
-        #expect(pane.contains("onChange(of: todayKey)"))
+        #expect(pane.contains("onChange(of: todayFetchKey)"))
+        #expect(pane.contains("CadenceTimeZoneChangeSupport.zoneScopedKey(todayKey)"))
         #expect(
             CadenceSourceScan.matchCount(#"refreshTodayEvents\(\)"#, in: pane) == 4,
             "a refresh trigger was added or lost without this pin following it"

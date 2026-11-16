@@ -77,7 +77,9 @@ struct CalendarPageView: View {
         )
     }
 
-    private let cal = Calendar.current
+    /// Read per access, never stored ([[T-18186]]): a snapshot keeps the zone the page was built in,
+    /// so after a zone change its columns were counted in one zone and keyed in another.
+    private var cal: Calendar { Calendar.current }
     /// The day this page was opened, which every column and month block is counted from
     /// ([[T-5352]]). Held, not read from the clock: a page left open across midnight keeps its
     /// columns' dates, and `todayDayIdx` — measured from it to the real today — is what moves.
@@ -180,6 +182,13 @@ struct CalendarPageView: View {
         }
         .background(Theme.bg)
         .cadenceTracksDayChanges($observedDay)
+        // [[T-18186]]: the held days are midnight instants of the zone they were taken in, and
+        // every column, month block and board day is counted from them in the CURRENT zone. After
+        // a westward change they named the day before; re-snapped, they keep the day.
+        .onChange(of: observedDay) { old, new in
+            calendarAnchorDay = CadenceTimeZoneChangeSupport.resnappedDay(calendarAnchorDay, from: old, to: new)
+            selectedBoardDate = CadenceTimeZoneChangeSupport.resnappedDay(selectedBoardDate, from: old, to: new)
+        }
         // The other surface that writes EventKit. Drag-to-create in the week/2W timeline, the
         // month grid's quick-create, the all-day → timed conversion, and the event popover's
         // save/delete all failed in silence here while `SchedulePanel` reported the same failures.

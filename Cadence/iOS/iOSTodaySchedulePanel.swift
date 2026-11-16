@@ -54,6 +54,11 @@ struct iOSSchedulePanel: View {
         observedDay.todayKey
     }
 
+    /// What `todayEvents` was fetched for: the day, in the zone ([[T-18187]]).
+    private var todayFetchKey: String {
+        CadenceTimeZoneChangeSupport.zoneScopedKey(todayKey)
+    }
+
     /// `todayKey`'s day as a `Date`, read through the same today override ([[T-15231]]).
     private var today: Date {
         DateFormatters.today()
@@ -155,7 +160,10 @@ struct iOSSchedulePanel: View {
         // The midnight rollover. The day key is read from the clock, so the pane's subject changes
         // without anything telling it; this is the same `scenePhase` test the Calendar page uses to
         // flush its position, read the other way round.
-        .onChange(of: todayKey) { _, _ in
+        //
+        // [[T-18187]]: and when the zone does. The day is fetched between its bounds in the zone
+        // current at fetch time, so a same-day zone change left the old zone's day in the cache.
+        .onChange(of: todayFetchKey) { _, _ in
             refreshTodayEvents()
         }
         .cadenceTracksDayChanges($observedDay)

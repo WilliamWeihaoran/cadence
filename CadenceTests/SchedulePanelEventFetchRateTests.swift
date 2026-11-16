@@ -233,6 +233,38 @@ struct SchedulePanelEventFetchRateTests {
                 "the refetch drew \(fresh.count) events; it replayed the cached answer")
     }
 
+    /// **[[T-18187]]: a zone change refetches, even on the same day.** A bucket holds the day's
+    /// bounds in the zone current at fetch time under the bare `yyyy-MM-dd` key, so a key-only
+    /// cache kept New York's day after the device landed in Los Angeles. The zone is handed in
+    /// explicitly rather than by turning the process-global `NSTimeZone.default`, so no parallel
+    /// suite can read the wrong zone. The control: asking again in the SAME zone costs nothing.
+    @Test("A zone change refetches the same day, and the same zone does not")
+    func aZoneChangeIsNotServedFromTheCache() throws {
+        let source = CountingEventDaySource()
+        let cache = CalendarEventDayCache()
+        let day = Self.day()
+        let newYork = try #require(TimeZone(identifier: "America/New_York"))
+        let losAngeles = try #require(TimeZone(identifier: "America/Los_Angeles"))
+
+        for _ in 0..<3 { _ = cache.timedEvents(for: day, calendarManager: source, timeZone: newYork) }
+        _ = cache.allDayEvents(for: day, calendarManager: source, timeZone: newYork)
+        #expect(source.timedFetchCount == 1, "the control: one zone, one fetch")
+        #expect(source.allDayFetchCount == 1)
+
+        source.eventsPerFetch = 5
+        let fresh = cache.timedEvents(for: day, calendarManager: source, timeZone: losAngeles)
+        _ = cache.allDayEvents(for: day, calendarManager: source, timeZone: losAngeles)
+
+        #expect(source.timedFetchCount == 2,
+                "a zone change made \(source.timedFetchCount) timed queries, not 2")
+        #expect(source.allDayFetchCount == 2,
+                "a zone change made \(source.allDayFetchCount) all-day queries, not 2")
+        #expect(fresh.count == 5, "the refetch drew \(fresh.count) events; it replayed the old zone's day")
+
+        _ = cache.timedEvents(for: day, calendarManager: source, timeZone: losAngeles)
+        #expect(source.timedFetchCount == 2, "the new zone is cached in its turn")
+    }
+
     /// A different day is a different key. The panel draws one day, but it outlives midnight, and a
     /// cache keyed on nothing would pin yesterday's events on today's canvas forever.
     @Test("A second day is a second query, not the first day's answer")

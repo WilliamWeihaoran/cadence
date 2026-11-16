@@ -429,7 +429,8 @@ struct CadenceCalendarFixtureEventsTests {
         for door in ["timedEvents", "allDayEvents"] {
             let fixtureCall = "CadenceCalendarFixtureEvents.\(door)(for: date)"
             let fixtureIndex = try #require(code.range(of: fixtureCall)?.lowerBound, "no \(door) fixture consult")
-            let signature = "func \(door)(for date: Date, calendarManager: any CalendarEventDaySource)"
+            // Open-ended: [[T-18187]] added a trailing `timeZone:` parameter.
+            let signature = "func \(door)(for date: Date, calendarManager: any CalendarEventDaySource"
             let signatureIndex = try #require(code.range(of: signature)?.lowerBound, "no \(door) signature")
             let guardIndex = try #require(
                 code.range(of: "guard calendarManager.isAuthorized", range: signatureIndex..<code.endIndex)?.lowerBound
