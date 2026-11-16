@@ -23,7 +23,7 @@ struct CadenceWidgetAccentedRenderingTests {
         for path in files {
             let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
             routed += source.components(separatedBy: ".cadenceWidgetCardBackground(").count - 1
-            for match in source.matches(of: #/\.background\s*(\(|\{)\s*([^\n]*)/#) {
+            for match in source.matches(of: #/\.background\s*(\(|\x7B)\s*([^\n]*)/#) {
                 let argument = String(match.2)
                 if argument.hasPrefix("tint.opacity(") { continue }
                 if path == Self.chrome, argument.hasPrefix("Rectangle()") || source[match.range].hasSuffix("{") { continue }
