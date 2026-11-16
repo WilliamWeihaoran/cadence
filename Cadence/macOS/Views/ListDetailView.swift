@@ -88,6 +88,7 @@ private struct ListDetailView: View {
 
     @Environment(ListNavigationManager.self) private var listNavigationManager
     @AppStorage(CadencePreferenceKeys.listDetailDefaultPage) private var defaultPageRawValue = ListDetailPage.tasks.rawValue
+    @Environment(\.cadenceRootRetainedPageScope) private var retainedScope
     @State private var tab: ListDetailPage = .tasks
     @State private var showEdit = false
     @State private var keyMonitor: Any? = nil
@@ -172,6 +173,8 @@ private struct ListDetailView: View {
     }
 
     private func pickTab(_ page: ListDetailPage) {
+        // [[T-18162]]: the Notes tab's open note is retained only across a rebuild in place.
+        if page != tab { retainedScope?.removeValues(keyPrefix: ListNotesView.retainedSelectionKey) }
         tab = page
         CadenceDefaults.store.set(page.rawValue, forKey: tabDefaultsKey)
     }

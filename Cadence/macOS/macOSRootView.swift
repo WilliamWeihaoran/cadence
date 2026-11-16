@@ -59,6 +59,9 @@ struct macOSRootView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var activeModelContext: ModelContext?
     @State private var dataRefreshID = UUID()
+    /// [[T-18162]]: the page values the `.id(dataRefreshID)` rebuild must not reset. Above the
+    /// `.id()`, so the rebuild does not reach it; see `macOSRootRetainedPageState`.
+    @State private var retainedPageState = macOSRootRetainedPageState()
     @State private var mcpRefreshCoordinator = CadenceMCPRefreshCoordinator()
     @State private var pendingAppDataRefresh: DispatchWorkItem?
     @State private var hasPendingExternalDataRefresh = false
@@ -110,6 +113,13 @@ struct macOSRootView: View {
             macOSRootOverlayStack(handleSearchSelection: handleSearchSelection)
                 .id(dataRefreshID)
         }
+        .environment(
+            \.cadenceRootRetainedPageScope,
+            macOSRootRetainedPageScope(
+                store: retainedPageState,
+                scope: macOSRootRetainedPageState.scope(for: selection)
+            )
+        )
         // Shared with both iOS shells since T-153. The banner used to be a `private` view in this
         // file, so the identical silent failure was visible here and invisible on iPhone and iPad.
         .cadenceStartupIssueBanner(PersistenceController.startupIssue)
@@ -200,7 +210,10 @@ struct macOSRootView: View {
             guard let request = viewMenuRoute.request else { return }
             RootCommandHandler.handleViewMenuCommand(request.command, context: makeCommandContext())
         }
-        .onChange(of: selection) { _, newValue in
+        .onChange(of: selection) { oldValue, newValue in
+            // [[T-18162]]: only a rebuild in place keeps a page's values; leaving the page drops
+            // them, so coming back opens it on its defaults as it always did.
+            retainedPageState.removeValues(in: macOSRootRetainedPageState.scope(for: oldValue))
             macOSRootLifecycleSupport.handleSelectionChange(
                 newValue: newValue,
                 columnVisibility: &columnVisibility,
@@ -353,15 +366,22 @@ struct macOSRootView: View {
         HabitNotificationReconcileSupport.scheduleReconcile(in: currentModelContext)
     }
 
-    private func scheduleAppDataRefreshIfPossible() {
+    private func scheduleAppDataRefreshIfPossible(after delay: TimeInterval = 0.2) {
         pendingAppDataRefresh?.cancel()
         let workItem = DispatchWorkItem {
             guard NSApp.isActive else { return }
+            // [[T-18162]]: never rebuild under an open sheet or dialog -- it would dismiss an Edit
+            // List sheet mid-rename, and a dialog holds a model object from the context about to
+            // be retired. Held, not dropped: `hasPendingExternalDataRefresh` stays set.
+            if macOSRootDataRefreshSupport.shouldDeferRefresh(windows: NSApp.windows) {
+                scheduleAppDataRefreshIfPossible(after: macOSRootDataRefreshSupport.sheetDeferralRetryDelay)
+                return
+            }
             refreshAppData()
             pendingAppDataRefresh = nil
         }
         pendingAppDataRefresh = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
     }
 
     /// A `.task` link no longer routes blind. `resolvedDestination(for:modelContext:)` fetches the

@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppKit
 import Foundation
 import SwiftData
 
@@ -46,6 +47,17 @@ enum macOSRootDataRefreshSupport {
         // answers an in-process write: bank, then move on.
         focusManager.releaseIfActiveTaskSettled()
         hoveredTaskManager.clear()
+    }
+
+    /// How long a refresh held behind an open sheet waits before it looks again ([[T-18162]]).
+    static let sheetDeferralRetryDelay: TimeInterval = 1.0
+
+    /// Whether a refresh must wait: some window has a sheet attached ([[T-18162]]). A SwiftUI
+    /// `.sheet`, `.confirmationDialog` or `.alert` on macOS is an AppKit sheet on the window, and
+    /// the rebuild would tear it down -- the Edit List sheet with a half-typed rename, or a delete
+    /// dialog whose pending model object belongs to the context the swap retires.
+    static func shouldDeferRefresh(windows: [NSWindow]) -> Bool {
+        windows.contains { $0.attachedSheet != nil }
     }
 
     /// The same session, pointing at `context`'s copy of its row — or `nil` when there is nothing

@@ -276,9 +276,10 @@ struct CadenceCodexFunctionalParityTests {
         for page in ["DailyNotesPage", "WeeklyNotesPage", "NotepadPage", "MeetingNotesPage"] {
             #expect(view.contains("\(page)(requestedNoteID: $requestedNoteID)"))
         }
-        #expect(view.contains("if !applyRequestedSelection() { openNote(forDateKey: observedDay.todayKey) }"))
-        #expect(view.contains("if !applyRequestedSelection() { openNote(forWeekKey: currentWeekKey) }"))
-        #expect(view.contains("if !applyRequestedSelection() { selectNewestNotepadNote() }"))
+        // [[T-18162]]: the default opens only when the note retained across a refresh is gone.
+        #expect(view.contains("if !applyRequestedSelection(), selectedNote == nil { openNote(forDateKey: observedDay.todayKey) }"))
+        #expect(view.contains("if !applyRequestedSelection(), selectedNote == nil { openNote(forWeekKey: currentWeekKey) }"))
+        #expect(view.contains("if !applyRequestedSelection(), selectedNote == nil { selectNewestNotepadNote() }"))
         #expect(view.components(separatedBy: "NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, notes: notes)").count - 1 == 3)
     }
 

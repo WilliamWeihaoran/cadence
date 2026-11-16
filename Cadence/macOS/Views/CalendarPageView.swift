@@ -39,7 +39,9 @@ struct CalendarPageView: View {
     @AppStorage("calendarRememberedTimelineDateKey") private var anchorDateKey: String = ""
     // Index of the *block* MonthGridView renders, not of a calendar month — the two differ for
     // the days before a month's first Sunday. See `CalendarPageStateSupport.visibleMonthLabel`.
-    @State private var visibleMonthIdx: Int = CalendarPageStateSupport.monthIndexForToday(calendar: .current)
+    // [[T-18162]]: kept across the root's data-refresh rebuild, so an MCP write or a widget tick
+    // no longer scrolls the month grid back to this month. The grid scrolls to it on appear.
+    @RootRetained("calendar.visibleMonthIdx") private var visibleMonthIdx: Int = CalendarPageStateSupport.monthIndexForToday(calendar: .current)
     // The month the month grid is *showing*, reported back from its scroll position — what its
     // cells are tinted against and what the title reads, one value for both. `nil` until the grid
     // has measured itself, where `visibleMonthIdx` is the fallback. See

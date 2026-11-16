@@ -43,7 +43,11 @@ struct ListNotesView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(CalendarManager.self) private var calendarManager
-    @State private var selection: ListNotesSelection?
+    /// [[T-18162]]: kept across the root's data-refresh rebuild, which used to drop the open note.
+    /// The scope is the root page, which is this list; `ListDetailView.pickTab` drops it on a tab
+    /// change so the Notes tab still opens on its first note, as before.
+    @RootRetained(ListNotesView.retainedSelectionKey) private var selection: ListNotesSelection? = nil
+    static let retainedSelectionKey = "listNotes.selection"
     @State private var searchText = ""
     /// Tag ids, not slugs: a rename rewrites the slug and must not let go of the filter ([[T-17014]]).
     @State private var selectedTagFilterIDs: Set<UUID> = []

@@ -80,8 +80,10 @@ struct CadenceUITestSettingsCategoryTests {
     /// that would shadow it is gone.
     @Test func theSettingsPaneSeedsItsSelectionFromTheSelector() throws {
         let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SettingsView.swift"))
-        #expect(source.contains("@State private var selectedCategory: SettingsCategory = SettingsCategory.launchRequested() ?? .navigation"))
-        #expect(CadenceSourceScan.matchCount(#"@State private var selectedCategory: SettingsCategory = \.navigation"#, in: source) == 0)
+        // [[T-18162]]: `@RootRetained`, so the pick survives the root's data-refresh rebuild.
+        // `codeOnly` blanks string literals, so the wrapper's key is not part of the match.
+        #expect(CadenceSourceScan.matchCount(#"@RootRetained\([^)]*\) private var selectedCategory: SettingsCategory = SettingsCategory\.launchRequested\(\) \?\? \.navigation"#, in: source) == 1)
+        #expect(CadenceSourceScan.matchCount(#"private var selectedCategory: SettingsCategory = \.navigation"#, in: source) == 0)
     }
     #endif
 

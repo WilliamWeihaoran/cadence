@@ -29,7 +29,9 @@ struct SettingsView: View {
     /// Navigation unless a seeded launch named a category ([[T-11451]]). The selector is gated on
     /// UI-test mode, so a shipping launch gets the `.navigation` this line always opened on; what
     /// it buys is a window capture of a pane other than the first one, with no pointer.
-    @State private var selectedCategory: SettingsCategory = SettingsCategory.launchRequested() ?? .navigation
+    /// [[T-18162]]: kept across the root's data-refresh rebuild, which used to return Settings to
+    /// Navigation on every MCP write or widget tick.
+    @RootRetained("settings.category") private var selectedCategory: SettingsCategory = SettingsCategory.launchRequested() ?? .navigation
     @State private var pendingDeleteArea: Area?
     @State private var pendingDeleteProject: Project?
     @State private var pendingDeleteContext: Context?

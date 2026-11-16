@@ -123,7 +123,7 @@ struct CadenceCoreNoteLoadFailureTests {
     /// Today panel draws an empty state whose button is its one create.
     @Test func theMacNotepadSurfacesReadWithoutCreating() throws {
         let page = CadenceSourceScan.codeOnly(try sourceFile("Cadence/macOS/Views/NotesView.swift"))
-        #expect(page.contains("if !applyRequestedSelection() { selectNewestNotepadNote() }"))
+        #expect(page.contains("if !applyRequestedSelection(), selectedNote == nil { selectNewestNotepadNote() }"))
         #expect(!page.contains("CadenceCoreNoteSupport.note(for: .notepad"))
         #expect(!page.contains("loadOrCreateNotepad"))
 

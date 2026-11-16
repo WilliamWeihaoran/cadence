@@ -34,7 +34,12 @@ struct NotesView: View {
     }
 
     @Environment(NotesNavigationManager.self) private var notesNavigationManager
-    @State private var page: NotesPage = .daily
+    @Environment(\.cadenceRootRetainedPageScope) private var retainedScope
+    /// [[T-18162]]: the tab, and each tab's open note below, are kept across the root's
+    /// data-refresh rebuild (an MCP write, a widget tick), which used to drop the owner back on
+    /// Today and today's note. Picking another tab still opens it fresh, as before: `show(_:)`.
+    @RootRetained("notes.page") private var page: NotesPage = .daily
+    static let retainedSelectionPrefix = "notes.selected."
     @State private var requestedNoteID: UUID?
 
     enum RequestedSelection {
@@ -78,7 +83,7 @@ struct NotesView: View {
             HStack(spacing: CadenceQuietPillMetrics.clusterSpacing) {
                 ForEach(NotesPage.allCases, id: \.self) { page in
                     CadenceQuietTabButton(title: page.title, isSelected: self.page == page) {
-                        self.page = page
+                        show(page)
                     }
                 }
                 Spacer()
@@ -110,9 +115,18 @@ struct NotesView: View {
         }
     }
 
+    /// A tab change builds the new tab's page from scratch, which is what made it open on its
+    /// default note; with the selection retained, the tab being left would otherwise hand its
+    /// pick back on the next visit. Re-picking the tab already shown keeps its note.
+    private func show(_ newPage: NotesPage) {
+        guard newPage != page else { return }
+        retainedScope?.removeValues(keyPrefix: Self.retainedSelectionPrefix)
+        page = newPage
+    }
+
     private func applyPendingNavigationIfNeeded() {
         guard let request = notesNavigationManager.request else { return }
-        page = request.page
+        show(request.page)
         requestedNoteID = request.noteID ?? request.eventNoteID
         notesNavigationManager.clear()
     }
@@ -123,7 +137,8 @@ private struct DailyNotesPage: View {
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
-    @State private var selectedNoteID: UUID?
+    /// [[T-18162]]: survives the root's data-refresh rebuild; see `NotesView.retainedSelectionPrefix`.
+    @RootRetained(NotesView.retainedSelectionPrefix + "daily") private var selectedNoteID: UUID? = nil
     /// The day the list pins as today ([[T-5012]]). `NotesListVisibility.dailyNotes` keeps the
     /// current day listed even when blank; it was handed the clock in a body whose inputs do not
     /// change at midnight, so the morning after, yesterday stayed pinned and today had no row.
@@ -207,7 +222,9 @@ private struct DailyNotesPage: View {
         }
         .cadenceTracksDayChanges($observedDay)
         .onAppear {
-            if !applyRequestedSelection() { openNote(forDateKey: observedDay.todayKey) }
+            // [[T-18162]]: a retained note that still exists is kept; only an empty or dangling
+            // selection opens today's.
+            if !applyRequestedSelection(), selectedNote == nil { openNote(forDateKey: observedDay.todayKey) }
         }
         // [[T-14583]]: the list pins the observed day, but only a note that EXISTS can be pinned,
         // and `.onAppear` above made today's once. Across midnight the new day had no row and no
@@ -273,7 +290,8 @@ private struct WeeklyNotesPage: View {
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
-    @State private var selectedNoteID: UUID?
+    /// [[T-18162]]: survives the root's data-refresh rebuild; see `NotesView.retainedSelectionPrefix`.
+    @RootRetained(NotesView.retainedSelectionPrefix + "weekly") private var selectedNoteID: UUID? = nil
     /// The day the current week is derived from — `DailyNotesPage.observedDay`'s reason, for the
     /// pinned current week ([[T-5012]]). A week turns over at a day change, so the day observer
     /// is the week observer too.
@@ -362,7 +380,7 @@ private struct WeeklyNotesPage: View {
         }
         .cadenceTracksDayChanges($observedDay)
         .onAppear {
-            if !applyRequestedSelection() { openNote(forWeekKey: currentWeekKey) }
+            if !applyRequestedSelection(), selectedNote == nil { openNote(forWeekKey: currentWeekKey) }
         }
         // [[T-14583]]: `DailyNotesPage`'s reason, one period up -- across a Monday the new week
         // had no note to pin. Made, never selected; on any other day the week's note already
@@ -438,7 +456,8 @@ private struct NotepadPage: View {
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
-    @State private var selectedNoteID: UUID?
+    /// [[T-18162]]: survives the root's data-refresh rebuild; see `NotesView.retainedSelectionPrefix`.
+    @RootRetained(NotesView.retainedSelectionPrefix + "notepad") private var selectedNoteID: UUID? = nil
     /// A refused note ([[T-5301]]), named above the list column.
     @State private var createFailureNotice: String?
 
@@ -521,7 +540,7 @@ private struct NotepadPage: View {
             }
         }
         .onAppear {
-            if !applyRequestedSelection() { selectNewestNotepadNote() }
+            if !applyRequestedSelection(), selectedNote == nil { selectNewestNotepadNote() }
         }
         .onChange(of: requestedNoteID) { _, _ in
             applyRequestedSelection()
@@ -595,7 +614,8 @@ private struct MeetingNotesPage: View {
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
-    @State private var selectedNoteID: UUID?
+    /// [[T-18162]]: survives the root's data-refresh rebuild; see `NotesView.retainedSelectionPrefix`.
+    @RootRetained(NotesView.retainedSelectionPrefix + "meeting") private var selectedNoteID: UUID? = nil
     @State private var commitNotice: String?
 
     /// Filter *and* order both live in `NotesListVisibility` now, beside the other three tabs'
