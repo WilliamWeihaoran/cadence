@@ -198,7 +198,9 @@ struct ListNoteRow: View {
     /// `ContextSettingsRow.commitRename` shape. Static, and the commit a parameter, so the refused
     /// path is reachable from a test; the view has no seam.
     ///
-    /// Only the title is written, as `NoteEditorPane`'s own title field writes it.
+    /// [[T-18095]]: the body's first-line `# H1` is rewritten with the title, as `NoteEditorPane`'s
+    /// own title field does, so the note's next body commit cannot read the old heading back and
+    /// undo the rename. A refused commit puts the body back with the title.
     static func commitRename(
         _ note: Note,
         draft: String,
@@ -211,10 +213,12 @@ struct ListNoteRow: View {
         guard title != note.title else { return .unchanged }
         let previousTitle = note.title
         let previousUpdatedAt = note.updatedAt
-        note.title = title
+        let previousContent = note.content
+        MarkdownNoteTitleSync.rename(note, to: title)
         note.updatedAt = now
         try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
             note.title = previousTitle
+            note.content = previousContent
             note.updatedAt = previousUpdatedAt
         }
         return .saved

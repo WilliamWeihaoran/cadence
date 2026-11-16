@@ -693,12 +693,48 @@ nonisolated enum MarkdownNoteTitleSync {
     /// Only the *first* line is considered. An `# H1` further down the body is a section heading,
     /// not the document's name.
     static func title(from content: String, kind: NoteKind, currentTitle: String) -> String? {
-        guard syncsTitleFromH1(kind) else { return nil }
-        let firstLine = content.prefix(while: { $0 != "\n" })
-        guard firstLine.hasPrefix("# ") else { return nil }
-        let h1 = String(firstLine.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+        guard syncsTitleFromH1(kind), let h1 = firstLineHeading(of: content) else { return nil }
         guard !h1.isEmpty, h1 != currentTitle else { return nil }
         return h1
+    }
+
+    /// The trimmed text of the body's first line when that line is an H1 this rule reads, else
+    /// `nil`. The one spelling of the `# ` test, for reading and for renaming alike.
+    private static func firstLineHeading(of content: String) -> String? {
+        let firstLine = content.prefix(while: { $0 != "\n" })
+        guard firstLine.hasPrefix("# ") else { return nil }
+        return String(firstLine.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// **[[T-18095]]: the other direction.** `content` with its first-line H1 rewritten to `title`,
+    /// or `nil` when there is nothing to rewrite: the kind does not follow its H1, the first line is
+    /// not an H1, or the H1 already says `title`.
+    ///
+    /// A rename made anywhere but the heading (the Mac row's double-click, `NoteEditorPane`'s title
+    /// field) used to write `title` alone, so the body still opened with the old `# Name` and the
+    /// note's next body commit read it back through `apply` — undoing the rename. Rewriting the
+    /// heading keeps the invariant every reader of the rule relies on (title == first H1: the row
+    /// excerpt that skips the heading, the MCP write service that seeds `# title`) instead of
+    /// detaching the title from the heading, which would need a stored flag and leave a note whose
+    /// first line names something else. A body with no H1 has no heading to keep in step and is left
+    /// alone. An empty `title` writes `"# "`, the seed shape this rule already reads as "leave the
+    /// title alone".
+    static func content(_ content: String, renamedTo title: String, kind: NoteKind) -> String? {
+        guard syncsTitleFromH1(kind), let h1 = firstLineHeading(of: content) else { return nil }
+        let name = title.split(whereSeparator: \.isNewline).joined(separator: " ")
+            .trimmingCharacters(in: .whitespaces)
+        guard h1 != name else { return nil }
+        let firstLineEnd = content.firstIndex(of: "\n") ?? content.endIndex
+        return "# " + name + content[firstLineEnd...]
+    }
+
+    /// Renames `note`, keeping its first-line H1 in step (see `content(_:renamedTo:kind:)`). Writes
+    /// the model only; the caller stamps `updatedAt` and commits.
+    static func rename(_ note: Note, to title: String) {
+        note.title = title
+        if let renamed = content(note.content, renamedTo: title, kind: note.kind) {
+            note.content = renamed
+        }
     }
 
     /// Applies the rule to a note. **The one write path** — both platforms' commit paths call this

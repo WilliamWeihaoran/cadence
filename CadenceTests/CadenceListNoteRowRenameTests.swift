@@ -77,6 +77,67 @@ struct CadenceListNoteRowRenameTests {
         #expect(bystander.name == "Home, being typed", "the refused rename discarded unrelated pending work")
     }
 
+    /// **[[T-18095]]: a rename survives the note's next body commit.** A list note's title follows
+    /// its first `# H1`, so a rename that wrote only `title` left `# Groceries` in the body and the
+    /// next commit through the shared path read it back, undoing the rename. The rename now rewrites
+    /// the heading, and the rest of the body is untouched.
+    @Test func aRenameSurvivesTheNextBodyCommit() throws {
+        let (container, context, note) = try savedNote(title: "Groceries")
+        note.content = "# Groceries\n\n- milk"
+        try context.save()
+
+        #expect(try ListNoteRow.commitRename(note, draft: "Weekly shop", in: context) == .saved)
+        #expect(note.content == "# Weekly shop\n\n- milk")
+
+        // The next body edit, through the commit path every iOS editor and the shared support use.
+        CadenceCoreNoteSupport.update(note, content: note.content + "\n- eggs", in: context)
+        try context.save()
+
+        let stored = try #require(try ModelContext(container).fetch(FetchDescriptor<Note>()).first)
+        #expect(stored.title == "Weekly shop", "the next body commit put the old heading back as the title")
+        #expect(stored.content == "# Weekly shop\n\n- milk\n- eggs")
+    }
+
+    /// A refused rename puts the rewritten heading back with the title.
+    @Test func aRefusedRenamePutsTheHeadingBack() throws {
+        let (_, context, note) = try savedNote(title: "Groceries")
+        note.content = "# Groceries\n\n- milk"
+        try context.save()
+
+        #expect(throws: CommitRefused.self) {
+            try ListNoteRow.commitRename(note, draft: "Weekly shop", in: context, commit: { _ in throw CommitRefused() })
+        }
+        #expect(note.content == "# Groceries\n\n- milk")
+    }
+
+    /// The rewrite's edges: only a first-line H1 the read rule would read is rewritten, only for the
+    /// kinds that follow it, and an empty name writes the seed shape the read rule ignores.
+    @Test func theHeadingRewriteTouchesOnlyAHeadingTheTitleFollows() {
+        #expect(MarkdownNoteTitleSync.content("# Old\nbody", renamedTo: " New ", kind: .list) == "# New\nbody")
+        #expect(MarkdownNoteTitleSync.content("# Old", renamedTo: "New", kind: .permanent) == "# New")
+        #expect(MarkdownNoteTitleSync.content("# New\nbody", renamedTo: "New", kind: .list) == nil)
+        #expect(MarkdownNoteTitleSync.content("prose\n# Old", renamedTo: "New", kind: .list) == nil)
+        #expect(MarkdownNoteTitleSync.content("## Old", renamedTo: "New", kind: .list) == nil)
+        #expect(MarkdownNoteTitleSync.content("# Old", renamedTo: "New", kind: .meeting) == nil)
+        #expect(MarkdownNoteTitleSync.content("# Old\n", renamedTo: "", kind: .list) == "# \n")
+        #expect(MarkdownNoteTitleSync.title(from: "# \n", kind: .list, currentTitle: "") == nil)
+    }
+
+    /// `NoteEditorPane`'s title field renames through the same helper, after landing any armed body
+    /// commit (which holds the old heading). The view has no seam, so this is pinned from source.
+    @Test func theEditorTitleFieldRenamesTheHeadingToo() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = CadenceSourceScan.codeOnly(try String(
+            contentsOf: root.appendingPathComponent("Cadence/macOS/Views/NoteEditorPane.swift"),
+            encoding: .utf8
+        ))
+        let binding = try #require(CadenceSourceScan.declarationBody("private var titleBinding: Binding<String>", in: source))
+        #expect(!binding.contains("note.title = $0"))
+        let flush = try #require(binding.range(of: "if pendingFallbackContentSyncTask != nil { flushPendingEditorContent() }"))
+        let rename = try #require(binding.range(of: "MarkdownNoteTitleSync.rename(note, to: $0)"))
+        #expect(flush.lowerBound < rename.lowerBound)
+    }
+
     /// The view: the field binds the draft, never the model; both ways out reach `finishRename`;
     /// Escape cancels without a write; the draft is seeded only when a rename starts.
     @Test func theRowEditsADraftAndCommitsThroughTheOneWrite() throws {

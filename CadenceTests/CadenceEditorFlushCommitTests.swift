@@ -127,11 +127,14 @@ struct CadenceEditorFlushCommitTests {
         #expect(CadenceSourceScan.codeOnly(source).contains(".onSubmit { flushPendingEditorContent() }"))
     }
 
-    /// Not per keystroke: the title binding's setter writes the model and does not commit.
+    /// Not per keystroke: the title binding's setter writes the model and does not commit. Since
+    /// [[T-18095]] it writes through `MarkdownNoteTitleSync.rename`, which keeps the body's `# H1`
+    /// in step; the only flush it reaches is an already-armed body commit, once.
     @Test func theTitleBindingDoesNotCommitPerKeystroke() throws {
         let source = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/NoteEditorPane.swift")
         let binding = try #require(CadenceSourceScan.declarationBody("private var titleBinding", in: source))
-        #expect(binding.contains("note.title = $0"))
+        #expect(binding.contains("MarkdownNoteTitleSync.rename(note, to: $0)"))
+        #expect(binding.contains("if pendingFallbackContentSyncTask != nil { flushPendingEditorContent() }"))
         #expect(!binding.contains("commitTypedContent"))
         #expect(!binding.contains("save()"))
     }

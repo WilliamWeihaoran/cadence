@@ -76,7 +76,11 @@ struct NoteEditorPane: View {
         Binding(
             get: { note.title },
             set: {
-                note.title = $0
+                // [[T-18095]]: an armed body commit holds the old `# H1`; landing it after the
+                // rename would read the old name back. Land it first, then rename body and title
+                // together — the buffer adopts the rewritten heading through `adoptStoreContentIfIdle`.
+                if pendingFallbackContentSyncTask != nil { flushPendingEditorContent() }
+                MarkdownNoteTitleSync.rename(note, to: $0)
                 note.updatedAt = Date()
                 // T-7832: typed straight into the model, so a quit before Return or blur commits it.
                 MarkdownEditorTerminationFlush.shared.registerCommit(titleTerminationFlushID, in: modelContext)
