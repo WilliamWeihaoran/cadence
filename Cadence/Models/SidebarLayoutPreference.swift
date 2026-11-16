@@ -19,8 +19,9 @@ import Foundation
 /// lists, and every reader would have to sort them. These are the same comma-separated
 /// `CadenceFeatureDestination` raw values the device-local `sidebarTabOrder` / `sidebarHiddenTabs`
 /// preferences already hold, so the parse is one shared spelling
-/// (`CadenceSidebarLayoutPreferenceStore`) and the legacy local values remain readable as the
-/// fallback for a device that has never synced one of these rows.
+/// (`CadenceSidebarLayoutPreferenceStore`). The legacy local values are no longer a fallback for a
+/// device with no row: since [[T-18183]] they are purged at launch, and a store with no row draws
+/// the declared layout on every platform.
 ///
 /// ## What a destination missing from `orderRaw` means
 ///

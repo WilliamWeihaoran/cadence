@@ -10,12 +10,13 @@ import Foundation
 /// Keys that only one file reads are deliberately not here — a constant for a single call site
 /// adds indirection without removing a way to be wrong.
 enum CadencePreferenceKeys {
-    /// Comma-separated `SidebarStaticDestination` raw values the user has hidden.
-    /// Read by the sidebar, the Settings sidebar section, and global search (which must not offer
-    /// a destination the sidebar is hiding).
+    /// RETIRED ([[T-18183]]): the pre-[[T-1274]] device-local hidden set. Nothing reads it; it is
+    /// kept as a constant only so launch and the reset can purge it
+    /// (`CadenceSidebarLayoutPreferenceStore.purgeRetiredDeviceLocalKeys`) and the UI-test reset can
+    /// clear it.
     static let sidebarHiddenTabs = "sidebarHiddenTabs"
 
-    /// Comma-separated `SidebarStaticDestination` raw values in the user's chosen order.
+    /// RETIRED ([[T-18183]]): the pre-[[T-1274]] device-local order. Purged, never read.
     static let sidebarTabOrder = "sidebarTabOrder"
 
     /// Per-destination colour overrides, encoded by `SidebarStaticDestination`.

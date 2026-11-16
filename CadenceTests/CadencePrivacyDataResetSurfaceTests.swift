@@ -321,6 +321,21 @@ struct CadencePrivacyDataResetSurfaceTests {
         #expect(phaseOne.upperBound <= clear.lowerBound)
     }
 
+    /// **[[T-18183]]: the reset takes the retired device-local sidebar keys.** Phase one deletes
+    /// the synced `SidebarLayoutPreference` row; a Mac still holding `sidebarTabOrder` /
+    /// `sidebarHiddenTabs` from before [[T-1274]] must not keep them past a reset that said it
+    /// deleted everything. In phase two, after the only `try`.
+    @Test func theResetPurgesTheRetiredSidebarKeysAfterTheStoreDeletion() throws {
+        let live = try strippingComments(sourceFile("Cadence/Services/CadencePrivacyDataResetService.swift"))
+        let body = try #require(CadenceSourceScan.functionBody(named: "deleteCadenceDataAndLocalArtifacts", in: live))
+        let phaseOne = try #require(body.range(of: "try await deleteCadenceData(in: modelContext)"))
+        let purge = try #require(
+            body.range(of: "CadenceSidebarLayoutPreferenceStore.purgeRetiredDeviceLocalKeys()"),
+            "the reset no longer purges the retired sidebar layout keys (T-18183)"
+        )
+        #expect(phaseOne.upperBound <= purge.lowerBound)
+    }
+
     /// **[[T-8736]]: the reset signs the Apple account out, on both platforms.** The sign-out was
     /// a line at the Mac's call site while `AppleAccountManager` was `#if os(macOS)`; it is a step
     /// of the shared sequence now, so the iOS Account section's Delete Account route clears the

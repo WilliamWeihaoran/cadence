@@ -11,12 +11,6 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @AppStorage(NotificationManager.notificationsEnabledDefaultsKey) private var notificationsEnabled = false
     @AppStorage(CadencePreferenceKeys.listDetailDefaultPage) private var listDetailDefaultPage = ListDetailPage.tasks.rawValue
-    /// The device-local values the synced layout replaced (T-1274), read only as the fallback for
-    /// a store with no synced row yet. The first edit here writes the whole resolved layout into
-    /// the row, so a Mac customised before the change carries its layout across rather than
-    /// resetting to the declared one.
-    @AppStorage(CadencePreferenceKeys.sidebarHiddenTabs) private var sidebarHiddenTabsRaw = ""
-    @AppStorage(CadencePreferenceKeys.sidebarTabOrder) private var sidebarTabOrderRaw = ""
     /// Still device-local: T-1274 synced the rows and their order, which is what the owner asked
     /// for. Colour is a separate preference and stayed where it was.
     @AppStorage(CadencePreferenceKeys.sidebarTabColors) private var sidebarTabColorsRaw = ""
@@ -275,15 +269,11 @@ struct SettingsView: View {
         }
     }
 
-    /// The layout the sidebar is drawing: the synced row if there is one, the device-local values
-    /// otherwise. Both this screen and `SidebarView` read it through the same helper, so the list
+    /// The layout the sidebar is drawing: the synced row if there is one, the declared layout
+    /// otherwise -- never the retired device-local keys ([[T-18183]]). Both this screen and `SidebarView` read it through the same helper, so the list
     /// here is the column's own order rather than a second guess at it.
     private var sidebarLayout: CadenceSidebarLayoutPreferenceStore.Layout {
-        CadenceSidebarLayoutPreferenceStore.layout(
-            from: sidebarLayoutPreferences,
-            legacyOrderRaw: sidebarTabOrderRaw,
-            legacyHiddenRaw: sidebarHiddenTabsRaw
-        )
+        CadenceSidebarLayoutPreferenceStore.layout(from: sidebarLayoutPreferences)
     }
 
     private var hiddenTabs: Set<SidebarStaticDestination> {

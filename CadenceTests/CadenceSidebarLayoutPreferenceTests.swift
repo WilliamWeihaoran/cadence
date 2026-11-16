@@ -67,28 +67,80 @@ struct CadenceSidebarLayoutPreferenceTests {
         #expect(CadenceSidebarLayoutPreferenceStore.current(from: [second, first])?.id == winner.id)
     }
 
-    // MARK: - The device-local fallback
+    // MARK: - No device-local fallback (T-18183)
 
-    /// The Mac that has been customised for months must not reset itself the day the layout became
-    /// synced. With no row in the store the device-local preference is what is drawn; the first
-    /// edit writes a row, and from then on the local values are not consulted.
-    @Test func theDeviceLocalPreferenceIsReadOnlyUntilASyncedRowExists() {
-        let fallback = CadenceSidebarLayoutPreferenceStore.layout(
-            from: [],
-            legacyOrderRaw: "calendar,today",
-            legacyHiddenRaw: "allTasks"
-        )
-        #expect(fallback.order == [.calendar, .today])
-        #expect(fallback.hidden == [.allTasks])
+    /// **With no synced row, every platform draws the declared layout** ([[T-18183]], under
+    /// [[T-8201]]). The Mac used to fall back to its retired `sidebarTabOrder` /
+    /// `sidebarHiddenTabs` keys here while iOS drew the default, so one "synced" layout read two
+    /// ways; after Delete Account & Data the Mac resurrected its pre-[[T-1274]] layout and its first
+    /// edit pushed it to every device. The reader takes no legacy input now, so this pins the
+    /// answer a store with no row gets, and that a synced row is read as written.
+    @Test func withNoSyncedRowTheLayoutIsTheDeclaredOne() {
+        #expect(CadenceSidebarLayoutPreferenceStore.layout(from: []) == .declared)
 
         let synced = SidebarLayoutPreference(orderRaw: "notes", hiddenRaw: "focus")
-        let resolved = CadenceSidebarLayoutPreferenceStore.layout(
-            from: [synced],
-            legacyOrderRaw: "calendar,today",
-            legacyHiddenRaw: "allTasks"
-        )
+        let resolved = CadenceSidebarLayoutPreferenceStore.layout(from: [synced])
         #expect(resolved.order == [.notes])
-        #expect(resolved.hidden == [.focus], "the local values outranked the synced row")
+        #expect(resolved.hidden == [.focus])
+    }
+
+    /// The launch and reset purge: both retired keys go, whatever else is in the suite stays, and a
+    /// second run finds nothing. Driven over a temporary suite, never the app's own.
+    @Test func purgingTheRetiredDeviceLocalKeysRemovesBothAndOnlyThem() throws {
+        try withTemporaryDefaults("CadenceSidebarLayoutPreferenceTests.purge") { defaults in
+            defaults.set("calendar,today", forKey: CadencePreferenceKeys.sidebarTabOrder)
+            defaults.set("focus", forKey: CadencePreferenceKeys.sidebarHiddenTabs)
+            defaults.set("{}", forKey: CadencePreferenceKeys.sidebarTabColors)
+
+            let removed = CadenceSidebarLayoutPreferenceStore.purgeRetiredDeviceLocalKeys(in: defaults)
+
+            #expect(Set(removed) == [CadencePreferenceKeys.sidebarTabOrder, CadencePreferenceKeys.sidebarHiddenTabs])
+            #expect(defaults.object(forKey: CadencePreferenceKeys.sidebarTabOrder) == nil,
+                    "the retired order survived the purge (T-18183)")
+            #expect(defaults.object(forKey: CadencePreferenceKeys.sidebarHiddenTabs) == nil,
+                    "the retired hidden set survived the purge (T-18183)")
+            #expect(defaults.string(forKey: CadencePreferenceKeys.sidebarTabColors) == "{}",
+                    "the purge took the colour overrides, which are a live device-local preference")
+            #expect(CadenceSidebarLayoutPreferenceStore.purgeRetiredDeviceLocalKeys(in: defaults).isEmpty)
+        }
+    }
+
+    /// Launch runs the purge, so a Mac that has not relaunched since the reset still loses them.
+    @Test func launchPurgesTheRetiredDeviceLocalKeys() throws {
+        let app = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/CadenceApp.swift"))
+        let initBody = try #require(CadenceSourceScan.declarationBody("init()", in: app))
+        #expect(
+            initBody.contains("CadenceSidebarLayoutPreferenceStore.purgeRetiredDeviceLocalKeys()"),
+            "launch no longer purges the retired sidebar keys (T-18183)"
+        )
+    }
+
+    /// **Nothing in the app reads the retired keys** ([[T-18183]]). The parameters that carried
+    /// them are gone, so a reader would have to be a new `@AppStorage` -- this census is what
+    /// catches it. The only sites left are the declaration, the purge list and the UI-test reset.
+    @Test func nothingInTheAppReadsTheRetiredSidebarKeys() throws {
+        let allowed: Set<String> = [
+            "Cadence/Shared/CadencePreferenceKeys.swift",
+            "Cadence/Shared/CadenceSidebarLayoutPreferenceStore.swift",
+            "Cadence/Services/CadenceUITestSupport.swift",
+        ]
+        let root = CadenceSourceScan.repositoryRoot()
+        let base = root.appendingPathComponent("Cadence")
+        let enumerator = try #require(FileManager.default.enumerator(at: base, includingPropertiesForKeys: nil))
+        var scanned = 0
+        var offenders: [String] = []
+        for case let url as URL in enumerator where url.pathExtension == "swift" {
+            scanned += 1
+            let relative = "Cadence/" + url.path.dropFirst(base.path.count + 1)
+            let code = CadenceSourceScan.strippingComments(try String(contentsOf: url, encoding: .utf8))
+            let names = code.contains("CadencePreferenceKeys.sidebarTabOrder")
+                || code.contains("CadencePreferenceKeys.sidebarHiddenTabs")
+                || code.contains("\"sidebarTabOrder\"")
+                || code.contains("\"sidebarHiddenTabs\"")
+            if names && !allowed.contains(relative) { offenders.append(relative) }
+        }
+        #expect(scanned > 100, "the census walked too few files to mean anything")
+        #expect(offenders.isEmpty, "a file reads the retired sidebar keys again: \(offenders) (T-18183)")
     }
 
     // MARK: - Visibility
@@ -309,13 +361,9 @@ struct CadenceSidebarLayoutPreferenceTests {
 
         let stored = try ModelContext(container).fetch(FetchDescriptor<SidebarLayoutPreference>())
         #expect(stored.count == 1)
-        let drawn = CadenceSidebarLayoutPreferenceStore.layout(
-            from: stored,
-            legacyOrderRaw: "calendar,notes",
-            legacyHiddenRaw: "today"
-        )
+        let drawn = CadenceSidebarLayoutPreferenceStore.layout(from: stored)
         #expect(drawn.order == [.calendar, .today])
-        #expect(drawn.hidden == [.allTasks], "the device-local fallback outranked the row this device wrote")
+        #expect(drawn.hidden == [.allTasks], "the row this device wrote was not what it drew")
     }
 
     /// **And what happens on the day the schema is finally deployed.**
@@ -344,11 +392,7 @@ struct CadenceSidebarLayoutPreferenceTests {
 
         let arrived = try context.fetch(FetchDescriptor<SidebarLayoutPreference>())
         #expect(arrived.count == 2)
-        let resolved = CadenceSidebarLayoutPreferenceStore.layout(
-            from: arrived,
-            legacyOrderRaw: "calendar",
-            legacyHiddenRaw: "focus"
-        )
+        let resolved = CadenceSidebarLayoutPreferenceStore.layout(from: arrived)
         #expect(resolved.order == [.notes, .today], "the older row won")
         #expect(resolved.hidden == [.allTasks])
 

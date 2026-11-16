@@ -71,28 +71,51 @@ enum CadenceSidebarLayoutPreferenceStore {
         }
     }
 
-    /// The layout to draw.
+    /// The layout to draw: the synced row, or the declared default when there is none.
     ///
-    /// `legacy*` are the device-local `CadencePreferenceKeys.sidebarTabOrder` /
-    /// `sidebarHiddenTabs` values this preference replaced. They are the fallback for a store that
-    /// holds no synced row yet, so the Mac that has been customised for months does not reset
-    /// itself the day the layout became synced; the first edit writes a row and the local values
-    /// stop being consulted.
-    static func layout(
-        from records: [SidebarLayoutPreference],
-        legacyOrderRaw: String = "",
-        legacyHiddenRaw: String = ""
-    ) -> Layout {
-        guard let record = current(from: records) else {
-            return Layout(
-                order: destinations(fromRaw: legacyOrderRaw),
-                hidden: Set(destinations(fromRaw: legacyHiddenRaw))
-            )
-        }
+    /// **There is no device-local fallback, on either platform** ([[T-18183]], under [[T-8201]]).
+    /// The Mac used to pass its retired `sidebarTabOrder` / `sidebarHiddenTabs` values here, to be
+    /// drawn while no row existed; iOS passed nothing. So with no row the two platforms drew two
+    /// different "synced" layouts, and after Delete Account & Data -- which deletes the row on
+    /// every device -- the Mac resurrected whatever it held before [[T-1274]] and its first
+    /// Settings > Sidebar edit seeded a new row from it, pushing that old layout to every device.
+    /// The keys are now purged at launch and by the reset (`purgeRetiredDeviceLocalKeys`), and
+    /// both platforms read this one answer.
+    static func layout(from records: [SidebarLayoutPreference]) -> Layout {
+        guard let record = current(from: records) else { return .declared }
         return Layout(
             order: destinations(fromRaw: record.orderRaw),
             hidden: Set(destinations(fromRaw: record.hiddenRaw))
         )
+    }
+
+    // MARK: - Retired device-local keys
+
+    /// The pre-[[T-1274]] device-local layout keys. Nothing reads them since [[T-18183]].
+    static let retiredDeviceLocalKeys = [
+        CadencePreferenceKeys.sidebarTabOrder,
+        CadencePreferenceKeys.sidebarHiddenTabs,
+    ]
+
+    /// Removes the retired keys and reports which ones were present.
+    ///
+    /// **Why a purge and not a migration that seeds a synced row from them** ([[T-18183]]): the
+    /// launch that would seed runs before CloudKit's first import settles, so "no row in the store"
+    /// at that moment does not mean "no row in the account". A row seeded then is stamped `now`,
+    /// and newest-`updatedAt` wins (`current(from:)`), so it would overwrite the layout every other
+    /// device already agreed on -- the exact cross-device push the ticket is about. Dropping the
+    /// keys lands this Mac on what iOS has drawn all along: the synced row if one exists, the
+    /// declared default otherwise. The cost is bounded to one Mac whose owner customised the
+    /// sidebar before 2026-09-18 and never touched Settings > Sidebar since, and is one edit to
+    /// redo. Idempotent, so it is safe on every cold launch; called from `CadenceApp.init` and
+    /// from the reset's phase two.
+    @discardableResult
+    static func purgeRetiredDeviceLocalKeys(in defaults: UserDefaults = CadenceDefaults.store) -> [String] {
+        let present = retiredDeviceLocalKeys.filter { defaults.object(forKey: $0) != nil }
+        for key in present {
+            defaults.removeObject(forKey: key)
+        }
+        return present
     }
 
     // MARK: - Editing
@@ -200,8 +223,7 @@ enum CadenceSidebarLayoutPreferenceStore {
 
         guard let record = current(from: records) else {
             // Seeded with the **whole** layout, which is why callers pass both halves: the first
-            // edit on a Mac that has been customised for months must carry the device-local order
-            // and hidden set into the synced row, not replace them with one toggle.
+            // edit writes the order and the hidden set the screen is drawing, not one toggle alone.
             let created = SidebarLayoutPreference(orderRaw: orderRaw, hiddenRaw: hiddenRaw, updatedAt: now)
             modelContext.insert(created)
             try CadencePendingChangePersistence.commitInsert(of: created, in: modelContext, commit: commit)

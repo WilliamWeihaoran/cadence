@@ -127,6 +127,12 @@ struct CadenceApp: App {
         // or the Mac's `calendarZoomLevel` only while it is unset — see
         // `CadenceCalendarPreferences`.
         CadenceCalendarPreferences.migrateLegacyKeys()
+        // [[T-18183]]: the Mac's pre-[[T-1274]] device-local sidebar layout keys, which made it
+        // draw a different layout from iOS whenever no synced row existed. Purged, not migrated
+        // into a row: this runs before CloudKit's first import, so a row seeded here would be the
+        // newest and overwrite the one every other device already agreed on. Idempotent; see
+        // `CadenceSidebarLayoutPreferenceStore.purgeRetiredDeviceLocalKeys`.
+        CadenceSidebarLayoutPreferenceStore.purgeRetiredDeviceLocalKeys()
         // The same shape as the line above, one layer further out: a retired feature's leftovers
         // cleared on every cold launch, idempotently. The difference is where they live — these
         // are not this app's `UserDefaults` but the *operating system's* pending-notification

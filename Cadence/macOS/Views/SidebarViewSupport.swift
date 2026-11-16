@@ -79,7 +79,7 @@ extension SidebarStaticDestination {
     // the order is a synced `SidebarLayoutPreference`, and the one parse is
     // `CadenceSidebarLayoutPreferenceStore`'s — which deliberately does *not* fill the gaps from
     // `defaultOrder`, because a defaults-filled order silently reorders a group nobody customised.
-    // The old preference is still read, once, as this device's fallback until a synced row exists.
+    // The old preference is no longer read at all; launch purges it ([[T-18183]]).
 
     /// Delegates to `CadenceSidebarTint`, which parses the same string keyed by
     /// `CadenceFeatureDestination` raw values. The two enums share raw values by construction, so

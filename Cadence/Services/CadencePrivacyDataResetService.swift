@@ -339,6 +339,10 @@ enum PrivacyDataResetService {
         // [[T-18182]]: the synced template row went in phase one; its device-local mirror, which
         // every template surface reads, goes here, or the next edit republishes the old set.
         clearNoteTemplateOverrides()
+        // [[T-18183]]: the retired device-local sidebar layout keys. Launch purges them too, but a
+        // Mac that never relaunched since an older build still holds them, and the synced row went
+        // in phase one -- so the reset must not leave a pre-reset layout behind on this device.
+        CadenceSidebarLayoutPreferenceStore.purgeRetiredDeviceLocalKeys()
         // The pending restore and the failed-restore record are cleared inside the sweep's own
         // default step, `StoreBackupManager.deleteAllBackupsForDataReset`, before it deletes: the
         // plain `deleteAllBackups` spares the backup either names ([[T-3116]] (1)), so a reset that

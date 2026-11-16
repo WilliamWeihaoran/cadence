@@ -28,10 +28,6 @@ struct SidebarView: View {
     /// The synced layout (T-1274). One row for the whole account; `@Query` rather than a fetch so
     /// a change made on the iPad redraws this column without anything here asking.
     @Query private var sidebarLayoutPreferences: [SidebarLayoutPreference]
-    /// The device-local values this preference replaced, read only as the fallback for a store that
-    /// holds no synced row yet — see `CadenceSidebarLayoutPreferenceStore.layout(from:)`.
-    @AppStorage(CadencePreferenceKeys.sidebarHiddenTabs) private var sidebarHiddenTabsRaw = ""
-    @AppStorage(CadencePreferenceKeys.sidebarTabOrder) private var sidebarTabOrderRaw = ""
     /// Still device-local, deliberately: T-1274 synced *which rows and in what order*, which is
     /// what the owner asked for. Colour is a separate preference and stayed where it was.
     @AppStorage(CadencePreferenceKeys.sidebarTabColors) private var sidebarTabColorsRaw = ""
@@ -280,18 +276,15 @@ struct SidebarView: View {
 
     // MARK: - Tab visibility / order
 
-    /// The user's layout, synced, with the device-local preference as the fallback.
+    /// The user's layout, synced, or the declared one when no row exists -- the iPad's answer too
+    /// ([[T-18183]]: the retired device-local keys are no longer a fallback).
     ///
     /// What it carries is **only what the user actually dragged or hid**, never a defaults-filled
     /// sequence: a defaults-filled order would silently reorder a group nobody has customised —
     /// Focus climbed above the then-last two nav rows on a fresh install the one time that was
     /// tried.
     var sidebarLayout: CadenceSidebarLayoutPreferenceStore.Layout {
-        CadenceSidebarLayoutPreferenceStore.layout(
-            from: sidebarLayoutPreferences,
-            legacyOrderRaw: sidebarTabOrderRaw,
-            legacyHiddenRaw: sidebarHiddenTabsRaw
-        )
+        CadenceSidebarLayoutPreferenceStore.layout(from: sidebarLayoutPreferences)
     }
 
     /// Every row this column draws, top to bottom, with the user's order and hidden set applied.
