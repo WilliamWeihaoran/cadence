@@ -106,4 +106,18 @@ enum CadencePreferenceKeys {
     /// iOS does not have. **Not an `@AppStorage`** — nothing renders this value, and a view that
     /// re-rendered on every tick of the clock it stores would be the opposite of what it is for.
     static let iosFocusSession = "ios.focus.session"
+
+    // MARK: - Mac window chrome ([[T-18163]])
+
+    /// Whether the user has hidden the Mac's sidebar (Cmd+O, View > Toggle Sidebar, the corner
+    /// button). The Mac half of iPad's `ios.sidebar.collapsed`: one app on two platforms keeps the
+    /// same fold choice across a relaunch. **Only a user toggle writes it** --
+    /// `macOSRootLifecycleSupport.toggleSidebar` -- never Focus's own auto-hide, which would
+    /// otherwise relaunch into a hidden sidebar with no Focus page to explain it. Read by the root
+    /// view at launch and cleared by the UI-test reset, the second reader that puts it here.
+    static let macSidebarHidden = "macos.sidebar.hidden"
+
+    /// Whether the Mac's Cmd+\ timeline panel is open. Every writer is a user action (the key,
+    /// View > Toggle Timeline, the pane's close button), so the root view stores it directly.
+    static let macTimelinePanelShown = "macos.timelinePanel.shown"
 }

@@ -100,14 +100,29 @@ enum macOSRootLifecycleSupport {
 
     /// The user's Cmd+O / corner toggle. Whatever was hidden, the user owns the sidebar now, so a
     /// later page change leaves it where they put it.
+    ///
+    /// [[T-18163]]: and a relaunch does too. `persistedSidebarHidden` is the root view's
+    /// `@AppStorage(CadencePreferenceKeys.macSidebarHidden)`, written HERE and nowhere else in this
+    /// type: Focus's hide (`hideSidebarForFocus`) and its undo (`handleSelectionChange`) leave it
+    /// alone, so quitting mid-Focus does not relaunch into a sidebar hidden for no visible reason.
     static func toggleSidebar(
         columnVisibility: inout NavigationSplitViewVisibility,
-        focusHidSidebar: inout Bool
+        focusHidSidebar: inout Bool,
+        persistedSidebarHidden: inout Bool
     ) {
         focusHidSidebar = false
         withAnimation(.easeInOut(duration: 0.22)) {
             columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
         }
+        persistedSidebarHidden = columnVisibility == .detailOnly
+    }
+
+    /// [[T-18163]]: the visibility a new window opens with -- the user's last own toggle, the way
+    /// iPad's `ios.sidebar.collapsed` restores its fold.
+    static func launchColumnVisibility(
+        store: UserDefaults = CadenceDefaults.store
+    ) -> NavigationSplitViewVisibility {
+        store.bool(forKey: CadencePreferenceKeys.macSidebarHidden) ? .detailOnly : .all
     }
 
     /// A sidebar the user had already hidden stays theirs: Focus hiding it again changes nothing,

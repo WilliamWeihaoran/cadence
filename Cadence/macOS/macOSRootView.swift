@@ -37,7 +37,9 @@ extension SidebarItem {
 
 struct macOSRootView: View {
     @State private var selection: SidebarItem? = SidebarItem.launchSelection()
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    /// [[T-18163]]: seeded from the user's last own toggle, which `persistedSidebarHidden` keeps.
+    @State private var columnVisibility: NavigationSplitViewVisibility = macOSRootLifecycleSupport.launchColumnVisibility()
+    @AppStorage(CadencePreferenceKeys.macSidebarHidden) private var persistedSidebarHidden = false
     /// [[T-14432]]: whether the standing hide is Focus's own, so leaving Focus undoes only that.
     @State private var focusHidSidebar = false
     @Environment(\.scenePhase) private var scenePhase
@@ -61,7 +63,9 @@ struct macOSRootView: View {
     @State private var pendingAppDataRefresh: DispatchWorkItem?
     @State private var hasPendingExternalDataRefresh = false
     @State private var keyMonitor: Any? = nil
-    @State private var showTimelineSidebar = false
+    /// [[T-18163]]: remembered across relaunch -- every writer is the user's own Cmd+\, menu item
+    /// or close button.
+    @AppStorage(CadencePreferenceKeys.macTimelinePanelShown) private var showTimelineSidebar = false
     private let hoveredTaskManager = HoveredTaskManager.shared
     private let hoveredEditableManager = HoveredEditableManager.shared
     private let hoveredKanbanColumnManager = HoveredKanbanColumnManager.shared
@@ -276,7 +280,8 @@ struct macOSRootView: View {
     private func toggleSidebarVisibility() {
         macOSRootLifecycleSupport.toggleSidebar(
             columnVisibility: &columnVisibility,
-            focusHidSidebar: &focusHidSidebar
+            focusHidSidebar: &focusHidSidebar,
+            persistedSidebarHidden: &persistedSidebarHidden
         )
     }
 

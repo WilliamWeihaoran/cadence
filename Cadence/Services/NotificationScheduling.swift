@@ -221,6 +221,51 @@ nonisolated struct NotificationReconcileDiff: Equatable {
         .sorted()
     }
 
+    /// **[[T-18160]].** The already-DELIVERED task reminders of OPEN tasks whose schedule no longer
+    /// says what the banner says: the due date was moved off the day it fired for, or cleared; the
+    /// do time was moved to another day or minute, or unscheduled.
+    ///
+    /// The settled-task rule above cannot see these -- the task is still open -- and nothing else
+    /// would ever take them down: the next fire replaces a banner under the same identifier only
+    /// when there IS a next fire, so a cleared date left "Due today" in Notification Center for
+    /// good. Each delivery carries the instant it was scheduled to describe
+    /// (`CadenceDeliveredReminder.describedInstant`), and it is compared with what the planner
+    /// would schedule for the task now:
+    ///
+    /// - `task-due-` stays while the task's due date is that instant's DAY. Only the day: the due
+    ///   reminder's hour is a Settings preference, and changing it does not make a fired "Due
+    ///   today" untrue.
+    /// - `task-start-` stays while the task's do date and start minute resolve to that same
+    ///   instant, to the minute -- set the way `TaskNotificationPlanner.startNotification` sets
+    ///   it, so a start inside a DST gap matches the 03:00 it was actually scheduled at.
+    ///
+    /// **Only tasks the pass holds.** An absent task is left alone for [[T-3046]]'s mid-import
+    /// reason, exactly as above; a settled task is the rule above's to withdraw; a habit's or
+    /// another app's identifier names no task. A renamed task's banner keeps its old title and is
+    /// NOT withdrawn: the title is not part of the schedule, and taking down a still-true "Due
+    /// today" to correct a name would lose the reminder itself.
+    static func staleDeliveredIdentifiersToRemove(
+        delivered: [CadenceDeliveredReminder],
+        tasks: [AppTask],
+        calendar: Calendar = .current
+    ) -> [String] {
+        let tasksByID = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return delivered.filter { reminder in
+            guard let taskID = NotificationIdentifiers.taskID(fromIdentifier: reminder.identifier),
+                  let task = tasksByID[taskID],
+                  !task.isDone, !task.isCancelled else { return false }
+            if reminder.identifier == NotificationIdentifiers.taskDue(taskID: taskID) {
+                return !TaskNotificationPlanner.dueDay(of: task, isDayOf: reminder.describedInstant, calendar: calendar)
+            }
+            if reminder.identifier == NotificationIdentifiers.taskStart(taskID: taskID) {
+                return !TaskNotificationPlanner.start(of: task, isAt: reminder.describedInstant, calendar: calendar)
+            }
+            return false
+        }
+        .map(\.identifier)
+        .sorted()
+    }
+
     /// **[[T-15486]].** The tasks a reconcile may treat as DELETED: present in the previous
     /// complete read of this same store and absent from this one.
     ///
@@ -250,6 +295,14 @@ nonisolated struct NotificationReconcileDiff: Equatable {
         guard let previous, let current, previous.storeFileIdentity == current.storeFileIdentity else { return [] }
         return previous.taskIDs.subtracting(current.taskIDs)
     }
+}
+
+/// **[[T-18160]].** One reminder Notification Center is showing: its identifier, and the instant
+/// it was scheduled to describe -- the calendar trigger's own date, which a late delivery (a Mac
+/// asleep at the fire time) does not move. `NotificationManager.describedInstant` builds it.
+nonisolated struct CadenceDeliveredReminder: Equatable, Sendable {
+    let identifier: String
+    let describedInstant: Date
 }
 
 /// **[[T-15486]].** Evidence that a reconcile's `tasks` is EVERY task in one store: an unfiltered
@@ -427,6 +480,29 @@ nonisolated enum TaskNotificationPlanner {
             body: "Due today",
             fireDate: fireDate
         )
+    }
+}
+
+nonisolated extension TaskNotificationPlanner {
+    /// [[T-18160]]: whether a fired due reminder's day is still the task's due date.
+    static func dueDay(of task: AppTask, isDayOf instant: Date, calendar: Calendar = .current) -> Bool {
+        guard !task.dueDate.isEmpty,
+              let baseDate = DateFormatters.date(from: task.dueDate, in: calendar) else { return false }
+        return calendar.isDate(instant, inSameDayAs: baseDate)
+    }
+
+    /// [[T-18160]]: whether a fired start reminder's instant is still the task's do date and start
+    /// minute, resolved exactly as `startNotification` resolves them.
+    static func start(of task: AppTask, isAt instant: Date, calendar: Calendar = .current) -> Bool {
+        guard !task.scheduledDate.isEmpty, task.scheduledStartMin >= 0,
+              let baseDate = DateFormatters.date(from: task.scheduledDate, in: calendar),
+              let planned = calendar.date(
+                  bySettingHour: task.scheduledStartMin / 60,
+                  minute: task.scheduledStartMin % 60,
+                  second: 0,
+                  of: baseDate
+              ) else { return false }
+        return calendar.isDate(planned, equalTo: instant, toGranularity: .minute)
     }
 }
 

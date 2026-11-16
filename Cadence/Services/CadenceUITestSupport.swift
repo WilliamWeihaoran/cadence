@@ -110,6 +110,8 @@ enum CadenceUITestSupport {
             CadencePreferenceKeys.sidebarHiddenTabs,
             CadencePreferenceKeys.sidebarTabOrder,
             CadencePreferenceKeys.sidebarTabColors,
+            CadencePreferenceKeys.macSidebarHidden,
+            CadencePreferenceKeys.macTimelinePanelShown,
         ]
 
         for key in keys {

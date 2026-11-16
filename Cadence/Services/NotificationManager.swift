@@ -275,11 +275,19 @@ final class NotificationManager: NSObject {
         if let durableRead { Self.store(durableRead, defaults: defaults) }
         let settledTaskIDs = Set(tasks.filter { $0.status == .done || $0.status == .cancelled }.map(\.id))
             .union(provenDeleted)
-        if !settledTaskIDs.isEmpty {
-            let deliveredToRemove = NotificationReconcileDiff.deliveredIdentifiersToRemove(
-                delivered: await centre.deliveredIdentifiers(),
-                settledTaskIDs: settledTaskIDs
-            )
+        // [[T-18160]]: and the ones an OPEN task in this pass no longer schedules -- a due date moved
+        // or cleared, a do time moved or unscheduled. Read whenever the pass holds any task, since
+        // an open task's banner can be stale too; an empty pass can prove nothing either way.
+        if !settledTaskIDs.isEmpty || !tasks.isEmpty {
+            let delivered = await centre.deliveredReminders()
+            let deliveredToRemove = Set(
+                NotificationReconcileDiff.deliveredIdentifiersToRemove(
+                    delivered: delivered.map(\.identifier),
+                    settledTaskIDs: settledTaskIDs
+                )
+            ).union(
+                NotificationReconcileDiff.staleDeliveredIdentifiersToRemove(delivered: delivered, tasks: tasks)
+            ).sorted()
             if !deliveredToRemove.isEmpty {
                 centre.removeDelivered(withIdentifiers: deliveredToRemove)
             }
@@ -334,6 +342,22 @@ final class NotificationManager: NSObject {
     static func makeTrigger(for request: CadenceNotificationRequest) -> UNCalendarNotificationTrigger {
         let spec = request.triggerSpec()
         return UNCalendarNotificationTrigger(dateMatching: spec.components, repeats: spec.repeats)
+    }
+
+    /// **[[T-18160]].** The instant a delivered reminder was scheduled to describe: its calendar
+    /// trigger's date, resolved in `calendar`. A task reminder's trigger pins year through second
+    /// (`NotificationKind.triggerComponents`), so this is the planner's own fire date, unmoved by a
+    /// delivery that arrived late. Anything else -- no trigger, a non-calendar one, components that
+    /// name no date -- falls back to when it was delivered.
+    nonisolated static func describedInstant(
+        of trigger: UNNotificationTrigger?,
+        deliveredAt: Date,
+        calendar: Calendar = .current
+    ) -> Date {
+        guard let components = (trigger as? UNCalendarNotificationTrigger)?.dateComponents,
+              components.year != nil, components.month != nil, components.day != nil,
+              let instant = calendar.date(from: components) else { return deliveredAt }
+        return instant
     }
 
     /// Cancels a specific set of tasks' pending notifications directly — cheaper than a full
@@ -521,8 +545,10 @@ protocol CadenceNotificationCentre: CadencePendingNotificationPurgeCentre {
     func authorizationStatus() async -> UNAuthorizationStatus
     func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool
     func add(_ request: UNNotificationRequest) async throws
-    /// [[T-15464]]: the identifiers of the reminders already shown in Notification Center.
-    func deliveredIdentifiers() async -> [String]
+    /// [[T-15464]]: the reminders already shown in Notification Center -- since [[T-18160]] with
+    /// the instant each was scheduled to describe, so a reconcile can tell a banner its task's
+    /// schedule has moved away from.
+    func deliveredReminders() async -> [CadenceDeliveredReminder]
     /// [[T-15464]]: withdraws already-shown reminders from Notification Center.
     func removeDelivered(withIdentifiers identifiers: [String])
 }
@@ -554,8 +580,16 @@ private struct CadenceSystemNotificationCentre: CadenceNotificationCentre {
         try await UNUserNotificationCenter.current().add(request)
     }
 
-    func deliveredIdentifiers() async -> [String] {
-        await UNUserNotificationCenter.current().deliveredNotifications().map(\.request.identifier)
+    func deliveredReminders() async -> [CadenceDeliveredReminder] {
+        await UNUserNotificationCenter.current().deliveredNotifications().map { notification in
+            CadenceDeliveredReminder(
+                identifier: notification.request.identifier,
+                describedInstant: NotificationManager.describedInstant(
+                    of: notification.request.trigger,
+                    deliveredAt: notification.date
+                )
+            )
+        }
     }
 
     func removeDelivered(withIdentifiers identifiers: [String]) {

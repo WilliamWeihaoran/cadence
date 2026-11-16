@@ -14,7 +14,8 @@ struct macOSRootSidebarVisibilityTests {
     @Test func aSidebarTheUserHidStaysHiddenOnAPageChange() {
         var visibility: NavigationSplitViewVisibility = .all
         var focusHid = false
-        macOSRootLifecycleSupport.toggleSidebar(columnVisibility: &visibility, focusHidSidebar: &focusHid)
+        var persisted = false
+        macOSRootLifecycleSupport.toggleSidebar(columnVisibility: &visibility, focusHidSidebar: &focusHid, persistedSidebarHidden: &persisted)
         #expect(visibility == .detailOnly, "non-vacuity: the toggle did not hide the sidebar")
 
         for page: SidebarItem? in [.settings, .today, .notes, nil] {
@@ -30,6 +31,7 @@ struct macOSRootSidebarVisibilityTests {
     @Test func leavingFocusUndoesFocussOwnHideOnce() {
         var visibility: NavigationSplitViewVisibility = .all
         var focusHid = false
+        var persisted = false
         macOSRootLifecycleSupport.handleFocusRunningChange(
             isRunning: true,
             selection: .focus,
@@ -47,7 +49,7 @@ struct macOSRootSidebarVisibilityTests {
         #expect(!focusHid, "the restore did not spend the flag")
 
         // Spent: a later user hide is the user's.
-        macOSRootLifecycleSupport.toggleSidebar(columnVisibility: &visibility, focusHidSidebar: &focusHid)
+        macOSRootLifecycleSupport.toggleSidebar(columnVisibility: &visibility, focusHidSidebar: &focusHid, persistedSidebarHidden: &persisted)
         macOSRootLifecycleSupport.handleSelectionChange(newValue: .settings, columnVisibility: &visibility, focusHidSidebar: &focusHid)
         #expect(visibility == .detailOnly)
     }
@@ -55,6 +57,7 @@ struct macOSRootSidebarVisibilityTests {
     @Test func aUserToggleInsideFocusTakesTheSidebarBack() {
         var visibility: NavigationSplitViewVisibility = .all
         var focusHid = false
+        var persisted = false
         macOSRootLifecycleSupport.handleFocusRunningChange(
             isRunning: true,
             selection: .focus,
@@ -62,8 +65,8 @@ struct macOSRootSidebarVisibilityTests {
             focusHidSidebar: &focusHid
         )
         // Show, then hide again by hand: the standing hide is now the user's.
-        macOSRootLifecycleSupport.toggleSidebar(columnVisibility: &visibility, focusHidSidebar: &focusHid)
-        macOSRootLifecycleSupport.toggleSidebar(columnVisibility: &visibility, focusHidSidebar: &focusHid)
+        macOSRootLifecycleSupport.toggleSidebar(columnVisibility: &visibility, focusHidSidebar: &focusHid, persistedSidebarHidden: &persisted)
+        macOSRootLifecycleSupport.toggleSidebar(columnVisibility: &visibility, focusHidSidebar: &focusHid, persistedSidebarHidden: &persisted)
         #expect(visibility == .detailOnly)
         macOSRootLifecycleSupport.handleSelectionChange(newValue: .today, columnVisibility: &visibility, focusHidSidebar: &focusHid)
         #expect(visibility == .detailOnly)
@@ -94,6 +97,64 @@ struct macOSRootSidebarVisibilityTests {
         )
         #expect(visibility == .all)
         #expect(!focusHid)
+    }
+    // MARK: - [[T-18163]]: the user's fold survives a relaunch; Focus's does not
+
+    @Test func theUsersToggleIsWhatPersists() {
+        var visibility: NavigationSplitViewVisibility = .all
+        var focusHid = false
+        var persisted = false
+        macOSRootLifecycleSupport.toggleSidebar(columnVisibility: &visibility, focusHidSidebar: &focusHid, persistedSidebarHidden: &persisted)
+        #expect(visibility == .detailOnly)
+        #expect(persisted, "hiding the sidebar by hand was not stored for the next launch")
+        macOSRootLifecycleSupport.toggleSidebar(columnVisibility: &visibility, focusHidSidebar: &focusHid, persistedSidebarHidden: &persisted)
+        #expect(visibility == .all)
+        #expect(!persisted, "showing the sidebar by hand left the stored hide standing")
+    }
+
+    @Test func focussOwnHideIsNeverStored() throws {
+        var visibility: NavigationSplitViewVisibility = .all
+        var focusHid = false
+        var persisted = false
+        macOSRootLifecycleSupport.handleFocusRunningChange(
+            isRunning: true,
+            selection: .focus,
+            columnVisibility: &visibility,
+            focusHidSidebar: &focusHid
+        )
+        #expect(visibility == .detailOnly, "non-vacuity: Focus did not hide the sidebar")
+        // A relaunch now must come back with the sidebar the user left: shown.
+        try withTemporaryDefaults("cadence.tests.mac-sidebar-fold") { defaults in
+            defaults.set(persisted, forKey: CadencePreferenceKeys.macSidebarHidden)
+            #expect(macOSRootLifecycleSupport.launchColumnVisibility(store: defaults) == .all)
+        }
+
+        // A user toggle inside Focus shows it, and THAT is stored.
+        macOSRootLifecycleSupport.toggleSidebar(columnVisibility: &visibility, focusHidSidebar: &focusHid, persistedSidebarHidden: &persisted)
+        #expect(visibility == .all)
+        #expect(!persisted)
+    }
+
+    @Test func aNewWindowOpensWithTheStoredFold() throws {
+        try withTemporaryDefaults("cadence.tests.mac-sidebar-fold") { defaults in
+            #expect(macOSRootLifecycleSupport.launchColumnVisibility(store: defaults) == .all, "an unset key must open the sidebar")
+            defaults.set(true, forKey: CadencePreferenceKeys.macSidebarHidden)
+            #expect(macOSRootLifecycleSupport.launchColumnVisibility(store: defaults) == .detailOnly)
+            defaults.set(false, forKey: CadencePreferenceKeys.macSidebarHidden)
+            #expect(macOSRootLifecycleSupport.launchColumnVisibility(store: defaults) == .all)
+        }
+    }
+
+    /// The root view is what binds both values to storage, and a view cannot be driven headless, so
+    /// this reads it: the toggle must be handed the stored bool, the column state must be seeded
+    /// from it, and the timeline panel must be the `@AppStorage` value itself.
+    @Test func theRootViewBindsBothChoicesToStorage() throws {
+        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/macOSRootView.swift"))
+        #expect(source.contains("@AppStorage(CadencePreferenceKeys.macSidebarHidden) private var persistedSidebarHidden"))
+        #expect(source.contains("persistedSidebarHidden: &persistedSidebarHidden"))
+        #expect(source.contains("columnVisibility: NavigationSplitViewVisibility = macOSRootLifecycleSupport.launchColumnVisibility()"))
+        #expect(source.contains("@AppStorage(CadencePreferenceKeys.macTimelinePanelShown) private var showTimelineSidebar"))
+        #expect(!source.contains("@State private var showTimelineSidebar"))
     }
 }
 #endif

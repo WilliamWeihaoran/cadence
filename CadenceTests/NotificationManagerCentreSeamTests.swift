@@ -33,21 +33,29 @@ struct NotificationManagerCentreSeamTests {
         private(set) var requestedOptions: [UNAuthorizationOptions] = []
         /// What Notification Center is showing ([[T-15464]]).
         private(set) var delivered: [String]
+        /// [[T-18160]]: the instant each shown reminder was scheduled to describe. One not listed
+        /// describes `distantPast`, which no task's schedule names -- so a fixture that means a
+        /// still-accurate banner has to say so (`accurateInstants(for:)`).
+        var describedAt: [String: Date]
         private(set) var removeDeliveredCalls: [[String]] = []
 
         init(
             status: UNAuthorizationStatus = .authorized,
             grantsRequest: Bool = false,
             pending: [String] = [],
-            delivered: [String] = []
+            delivered: [String] = [],
+            describedAt: [String: Date] = [:]
         ) {
             self.status = status
             self.grantsRequest = grantsRequest
             self.pending = pending
             self.delivered = delivered
+            self.describedAt = describedAt
         }
 
-        func deliveredIdentifiers() async -> [String] { delivered }
+        func deliveredReminders() async -> [CadenceDeliveredReminder] {
+            delivered.map { CadenceDeliveredReminder(identifier: $0, describedInstant: describedAt[$0] ?? .distantPast) }
+        }
 
         func removeDelivered(withIdentifiers identifiers: [String]) {
             removeDeliveredCalls.append(identifiers)
@@ -110,6 +118,20 @@ struct NotificationManagerCentreSeamTests {
         let task = AppTask(title: title)
         task.dueDate = "2099-06-10"
         return task
+    }
+
+    /// [[T-18160]]: gives `task` a due date and a do time, and answers the instants its two
+    /// reminders describe -- what a banner that is still TRUE of the task carries.
+    @discardableResult
+    private func accurateInstants(for task: AppTask) -> [String: Date] {
+        task.dueDate = "2099-06-10"
+        task.scheduledDate = "2099-06-10"
+        task.scheduledStartMin = 14 * 60
+        let day = DateFormatters.date(from: "2099-06-10", in: .current)!
+        return [
+            NotificationIdentifiers.taskDue(taskID: task.id): Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: day)!,
+            NotificationIdentifiers.taskStart(taskID: task.id): Calendar.current.date(bySettingHour: 14, minute: 0, second: 0, of: day)!,
+        ]
     }
 
     // MARK: - reconcile
@@ -344,6 +366,7 @@ struct NotificationManagerCentreSeamTests {
         let cancelled = dueTask("Called off")
         cancelled.status = .cancelled
         let open = dueTask("Still open")
+        let openInstants = accurateInstants(for: open)
         let absent = UUID()
         let doneShown = [NotificationIdentifiers.taskStart(taskID: done.id), NotificationIdentifiers.taskDue(taskID: done.id)]
         let cancelledShown = NotificationIdentifiers.taskDue(taskID: cancelled.id)
@@ -353,7 +376,7 @@ struct NotificationManagerCentreSeamTests {
             NotificationIdentifiers.habitReminder(habitID: done.id),
             foreign,
         ]
-        let centre = FakeCentre(delivered: doneShown + [cancelledShown] + kept)
+        let centre = FakeCentre(delivered: doneShown + [cancelledShown] + kept, describedAt: openInstants)
 
         try await withManager(centre) { manager in
             await manager.reconcile(tasks: [done, cancelled, open])
@@ -371,6 +394,105 @@ struct NotificationManagerCentreSeamTests {
         }
     }
 
+    // MARK: - [[T-18160]]: a fired reminder whose open task's schedule moved
+
+    /// A due date moved to another day or cleared, a do time moved to another day or minute or
+    /// unscheduled: each withdraws exactly that banner. An unmoved task's, an absent task's, a
+    /// habit's and another app's stay, and the still-true due banner of a task whose do time
+    /// moved stays too -- the two legs are judged apart.
+    @Test func reconcileWithdrawsTheDeliveredRemindersAnOpenTasksScheduleNoLongerHolds() async throws {
+        let unmoved = AppTask(title: "Unmoved")
+        let dueMoved = AppTask(title: "Due moved to Friday")
+        let dueCleared = AppTask(title: "Due cleared")
+        let startMovedDay = AppTask(title: "Block dragged to tomorrow")
+        let startMovedMinute = AppTask(title: "Block moved to 16:00")
+        let unscheduled = AppTask(title: "Unscheduled")
+        var instants: [String: Date] = [:]
+        for task in [unmoved, dueMoved, dueCleared, startMovedDay, startMovedMinute, unscheduled] {
+            instants.merge(accurateInstants(for: task)) { first, _ in first }
+        }
+        dueMoved.dueDate = "2099-06-12"
+        dueCleared.dueDate = ""
+        startMovedDay.scheduledDate = "2099-06-11"
+        startMovedMinute.scheduledStartMin = 16 * 60
+        unscheduled.scheduledDate = ""
+        unscheduled.scheduledStartMin = -1
+        let absent = AppTask(title: "Not in this pass")
+        instants.merge(accurateInstants(for: absent)) { first, _ in first }
+        absent.dueDate = ""
+
+        let stale = [
+            NotificationIdentifiers.taskDue(taskID: dueMoved.id),
+            NotificationIdentifiers.taskDue(taskID: dueCleared.id),
+            NotificationIdentifiers.taskStart(taskID: startMovedDay.id),
+            NotificationIdentifiers.taskStart(taskID: startMovedMinute.id),
+            NotificationIdentifiers.taskStart(taskID: unscheduled.id),
+        ]
+        let kept = shown(unmoved.id) + shown(absent.id) + [
+            NotificationIdentifiers.taskStart(taskID: dueMoved.id),
+            NotificationIdentifiers.taskStart(taskID: dueCleared.id),
+            NotificationIdentifiers.taskDue(taskID: startMovedDay.id),
+            NotificationIdentifiers.taskDue(taskID: startMovedMinute.id),
+            NotificationIdentifiers.taskDue(taskID: unscheduled.id),
+            NotificationIdentifiers.habitReminder(habitID: unmoved.id),
+            foreign,
+        ]
+        let centre = FakeCentre(delivered: stale + kept, describedAt: instants)
+
+        try await withManager(centre) { manager in
+            await manager.reconcile(tasks: [unmoved, dueMoved, dueCleared, startMovedDay, startMovedMinute, unscheduled])
+
+            #expect(centre.removeDeliveredCalls.count == 1)
+            #expect(
+                Set(centre.removeDeliveredCalls.flatMap { $0 }) == Set(stale),
+                "reconcile withdrew \(centre.removeDeliveredCalls) instead of exactly the banners whose schedule moved"
+            )
+            #expect(Set(centre.delivered) == Set(kept))
+
+            await manager.reconcile(tasks: [unmoved, dueMoved, dueCleared, startMovedDay, startMovedMinute, unscheduled])
+            #expect(centre.removeDeliveredCalls.count == 1, "a pass with nothing stale still reached the centre")
+        }
+    }
+
+    /// The due leg is judged by DAY: a fired "Due today" stays true whatever the reminder hour is
+    /// set to now. The start leg is judged to the minute, set the way the planner sets it, so a
+    /// start inside a DST gap matches the 03:00 it was scheduled at.
+    @Test func theScheduleRuleJudgesDueByDayAndStartByThePlannersOwnMinute() throws {
+        var newYork = Calendar(identifier: .gregorian)
+        newYork.timeZone = try #require(TimeZone(identifier: "America/New_York"))
+        let task = AppTask(title: "Gap start")
+        task.dueDate = "2026-03-08"
+        task.scheduledDate = "2026-03-08"
+        task.scheduledStartMin = 2 * 60 + 30
+        let day = try #require(DateFormatters.date(from: "2026-03-08", in: newYork))
+        let lateEvening = try #require(newYork.date(bySettingHour: 23, minute: 0, second: 0, of: day))
+        let threeAM = try #require(newYork.date(bySettingHour: 3, minute: 0, second: 0, of: day))
+        let delivered = [
+            CadenceDeliveredReminder(identifier: NotificationIdentifiers.taskDue(taskID: task.id), describedInstant: lateEvening),
+            CadenceDeliveredReminder(identifier: NotificationIdentifiers.taskStart(taskID: task.id), describedInstant: threeAM),
+        ]
+        #expect(NotificationReconcileDiff.staleDeliveredIdentifiersToRemove(delivered: delivered, tasks: [task], calendar: newYork).isEmpty)
+
+        task.scheduledStartMin = 3 * 60 + 1
+        #expect(
+            NotificationReconcileDiff.staleDeliveredIdentifiersToRemove(delivered: delivered, tasks: [task], calendar: newYork)
+                == [NotificationIdentifiers.taskStart(taskID: task.id)],
+            "a start one minute off was judged still true"
+        )
+    }
+
+    /// The instant comes from the calendar trigger the planner built, not the delivery time, so a
+    /// banner delivered late (a Mac asleep at the fire time) is judged by what it was scheduled for.
+    @Test func theDescribedInstantIsTheTriggersDateNotTheDeliveryTime() throws {
+        let planned = try #require(Calendar.current.date(from: DateComponents(year: 2099, month: 6, day: 10, hour: 14, minute: 0, second: 0)))
+        let request = CadenceNotificationRequest(identifier: "task-start-x", kind: .taskStart, title: "t", body: "b", fireDate: planned)
+        let late = planned.addingTimeInterval(20 * 60)
+        #expect(NotificationManager.describedInstant(of: NotificationManager.makeTrigger(for: request), deliveredAt: late) == planned)
+        #expect(NotificationManager.describedInstant(of: nil, deliveredAt: late) == late)
+        let timeOnly = UNCalendarNotificationTrigger(dateMatching: DateComponents(hour: 9, minute: 0), repeats: true)
+        #expect(NotificationManager.describedInstant(of: timeOnly, deliveredAt: late) == late)
+    }
+
     // MARK: - [[T-15486]]: a fired reminder whose task was deleted where no cancel ran
 
     private func shown(_ id: UUID) -> [String] {
@@ -386,11 +508,13 @@ struct NotificationManagerCentreSeamTests {
         let writer = ModelContext(container)
         let kept = AppTask(title: "Kept")
         let deleted = AppTask(title: "Deleted on another device")
+        // [[T-18160]]: both banners still true while both tasks exist, so only the delete withdraws.
+        let keptInstants = accurateInstants(for: kept).merging(accurateInstants(for: deleted)) { first, _ in first }
         writer.insert(kept)
         writer.insert(deleted)
         try writer.save()
         let (keptID, deletedID, neverSeen) = (kept.id, deleted.id, UUID())
-        let centre = FakeCentre(delivered: shown(keptID) + shown(deletedID) + shown(neverSeen) + [foreign])
+        let centre = FakeCentre(delivered: shown(keptID) + shown(deletedID) + shown(neverSeen) + [foreign], describedAt: keptInstants)
 
         try await withManager(centre) { manager in
             let first = try CadenceForegroundNotificationSnapshot(container: container)
@@ -420,10 +544,11 @@ struct NotificationManagerCentreSeamTests {
         let container = try CadenceTestStore.container()
         let writer = ModelContext(container)
         let task = AppTask(title: "Merely not loaded")
+        let instants = accurateInstants(for: task)
         writer.insert(task)
         try writer.save()
         let taskID = task.id
-        let centre = FakeCentre(delivered: shown(taskID))
+        let centre = FakeCentre(delivered: shown(taskID), describedAt: instants)
 
         try await withManager(centre) { manager in
             let first = try CadenceForegroundNotificationSnapshot(container: container)
@@ -493,11 +618,13 @@ struct NotificationManagerCentreSeamTests {
             let writer = ModelContext(firstLaunch)
             let kept = AppTask(title: "Kept")
             let deleted = AppTask(title: "Deleted on another device")
+            // [[T-18160]]: both banners still true while both tasks exist, so only the delete withdraws.
+            let keptInstants = accurateInstants(for: kept).merging(accurateInstants(for: deleted)) { first, _ in first }
             writer.insert(kept)
             writer.insert(deleted)
             try writer.save()
             let (keptID, deletedID) = (kept.id, deleted.id)
-            let centre = FakeCentre(delivered: shown(keptID) + shown(deletedID) + [foreign])
+            let centre = FakeCentre(delivered: shown(keptID) + shown(deletedID) + [foreign], describedAt: keptInstants)
 
             try await withTemporaryDefaults(
                 "cadence.tests.notification-centre-seam",
@@ -539,10 +666,11 @@ struct NotificationManagerCentreSeamTests {
             let primary = try fileStore(directory.appendingPathComponent("default.store"))
             let writer = ModelContext(primary)
             let task = AppTask(title: "Still in the primary store")
+            let instants = accurateInstants(for: task)
             writer.insert(task)
             try writer.save()
             let taskID = task.id
-            let centre = FakeCentre(delivered: shown(taskID))
+            let centre = FakeCentre(delivered: shown(taskID), describedAt: instants)
 
             try await withTemporaryDefaults(
                 "cadence.tests.notification-centre-seam",
