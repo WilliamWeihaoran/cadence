@@ -429,7 +429,13 @@ enum CalendarAllDayEventDropSupport {
             ?? lookup(CalendarEventIdentity.lookupIdentifier(from: payload.eventIdentifier))
         // `nil` is the editor's own gate; a default argument cannot name it without leaving the
         // main actor.
-        let isEditable = isEditable ?? { CalendarEventEditPopover.isEditable($0) }
+        // A cancelled invite is refused as the chip refuses its drag ([[T-18179]]).
+        let isEditable = isEditable ?? {
+            TimelineEventBlockEditGate.allowsMove(
+                isEditable: CalendarEventEditPopover.isEditable($0),
+                isCancelled: CadenceCalendarEventVisibility.isCancelled($0)
+            )
+        }
         guard let event, isEditable(event) else { return nil }
         return event
     }

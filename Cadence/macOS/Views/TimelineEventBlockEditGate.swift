@@ -10,7 +10,8 @@ import Foundation
 ///   drawn on the timeline and EventKit refuses every write to them. The block used to let them be
 ///   dragged and resized anyway, so the refusal arrived as an alert *after* the block had already
 ///   moved. iOS refuses before trying (`iOSCalendarManager.canModify`); `isEditable` is the
-///   caller's `CalendarEventEditPopover.isEditable(_:)`, which is that same rule.
+///   caller's `CalendarEventEditPopover.isEditable(_:)`, which is that same rule. An
+///   organizer-cancelled event is view-only too ([[T-18014]], [[T-18179]]), so it offers none either.
 /// - **A resize handle sits only on an edge the event has.** A multi-day timed event is drawn as
 ///   one segment per day, clipped at midnight. A clip is not an edge:
 ///   `CalendarEventItem.eventDateRangeForResizedSegment` moves the event's start only from its first
@@ -22,9 +23,15 @@ import Foundation
 ///   range the event already has, so in both cases that observation never fires: the block kept
 ///   drawing a time the event is not at, and `handleBlockTap` ignored every later click on it.
 enum TimelineEventBlockEditGate {
-    /// Whether the move gesture is attached.
-    static func allowsMove(isEditable: Bool) -> Bool {
-        isEditable
+    /// Whether the move gesture is attached -- and, through `drawsResizeHandle` and the all-day
+    /// chip's `calendarEventDraggable`, whether any gesture may write a new time.
+    ///
+    /// The same view-only rule `allowsDelete` reads ([[T-18179]]): an organizer-cancelled invite on
+    /// a writable calendar used to stay draggable and resizable while its popover said it "can only
+    /// be viewed here" and Cmd+Delete over it did nothing. Move, resize, delete and the popover now
+    /// answer from one rule.
+    static func allowsMove(isEditable: Bool, isCancelled: Bool) -> Bool {
+        isViewOnly(isEditable: isEditable, isCancelled: isCancelled) == false
     }
 
     /// Whether the hovered block registers a Cmd+Delete action ([[T-18175]]).
@@ -36,21 +43,28 @@ enum TimelineEventBlockEditGate {
     /// the editor's own rule, read from `viewOnlyNotice` rather than restated: a view-only notice
     /// means no delete, from any surface.
     static func allowsDelete(isEditable: Bool, isCancelled: Bool) -> Bool {
+        isViewOnly(isEditable: isEditable, isCancelled: isCancelled) == false
+    }
+
+    /// The editor's view-only rule, read rather than restated: a view-only notice means no write,
+    /// from any surface.
+    private static func isViewOnly(isEditable: Bool, isCancelled: Bool) -> Bool {
         CadenceCalendarEventEditingSupport.viewOnlyNotice(
             calendarName: "",
             isEventEditable: isEditable,
             isEventCancelled: isCancelled
-        ) == nil
+        ) != nil
     }
 
     /// Whether `edge` draws a resize handle on this segment.
     static func drawsResizeHandle(
         edge: TimelineResizeEdge,
         isEditable: Bool,
+        isCancelled: Bool,
         isFirstSegment: Bool,
         isLastSegment: Bool
     ) -> Bool {
-        guard isEditable else { return false }
+        guard allowsMove(isEditable: isEditable, isCancelled: isCancelled) else { return false }
         switch edge {
         case .start: return isFirstSegment
         case .end: return isLastSegment

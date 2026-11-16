@@ -18,31 +18,60 @@ struct CadenceCalendarEventChipEditingTests {
 
     @Test("A single-day event draws both handles")
     func aSingleDayEventDrawsBothHandles() {
-        #expect(TimelineEventBlockEditGate.drawsResizeHandle(edge: .start, isEditable: true, isFirstSegment: true, isLastSegment: true))
-        #expect(TimelineEventBlockEditGate.drawsResizeHandle(edge: .end, isEditable: true, isFirstSegment: true, isLastSegment: true))
+        #expect(TimelineEventBlockEditGate.drawsResizeHandle(edge: .start, isEditable: true, isCancelled: false, isFirstSegment: true, isLastSegment: true))
+        #expect(TimelineEventBlockEditGate.drawsResizeHandle(edge: .end, isEditable: true, isCancelled: false, isFirstSegment: true, isLastSegment: true))
     }
 
     @Test("A multi-day segment draws no handle on a midnight clip")
     func aMidnightClipDrawsNoHandle() {
         // First day's piece: its own start, clipped at midnight below.
-        #expect(TimelineEventBlockEditGate.drawsResizeHandle(edge: .start, isEditable: true, isFirstSegment: true, isLastSegment: false))
-        #expect(!TimelineEventBlockEditGate.drawsResizeHandle(edge: .end, isEditable: true, isFirstSegment: true, isLastSegment: false))
+        #expect(TimelineEventBlockEditGate.drawsResizeHandle(edge: .start, isEditable: true, isCancelled: false, isFirstSegment: true, isLastSegment: false))
+        #expect(!TimelineEventBlockEditGate.drawsResizeHandle(edge: .end, isEditable: true, isCancelled: false, isFirstSegment: true, isLastSegment: false))
         // Last day's piece: clipped at midnight above, its own end below.
-        #expect(!TimelineEventBlockEditGate.drawsResizeHandle(edge: .start, isEditable: true, isFirstSegment: false, isLastSegment: true))
-        #expect(TimelineEventBlockEditGate.drawsResizeHandle(edge: .end, isEditable: true, isFirstSegment: false, isLastSegment: true))
+        #expect(!TimelineEventBlockEditGate.drawsResizeHandle(edge: .start, isEditable: true, isCancelled: false, isFirstSegment: false, isLastSegment: true))
+        #expect(TimelineEventBlockEditGate.drawsResizeHandle(edge: .end, isEditable: true, isCancelled: false, isFirstSegment: false, isLastSegment: true))
         // A middle day is clipped on both sides.
-        #expect(!TimelineEventBlockEditGate.drawsResizeHandle(edge: .start, isEditable: true, isFirstSegment: false, isLastSegment: false))
-        #expect(!TimelineEventBlockEditGate.drawsResizeHandle(edge: .end, isEditable: true, isFirstSegment: false, isLastSegment: false))
+        #expect(!TimelineEventBlockEditGate.drawsResizeHandle(edge: .start, isEditable: true, isCancelled: false, isFirstSegment: false, isLastSegment: false))
+        #expect(!TimelineEventBlockEditGate.drawsResizeHandle(edge: .end, isEditable: true, isCancelled: false, isFirstSegment: false, isLastSegment: false))
     }
 
     // MARK: - T-5241: a read-only event offers nothing
 
     @Test("A read-only event draws no handle and takes no move")
     func aReadOnlyEventOffersNoGesture() {
-        #expect(!TimelineEventBlockEditGate.drawsResizeHandle(edge: .start, isEditable: false, isFirstSegment: true, isLastSegment: true))
-        #expect(!TimelineEventBlockEditGate.drawsResizeHandle(edge: .end, isEditable: false, isFirstSegment: true, isLastSegment: true))
-        #expect(!TimelineEventBlockEditGate.allowsMove(isEditable: false))
-        #expect(TimelineEventBlockEditGate.allowsMove(isEditable: true))
+        #expect(!TimelineEventBlockEditGate.drawsResizeHandle(edge: .start, isEditable: false, isCancelled: false, isFirstSegment: true, isLastSegment: true))
+        #expect(!TimelineEventBlockEditGate.drawsResizeHandle(edge: .end, isEditable: false, isCancelled: false, isFirstSegment: true, isLastSegment: true))
+        #expect(!TimelineEventBlockEditGate.allowsMove(isEditable: false, isCancelled: false))
+        #expect(TimelineEventBlockEditGate.allowsMove(isEditable: true, isCancelled: false))
+    }
+
+    // MARK: - T-18179: a cancelled invite is view-only to every gesture
+
+    @Test("A cancelled event on a writable calendar draws no handle and takes no move")
+    func aCancelledEventOffersNoGesture() {
+        for edge in [TimelineResizeEdge.start, .end] {
+            #expect(
+                !TimelineEventBlockEditGate.drawsResizeHandle(edge: edge, isEditable: true, isCancelled: true, isFirstSegment: true, isLastSegment: true),
+                "a cancelled invite still draws its \(edge) resize handle"
+            )
+            #expect(!TimelineEventBlockEditGate.drawsResizeHandle(edge: edge, isEditable: false, isCancelled: true, isFirstSegment: true, isLastSegment: true))
+        }
+        #expect(!TimelineEventBlockEditGate.allowsMove(isEditable: true, isCancelled: true), "a cancelled invite still moves")
+        #expect(!TimelineEventBlockEditGate.allowsMove(isEditable: false, isCancelled: true))
+        // One rule with the popover and the keyboard delete: a gesture exactly where the editor
+        // shows no view-only notice.
+        for isEditable in [true, false] {
+            for isCancelled in [true, false] {
+                let notice = CadenceCalendarEventEditingSupport.viewOnlyNotice(
+                    calendarName: "Work", isEventEditable: isEditable, isEventCancelled: isCancelled
+                )
+                #expect(TimelineEventBlockEditGate.allowsMove(isEditable: isEditable, isCancelled: isCancelled) == (notice == nil))
+                #expect(
+                    TimelineEventBlockEditGate.allowsMove(isEditable: isEditable, isCancelled: isCancelled)
+                        == TimelineEventBlockEditGate.allowsDelete(isEditable: isEditable, isCancelled: isCancelled)
+                )
+            }
+        }
     }
 
     // MARK: - T-5241 (b): a write that changes nothing puts the block back
@@ -135,11 +164,11 @@ struct CadenceCalendarEventChipEditingTests {
         let code = try Self.code(Self.block)
         #expect(code.contains("CalendarEventEditPopover.isEditable(item.ekEvent)"))
         #expect(
-            CadenceSourceScan.matchCount(#"including: TimelineEventBlockEditGate\.allowsMove\(isEditable: isEditable\) \? \.all : \.subviews"#, in: code) == 1,
+            CadenceSourceScan.matchCount(#"including: TimelineEventBlockEditGate\.allowsMove\(isEditable: isEditable, isCancelled: isCancelled\) \? \.all : \.subviews"#, in: code) == 1,
             "the move gesture is not gated on the event being editable"
         )
         #expect(
-            CadenceSourceScan.matchCount(#"TimelineEventBlockEditGate\.drawsResizeHandle\(\s*edge: edge,\s*isEditable: isEditable,\s*isFirstSegment: item\.isFirstSegment,\s*isLastSegment: item\.isLastSegment"#, in: code) == 1,
+            CadenceSourceScan.matchCount(#"TimelineEventBlockEditGate\.drawsResizeHandle\(\s*edge: edge,\s*isEditable: isEditable,\s*isCancelled: isCancelled,\s*isFirstSegment: item\.isFirstSegment,\s*isLastSegment: item\.isLastSegment"#, in: code) == 1,
             "the resize handles are drawn without asking which edges the segment has"
         )
         #expect(
@@ -163,8 +192,16 @@ struct CadenceCalendarEventChipEditingTests {
             "an all-day chip opens nothing"
         )
         #expect(
-            CadenceSourceScan.matchCount(#"\.calendarEventDraggable\(\s*CalendarEventDragPayload\.string\(for: event\),\s*isEditable: CalendarEventEditPopover\.isEditable\(event\)"#, in: allDay) == 1,
-            "the all-day chip's drag is not gated on the event being editable"
+            CadenceSourceScan.matchCount(#"\.calendarEventDraggable\(\s*CalendarEventDragPayload\.string\(for: event\),\s*isEditable: CalendarEventEditPopover\.isEditable\(event\),\s*isCancelled: isCancelled\s*\)"#, in: allDay) == 1,
+            "the all-day chip's drag is not gated on the event being editable and live"
+        )
+        // [[T-18179]]: the drop refuses a cancelled payload by the gate the chip's drag reads
+        // (`theChipHostReportsItsWrites` pins the modifier itself).
+        let presentation = try Self.code("Cadence/macOS/Views/CalendarEventPresentationSupport.swift")
+        let resolve = try #require(CadenceSourceScan.functionBody(named: "resolveEditableEvent", in: presentation))
+        #expect(
+            CadenceSourceScan.matchCount(#"isEditable \?\? \{\s*TimelineEventBlockEditGate\.allowsMove\(\s*isEditable: CalendarEventEditPopover\.isEditable\(\$0\),\s*isCancelled: CadenceCalendarEventVisibility\.isCancelled\(\$0\)\s*\)\s*\}"#, in: resolve) == 1,
+            "the all-day drop's default gate ignores cancellation"
         )
         #expect(!allDay.contains(".draggable("), "the all-day chip drags unconditionally again")
         // The drop that converts all-day to timed refuses a read-only event too: the column calls
@@ -224,7 +261,7 @@ struct CadenceCalendarEventChipEditingTests {
             "the chip modifier does not open its popover on click"
         )
         #expect(
-            CadenceSourceScan.matchCount(#"if isEditable \{\s*draggable\(payload\)\s*\} else \{\s*self\s*\}"#, in: code) == 1,
+            CadenceSourceScan.matchCount(#"if TimelineEventBlockEditGate\.allowsMove\(isEditable: isEditable, isCancelled: isCancelled\) \{\s*draggable\(payload\)\s*\} else \{\s*self\s*\}"#, in: code) == 1,
             "the gated draggable drags regardless"
         )
     }

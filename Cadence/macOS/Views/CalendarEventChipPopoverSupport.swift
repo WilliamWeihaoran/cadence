@@ -92,10 +92,11 @@ extension View {
 
     /// `.draggable` only when the event can take the write the drop would ask for ([[T-5241]]):
     /// dropping an all-day event on the timeline converts it to timed, which EventKit refuses on
-    /// a read-only calendar.
+    /// a read-only calendar. An organizer-cancelled event is view-only as well ([[T-18179]]), so it
+    /// does not drag either: the timed block's own gate answers.
     @ViewBuilder
-    func calendarEventDraggable(_ payload: String, isEditable: Bool) -> some View {
-        if isEditable {
+    func calendarEventDraggable(_ payload: String, isEditable: Bool, isCancelled: Bool) -> some View {
+        if TimelineEventBlockEditGate.allowsMove(isEditable: isEditable, isCancelled: isCancelled) {
             draggable(payload)
         } else {
             self

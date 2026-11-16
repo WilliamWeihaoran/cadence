@@ -154,7 +154,7 @@ struct TimelineEventBlock: View {
                     },
                 // `.subviews` keeps the tap above and the popover working on a read-only event
                 // while the move itself is never recognised ([[T-5241]]).
-                including: TimelineEventBlockEditGate.allowsMove(isEditable: isEditable) ? .all : .subviews
+                including: TimelineEventBlockEditGate.allowsMove(isEditable: isEditable, isCancelled: isCancelled) ? .all : .subviews
             )
             // MARK: Resize handles
             .overlay(alignment: .top)    { resizeHandle(edge: .start) }
@@ -278,6 +278,7 @@ struct TimelineEventBlock: View {
            TimelineEventBlockEditGate.drawsResizeHandle(
                edge: edge,
                isEditable: isEditable,
+               isCancelled: isCancelled,
                isFirstSegment: item.isFirstSegment,
                isLastSegment: item.isLastSegment
            ) {

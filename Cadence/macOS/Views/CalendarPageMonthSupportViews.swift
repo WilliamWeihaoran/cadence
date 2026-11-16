@@ -797,10 +797,11 @@ struct AllDayEventChip: View {
         // The all-day form of the item, as `CalendarBoardEventDisplayItem.editItem` builds it.
         .calendarEventChipEditor(isPresented: $showEditor) { CalendarEventItem(event: event) }
         // A read-only calendar cannot take the all-day → timed conversion the drop asks for
-        // ([[T-5241]]), so its chip does not offer the drag.
+        // ([[T-5241]]), and a cancelled invite is view-only ([[T-18179]]), so neither chip drags.
         .calendarEventDraggable(
             CalendarEventDragPayload.string(for: event),
-            isEditable: CalendarEventEditPopover.isEditable(event)
+            isEditable: CalendarEventEditPopover.isEditable(event),
+            isCancelled: isCancelled
         )
     }
 }
