@@ -496,6 +496,28 @@ struct CadenceNoteDeletionSurfaceTests {
         #expect(!menu.contains("Menu(\"Move to Folder\")"), "the trigger is title-only again")
     }
 
+    /// **[[T-18154]]: Move to Folder checks the folder the note is already in**, as Move Section
+    /// and Move to List check theirs; "No Folder" is the current item for a root note, and both
+    /// list-note rows hand the menu the note's own `folderPath`.
+    @Test func theMoveToFolderMenuChecksTheNotesCurrentFolder() throws {
+        let check = NoteFolderMoveMenu.currentFolderSystemImage
+        #expect(check == "checkmark.circle.fill")
+        #expect(NoteFolderMoveMenu.itemSystemImage(for: "Planning", currentFolder: "Planning") == check)
+        #expect(NoteFolderMoveMenu.itemSystemImage(for: "Research", currentFolder: "Planning") == "folder")
+        #expect(NoteFolderMoveMenu.itemSystemImage(for: CadenceNoteFolderPath.root, currentFolder: CadenceNoteFolderPath.root) == check)
+        #expect(NoteFolderMoveMenu.itemSystemImage(for: CadenceNoteFolderPath.root, currentFolder: "Planning") == "folder")
+        #expect(NoteFolderMoveMenu.itemSystemImage(for: "Planning", currentFolder: CadenceNoteFolderPath.root) == "folder")
+        // A stored path with stray separators is still the same folder.
+        #expect(NoteFolderMoveMenu.itemSystemImage(for: "Work/Q4", currentFolder: " Work // Q4 ") == check)
+
+        for path in ["Cadence/macOS/Views/ListNotesViewSupportViews.swift", "Cadence/iOS/iOSListNotesView.swift"] {
+            let code = try strippingComments(sourceFile(path))
+            let start = try #require(code.range(of: "NoteFolderMoveMenu("), "\(path) no longer draws the shared menu")
+            let call = String(code[start.upperBound...].prefix(200))
+            #expect(call.contains("currentFolder: note.folderPath"), "\(path) does not hand the menu the note's folder")
+        }
+    }
+
     /// Without this, every zero and every absence above could be passing because the reader
     /// returned an empty string — which is exactly what a `/tmp` against `/private/tmp` path
     /// mismatch produces on an isolated build tree.

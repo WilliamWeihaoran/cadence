@@ -513,6 +513,7 @@ struct iOSListNotesView: View {
             iOSNoteCopyLinkButton(note: note)
             NoteFolderMoveMenu(
                 folderNames: folderNames,
+                currentFolder: note.folderPath,
                 move: { moveNote(note, toFolder: $0) },
                 newFolder: { folderRequest = iOSNoteFolderRequest(mode: .moveNote(note.id)) }
             )

@@ -164,10 +164,55 @@ nonisolated enum CadenceArchiveImportPresentation {
             case .mergeKeepingExistingRows:
                 sentence += " \(records(matched)) already here would be left untouched."
             case .restoreOverwritingExistingRows:
-                sentence += " \(records(matched)) already here would be replaced by this archive's copy."
+                sentence += overwrittenMatchesSentence(plan)
             }
         }
         return sentence
+    }
+
+    /// [[T-18150]]: overwrite's half of `planSummary`. Every id match is rewritten, but the plan
+    /// already compared the tasks, lists, notes and links ([[T-3111]], [[T-3131]]), so a count of
+    /// "N records … replaced" for an archive this device already matches overstates what changes.
+    /// Says how many compared rows actually differ (or that none do), and keeps the plain
+    /// "replaced" count only for the kinds that are not compared — tags, habits, goals, settings —
+    /// which an overwrite can still change, which is why `changesAnything` is left alone.
+    ///
+    /// An empty `differingMatchedCountsByEntityName` means *not compared* (a plan built without a
+    /// store behind it), and keeps the old sentence.
+    private static func overwrittenMatchesSentence(_ plan: CadenceArchiveImportPlan) -> String {
+        let matched = plan.totalMatchedCount
+        guard !plan.differingMatchedCountsByEntityName.isEmpty else {
+            return " \(records(matched)) already here would be replaced by this archive's copy."
+        }
+        let split = comparedMatchSplit(plan)
+        var sentence = ""
+        if split.differing > 0 {
+            let one = split.differing == 1
+            sentence += " \(differingRows(plan)) already here \(one ? "differs" : "differ") and would be replaced by this archive's copy"
+            sentence += split.compared > split.differing ? "; the other \(comparedKinds) already match it." : "."
+        } else if split.compared > 0 {
+            sentence += " The \(comparedKinds) already here match this archive's copy."
+        }
+        if split.uncompared > 0 {
+            let other = split.compared > 0 ? "other " : ""
+            let count = split.uncompared
+            sentence += " \(count) \(other)record\(count == 1 ? "" : "s") already here would be replaced by this archive's copy."
+        }
+        return sentence
+    }
+
+    /// The kinds `CadenceArchiveImportService.makePlan` compares, in a reader's words.
+    private static let comparedKinds = "tasks, lists, notes and links"
+
+    /// Matched rows split three ways: of the compared kinds, how many matched and how many of
+    /// those differ; and how many matched rows are of kinds that are not compared at all.
+    private static func comparedMatchSplit(_ plan: CadenceArchiveImportPlan) -> (compared: Int, differing: Int, uncompared: Int) {
+        let comparedNames = Set(plan.differingMatchedCountsByEntityName.keys)
+        let compared = plan.matchedCountsByEntityName
+            .filter { comparedNames.contains($0.key) }
+            .values.reduce(0, +)
+        let differing = plan.totalDifferingMatchedCount
+        return (compared, differing, max(0, plan.totalMatchedCount - compared))
     }
 
     /// Named once so "4,182 records" and "1 record" cannot disagree between the summary, the
@@ -280,7 +325,8 @@ nonisolated enum CadenceArchiveImportPresentation {
     /// by id. This is the sentence that says the second one is not the whole story, and names the
     /// mode that would act on it, in that mode's own title.
     ///
-    /// `nil` under overwrite, where `planSummary` already says the matched rows are replaced.
+    /// `nil` under overwrite, where `planSummary` already says which compared rows differ and
+    /// would be replaced ([[T-18150]]).
     static func matchedDifferencesNote(_ plan: CadenceArchiveImportPlan) -> String? {
         guard plan.mode == .mergeKeepingExistingRows else { return nil }
         let count = plan.totalDifferingMatchedCount
@@ -350,6 +396,18 @@ nonisolated enum CadenceArchiveImportPresentation {
         if outcome.plan.mode == .mergeKeepingExistingRows, outcome.plan.totalDifferingMatchedCount > 0 {
             let one = outcome.plan.totalDifferingMatchedCount == 1
             sentence += " \(differingRows(outcome.plan)) here \(one ? "differs" : "differ") from the archive and \(one ? "was" : "were") left as \(one ? "it is" : "they are")."
+        }
+        // [[T-18150]]: the overwrite's count is every row rewritten; say how few of the compared
+        // ones actually differed, in `planSummary`'s words, so "4182 replaced" is not the whole story.
+        if outcome.plan.mode == .restoreOverwritingExistingRows, outcome.overwrittenRecordCount > 0,
+           !outcome.plan.differingMatchedCountsByEntityName.isEmpty {
+            let split = comparedMatchSplit(outcome.plan)
+            if split.differing > 0 {
+                sentence += " \(differingRows(outcome.plan)) here had differed from the archive"
+                sentence += split.compared > split.differing ? "; the other \(comparedKinds) already matched it." : "."
+            } else if split.compared > 0 {
+                sentence += " The \(comparedKinds) among them already matched the archive's copy."
+            }
         }
         if outcome.notesFoldedFromLegacyRows > 0 {
             let folded = outcome.notesFoldedFromLegacyRows

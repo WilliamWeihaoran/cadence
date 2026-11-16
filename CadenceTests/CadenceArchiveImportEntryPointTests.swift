@@ -775,6 +775,54 @@ struct CadenceArchiveImportEntryPointTests {
         #expect(!sentence.lowercased().contains("restore"))
     }
 
+    /// **[[T-18150]]:** under overwrite, a re-import the device already matches does not say every
+    /// match "would be replaced". The compared kinds say how many actually differ, or that none
+    /// do; only uncompared kinds keep the plain "replaced" count; and the outcome says the same.
+    @Test func anOverwriteSaysHowManyComparedRowsActuallyDiffer() {
+        func plan(_ differing: [String: Int], matches: [String: Int] = ["AppTask": 5]) -> CadenceArchiveImportPlan {
+            CadenceArchiveImportPlan(
+                mode: .restoreOverwritingExistingRows,
+                insertCountsByEntityName: [:],
+                matchedCountsByEntityName: matches,
+                entityNamesOnlyInTheArchive: [],
+                linkedCalendarCount: 0,
+                differingMatchedCountsByEntityName: differing
+            )
+        }
+
+        let identical = CadenceArchiveImportPresentation.planSummary(plan(["AppTask": 0]))
+        #expect(identical.contains("The tasks, lists, notes and links already here match this archive's copy."))
+        #expect(!identical.contains("5 records"))
+        #expect(!identical.contains("would be replaced"))
+
+        let damaged = CadenceArchiveImportPresentation.planSummary(plan(["AppTask": 1]))
+        #expect(damaged.contains("1 task already here differs and would be replaced by this archive's copy; the other tasks, lists, notes and links already match it."))
+        #expect(!damaged.contains("5 records"))
+
+        // Kinds that are not compared still count as replaced, and say "other".
+        let mixed = CadenceArchiveImportPresentation.planSummary(plan(["AppTask": 0], matches: ["AppTask": 5, "Tag": 3]))
+        #expect(mixed.contains("match this archive's copy"))
+        #expect(mixed.contains("3 other records already here would be replaced by this archive's copy."))
+
+        let outcome = CadenceArchiveImportOutcome(
+            plan: plan(["AppTask": 0]),
+            insertedRecordCount: 0,
+            overwrittenRecordCount: 5,
+            skippedRecordCount: 0,
+            notesFoldedFromLegacyRows: 0
+        )
+        #expect(CadenceArchiveImportPresentation.outcomeMessage(outcome)
+            == "Imported. 5 records replaced by the archive's copy. The tasks, lists, notes and links among them already matched the archive's copy.")
+        let repaired = CadenceArchiveImportOutcome(
+            plan: plan(["AppTask": 1]),
+            insertedRecordCount: 0,
+            overwrittenRecordCount: 5,
+            skippedRecordCount: 0,
+            notesFoldedFromLegacyRows: 0
+        )
+        #expect(CadenceArchiveImportPresentation.outcomeMessage(repaired).contains("1 task here had differed from the archive; the other tasks, lists, notes and links already matched it."))
+    }
+
     /// T-3131: once more than tasks are compared, the note and the result sentence name each kind
     /// in plain words, agree with the total, and leave a kind at zero out.
     @Test func theMatchedDifferencesNoteNamesEachKindThatDiffers() throws {

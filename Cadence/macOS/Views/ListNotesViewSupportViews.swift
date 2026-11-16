@@ -105,6 +105,7 @@ struct ListNoteFolderRow: View {
                 }
                 NoteFolderMoveMenu(
                     folderNames: folderNames,
+                    currentFolder: note.folderPath,
                     move: onMoveToFolder,
                     newFolder: onNewFolder
                 )

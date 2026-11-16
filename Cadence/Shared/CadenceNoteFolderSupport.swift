@@ -301,9 +301,12 @@ struct TaskNoteListRow: View {
 /// The "Move to Folder" submenu, one spelling for both platforms: out of every folder, into any
 /// folder this list already has, or into a new one.
 ///
-/// No checkmark and no disabled current folder, deliberately — the heading the row sits under
-/// already says where it is, and greying out the answer to "where is this note" is how a menu
-/// stops being readable as a list of destinations.
+/// [[T-18154]]: the folder the note is already in (or "No Folder" for a root note) draws
+/// `checkmark.circle.fill`, the Move Section / Move to List vocabulary, and every other
+/// destination the plain `folder` glyph. This reverses `676ff3bf`'s "no checkmark" call: the
+/// heading above the row is out of sight once the menu is open, and the task menus one row up
+/// already answer "where is this now" this way. The current item stays enabled — a destination
+/// list, not a greyed-out answer.
 ///
 /// [[T-10168]]: the trigger draws the folder glyph, so it is not the one words-only item between
 /// Copy Note Link's link glyph and Delete's trash. Unfilled, because the filled folder is the AREA
@@ -311,20 +314,35 @@ struct TaskNoteListRow: View {
 struct NoteFolderMoveMenu: View {
     static let systemImage = "folder"
 
+    static let currentFolderSystemImage = "checkmark.circle.fill"
+
     let folderNames: [String]
+    let currentFolder: String
     let move: (String) -> Void
     let newFolder: () -> Void
 
     var body: some View {
         Menu {
-            Button("No Folder") { move(CadenceNoteFolderPath.root) }
+            Button { move(CadenceNoteFolderPath.root) } label: {
+                Label("No Folder", systemImage: Self.itemSystemImage(for: CadenceNoteFolderPath.root, currentFolder: currentFolder))
+            }
             ForEach(folderNames, id: \.self) { name in
-                Button(name) { move(name) }
+                Button { move(name) } label: {
+                    Label(name, systemImage: Self.itemSystemImage(for: name, currentFolder: currentFolder))
+                }
             }
             Button("New Folder…") { newFolder() }
         } label: {
             Label("Move to Folder", systemImage: Self.systemImage)
         }
+    }
+
+    /// The checkmark on the destination the note is already in; `currentFolder` is normalized
+    /// because a stored `folderPath` predating the normalizer may carry stray separators.
+    static func itemSystemImage(for destination: String, currentFolder: String) -> String {
+        CadenceNoteFolderPath.normalized(destination) == CadenceNoteFolderPath.normalized(currentFolder)
+            ? currentFolderSystemImage
+            : systemImage
     }
 }
 
