@@ -581,35 +581,97 @@ extension View {
 
 // MARK: - The composers a finished press asks for
 
-/// The palette's arc, and the three composers behind its segments.
+/// **[[T-18157]] — the mailbox between every `+` and the one host that presents.**
+///
+/// Each placement's host used to present its own composers from its own `@State`. Three of the
+/// four placements (the page's corner `+`, the iPad drawer's, the tab bar's) sit inside one of the
+/// two shells `iOSRootView` picks from `horizontalSizeClass`, so a Split View or Stage Manager
+/// resize across the compact/regular boundary took the host out of the hierarchy and SwiftUI
+/// dismissed the half-typed composer with it -- a dismissal the [[T-5174]] swipe guard never saw.
+/// The palette stays with its placement (it draws over that placement's content); what a finished
+/// press asks for is forwarded here and presented by `iOSCapturePresentationHostModifier`, which
+/// `iOSRootView` mounts once, above the size-class switch, the way [[T-201]] hoisted the task
+/// inspector.
+@Observable
+final class iOSCapturePresenter {
+    struct Pending {
+        let request: iOSCaptureRequest
+        let onCreated: ((AppTask) -> Void)?
+    }
+
+    private(set) var pending: Pending?
+
+    init() {}
+
+    func forward(_ request: iOSCaptureRequest, onCreated: ((AppTask) -> Void)?) {
+        pending = Pending(request: request, onCreated: onCreated)
+    }
+
+    /// Hands the request over exactly once, as `iOSCaptureInteraction.consumeRequest()` does.
+    func consume() -> Pending? {
+        defer { pending = nil }
+        return pending
+    }
+}
+
+/// One placement's half: the palette and drag preview over its content, and the forwarding of a
+/// finished press to the root's `iOSCapturePresenter`.
 ///
 /// **Both `+`s apply this, which is the point.** T-171 shipped the gesture on the tab bar's centre
 /// button and the routing beside it in `iOSCompactRootShell`; the iPad's corner `+` therefore had a
-/// tap and nothing else (T-282). Moving the routing here is what let the corner button take the same
-/// gesture without a second copy of "a Task is a sheet, an Event is a sheet, a Note is a cover over a
-/// note that has to exist first" — the near-copy this repo keeps paying for.
+/// tap and nothing else (T-282). One host means no second copy of "a Task is a sheet, an Event is a
+/// sheet, a Note is a cover over a note that has to exist first" -- the near-copy this repo keeps
+/// paying for. Since [[T-18157]] the composers themselves are presented by
+/// `iOSCapturePresentationHostModifier`, so this modifier presents nothing: a host inside a shell
+/// cannot present anything that has to outlive that shell.
+private struct iOSCaptureHostModifier: ViewModifier {
+    let interaction: iOSCaptureInteraction
+    let onCreated: ((AppTask) -> Void)?
+
+    @Environment(iOSCapturePresenter.self) private var presenter: iOSCapturePresenter?
+
+    func body(content: Content) -> some View {
+        content
+            .iOSCaptureRadialMenuLayer(interaction)
+            .onChange(of: interaction.pendingRequest?.id) { _, _ in
+                guard let request = interaction.consumeRequest() else { return }
+                guard let presenter else {
+                    assertionFailure("an iOSCaptureHost is mounted outside iOSRootView's presentation host")
+                    return
+                }
+                presenter.forward(request, onCreated: onCreated)
+            }
+    }
+}
+
+/// The three composers behind the palette's segments, presented once, from the root.
 ///
 /// The **Note** branch is why this needs a `modelContext`. `iOSNoteEditorCover` edits a note, so one
 /// is created before the cover is presented; an abandoned blank note is invisible in every list,
 /// because the lists filter to notes with content. That is what tapping "New note" on the Notes page
 /// already does, through the same call.
 ///
-/// It presents from the request mailbox on `iOSCaptureInteraction` rather than from a closure,
-/// because the button's placement is the caller's business and its presentations are not: on iPhone
-/// the button is four levels down inside a tab bar row, on iPad it is an overlay on a page, and both
-/// want the same composers.
+/// It presents from the request mailbox rather than from a closure, because the button's placement
+/// is the caller's business and its presentations are not: on iPhone the button is four levels down
+/// inside a tab bar row, on iPad it is an overlay on a page, and both want the same composers.
 ///
 /// **The fourth is the list editor, and no palette segment opens it (T-2054).** It is reached only
 /// by a drag that came down on an iPad sidebar context group — the one region in the app that
 /// implies a list rather than a task — so it is a consequence of *where*, not a choice of *what*.
 /// The arc is unchanged and stays three segments.
-private struct iOSCaptureHostModifier: ViewModifier {
-    let interaction: iOSCaptureInteraction
-    let onCreated: ((AppTask) -> Void)?
+///
+/// **One host, so one composer at a time.** A request that arrives while a composer is up is
+/// dropped rather than swapped in: replacing the sheet's item would throw away the draft on screen,
+/// which is the loss this host exists to prevent. Before [[T-18157]] the same press reached a second
+/// host that could not present over the first, so nothing opened then either.
+private struct iOSCapturePresentationHostModifier: ViewModifier {
+    let presenter: iOSCapturePresenter
 
     @Environment(\.modelContext) private var modelContext
     /// The task and event composers, which are sheets.
     @State private var composer: iOSCaptureRequest?
+    /// What the press that opened `composer` wants told about the task it made.
+    @State private var composerOnCreated: ((AppTask) -> Void)?
     /// The note composer, which is a full-screen cover over a note that already exists — the same
     /// presentation the Notes page uses for the same editor.
     @State private var noteBeingCaptured: Note?
@@ -620,6 +682,7 @@ private struct iOSCaptureHostModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .environment(presenter)
             .safeAreaInset(edge: .top, spacing: 0) {
                 if let noteCaptureFailureNotice {
                     CadenceInlineFailureNotice(text: noteCaptureFailureNotice)
@@ -628,11 +691,10 @@ private struct iOSCaptureHostModifier: ViewModifier {
                         .background(Theme.bg)
                 }
             }
-            .iOSCaptureRadialMenuLayer(interaction)
             .sheet(item: $composer) { request in
                 switch request.kind {
                 case .task(let seed):
-                    iOSCreateTaskSheet(seed: seed, onCreated: onCreated)
+                    iOSCreateTaskSheet(seed: seed, onCreated: composerOnCreated)
                 case .event(let dateKey, let startMinute):
                     iOSCreateTaskSheet(
                         seed: CadenceTaskComposerSeed(doDateKey: dateKey, scheduledStartMin: startMinute ?? -1),
@@ -656,13 +718,14 @@ private struct iOSCaptureHostModifier: ViewModifier {
                     iOSNoteEditorCover(note: note, templateKind: .permanent, title: note.displayTitle)
                 }
             }
-            .onChange(of: interaction.pendingRequest?.id) { _, _ in
-                guard let request = interaction.consumeRequest() else { return }
-                present(request)
+            .onChange(of: presenter.pending?.request.id) { _, _ in
+                guard let pending = presenter.consume() else { return }
+                guard composer == nil, noteBeingCaptured == nil else { return }
+                present(pending)
             }
     }
 
-    /// The group a sidebar drop landed on.
+/// The group a sidebar drop landed on.
     ///
     /// Fetched here rather than carried from the drag, because the drop registry is a value layer:
     /// it publishes a key, and a key holds a UUID — see
@@ -675,10 +738,12 @@ private struct iOSCaptureHostModifier: ViewModifier {
         return try? modelContext.fetch(descriptor).first
     }
 
-    private func present(_ request: iOSCaptureRequest) {
+    private func present(_ pending: iOSCapturePresenter.Pending) {
+        let request = pending.request
         noteCaptureFailureNotice = nil
         switch request.kind {
         case .task, .event, .list:
+            composerOnCreated = pending.onCreated
             composer = request
         case .note:
             switch iOSCaptureNoteCreation.create(in: modelContext) {
@@ -719,13 +784,21 @@ enum iOSCaptureNoteCreation {
 }
 
 extension View {
-    /// Installs the capture palette and the composers its segments open. Apply once per placement,
-    /// above the content the palette draws over. See `iOSCaptureHostModifier`.
+    /// Installs the capture palette and forwards what its segments ask for to the root's
+    /// `.iOSCapturePresentationHost(_:)`. Apply once per placement, above the content the palette
+    /// draws over. See `iOSCaptureHostModifier`.
     func iOSCaptureHost(
         _ interaction: iOSCaptureInteraction,
         onCreated: ((AppTask) -> Void)? = nil
     ) -> some View {
         modifier(iOSCaptureHostModifier(interaction: interaction, onCreated: onCreated))
+    }
+
+    /// [[T-18157]]: presents what every `.iOSCaptureHost(_:)` below forwards. `iOSRootView` applies
+    /// it exactly once, OUTSIDE the `horizontalSizeClass` shell switch, so a resize across the
+    /// compact/regular boundary cannot take a half-typed composer down with the shell.
+    func iOSCapturePresentationHost(_ presenter: iOSCapturePresenter) -> some View {
+        modifier(iOSCapturePresentationHostModifier(presenter: presenter))
     }
 }
 #endif

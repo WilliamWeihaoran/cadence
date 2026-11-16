@@ -5,13 +5,15 @@ import UIKit
 
 struct iPadMacStyleRootShell<Content: View>: View {
     @Binding var selection: iOSSidebarItem?
+    /// The editor's presenter must survive hiding the navigation -- and, since [[T-18157]], the
+    /// shell itself: `iOSRootView` owns and presents it, because a resize into compact width
+    /// destroys this shell and would dismiss a half-filled editor with it.
+    @Binding var listEditorRequest: iOSSidebarListEditorRequest?
     @ViewBuilder let detail: () -> Content
 
     /// Only the user's docked fold choice persists. Window measurements and drawer taps do not.
     @AppStorage("ios.sidebar.collapsed") private var isSidebarCollapsed = false
     @State private var isDrawerPresented = false
-    /// The editor's presenter must survive hiding the navigation.
-    @State private var listEditorRequest: iOSSidebarListEditorRequest?
     /// The capture `+` the shell draws **only while the drawer is modal** — see `drawerCaptureButton`.
     @State private var drawerCapture = iOSCaptureInteraction(placement: .bottomTrailing)
 
@@ -122,12 +124,9 @@ struct iPadMacStyleRootShell<Content: View>: View {
         }
         .background(Theme.bg.ignoresSafeArea())
         .ignoresSafeArea(.container)
-        .sheet(item: $listEditorRequest) { request in
-            iOSListEditorSheet(mode: request.mode, seededContext: request.seededContext)
-        }
-        // The composers the drawer's own `+` asks for. Mounted on the shell rather than on a page
-        // for the same reason the phone's is mounted on `iOSCompactRootShell`: the control it
-        // belongs to is drawn above a modal scrim, outside every page.
+        // The palette for the drawer's own `+`. Mounted on the shell rather than on a page for the
+        // same reason the phone's is mounted on `iOSCompactRootShell`: the control it belongs to is
+        // drawn above a modal scrim, outside every page. Its composers are the root's ([[T-18157]]).
         .iOSCaptureHost(drawerCapture)
     }
 

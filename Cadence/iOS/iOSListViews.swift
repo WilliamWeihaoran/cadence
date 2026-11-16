@@ -5,9 +5,27 @@ import SwiftUI
 enum iOSListRoute: Hashable {
     case area(UUID)
     case project(UUID)
+
+    /// [[T-18158]]: the same route in `CadenceShellPlaceCarry`'s vocabulary, and back.
+    var carried: CadenceCarriedListRoute {
+        switch self {
+        case .area(let id): return .area(id)
+        case .project(let id): return .project(id)
+        }
+    }
+
+    init(_ carried: CadenceCarriedListRoute) {
+        switch carried {
+        case .area(let id): self = .area(id)
+        case .project(let id): self = .project(id)
+        }
+    }
 }
 
 struct iOSListsView: View {
+    /// [[T-18158]]: the list selection carried across a size-class swap. Both shells build this page
+    /// (the sidebar's Lists row, the More tab's push) and nothing else does.
+    @Environment(CadenceShellPlaceCarry.self) private var placeCarry: CadenceShellPlaceCarry?
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -98,9 +116,17 @@ struct iOSListsView: View {
         .navigationDestination(for: iOSListRoute.self) { route in
             listDetail(for: route)
         }
-        .onAppear(perform: selectDefaultListIfNeeded)
+        .onAppear {
+            adoptCarriedList()
+            selectDefaultListIfNeeded()
+        }
         .onChange(of: activeRouteKey) { _, _ in
             selectDefaultListIfNeeded()
+        }
+        // [[T-18158]]: the regular pane's selection is the list the other shell should carry.
+        .onChange(of: selectedRoute) { _, route in
+            guard !isCompact, let route else { return }
+            recordList(route)
         }
     }
 
@@ -386,8 +412,14 @@ struct iOSListsView: View {
         CadenceListSearchSupport.containerNames(for: project).joined(separator: " / ")
     }
 
-    @ViewBuilder
     private func listDetail(for route: iOSListRoute) -> some View {
+        listDetailContent(for: route)
+            // [[T-18158]]: a list pushed open is the compact form's selection.
+            .onAppear { recordList(route) }
+    }
+
+    @ViewBuilder
+    private func listDetailContent(for route: iOSListRoute) -> some View {
         switch route {
         case .area(let id):
             if let area = areas.first(where: { $0.id == id }) {
@@ -417,6 +449,23 @@ struct iOSListsView: View {
         case .project(let id):
             return activeProjects.contains { $0.id == id }
         }
+    }
+
+    // MARK: - [[T-18158]] The list carried across a size-class swap
+
+    private func recordList(_ route: iOSListRoute) {
+        placeCarry?.recordList(route.carried, isRegularWidth: !isCompact)
+    }
+
+    /// The regular pane selects the list the compact shell last had; the compact form, which has no
+    /// standing selection, passes the regular pane's on so widening again hands it back.
+    private func adoptCarriedList() {
+        guard let placeCarry, let carried = placeCarry.listToRestore(isRegularWidth: !isCompact) else { return }
+        let route = iOSListRoute(carried)
+        if !isCompact, containsActive(route: route) {
+            selectedRoute = route
+        }
+        placeCarry.recordList(carried, isRegularWidth: !isCompact)
     }
 
     private func selectDefaultListIfNeeded() {

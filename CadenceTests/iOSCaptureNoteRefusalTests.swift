@@ -61,7 +61,9 @@ struct iOSCaptureNoteRefusalWiringTests {
 
     @Test func theHostDrawsTheNoticeWithoutADismissal() throws {
         let source = try CadenceCommitSurfaceScan.scanned(Self.path)
-        let body = try #require(CadenceSourceScan.declarationBody("func body(content: Content) -> some View", in: source))
+        // [[T-18157]]: the notice moved with the composers into the root's presentation host.
+        let host = try #require(CadenceSourceScan.declarationBody("private struct iOSCapturePresentationHostModifier: ViewModifier", in: source))
+        let body = try #require(CadenceSourceScan.declarationBody("func body(content: Content) -> some View", in: host))
         #expect(body.contains("if let noteCaptureFailureNotice {"))
         #expect(body.contains("CadenceInlineFailureNotice(text: noteCaptureFailureNotice)"))
         #expect(!body.contains("CadenceInlineFailureNotice(text: noteCaptureFailureNotice) {"),

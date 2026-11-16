@@ -636,7 +636,12 @@ struct SidebarStaticDestinationBridgeTests {
                     "\(path)'s + no longer opens the editor on a new list")
             #expect(code.contains("contexts.first { $0.id == id }"),
                     "\(path)'s + stopped resolving the context it was tapped on, so the seed is dropped")
-            #expect(code.contains("seededContext: request.seededContext"),
+            // [[T-18157]]: the iPad shell's editor is presented by the root, above the size-class
+            // switch, so the seed is read where the sheet now is.
+            let presenter = path == "Cadence/iOS/iOSRootSidebar.swift"
+                ? CadenceSourceScan.codeOnly(try cadenceTestSource("Cadence/iOS/iOSRootView.swift"))
+                : code
+            #expect(presenter.contains("seededContext: request.seededContext"),
                     "\(path) presents the editor without the group the + was tapped on")
         }
 

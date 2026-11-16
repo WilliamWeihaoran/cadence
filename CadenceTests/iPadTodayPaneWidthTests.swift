@@ -320,7 +320,8 @@ struct iPadTodayRailSurfaceTests {
 
         // The tab strip is the other way out.
         #expect(
-            dense(notes).contains(".onChange(of:activeTab){_,_inisEditorFocused=falseshowsInlineEditor=falseselectDefaultNote()}"),
+            // [[T-18158]]: after the carried-place prelude, which yields only to a pending restore.
+            dense(notes).contains("pendingCarriedPlace=nilisEditorFocused=falseshowsInlineEditor=falseselectDefaultNote()}"),
             "switching tabs no longer returns the index"
         )
     }

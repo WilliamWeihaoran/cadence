@@ -819,8 +819,9 @@ struct CadenceNotesTwoColumnFloorTests {
         // editor instead of the list, where the template control lives, and — since T-1277 — the
         // guard on the in-pane editor, which may only draw in the one-column form -- and, since
         // [[T-9664]], whether a row draws the "open note" plate, which is lit only in the
-        // two-column form where the note stands beside the list.
-        #expect(code.components(separatedBy: "notesLayout").count - 1 == 6)
+        // two-column form where the note stands beside the list -- and, since [[T-18158]], the
+        // place carried across a size-class swap, whose "is the note open" answer differs by form.
+        #expect(code.components(separatedBy: "notesLayout").count - 1 == 7)
         // Declaration, the `!isCompactWidth` inside `notesLayout`, the row metrics, and the three
         // genuinely device-shaped decisions T-1277 leaves it with: `isShowingInlineEditor` (a phone
         // never edits in the pane), `open(_:)`'s fork between the pane and the presented cover, and
@@ -829,8 +830,9 @@ struct CadenceNotesTwoColumnFloorTests {
         // **The split this pair asserts is unchanged and is the point.** Every "how many columns"
         // question is still `notesLayout`; what T-1277 added to `isCompactWidth` is not a layout
         // branch but the question the layout cannot answer — a 320pt pane and a 390pt phone are the
-        // same *shape*, and the pushed editor is right on exactly one of them.
-        #expect(code.components(separatedBy: "isCompactWidth").count - 1 == 6)
+        // same *shape*, and the pushed editor is right on exactly one of them. [[T-18158]] adds one:
+        // `shellIsRegular`, which shell the carried place was recorded in -- a size-class question.
+        #expect(code.components(separatedBy: "isCompactWidth").count - 1 == 7)
         // Measured rather than wrapped in a `GeometryReader`, and measured exactly once.
         #expect(code.components(separatedBy: "onGeometryChange").count - 1 == 1)
         // The one-column form is reused, not rebuilt: the *phone's* editor is still presented over

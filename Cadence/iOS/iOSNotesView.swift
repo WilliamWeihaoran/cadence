@@ -73,7 +73,12 @@ struct iOSNotesView: View {
     /// and already has "Notes" lit up in it — the same duplication the title itself was fixed for.
     /// The kind tabs stay either way; they are the only thing in this row that is not a restatement.
     var showsTitle = true
+    /// [[T-18158]]: set by the two shells' Notes destinations, the page a size-class swap destroys
+    /// and rebuilds. Off for Today's inspector, which is not the Notes page and keeps its own
+    /// per-visit reset.
+    var carriesPlaceAcrossShells = false
 
+    @Environment(CadenceShellPlaceCarry.self) private var placeCarry: CadenceShellPlaceCarry?
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
@@ -112,6 +117,14 @@ struct iOSNotesView: View {
     /// list and the open note together, and narrowing it again returns to the note you were reading
     /// rather than to the top of the index.
     @State private var showsInlineEditor = false
+    /// [[T-18158]]: whether the selected note was OPENED (a tap, a date jump, a carried place) rather
+    /// than being the tab's default. Only the two-column pane needs it -- see
+    /// `CadenceNotesShellPlace.isOpen`.
+    @State private var noteWasChosen = false
+    /// [[T-18158]]: the place this page was rebuilt onto, held until the tab and day writes it made
+    /// have been answered. Those writes fire `onChange(of: activeTab)` / `onChange(of: selectedDayKey)`
+    /// a frame later, and both would otherwise select the tab's default note over the carried one.
+    @State private var pendingCarriedPlace: CadenceNotesShellPlace?
     @State private var selectedMeetingNote: Note?
     /// Set by a notepad row's menu; the `iOSNoteDeletion` modifier owns the confirmation and the
     /// delete.
@@ -236,7 +249,16 @@ struct iOSNotesView: View {
         .cadenceTracksDayChanges($observedDay)
         .onAppear {
             loadCoreNotes()
-            selectDefaultNote()
+            if let place = carriedPlaceToRestore() {
+                restore(place)
+            } else {
+                selectDefaultNote()
+            }
+            recordPlace()
+        }
+        // [[T-18158]]: every change to where the user is, so the other shell can be built onto it.
+        .onChange(of: shellPlace) { _, _ in
+            recordPlace()
         }
         // [[T-14583]]: the standing notes above are made for `selectedDayKey`, which deliberately
         // does not move at midnight, so the Today and Week tabs pinned an observed day whose note
@@ -250,6 +272,11 @@ struct iOSNotesView: View {
             loadCoreNotes()
         }
         .onChange(of: activeTab) { _, _ in
+            if let place = pendingCarriedPlace, place.tab == activeTab {
+                applyCarried(place)
+                return
+            }
+            pendingCarriedPlace = nil
             isEditorFocused = false
             // Back to the index, not into the new tab's default note (T-1277). The tab strip is the
             // one control on this header that names a *destination*, and `selectDefaultNote` picks
@@ -263,6 +290,11 @@ struct iOSNotesView: View {
         // note is exactly such a write. Without this, jumping dates with the caret in the editor
         // would show the old day's text over the new day's note.
         .onChange(of: selectedDayKey) { _, _ in
+            if let place = pendingCarriedPlace, place.tab == activeTab, place.dayKey == selectedDayKey {
+                applyCarried(place)
+                return
+            }
+            pendingCarriedPlace = nil
             isEditorFocused = false
             openNoteForSelectedDay()
         }
@@ -705,7 +737,11 @@ struct iOSNotesView: View {
     /// inspector would set `selectedNoteID` and show nothing at all; the second follows the size
     /// class, because which of the two a one-column host wants is a question about the device.
     private func open(_ note: Note) {
+        if pendingCarriedPlace?.noteID != note.id {
+            pendingCarriedPlace = nil
+        }
         selectedNoteID = note.id
+        noteWasChosen = true
         guard notesLayout == .oneColumn else { return }
         guard isCompactWidth else {
             showsInlineEditor = true
@@ -766,9 +802,76 @@ struct iOSNotesView: View {
         if let coreTab = activeTab.coreTab, coreTab != .notepad,
            let note = loadCoreNotes().note(for: coreTab) {
             selectedNoteID = note.id
+            noteWasChosen = false
             return
         }
         selectedNoteID = listedNotes.first?.id
+        noteWasChosen = false
+    }
+
+    // MARK: - [[T-18158]] The place carried across a size-class swap
+
+    /// Which shell this page is in, for the carry -- a size-class question, not a layout one.
+    private var shellIsRegular: Bool {
+        !isCompactWidth
+    }
+
+    /// Where this page is, in the vocabulary the root carries between the two shells.
+    private var shellPlace: CadenceNotesShellPlace {
+        CadenceNotesShellPlace(
+            tab: activeTab,
+            dayKey: selectedDayKey,
+            noteID: selectedNoteID,
+            isOpen: CadenceNotesShellPlace.isOpen(
+                isRegularWidth: shellIsRegular,
+                layout: notesLayout,
+                compactEditorIsUp: presentedNote != nil || selectedMeetingNote != nil,
+                inlineEditorIsShown: showsInlineEditor,
+                noteWasChosen: noteWasChosen
+            )
+        )
+    }
+
+    private func recordPlace() {
+        guard carriesPlaceAcrossShells, let placeCarry else { return }
+        placeCarry.recordNotes(shellPlace, isRegularWidth: shellIsRegular)
+    }
+
+    /// The other shell's place, when this page is the one a resize just built. `nil` on every
+    /// ordinary arrival, which keeps the per-launch Daily reset the header documents.
+    private func carriedPlaceToRestore() -> CadenceNotesShellPlace? {
+        guard carriesPlaceAcrossShells, let placeCarry else { return nil }
+        return placeCarry.notesPlaceToRestore(isRegularWidth: shellIsRegular)
+    }
+
+    /// Puts the tab and day back first, so `notesForActiveTab` answers for the carried tab, then the
+    /// note. The two writes' `onChange` handlers re-apply through `pendingCarriedPlace` instead of
+    /// picking a default.
+    private func restore(_ place: CadenceNotesShellPlace) {
+        pendingCarriedPlace = place
+        activeTab = place.tab
+        selectedDayKey = place.dayKey
+        loadCoreNotes()
+        applyCarried(place)
+    }
+
+    private func applyCarried(_ place: CadenceNotesShellPlace) {
+        guard let id = place.noteToSelect(amongTabNoteIDs: notesForActiveTab.map(\.id)),
+              let note = notesForActiveTab.first(where: { $0.id == id }) else {
+            pendingCarriedPlace = nil
+            selectDefaultNote()
+            return
+        }
+        selectedNoteID = id
+        noteWasChosen = place.isOpen
+        guard place.isOpen else { return }
+        if !shellIsRegular {
+            open(note)
+        } else {
+            // Set rather than routed through `open(_:)`: before the first width measurement the
+            // layout reads two-column, and the flag only draws in the one-column form anyway.
+            showsInlineEditor = true
+        }
     }
 
     /// The date picker is this surface's "go to date", the same job macOS's `NotesDateJumpButton`

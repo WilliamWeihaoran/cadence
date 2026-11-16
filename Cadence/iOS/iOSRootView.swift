@@ -56,6 +56,16 @@ struct iOSRootView: View {
     /// [[T-13281]]: Cmd+N's composer. No `+` draws against it -- the key is the whole press --
     /// so its placement only satisfies the type; it never opens a palette.
     @State private var keyboardCapture = iOSCaptureInteraction(placement: .bottomCentre)
+    /// [[T-18157]]: the one presenter every `+`'s host forwards to. Held here, above the size-class
+    /// switch, so a resize across the compact/regular boundary cannot dismiss a half-typed composer
+    /// by destroying the shell whose host presented it.
+    @State private var capturePresenter = iOSCapturePresenter()
+    /// [[T-18157]]: the iPad sidebar's own list editor (its New List / Edit rows), hoisted out of
+    /// `iPadMacStyleRootShell` for the same reason -- narrowing destroys that shell.
+    @State private var sidebarListEditorRequest: iOSSidebarListEditorRequest?
+    /// [[T-18158]]: where the user was inside Notes and Lists, carried into whichever shell the
+    /// size class builds next. Scene-scoped `@State`, never persisted -- see `CadenceShellPlaceCarry`.
+    @State private var placeCarry = CadenceShellPlaceCarry()
 
     private var selectedTab: CadenceCompactTab {
         CadenceCompactTab.resolved(selectedTabRaw)
@@ -76,7 +86,7 @@ struct iOSRootView: View {
     var body: some View {
         Group {
             if horizontalSizeClass == .regular {
-                iPadMacStyleRootShell(selection: $selection) {
+                iPadMacStyleRootShell(selection: $selection, listEditorRequest: $sidebarListEditorRequest) {
                     detailView(for: selection ?? .today)
                 }
             } else {
@@ -97,6 +107,13 @@ struct iOSRootView: View {
         // recreate the macOS/iOS asymmetry it exists to close, one level down.
         .cadenceStartupIssueBanner(PersistenceController.startupIssue)
         .environment(searchFocusRequest)
+        // [[T-18158]]: both shells' Notes and Lists read and write the carried place.
+        .environment(placeCarry)
+        // [[T-18157]]: presented from the root rather than from `iPadMacStyleRootShell`, whose
+        // lifetime is one size class.
+        .sheet(item: $sidebarListEditorRequest) { request in
+            iOSListEditorSheet(mode: request.mode, seededContext: request.seededContext)
+        }
         // T-636, and `macOSRootView` says the same thing in the same place for the same reason:
         // the completion control is reached from six surfaces here and owned by none of them, so
         // a refused settle is named once at the shell rather than six times badly. Both shells,
@@ -159,6 +176,10 @@ struct iOSRootView: View {
                 .accessibilityHidden(true)
         }
         .iOSCaptureHost(keyboardCapture)
+        // [[T-18157]]: every `+`'s composer is presented here, once, outside the shell switch, so
+        // a Split View or Stage Manager resize keeps the draft on screen. After the Cmd+N host so
+        // that host, like the shells', is inside the presenter's environment.
+        .iOSCapturePresentationHost(capturePresenter)
         .background(Theme.bg)
         // Both shells, one call ([[T-9975]]). The palette's blue was declared only on the iPhone's
         // tab shell, so on the iPad sidebar shell every control that inherits its tint and sits
@@ -281,7 +302,7 @@ struct iOSRootView: View {
             iOSCalendarView()
         case .notes:
             NavigationStack {
-                iOSNotesView()
+                iOSNotesView(carriesPlaceAcrossShells: true)
                     .toolbar(.hidden, for: .navigationBar)
             }
         case .lists:
