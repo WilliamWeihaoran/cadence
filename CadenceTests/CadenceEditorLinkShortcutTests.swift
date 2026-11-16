@@ -49,7 +49,43 @@ struct CadenceEditorLinkShortcutTests {
         #expect(!textView.string.contains("~~"))
     }
 
-    private func keyEvent(_ characters: String, _ flags: NSEvent.ModifierFlags) throws -> NSEvent {
+    /// [[T-18152]]: what the keyboard really delivers for Cmd+Shift+7/8/9 on a US layout. Shift
+    /// survives `charactersIgnoringModifiers`, so the digits arrive as `&`, `*` and `(`; only the
+    /// key code still names the key.
+    @Test func commandShiftEightOnTheShiftedKeyMakesABullet() throws {
+        let textView = NSTextView()
+        textView.string = "a"
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        let expected = MarkdownFormatCommandSupport.apply(.unorderedList, text: "a", selection: NSRange(location: 0, length: 0)).text
+
+        #expect(MarkdownKeyboardShortcutSupport.handle(try keyEvent("*", [.command, .shift], keyCode: 28), in: textView))
+        #expect(textView.string == expected)
+        #expect(textView.string != "a")
+    }
+
+    @Test func commandShiftSevenOnTheShiftedKeyMakesANumberedItem() throws {
+        let textView = NSTextView()
+        textView.string = "a"
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        let expected = MarkdownFormatCommandSupport.apply(.orderedList, text: "a", selection: NSRange(location: 0, length: 0)).text
+
+        #expect(MarkdownKeyboardShortcutSupport.handle(try keyEvent("&", [.command, .shift], keyCode: 26), in: textView))
+        #expect(textView.string == expected)
+        #expect(textView.string != "a")
+    }
+
+    @Test func commandShiftNineOnTheShiftedKeyMakesAQuote() throws {
+        let textView = NSTextView()
+        textView.string = "a"
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        let expected = MarkdownFormatCommandSupport.apply(.quote, text: "a", selection: NSRange(location: 0, length: 0)).text
+
+        #expect(MarkdownKeyboardShortcutSupport.handle(try keyEvent("(", [.command, .shift], keyCode: 25), in: textView))
+        #expect(textView.string == expected)
+        #expect(textView.string != "a")
+    }
+
+    private func keyEvent(_ characters: String, _ flags: NSEvent.ModifierFlags, keyCode: UInt16 = 40) throws -> NSEvent {
         try #require(
             NSEvent.keyEvent(
                 with: .keyDown,
@@ -61,7 +97,7 @@ struct CadenceEditorLinkShortcutTests {
                 characters: characters,
                 charactersIgnoringModifiers: characters,
                 isARepeat: false,
-                keyCode: 40
+                keyCode: keyCode
             )
         )
     }

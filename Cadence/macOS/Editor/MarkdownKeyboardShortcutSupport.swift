@@ -22,12 +22,26 @@ enum MarkdownKeyboardShortcutSupport {
         )
     }
 
+    /// ANSI key codes of the 7, 8 and 9 keys.
+    ///
+    /// [[T-18152]]: `charactersIgnoringModifiers` ignores every modifier except Shift, so on a US
+    /// layout Cmd+Shift+7/8/9 arrive as `&`, `*` and `(` and the digit cases below never matched —
+    /// the numbered-list, bulleted-list and quote chords were dead on the Mac while the same keys
+    /// worked on iPad, where `UIKeyCommand` matches by key. The key code is the key, whatever the
+    /// layout prints on it, and unlike asking AppKit to re-apply modifiers it does not read the
+    /// host's live input source, so a test on CI and on this Mac sees the same thing.
+    private static let shiftedDigitKeyCodes: [UInt16: String] = [26: "7", 28: "8", 25: "9"]
+
     static func handle(_ event: NSEvent, in textView: NSTextView) -> Bool {
-        guard let characters = event.charactersIgnoringModifiers?.lowercased(),
+        guard var characters = event.charactersIgnoringModifiers?.lowercased(),
               characters.count == 1 else { return false }
 
         var flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         flags.remove(.capsLock)
+
+        if flags.contains(.shift), let digit = shiftedDigitKeyCodes[event.keyCode] {
+            characters = digit
+        }
 
         switch (characters, flags) {
         case ("b", [.command]):
