@@ -45,6 +45,11 @@ struct iOSCalendarQuickCreateSheet: View {
     /// [[T-5174]] (b): the draft as `onAppear`'s calendar normalisation left it, against which a
     /// swipe-down is refused. `nil` until then, so that normalisation is never read as typing.
     @State private var openedDraft: CadenceScheduleDraft?
+    /// [[T-18083]]: a refusal reached by Cmd+Return, which bypasses the card's own create arrow and
+    /// so its notice; drawn through the panel's `failureNotice:`, as the `+` composer's is.
+    @State private var actionError: String?
+    /// [[T-18083]]: the card panel standing open, so Escape closes it before the sheet.
+    @State private var openField: CadenceCaptureField?
 
     /// `initialKind` is what the capture palette's **Event** segment needs: the kind switch is
     /// still there and still switches, but a palette that says "Event" and opens on Task would be
@@ -88,6 +93,7 @@ struct iOSCalendarQuickCreateSheet: View {
                 sectionChoices: CadenceScheduleDraftChoices.sectionChoices(for: draft, areas: areas, projects: projects),
                 calendarChoices: iOSScheduleDraftCreation.calendarChoices(calendarManager),
                 calendarUnavailableNotice: calendarUnavailableNotice,
+                failureNotice: actionError,
                 canCommit: canCreate,
                 offersSubtasks: true,
                 actions: CadenceSchedulePanelActions(
@@ -99,12 +105,16 @@ struct iOSCalendarQuickCreateSheet: View {
             ) {
                 calendarAccessRequest
             }
-            .capturePresentation(CadenceScheduleCaptureOptions())
+            .capturePresentation(CadenceScheduleCaptureOptions(activeField: $openField))
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardHeight = $0 + 24 }
             .frame(maxWidth: 540)
             .padding(12)
             .frame(maxWidth: .infinity)
         }
+        .iOSCaptureKeyboardCommands(
+            commit: { actionError = create() },
+            cancel: { iOSCaptureKeyboardCancel(openField: &openField, dismiss: { dismiss() }) }
+        )
         .cadenceScaledTypography()
         .scrollDismissesKeyboard(.never)
         .scrollIndicators(.hidden)
@@ -124,6 +134,8 @@ struct iOSCalendarQuickCreateSheet: View {
         )
         // The Section row follows the List row inside the panel ([[T-8591]], [[T-8601]]).
         .onChange(of: draft.kind) { _, _ in normalizeCalendarSelection() }
+        // [[T-18083]]: a keyboard refusal stands until the draft it was about changes.
+        .onChange(of: draft) { _, _ in actionError = nil }
         .onChange(of: calendarManager.writableCalendars.map(\.calendarIdentifier)) { _, _ in normalizeCalendarSelection() }
         .onAppear {
             normalizeCalendarSelection()

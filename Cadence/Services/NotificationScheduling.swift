@@ -341,17 +341,26 @@ nonisolated struct NotificationDurableCompleteStoreRead: Equatable, Sendable {
     private static let idsKey = "ids"
 
     /// A binary property list: the identity, and the ids packed sixteen bytes each in sorted order
-    /// so an unchanged read encodes to the same bytes.
+    /// so an unchanged read encodes to the same bytes -- which `NotificationManager`'s store relies
+    /// on to skip a write that would change nothing.
+    ///
+    /// **[[T-18173]]: the two keys go in an `NSDictionary`, not a Swift `[String: Any]`.** The
+    /// binary writer emits a dictionary's keys in its enumeration order, and a Swift dictionary's
+    /// order follows the process's random hashing seed: measured on this Mac, the same record wrote
+    /// `ids` first in 88 of 200 launches and `store` first in the rest, which flaked the byte test
+    /// and re-wrote an unchanged record. An `NSDictionary`'s order follows the keys' unseeded
+    /// `CFString` hashes, the same in every launch (200 of 200), and is the `store`-first form, so a
+    /// record already written that way still compares equal. Decoding is unchanged.
     var encoded: Data? {
         var packed = Data(capacity: taskIDs.count * 16)
         for id in taskIDs.sorted(by: { $0.uuidString < $1.uuidString }) {
             withUnsafeBytes(of: id.uuid) { packed.append(contentsOf: $0) }
         }
-        return try? PropertyListSerialization.data(
-            fromPropertyList: [Self.storeKey: storeFileIdentity, Self.idsKey: packed] as [String: Any],
-            format: .binary,
-            options: 0
+        let record = NSDictionary(
+            objects: [storeFileIdentity, packed],
+            forKeys: [Self.storeKey as NSString, Self.idsKey as NSString]
         )
+        return try? PropertyListSerialization.data(fromPropertyList: record, format: .binary, options: 0)
     }
 
     /// `nil` for anything that is not exactly what `encoded` writes, so a damaged record proves

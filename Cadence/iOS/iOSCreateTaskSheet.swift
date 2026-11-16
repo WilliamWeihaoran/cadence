@@ -17,6 +17,9 @@ struct iOSCreateTaskSheet: View {
     @State private var selectedTagIDs: Set<String> = []
     @State private var actionError: String?
     @State private var cardHeight: CGFloat = 260
+    /// The card panel standing open, held here so Escape closes it before the composer
+    /// ([[T-18083]], the Mac's [[T-16041]] rule). The card mirrors it through `activeField`.
+    @State private var openField: CadenceCaptureField?
     /// [[T-5174]] (b): the draft as `onAppear`'s opening normalisation left it, against which a
     /// swipe-down is refused. `nil` until then, so the normalisation itself is never read as typing.
     @State private var openedDraft: CadenceCreateTaskDraftSnapshot?
@@ -58,13 +61,18 @@ struct iOSCreateTaskSheet: View {
                     CadenceSchedulePanelChoice(id: $0.id.uuidString, name: $0.name, color: Color(hex: $0.colorHex), systemImage: "tag")
                 },
                 selectedTagIDs: $selectedTagIDs,
-                createTag: createTag
+                createTag: createTag,
+                activeField: $openField
             ))
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardHeight = $0 + 24 }
             .frame(maxWidth: 540)
             .padding(12)
             .frame(maxWidth: .infinity)
         }
+        .iOSCaptureKeyboardCommands(
+            commit: { actionError = create() },
+            cancel: { iOSCaptureKeyboardCancel(openField: &openField, dismiss: { dismiss() }) }
+        )
         .scrollDismissesKeyboard(.never)
         .scrollIndicators(.hidden)
         .cadenceScaledTypography()
@@ -245,6 +253,42 @@ struct iOSCreateTaskSheet: View {
         }
         dismiss()
         return nil
+    }
+}
+
+/// **[[T-18083]]: the capture composer's hardware-keyboard keys on iPad, the Mac's own two.**
+/// Cmd+N opens this composer ([[T-13281]]), so it is the one sheet a keyboard user opens BY
+/// keyboard; the Mac's `CreateTaskSheet` commits on Cmd+Return and cancels on Escape, and under
+/// [[T-8201]] a hardware keyboard is the reason the platforms may differ, which argues for the same
+/// keys here. Cmd+Return matters because Return in the notes field is a newline. Zero-size,
+/// transparent buttons in `iOSRootView`'s Cmd+K / Cmd+N form rather than `.hidden()`, which can
+/// drop a button's shortcut; titled, so the Cmd-hold overlay lists them. Applied by both hosts of
+/// the capture card, `iOSCreateTaskSheet` and `iOSCalendarQuickCreateSheet`.
+extension View {
+    func iOSCaptureKeyboardCommands(commit: @escaping () -> Void, cancel: @escaping () -> Void) -> some View {
+        background {
+            Button("Create", action: commit)
+                .keyboardShortcut(.return, modifiers: [.command])
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+            Button("Cancel", action: cancel)
+                .keyboardShortcut(.cancelAction)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+/// [[T-18083]], with [[T-16041]]'s panel-first rule: Escape closes an open card panel (Do, Due,
+/// Repeat...) and leaves the draft; only with no panel up does it close the composer, as the card's ✕
+/// does.
+func iOSCaptureKeyboardCancel(openField: inout CadenceCaptureField?, dismiss: () -> Void) {
+    if openField != nil {
+        openField = nil
+    } else {
+        dismiss()
     }
 }
 #endif

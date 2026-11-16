@@ -748,6 +748,12 @@ struct NotificationManagerCentreSeamTests {
         let data = try #require(record.encoded)
         #expect(NotificationDurableCompleteStoreRead(encoded: data) == record)
         #expect(read("s", [y, x]).encoded == read("s", [x, y]).encoded, "an unchanged read must encode to the same bytes")
+        // [[T-18173]]: and the same bytes in every LAUNCH, which one process cannot compare: a Swift
+        // `[String: Any]` wrote its two keys in the order of the process's random hashing seed, `ids`
+        // first in 88 of 200 launches. Each launch must write the one order an `NSDictionary` gives.
+        let keyOrder = try #require(read("s", [x, y]).encoded.flatMap { String(data: $0, encoding: .isoLatin1) })
+        let store = try #require(keyOrder.range(of: "store")), ids = try #require(keyOrder.range(of: "ids"))
+        #expect(store.lowerBound < ids.lowerBound, "the record writes its keys in one fixed order")
         #expect(NotificationDurableCompleteStoreRead(encoded: Data("not a record".utf8)) == nil)
     }
 
