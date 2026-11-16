@@ -241,6 +241,47 @@ struct CadenceNoteTemplatePreferenceTests {
         }
     }
 
+    /// **[[T-18182]]: a row this device followed, deleted elsewhere, takes the local templates
+    /// with it.** Delete Account & Data on one device deletes the row; the others used to keep
+    /// their local map, and the next edit on any of them republished the pre-reset set.
+    @Test func aDeletedRowThisDeviceFollowedClearsTheLocalTemplates() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let remote = customised("checklist", title: "Standup", body: "# Standup")
+
+        try withTemporaryDefaults("template-row-deleted") { defaults in
+            let sync = CadenceNoteTemplatePreferenceSync(defaults: defaults)
+            try Store.write(remote, records: [], in: context, now: Date(timeIntervalSince1970: 100))
+            let records = try context.fetch(FetchDescriptor<NoteTemplatePreference>())
+            #expect(sync.reconcile(records: records, in: context), "the row was not adopted")
+            #expect(defaults.string(forKey: NoteTemplateLibrary.storageKey) != nil)
+
+            // The reset on another device: the row is gone from this store.
+            for record in records { context.delete(record) }
+            try context.save()
+            #expect(sync.reconcile(records: [], in: context), "the deletion did not reach the local default")
+            #expect(defaults.object(forKey: NoteTemplateLibrary.storageKey) == nil,
+                    "the local templates survived the row's deletion (T-18182)")
+
+            // And nothing republishes them.
+            sync.publish(records: [], in: context)
+            #expect(try context.fetch(FetchDescriptor<NoteTemplatePreference>()).isEmpty,
+                    "the pre-reset map went back into iCloud (T-18182)")
+            #expect(!sync.reconcile(records: [], in: context), "a second empty pass moved something")
+        }
+
+        // A device that has never followed a row keeps its templates on an empty set: that is
+        // "nothing has downloaded yet", not a deletion.
+        try withTemporaryDefaults("template-row-never-adopted") { defaults in
+            let mine = customised("checklist", title: "Packing", body: "# Packing")
+            defaults.set(mine, forKey: NoteTemplateLibrary.storageKey)
+            defaults.set(true, forKey: Store.migrationCompletedKey)
+            let sync = CadenceNoteTemplatePreferenceSync(defaults: defaults)
+            #expect(!sync.reconcile(records: [], in: context))
+            #expect(defaults.string(forKey: NoteTemplateLibrary.storageKey) == mine)
+        }
+    }
+
     // MARK: - Seeding is once, and it does not double-apply
 
     /// The migration the ticket turns on: somebody already has customised templates in local

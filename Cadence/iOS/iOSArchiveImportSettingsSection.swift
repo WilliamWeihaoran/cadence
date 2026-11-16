@@ -20,6 +20,10 @@ import UniformTypeIdentifiers
 /// **Nothing is written until the preview is confirmed.** Choosing a file reads, decodes and fully
 /// validates it and then shows what it would do; the store is untouched until **Import**.
 struct iOSArchiveImportSettingsSection: View {
+    /// [[T-18149]]: called after an import commits, so the page re-reads its Backups list — an
+    /// overwrite has just taken a Before Import backup, and this section's sentence names it.
+    var onCommitted: () -> Void = {}
+
     @Environment(\.modelContext) private var modelContext
     @State private var flow = CadenceArchiveImportFlow()
     @State private var isChoosingFile = false
@@ -79,7 +83,7 @@ struct iOSArchiveImportSettingsSection: View {
                     mode: $flow.mode,
                     isWriting: flow.isWriting,
                     onCancel: { flow.cancel() },
-                    onConfirm: { flow.confirm() }
+                    onConfirm: { if flow.confirm() { onCommitted() } }
                 )
             }
         }

@@ -62,7 +62,8 @@ struct SettingsDataSafetySection: View {
             // see, in the same breath, what Cadence can do with it. Above the Backups card
             // deliberately: those copies live inside the container and die with the app, so the
             // archive is the route that answers "I lost the device", and it reads first.
-            SettingsArchiveImportCard()
+            // [[T-18149]]: an overwrite adds a Before Import backup the Backups card must list.
+            SettingsArchiveImportCard(onCommitted: refreshBackups)
             // [[T-6481]]: directly after the import, the likeliest producer of a duplicate (the
             // same archive read in on two devices), and above the reset, which ends everything.
             SettingsDuplicateMergeCard()

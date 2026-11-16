@@ -304,7 +304,9 @@ struct iOSSettingsView: View {
             // route on this device to data that outlives the app, and the import is the only route
             // back from one; both belong above the control that ends it.
             iOSDataExportSettingsSection()
-            iOSArchiveImportSettingsSection()
+            // [[T-18149]]: the same generation the reset advances, so the Backups list below
+            // re-reads and shows the Before Import backup an overwrite just took.
+            iOSArchiveImportSettingsSection(onCommitted: { dataResetGeneration &+= 1 })
             // [[T-6481]]: in the Mac's order — after the import that most often makes a duplicate,
             // above the reset.
             iOSDuplicateMergeSettingsSection()

@@ -716,6 +716,38 @@ struct CadenceArchiveImportEntryPointTests {
         #expect(phoneExport < phoneImport && phoneImport < phoneReset)
     }
 
+    /// **[[T-18149]]: both pages re-read their Backups list after a committed import.** An
+    /// overwrite takes a Before Import backup and the card's sentence names it; without this the
+    /// list beside it did not show that backup until the page was reopened.
+    @Test func bothBackupListsRereadAfterACommittedImport() throws {
+        for path in [
+            "Cadence/macOS/Views/SettingsArchiveImportCard.swift",
+            "Cadence/iOS/iOSArchiveImportSettingsSection.swift",
+        ] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(
+                code.components(separatedBy: "if flow.confirm() { onCommitted() }").count - 1 == 1,
+                "\(path) no longer tells its page when an import commits"
+            )
+            #expect(!code.contains("onConfirm: { flow.confirm() }"), "\(path) drops the commit signal")
+        }
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SettingsDataSafetySection.swift")
+        )
+        #expect(mac.contains("SettingsArchiveImportCard(onCommitted: refreshBackups)"),
+                "the Mac's Backups card is not re-read after an import")
+        let phone = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSettingsView.swift")
+        )
+        let advances = try NSRegularExpression(
+            pattern: #"iOSArchiveImportSettingsSection\(\s*onCommitted:\s*\{\s*dataResetGeneration\s*&?\+=\s*1\s*\}\s*\)"#
+        )
+        #expect(advances.numberOfMatches(in: phone, range: NSRange(phone.startIndex..., in: phone)) == 1,
+                "the phone's import no longer advances the generation its Backups section re-reads on")
+        #expect(phone.contains("iOSStoreBackupSettingsSection(resetGeneration: dataResetGeneration)"),
+                "non-vacuity: the Backups section no longer reads that generation")
+    }
+
     /// The scan is not vacuous. Without this, a wrong repository root makes every count above read
     /// an empty string and pass by finding nothing at all.
     @Test func theImportMountScanReadsTheRealFiles() throws {

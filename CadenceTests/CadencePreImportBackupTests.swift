@@ -122,7 +122,56 @@ struct CadencePreImportBackupTests {
         #expect(backups.map(\.reason) == [StoreBackupReason.preImport.displayName])
         let backup = try #require(backups.first)
         #expect(try Self.taskTitlesInBackup(backup.url) == [OverwriteFixture.editedTitle])
-        #expect(try #require(flow.statusMessage).contains(backup.url.lastPathComponent))
+        // T-18149: the sentence names the backup the way the Backups list's row does — its reason
+        // and `rowTitle` — never by the folder name, which no list in the app shows.
+        let message = try #require(flow.statusMessage)
+        #expect(message.contains(CadenceStoreBackupPresentation.rowTitle(backup)))
+        #expect(message.contains(backup.reason))
+        #expect(message.contains(CadenceStoreBackupPresentation.title))
+        #expect(!message.contains(backup.url.lastPathComponent))
+        #expect(!message.contains("-pre-import"))
+    }
+
+    /// T-18149: the note's spelled-out names are the list's, and a backup whose date cannot be
+    /// read keeps the folder name as the only handle left.
+    @Test func thePreImportNoteNamesTheBackupTheWayTheListDoes() {
+        let url = URL(fileURLWithPath: "/nonexistent/20261116-030712-pre-import", isDirectory: true)
+        let date = Date(timeIntervalSinceReferenceDate: 815_000_000)
+        let dated = CadenceArchiveImportPresentation.preImportBackupNote(url, createdAt: date)
+        #expect(dated.contains(DateFormatters.dateTimeStamp(date)))
+        #expect(dated.contains("the \(StoreBackupReason.preImport.displayName) backup"))
+        #expect(dated.contains("under \(CadenceStoreBackupPresentation.title)"))
+        #expect(!dated.contains(url.lastPathComponent))
+
+        let undated = CadenceArchiveImportPresentation.preImportBackupNote(url, createdAt: nil)
+        #expect(undated.contains(url.lastPathComponent))
+        #expect(StoreBackupManager.createdAt(ofBackupAt: url) == nil)
+    }
+
+    /// T-18149: `confirm()` answers whether the import committed — the cards call `onCommitted`
+    /// on it to re-read the Backups list — and a refused overwrite answers false.
+    @Test func confirmAnswersWhetherTheImportCommitted() throws {
+        let committed = try OverwriteFixture(destination: try CadenceTestStore.container())
+        defer { committed.removeArchive() }
+        let flow = CadenceArchiveImportFlow(
+            reconcileNotifications: { _ in },
+            backUpBeforeOverwriting: { _ in nil }
+        )
+        flow.preview(.success(committed.archiveURL), in: committed.destination)
+        flow.mode = .restoreOverwritingExistingRows
+        #expect(flow.confirm() == true)
+        #expect(flow.confirm() == false, "a second confirm with nothing pending wrote again")
+
+        let refused = try OverwriteFixture(destination: try CadenceTestStore.container())
+        defer { refused.removeArchive() }
+        struct BackupRefused: Error {}
+        let refusing = CadenceArchiveImportFlow(
+            reconcileNotifications: { _ in },
+            backUpBeforeOverwriting: { _ in throw BackupRefused() }
+        )
+        refusing.preview(.success(refused.archiveURL), in: refused.destination)
+        refusing.mode = .restoreOverwritingExistingRows
+        #expect(refusing.confirm() == false)
     }
 
     /// The door's non-backup answers: an in-memory store has nothing on disk to copy and is not

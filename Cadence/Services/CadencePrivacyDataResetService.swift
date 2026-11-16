@@ -336,6 +336,9 @@ enum PrivacyDataResetService {
         // at the next launch can withdraw its fired reminder. Ids only, but ids of the store this
         // reset just emptied, so the reset takes them too; the next reconcile writes a fresh one.
         NotificationManager.clearStoredCompleteStoreRead()
+        // [[T-18182]]: the synced template row went in phase one; its device-local mirror, which
+        // every template surface reads, goes here, or the next edit republishes the old set.
+        clearNoteTemplateOverrides()
         // The pending restore and the failed-restore record are cleared inside the sweep's own
         // default step, `StoreBackupManager.deleteAllBackupsForDataReset`, before it deletes: the
         // plain `deleteAllBackups` spares the backup either names ([[T-3116]] (1)), so a reset that
@@ -346,6 +349,23 @@ enum PrivacyDataResetService {
             retainedAPIKeyReason: retainedAPIKeyReason,
             retainedBackupReason: backups.retainedBackupReason
         )
+    }
+
+    /// The device-local half of the note templates ([[T-18182]]).
+    ///
+    /// Phase one deletes `NoteTemplatePreference`, but every template surface reads
+    /// `NoteTemplateLibrary.storageKey`, so without this the Customized chips and the user's text
+    /// survived a reset that had just said it deletes everything — and the seed flag being set
+    /// sent the next edit through `publish`, which minted a new row carrying the whole pre-reset
+    /// map to every device. The seed flag and the adopted-row flag go too: this device starts
+    /// over as one that has never contributed. Templates are prose the user wrote, which is why
+    /// they go and the synced look (accent, tints, sort modes) is left as a setting.
+    /// The other devices clear their own copy when the deletion reaches them
+    /// (`CadenceNoteTemplatePreferenceSync.reconcile`).
+    static func clearNoteTemplateOverrides(defaults: UserDefaults = CadenceDefaults.store) {
+        defaults.removeObject(forKey: NoteTemplateLibrary.storageKey)
+        defaults.removeObject(forKey: CadenceNoteTemplatePreferenceStore.migrationCompletedKey)
+        defaults.removeObject(forKey: CadenceNoteTemplatePreferenceStore.adoptedRecordKey)
     }
 
     /// The backup half of phase two, as its own function for the reason `removeStoredAPIKey` is

@@ -437,9 +437,23 @@ nonisolated enum CadenceArchiveImportPresentation {
         "Nothing was imported or replaced: Cadence could not back up your data first. (\(reason))"
     }
 
-    /// Appended to a committed overwriting import's sentence: the backup it took, by folder name.
-    static func preImportBackupNote(_ backupURL: URL) -> String {
-        " Your data as it was before the import is in the backup \(backupURL.lastPathComponent)."
+    /// Appended to a committed overwriting import's sentence: the backup it took, named the way the
+    /// Backups list on the same page names it.
+    ///
+    /// [[T-18149]]: this printed the folder name (`20261116-030712-pre-import`), which no list in
+    /// the app shows — both lists title a row `CadenceStoreBackupPresentation.rowTitle` and detail
+    /// it with the reason — so on iPhone, where nothing can reveal a folder, the one sentence that
+    /// makes an overwrite safe to regret pointed at nothing. It now names the reason and the same
+    /// `DateFormatters.dateTimeStamp` the row wears. "Before Import" and "Backups" are spelled out
+    /// rather than read from `StoreBackupReason.preImport.displayName` and
+    /// `CadenceStoreBackupPresentation.title` because those are main-actor isolated and this enum
+    /// is not; `CadencePreImportBackupTests` holds the three equal. The folder name survives only
+    /// for a backup whose date cannot be read, where it is the one handle left.
+    static func preImportBackupNote(_ backupURL: URL, createdAt: Date?) -> String {
+        guard let createdAt else {
+            return " Your data as it was before the import is in the backup \(backupURL.lastPathComponent)."
+        }
+        return " Your data as it was before the import is in the Before Import backup from \(DateFormatters.dateTimeStamp(createdAt)), listed under Backups."
     }
 
     // MARK: - Reading the chosen file
@@ -723,8 +737,13 @@ final class CadenceArchiveImportFlow {
     /// import whose legacy-note fold failed ([[T-1111]]) has still changed the tasks and habits the
     /// OS holds reminders for, so it needs the same follow-up as a spotless one. The `catch` is the
     /// only branch that wrote nothing, and it is the only branch that does not reconcile.
-    func confirm() {
-        guard !isWriting, let pendingData, let container else { return }
+    ///
+    /// Answers whether an import **committed**, so the card that mounts this flow can tell its
+    /// page ([[T-18149]]): an overwrite has just added a Before Import backup the page's Backups
+    /// list does not know about, and the list re-reads only when told.
+    @discardableResult
+    func confirm() -> Bool {
+        guard !isWriting, let pendingData, let container else { return false }
         isWriting = true
         defer {
             isWriting = false
@@ -741,7 +760,7 @@ final class CadenceArchiveImportFlow {
                 }
             } catch {
                 statusMessage = CadenceArchiveImportPresentation.backupRefusalMessage(error.localizedDescription)
-                return
+                return false
             }
         }
         do {
@@ -751,10 +770,17 @@ final class CadenceArchiveImportFlow {
                 into: container
             )
             statusMessage = CadenceArchiveImportPresentation.outcomeMessage(outcome)
-                + (preImportBackup.map(CadenceArchiveImportPresentation.preImportBackupNote) ?? "")
+                + (preImportBackup.map {
+                    CadenceArchiveImportPresentation.preImportBackupNote(
+                        $0,
+                        createdAt: StoreBackupManager.createdAt(ofBackupAt: $0)
+                    )
+                } ?? "")
             (reconcileNotifications ?? Self.liveReconcileNotifications)(container)
+            return true
         } catch {
             statusMessage = CadenceArchiveImportPresentation.failureMessage(error.localizedDescription)
+            return false
         }
     }
 

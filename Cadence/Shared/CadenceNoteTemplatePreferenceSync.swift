@@ -97,11 +97,25 @@ final class CadenceNoteTemplatePreferenceSync {
         // from `records` again, which cannot yet see an insert made in this frame.
         let readable = CadenceNoteTemplatePreferenceStore.currentReadable(from: records)
         guard let effective = seeded ?? readable?.overridesRaw else {
-            // No row this device can read: the device-local default stands. That is the shape of
-            // "the Production schema has no `CD_NoteTemplatePreference` yet", of "nothing has
-            // downloaded yet", and of "the only row here came from a build I do not understand" —
-            // nothing can tell those apart, so there is no notice here and nothing is overwritten.
+            // [[T-18182]]: no row at all, on a device that has followed one, is a deletion — Delete
+            // Account & Data on some device took the row — so the templates go with it. Removed
+            // rather than set to `{}`: an absent default "says nothing", so `publish` cannot mint
+            // a fresh row from it, and every reader falls back to the stock templates.
+            if records.isEmpty, defaults.bool(forKey: CadenceNoteTemplatePreferenceStore.adoptedRecordKey) {
+                defaults.removeObject(forKey: CadenceNoteTemplatePreferenceStore.adoptedRecordKey)
+                guard defaults.object(forKey: NoteTemplateLibrary.storageKey) != nil else { return false }
+                defaults.removeObject(forKey: NoteTemplateLibrary.storageKey)
+                return true
+            }
+            // Otherwise no row this device can read: the device-local default stands. That is the
+            // shape of "the Production schema has no `CD_NoteTemplatePreference` yet", of "nothing
+            // has downloaded yet", and of "the only row here came from a build I do not
+            // understand" — nothing can tell those apart, so there is no notice here and nothing
+            // is overwritten.
             return false
+        }
+        if !defaults.bool(forKey: CadenceNoteTemplatePreferenceStore.adoptedRecordKey) {
+            defaults.set(true, forKey: CadenceNoteTemplatePreferenceStore.adoptedRecordKey)
         }
         return writeLocal(effective)
     }

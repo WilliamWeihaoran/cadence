@@ -278,6 +278,49 @@ struct CadencePrivacyDataResetSurfaceTests {
         }
     }
 
+    /// **[[T-18182]]: the reset takes the device-local note templates with the synced row.** Every
+    /// template surface reads `NoteTemplateLibrary.storageKey`, and the seed flag left set sent the
+    /// next edit through `publish`, which republished the whole pre-reset map to iCloud.
+    @Test func clearingTheNoteTemplatesLeavesNothingToRepublish() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        try withTemporaryDefaults("cadence.tests.privacy-reset.note-templates") { defaults in
+            let customised = NoteTemplateLibrary.setOverride(
+                for: "checklist", title: "Packing", subtitle: "", body: "# Packing", in: ""
+            )
+            defaults.set(customised, forKey: NoteTemplateLibrary.storageKey)
+            defaults.set(true, forKey: CadenceNoteTemplatePreferenceStore.migrationCompletedKey)
+            defaults.set(true, forKey: CadenceNoteTemplatePreferenceStore.adoptedRecordKey)
+
+            PrivacyDataResetService.clearNoteTemplateOverrides(defaults: defaults)
+
+            #expect(defaults.object(forKey: NoteTemplateLibrary.storageKey) == nil,
+                    "the reset left the customised templates on this device (T-18182)")
+            #expect(defaults.object(forKey: CadenceNoteTemplatePreferenceStore.migrationCompletedKey) == nil)
+            #expect(defaults.object(forKey: CadenceNoteTemplatePreferenceStore.adoptedRecordKey) == nil)
+
+            // The store the reset just emptied: nothing the sync does next mints a row.
+            let sync = CadenceNoteTemplatePreferenceSync(defaults: defaults)
+            sync.publish(records: [], in: context)
+            sync.reconcile(records: [], in: context)
+            sync.publish(records: [], in: context)
+            let rows = try context.fetch(FetchDescriptor<NoteTemplatePreference>())
+            #expect(rows.isEmpty, "the next sync pass republished the pre-reset templates (T-18182)")
+        }
+    }
+
+    /// And the step is in the reset's phase two, after the only `try`.
+    @Test func theResetClearsTheNoteTemplatesAfterTheStoreDeletion() throws {
+        let live = try strippingComments(sourceFile("Cadence/Services/CadencePrivacyDataResetService.swift"))
+        let body = try #require(CadenceSourceScan.functionBody(named: "deleteCadenceDataAndLocalArtifacts", in: live))
+        let phaseOne = try #require(body.range(of: "try await deleteCadenceData(in: modelContext)"))
+        let clear = try #require(
+            body.range(of: "clearNoteTemplateOverrides()"),
+            "the reset no longer clears the device-local note templates (T-18182)"
+        )
+        #expect(phaseOne.upperBound <= clear.lowerBound)
+    }
+
     /// **[[T-8736]]: the reset signs the Apple account out, on both platforms.** The sign-out was
     /// a line at the Mac's call site while `AppleAccountManager` was `#if os(macOS)`; it is a step
     /// of the shared sequence now, so the iOS Account section's Delete Account route clears the

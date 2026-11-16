@@ -24,6 +24,15 @@ enum CadenceNoteTemplatePreferenceStore {
     /// syncing it would make the second device skip the merge that is the whole point.
     static let migrationCompletedKey = "noteTemplateOverrides.syncSeeded.v1"
 
+    /// `true` once this device has read a shared row down into its local default ([[T-18182]]).
+    ///
+    /// Device-local for the reason the seed flag is. It is what lets `reconcile` tell "the row this
+    /// device was following has been deleted" — another device ran Delete Account & Data — from
+    /// "no row has downloaded yet": both arrive as an empty record set, and only the first may
+    /// clear the local templates. Without it the local map stood after a reset and the next edit
+    /// published the whole pre-reset set back into iCloud.
+    static let adoptedRecordKey = "noteTemplateOverrides.adoptedRecord.v1"
+
     /// The canonical spelling of an empty override map — what `NoteTemplateLibrary.resetOverride`
     /// leaves behind when the last customisation is reset, and therefore a real, deliberate value
     /// rather than an absence.

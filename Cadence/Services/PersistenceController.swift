@@ -1945,9 +1945,7 @@ enum StoreBackupManager {
         return contents.compactMap { url in
             guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { return nil }
             let manifest = manifest(at: url, fileManager: fileManager)
-            let createdAt = manifest?.createdAt
-                ?? (try? url.resourceValues(forKeys: [.creationDateKey]).creationDate)
-                ?? Date.distantPast
+            let createdAt = Self.createdAt(ofBackupAt: url, fileManager: fileManager) ?? Date.distantPast
             return StoreBackupSnapshot(
                 id: url.lastPathComponent,
                 url: url,
@@ -1957,6 +1955,16 @@ enum StoreBackupManager {
             )
         }
         .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    /// The date a backup's row is titled with: its manifest's, else the folder's creation date.
+    ///
+    /// [[T-18149]]: one rule for `listBackups` and for the import card's sentence, so the card
+    /// names a backup by the same date the list beside it draws. `nil` only when neither can be
+    /// read; `listBackups` sorts such a row last as `distantPast`.
+    static func createdAt(ofBackupAt url: URL, fileManager: FileManager = .default) -> Date? {
+        manifest(at: url, fileManager: fileManager)?.createdAt
+            ?? (try? url.resourceValues(forKeys: [.creationDateKey]).creationDate)
     }
 
     // MARK: - The backups this app does not manage ([[T-1532]])
