@@ -189,7 +189,7 @@ enum CadenceRowReorderSpan {
         before targetID: UUID,
         in scopeTasks: [AppTask]
     ) -> (dropped: AppTask, before: [AppTask], after: [AppTask])? {
-        let sorted = scopeTasks.sorted { $0.order < $1.order }
+        let sorted = scopeTasks.sorted(by: TaskOrdering.fallbackPrecedes)
         guard let ordered = CadenceOrderReassignment.moved(sorted, droppedID, before: targetID),
               ordered.map(\.id) != sorted.map(\.id),
               let dropped = ordered.first(where: { $0.id == droppedID }) else { return nil }

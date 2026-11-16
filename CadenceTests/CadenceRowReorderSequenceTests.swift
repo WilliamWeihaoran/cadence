@@ -203,7 +203,7 @@ struct CadenceRowReorderSequenceTests {
         // `movesTheSlice` now share so that the two cannot disagree about what a gesture asked for.
         // The property is unchanged and this follows it again rather than being dropped.
         let spanRule = try CadenceCommitSurfaceScan.declarationBody(named: "sliceMove", in: span)
-        #expect(spanRule.contains("scopeTasks.sorted { $0.order < $1.order }"), "the shared row renumber left the `order` sequence")
+        #expect(spanRule.contains("scopeTasks.sorted(by: TaskOrdering.fallbackPrecedes)"), "the shared row renumber left the `order` sequence")
         let ownList = try CadenceCommitSurfaceScan.declarationBody(named: "ownListSiblings", in: span)
         #expect(!ownList.contains(".sorted"), "the span rule grew a second sequence beside the one it shares")
 
@@ -225,12 +225,12 @@ struct CadenceRowReorderSequenceTests {
 
         let sectionColumn = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/KanbanSectionColumnView.swift")
         let sectionDrop = try CadenceCommitSurfaceScan.declarationBody(named: "moveTask", in: sectionColumn)
-        #expect(sectionDrop.contains("tasks.sorted { $0.order < $1.order }"))
+        #expect(sectionDrop.contains("tasks.sorted(by: TaskOrdering.fallbackPrecedes)"))
 
         let listColumn = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/KanbanListColumnView.swift")
         let listDrop = try CadenceCommitSurfaceScan.declarationBody(named: "moveTask", in: listColumn)
         #expect(
-            listDrop.contains("unfrozenSortedTasks.sorted { $0.order < $1.order }"),
+            listDrop.contains("unfrozenSortedTasks.sorted(by: TaskOrdering.fallbackPrecedes)"),
             "the list kanban column renumbers the board's active sort again"
         )
     }

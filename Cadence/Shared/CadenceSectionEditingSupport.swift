@@ -125,6 +125,26 @@ enum CadenceSectionEditingSupport {
         "This will delete the column \"\(columnName)\" and move its tasks into \(TaskSectionDefaults.defaultName)."
     }
 
+    /// **The iOS list editor's column move, with Default kept first ([[T-18168]]).** Every write of
+    /// a list's columns pins Default to index 0 (`normalizedSectionConfigs`), so a move that put
+    /// anything above it showed an order Save would silently undo. The move is applied as SwiftUI's
+    /// offsets move would, then Default is put back on top -- a column dropped
+    /// above it lands just below it, which is where the Mac board puts the same drop.
+    static func movingDrafts(
+        _ drafts: [CadenceSectionDraft],
+        fromOffsets source: IndexSet,
+        toOffset destination: Int
+    ) -> [CadenceSectionDraft] {
+        let moving = source.filter { drafts.indices.contains($0) }.map { drafts[$0] }
+        var result = drafts.enumerated().filter { !source.contains($0.offset) }.map(\.element)
+        let insertion = destination - source.filter { $0 < destination }.count
+        result.insert(contentsOf: moving, at: min(max(insertion, 0), result.count))
+        if let defaultIndex = result.firstIndex(where: \.isDefaultColumn), defaultIndex != 0 {
+            result.insert(result.remove(at: defaultIndex), at: 0)
+        }
+        return result
+    }
+
     /// Whether removing this draft from the iOS list editor asks first ([[T-8564]]). Only a column
     /// the editor opened with: one added during this edit has no `TaskSectionConfig` on disk, so
     /// no task can be in it and there is nothing to say about where its cards go.

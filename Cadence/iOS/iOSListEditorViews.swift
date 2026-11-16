@@ -406,10 +406,17 @@ struct iOSListEditorSheet: View {
                             // on Save, synthesised by `normalizedSectionConfigs`, in the default
                             // grey and with no due date — a delete that only erased its settings.
                             .deleteDisabled(draft.isDefaultColumn)
+                            // T-18168: nor moved. Save pins it first again, so a dragged Default
+                            // sat where it was dropped until then and silently jumped back.
+                            .moveDisabled(draft.isDefaultColumn)
                     }
                     .onDelete(perform: requestColumnDeletion)
                     .onMove { source, destination in
-                        sectionDrafts.move(fromOffsets: source, toOffset: destination)
+                        sectionDrafts = CadenceSectionEditingSupport.movingDrafts(
+                            sectionDrafts,
+                            fromOffsets: source,
+                            toOffset: destination
+                        )
                     }
 
                     Button {

@@ -169,7 +169,7 @@ enum CadenceKanbanCardDrop {
             target = nil
         }
         return reorder(
-            columnTasks.sorted { $0.order < $1.order },
+            columnTasks.sorted(by: TaskOrdering.fallbackPrecedes),
             moving: task,
             before: target,
             spanning: spanTasks,

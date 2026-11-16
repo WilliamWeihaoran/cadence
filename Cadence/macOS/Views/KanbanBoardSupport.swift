@@ -400,6 +400,12 @@ enum KanbanBoardSupport {
         return "\(base) \(index)"
     }
 
+    /// Whether a column's header offers a drag on the Mac board ([[T-18168]]): every column but
+    /// Default, which `reorderedSectionConfigs` below re-pins first however it is dropped.
+    static func isColumnDraggable(_ section: TaskSectionConfig) -> Bool {
+        !section.isDefault
+    }
+
     static func reorderedSectionConfigs(
         _ sectionConfigs: [TaskSectionConfig],
         movingName: String,

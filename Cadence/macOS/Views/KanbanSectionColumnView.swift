@@ -426,7 +426,7 @@ struct ListSectionKanbanColumn: View {
     /// agree on every card either can see, because that closure nils whichever container it does
     /// not set.
     private func moveTask(_ task: AppTask, before target: AppTask?) -> Bool {
-        let columnOrder = tasks.sorted { $0.order < $1.order }
+        let columnOrder = tasks.sorted(by: TaskOrdering.fallbackPrecedes)
         let reordered = KanbanBoardSupport.reorder(
             columnOrder,
             moving: task,

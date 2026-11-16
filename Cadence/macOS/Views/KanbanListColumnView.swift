@@ -174,7 +174,7 @@ struct TaskListKanbanColumn: View {
         // arrangement with the date order the first time anyone dragged a card while sorted by
         // date. `TasksPanelSupport.reorderTask` carries the whole reasoning; this column and the
         // section board's `ListSectionKanbanColumn.moveTask` are the two card drops it covers.
-        let columnOrder = unfrozenSortedTasks.sorted { $0.order < $1.order }
+        let columnOrder = unfrozenSortedTasks.sorted(by: TaskOrdering.fallbackPrecedes)
         let reordered = KanbanBoardSupport.reorder(
             columnOrder,
             moving: task,

@@ -123,12 +123,14 @@ struct ListSectionsKanbanView: View {
                                     }
                                 )
                                 .id(section.id)
-                                .onDrag {
-                                    endColumnDragOnRelease(columnDrag.begin(section.name))
-                                    return NSItemProvider(object: NSString(string: "\(kanbanSectionDragPrefix)\(section.name)"))
-                                } preview: {
-                                    columnDragPreview(for: section)
-                                }
+                                .modifier(ColumnDragSource(
+                                    isDraggable: KanbanBoardSupport.isColumnDraggable(section),
+                                    begin: {
+                                        endColumnDragOnRelease(columnDrag.begin(section.name))
+                                        return NSItemProvider(object: NSString(string: "\(kanbanSectionDragPrefix)\(section.name)"))
+                                    },
+                                    preview: { columnDragPreview(for: section) }
+                                ))
                             }
 
                             if allowsSectionEditing && !showArchivedBinding.wrappedValue {
@@ -366,4 +368,24 @@ struct ListSectionsKanbanView: View {
     }
 }
 
+/// **The column header's drag, withheld from Default ([[T-18168]]).** Default is pinned first by
+/// every write of a list's columns (`normalizedSectionConfigs`, and
+/// `KanbanBoardSupport.reorderedSectionConfigs` re-pins it), so a Default drag could only ever be
+/// thrown away -- and it was, silently: the write was declined as identical and the drop answered
+/// `true`. Offering no drag says the rule instead of hiding it. Other columns can still be dropped
+/// onto Default; they land just right of it.
+private struct ColumnDragSource<Preview: View>: ViewModifier {
+    let isDraggable: Bool
+    let begin: () -> NSItemProvider
+    let preview: () -> Preview
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isDraggable {
+            content.onDrag(begin, preview: preview)
+        } else {
+            content
+        }
+    }
+}
 #endif
