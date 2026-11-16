@@ -146,8 +146,9 @@ struct CadenceEventRepeatSetting: Equatable {
     ///
     /// Readable: no rule (a one-off), or exactly one rule at interval 1 with no by-day, by-month or
     /// set-position refinements — except the one refinement that changes nothing: a weekly rule
-    /// naming only the event's own weekday, or a monthly rule naming only its own day of the month,
-    /// which is how Google- and Exchange-synced series often spell plain "weekly" and "monthly".
+    /// naming only the event's own weekday, a monthly rule naming only its own day of the month, or
+    /// a yearly rule naming only its own month and/or day of the month, which is how Google- and
+    /// Exchange-synced series often spell plain "weekly", "monthly" and "yearly" ([[T-18132]]).
     ///
     /// **A detached occurrence with no rule of its own is not a one-off** — it is a member of a
     /// series whose rule it does not carry, and reading it as "Never" would offer to end a series
@@ -163,20 +164,20 @@ struct CadenceEventRepeatSetting: Equatable {
             return
         }
         guard rules.count == 1, only.interval == 1,
-              (only.monthsOfTheYear ?? []).isEmpty,
               (only.weeksOfTheYear ?? []).isEmpty,
               (only.daysOfTheYear ?? []).isEmpty,
               (only.setPositions ?? []).isEmpty
         else { return nil }
         let days = only.daysOfTheWeek ?? []
         let monthDays = only.daysOfTheMonth ?? []
+        let months = only.monthsOfTheYear ?? []
         let rule: TaskRecurrenceRule
         switch only.frequency {
         case .daily:
-            guard days.isEmpty, monthDays.isEmpty else { return nil }
+            guard days.isEmpty, monthDays.isEmpty, months.isEmpty else { return nil }
             rule = .daily
         case .weekly:
-            guard monthDays.isEmpty else { return nil }
+            guard monthDays.isEmpty, months.isEmpty else { return nil }
             if !days.isEmpty {
                 guard days.count == 1, days[0].weekNumber == 0, let start,
                       days[0].dayOfTheWeek.rawValue == calendar.component(.weekday, from: start)
@@ -184,7 +185,7 @@ struct CadenceEventRepeatSetting: Equatable {
             }
             rule = .weekly
         case .monthly:
-            guard days.isEmpty else { return nil }
+            guard days.isEmpty, months.isEmpty else { return nil }
             if !monthDays.isEmpty {
                 guard monthDays.count == 1, let start,
                       monthDays[0].intValue == calendar.component(.day, from: start)
@@ -192,7 +193,17 @@ struct CadenceEventRepeatSetting: Equatable {
             }
             rule = .monthly
         case .yearly:
-            guard days.isEmpty, monthDays.isEmpty else { return nil }
+            guard days.isEmpty else { return nil }
+            if !months.isEmpty {
+                guard months.count == 1, let start,
+                      months[0].intValue == calendar.component(.month, from: start)
+                else { return nil }
+            }
+            if !monthDays.isEmpty {
+                guard monthDays.count == 1, let start,
+                      monthDays[0].intValue == calendar.component(.day, from: start)
+                else { return nil }
+            }
             rule = .yearly
         @unknown default:
             return nil

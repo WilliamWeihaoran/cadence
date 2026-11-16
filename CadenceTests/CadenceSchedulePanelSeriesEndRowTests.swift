@@ -241,6 +241,29 @@ struct CadenceSchedulePanelSeriesEndRowTests {
         #expect(creating.seriesEndValueLabel == TaskRecurrenceEndMode.afterCount.label)
     }
 
+    /// **An event names its bound with no position** ([[T-18130]]). An event draft's occurrence
+    /// number is always 1, so the 7th occurrence of a weekly event ending after 10 read "1 of 10".
+    @Test func anExistingEventsEndsValueNamesTheBoundWithNoPosition() throws {
+        var opened = Self.weekly(.event)
+        opened.subject = .editingEvent("event-id")
+        CadenceEventRepeatSetting(rule: .weekly, endMode: .afterCount, endDateKey: "", endCount: 10).seed(&opened)
+        #expect(opened.effectiveSeriesEndMode == .afterCount, "non-vacuity: the seed reached the draft")
+        #expect(opened.seriesEndValueLabel != "1 of 10")
+        #expect(opened.seriesEndValueLabel == "10 times")
+        opened.setSeriesEndCount(1)
+        #expect(opened.seriesEndValueLabel == "1 time")
+
+        opened.selectSeriesEnd(.onDate, reference: try Self.day("2026-10-21"), calendar: Self.calendar)
+        #expect(opened.seriesEndValueLabel.hasPrefix("Until "), "\(opened.seriesEndValueLabel)")
+
+        opened.selectSeriesEnd(.never)
+        #expect(opened.seriesEndValueLabel == TaskRecurrenceEndMode.never.label)
+
+        // The capture chip and the Ends row say the count in the same words.
+        opened.setSeriesEndCount(10)
+        #expect(opened.captureRepeatSummary.hasSuffix(opened.seriesEndValueLabel))
+    }
+
     /// The Mac Ends row and the iOS sheet's read the one value.
     @Test func bothEndsRowsReadTheOneValue() throws {
         let panel = CadenceSourceScan.codeOnly(

@@ -28,6 +28,7 @@ struct CadenceEventRepeatEditTests {
         interval: Int = 1,
         days: [EKRecurrenceDayOfWeek]? = nil,
         monthDays: [NSNumber]? = nil,
+        months: [NSNumber]? = nil,
         setPositions: [NSNumber]? = nil,
         end: EKRecurrenceEnd? = nil
     ) -> EKRecurrenceRule {
@@ -36,7 +37,7 @@ struct CadenceEventRepeatEditTests {
             interval: interval,
             daysOfTheWeek: days,
             daysOfTheMonth: monthDays,
-            monthsOfTheYear: nil,
+            monthsOfTheYear: months,
             weeksOfTheYear: nil,
             daysOfTheYear: nil,
             setPositions: setPositions,
@@ -79,6 +80,38 @@ struct CadenceEventRepeatEditTests {
         #expect(read([rule(.monthly, monthDays: [1])]) == nil)
         #expect(read([rule(.monthly, days: [EKRecurrenceDayOfWeek(.monday)], setPositions: [1])]) == nil)
         #expect(read([rule(.daily), rule(.weekly)]) == nil, "two rules read as one")
+    }
+
+    /// **A synced yearly rule naming the event's own month and day is plain yearly** ([[T-18132]]).
+    /// Exchange spells "every year on Jun 15" `FREQ=YEARLY;BYMONTH=6;BYMONTHDAY=15`; the weekly and
+    /// monthly arms already accepted their own no-op refinement, and yearly refused it, so such an
+    /// event got no Repeat row. Any other month or day is a different rule and is still refused.
+    @Test("A yearly rule naming only the event's own month and day reads as yearly; any other is refused")
+    func yearlyOwnMonthAndDay() throws {
+        let start = try monday()
+        let read = { (rules: [EKRecurrenceRule]) in
+            CadenceEventRepeatSetting(rules: rules, isDetached: false, start: start)?.rule
+        }
+        let both = rule(.yearly, monthDays: [15], months: [6])
+        #expect(both.monthsOfTheYear == [6], "non-vacuity: EventKit kept BYMONTH")
+        #expect(both.daysOfTheMonth == [15], "non-vacuity: EventKit kept BYMONTHDAY")
+        #expect(read([both]) == .yearly)
+        #expect(read([rule(.yearly, months: [6])]) == .yearly)
+        #expect(read([rule(.yearly, monthDays: [15])]) == .yearly)
+
+        #expect(read([rule(.yearly, months: [7])]) == nil, "another month read as the event's own")
+        #expect(read([rule(.yearly, monthDays: [15], months: [3])]) == nil)
+        #expect(read([rule(.yearly, monthDays: [16], months: [6])]) == nil, "another day read as the event's own")
+        #expect(read([rule(.yearly, months: [6, 12])]) == nil, "twice a year read as yearly")
+        #expect(read([rule(.yearly, monthDays: [15, 16])]) == nil)
+        // BYMONTH stays refused where it is not the no-op yearly spelling.
+        #expect(read([rule(.monthly, months: [6])]) == nil)
+        #expect(read([rule(.weekly, months: [6])]) == nil)
+        #expect(read([rule(.daily, months: [6])]) == nil)
+        #expect(
+            CadenceEventRepeatSetting(rules: [rule(.yearly, months: [6])], isDetached: false, start: nil) == nil,
+            "a month cannot be matched against no start"
+        )
     }
 
     @Test("Every answer Cadence writes reads back as itself")

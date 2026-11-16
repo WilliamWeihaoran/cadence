@@ -90,6 +90,12 @@ nonisolated enum CadenceTaskRecurrenceEndPresentation {
             ?? TaskRecurrenceEndMode.never.label
     }
 
+    /// An `.afterCount` bound with no position: "10 times". An event's Ends row and the capture
+    /// card's Repeat chip both say it, so it is spelled once ([[T-18130]]).
+    static func countPhrase(_ endCount: Int) -> String {
+        CadencePluralization.phrase(endCount, singular: "time", plural: "times")
+    }
+
     /// The day a fresh `.onDate` selection is seeded with. Selecting the mode has to store a real
     /// key: an empty one degrades straight back to `.never`.
     static func defaultEndDateKey(from reference: Date = Date(), calendar: Calendar = .current) -> String {

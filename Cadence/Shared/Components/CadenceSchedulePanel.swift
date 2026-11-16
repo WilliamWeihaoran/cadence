@@ -1250,8 +1250,20 @@ extension CadenceScheduleDraft {
     /// `CadenceTaskRecurrenceEndPresentation.valueLabel` -- "3 of 5", "Until Nov 20" -- because
     /// where the series is is the one fact no other row states. A series being created has no
     /// position yet, so it names its mode ("After", "On Date"), which the row beneath it fills in.
+    ///
+    /// **Only a task has a position** ([[T-18130]]). An event draft's `seriesOccurrenceNumber` is
+    /// always 1 -- EventKit gives no cheap occurrence index, and a this-and-future edit starts a new
+    /// series -- so an event read "1 of 10" on every occurrence. An event names its count with no
+    /// position ("10 times", the capture chip's words); its date and Never read as a task's.
     var seriesEndValueLabel: String {
-        guard subject.isEditing else { return effectiveSeriesEndMode.label }
+        switch subject {
+        case .creating:
+            return effectiveSeriesEndMode.label
+        case .editingEvent where effectiveSeriesEndMode == .afterCount:
+            return CadenceTaskRecurrenceEndPresentation.countPhrase(seriesEndCount)
+        case .editingTask, .editingEvent:
+            break
+        }
         return CadenceTaskRecurrenceEndPresentation.valueLabel(
             mode: effectiveSeriesEndMode,
             endDateKey: seriesEndDateKey,

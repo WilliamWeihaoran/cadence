@@ -339,7 +339,7 @@ extension CadenceScheduleDraft {
         case .never: return repeatRule.label
         case .onDate: return "\(repeatRule.label) until \(DateFormatters.shortDateString(from: seriesEndDateKey))"
         case .afterCount:
-            return "\(repeatRule.label) · \(seriesEndCount) \(seriesEndCount == 1 ? "time" : "times")"
+            return "\(repeatRule.label) · \(CadenceTaskRecurrenceEndPresentation.countPhrase(seriesEndCount))"
         }
     }
 }
