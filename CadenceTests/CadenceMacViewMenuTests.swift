@@ -103,14 +103,17 @@ struct CadenceMacViewMenuTests {
         #expect(toggles == 2)
     }
 
-    /// Every View key is consumed by its arm, which runs that item's command.
+    /// Every View key is consumed by its arm, which runs that item's command. [[T-18067]]: an arm
+    /// may first stand down on a modifier its key does not own (Search on Shift, for the note
+    /// editor's Cmd+Shift+K), through a named `…ArmClaims` predicate.
     @Test func everyViewArmConsumesItsKeyAndRunsItsCommand() throws {
         let source = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/Views/macOSRootCommandEventSupport.swift")
         let handler = try #require(CadenceSourceScan.declarationBody("static func handleCommandKeyEvent", in: source))
         #expect(handler.contains("case 51:"), "non-vacuity: the scan read the whole shortcut table")
         for item in CadenceViewMenu.items {
             let pattern = #"case "# + String(item.keyCode)
-                + #":\s*performViewCommand\(\.\#(item.command), context: context\)\s*return nil"#
+                + #":\s*(?:guard \w+ArmClaims\(modifierFlags: event\.modifierFlags\) else \{ return event \}\s*)?"#
+                + #"performViewCommand\(\.\#(item.command), context: context\)\s*return nil"#
             #expect(CadenceSourceScan.matchCount(pattern, in: handler) == 1, "\(item.title)")
         }
     }

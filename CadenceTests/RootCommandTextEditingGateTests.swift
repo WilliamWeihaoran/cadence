@@ -24,6 +24,7 @@ struct RootCommandTextEditingGateTests {
     private static let priorityKey: UInt16 = 35
     private static let returnKey: UInt16 = 36
     private static let slashKey: UInt16 = 44
+    private static let searchKey: UInt16 = 40
 
     @Test func everyHoverScopedKeyPassesThroughWhileEditingText() {
         for key in Self.hoverScopedKeys {
@@ -148,6 +149,39 @@ struct RootCommandTextEditingGateTests {
         #expect(RootCommandEventSupport.cancellationArmClaims(modifierFlags: .command))
         #expect(!RootCommandEventSupport.cancellationArmClaims(modifierFlags: [.command, .shift]))
         #expect(RootCommandEventSupport.cancellationArmClaims(modifierFlags: [.command, .option]))
+    }
+
+    /// [[T-18067]]: the Search arm claims plain Cmd+K and leaves Cmd+Shift+K to the note editor's
+    /// insert-link shortcut ([[T-5882]]).
+    @Test func theSearchArmStandsDownOnShiftOnly() {
+        #expect(RootCommandEventSupport.searchArmClaims(modifierFlags: .command))
+        #expect(!RootCommandEventSupport.searchArmClaims(modifierFlags: [.command, .shift]))
+        #expect(RootCommandEventSupport.searchArmClaims(modifierFlags: [.command, .option]))
+    }
+
+    /// [[T-18067]], driven through the real handler: Cmd+Shift+K is handed on (so the note
+    /// editor's `performKeyEquivalent` can insert a link) and opens no Search; plain Cmd+K still
+    /// opens it and is consumed.
+    @Test func commandShiftKReachesTheEditorAndOpensNoSearch() throws {
+        let container = try CadenceTestStore.container()
+        let window = makeWindow()
+        defer { window.close() }
+        try #require(window.makeFirstResponder(nil))
+        let search = GlobalSearchManager.shared
+        search.dismiss()
+        defer { search.dismiss() }
+        try #require(!search.isPresented)
+
+        let link = try commandKeyEvent(Self.searchKey, in: window, modifiers: [.command, .shift])
+        let result = RootCommandEventSupport.handleCommandKeyEvent(link, context: makeContext(container.mainContext))
+        #expect(result === link, "Cmd+Shift+K was consumed, so the editor's insert-link never sees it")
+        #expect(!search.isPresented, "Cmd+Shift+K opened Search")
+
+        // Scope control: plain Cmd+K is still Search, consumed.
+        let plain = try commandKeyEvent(Self.searchKey, in: window)
+        let control = RootCommandEventSupport.handleCommandKeyEvent(plain, context: makeContext(container.mainContext))
+        #expect(control == nil)
+        #expect(search.isPresented)
     }
 
     // MARK: - Fixtures

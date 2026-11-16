@@ -313,7 +313,10 @@ nonisolated enum CadenceSavedLinkRowMenu {
     static let copyTitle = "Copy Link"
     /// [[T-7259]]: opens the Links tab's form on this link, prefilled, on both platforms.
     static let editTitle = "Edit Link"
-    static let deleteTitle = "Delete"
+    /// [[T-18068]]: names its object, as "Delete Task" and "Delete Note" do ([[T-8534]]) and as
+    /// the confirmation it raises ("Delete Link?") does. The iOS swipe reads this too and keeps
+    /// it: its sibling swipe already reads "Edit Link".
+    static let deleteTitle = "Delete Link"
 
     /// Each item's glyph, named once beside its words ([[T-10165]]). iOS's long-press drew these
     /// three from the day it gained the menu; the Mac's right-click drew Open Link and Copy Link

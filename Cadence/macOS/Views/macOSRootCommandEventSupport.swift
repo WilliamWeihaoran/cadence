@@ -166,6 +166,16 @@ enum RootCommandEventSupport {
         !modifierFlags.contains(.shift)
     }
 
+    /// **[[T-18067]] — Cmd+K is Search; Cmd+Shift+K is the note editor's insert-link key.**
+    ///
+    /// [[T-5882]] moved the editor's insert-link shortcut to Cmd+Shift+K to escape this arm, but
+    /// the `case 40` arm checked no modifier but Command, so it ate the shifted key too: the
+    /// palette opened and no link was written. It now claims plain Cmd+K only and stands down on
+    /// Shift, as the cancellation arm does for Cmd+?, so the key reaches `performKeyEquivalent`.
+    static func searchArmClaims(modifierFlags: NSEvent.ModifierFlags) -> Bool {
+        !modifierFlags.contains(.shift)
+    }
+
     /// **[[T-7203]] — the one body behind Cmd+K, Cmd+O and Cmd+\ and their View-menu items.**
     ///
     /// The `case 40` / `case 31` / `case 42` arms below call this and return `nil`, so the key is
@@ -203,13 +213,14 @@ enum RootCommandEventSupport {
 
         switch event.keyCode {
         case 40:
-            // T-5882: unconditional, and that is the decision rather than an oversight. This arm
-            // runs before `performKeyEquivalent`, so for as long as it is here the markdown
-            // editor's own Cmd+K can never fire. The owner chose one meaning for Cmd+K app-wide —
-            // Search — over letting it reach an editable text view, so the editor's insert-link
-            // shortcut moved to Cmd+Shift+K (`MarkdownKeyboardShortcutSupport.handle`) and this
-            // arm does **not** grow a text-editing exception.
+            // T-5882: no text-editing exception, and that is the decision rather than an
+            // oversight. This arm runs before `performKeyEquivalent`, so the markdown editor's own
+            // Cmd+K can never fire. The owner chose one meaning for Cmd+K app-wide — Search — over
+            // letting it reach an editable text view, so the editor's insert-link shortcut moved
+            // to Cmd+Shift+K (`MarkdownKeyboardShortcutSupport.handle`), which this arm must
+            // therefore leave alone ([[T-18067]], `searchArmClaims`).
             // [[T-7203]]: View ▸ Search names this key; both run `performViewCommand`.
+            guard searchArmClaims(modifierFlags: event.modifierFlags) else { return event }
             performViewCommand(.search, context: context)
             return nil
         case 51:

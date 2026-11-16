@@ -116,6 +116,9 @@ struct CadenceSavedLinkAddFormTests {
         #expect(MacSavedLinkRowActions.openMenuTitle == CadenceSavedLinkRowMenu.openTitle)
         #expect(MacSavedLinkRowActions.copyMenuTitle == CadenceSavedLinkRowMenu.copyTitle)
         #expect(MacSavedLinkRowActions.deleteMenuTitle == CadenceSavedLinkRowMenu.deleteTitle)
+        // [[T-18068]]: the menu's Delete names its object, as its three siblings and the
+        // "Delete Link?" confirmation do; a bare "Delete" was the odd one out.
+        #expect(CadenceSavedLinkRowMenu.deleteTitle.contains("Link"), "measured: \(CadenceSavedLinkRowMenu.deleteTitle)")
     }
 
     /// [[T-10165]]: a saved link's row menu draws one glyph per item, the same three on the Mac's
