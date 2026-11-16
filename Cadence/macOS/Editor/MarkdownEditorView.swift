@@ -593,6 +593,13 @@ struct MarkdownEditorView: NSViewRepresentable {
         let imageAssetVersions = CadenceIdentityMap.firstWins(referencedAssets.map { ($0.id, $0.updatedAt) })
         var didUpdateRenderedContent = false
 
+        // [[T-18203]]: a palette change reaches this pass through the read below and restyles the
+        // links, tags and task cards; the caret is the one accent set outside the stylist.
+        if MarkdownStylist.needsAccentRestyle(textView) {
+            textView.insertionPointColor = Theme.nsBlue
+            didUpdateRenderedContent = true
+        }
+
         if textView.markdownImageAssetVersions != imageAssetVersions {
             textView.markdownImageAssetVersions = imageAssetVersions
             textView.markdownImageRects.removeAll()

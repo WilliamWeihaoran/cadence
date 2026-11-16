@@ -426,6 +426,14 @@ enum MarkdownStylist {
         )
     }
 
+    /// Whether this text view was last styled under a different accent palette than the live one
+    /// ([[T-18203]]). `MarkdownEditorView.updateNSView` restyles on it, since a palette change
+    /// moves no text, image or embed and so set none of its other triggers. A view never styled
+    /// reads as stale, for the reason `refreshWidthDependentLayout(in:)` gives.
+    static func needsAccentRestyle(_ textView: NSTextView) -> Bool {
+        (textView as? CadenceTextView)?.markdownLayoutSignature?.theme != MarkdownStyleSignature.currentTheme
+    }
+
     /// Renders a note's YAML frontmatter at zero height.
     ///
     /// The block is kept in `note.content` for portability with other markdown tools, but Cadence

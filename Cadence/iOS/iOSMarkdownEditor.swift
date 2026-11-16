@@ -209,11 +209,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         textView.autocapitalizationType = .none
         textView.smartDashesType = .no
         textView.smartQuotesType = .no
-        textView.tintColor = UIColor(Theme.blue)
-        textView.linkTextAttributes = [
-            .foregroundColor: UIColor(Theme.blueLight),
-            .underlineStyle: NSUnderlineStyle.single.rawValue
-        ]
+        context.coordinator.applyAccentChromeIfNeeded(to: textView)
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         context.coordinator.applyMarkdownStyle(to: textView, text: text)
         return textView
@@ -221,6 +217,9 @@ struct iOSMarkdownEditor: UIViewRepresentable {
 
     func updateUIView(_ textView: UITextView, context: UIViewRepresentableContext<iOSMarkdownEditor>) {
         context.coordinator.parent = self
+        // [[T-18203]]: first, so this pass reads the live palette on every path and Observation
+        // re-runs it on a palette change; the restyle itself follows from the signature's `theme`.
+        context.coordinator.applyAccentChromeIfNeeded(to: textView)
         // Set on every pass, not only at creation: quick create flips its image policy with the
         // sheet's mode (`kind != .event`) while the same text view stays alive, so a value written
         // once in `makeUIView` would leave the edit menu offering whichever mode the sheet opened in.
@@ -271,6 +270,21 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         /// repeated `updateUIView` passes over an unconverged focus state enqueue one hop and not
         /// one per pass. See `synchronizeFirstResponder(of:focused:)`.
         private var isFirstResponderChangeScheduled = false
+        /// The palette the caret, selection and link colours were last set from ([[T-18203]]).
+        private var accentChromePaletteID: String?
+
+        /// The three accents UIKit holds on the text view rather than in the styled text, so no
+        /// restyle reaches them: re-set whenever the palette has moved since they were written.
+        func applyAccentChromeIfNeeded(to textView: UITextView) {
+            let paletteID = MarkdownStyleSignature.currentTheme
+            guard paletteID != accentChromePaletteID else { return }
+            accentChromePaletteID = paletteID
+            textView.tintColor = UIColor(Theme.blue)
+            textView.linkTextAttributes = [
+                .foregroundColor: UIColor(Theme.blueLight),
+                .underlineStyle: NSUnderlineStyle.single.rawValue
+            ]
+        }
 
         // MARK: - Rendered tables (T-221)
 

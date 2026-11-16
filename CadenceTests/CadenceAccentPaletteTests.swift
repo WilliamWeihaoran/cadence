@@ -285,6 +285,33 @@ struct CadenceAccentPaletteSwitchTests {
         ][index]
     }
 
+    /// [[T-18203]]: an editor already on screen restyles on a switch. The signature's `theme` was
+    /// the constant `"fixed"`, so a switch compared equal and the open note kept the old hues; both
+    /// feeds must move with the selection, and the AppKit editor's gate must say "stale" until the
+    /// stylist has run under the new set, and "fresh" once it has.
+    @Test func switchingTheSetMakesAnOpenEditorRestyle() {
+        let selection = CadenceAccentPaletteSelection.shared
+        let original = selection.palette
+        defer { selection.select(original, persist: false) }
+
+        selection.select(.cadence, persist: false)
+        let iOSFeedBefore = MarkdownStyleSignature.current(revealedBlockRange: nil, imageAssets: [])
+        let macFeedBefore = MarkdownStyleSignature.current(revealedBlockRange: nil, renderAssets: [:])
+        let textView = CadenceTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 400))
+        textView.string = "A [[Reference]] and #tag with [a link](https://example.com)."
+        MarkdownStylist.apply(to: textView)
+        #expect(!MarkdownStylist.needsAccentRestyle(textView), "non-vacuity: fresh after styling")
+
+        selection.select(.glacier, persist: false)
+
+        #expect(MarkdownStyleSignature.current(revealedBlockRange: nil, imageAssets: []) != iOSFeedBefore)
+        #expect(MarkdownStyleSignature.current(revealedBlockRange: nil, renderAssets: [:]) != macFeedBefore)
+        #expect(MarkdownStylist.needsAccentRestyle(textView), "a switch left the open editor's styling current")
+
+        MarkdownStylist.apply(to: textView)
+        #expect(!MarkdownStylist.needsAccentRestyle(textView), "restyling under the new set did not catch up")
+    }
+
     /// Selecting the set already in force is a no-op, so a picker row can be tapped twice without
     /// pushing a widget timeline reload each time.
     @Test func selectingTheActiveSetChangesNothing() {

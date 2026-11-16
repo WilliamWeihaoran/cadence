@@ -23,6 +23,11 @@ import Foundation
 /// inside `#if os(iOS)` and invisible to the macOS-built test target — the same reason
 /// `CadenceCompactTab` sits in `Shared/`. Nothing here is platform-specific.
 struct MarkdownStyleSignature: Equatable {
+    /// The accent palette the styling painted with ([[T-18203]]). It was the constant `"fixed"`,
+    /// so a palette change compared equal, the gate skipped, and an open editor kept the old
+    /// palette's link, tag and task hues until the next keystroke. Both feeds read it from
+    /// `currentTheme`, and each editor's update pass reads it there too, which is what has
+    /// Observation re-run that pass when the palette changes.
     let theme: String
     /// The code fence or table the caret is currently inside, which the styler leaves un-rendered
     /// so its source can be edited. Part of the signature because moving the caret in or out of one
@@ -53,7 +58,7 @@ struct MarkdownStyleSignature: Equatable {
         tableSourceAnchors: Set<Int> = []
     ) -> MarkdownStyleSignature {
         MarkdownStyleSignature(
-            theme: "fixed",
+            theme: currentTheme,
             revealedBlockRange: revealedBlockRange,
             // Sorted, so the same set of revealed tables is the same signature however the caller
             // happened to accumulate it — the rule `imageAssetRevision` below already follows.
@@ -87,7 +92,7 @@ struct MarkdownStyleSignature: Equatable {
         tableSourceAnchors: Set<Int> = []
     ) -> MarkdownStyleSignature {
         MarkdownStyleSignature(
-            theme: "fixed",
+            theme: currentTheme,
             revealedBlockRange: revealedBlockRange,
             tableSourceAnchors: tableSourceAnchors.sorted(),
             contentWidthBucket: bucket(for: contentWidth),
@@ -97,6 +102,12 @@ struct MarkdownStyleSignature: Equatable {
                 .joined(separator: "|"),
             taskEmbedRevision: revision(of: taskEmbeds)
         )
+    }
+
+    /// The palette id every signature records, and the one read of the live selection both
+    /// editors make outside their stylists ([[T-18203]]).
+    static var currentTheme: String {
+        CadenceAccentPaletteSelection.shared.palette.id
     }
 
     /// The one place a content width is reduced to the value the signature compares, so the two

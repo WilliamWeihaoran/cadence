@@ -207,10 +207,10 @@ nonisolated enum CadenceAccentPaletteStore {
 /// alternative was `.id(paletteID)` on the root, which repaints by throwing away every piece of
 /// `@State` in the app, including the Settings screen the user is standing on.
 ///
-/// The AppKit markdown editor is the one surface this does not reach — it draws through
-/// `MarkdownStylist`, not through a SwiftUI body — so it repaints on its next restyle rather than
-/// instantly. Its three accent colours are computed rather than stored precisely so that restyle
-/// is correct; see `MarkdownEditorSupport`.
+/// The two markdown editors draw through UIKit and AppKit stylists, not a SwiftUI body, so this
+/// reaches them only through their update passes: each reads the palette id there via
+/// `MarkdownStyleSignature.currentTheme`, which is also the signature's `theme`, so a palette
+/// change re-runs the pass and the pass restyles ([[T-18203]]).
 @Observable
 nonisolated final class CadenceAccentPaletteSelection: @unchecked Sendable {
     static let shared = CadenceAccentPaletteSelection()
