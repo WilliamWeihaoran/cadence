@@ -157,7 +157,7 @@ struct CadenceCodexKanbanRenderingTests {
         #expect(cards.contains("ForEach(tasks)"))
         #expect(cards.contains("handleTaskDrop(items: items, before: task)"))
         let move = try #require(CadenceSourceScan.declarationBody("private func moveTask(", in: source))
-        #expect(move.contains("unfrozenSortedTasks.sorted { $0.order < $1.order }"))
+        #expect(move.contains("unfrozenSortedTasks.sorted(by: TaskOrdering.fallbackPrecedes)"))
         #expect(move.contains("spanning: spanTasks"))
         #expect(move.contains("assigning: { onAssignTask(task) }"))
         #expect(move.contains("return reordered"))
