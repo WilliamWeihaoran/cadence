@@ -209,8 +209,8 @@ struct CadenceTodayRolloverBanner: View {
     }
 
     /// How late the leftover is ([[T-10491]]): the do date's relative day — "Yesterday",
-    /// "22 days ago" — so a task planned yesterday and one planned three weeks ago no longer read
-    /// alike in the offer to move both. The words are the row's own do-date chip's, from
+    /// "6 days ago", and past the week the day itself, "Oct 12" ([[T-18092]]) — so a task planned
+    /// yesterday and one planned three weeks ago no longer read alike in the offer to move both. The words are the row's own do-date chip's, from
     /// `CadenceTaskPresentationSupport.scheduledDayLabel(for:)`, never a second formatter; the
     /// styling is the list name's beside it. It keeps its width (`layoutPriority`) so the title,
     /// not the lateness, is what truncates on a narrow row.

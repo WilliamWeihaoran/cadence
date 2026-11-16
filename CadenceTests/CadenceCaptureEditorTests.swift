@@ -153,11 +153,11 @@ struct CadenceCaptureEditorTests {
     /// **The seven-day cutoff, which [[T-3237]] item (3) left to the implementer and asked to have
     /// stated** — so it is stated here, in the one place a change to it turns red.
     ///
-    /// `DateFormatters.relativeDate(from:)`'s own backward arm is UNBOUNDED, which is right for a
-    /// lateness summary and wrong on a chip: a chip states a day, and `30 days ago` makes the
-    /// reader do the arithmetic that `Sep 21` would have saved them. The card therefore calls the
-    /// symmetric overload, and the last two expectations are the non-vacuity — at eight days the
-    /// two spellings genuinely disagree, so this cannot pass by accidentally reading the old one.
+    /// A chip states a day, and `30 days ago` makes the reader do the arithmetic that `Sep 21`
+    /// would have saved them. Since [[T-18092]] the window-less `DateFormatters.relativeDate(from:)`
+    /// uses this same window -- it used to run a fortnight forward and unbounded backward, so a
+    /// task row and this card worded one day two ways -- and the last two expectations pin that
+    /// the two forms now agree just past the turnover, where they used to differ.
     ///
     /// The reference instant is stated rather than taken from the clock: `relativeTo:` exists, and
     /// a test that said `Date()` would both straddle midnight and join the bare-`Date()` ledger in
@@ -190,8 +190,8 @@ struct CadenceCaptureEditorTests {
 
         let behind = try #require(keys[-(cutoff + 1)])
         let ahead = try #require(keys[cutoff + 1])
-        #expect(DateFormatters.relativeDate(from: behind, relativeTo: reference) == "\(cutoff + 1) days ago")
-        #expect(DateFormatters.relativeDate(from: ahead, relativeTo: reference) == "in \(cutoff + 1) days")
+        #expect(try chipLabel(-(cutoff + 1)) == DateFormatters.relativeDate(from: behind, relativeTo: reference))
+        #expect(try chipLabel(cutoff + 1) == DateFormatters.relativeDate(from: ahead, relativeTo: reference))
     }
 
     /// **The owner's four capture-card complaints, pinned** ([[T-3237]]).

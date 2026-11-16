@@ -25,19 +25,19 @@ struct DateFormatterSupportTests {
         let today = calendar.startOfDay(for: Date())
         let tomorrow = try #require(calendar.date(byAdding: .day, value: 1, to: today))
         let yesterday = try #require(calendar.date(byAdding: .day, value: -1, to: today))
-        let inThirteenDays = try #require(calendar.date(byAdding: .day, value: 13, to: today))
-        let inFourteenDays = try #require(calendar.date(byAdding: .day, value: 14, to: today))
+        let inSevenDays = try #require(calendar.date(byAdding: .day, value: 7, to: today))
+        let inEightDays = try #require(calendar.date(byAdding: .day, value: 8, to: today))
 
         #expect(DateFormatters.relativeDate(from: DateFormatters.dateKey(from: today)) == "Today")
         #expect(DateFormatters.relativeDate(from: DateFormatters.dateKey(from: tomorrow)) == "Tomorrow")
         #expect(DateFormatters.relativeDate(from: DateFormatters.dateKey(from: yesterday)) == "Yesterday")
-        #expect(DateFormatters.relativeDate(from: DateFormatters.dateKey(from: inThirteenDays)) == "in 13 days")
-        // Past the fortnight the day is spelled out, with the year only when it differs (T-6252),
-        // so this wall-clock check stays true in the last fortnight of December too.
-        let sameYear = calendar.component(.year, from: inFourteenDays) == calendar.component(.year, from: today)
+        #expect(DateFormatters.relativeDate(from: DateFormatters.dateKey(from: inSevenDays)) == "in 7 days")
+        // Past the week (T-18092) the day is spelled out, with the year only when it differs
+        // (T-6252), so this wall-clock check stays true in the last week of December too.
+        let sameYear = calendar.component(.year, from: inEightDays) == calendar.component(.year, from: today)
         #expect(
-            DateFormatters.relativeDate(from: DateFormatters.dateKey(from: inFourteenDays)) ==
-            (sameYear ? DateFormatters.shortDate : DateFormatters.fullShortDate).string(from: inFourteenDays)
+            DateFormatters.relativeDate(from: DateFormatters.dateKey(from: inEightDays)) ==
+            (sameYear ? DateFormatters.shortDate : DateFormatters.fullShortDate).string(from: inEightDays)
         )
 
         #expect(TimeFormatters.durationLabel(actual: 45, estimated: 0) == "45m/-")
@@ -48,9 +48,9 @@ struct DateFormatterSupportTests {
     /// **T-6252: a day in another year carries its year.** Past the words, `relativeDate` spelled
     /// every day `MMM d`, so a deadline on 2027-11-15 and one on 2026-11-15 both read "Nov 15" on
     /// the row chip, the inspector and search. Same-year output must stay `MMM d` (no chip widens
-    /// in the common case), near days must stay words, and the unbounded backward arm of the
-    /// default overload stays words even a year back. The reference instant is stated, never the
-    /// clock, and the year-boundary pair is the non-vacuity: 18 days ahead across New Year is
+    /// in the common case), near days must stay words, and a day a year back is dated in its own
+    /// year ([[T-18092]] ended the default overload's unbounded backward arm). The reference
+    /// instant is stated, never the clock, and the year-boundary pair is the non-vacuity: 18 days ahead across New Year is
     /// next year's date, 6 days ahead across it is still words.
     @Test func relativeDateShowsTheYearOnlyForADayInAnotherYear() throws {
         let noon: TimeInterval = 12 * 60 * 60
@@ -62,7 +62,7 @@ struct DateFormatterSupportTests {
         #expect(DateFormatters.relativeDate(from: "2026-10-30", relativeTo: reference) == "in 6 days")
         #expect(DateFormatters.relativeDate(from: "2026-11-23", relativeTo: reference) == "Nov 23")
         #expect(DateFormatters.relativeDate(from: "2027-11-15", relativeTo: reference) == "Nov 15, 2027")
-        #expect(DateFormatters.relativeDate(from: "2025-10-24", relativeTo: reference) == "365 days ago")
+        #expect(DateFormatters.relativeDate(from: "2025-10-24", relativeTo: reference) == "Oct 24, 2025")
 
         // The symmetric chip overload turns over to the same year-aware spelling both ways.
         #expect(DateFormatters.relativeDate(from: "2026-10-25", relativeTo: reference, withinDays: 7) == "Tomorrow")

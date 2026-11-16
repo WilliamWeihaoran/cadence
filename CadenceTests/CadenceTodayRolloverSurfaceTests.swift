@@ -341,7 +341,8 @@ struct CadenceTodayRolloverSurfaceTests {
         )
         #expect(rolled.count == 2, "non-vacuity: both are leftovers")
         #expect(DateFormatters.relativeDate(from: yesterday.scheduledDate, relativeTo: now) == "Yesterday")
-        #expect(DateFormatters.relativeDate(from: longAgo.scheduledDate, relativeTo: now) == "22 days ago")
+        // Past the seven-day window the leftover names its day ([[T-18092]]), as its row does.
+        #expect(DateFormatters.relativeDate(from: longAgo.scheduledDate, relativeTo: now) == "Oct 12")
         // The banner's label is the chips' formatter over the do date, nothing of its own.
         for leftover in [yesterday, longAgo] {
             #expect(

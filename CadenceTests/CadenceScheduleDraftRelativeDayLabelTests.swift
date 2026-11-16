@@ -78,4 +78,29 @@ struct CadenceScheduleDraftRelativeDayLabelTests {
             #expect(draft.dueRowLabel(relativeTo: reference) == chip, "offset \(offset)")
         }
     }
+
+    /// **[[T-18092]]: the task's row and its inspector say the same words for its do date, at
+    /// every distance.** The rows (Mac task chip, iOS task row, rollover offer, board card, note
+    /// embed chip, Cmd+K, iOS search) read the window-less `relativeDate(from:relativeTo:)`, which
+    /// went relative a fortnight forward and without limit backward, while this panel used the
+    /// capture card's seven days -- so a task ten days out read "in 10 days" on its row and
+    /// "Nov 22" here. The range runs well past both old turnovers (13 forward, unbounded back), and
+    /// the two named offsets are the non-vacuity: they are dates now, and were words before.
+    @Test("The task row's do-date words match the inspector's Do row at every distance")
+    func taskRowAndInspectorAgreeAtEveryDistance() {
+        for offset in -40...40 {
+            let draft = taskDraft(doKey: key(offset), dueKey: key(offset))
+            let task = AppTask(title: "Distance \(offset)")
+            task.scheduledDate = key(offset)
+            let row = CadenceTaskPresentationSupport.scheduledDayLabel(for: task, override: nil, realNow: reference)
+            #expect(row == draft.doRowLabel(relativeTo: reference), "offset \(offset)")
+            #expect(DateFormatters.relativeDate(from: key(offset), relativeTo: reference) == row, "offset \(offset)")
+        }
+        for offset in [10, -30] {
+            let task = AppTask(title: "Named \(offset)")
+            task.scheduledDate = key(offset)
+            #expect(CadenceTaskPresentationSupport.scheduledDayLabel(for: task, override: nil, realNow: reference)
+                == DateFormatters.shortDateString(from: key(offset), relativeTo: reference), "offset \(offset)")
+        }
+    }
 }

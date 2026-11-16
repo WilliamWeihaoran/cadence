@@ -399,7 +399,7 @@ nonisolated enum DateFormatters {
     }
 
     /// Converts a `yyyy-MM-dd` storage key to a relative string using task-friendly rules:
-    /// "Today", "Tomorrow", "Yesterday", "in 5 days", "30 days ago", or "Mar 28" ("Mar 28, 2027" in
+    /// "Today", "Tomorrow", "Yesterday", "in 5 days", "5 days ago", or "Mar 28" ("Mar 28, 2027" in
     /// another year — see `absoluteDay`)
     ///
     /// `relativeTo` exists so a caller that has already decided what "today" is can say so.
@@ -412,22 +412,29 @@ nonisolated enum DateFormatters {
     /// the same "today" `todayKey()` names -- under the Debug today override the rollover offer's
     /// rows read `Yesterday`, not `Today` ([[T-16801]]). Identical to `Date()` wherever
     /// `CadenceTodayOverride.live` is `nil`, which is every Release build.
+    ///
+    /// [[T-18092]]: the window is `relativeDayWindow`, seven days each way -- the same one the
+    /// `withinDays:` form is handed by the schedule panel and the capture card. It used to be its
+    /// own, a fortnight forward and unbounded backward, so one do date read "in 10 days" on its row
+    /// and "Nov 25" in its inspector. Every do-date reader (rows, board card, note embed chip,
+    /// Cmd+K, iOS search, the rollover offer) calls this form, so the window is decided here once.
     static func relativeDate(from key: String, relativeTo referenceDate: Date = DateFormatters.now()) -> String {
-        guard let date = Self.date(from: key) else { return key }
-        let diff = dayOffset(from: key, relativeTo: referenceDate) ?? Int.max
-        // The original window, unchanged: forward as far as a fortnight, backward without a limit.
-        guard diff <= 13 else { return absoluteDay(date, relativeTo: referenceDate) }
-        return relativeWords(dayOffset: diff)
+        relativeDate(from: key, relativeTo: referenceDate, withinDays: relativeDayWindow)
     }
+
+    /// **The one relative-date window** ([[T-3237]] item 3, [[T-18092]]): seven days each way,
+    /// then the date. Its reasoning is stated at `CadenceCaptureFieldInventory.relativeDateCutoffDays`,
+    /// which forwards here; it lives in `DateFormatters` because the MCP server target compiles this
+    /// file and not the capture card.
+    static let relativeDayWindow = 7
 
     /// `relativeDate(from:)` with a **symmetric cutoff**, for surfaces where the words stop being
     /// the shorter way to say it.
     ///
-    /// The unbounded backward arm above is right for a summary line that is *about* lateness —
-    /// `30 days ago` is the point there. It is wrong on a chip: a chip states a date, and once the
-    /// offset is big enough that the reader has to do the arithmetic themselves to know which day
-    /// it is, `Oct 19` is both shorter and the thing they wanted. `withinDays` is where that turns
-    /// over, and it is the caller's to choose because it depends on what the surface is for.
+    /// A chip states a date, and once the offset is big enough that the reader has to do the
+    /// arithmetic themselves to know which day it is, `Oct 19` is both shorter and the thing they
+    /// wanted. `withinDays` is where that turns over; the window-less form above passes
+    /// `relativeDayWindow`, and a caller passes its own only for a surface with a stated reason.
     ///
     /// Inside the window the words are the same ones, spelled in the same place, so the two forms
     /// cannot drift into saying `Tomorrow` differently.

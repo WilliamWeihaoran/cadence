@@ -167,9 +167,10 @@ enum CadenceCaptureFieldInventory {
     /// which day it is, while `Nov 11` is the answer. Seven rather than fourteen because a chip is
     /// glanced at rather than read, and because a week is a boundary the reader already has.
     ///
-    /// Symmetric, unlike `DateFormatters.relativeDate(from:)`'s own unbounded backward arm: a do
-    /// date thirty days gone is a date, not a measure of how late it is.
-    static let relativeDateCutoffDays = 7
+    /// Symmetric: a do date thirty days gone is a date, not a measure of how late it is. Since
+    /// [[T-18092]] this is `DateFormatters.relativeDayWindow`, the window every do-date reader
+    /// uses, so the task rows and this card cannot disagree about one day again.
+    static let relativeDateCutoffDays = DateFormatters.relativeDayWindow
 
     static let taskIcons: [CadenceCaptureField] = [.doDate, .dueDate, .list, .tags]
     static let overflow: [CadenceCaptureField] = [.repeatRule, .priority, .estimate]
