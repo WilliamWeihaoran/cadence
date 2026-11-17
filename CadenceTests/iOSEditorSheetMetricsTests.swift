@@ -318,13 +318,14 @@ struct iOSEditorSheetMetricsTests {
         let chain = [
             "Cadence/iOS/iOSAINoteActionsViews.swift",
             "Cadence/iOS/iOSCalendarEventEditSheet.swift",
-            "Cadence/iOS/iOSCalendarInspectorView.swift",
-            "Cadence/iOS/iOSCalendarMonthAgendaViews.swift",
+            // [[T-18252]]: the day inspector and the month agenda left the chain when the event
+            // editor's presentation moved onto the root's page-editor host.
             "Cadence/iOS/iOSCaptureRadialMenu.swift",
             "Cadence/iOS/iOSEventNoteEditorSheet.swift",
             "Cadence/iOS/iOSMarkdownReferenceSupport.swift",
             "Cadence/iOS/iOSNoteEditorSheetHeader.swift",
             "Cadence/iOS/iOSNotesView.swift",
+            "Cadence/iOS/iOSPageEditorHost.swift",
             "Cadence/iOS/iOSSearchView.swift",
             "Cadence/iOS/iOSTaskDetailSheet.swift",
             "Cadence/iOS/iOSTaskInspectorHost.swift"
@@ -345,8 +346,6 @@ struct iOSEditorSheetMetricsTests {
         let needles = [
             "Cadence/iOS/iOSAINoteActionsViews.swift": "iOSAISummaryReviewSheet(",
             "Cadence/iOS/iOSCalendarEventEditSheet.swift": "iOSEventNoteEditorSheet(",
-            "Cadence/iOS/iOSCalendarInspectorView.swift": "iOSCalendarEventEditSheet(",
-            "Cadence/iOS/iOSCalendarMonthAgendaViews.swift": "iOSCalendarEventEditSheet(",
             // [[T-3195]] unified capture on `iOSCreateTaskSheet`, so the palette's Event arm no
             // longer reaches `iOSCalendarQuickCreateSheet(`. The file stays in the chain as the
             // presenter of two sheets and one cover; the needle follows the sheet it presents now.
@@ -362,7 +361,8 @@ struct iOSEditorSheetMetricsTests {
             "Cadence/iOS/iOSMarkdownReferenceSupport.swift": "iOSNoteEditorCover(reachedFrom: note)",
             "Cadence/iOS/iOSNoteEditorSheetHeader.swift": "iOSEditorSheetMetrics.gutter(",
             "Cadence/iOS/iOSNotesView.swift": "iOSEventNoteEditorSheet(",
-            "Cadence/iOS/iOSSearchView.swift": "iOSCalendarEventEditSheet(",
+            "Cadence/iOS/iOSPageEditorHost.swift": "iOSCalendarEventEditSheet(",
+            "Cadence/iOS/iOSSearchView.swift": "iOSEventNoteEditorSheet(",
             "Cadence/iOS/iOSTaskDetailSheet.swift": ".capturePresentation(",
             "Cadence/iOS/iOSTaskInspectorHost.swift": "iOSTaskDetailSheet("
         ]

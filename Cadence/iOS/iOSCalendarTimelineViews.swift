@@ -197,11 +197,12 @@ struct iOSCalendarTimelineGrid: View {
     /// Set when a move or resize was refused by the store. The block is already back at its
     /// stored minute by then (`CadenceTimelineBlockEdit.commit`); this is the sentence saying so.
     @State private var blockEditFailureNotice: String?
-    /// The event a tap on its timed block opened ([[T-5356]]). Held here, once for every column, and
-    /// presented as the same `iOSCalendarEventEditSheet` the Board, Month, Search and the day
-    /// inspector open, so a meeting on Day/Week (and on Today's schedule pane) is edited where it
-    /// is seen instead of only from another view.
-    @State private var selectedEvent: iOSCalendarEventSelection?
+    /// Where a tap on an event opens it ([[T-5356]]), once for every column: the same
+    /// `iOSCalendarEventEditSheet` the Board, Month, Search and the day inspector open, so a meeting
+    /// on Day/Week (and on Today's schedule pane) is edited where it is seen. [[T-18252]]: presented
+    /// by the root's page-editor host, not by this grid, so an iPad resize that rebuilds the page
+    /// cannot dismiss a half-edited event.
+    @Environment(\.iOSPageEditor) private var pageEditor
     /// **Where an all-day draft's block is drawn** ([[T-8851]]). The draft is owned by the day
     /// COLUMN the press landed in, and the all-day strip is that column's sibling — pinned outside
     /// the hour canvas's scroll view so it stays put while the hours scroll. So the column says
@@ -314,9 +315,6 @@ struct iOSCalendarTimelineGrid: View {
             }
             canvas
         }
-        .sheet(item: $selectedEvent) { selection in
-            iOSCalendarEventEditSheet(event: selection.event)
-        }
     }
 
     private var canvas: some View {
@@ -405,7 +403,7 @@ struct iOSCalendarTimelineGrid: View {
             workHoursStartMinute: workHoursStartMinute,
             workHoursEndMinute: workHoursEndMinute,
             onCreateAt: onCreateAt,
-            onOpenEvent: { selectedEvent = iOSCalendarEventSelection(event: $0) },
+            onOpenEvent: { pageEditor(.event(iOSCalendarEventSelection(event: $0))) },
             drawsDraftBlocks: drawsDraftBlocks,
             onClearTime: clearsTime,
             editingTaskID: editingTaskID,
@@ -453,7 +451,7 @@ struct iOSCalendarTimelineGrid: View {
             editingTaskID = nil
             return
         }
-        selectedEvent = iOSCalendarEventSelection(event: event)
+        pageEditor(.event(iOSCalendarEventSelection(event: event)))
     }
 
     /// A finished move or resize, written through the shared field transaction ([[T-1475]]).
@@ -1484,8 +1482,8 @@ private struct iOSCalendarTimelineDayColumn: View {
     let workHoursStartMinute: Int
     let workHoursEndMinute: Int
     let onCreateAt: (String, Int) -> Void
-    /// Opens the grid's event editor for a tapped timed event ([[T-5356]]). See
-    /// `iOSCalendarTimelineGrid.selectedEvent`.
+    /// Opens the event editor for a tapped timed event ([[T-5356]]) -- on the root's page-editor
+    /// host since [[T-18252]]; see `iOSCalendarTimelineGrid.pageEditor`.
     let onOpenEvent: (EKEvent) -> Void
     /// See `iOSCalendarTimelineGrid.drawsDraftBlocks`.
     var drawsDraftBlocks: Bool = false

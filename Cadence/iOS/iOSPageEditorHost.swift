@@ -10,8 +10,10 @@ import SwiftUI
 /// [[T-5174]] swipe guard never sees that dismissal. [[T-18157]] moved the capture composers and the
 /// iPad sidebar's list editor above the switch; this host is the same move for the editors a page
 /// opens from its own controls: the Lists page's New List, a list's Edit (Lists page, list detail,
-/// the iPhone Tasks tab's list rows), Settings' New / Edit Context, and the Calendar's empty-slot
-/// quick create. Each holds a draft in its own `@State`, which now lives as long as the root.
+/// the iPhone Tasks tab's list rows), Settings' New / Edit Context, the Calendar's empty-slot
+/// quick create, and -- since [[T-18252]] -- an Apple Calendar event's editor, opened from the
+/// Board, Day/Week timeline (and Today's schedule pane), Month grid and agenda, the day inspector
+/// and Search. Each holds a draft in its own `@State`, which now lives as long as the root.
 ///
 /// The shape is `iOSTaskInspectorHost`'s: a callable action in the environment, so a page cannot
 /// hold the presentation; the request is `@State` on a modifier `iOSRootView` applies once, outside
@@ -32,12 +34,16 @@ enum iOSPageEditorRequest: Identifiable {
     /// The Calendar's tap on an empty day or slot. `press` makes every tap a new presentation, as
     /// the per-press id of the page's former seed did for a second tap on another slot.
     case calendarQuickCreate(dateKey: String, startMinute: Int?, press: UUID = UUID())
+    /// [[T-18252]]: a tapped Apple Calendar event, edited in `iOSCalendarEventEditSheet` -- its
+    /// `CadenceScheduleDraft` is the half-typed title the ticket's user lost to a Split View drag.
+    case event(iOSCalendarEventSelection)
 
     var id: String {
         switch self {
         case .list(let request): return "list-\(request.id)"
         case .context(let mode): return "context-\(mode.id)"
         case .calendarQuickCreate(_, _, let press): return "calendar-\(press)"
+        case .event(let selection): return "event-\(selection.id)"
         }
     }
 }
@@ -107,6 +113,11 @@ private struct iOSPageEditorHostModifier: ViewModifier {
                     iOSContextEditorSheet(mode: mode)
                 case .calendarQuickCreate(let dateKey, let startMinute, _):
                     iOSCalendarQuickCreateSheet(dateKey: dateKey, initialStartMinute: startMinute)
+                case .event(let selection):
+                    // Fixed outside, as Search and Today's schedule pane declared it; the sheet
+                    // scales its own form (`.cadenceScaledTypography()` in its body).
+                    iOSCalendarEventEditSheet(event: selection.event)
+                        .cadenceFixedTypography()
                 }
             }
     }

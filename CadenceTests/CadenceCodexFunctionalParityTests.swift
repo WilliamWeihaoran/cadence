@@ -74,11 +74,15 @@ struct CadenceCodexFunctionalParityTests {
         let editor = try read("Cadence/iOS/iOSCalendarEventEditSheet.swift")
         #expect(board.contains("struct iOSCalendarBoardPlanner: View"))
         #expect(board.contains("private struct iOSCalendarBoardDayColumn: View"))
-        #expect(board.contains("@State private var selectedEvent: iOSCalendarEventSelection?"))
-        #expect(board.contains("onOpenEvent: { selectedEvent = iOSCalendarEventSelection(event: $0) }"))
+        // [[T-18252]]: the board opens the event on the root's page-editor host, not on itself.
+        #expect(board.contains("@Environment(\\.iOSPageEditor) private var pageEditor"))
+        #expect(board.contains("onOpenEvent: { pageEditor(.event(iOSCalendarEventSelection(event: $0))) }"))
         #expect(board.contains("let onOpenEvent: (EKEvent) -> Void"))
         #expect(board.contains("Button {\n                onOpenEvent(item.event)\n            } label: {\n                iOSCalendarBoardEventCard(item: item)"))
-        #expect(board.contains(".sheet(item: $selectedEvent) { selection in\n            iOSCalendarEventEditSheet(event: selection.event)"))
+        #expect(!board.contains("iOSCalendarEventEditSheet("), "the board presents the event editor itself again")
+        let host = try read("Cadence/iOS/iOSPageEditorHost.swift")
+        #expect(host.contains("case .event(let selection):"))
+        #expect(host.contains("iOSCalendarEventEditSheet(event: selection.event)"))
         #expect(editor.contains("struct iOSCalendarEventEditSheet: View"))
         #expect(editor.contains("if isEditable {"))
         // [[T-8161]]: the one Notes field is the Cadence note, so a read-only calendar no longer

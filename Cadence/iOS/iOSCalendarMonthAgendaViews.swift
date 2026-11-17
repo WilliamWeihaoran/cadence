@@ -125,7 +125,7 @@ struct iOSCalendarMonthAgendaList: View {
     /// Set by the first report that agrees with the placement. Until then this agenda believes
     /// nothing it is told about where it is scrolled — see the switch in `agenda`.
     @State private var didConfirmInitialDay = false
-    @State private var selectedEvent: iOSCalendarEventSelection?
+    @Environment(\.iOSPageEditor) private var pageEditor
 
     private let calendar = Calendar.current
 
@@ -198,9 +198,6 @@ struct iOSCalendarMonthAgendaList: View {
     var body: some View {
         content
             .background(Theme.bg)
-            .sheet(item: $selectedEvent) { selection in
-                iOSCalendarEventEditSheet(event: selection.event)
-            }
     }
 
     /// A month holding nothing draws no scroll view at all.
@@ -314,7 +311,7 @@ struct iOSCalendarMonthAgendaList: View {
         switch item {
         case .event(let eventItem):
             Button {
-                selectedEvent = iOSCalendarEventSelection(event: eventItem.event)
+                pageEditor(.event(iOSCalendarEventSelection(event: eventItem.event)))
             } label: {
                 iOSCalendarEventSummaryRow(event: eventItem.event)
             }

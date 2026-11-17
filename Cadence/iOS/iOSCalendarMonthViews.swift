@@ -22,10 +22,10 @@ struct iOSCalendarMonthGrid: View {
     let todayKey: String
 
     private let calendar = Calendar.current
-    /// The event a chip opened, while its editor is up ([[T-8725]]). The month agenda beside this
-    /// grid owns its editor the same way; a cell cannot, because a cell is rebuilt the moment the
-    /// grid's query moves and would take its own sheet down with it.
-    @State private var selectedEvent: iOSCalendarEventSelection?
+    /// Where a chip opens its event ([[T-8725]]). Not the cell, which is rebuilt the moment the
+    /// grid's query moves; and since [[T-18252]] not this grid either -- the root's page-editor host
+    /// presents the editor, so an iPad size-class swap cannot take it down with the page.
+    @Environment(\.iOSPageEditor) private var pageEditor
     /// The band was 36 here and 22 in `iOSCalendarMonthStack`, for the same row of the same grid.
     /// One figure now; the reasoning for which of the two survived is on the constant.
     private var weekdayHeaderHeight: CGFloat { CadenceCalendarWeekdayHeaderMetrics.bandHeight + iOSCalendarTypographyMetrics.lineGain(CadenceCalendarWeekdayHeaderMetrics.labelSize, at: dynamicTypeSize, scaling: scaling) }
@@ -51,7 +51,7 @@ struct iOSCalendarMonthGrid: View {
                     events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
                     todayKey: todayKey,
                     minHeight: rowHeight,
-                    onOpenEvent: { selectedEvent = iOSCalendarEventSelection(event: $0) }
+                    onOpenEvent: { pageEditor(.event(iOSCalendarEventSelection(event: $0))) }
                 ) {
                     selectedDate = date
                     // [[T-11731]]: a greyed neighbouring-month day takes the grid to its month.
@@ -62,10 +62,6 @@ struct iOSCalendarMonthGrid: View {
             }
         }
         .background(Theme.bg)
-        // A chip opens its event here, in the grid, for the reason `selectedEvent` records.
-        .sheet(item: $selectedEvent) { selection in
-            iOSCalendarEventEditSheet(event: selection.event)
-        }
     }
 }
 

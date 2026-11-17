@@ -112,10 +112,13 @@ struct CadenceCodexTaskRowTypographyTests {
         let shared = try #require(CadenceSourceScan.declarationBody("struct iOSCompactFeatureDestinationView: View", in: shell))
         #expect(shared.contains("iOSTasksPageView(requestedScope: .all)"))
         #expect(shared.contains("iOSTasksPageView(requestedScope: .inbox)"))
-        for binding in ["$selectedNote", "$selectedEvent"] {
-            let sheet = try #require(CadenceSourceScan.declarationBody(".sheet(item: \(binding))", in: body))
-            #expect(sheet.contains(".cadenceFixedTypography()"))
-        }
+        let noteSheet = try #require(CadenceSourceScan.declarationBody(".sheet(item: $selectedNote)", in: body))
+        #expect(noteSheet.contains(".cadenceFixedTypography()"))
+        // [[T-18252]]: an event result opens on the root's page-editor host, which keeps Search's
+        // fixed outer typography for it.
+        #expect(source.contains("pageEditor(.event(iOSCalendarEventSelection(event: event)))"))
+        let host = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSPageEditorHost.swift"))
+        #expect(host.contains("iOSCalendarEventEditSheet(event: selection.event)\n                        .cadenceFixedTypography()"))
         let inspector = try #require(CadenceSourceScan.declarationBody(".sheet(item: $selectedTask)", in: body))
         #expect(inspector.contains("iOSTaskInspectorSheet("))
         let inspectorSource = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailSheet.swift"))

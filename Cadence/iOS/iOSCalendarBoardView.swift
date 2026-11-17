@@ -42,7 +42,7 @@ struct iOSCalendarBoardPlanner: View {
     /// Each day column's Completed fold, keyed by the day rather than held by the column slot,
     /// which changes date whenever `alignWindow(to:)` re-anchors the window ([[T-14601]]).
     @State private var dayDisclosures = CalendarBoardDayDisclosures()
-    @State private var selectedEvent: iOSCalendarEventSelection?
+    @Environment(\.iOSPageEditor) private var pageEditor
     @State private var dropFailureNotice: String?
 
     private let calendar = Calendar.current
@@ -109,9 +109,6 @@ struct iOSCalendarBoardPlanner: View {
                 board(columnWidth: columnWidth(containerWidth: geometry.size.width))
             }
         }
-        .sheet(item: $selectedEvent) { selection in
-            iOSCalendarEventEditSheet(event: selection.event)
-        }
     }
 
     private func board(columnWidth: CGFloat) -> some View {
@@ -128,7 +125,7 @@ struct iOSCalendarBoardPlanner: View {
                         events: eventsByDate[dateKey] ?? [],
                         allTasks: allTasks,
                         emptyDayText: emptyDayText,
-                        onOpenEvent: { selectedEvent = iOSCalendarEventSelection(event: $0) },
+                        onOpenEvent: { pageEditor(.event(iOSCalendarEventSelection(event: $0))) },
                         onAddTask: { onAddItem(dateKey) },
                         onDropTaskOnDay: { task in schedule(task, on: dateKey) },
                         isCompletedExpanded: Binding(

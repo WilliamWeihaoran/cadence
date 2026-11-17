@@ -182,7 +182,10 @@ struct CadenceShellSwapWiringTests {
         let host = try cadenceFunctionBody("private struct iOSPageEditorHostModifier: ViewModifier", in: source)
         #expect(host.contains(".sheet(item: $request)"))
         #expect(host.contains("guard request == nil else { return }"))
-        for editor in ["iOSListEditorSheet(", "iOSContextEditorSheet(", "iOSCalendarQuickCreateSheet("] {
+        for editor in [
+            "iOSListEditorSheet(", "iOSContextEditorSheet(", "iOSCalendarQuickCreateSheet(",
+            "iOSCalendarEventEditSheet(event: selection.event)"
+        ] {
             #expect(host.contains(editor), "the host no longer presents \(editor)")
         }
     }
@@ -196,6 +199,8 @@ struct CadenceShellSwapWiringTests {
             "iOSListEditorSheet(": ["iOSPageEditorHost.swift", "iOSCaptureRadialMenu.swift"],
             "iOSContextEditorSheet(": ["iOSPageEditorHost.swift"],
             "iOSCalendarQuickCreateSheet(": ["iOSPageEditorHost.swift"],
+            // [[T-18252]]: six surfaces open an event; only the root's host presents its editor.
+            "iOSCalendarEventEditSheet(": ["iOSPageEditorHost.swift"],
             "iOSCreateTaskSheet(": ["iOSCaptureRadialMenu.swift"],
         ]
         var found: [String: Set<String>] = [:]
@@ -225,6 +230,40 @@ struct CadenceShellSwapWiringTests {
         ] {
             #expect(try Self.code(path).contains(call), "\(path) no longer opens its editor on a root host")
         }
+    }
+
+    /// [[T-18252]]: the six surfaces that open an Apple Calendar event -- Board, the Day/Week
+    /// timeline (also Today's schedule pane), the Month grid and agenda, the day inspector and
+    /// Search -- route the tap to the root's page-editor host and hold no editor state of their own,
+    /// so a resize that rebuilds the page cannot dismiss a half-edited event.
+    @Test func everyEventOpenerRoutesToThePageEditorHost() throws {
+        let openers: [String: Int] = [
+            "Cadence/iOS/iOSCalendarBoardView.swift": 1,
+            "Cadence/iOS/iOSCalendarTimelineViews.swift": 2,
+            "Cadence/iOS/iOSCalendarMonthViews.swift": 1,
+            "Cadence/iOS/iOSCalendarMonthAgendaViews.swift": 1,
+            "Cadence/iOS/iOSCalendarInspectorView.swift": 1,
+            "Cadence/iOS/iOSSearchView.swift": 1,
+        ]
+        for (path, expected) in openers {
+            let code = try Self.code(path)
+            #expect(code.contains("@Environment(\\.iOSPageEditor) private var pageEditor"), "\(path) cannot reach the host")
+            #expect(code.components(separatedBy: "pageEditor(.event(iOSCalendarEventSelection(event: ").count - 1 == expected,
+                    "\(path) no longer opens each event on the root's host")
+            #expect(!code.contains("$selectedEvent"), "\(path) presents an event editor of its own again")
+            #expect(!code.contains("var selectedEvent:"), "\(path) holds an event selection a resize would drop")
+        }
+        // Every opener in the iOS tree is one of the six: a seventh surface presenting the editor
+        // itself is caught by `noPageConstructsAHoistedEditorItself`; one routing elsewhere, here.
+        var routed: Set<String> = []
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence/iOS") {
+            if try Self.code(path).contains("iOSCalendarEventSelection(event: ") { routed.insert(path) }
+        }
+        #expect(routed.count == openers.count, "event openers: \(routed.sorted())")
+
+        let source = try Self.code("Cadence/iOS/iOSPageEditorHost.swift")
+        #expect(source.contains("case event(iOSCalendarEventSelection)"))
+        #expect(source.contains("case .event(let selection): return \"event-\\(selection.id)\""))
     }
 
     /// [[T-18158]]: the two shells' Notes destinations opt in; Today's inspector does not.

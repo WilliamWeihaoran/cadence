@@ -314,7 +314,7 @@ struct CadenceBundleInspectorHostTests {
             ("Cadence/iOS/iOSTaskInspectorHost.swift", "CadenceDetailPanelPresentation.resolveHeldSubject("),
             ("Cadence/iOS/iOSRootView.swift", ".iOSTaskInspectorHost()"),
             ("Cadence/iOS/iOSCalendarTimelineViews.swift", "struct iOSTimelineTaskBlock"),
-            ("Cadence/iOS/iOSCalendarInspectorView.swift", "@State private var selectedEvent"),
+            ("Cadence/iOS/iOSCalendarInspectorView.swift", "@Environment(\\.iOSPageEditor) private var pageEditor"),
             ("Cadence/iOS/iOSCalendarMonthViews.swift", "private var visibleEvents"),
             ("Cadence/iOS/iOSCalendarView.swift", "iOSCalendarTimelineGrid("),
             ("Cadence/iOS/iOSTodaySchedulePanel.swift", "iOSCalendarTimelineGrid(")

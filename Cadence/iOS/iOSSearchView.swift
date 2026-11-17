@@ -30,7 +30,7 @@ struct iOSSearchView: View {
     @State private var isOnScreen = false
     @State private var selectedTask: AppTask?
     @State private var selectedNote: Note?
-    @State private var selectedEvent: iOSCalendarEventSelection?
+    @Environment(\.iOSPageEditor) private var pageEditor
     @State private var calendarSearchEvents: [EKEvent] = []
     @State private var scope: iOSSearchScope = .all
     /// Persisted since T-1476, and shared in spelling with the Mac palette's toggle. It was a
@@ -497,10 +497,6 @@ struct iOSSearchView: View {
             }
             .cadenceFixedTypography()
         }
-        .sheet(item: $selectedEvent) { selection in
-            iOSCalendarEventEditSheet(event: selection.event)
-                .cadenceFixedTypography()
-        }
     }
 
     /// Raise the field if Cmd+K asked for it ([[T-8791]]). Deferred a turn, as the other focus
@@ -781,7 +777,7 @@ struct iOSSearchView: View {
         case .note(let note):
             selectedNote = note
         case .event(let event):
-            selectedEvent = iOSCalendarEventSelection(event: event)
+            pageEditor(.event(iOSCalendarEventSelection(event: event)))
         case .list(let route):
             pushedListRoute = route
         case .feature(let featureDestination):

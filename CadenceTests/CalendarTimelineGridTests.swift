@@ -1596,12 +1596,13 @@ struct CadenceTimelineEventOpenTests {
         let grid = try #require(
             CadenceSourceScan.declarationBody("struct iOSCalendarTimelineGrid: View", in: code)
         )
-        #expect(grid.contains("@State private var selectedEvent: iOSCalendarEventSelection?"))
-        #expect(grid.contains(".sheet(item: $selectedEvent) { selection in\n            iOSCalendarEventEditSheet(event: selection.event)"))
+        // [[T-18252]]: the grid opens it on the root's page-editor host, so an iPad size-class swap
+        // (which rebuilds this grid with its page) cannot dismiss a half-edited event.
+        #expect(grid.contains("@Environment(\\.iOSPageEditor) private var pageEditor"))
         let dayColumn = try #require(CadenceSourceScan.functionBody(named: "dayColumn", in: grid))
-        #expect(dayColumn.contains("onOpenEvent: { selectedEvent = iOSCalendarEventSelection(event: $0) }"))
-        // One presenter for the whole grid, not one per column.
-        #expect(CadenceSourceScan.matchCount(#"iOSCalendarEventEditSheet\("#, in: code) == 1)
+        #expect(dayColumn.contains("onOpenEvent: { pageEditor(.event(iOSCalendarEventSelection(event: $0))) }"))
+        // No presenter in the timeline at all -- not one per column, and not the grid's own.
+        #expect(CadenceSourceScan.matchCount(#"iOSCalendarEventEditSheet\("#, in: code) == 0)
     }
 
     /// [[T-5356]]'s all-day half, both surfaces: on the single-day pane (iPad Today, and the
@@ -1627,7 +1628,7 @@ struct CadenceTimelineEventOpenTests {
         let guardRange = try #require(open.range(of: "guard editingTaskID == nil else {"))
         let putDown = try #require(open.range(of: "editingTaskID = nil"))
         let select = try #require(
-            open.range(of: "selectedEvent = iOSCalendarEventSelection(event: event)"),
+            open.range(of: "pageEditor(.event(iOSCalendarEventSelection(event: event)))"),
             "a tap on an all-day chip opens nothing"
         )
         #expect(guardRange.upperBound <= putDown.lowerBound && putDown.upperBound <= select.lowerBound,

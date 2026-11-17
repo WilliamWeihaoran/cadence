@@ -26,7 +26,7 @@ struct iOSCalendarDayInspector: View {
     /// Calendar page's access notice is up ([[T-5954]]).
     var emptyDayText: String = CadenceEmptyStateCopy.nothingScheduledTitle
     let addItem: () -> Void
-    @State private var selectedEvent: iOSCalendarEventSelection?
+    @Environment(\.iOSPageEditor) private var pageEditor
 
     /// The day this pane is built for, as a `yyyy-MM-dd` key — the pane's own date, never
     /// `DateFormatters.todayKey()`. Handed to the rows that are here *because* their do date is
@@ -90,7 +90,7 @@ struct iOSCalendarDayInspector: View {
                                 ForEach(events.uniquelyKeyed) { keyed in
                                     let event = keyed.item
                                     Button {
-                                        selectedEvent = iOSCalendarEventSelection(event: event)
+                                        pageEditor(.event(iOSCalendarEventSelection(event: event)))
                                     } label: {
                                         iOSCalendarEventSummaryRow(event: event)
                                     }
@@ -147,9 +147,6 @@ struct iOSCalendarDayInspector: View {
             }
         }
         .background(Theme.bg)
-        .sheet(item: $selectedEvent) { selection in
-            iOSCalendarEventEditSheet(event: selection.event)
-        }
     }
 }
 
