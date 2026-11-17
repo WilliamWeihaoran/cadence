@@ -396,14 +396,16 @@ struct CadenceCodexWidgetFollowupTests {
         // Not `codeOnly`: the retired spelling is a string literal.
         let today = try read("CadenceWidgets/TodayTasksWidgetView.swift")
         let calendar = try read("CadenceWidgets/CalendarSnapshotWidget.swift")
-        for (path, code) in [("TodayTasksWidgetView", today), ("CalendarSnapshotWidget", calendar)] {
+        // Today has two overdue figures: the large summary panel and, since [[T-18046]], the
+        // extra-large focus strip. The Calendar widget has one card.
+        for (path, code, overdueTiles) in [("TodayTasksWidgetView", today, 2), ("CalendarSnapshotWidget", calendar, 1)] {
             let badges = try #require(CadenceSourceScan.declarationBody("private var headerBadges", in: code))
             // Every family's overdue badge comes from the one optional, never a hand-typed count.
             #expect(CadenceSourceScan.matchCount(#"CadenceWidgetCountWords\.overdueBadge\(\s*entry\.snapshot\.overdueCount\s*\)"#, in: badges) == 1, "\(path) badge rule")
             #expect(CadenceSourceScan.matchCount(#"overdue\"\s*,\s*tint:"#, in: code) == 0, "\(path) types an unconditional overdue badge again")
             #expect(CadenceSourceScan.matchCount(#"overdueCount\s*>\s*0"#, in: badges) == 0, "\(path) guards zero by hand instead of the shared rule")
-            // The one overdue card/tile in each file reads the shared tint, not a bare `Theme.red`.
-            #expect(CadenceSourceScan.matchCount(#"CadenceWidgetOverdueTint\.value\(for:\s*entry\.snapshot\.overdueCount\)"#, in: code) == 1, "\(path) metric tint")
+            // Each overdue card/tile reads the shared tint, not a bare `Theme.red`.
+            #expect(CadenceSourceScan.matchCount(#"CadenceWidgetOverdueTint\.value\(for:\s*entry\.snapshot\.overdueCount\)"#, in: code) == overdueTiles, "\(path) metric tint")
         }
         let chrome = try read("CadenceWidgets/WidgetChrome.swift")
         let tint = try #require(CadenceSourceScan.declarationBody("static func value(for count: Int) -> Color", in: chrome))
@@ -427,7 +429,8 @@ struct CadenceCodexWidgetFollowupTests {
         let today = try read("CadenceWidgets/TodayTasksWidgetView.swift")
         let calendar = try read("CadenceWidgets/CalendarSnapshotWidget.swift")
         for (path, code, badges, titles) in [
-            ("TodayTasksWidgetView", today, 5, 4),
+            // Six titles: the summary panel's two and, since [[T-18046]], the focus strip's two.
+            ("TodayTasksWidgetView", today, 5, 6),
             ("CalendarSnapshotWidget", calendar, 2, 2),
         ] {
             #expect(CadenceSourceScan.matchCount("CadenceWidgetCountWords\\.badge\\(", in: code) == badges, "\(path) badge sites")
@@ -470,10 +473,64 @@ struct CadenceCodexWidgetFollowupTests {
         let read = CadenceSourceScan.strippedSourceReader()
         let today = try read("CadenceWidgets/TodayTasksWidgetView.swift")
         #expect(!today.localizedCaseInsensitiveContains("hot path"), "the Today widget types \"hot path\" again")
-        #expect(CadenceSourceScan.matchCount("CadenceTodayWidgetCopy\\.(emptyTitle|emptyMessage|queueSubtitle|upNextTitle|emptyColumnMessage)", in: today) == 5)
+        // Six, not five: [[T-18046]] put `upNextTitle` over the extra-large tile's first column too.
+        #expect(CadenceSourceScan.matchCount("CadenceTodayWidgetCopy\\.(emptyTitle|emptyMessage|queueSubtitle|upNextTitle|emptyColumnMessage)", in: today) == 6)
         for retired in ["\"Actionable queue\"", "\"No more tasks in this lane.\""] {
             #expect(!today.contains(retired), "the Today widget types \(retired) again")
         }
+    }
+
+    /// **[[T-18046]]: one name per thing at every size, and no count said twice.** The top task's
+    /// card read "Top task" at `systemSmall` and "Priority now" above it; the queue after it was
+    /// "Up next" on the large tile and "On deck" / "Then" on the extra-large one; and the
+    /// extra-large focus strip drew `Total` -- the header's own number again -- beside `Visible`,
+    /// how many rows the widget happened to fetch. The words are values, the view reads them, and
+    /// the strip draws the summary panel's Overdue / Due / Planned instead.
+    @Test func theTodayWidgetNamesEachThingOnceAtEverySize() throws {
+        #expect(CadenceTodayWidgetCopy.priorityTitle == "Priority now")
+        #expect(CadenceTodayWidgetCopy.upNextTitle == "Up next")
+        #expect(CadenceTodayWidgetCopy.laterTitle == "Later")
+        #expect(CadenceTodayWidgetCopy.nowTitle == "Now")
+        #expect(CadenceWidgetCountWords.overdueTitle == "Overdue")
+        #expect(CadenceWidgetCountWords.dueTitle == "Due")
+        #expect(CadenceWidgetCountWords.plannedTitle == "Planned")
+
+        let read = CadenceSourceScan.strippedSourceReader()
+        // Comments stripped, literals kept, for the retired words; code only for the structure.
+        let stripped = try read("CadenceWidgets/TodayTasksWidgetView.swift")
+        let today = CadenceSourceScan.codeOnly(stripped)
+        #expect(stripped.contains("\"Open Today\""), "non-vacuity: the literal scan sees no literals")
+        for retired in ["\"Top task\"", "\"Priority now\"", "\"On deck\"", "\"Then\"", "\"Visible\"", "\"Total\"", "\"Overdue\"", "\"Now\""] {
+            #expect(!stripped.contains(retired), "the Today widget types \(retired) again")
+        }
+        func block(from start: String, to end: String) throws -> String {
+            let lower = try #require(today.range(of: start))
+            let upper = try #require(today.range(of: end, range: lower.upperBound..<today.endIndex))
+            return String(today[lower.upperBound..<upper.lowerBound])
+        }
+        // The title is not chosen by size any more.
+        let card = try block(from: "private func primaryTaskCard(", to: "Link(destination: task.deepLinkURL)")
+        #expect(card.contains("Text(CadenceTodayWidgetCopy.priorityTitle)"))
+        #expect(!card.contains("compact ?"), "the top task's title is picked by size again")
+        // Both extra-large columns read the copy enum: Up next, then Later.
+        let xl = try block(from: "private var extraLargeLayout: some View {", to: "private var summaryPanel: some View {")
+        let upNext = try #require(xl.range(of: "title: CadenceTodayWidgetCopy.upNextTitle,"))
+        let later = try #require(xl.range(of: "title: CadenceTodayWidgetCopy.laterTitle,"))
+        #expect(upNext.upperBound <= later.lowerBound)
+        // The strip draws the summary panel's three counts and neither the header's total nor
+        // the fetched-row count.
+        let strip = try block(from: "private var focusStrip: some View {", to: "private var usesInlineHeaderBadges: Bool")
+        #expect(CadenceSourceScan.matchCount("focusTile\\(", in: strip) == 4)
+        for title in ["CadenceTodayWidgetCopy.nowTitle", "CadenceWidgetCountWords.overdueTitle", "CadenceWidgetCountWords.dueTitle", "CadenceWidgetCountWords.plannedTitle"] {
+            #expect(strip.contains("title: \(title),"), "the focus strip lost \(title)")
+        }
+        // Read with literals kept: `codeOnly` blanks the `"\(...)"` the values are drawn through.
+        let literalStrip = try #require(CadenceSourceScan.declarationBody("private var focusStrip: some View", in: stripped))
+        for value in ["\"\\(entry.snapshot.overdueCount)\"", "\"\\(entry.snapshot.dueTodayCount)\"", "\"\\(entry.snapshot.scheduledTodayCount)\""] {
+            #expect(literalStrip.contains(value), "the focus strip no longer draws \(value)")
+        }
+        #expect(!literalStrip.contains("totalCount"), "the focus strip repeats the header's total")
+        #expect(!literalStrip.contains("tasks.count"), "the focus strip counts the widget's fetched rows")
     }
 
     /// T-10001: two cards lay flat among lifted siblings -- the Today extra-large focus strip's

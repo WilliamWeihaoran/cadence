@@ -184,12 +184,14 @@ struct TodayTasksWidgetView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                     HStack(alignment: .top, spacing: scale.sectionSpacing) {
+                        // [[T-18046]]: the same `dropFirst()` queue the large tile heads `Up next`;
+                        // it read "On deck" / "Then" here.
                         taskColumnCard(
-                            title: "On deck",
+                            title: CadenceTodayWidgetCopy.upNextTitle,
                             tasks: leadingColumnTasks
                         )
                         taskColumnCard(
-                            title: "Then",
+                            title: CadenceTodayWidgetCopy.laterTitle,
                             tasks: trailingColumnTasks
                         )
                     }
@@ -210,7 +212,7 @@ struct TodayTasksWidgetView: View {
         CadenceWidgetPanel {
             VStack(alignment: .leading, spacing: 4) {
                 metricTile(
-                    title: "Overdue",
+                    title: CadenceWidgetCountWords.overdueTitle,
                     value: entry.snapshot.overdueCount,
                     tint: CadenceWidgetOverdueTint.value(for: entry.snapshot.overdueCount)
                 )
@@ -229,24 +231,33 @@ struct TodayTasksWidgetView: View {
     }
 
     private var focusStrip: some View {
-        // `Visible` and `Total` are one- or two-digit counts and take only the width they draw;
-        // `Now` takes the rest. Three equal thirds left `Overdue Oct 23` a third of the row and
-        // it drew as `Overdue Oc...` on the iPad's extra-large tile (T-7126).
+        // The counts are one- or two-digit numbers and take only the width they draw; `Now` takes
+        // the rest. Three equal thirds left `Overdue Oct 23` a third of the row and it drew as
+        // `Overdue Oc...` on the iPad's extra-large tile (T-7126).
+        // [[T-18046]]: the strip drew `Visible` (how many rows the widget fetched, a layout fact)
+        // and `Total` (the header's own number, said again); it now draws the large tile's summary
+        // panel's three counts, which the header does not state as figures under titles.
         HStack(spacing: scale.compactSectionSpacing) {
             focusTile(
-                title: "Now",
+                title: CadenceTodayWidgetCopy.nowTitle,
                 value: topStatus.label,
                 tint: topStatus.tint
             )
             focusTile(
-                title: "Visible",
-                value: "\(entry.snapshot.tasks.count)",
-                tint: Theme.text
+                title: CadenceWidgetCountWords.overdueTitle,
+                value: "\(entry.snapshot.overdueCount)",
+                tint: CadenceWidgetOverdueTint.value(for: entry.snapshot.overdueCount)
             )
             .fixedSize(horizontal: true, vertical: false)
             focusTile(
-                title: "Total",
-                value: "\(entry.snapshot.totalCount)",
+                title: CadenceWidgetCountWords.dueTitle,
+                value: "\(entry.snapshot.dueTodayCount)",
+                tint: Theme.amber
+            )
+            .fixedSize(horizontal: true, vertical: false)
+            focusTile(
+                title: CadenceWidgetCountWords.plannedTitle,
+                value: "\(entry.snapshot.scheduledTodayCount)",
                 tint: Theme.blueLight
             )
             .fixedSize(horizontal: true, vertical: false)
@@ -303,7 +314,8 @@ struct TodayTasksWidgetView: View {
         return VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
             HStack(alignment: .top, spacing: scale.compactSectionSpacing) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(compact ? "Top task" : "Priority now")
+                    // [[T-18046]]: one name at every size; `systemSmall` said "Top task".
+                    Text(CadenceTodayWidgetCopy.priorityTitle)
                         .font(.system(size: scale.captionFontSize, weight: .semibold))
                         .foregroundStyle(Theme.muted)
 

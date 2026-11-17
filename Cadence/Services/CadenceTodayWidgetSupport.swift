@@ -189,6 +189,7 @@ nonisolated enum CadenceWidgetCountWords {
     /// The capitalised forms, for a title above a number rather than a word after one.
     static let dueTitle = "Due"
     static let plannedTitle = "Planned"
+    static let overdueTitle = "Overdue"
 
     static let overdue = "overdue"
 
@@ -227,6 +228,13 @@ nonisolated enum CadenceTodayWidgetCopy {
     static let emptyMessage = "Your day is clear right now."
     /// The large tile's second card, under the top task ([[T-17790]]: it read "Actionable queue").
     static let upNextTitle = "Up next"
+    /// The top task's card at every size ([[T-18046]]: `systemSmall` headed it "Top task").
+    static let priorityTitle = "Priority now"
+    /// The extra-large tile's second queue column, beside `upNextTitle` ([[T-18046]]: the two
+    /// columns read "On deck" / "Then" while the large tile called the same list "Up next").
+    static let laterTitle = "Later"
+    /// The extra-large focus strip's first tile, the top task's status.
+    static let nowTitle = "Now"
     /// An empty column on the extra-large tile ([[T-17790]]: it read "No more tasks in this lane.").
     static let emptyColumnMessage = "Nothing else here."
 
