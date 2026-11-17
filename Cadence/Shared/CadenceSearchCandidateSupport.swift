@@ -313,8 +313,11 @@ struct CadenceTaskSearchRowFacts: Equatable {
         .joined(separator: Self.subtitleSeparator)
 
         var details: [String] = []
+        // [[T-18430]]: the Do words are measured against the same `todayKey` as the Due words, so
+        // a caller that observes the day turns the whole row at once rather than half of it.
         if !task.scheduledDate.isEmpty {
-            details.append("Do \(DateFormatters.relativeDate(from: task.scheduledDate))")
+            let referenceDate = DateFormatters.date(from: todayKey, in: .current) ?? DateFormatters.now()
+            details.append("Do \(DateFormatters.relativeDate(from: task.scheduledDate, relativeTo: referenceDate))")
         }
         if task.estimatedMinutes > 0 {
             details.append(CadenceTaskPresentationSupport.estimateLabel(for: task))

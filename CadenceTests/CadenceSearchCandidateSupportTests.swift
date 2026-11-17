@@ -326,7 +326,7 @@ struct CadenceSearchCandidateSupportTests {
         // facts both search surfaces share since [[T-16473]], which lead with it.
         #expect(CadenceTaskSearchRowFacts(task: fixture.active).subtitle == "Operations / Billing")
         let view = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath))
-        #expect(view.contains("CadenceTaskSearchRowFacts(task: task)"))
+        #expect(view.contains("CadenceTaskSearchRowFacts(task: task, todayKey: observedDay.todayKey)"))
         #expect(!view.contains("task.resolvedSectionName].joined"))
     }
 
@@ -358,10 +358,11 @@ struct CadenceSearchCandidateSupportTests {
     /// day and the estimate; there is no trailing lifecycle word; the glyph is the priority colour.
     @Test func aTaskRowsFactsAreTheSectionedContainerTagsDoDayAndEstimate() throws {
         let (_, task) = try rowFactsFixture()
+        task.scheduledDate = "2026-11-16"
         let facts = CadenceTaskSearchRowFacts(task: task, todayKey: "2026-11-16")
 
         #expect(facts.subtitle == "Work / Launch • client, urgent")
-        #expect(facts.detail == "Do \(DateFormatters.relativeDate(from: task.scheduledDate)) · 30m")
+        #expect(facts.detail == "Do Today · 30m")
         #expect(facts.dueLabel == CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: "2026-11-16"))
         #expect(facts.dueLabel?.hasPrefix("Overdue ") == true, "non-vacuity: the fixture is overdue")
         #expect(facts.glyphTint == Theme.priorityColor(.high))
@@ -396,6 +397,24 @@ struct CadenceSearchCandidateSupportTests {
         #expect(CadenceTaskSearchRowFacts(task: task).detail == "45m", "the estimate alone, no leading separator")
     }
 
+    /// [[T-18430]]: the Do words and the Due words are measured against the one `todayKey` the
+    /// caller hands in, never the clock beside it -- so a page that observes the day turns the
+    /// whole row at midnight. The same task read on two days says two different things.
+    @Test func aTaskRowsDoAndDueWordsBothFollowTheHandedDay() throws {
+        let (_, task) = try rowFactsFixture()
+        task.scheduledDate = "2026-11-16"
+        task.dueDate = "2026-11-16"
+
+        let sameDay = CadenceTaskSearchRowFacts(task: task, todayKey: "2026-11-16")
+        let nextDay = CadenceTaskSearchRowFacts(task: task, todayKey: "2026-11-17")
+
+        #expect(sameDay.detail == "Do Today · 30m")
+        #expect(nextDay.detail == "Do Yesterday · 30m")
+        #expect(sameDay.dueLabel == CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: "2026-11-16"))
+        #expect(nextDay.dueLabel == CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: "2026-11-17"))
+        #expect(sameDay.dueLabel != nextDay.dueLabel, "non-vacuity: the due words turn with the day")
+    }
+
     /// Cmd+K's row draws the shared facts field for field.
     @Test func theCmdKTaskRowReadsTheSharedFacts() throws {
         let (_, task) = try rowFactsFixture()
@@ -414,7 +433,8 @@ struct CadenceSearchCandidateSupportTests {
     @Test func theIOSSearchTaskRowReadsTheSharedFacts() throws {
         let view = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath))
         let body = try #require(CadenceSourceScan.functionBody(named: "taskResult", in: view))
-        #expect(body.contains("CadenceTaskSearchRowFacts(task: task)"))
+        // [[T-18430]]: the row reads the day the page observes, not the clock's default.
+        #expect(body.contains("CadenceTaskSearchRowFacts(task: task, todayKey: observedDay.todayKey)"))
         for field in ["subtitle: facts.subtitle", "detail: facts.detail", "color: facts.glyphTint", "dueLabel: facts.dueLabel"] {
             #expect(body.contains(field), "the iOS task row no longer reads \(field)")
         }

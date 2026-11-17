@@ -59,6 +59,10 @@ struct iOSSearchView: View {
     /// has no highlight to show, so nothing is drawn for a reader who never reaches for the keys
     /// -- and cleared with the result set it pointed into.
     @State private var highlightedResultID: String?
+    /// [[T-18430]]: the idle Tasks list and every task row's Do and Due words are measured against
+    /// today, and this page stands open as the iPad sidebar's Search and the phone's More > Search.
+    /// Nothing else in its inputs moves at midnight, so it observes the day itself (T-3104).
+    @State private var observedDay = CadenceObservedDay()
 
     private var trimmedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -147,7 +151,7 @@ struct iOSSearchView: View {
         // then manual order then identity (T-498).
         let suggested = CadenceSearchIdleSuggestions.tasks(
             searchableTasks,
-            today: DateFormatters.todayKey(),
+            today: observedDay.todayKey,
             limit: CadenceSearchIdleSuggestions.limit
         )
 
@@ -332,7 +336,7 @@ struct iOSSearchView: View {
     /// The row's words and glyph tint are `CadenceTaskSearchRowFacts`', the facts Cmd+K's palette
     /// row reads too ([[T-16473]]).
     private func taskResult(_ task: AppTask, score: Int) -> iOSSearchResult {
-        let facts = CadenceTaskSearchRowFacts(task: task)
+        let facts = CadenceTaskSearchRowFacts(task: task, todayKey: observedDay.todayKey)
         return iOSSearchResult(
             id: CadenceSearchIdentity.task(task.id),
             destination: .task(task),
@@ -353,6 +357,7 @@ struct iOSSearchView: View {
                     scrollToHighlighted(id, proxy: proxy)
                 }
         }
+        .cadenceTracksDayChanges($observedDay)
     }
 
     private var searchList: some View {

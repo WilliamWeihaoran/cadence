@@ -68,6 +68,9 @@ struct CadenceDayChangeAdoptionTests {
         // today while every input the strip is handed is the same on both sides of midnight.
         ("Cadence/macOS/Views/NoteReferenceSupportViews.swift", "struct NoteReferenceStrip: View"),
         ("Cadence/iOS/iOSMarkdownAccessoryViews.swift", "struct iOSNoteReferencePanel: View"),
+        // [[T-18430]]: iOS Search stands open as a page, and its idle Tasks list and every task
+        // row's Do and Due words are measured against today.
+        ("Cadence/iOS/iOSSearchView.swift", "struct iOSSearchView: View"),
         // [[T-17747]]: the capture card's Do and Due chips say Today / Tomorrow, and the Mac
         // quick-capture panel keeps a half-typed card standing across midnight ([[T-5302]]).
         ("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift",
