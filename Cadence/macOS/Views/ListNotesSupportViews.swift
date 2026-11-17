@@ -49,6 +49,10 @@ struct TaskNoteEditorPane: View {
         !derivedState.linkedNotes.isEmpty || !derivedState.linkedTasks.isEmpty
     }
 
+    private var referenceRefreshKey: Int {
+        NoteReferencePanelSupport.refreshKey(excluding: task.id, notes: relatedNotes, tasks: relatedTasks)
+    }
+
     private var templates: [NoteTemplate] {
         NoteTemplateLibrary.taskNotesTemplates(overridesRaw: noteTemplateOverridesRaw)
     }
@@ -170,6 +174,11 @@ struct TaskNoteEditorPane: View {
         // T-9123: an outside write to these notes (sync, MCP, another editor) reaches the buffer.
         .onChange(of: task.notes) { priorNotes, storeNotes in
             adoptStoreNotesIfIdle(storeNotes, priorStoreNotes: priorNotes)
+        }
+        // [[T-18444]]: a note or task written elsewhere re-derives the chips and the mention footer
+        // against the buffer on screen; this task's own notes have the observer above.
+        .onChange(of: referenceRefreshKey) { _, _ in
+            refreshDerivedState(for: loadedTaskID == task.id ? editorContent : task.notes)
         }
         .onDisappear {
             flushPendingEditorContent()

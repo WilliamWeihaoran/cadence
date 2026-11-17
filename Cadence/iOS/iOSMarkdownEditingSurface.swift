@@ -103,7 +103,8 @@ struct iOSMarkdownEditingSurface: View {
     /// Held rather than computed in `body`. Backlinks run a regex over *every* other note's content,
     /// so recomputing them on each body pass would put that scan behind every keystroke; macOS holds
     /// its equivalent in `NoteEditorPane.derivedState` for the same reason. Refreshed when the
-    /// committed text changes — the editor's own 2.5s commit debounce is the throttle.
+    /// committed text changes — the editor's own 2.5s commit debounce is the throttle — and when
+    /// `NoteReferencePanelSupport.refreshKey` says another note or task was written ([[T-18444]]).
     @State private var referenceContents = NoteReferencePanelContents()
 
     // No word/line count bar under the editor. It was a permanent strip across the foot of every
@@ -127,8 +128,9 @@ struct iOSMarkdownEditingSurface: View {
         // the buffer commits.
         .onChange(of: text) { _, _ in refreshReferenceContents() }
         .onChange(of: editingNote?.id) { _, _ in refreshReferenceContents() }
-        .onChange(of: referenceNotes.count) { _, _ in refreshReferenceContents() }
-        .onChange(of: referenceTasks.count) { _, _ in refreshReferenceContents() }
+        // [[T-18444]]: the shared key, not the two counts it replaces — a count misses an existing
+        // note gaining or losing a link to this one, which is the common case.
+        .onChange(of: referenceRefreshKey) { _, _ in refreshReferenceContents() }
         .onChange(of: isFocused) { _, focused in
             if focused {
                 loadDraftIfNeeded()
@@ -794,6 +796,10 @@ struct iOSMarkdownEditingSurface: View {
         updateDraft(reconciled.text)
         selectedRange = reconciled.selection
         commitDraftImmediately()
+    }
+
+    private var referenceRefreshKey: Int {
+        NoteReferencePanelSupport.refreshKey(excluding: editingNote?.id, notes: referenceNotes, tasks: referenceTasks)
     }
 
     private func refreshReferenceContents() {

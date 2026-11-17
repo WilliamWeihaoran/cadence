@@ -421,6 +421,32 @@ nonisolated struct NoteReferencePanelContents {
 /// re-derived them would be free to disagree. So the panel gets a shape to draw and no decisions of
 /// its own.
 nonisolated enum NoteReferencePanelSupport {
+    /// [[T-18444]]: when an open editor's references must be re-derived because the OTHER notes or
+    /// tasks changed — another window or a synced device wrote a `[[link]]` to the open note, a note
+    /// appeared or went, a note or task was renamed. The open editor's own text has its own observer.
+    ///
+    /// A signature over each other note's `(id, updatedAt, title)` and each other task's
+    /// `(id, title)`: cheap to compute in `body` (no `content` is read), and it moves only when a
+    /// note is written, so the backlink scan stays off the keystroke path. `ownerID` — the open
+    /// note, or the task whose notes are open — is left out, because its own commits are already
+    /// covered by the text observer and would otherwise re-run the scan on every commit.
+    static func refreshKey(excluding ownerID: UUID?, notes: [Note], tasks: [AppTask]) -> Int {
+        var hasher = Hasher()
+        var noteCount = 0
+        for note in notes where note.id != ownerID {
+            hasher.combine(note.id)
+            hasher.combine(note.updatedAt)
+            hasher.combine(note.title)
+            noteCount += 1
+        }
+        hasher.combine(noteCount)
+        for task in tasks where task.id != ownerID {
+            hasher.combine(task.id)
+            hasher.combine(task.title)
+        }
+        return hasher.finalize()
+    }
+
     static func contents(
         noteID: UUID,
         title: String,

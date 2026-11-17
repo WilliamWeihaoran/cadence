@@ -560,6 +560,90 @@ struct CadenceNoteReferencePanelSurfaceTests {
         )
     }
 
+    // MARK: - Refreshing when the other notes change ([[T-18444]])
+
+    /// The open note's references are re-derived when this key moves. It must move when another
+    /// note is written (a link to the open note typed in another window, or arriving by sync), when
+    /// a note or task is added, or when one is renamed — and must NOT move on a read, or on the open
+    /// note's own commit, which has its own observer and would re-run the backlink scan for nothing.
+    @Test func theRefreshKeyMovesWhenAnotherNoteIsWrittenAndNotOnARead() {
+        let open = note("Alpha")
+        let other = note("Beta", content: "Nothing yet.")
+        let task = AppTask(title: "Ship it")
+        let key = { NoteReferencePanelSupport.refreshKey(excluding: open.id, notes: [open, other], tasks: [task]) }
+        let start = key()
+
+        // A read — resolving the panel itself — leaves it alone, and so does computing it again.
+        _ = NoteReferencePanelSupport.contents(for: open, content: open.content, notes: [open, other], tasks: [task])
+        #expect(key() == start)
+
+        // The open note's own commit is not this key's business.
+        open.content = "Alpha body"
+        open.updatedAt = open.updatedAt.addingTimeInterval(5)
+        #expect(key() == start)
+
+        // Another note gains a link to the open note: the editors' commit stamps `updatedAt`.
+        other.content = "See [[Alpha]]."
+        other.updatedAt = other.updatedAt.addingTimeInterval(10)
+        let linked = key()
+        #expect(linked != start)
+        #expect(NoteReferencePanelSupport.contents(
+            for: open, content: open.content, notes: [open, other], tasks: [task]
+        ).backlinks.map(\.id) == [other.id])
+
+        // A note added, a note renamed, a task added or renamed.
+        let added = note("Gamma")
+        let withAdded = NoteReferencePanelSupport.refreshKey(excluding: open.id, notes: [open, other, added], tasks: [task])
+        #expect(withAdded != linked)
+        other.title = "Beta renamed"
+        #expect(key() != linked)
+        let renamedNote = key()
+        #expect(NoteReferencePanelSupport.refreshKey(
+            excluding: open.id, notes: [open, other], tasks: [task, AppTask(title: "Another")]
+        ) != renamedNote)
+        task.title = "Ship it today"
+        #expect(key() != renamedNote)
+    }
+
+    /// The task-notes pane passes the task as the owner: its own task is excluded like a note's self.
+    @Test func theRefreshKeyLeavesOutTheTaskWhoseNotesAreOpen() {
+        let owner = AppTask(title: "Owner")
+        let other = AppTask(title: "Other")
+        let notes = [note("Alpha")]
+        let start = NoteReferencePanelSupport.refreshKey(excluding: owner.id, notes: notes, tasks: [owner, other])
+        owner.title = "Owner renamed"
+        #expect(NoteReferencePanelSupport.refreshKey(excluding: owner.id, notes: notes, tasks: [owner, other]) == start)
+        other.title = "Other renamed"
+        #expect(NoteReferencePanelSupport.refreshKey(excluding: owner.id, notes: notes, tasks: [owner, other]) != start)
+    }
+
+    /// **Census.** All three editors that hold derived references observe the one shared key, and
+    /// iOS's two count observers — which caught a note created or deleted but never an existing note
+    /// gaining a link — are gone rather than left beside it.
+    @Test func everyReferenceHoldingEditorObservesTheSharedRefreshKey() throws {
+        let surfaces = [
+            "Cadence/macOS/Views/NoteEditorPane.swift",
+            "Cadence/macOS/Views/ListNotesSupportViews.swift",
+            "Cadence/iOS/iOSMarkdownEditingSurface.swift"
+        ]
+        try expectOccurrences(
+            of: ".onChange(of: referenceRefreshKey)",
+            at: Dictionary(uniqueKeysWithValues: surfaces.map { ($0, 1) })
+        )
+        try expectOccurrences(
+            of: "NoteReferencePanelSupport.refreshKey(",
+            at: Dictionary(uniqueKeysWithValues: surfaces.map { ($0, 1) })
+        )
+        try expectOccurrences(of: "referenceNotes.count", at: ["Cadence/iOS/iOSMarkdownEditingSurface.swift": 0])
+        try expectOccurrences(of: "referenceTasks.count", at: ["Cadence/iOS/iOSMarkdownEditingSurface.swift": 0])
+
+        // The Mac panes re-derive against the buffer on screen, not the stored body.
+        let pane = try strippingComments(sourceFile("Cadence/macOS/Views/NoteEditorPane.swift"))
+        #expect(pane.contains("refreshDerivedState(for: loadedNoteID == note.id ? editorContent : note.content)"))
+        let taskPane = try strippingComments(sourceFile("Cadence/macOS/Views/ListNotesSupportViews.swift"))
+        #expect(taskPane.contains("refreshDerivedState(for: loadedTaskID == task.id ? editorContent : task.notes)"))
+    }
+
     // MARK: - The call sites
 
     /// **The half that closes the ticket.** The resolver was already right; nothing on iOS asked it.

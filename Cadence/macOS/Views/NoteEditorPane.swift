@@ -147,6 +147,10 @@ struct NoteEditorPane: View {
         relatedNotes.filter { $0.id != note.id }
     }
 
+    private var referenceRefreshKey: Int {
+        NoteReferencePanelSupport.refreshKey(excluding: note.id, notes: relatedNotes, tasks: relatedTasks)
+    }
+
     private var hasReferenceStripContent: Bool {
         !derivedState.linkedNotes.isEmpty ||
         !derivedState.linkedTasks.isEmpty ||
@@ -371,6 +375,12 @@ struct NoteEditorPane: View {
         // buffer. The title needs no counterpart: `titleBinding` types straight into `note.title`.
         .onChange(of: note.content) { priorContent, storeContent in
             adoptStoreContentIfIdle(storeContent, priorStoreContent: priorContent)
+        }
+        // [[T-18444]]: another note gaining or losing a link to this one, a note added or removed,
+        // a rename — none of them touch this note's body, so the references are re-derived from
+        // the shared key, against the buffer on screen.
+        .onChange(of: referenceRefreshKey) { _, _ in
+            refreshDerivedState(for: loadedNoteID == note.id ? editorContent : note.content)
         }
         .onDisappear {
             flushPendingEditorContent()
