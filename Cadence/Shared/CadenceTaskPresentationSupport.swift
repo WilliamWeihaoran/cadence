@@ -567,6 +567,16 @@ enum CadenceTaskPresentationSupport {
         return DateFormatters.relativeDate(from: task.scheduledDate)
     }
 
+    /// A timed task's slot as a list row beside event rows spells it — "9 AM – 9:30 AM", the
+    /// task's start and `scheduledEndMin`, in the event rows' range shape — or `nil` for a task
+    /// with no start minute ([[T-16821]]). For a surface whose rows are ordered by time and that
+    /// names the day itself (the iOS calendar day inspector's Timed section, the compact month
+    /// agenda), where the row's do-date chip is suppressed and nothing else on it says when.
+    static func scheduledTimeRangeLabel(for task: AppTask) -> String? {
+        guard task.scheduledStartMin >= 0 else { return nil }
+        return TimeFormatters.timeRange(startMin: task.scheduledStartMin, endMin: task.scheduledEndMin)
+    }
+
     /// The do date as a **day**, never a time — "Today", "3 days ago", "Aug 24".
     ///
     /// `scheduledDateLabel` folds the timeline slot into the same string ("3 days ago at 9:30 AM –

@@ -318,7 +318,9 @@ struct iOSCalendarMonthAgendaList: View {
             .buttonStyle(.iosPressable)
 
         case .task(let task):
-            iOSTaskRow(task: task, dayAlreadyStatedBySurface: dayKey, todayKey: todayKey)
+            // [[T-16821]]: interleaved with events by start time, so a timed task states its slot
+            // as the event rows do; an untimed one draws nothing extra.
+            iOSTaskRow(task: task, dayAlreadyStatedBySurface: dayKey, statesScheduledTime: true, todayKey: todayKey)
         }
     }
 

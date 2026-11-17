@@ -27,6 +27,13 @@ struct iOSTaskRow: View {
     /// "Today hides the sun" would have taken it. See `CadenceBoardCardMetadata.repeatsSurfaceDay`,
     /// which both calendar boards and macOS's Today already ask.
     var dayAlreadyStatedBySurface: String? = nil
+    /// Draws a timed task's slot ("9 AM – 9:30 AM") at the head of the metadata strip
+    /// ([[T-16821]]). Off by default: a task row states the day, never the slot (see
+    /// `scheduledDayLabel`). On only where the surface lists rows **in time order beside event
+    /// rows that read their times** and has suppressed the day pill — the calendar day inspector's
+    /// Timed section and the compact month agenda — so the row would otherwise say nothing about
+    /// when, or why it sits where it does. An untimed task draws nothing either way.
+    var statesScheduledTime: Bool = false
     /// The day this row measures lateness against -- its page host's observed day ([[T-14341]]),
     /// as `MacTaskRow.todayKey` has been since [[T-5012]]. **No default.** The row read the clock
     /// for its do-date emphasis and its due flag, and nothing else it is handed changes at
@@ -477,6 +484,13 @@ struct iOSTaskRow: View {
     /// control that did nothing.
     @ViewBuilder
     private var taskBadgeContent: some View {
+        // [[T-16821]]: the slot, first, only where the host asked for it. A label, not a picker:
+        // the time is set in the inspector the row's tap opens, or by dragging on the timeline.
+        if statesScheduledTime, let slot = CadenceTaskPresentationSupport.scheduledTimeRangeLabel(for: task) {
+            iOSTaskMetaLabel(systemImage: "clock", text: slot)
+                .accessibilityLabel("Time \(slot)")
+        }
+
         if showsListContextChip {
             iOSTaskRowContainerChip(task: task)
         }

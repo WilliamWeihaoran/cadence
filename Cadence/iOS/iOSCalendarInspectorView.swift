@@ -101,10 +101,12 @@ struct iOSCalendarDayInspector: View {
 
                         if !timedTasks.isEmpty {
                             // Admitted by `scheduledDate == dayKey`, so every row here is do-dated
-                            // this pane's day and the sun pill can only restate it.
+                            // this pane's day and the sun pill can only restate it. Every row is
+                            // timed and in start order, so it states its slot, as the event rows
+                            // above it do ([[T-16821]]).
                             iOSCalendarInspectorSection(title: "Timed", color: Theme.blue) {
                                 ForEach(timedTasks) { task in
-                                    iOSTaskRow(task: task, dayAlreadyStatedBySurface: dayKey, todayKey: todayKey)
+                                    iOSTaskRow(task: task, dayAlreadyStatedBySurface: dayKey, statesScheduledTime: true, todayKey: todayKey)
                                 }
                             }
                         }

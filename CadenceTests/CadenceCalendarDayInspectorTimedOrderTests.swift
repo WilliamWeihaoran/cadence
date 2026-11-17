@@ -57,6 +57,44 @@ import Testing
         #expect(body.contains("CadenceScheduleSupport.scheduledTasks(on: dayKey, from: tasks, includeCompleted: true)"))
         #expect(!body.contains(".filter"), "the Timed section went back to filtering the priority-ordered input")
     }
+    // MARK: - [[T-16821]]: a Timed row states its slot
+
+    /// The Timed rows drew only a ring, a title and a list chip -- the day pill is suppressed
+    /// because the pane names the day -- so a section ordered by start time never said the time.
+    /// The slot reads in the event rows' range shape; an untimed task has none to state.
+    @Test func aTimedTaskStatesItsSlotAndAnUntimedOneStatesNothing() throws {
+        let context = ModelContext(try CadenceTestStore.container())
+        let tasks = dayTasks(in: context)
+        let morning = try #require(tasks.first { $0.title == "Morning" })
+        let untimed = try #require(tasks.first { $0.title == "Untimed" })
+
+        #expect(
+            CadenceTaskPresentationSupport.scheduledTimeRangeLabel(for: morning)
+                == TimeFormatters.timeRange(startMin: 9 * 60, endMin: 9 * 60 + 30)
+        )
+        #expect(CadenceTaskPresentationSupport.scheduledTimeRangeLabel(for: untimed) == nil)
+    }
+
+    @Test func theTimedSectionAndTheAgendaAskTheRowToStateTheSlot() throws {
+        let inspector = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarInspectorView.swift"))
+        #expect(inspector.contains("struct iOSCalendarDayInspector: View"), "non-vacuity: wrong file read")
+        #expect(inspector.contains(
+            "iOSTaskRow(task: task, dayAlreadyStatedBySurface: dayKey, statesScheduledTime: true, todayKey: todayKey)"
+        ), "the Timed section's rows no longer state their slot")
+        // Only the Timed section: the Do Date and Due rows are untimed or there for a deadline.
+        #expect(inspector.components(separatedBy: "statesScheduledTime: true").count - 1 == 1)
+
+        let agenda = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarMonthAgendaViews.swift"))
+        #expect(agenda.contains("statesScheduledTime: true"), "the compact agenda's task rows no longer state their slot")
+
+        let row = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskViews.swift"))
+        let badges = try #require(CadenceSourceScan.declarationBody("private var taskBadgeContent: some View", in: row))
+        #expect(badges.contains(
+            "if statesScheduledTime, let slot = CadenceTaskPresentationSupport.scheduledTimeRangeLabel(for: task)"
+        ), "the row no longer draws the slot it is asked for")
+        #expect(row.contains("var statesScheduledTime: Bool = false"), "the slot is no longer opt-in")
+    }
+
     // MARK: - [[T-18051]]: the Due heading's colour
 
     /// The Due section lists the deadlines of whatever day is inspected, so its eyebrow is red only
