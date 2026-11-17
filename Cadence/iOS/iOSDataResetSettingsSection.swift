@@ -18,17 +18,23 @@ import SwiftUI
 ///
 /// One view for both size classes: iPhone and iPad differ in the width this is handed, not in how
 /// a card, a sheet or a button inside it looks.
+///
+/// **[[T-18252]]: the typed-phrase gate and the reset it runs belong to the root, not to this
+/// section.** An iPad size-class swap rebuilds the Settings page, and a gate this section presented
+/// went with it -- the phrase half-typed into it thrown away, and a reset already running wrote its
+/// outcome into a section no longer on screen. `iOSDataResetHost`, applied once by `iOSRootView`
+/// above the shell switch, presents the gate and runs the reset through `iOSDataResetCenter`; this
+/// section opens the gate, shows the center's sentence, and hears about a finished reset through
+/// the center's count -- `iOSArchiveImportCenter`'s shape.
 struct iOSDataResetSettingsSection: View {
     /// [[T-5807]]: told once the reset has finished, so `iOSSettingsView` can tell the backup
     /// section on the same page to re-read what the reset deleted — the Mac pane's
     /// `refreshBackups()` after the same call.
     let onDidReset: () -> Void
 
-    @Environment(\.modelContext) private var modelContext
-    @Environment(AISettingsManager.self) private var aiSettingsManager
-    @Environment(AppleAccountManager.self) private var appleAccountManager
-    @State private var isConfirming = false
-    @State private var statusMessage: String?
+    @Environment(iOSDataResetCenter.self) private var resetCenter
+
+    private var statusMessage: String? { resetCenter.statusMessage }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -81,14 +87,51 @@ struct iOSDataResetSettingsSection: View {
                         systemImage: "trash.fill",
                         role: .destructive,
                         size: .compact,
-                        action: { isConfirming = true }
+                        action: { resetCenter.isConfirming = true }
                     )
                 }
             }
         }
-        .sheet(isPresented: $isConfirming) {
-            iOSDataResetConfirmationSheet(onConfirm: deleteCadenceData)
+        // The reset is the root's; the page that hears it is whichever Settings page now stands.
+        .onChange(of: resetCenter.completedCount) { _, _ in
+            onDidReset()
         }
+    }
+}
+
+/// [[T-18252]]: whether the reset's typed-phrase gate is up, the sentence the last reset left, and
+/// the count of resets that have finished -- held for the scene rather than for the Settings page,
+/// since the section that opened the gate may not be the one standing when the reset lands.
+@Observable
+final class iOSDataResetCenter {
+    var isConfirming = false
+    private(set) var statusMessage: String?
+    private(set) var completedCount = 0
+
+    /// A finished reset: its sentence, and one more on the count a standing page re-reads on.
+    func finish(statusMessage: String) {
+        self.statusMessage = statusMessage
+        completedCount &+= 1
+    }
+
+    /// A refused reset says so and advances nothing -- nothing was deleted for a page to re-read.
+    func fail(statusMessage: String) {
+        self.statusMessage = statusMessage
+    }
+}
+
+private struct iOSDataResetHostModifier: ViewModifier {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(AISettingsManager.self) private var aiSettingsManager
+    @Environment(AppleAccountManager.self) private var appleAccountManager
+    @State private var center = iOSDataResetCenter()
+
+    func body(content: Content) -> some View {
+        content
+            .environment(center)
+            .sheet(isPresented: Bindable(center).isConfirming) {
+                iOSDataResetConfirmationSheet(onConfirm: deleteCadenceData)
+            }
     }
 
     private func deleteCadenceData() {
@@ -104,12 +147,19 @@ struct iOSDataResetSettingsSection: View {
                 )
                 // The mobile sentence: the Mac's, minus its Finder route, which iOS has no
                 // Finder for.
-                statusMessage = outcome.mobileAccountAndDataStatusMessage
-                onDidReset()
+                center.finish(statusMessage: outcome.mobileAccountAndDataStatusMessage)
             } catch {
-                statusMessage = "Could not delete Cadence account and data: \(error.localizedDescription)"
+                center.fail(statusMessage: "Could not delete Cadence account and data: \(error.localizedDescription)")
             }
         }
+    }
+}
+
+extension View {
+    /// [[T-18252]]: presents Delete Account & Data's typed-phrase gate and runs the reset it
+    /// confirms. `iOSRootView` applies it exactly once, OUTSIDE the `horizontalSizeClass` shell switch.
+    func iOSDataResetHost() -> some View {
+        modifier(iOSDataResetHostModifier())
     }
 }
 

@@ -277,11 +277,13 @@ struct CadenceNoteFolderSurfaceTests {
 
     /// Both `+` buttons allocate through `nextOrder(in:)`; neither counts the list.
     @Test func bothAddNoteButtonsAllocateMaxPlusOne() throws {
-        for path in ["Cadence/macOS/Views/ListNotesView.swift", "Cadence/iOS/iOSListNotesView.swift"] {
+        // iOS twice since [[T-18252]]: the page's New Note and the root host's folder-sheet answer
+        // (`iOSNoteFolderFiling.file`), each through `nextOrder(in:)`.
+        for (path, allocations) in [("Cadence/macOS/Views/ListNotesView.swift", 1), ("Cadence/iOS/iOSListNotesView.swift", 2)] {
             let code = try folderStrippingComments(folderSource(path))
             #expect(code.folderMatchCount(
                 ofPattern: #"order: CadenceListNoteFiling\.nextOrder\(in: listNotes\)"#
-            ) == 1, "\(path)")
+            ) == allocations, "\(path)")
             #expect(code.folderMatchCount(ofPattern: #"order: listNotes\.count"#) == 0, "\(path)")
         }
     }
@@ -503,20 +505,25 @@ struct CadenceNoteFolderSurfaceTests {
             "Cadence/iOS/iOSListNotesView.swift": 1,
             "Cadence/macOS/Views/ListNotesView.swift": 1
         ])
+        // iOS twice since [[T-18252]]: the page's own New Note, and `iOSNoteFolderFiling.file`, the
+        // root host's answer to the folder sheet -- which must land whether or not the page that
+        // opened the sheet survived a size-class swap. Still one notice: the page draws the host's
+        // refusal from the outcome it adopts.
         try expectFolderOccurrences(of: "CadenceListNoteFiling.createNote(", at: [
-            "Cadence/iOS/iOSListNotesView.swift": 1,
+            "Cadence/iOS/iOSListNotesView.swift": 2,
             "Cadence/macOS/Views/ListNotesView.swift": 1
         ])
-        // Once each since T-1093: the two handles — the row's "Move to Folder" menu and the
-        // folder sheet's answer — both route through the view's own `moveNote`, which is where the
-        // commit and the refusal notice are. Two call sites of the helper would be two commits and
-        // two notices.
+        // Once each on the Mac since T-1093: the two handles — the row's "Move to Folder" menu and
+        // the folder sheet's answer — both route through the view's own `moveNote`, which is where
+        // the commit and the refusal notice are. On iOS since [[T-18252]] the sheet's answer is the
+        // root host's (`iOSNoteFolderFiling.file`) and the row's menu is the page's `moveNote`; the
+        // host's refusal reaches the page's one `moveFailureNotice` through the adopted outcome.
         try expectFolderOccurrences(of: "CadenceListNoteFiling.move(", at: [
-            "Cadence/iOS/iOSListNotesView.swift": 1,
+            "Cadence/iOS/iOSListNotesView.swift": 2,
             "Cadence/macOS/Views/ListNotesView.swift": 1
         ])
         try expectFolderOccurrences(of: "moveNote(note, toFolder:", at: [
-            "Cadence/iOS/iOSListNotesView.swift": 2,
+            "Cadence/iOS/iOSListNotesView.swift": 1,
             "Cadence/macOS/Views/ListNotesView.swift": 2
         ])
         try expectFolderOccurrences(of: "NoteFolderGroupList(", at: [

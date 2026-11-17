@@ -113,6 +113,11 @@ struct iOSRootView: View {
         // [[T-18252]]: Settings' archive import preview -- the chosen file and its mode -- for the
         // same reason: the Settings page is rebuilt with its shell.
         .iOSArchiveImportHost()
+        // [[T-18252]]: Delete Account & Data's typed-phrase gate, and the reset it runs, for the
+        // same reason.
+        .iOSDataResetHost()
+        // [[T-18252]]: a list's Notes folder sheet -- the folder name typed into it -- and its write.
+        .iOSNoteFolderHost()
         // T-636, and `macOSRootView` says the same thing in the same place for the same reason:
         // the completion control is reached from six surfaces here and owned by none of them, so
         // a refused settle is named once at the shell rather than six times badly. Both shells,

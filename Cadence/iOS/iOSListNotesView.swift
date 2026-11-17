@@ -56,7 +56,9 @@ struct iOSListNotesView: View {
     @State private var selectedNoteID: UUID?
     /// One-column only. The column is the screen there, so the editor is presented over it.
     @State private var presentedNote: Note?
-    @State private var folderRequest: iOSNoteFolderRequest?
+    /// [[T-18252]]: the folder sheet is presented, and its answer filed, by the root's
+    /// `iOSNoteFolderHost`; this page opens it and adopts the outcome if it is still standing.
+    @Environment(iOSNoteFolderCenter.self) private var folderCenter
     /// Set by a row's menu; the `iOSNoteDeletion` modifier owns the confirmation and the delete.
     @State private var noteToDelete: Note?
     /// The width this view was handed, which is not what the size class says about it. Zero until
@@ -232,10 +234,11 @@ struct iOSListNotesView: View {
                 )
             }
         }
-        .sheet(item: $folderRequest) { request in
-            iOSNoteFolderSheet(request: request, existingFolders: folderNames) { folderPath in
-                apply(request, folderPath: folderPath)
-            }
+        // [[T-18252]]: the folder sheet is the root's, so a size-class swap that rebuilds this
+        // page keeps the folder name typed into it; the filed note's selection and any refusal
+        // come back here through the center's outcome, for whichever page of this list stands.
+        .onChange(of: folderCenter.outcome?.id) { _, _ in
+            if let outcome = folderCenter.outcome { adopt(outcome) }
         }
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,
@@ -287,7 +290,7 @@ struct iOSListNotesView: View {
                 addNote()
             }
             Button("New Note in Folder…") {
-                folderRequest = iOSNoteFolderRequest(mode: .newNote)
+                openFolderSheet(.newNote)
             }
         } label: {
             iOSIconTile(systemImage: "plus", color: Theme.blue, size: 34, iconSize: 13)
@@ -515,7 +518,7 @@ struct iOSListNotesView: View {
                 folderNames: folderNames,
                 currentFolder: note.folderPath,
                 move: { moveNote(note, toFolder: $0) },
-                newFolder: { folderRequest = iOSNoteFolderRequest(mode: .moveNote(note.id)) }
+                newFolder: { openFolderSheet(.moveNote(note.id)) }
             )
             iOSNoteDeleteMenuButton(note: note) { noteToDelete = $0 }
         }
@@ -595,13 +598,29 @@ struct iOSListNotesView: View {
         presentedNote = note
     }
 
-    private func apply(_ request: iOSNoteFolderRequest, folderPath: String) {
-        switch request.mode {
-        case .newNote:
-            addNote(folderPath: folderPath)
-        case .moveNote(let noteID):
-            guard let note = listNotes.first(where: { $0.id == noteID }) else { return }
-            moveNote(note, toFolder: folderPath)
+    /// [[T-18252]]: the folder sheet, opened on the root's host with the list it files into and
+    /// the folders it offers, read now -- the page that opened it may be gone when it is answered.
+    private func openFolderSheet(_ mode: iOSNoteFolderRequest.Mode) {
+        folderCenter.open(iOSNoteFolderRequest(mode: mode, area: area, project: project, existingFolders: folderNames))
+    }
+
+    /// [[T-18252]]: what the root's host did with the folder sheet's answer, reported here the way
+    /// `addNote` and `moveNote` report their own -- but only by the page of the list it filed into.
+    /// The write already happened at the root; this is only the selection and the sentence.
+    private func adopt(_ outcome: iOSNoteFolderOutcome) {
+        guard outcome.areaID == area?.id, outcome.projectID == project?.id else { return }
+        switch outcome.kind {
+        case .created(let noteID):
+            createFailureNotice = nil
+            selectedNoteID = noteID
+            guard layout == .oneColumn else { return }
+            presentedNote = allNotes.first { $0.id == noteID }
+        case .createFailed:
+            createFailureNotice = CadencePendingChangePersistence.editFailureNotice
+        case .moved:
+            moveFailureNotice = nil
+        case .moveFailed:
+            moveFailureNotice = CadencePendingChangePersistence.editFailureNotice
         }
     }
 
@@ -660,6 +679,11 @@ struct iOSNoteFolderRequest: Identifiable {
 
     let id = UUID()
     let mode: Mode
+    /// [[T-18252]]: the list the answer is filed into, and the folders the sheet offers -- carried
+    /// on the request because the root's host, not the page, files it.
+    var area: Area?
+    var project: Project?
+    var existingFolders: [String] = []
 
     var title: String {
         switch mode {
@@ -673,6 +697,122 @@ struct iOSNoteFolderRequest: Identifiable {
         case .newNote: return "Create Note"
         case .moveNote: return "Move"
         }
+    }
+}
+
+/// [[T-18252]]: the folder sheet's presentation, and the outcome of its last answer, held for the
+/// scene rather than for the list-notes page. An iPad size-class swap rebuilds that page -- and a
+/// list's detail comes back on its default page, not on Notes -- so the sheet and the write both
+/// belong to the root, and a standing page adopts the outcome by its `id`.
+@Observable
+final class iOSNoteFolderCenter {
+    var request: iOSNoteFolderRequest?
+    private(set) var outcome: iOSNoteFolderOutcome?
+    /// Filed on Save and published once the sheet is gone, so a page presenting the new note's
+    /// cover never does so over a sheet still being dismissed.
+    @ObservationIgnored private var pending: iOSNoteFolderOutcome?
+
+    /// One sheet at a time -- the page-editor host's rule: a second request would throw away the
+    /// folder name on screen.
+    func open(_ next: iOSNoteFolderRequest) {
+        guard request == nil else { return }
+        request = next
+    }
+
+    func answer(_ request: iOSNoteFolderRequest, folderPath: String, in modelContext: ModelContext) {
+        guard let kind = iOSNoteFolderFiling.file(request, folderPath: folderPath, in: modelContext) else { return }
+        pending = iOSNoteFolderOutcome(areaID: request.area?.id, projectID: request.project?.id, kind: kind)
+    }
+
+    func publishPending() {
+        guard let pending else { return }
+        outcome = pending
+        self.pending = nil
+    }
+}
+
+/// What the folder sheet's answer did, for the page of the list it was filed into.
+struct iOSNoteFolderOutcome: Equatable {
+    enum Kind: Equatable {
+        case created(UUID)
+        case createFailed
+        case moved
+        case moveFailed
+    }
+
+    let id = UUID()
+    let areaID: UUID?
+    let projectID: UUID?
+    let kind: Kind
+}
+
+/// [[T-18252]]: the folder sheet's write, run by the root's host. The page's own `addNote` and
+/// `moveNote` say the same thing for the page's own controls; this is the sheet's answer, which
+/// must land whether or not that page is still standing.
+enum iOSNoteFolderFiling {
+    static func file(_ request: iOSNoteFolderRequest, folderPath: String, in modelContext: ModelContext) -> iOSNoteFolderOutcome.Kind? {
+        let listNotes: [Note]
+        do {
+            listNotes = CadenceListNoteSupport.notes(
+                for: request.area,
+                project: request.project,
+                in: try modelContext.fetch(FetchDescriptor<Note>())
+            )
+        } catch {
+            switch request.mode {
+            case .newNote: return .createFailed
+            case .moveNote: return .moveFailed
+            }
+        }
+        switch request.mode {
+        case .newNote:
+            // T-497: the note's id is the report that it exists, so it only leaves a committed insert.
+            do {
+                let note = try CadenceListNoteFiling.createNote(
+                    in: modelContext,
+                    area: request.area,
+                    project: request.project,
+                    folderPath: folderPath,
+                    order: CadenceListNoteFiling.nextOrder(in: listNotes)
+                )
+                return .created(note.id)
+            } catch {
+                return .createFailed
+            }
+        case .moveNote(let noteID):
+            guard let note = listNotes.first(where: { $0.id == noteID }) else { return nil }
+            // T-1093: the move is committed, and a refused one is reported.
+            do {
+                try CadenceListNoteFiling.move(note, toFolder: folderPath, in: modelContext)
+            } catch {
+                return .moveFailed
+            }
+            return .moved
+        }
+    }
+}
+
+private struct iOSNoteFolderHostModifier: ViewModifier {
+    @Environment(\.modelContext) private var modelContext
+    @State private var center = iOSNoteFolderCenter()
+
+    func body(content: Content) -> some View {
+        content
+            .environment(center)
+            .sheet(item: Bindable(center).request, onDismiss: { center.publishPending() }) { request in
+                let folderNames = request.existingFolders
+                iOSNoteFolderSheet(request: request, existingFolders: folderNames) { folderPath in
+                    center.answer(request, folderPath: folderPath, in: modelContext)
+                }
+            }
+    }
+}
+
+extension View {
+    /// [[T-18252]]: presents the list-notes folder sheet and files its answer. `iOSRootView`
+    /// applies it exactly once, OUTSIDE the `horizontalSizeClass` shell switch.
+    func iOSNoteFolderHost() -> some View {
+        modifier(iOSNoteFolderHostModifier())
     }
 }
 

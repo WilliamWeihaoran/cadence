@@ -148,6 +148,8 @@ struct CadenceShellSwapWiringTests {
             ".iOSCapturePresentationHost(capturePresenter)",
             ".iOSPageEditorHost()",
             ".iOSArchiveImportHost()",
+            ".iOSDataResetHost()",
+            ".iOSNoteFolderHost()",
             ".environment(placeCarry)"
         ] {
             #expect(body.contains(modifier), "iOSRootView's body no longer applies \(modifier)")
@@ -205,6 +207,10 @@ struct CadenceShellSwapWiringTests {
             // [[T-18252]]: Focus's Log Session form and Settings' archive import preview.
             "iOSFocusLogSessionSheet(": ["iOSPageEditorHost.swift"],
             "iOSArchiveImportPreviewSheet(": ["iOSArchiveImportSettingsSection.swift"],
+            // [[T-18252]]: Delete Account & Data's typed-phrase gate and a list's Notes folder
+            // sheet -- each file's host, never its page (the two tests below read which).
+            "iOSDataResetConfirmationSheet(": ["iOSDataResetSettingsSection.swift"],
+            "iOSNoteFolderSheet(": ["iOSListNotesView.swift"],
             "iOSCreateTaskSheet(": ["iOSCaptureRadialMenu.swift"],
         ]
         var found: [String: Set<String>] = [:]
@@ -321,6 +327,92 @@ struct CadenceShellSwapWiringTests {
         #expect(host.contains(".sheet(isPresented: previewBinding)"))
         #expect(host.contains("iOSArchiveImportPreviewSheet("))
         #expect(host.contains("mode: Bindable(center.flow).mode"))
+    }
+
+    /// [[T-18252]] item (5): Delete Account & Data's typed-phrase gate -- the phrase half-typed into
+    /// it -- is presented by a host on the root, and the reset it confirms runs there, so neither
+    /// dies with a Settings page a size-class swap rebuilt. The section opens the gate and reads
+    /// the center's sentence and count; it holds no presentation and runs no reset of its own.
+    @Test func theDataResetGateIsPresentedAndRunByTheRoot() throws {
+        var perFile: [String: Int] = [:]
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence/iOS") {
+            let count = try Self.code(path).components(separatedBy: ".iOSDataResetHost()").count - 1
+            if count > 0 { perFile[(path as NSString).lastPathComponent] = count }
+        }
+        #expect(perFile == ["iOSRootView.swift": 1])
+
+        let source = try Self.code("Cadence/iOS/iOSDataResetSettingsSection.swift")
+        let section = try cadenceFunctionBody("struct iOSDataResetSettingsSection: View", in: source)
+        #expect(section.contains("@Environment(iOSDataResetCenter.self) private var resetCenter"))
+        #expect(section.contains("action: { resetCenter.isConfirming = true }"))
+        #expect(section.contains("resetCenter.statusMessage"))
+        #expect(section.contains(".onChange(of: resetCenter.completedCount)"))
+        #expect(!section.contains("@State"), "the section holds state a resize would drop")
+        #expect(!section.contains("PrivacyDataResetService"), "the section runs the reset itself again")
+        for presentation in [".sheet(", ".fullScreenCover(", ".popover("] {
+            #expect(!section.contains(presentation), "the section presents \(presentation) again")
+        }
+
+        let host = try cadenceFunctionBody("private struct iOSDataResetHostModifier: ViewModifier", in: source)
+        #expect(host.contains("@State private var center = iOSDataResetCenter()"))
+        #expect(host.contains(".environment(center)"))
+        #expect(host.contains(".sheet(isPresented: Bindable(center).isConfirming)"))
+        #expect(host.contains("iOSDataResetConfirmationSheet(onConfirm: deleteCadenceData)"))
+        #expect(host.contains("PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts("))
+        #expect(host.contains("center.finish(statusMessage: outcome.mobileAccountAndDataStatusMessage)"))
+        #expect(host.contains("center.fail(statusMessage:"))
+
+        // Only a finished reset advances the count a page re-reads its Backups on.
+        let finish = try #require(CadenceSourceScan.declarationBody("func finish(statusMessage: String)", in: source))
+        #expect(finish.contains("completedCount &+= 1"))
+        let fail = try #require(CadenceSourceScan.declarationBody("func fail(statusMessage: String)", in: source))
+        #expect(!fail.contains("completedCount"), "a refused reset tells the page to re-read what it did not delete")
+    }
+
+    /// [[T-18252]] item (4): a list's Notes folder sheet -- the folder name typed into it -- is
+    /// presented by a host on the root, and its answer is filed there, because a swap rebuilds the
+    /// list's detail on its default page and the Notes page that opened the sheet may not come
+    /// back. The page opens the sheet and adopts the outcome for its own list only.
+    @Test func theListNotesFolderSheetIsPresentedAndFiledByTheRoot() throws {
+        var perFile: [String: Int] = [:]
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence/iOS") {
+            let count = try Self.code(path).components(separatedBy: ".iOSNoteFolderHost()").count - 1
+            if count > 0 { perFile[(path as NSString).lastPathComponent] = count }
+        }
+        #expect(perFile == ["iOSRootView.swift": 1])
+
+        let source = try Self.code("Cadence/iOS/iOSListNotesView.swift")
+        let page = try cadenceFunctionBody("struct iOSListNotesView: View", in: source)
+        #expect(page.contains("@Environment(iOSNoteFolderCenter.self) private var folderCenter"))
+        #expect(!page.contains("folderRequest"), "the page holds the folder sheet's presentation again")
+        #expect(!page.contains("iOSNoteFolderSheet("), "the page presents the folder sheet again")
+        #expect(page.components(separatedBy: "openFolderSheet(").count - 1 == 3,
+                "the page's two folder controls no longer open the root's sheet")
+        #expect(page.contains("folderCenter.open(iOSNoteFolderRequest(mode: mode, area: area, project: project, existingFolders: folderNames))"))
+        #expect(page.contains(".onChange(of: folderCenter.outcome?.id)"))
+        let adopt = try #require(CadenceSourceScan.declarationBody("private func adopt(_ outcome: iOSNoteFolderOutcome)", in: source))
+        #expect(adopt.contains("guard outcome.areaID == area?.id, outcome.projectID == project?.id else { return }"),
+                "a page adopts another list's outcome")
+        #expect(adopt.contains("selectedNoteID = noteID"))
+        #expect(adopt.contains("createFailureNotice = CadencePendingChangePersistence.editFailureNotice"))
+        #expect(adopt.contains("moveFailureNotice = CadencePendingChangePersistence.editFailureNotice"))
+
+        let host = try cadenceFunctionBody("private struct iOSNoteFolderHostModifier: ViewModifier", in: source)
+        #expect(host.contains("@State private var center = iOSNoteFolderCenter()"))
+        #expect(host.contains(".environment(center)"))
+        #expect(host.contains(".sheet(item: Bindable(center).request, onDismiss: { center.publishPending() })"))
+        #expect(host.contains("center.answer(request, folderPath: folderPath, in: modelContext)"))
+
+        let open = try #require(CadenceSourceScan.declarationBody("func open(_ next: iOSNoteFolderRequest)", in: source))
+        #expect(open.contains("guard request == nil else { return }"), "a second request swaps out the folder name on screen")
+
+        // The root's write: committed, and a refusal is an outcome rather than a silent return.
+        let filing = try #require(CadenceSourceScan.declarationBody("static func file(", in: source))
+        #expect(filing.contains("try CadenceListNoteFiling.createNote("))
+        #expect(filing.contains("try CadenceListNoteFiling.move(note, toFolder: folderPath, in: modelContext)"))
+        #expect(filing.contains("return .created(note.id)"))
+        #expect(filing.components(separatedBy: "return .createFailed").count - 1 == 2)
+        #expect(filing.components(separatedBy: "return .moveFailed").count - 1 == 2)
     }
 
     /// [[T-18158]]: the two shells' Notes destinations opt in; Today's inspector does not.

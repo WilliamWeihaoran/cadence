@@ -421,13 +421,22 @@ struct CadencePrivacyDataResetSurfaceTests {
     /// advances a generation, and the backup section re-reads when it changes. Read as text for
     /// this file's usual reason — all three are inside `#if os(iOS)`.
     @Test func theIOSBackupListRereadsAfterTheResetDeletesIt() throws {
+        // [[T-18252]]: the reset runs on the root's `iOSDataResetHost`, so a size-class swap cannot
+        // strand its outcome in a dead section; success advances `iOSDataResetCenter.completedCount`
+        // and whichever section now stands calls `onDidReset()` when that count changes.
         let reset = try strippingComments(sourceFile("Cadence/iOS/iOSDataResetSettingsSection.swift"))
         let call = try #require(reset.range(of: "PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts"))
         let failure = try #require(reset.range(of: "} catch", range: call.upperBound..<reset.endIndex))
         let succeeded = reset[call.upperBound..<failure.lowerBound]
         #expect(
-            succeeded.components(separatedBy: "onDidReset()").count - 1 == 1,
+            succeeded.components(separatedBy: "center.finish(").count - 1 == 1,
             "the iOS reset no longer reports a finished reset to its page (T-5807)"
+        )
+        let finish = try #require(CadenceSourceScan.declarationBody("func finish(statusMessage: String)", in: reset))
+        #expect(finish.contains("completedCount &+= 1"), "a finished reset no longer advances the count (T-5807)")
+        #expect(
+            matchCount(#"\.onChange\(of:\s*resetCenter\.completedCount\)\s*\{[^}]*\bonDidReset\(\)"#, in: reset) == 1,
+            "the section no longer tells its page when the root's reset finishes (T-5807)"
         )
         #expect(reset.components(separatedBy: "onDidReset()").count - 1 == 1)
 
@@ -567,12 +576,13 @@ struct CadencePrivacyDataResetSurfaceTests {
 
         #expect(source.contains("PrivacyDataResetConfirmation.authorizes"), "the typed-phrase gate is gone")
         #expect(source.contains("isDisabled: !isArmed"), "the destructive button is no longer gated on the phrase")
-        #expect(source.contains(".sheet(isPresented: $isConfirming)"), "the confirmation modal is gone")
+        // [[T-18252]]: the gate is presented by the root's `iOSDataResetHost`, on the center's flag.
+        #expect(source.contains(".sheet(isPresented: Bindable(center).isConfirming)"), "the confirmation modal is gone")
 
         // The section's own button presents; it must not be able to delete. Exactly one call to the
         // reset lives in this file (asserted above) and it is not inside the card's action.
         #expect(
-            source.contains("action: { isConfirming = true }"),
+            source.contains("action: { resetCenter.isConfirming = true }"),
             "the Data Safety card's button no longer merely opens the confirmation"
         )
     }
