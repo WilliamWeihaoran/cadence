@@ -55,6 +55,13 @@ enum CadenceUITestScenarioSeed {
         /// capacity, all on today: what sighting agents used to hand-seed with `sqlite3`. Serves the
         /// cascade fixture's events, so the frame is `calendar-cascade`'s with the band filled.
         case calendarChipStates = "calendar-chip-states"
+        /// **The overnight-series calendar scenario** ([[T-17622]]). A daily 11 PM - 7 AM `Sleep`
+        /// series and a daily all-day series, served on EVERY day (each other calendar scenario
+        /// answers today alone), plus one timed 6:00 - 6:30 AM task on today. It is the frame
+        /// [[T-16694]] and [[T-16696]] fixed: two occurrences of one series in one day column (last
+        /// night's tail, tonight's head) beside a morning task, and a daily all-day chip on every
+        /// Month cell. The events are `CadenceCalendarFixtureEvents.SleepFixture`.
+        case calendarSleep = "calendar-sleep"
     }
 
     /// The alt text on the seeded picture, and the text of the paragraph under it. Both are read
@@ -211,6 +218,15 @@ enum CadenceUITestScenarioSeed {
         /// (`CadenceCalendarAllDayBandPriority.compactCapacity`), so these two are what the
         /// "+N more" line stands for and the four states stay drawn.
         static let chipOverflowTitles = ["Overflow one", "Overflow two"]
+
+        // MARK: - calendar-sleep (T-17622)
+
+        /// The timed task on today that last night's `Sleep` tail overlaps (6:00 - 6:30 against a
+        /// tail ending at 7:00) and tonight's head never touches: the pair [[T-16694]]'s bug drew
+        /// wrong, tonight's block coming out half width beside a task hours away from it.
+        static let sleepTaskTitle = "Morning run"
+        static let sleepTaskStartMinute = 6 * 60
+        static let sleepTaskEstimateMinutes = 30
     }
 
     /// The variable this enum is selected by, named once so the tests and the readers agree on the
@@ -249,6 +265,8 @@ enum CadenceUITestScenarioSeed {
             seedCalendarCascade(modelContext: modelContext)
         case .calendarChipStates:
             seedCalendarChipStates(modelContext: modelContext)
+        case .calendarSleep:
+            seedCalendarSleep(modelContext: modelContext)
         }
     }
 
@@ -569,6 +587,38 @@ enum CadenceUITestScenarioSeed {
             try modelContext.save()
         } catch {
             print("[CadenceUITestScenarioSeed] the calendar-chip-states seed could not be saved: \(error)")
+        }
+    }
+
+    /// **The overnight-series fixture** ([[T-17622]]): one timed task at 6:00 on today, inside
+    /// last night's `Sleep` tail. The events are served by `CadenceCalendarFixtureEvents`.
+    ///
+    /// Internal rather than `private` for the reason `seedCalendarChipStates` gives.
+    @MainActor
+    static func seedCalendarSleep(modelContext: ModelContext, now: Date = Date()) {
+        let todayKey = DateFormatters.ymd.string(from: now)
+
+        // Idempotent by the same test the stock seed and the other scenarios use.
+        let existingTasks = (try? modelContext.fetch(FetchDescriptor<AppTask>())) ?? []
+        guard existingTasks.isEmpty else { return }
+
+        let areas = (try? modelContext.fetch(FetchDescriptor<Area>())) ?? []
+        let host = areas.first { $0.name == "Alpha Area" } ?? areas.first
+
+        let task = AppTask(title: Fixture.sleepTaskTitle)
+        task.scheduledDate = todayKey
+        task.scheduledStartMin = Fixture.sleepTaskStartMinute
+        task.estimatedMinutes = Fixture.sleepTaskEstimateMinutes
+        task.order = 0
+        task.area = host
+        task.context = host?.context
+        modelContext.insert(task)
+
+        // **Not `try?`**, for the reason the scenarios above state.
+        do {
+            try modelContext.save()
+        } catch {
+            print("[CadenceUITestScenarioSeed] the calendar-sleep seed could not be saved: \(error)")
         }
     }
 

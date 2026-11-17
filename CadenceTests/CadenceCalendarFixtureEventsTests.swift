@@ -103,7 +103,7 @@ struct CadenceCalendarFixtureEventsTests {
     @Test func aLaunchThatSeesTheFixturesCannotReachARealEventStore() {
         var checked = 0
         for modeValue in ["1", "0", ""] {
-            for scenarioValue in ["calendar-hues", "calendar-cascade", "calendar-chip-states", "today-geometry", "nonsense", ""] {
+            for scenarioValue in ["calendar-hues", "calendar-cascade", "calendar-chip-states", "calendar-sleep", "today-geometry", "nonsense", ""] {
                 let environment = [Self.mode: modeValue, Self.scenario: scenarioValue]
                 guard CadenceCalendarFixtureEvents.isActive(in: environment) else { continue }
                 checked += 1
@@ -113,7 +113,7 @@ struct CadenceCalendarFixtureEventsTests {
                 )
             }
         }
-        #expect(checked == 3, "non-vacuity: expected exactly three active combinations, saw \(checked)")
+        #expect(checked == 4, "non-vacuity: expected exactly four active combinations, saw \(checked)")
     }
 
     // MARK: - 3. What it answers when it is open
@@ -498,6 +498,129 @@ struct CadenceCalendarFixtureEventsTests {
             ],
             "unexpected reach of the calendar fixture harness: \(referencing.sorted())"
         )
+    }
+
+    // MARK: - 3d. The calendar-sleep scenario (T-17622)
+
+    private static let sleepActive: [String: String] = [mode: "1", scenario: "calendar-sleep"]
+
+    /// A stated zone and a fixed noon, never the host's zone or clock (the
+    /// `CadenceTimeZoneIndependenceTests` rule): the sleep scenario answers every day, so the
+    /// anchor need not be today.
+    private static func sleepCalendarAndAnchor() throws -> (Calendar, Date) {
+        let calendar = try CadenceTestTimeZones.calendar("Asia/Tokyo")
+        let anchor = try #require(calendar.date(from: DateComponents(year: 2026, month: 8, day: 11, hour: 12)))
+        return (calendar, anchor)
+    }
+
+    private static func minuteOfDay(_ date: Date, in calendar: Calendar) -> Int {
+        let parts = calendar.dateComponents([.hour, .minute], from: date)
+        return (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
+    }
+
+    /// **Every day, not today alone**: each day of a week and of days well outside it answers last
+    /// night's `Sleep` (its tail, ending 07:00 that morning) and tonight's (its head, starting
+    /// 23:00), plus one daily all-day occurrence. The other scenarios answer `[]` off today, which
+    /// is why no fixture could draw [[T-16694]]'s two-occurrences-in-one-column frame.
+    @Test func theSleepScenarioServesTwoOvernightOccurrencesAndOneAllDayOnEveryDay() throws {
+        let (calendar, anchor) = try Self.sleepCalendarAndAnchor()
+        let sleep = CadenceCalendarFixtureEvents.SleepFixture.self
+        #expect(CadenceCalendarFixtureEvents.activeScenario(in: Self.sleepActive) == .calendarSleep)
+        #expect(CadenceCalendarFixtureEvents.activeScenario(in: [Self.scenario: "calendar-sleep"]) == nil)
+        #expect(CadenceCalendarFixtureEvents.timedEvents(for: anchor, calendar: calendar, in: [Self.scenario: "calendar-sleep"]) == nil)
+        #expect(CadenceCalendarFixtureEvents.allDayEvents(for: anchor, calendar: calendar, in: [Self.scenario: "calendar-sleep"]) == nil)
+
+        let today = calendar.startOfDay(for: anchor)
+        var checkedDays = 0
+        var allDayStarts: Set<Date> = []
+        for offset in [-40, -1, 0, 1, 2, 3, 4, 5, 6, 30] {
+            let day = try #require(calendar.date(byAdding: .day, value: offset, to: today))
+            let nextDay = try #require(calendar.date(byAdding: .day, value: 1, to: day))
+            let timed = try #require(CadenceCalendarFixtureEvents.timedEvents(for: day, calendar: calendar, in: Self.sleepActive))
+            #expect(timed.count == 2, "day \(offset): \(timed.count) timed")
+            #expect(timed.allSatisfy { $0.title == sleep.sleep.title && $0.isAllDay == false && $0.calendar != nil })
+            #expect(timed.allSatisfy { CadenceEventNoteSupport.isRecurringSeriesMember($0) })
+
+            let tail = try #require(timed.first { $0.startDate < day })
+            #expect(tail.endDate > day && calendar.isDate(tail.endDate, inSameDayAs: day), "day \(offset): no tail this morning")
+            // The end is a duration of real time after the start (the file's rule), so it is
+            // asserted as one rather than as a wall minute, which moves on a transition night.
+            #expect(tail.endDate.timeIntervalSince(tail.startDate) == TimeInterval(sleep.sleepDurationMinutes * 60))
+            let head = try #require(timed.first { calendar.isDate($0.startDate, inSameDayAs: day) })
+            #expect(Self.minuteOfDay(head.startDate, in: calendar) == sleep.sleepStartMinute)
+            #expect(head.endDate > nextDay, "day \(offset): tonight's occurrence does not run past midnight")
+            #expect(tail !== head)
+
+            let allDay = try #require(CadenceCalendarFixtureEvents.allDayEvents(for: day, calendar: calendar, in: Self.sleepActive))
+            #expect(allDay.count == 1)
+            #expect(allDay.allSatisfy {
+                $0.isAllDay && $0.title == sleep.allDay.title && $0.calendar != nil
+                    && CadenceEventNoteSupport.isRecurringSeriesMember($0)
+            })
+            // EventKit floats an all-day event's dates (it re-reads the midnight in the HOST zone,
+            // measured: an `inSameDayAs` in this stated zone failed on every day), so the day is
+            // asserted as "within a day of this day's start" and "a different occurrence per day".
+            let allDayStart = try #require(allDay.first?.startDate)
+            #expect(abs(allDayStart.timeIntervalSince(day)) < 24 * 3600, "day \(offset): all-day is on another day")
+            allDayStarts.insert(allDayStart)
+            checkedDays += 1
+        }
+        #expect(checkedDays == 10)
+        #expect(allDayStarts.count == 10, "two days were handed one all-day occurrence")
+    }
+
+    /// **One held object per occurrence**: tonight's head is the very object tomorrow's tail is (one
+    /// occurrence seen from both days it touches), a second ask returns the same objects, and the
+    /// occurrences of different days are different objects with different identities, so no
+    /// fixture `ForEach` keys two of them alike.
+    @Test func eachSleepOccurrenceIsHeldOnceAndSharedByBothDaysItTouches() throws {
+        let (calendar, anchor) = try Self.sleepCalendarAndAnchor()
+        let today = calendar.startOfDay(for: anchor)
+        let tomorrow = try #require(calendar.date(byAdding: .day, value: 1, to: today))
+        let todays = try #require(CadenceCalendarFixtureEvents.timedEvents(for: today, calendar: calendar, in: Self.sleepActive))
+        let tomorrows = try #require(CadenceCalendarFixtureEvents.timedEvents(for: tomorrow, calendar: calendar, in: Self.sleepActive))
+        let again = try #require(CadenceCalendarFixtureEvents.timedEvents(for: today, calendar: calendar, in: Self.sleepActive))
+
+        let tonight = try #require(todays.first { calendar.isDate($0.startDate, inSameDayAs: today) })
+        let tomorrowsTail = try #require(tomorrows.first { $0.startDate < tomorrow })
+        #expect(tonight === tomorrowsTail, "one night is one occurrence, from either day")
+        #expect(zip(todays, again).allSatisfy { $0 === $1 })
+        #expect(todays.count == again.count)
+
+        let threeDays = todays + tomorrows.filter { $0 !== tomorrowsTail }
+        #expect(threeDays.count == 3)
+        #expect(Set(threeDays.map(\.calendarItemIdentifier)).count == 3, "two occurrences share an identity")
+        #expect(Set(threeDays.map(\.startDate)).count == 3)
+
+        let todayAllDay = try #require(CadenceCalendarFixtureEvents.allDayEvents(for: today, calendar: calendar, in: Self.sleepActive)?.first)
+        let tomorrowAllDay = try #require(CadenceCalendarFixtureEvents.allDayEvents(for: tomorrow, calendar: calendar, in: Self.sleepActive)?.first)
+        #expect(todayAllDay !== tomorrowAllDay)
+        #expect(todayAllDay === CadenceCalendarFixtureEvents.allDayEvents(for: today, calendar: calendar, in: Self.sleepActive)?.first)
+    }
+
+    /// The seeded `Morning run` sits inside last night's tail and hours before tonight's head: the
+    /// task [[T-16694]]'s tonight block came out half width beside. Seeded through the copy a
+    /// launch runs, into an in-memory store, and idempotent like every scenario.
+    @MainActor
+    @Test func theSleepSeedPlantsOneMorningTaskInsideLastNightsTail() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let (_, now) = try Self.sleepCalendarAndAnchor()
+        CadenceUITestScenarioSeed.seedCalendarSleep(modelContext: context, now: now)
+        CadenceUITestScenarioSeed.seedCalendarSleep(modelContext: context, now: now)
+        let tasks = try context.fetch(FetchDescriptor<AppTask>())
+        #expect(tasks.count == 1)
+        let task = try #require(tasks.first)
+        #expect(task.title == CadenceUITestScenarioSeed.Fixture.sleepTaskTitle)
+        #expect(task.scheduledDate == DateFormatters.ymd.string(from: now))
+
+        let sleep = CadenceCalendarFixtureEvents.SleepFixture.self
+        let tailEnd = (sleep.sleepStartMinute + sleep.sleepDurationMinutes) % (24 * 60)
+        let taskEnd = task.scheduledStartMin + task.estimatedMinutes
+        #expect(task.scheduledStartMin == CadenceUITestScenarioSeed.Fixture.sleepTaskStartMinute)
+        #expect(task.scheduledStartMin >= 0 && task.scheduledStartMin < tailEnd, "the task must start inside the tail")
+        #expect(taskEnd <= sleep.sleepStartMinute, "the task must not reach tonight's head")
+        #expect(CadenceUITestScenarioSeed.scenario(in: [Self.scenario: "calendar-sleep"]) == .calendarSleep)
     }
 
     // MARK: - T-4220: a fixture minute-of-day is wall-clock time on a transition day

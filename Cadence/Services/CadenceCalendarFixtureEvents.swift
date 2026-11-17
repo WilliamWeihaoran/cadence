@@ -252,6 +252,53 @@ enum CadenceCalendarFixtureEvents {
         ]
     }
 
+    /// **[[T-17622]] — the `calendar-sleep` fixture: a daily overnight series and a daily all-day
+    /// series, on every day of whatever range is on screen.**
+    ///
+    /// Every other scenario answers today alone, so no fixture could draw the shapes [[T-16694]]
+    /// and [[T-16696]] fixed: a daily 11 PM - 7 AM event puts LAST night's tail at the top of each
+    /// day column and TONIGHT's head at the bottom, two occurrences of one series in one column,
+    /// and a daily all-day event puts one chip on every Month cell. This scenario serves both for
+    /// any day it is asked about, so Week and Month are a still frame (`simctl io screenshot` over
+    /// a `cadence://calendar/<date>` link) rather than a gesture.
+    ///
+    /// **One held `EKEvent` per OCCURRENCE, not per title.** The overnight occurrence that starts
+    /// on day D is the same object whether day D (its head) or day D+1 (its tail) asks, as one
+    /// EventKit occurrence would be, and the occurrences of different nights are different objects.
+    /// Note what this cannot reproduce: unsaved fixture events never share a
+    /// `calendarItemIdentifier`, as real occurrences of one series do, so the frame shows the
+    /// layout of two occurrences per column but not the shared-identifier input [[T-16694]]'s
+    /// keying fix answers; `iOSCalendarTimelineBlockLayout.uniqueEventKeys` is unit-tested for that.
+    ///
+    /// The seeded task half (a timed `Morning run` at 6:00 on today, inside last night's tail)
+    /// lives in `CadenceUITestScenarioSeed.Fixture`.
+    enum SleepFixture {
+        static let sleepHue = Hue(red: 0x5B, green: 0x5F, blue: 0xC7)
+        static let routineHue = Hue(red: 0xC2, green: 0x7C, blue: 0x0E)
+
+        /// 23:00 for eight hours: it ends at 07:00 the next morning.
+        static let sleepStartMinute = 23 * 60
+        static let sleepDurationMinutes = 8 * 60
+
+        static let sleep = Spec(
+            title: "Sleep",
+            calendarTitle: "Health",
+            hue: sleepHue,
+            startMinute: sleepStartMinute,
+            durationMinutes: sleepDurationMinutes,
+            repeatFrequency: .daily
+        )
+
+        static let allDay = Spec(
+            title: "Daily review",
+            calendarTitle: "Routine",
+            hue: routineHue,
+            startMinute: nil,
+            durationMinutes: 24 * 60,
+            repeatFrequency: .daily
+        )
+    }
+
     /// A timed event that starts on one day and ends `endDayOffset` days later. See
     /// `Fixture.multiDay`.
     struct MultiDaySpec {
@@ -297,6 +344,7 @@ enum CadenceCalendarFixtureEvents {
         case .calendarHues: return .calendarHues
         case .calendarCascade: return .calendarCascade
         case .calendarChipStates: return .calendarChipStates
+        case .calendarSleep: return .calendarSleep
         case .todayGeometry, .todayRowCrush, .popoverAnchors, nil: return nil
         }
     }
@@ -313,7 +361,14 @@ enum CadenceCalendarFixtureEvents {
         calendar: Calendar = .current,
         in environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> [EKEvent]? {
-        events(
+        if activeScenario(in: environment) == .calendarSleep {
+            // Last night's occurrence (its tail) and tonight's (its head): both overlap this day,
+            // which is what an EventKit day fetch over a daily overnight series answers.
+            let day = calendar.startOfDay(for: date)
+            let previous = calendar.date(byAdding: .day, value: -1, to: day) ?? day
+            return [previous, day].map { occurrence(of: SleepFixture.sleep, on: $0, calendar: calendar) }
+        }
+        return events(
             for: date,
             specs: { $0 == .calendarHues ? Fixture.timed : CascadeFixture.timed },
             calendar: calendar,
@@ -327,7 +382,10 @@ enum CadenceCalendarFixtureEvents {
         calendar: Calendar = .current,
         in environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> [EKEvent]? {
-        events(
+        if activeScenario(in: environment) == .calendarSleep {
+            return [occurrence(of: SleepFixture.allDay, on: calendar.startOfDay(for: date), calendar: calendar)]
+        }
+        return events(
             for: date,
             specs: { $0 == .calendarHues ? Fixture.allDay : CascadeFixture.allDay },
             calendar: calendar,
@@ -353,8 +411,20 @@ enum CadenceCalendarFixtureEvents {
     /// and popover `@State` reset underneath the pointer. The board seam learned this the same way.
     private static var heldEvents: [String: EKEvent] = [:]
 
-    private static func built(spec: Spec, on date: Date, calendar: Calendar) -> EKEvent {
-        if let held = heldEvents[spec.title] { return held }
+    /// One occurrence of a `SleepFixture` series, held by title AND day, so each night is its
+    /// own object and the same night is the same object from both days it touches.
+    private static func occurrence(of spec: Spec, on day: Date, calendar: Calendar) -> EKEvent {
+        built(
+            spec: spec,
+            on: day,
+            calendar: calendar,
+            holdKey: spec.title + "@" + DateFormatters.dateKey(from: day, calendar: calendar)
+        )
+    }
+
+    private static func built(spec: Spec, on date: Date, calendar: Calendar, holdKey: String? = nil) -> EKEvent {
+        let holdKey = holdKey ?? spec.title
+        if let held = heldEvents[holdKey] { return held }
         let store = EKEventStore()
         let event = EKEvent(eventStore: store)
         // The unsaved `EKCalendar` is **measured, not decoration** ([[T-2047]]):
@@ -384,7 +454,7 @@ enum CadenceCalendarFixtureEvents {
             event.endDate = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart
             event.isAllDay = true
         }
-        heldEvents[spec.title] = event
+        heldEvents[holdKey] = event
         return event
     }
 }
