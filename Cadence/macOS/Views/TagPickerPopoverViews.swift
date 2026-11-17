@@ -7,8 +7,18 @@ struct TagPickerPopover: View {
     @Binding var selectedTags: [Tag]
     let allTags: [Tag]
     let onCreateTag: (String) -> Tag?
+    /// **[[T-18288]]: the field's text is the caller's state**, as the phone's `newTagName` is
+    /// (`iOSTaskTagPickerPopover`, [[T-5175]]). A name the dismiss commit could not land is still
+    /// here when the popover next opens, with its Create or Unarchive row, to try again with;
+    /// as popover `@State` it closed with the popover. Every other dismissal clears it.
+    @Binding var query: String
+    /// **[[T-18288]], the Mac twin of [[T-6471]].** Where a refused un-archive goes when the
+    /// field commits as the popover *closes*: `restoreFailureNotice` is drawn inside the popover
+    /// that is disappearing, so on that path the sentence is handed to the caller, which draws it
+    /// under the control. A refused create needs no hand-off -- `onCreateTag` is the caller's own
+    /// commit and says it there. Defaults to dropping it, for a caller with no surface.
+    var onDismissRefusal: (String) -> Void = { _ in }
 
-    @State private var query = ""
     @State private var editingTag: Tag?
     @State private var editName = ""
     @State private var editDescription = ""
@@ -54,7 +64,9 @@ struct TagPickerPopover: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.text)
                     .focused($isSearchFocused)
-                    .onSubmit(commitQueriedField)
+                    // [[T-18288]]: a closure, because the Return path now answers a refused
+                    // un-archive for the dismiss path; here the open popover draws it itself.
+                    .onSubmit { commitQueriedField() }
                 // [[T-9971]]: the title field's `#` picker (`TaskTitleInlineTagPicker`), with this
                 // same "Find or create tag" field, clears from the shared button; this one had none.
                 CadenceSearchFieldClearButton(text: $query, glyphSize: 11, focus: $isSearchFocused)
@@ -173,9 +185,20 @@ struct TagPickerPopover: View {
     /// **[[T-17962]].** The field's own Return path, behind the one dismiss decision the phone's
     /// `iOSTaskTagPickerPopover.addTagOnDismiss` asks: a query that drew an active row is a search
     /// and commits nothing ([[T-17935]]); an archived exact name un-archives through `restore(_:)`.
+    ///
+    /// **[[T-18288]].** As the phone's does: a query the gate does not commit is cleared, so it does
+    /// not pre-filter the next open now that it outlives the popover; a refused commit keeps it
+    /// (both rows leave `query` alone on a refusal), and a refused un-archive's sentence goes to
+    /// `onDismissRefusal`. The refusal is the return value rather than a read of
+    /// `restoreFailureNotice`, so it does not lean on a closing view's `@State` write.
     private func commitQueriedFieldOnDismiss() {
-        guard TagSupport.pickerDismissCommits(query, in: allTags) else { return }
-        commitQueriedField()
+        guard TagSupport.pickerDismissCommits(query, in: allTags) else {
+            query = ""
+            return
+        }
+        if let refusal = commitQueriedField() {
+            onDismissRefusal(refusal)
+        }
     }
 
     private func tagRow(_ tag: Tag) -> some View {
@@ -244,17 +267,21 @@ struct TagPickerPopover: View {
     /// text -- where Return used to stop at `canCreate`, false for an archived match, and leave the
     /// name in the field. An active tag's name attaches it ([[T-16584]], `returnPick`); every other
     /// name keeps the Create row's rules.
-    private func commitQueriedField() {
+    ///
+    /// [[T-18288]]: answers a refused un-archive's sentence, for the dismiss path to hand on; `nil`
+    /// otherwise, a refused create included, which `onCreateTag`'s caller reports itself.
+    @discardableResult
+    private func commitQueriedField() -> String? {
         if case let .unarchive(archived) = TagSupport.pickerFieldCommit(query, in: allTags) {
-            restore(archived)
-            return
+            return restore(archived)
         }
         if let picked = Self.returnPick(query, in: allTags, selected: selectedTags) {
             selectedTags = picked
             query = ""
-            return
+            return nil
         }
         createQueriedTagIfNeeded()
+        return nil
     }
 
     /// **[[T-16584]] -- Return on an active tag's typed name attaches it**, as the phone's field
@@ -281,7 +308,10 @@ struct TagPickerPopover: View {
     /// The undo is the same two-field snapshot `archive` takes, not `rollback()`: this popover is
     /// opened from a task inspector that routinely has unrelated edits pending behind it. See
     /// `CadencePendingChangePersistence.commitEdit`.
-    private func restore(_ tag: Tag) {
+    ///
+    /// [[T-18288]]: answers the refusal it drew, `nil` on success, for `commitQueriedField`.
+    @discardableResult
+    private func restore(_ tag: Tag) -> String? {
         let previousIsArchived = tag.isArchived
         let previousUpdatedAt = tag.updatedAt
         tag.isArchived = false
@@ -293,14 +323,16 @@ struct TagPickerPopover: View {
                 tag.updatedAt = previousUpdatedAt
             }
         } catch {
-            restoreFailureNotice = CadencePendingChangePersistence.editFailureNotice
-            return
+            let refusal = CadencePendingChangePersistence.editFailureNotice
+            restoreFailureNotice = refusal
+            return refusal
         }
         restoreFailureNotice = nil
         if !selectedTags.contains(where: { $0.id == tag.id }) {
             selectedTags.append(tag)
         }
         query = ""
+        return nil
     }
 
     private func beginEditing(_ tag: Tag) {

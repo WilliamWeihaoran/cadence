@@ -76,6 +76,9 @@ struct KanbanTagPickerPopover: View {
 
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Tag.order) private var allTags: [Tag]
+    /// [[T-18288]]: the field's text, still dying with this popover -- the card draws no failure
+    /// line to keep a refused name for. Filed as [[T-18292]].
+    @State private var query = ""
 
     var body: some View {
         TagPickerPopover(
@@ -89,7 +92,8 @@ struct KanbanTagPickerPopover: View {
             allTags: allTags,
             onCreateTag: { name in
                 TagSupport.committedTag(named: name, in: modelContext)
-            }
+            },
+            query: $query
         )
     }
 }

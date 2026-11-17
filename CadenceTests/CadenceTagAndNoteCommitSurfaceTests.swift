@@ -456,7 +456,9 @@ struct CadenceTagAndNoteCommitSurfaceTests {
         #expect(restore.contains("CadencePendingChangePersistence.commitEdit(in: modelContext)"))
         // Two fields written, two fields restored — the same snapshot `archive` takes, inverted.
         #expect(CadenceSourceScan.matchCount(#"tag\.\w+ = previous\w+"#, in: restore) == 2)
-        #expect(restore.contains("restoreFailureNotice = CadencePendingChangePersistence.editFailureNotice"))
+        // [[T-18288]]: the sentence is also answered, for the dismiss path to hand to the caller.
+        #expect(restore.contains("let refusal = CadencePendingChangePersistence.editFailureNotice"))
+        #expect(restore.contains("restoreFailureNotice = refusal"))
 
         // Both halves of the report, and both below the catch.
         #expect(
@@ -487,8 +489,10 @@ struct CadenceTagAndNoteCommitSurfaceTests {
     /// behaviourally by `CadenceTagPickerQueryTests.theFieldUnarchivesAnArchivedNameRatherThanResolvingIt`.
     @Test func theMacTagPickersReturnUnarchivesAnArchivedNameThroughRestore() throws {
         let picker = try scanned("Cadence/macOS/Views/TagPickerPopoverViews.swift")
-        #expect(picker.contains(".onSubmit(commitQueriedField)"), "Return no longer reads the field's decision")
+        // [[T-18288]]: a closure, since `commitQueriedField` answers a refusal Return discards.
+        #expect(picker.contains(".onSubmit { commitQueriedField() }"), "Return no longer reads the field's decision")
         #expect(!picker.contains(".onSubmit(createQueriedTagIfNeeded)"), "Return went back to the Create-only path")
+        #expect(!picker.contains(".onSubmit { createQueriedTagIfNeeded() }"), "Return went back to the Create-only path")
 
         let commit = try declarationBody(named: "commitQueriedField", in: picker)
         let asked = try #require(
@@ -497,7 +501,9 @@ struct CadenceTagAndNoteCommitSurfaceTests {
         )
         let restored = try #require(
             commit.range(
-                of: #"case let \.unarchive\(archived\) = [^\n]*\{\s*restore\(archived\)\s*return"#,
+                // [[T-18288]]: `restore` answers its refusal, which Return discards and the
+                // dismiss path hands on, so the arm returns it.
+                of: #"case let \.unarchive\(archived\) = [^\n]*\{\s*return restore\(archived\)\s*\}"#,
                 options: .regularExpression
             ),
             "an archived match no longer goes through restore(_:)"

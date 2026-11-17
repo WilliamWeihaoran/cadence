@@ -163,7 +163,9 @@ struct InlineTaskComposer: View {
                 TagPickerControl(
                     selectedTags: $selectedTags,
                     allTags: tags,
-                    onCreateTag: createTag
+                    onCreateTag: createTag,
+                    // [[T-18288]]: a refused un-archive on the popover's dismiss, on the hint line.
+                    onDismissRefusal: { actionError = $0 }
                 )
             }
 

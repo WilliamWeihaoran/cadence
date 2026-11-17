@@ -12,8 +12,15 @@ struct TagPickerControl: View {
     /// The note header passes `"plus"`: there the chips are the subject and the trigger's only
     /// job is "add one".
     var triggerSymbol: String = "tag.fill"
+    /// **[[T-18288]].** A refused un-archive made as the popover closes, for the caller to draw
+    /// beside the sentence its `onCreateTag` already draws -- the Mac twin of the phone's
+    /// `onDismissRefusal` ([[T-6471]]). Defaults to dropping it.
+    var onDismissRefusal: (String) -> Void = { _ in }
 
     @State private var isPresented = false
+    /// **[[T-18288]].** The popover's field, held here so a name its dismiss commit could not land
+    /// is offered again on the next open, as the phone's control holds `newTagName` ([[T-5175]]).
+    @State private var query = ""
 
     private var visibleSelectedTags: [Tag] {
         TagSupport.sorted(selectedTags)
@@ -50,7 +57,9 @@ struct TagPickerControl: View {
                 TagPickerPopover(
                     selectedTags: $selectedTags,
                     allTags: allTags,
-                    onCreateTag: onCreateTag
+                    onCreateTag: onCreateTag,
+                    query: $query,
+                    onDismissRefusal: onDismissRefusal
                 )
             }
         }

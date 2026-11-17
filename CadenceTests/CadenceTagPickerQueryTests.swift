@@ -481,11 +481,76 @@ struct MacTagPickerDismissCommitTests {
         #expect(CadenceSourceScan.matchCount(#"\.onDisappear"#, in: popover) == 1)
         let onDismiss = try #require(CadenceSourceScan.functionBody(named: "commitQueriedFieldOnDismiss", in: popover))
         let gated = try #require(
-            onDismiss.range(of: "guard TagSupport.pickerDismissCommits(query, in: allTags) else { return }"),
-            "the dismiss no longer asks the shared gate, so a search commits (T-17935)"
+            onDismiss.range(
+                // `codeOnly` blanks literals and their quotes, so `""` reads as two spaces here.
+                of: #"guard TagSupport\.pickerDismissCommits\(query, in: allTags\) else \{\s*query = [" ]*\s*return\s*\}"#,
+                options: .regularExpression
+            ),
+            "the dismiss no longer asks the shared gate, so a search commits (T-17935), or no longer clears a query it did not commit (T-18288)"
         )
         let committed = try #require(onDismiss.range(of: "commitQueriedField()"), "the dismiss no longer commits")
         #expect(gated.upperBound <= committed.lowerBound)
+    }
+
+    /// **[[T-18288]], the Mac twin of [[T-6471]] and [[T-5175]].** A refused commit on dismiss used
+    /// to be silent for an archived name -- `restoreFailureNotice` is drawn inside the closing
+    /// popover -- and the typed name died with the popover's `@State`. Now the refusal is handed to
+    /// `onDismissRefusal`, which every caller with a failure line draws, and `query` is the
+    /// control's state, so a refused name is back in the field on the next open.
+    ///
+    /// Source shape: `.onDisappear` is not callable and the popover's `@State` cannot be driven.
+    /// The refusal's value is `restore(_:)`'s own, pinned by
+    /// `CadenceTagAndNoteCommitSurfaceTests.theTagPickerSelectsARestoredTagOnlyOnceTheStoreTookTheUnarchive`.
+    @Test func aRefusedDismissCommitIsNamedByTheCallerAndKeepsTheTypedName() throws {
+        func scanned(_ path: String) throws -> String {
+            let raw = try CadenceSourceScan.sourceFile(path)
+            #expect(raw.count > 1_000, "non-vacuity: \(path)")
+            return CadenceSourceScan.strippingComments(raw)
+        }
+        let file = try scanned("Cadence/macOS/Views/TagPickerPopoverViews.swift")
+        let popover = try #require(CadenceSourceScan.declarationBody("struct TagPickerPopover: View", in: file))
+
+        // The hand-off: the Return path's answer, not a re-read of the closing view's `@State`.
+        let onDismiss = try #require(CadenceSourceScan.functionBody(named: "commitQueriedFieldOnDismiss", in: popover))
+        #expect(
+            onDismiss.range(
+                of: #"if let refusal = commitQueriedField\(\) \{\s*onDismissRefusal\(refusal\)\s*\}"#,
+                options: .regularExpression
+            ) != nil,
+            "a refusal on dismiss is no longer handed to the caller"
+        )
+        let commit = try #require(CadenceSourceScan.functionBody(named: "commitQueriedField", in: popover))
+        #expect(commit.contains("return restore(archived)"), "the Return path drops restore's refusal")
+        let restore = try #require(CadenceSourceScan.functionBody(named: "restore", in: popover))
+        #expect(
+            restore.range(
+                of: #"catch \{\s*let refusal = CadencePendingChangePersistence\.editFailureNotice\s*restoreFailureNotice = refusal\s*return refusal\s*\}"#,
+                options: .regularExpression
+            ) != nil,
+            "restore no longer answers the refusal it drew"
+        )
+        #expect(popover.contains("var onDismissRefusal: (String) -> Void = { _ in }"))
+
+        // The typed name outlives the popover: the control owns it.
+        #expect(popover.contains("@Binding var query: String"), "the field is popover state again, so a refused name is lost")
+        #expect(!popover.contains("@State private var query"))
+        let support = try scanned("Cadence/macOS/Views/TagPickerSupportViews.swift")
+        let control = try #require(CadenceSourceScan.declarationBody("struct TagPickerControl: View", in: support))
+        #expect(control.contains(#"@State private var query = """#))
+        #expect(control.contains("query: $query,"), "the control no longer hands its field to the popover")
+        #expect(control.contains("onDismissRefusal: onDismissRefusal"), "the control drops the popover's refusal")
+
+        // Every caller with a failure line draws it there.
+        let callers = [
+            ("Cadence/macOS/Views/SchedulePanelComponents.swift", "onDismissRefusal: { tagFailureNotice = $0 }"),
+            ("Cadence/macOS/Views/NoteEditorPane.swift", "onDismissRefusal: { tagFailureNotice = $0 }"),
+            ("Cadence/macOS/Views/InlineTaskComposerView.swift", "onDismissRefusal: { actionError = $0 }"),
+        ]
+        for (path, hook) in callers {
+            let source = try scanned(path)
+            #expect(CadenceSourceScan.matchCount(#"TagPickerControl\("#, in: source) == 1, "\(path)")
+            #expect(source.contains(hook), "\(path) no longer draws a refused dismiss commit")
+        }
     }
 }
 #endif

@@ -88,7 +88,9 @@ struct TaskDetailPopover: View {
                 selectedTags: taskTagsBinding,
                 allTags: tags,
                 onCreateTag: createTag,
-                triggerSymbol: "plus"
+                triggerSymbol: "plus",
+                // [[T-18288]]: a refused un-archive on the popover's dismiss, said where this is.
+                onDismissRefusal: { tagFailureNotice = $0 }
             )
             if let tagFailureNotice { CadenceInlineFailureNotice(text: tagFailureNotice) }
             if let logged = Self.loggedLabel(for: task) {

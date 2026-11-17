@@ -236,7 +236,9 @@ struct NoteEditorPane: View {
                 selectedTags: noteTagsBinding,
                 allTags: tags,
                 onCreateTag: createTag,
-                triggerSymbol: "plus"
+                triggerSymbol: "plus",
+                // [[T-18288]]: a refused un-archive on the popover's dismiss, said where this is.
+                onDismissRefusal: { tagFailureNotice = $0 }
             )
             // Here rather than in `noteHeader`, because the chips are drawn twice: the full header
             // draws them in its title row and the compact one parks them in the format toolbar. A
