@@ -573,7 +573,10 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // that lands (or the next load) clears it.
         // [[T-18082]] makes it 90, and bare: the Mac list-note row names a refused double-click
         // rename under itself -- the retry is the same rename, and the next one that lands clears it.
-        #expect(total == 90, "the inline notice has \(total) call sites, not the 90 this test was written over")
+        // [[T-18292]] makes it 91, and bare: the Mac board card's tag popover names a refused tag
+        // write under the picker -- the retry is the same pick or create, and the next one that
+        // lands clears it ([[T-18309]]).
+        #expect(total == 91, "the inline notice has \(total) call sites, not the 91 this test was written over")
         #expect(withDismissal == 9, "\(withDismissal) call sites offer a dismissal, not 9")
 
         // And each of the nine is named, so one swapping places with another is still a failure.
