@@ -1371,6 +1371,39 @@ struct CadenceReadServiceTests {
         #expect(contexts.contains { $0.name == "Work" })
     }
 
+    /// **T-16327.** A note's tag frontmatter is not text the search can find it by. Tagging a note
+    /// in the app writes `---` / `tags: [...]` / `---` above the body, a block the app hides and
+    /// its own searches stopped matching under [[T-16325]]; MCP scored the raw `content`, so a
+    /// query for `tags` returned every tagged note. One note of each kind the six note/document
+    /// search sites read -- a list document, a daily note, a meeting note -- whose only `tags` is
+    /// the frontmatter key, then the same notes found by a word in their body, so the empty
+    /// answers are about the frontmatter and not about the notes being unreachable.
+    @Test func noteAndDocumentSearchesDoNotMatchTheHiddenTagFrontmatter() throws {
+        let fixture = try Fixture()
+        let frontmatter = "---\ntags: [\"errand\"]\n---\n\n"
+        let doc = Note(kind: .list, title: "Groceries", content: frontmatter + "Quarterly restock list")
+        doc.project = fixture.project
+        let daily = Note(kind: .daily, title: "", content: frontmatter + "Quarterly review prep", dateKey: "2026-11-16")
+        let meeting = Note(kind: .meeting, title: "Planning sync", content: frontmatter + "Quarterly targets agreed", calendarEventID: "event-16327")
+        for note in [doc, daily, meeting] { fixture.modelContext.insert(note) }
+        try fixture.modelContext.save()
+        let all = Set([doc, daily, meeting].map(\.id.uuidString))
+        let service = fixture.service
+
+        #expect(try service.listDocuments(query: "tags").items.isEmpty)
+        #expect(try service.listNotes(options: .init(query: "tags")).items.isEmpty)
+        for scope in ["documents", "core_notes", "event_notes", "notes"] {
+            #expect(try service.search(query: "tags", scopes: [scope]).items.isEmpty, "scope \(scope)")
+        }
+
+        #expect(try service.listDocuments(query: "quarterly").items.map(\.id) == [doc.id.uuidString])
+        #expect(Set(try service.listNotes(options: .init(query: "quarterly")).items.map(\.id)) == all)
+        #expect(try service.search(query: "quarterly", scopes: ["documents"]).items.map(\.entityId) == [doc.id.uuidString])
+        #expect(try service.search(query: "quarterly", scopes: ["core_notes"]).items.map(\.entityId) == [daily.id.uuidString])
+        #expect(try service.search(query: "quarterly", scopes: ["event_notes"]).items.map(\.entityId) == [meeting.id.uuidString])
+        #expect(Set(try service.search(query: "quarterly", scopes: ["notes"]).items.map(\.entityId)) == all)
+    }
+
     @MainActor
     private final class Fixture {
         let container: ModelContainer
