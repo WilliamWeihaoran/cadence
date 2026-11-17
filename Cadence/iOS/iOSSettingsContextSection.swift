@@ -66,9 +66,12 @@ struct iOSContextEditorSheet: View {
 
                             VStack(alignment: .leading, spacing: 7) {
                                 SectionEyebrowLabel(text: "Color")
+                                // [[T-18375]]: the Mac's context palette, both its New Context
+                                // sheet and its Settings row editor. The row appends a stored hex
+                                // the palette lacks, so nothing saved is re-coloured.
                                 iOSSettingsColorSwatchRow(
                                     selectedHex: $colorHex,
-                                    options: Self.colorOptions
+                                    options: CadenceColorPalette.colors
                                 )
                             }
 
@@ -134,13 +137,6 @@ struct iOSContextEditorSheet: View {
             )
         }
         .preferredColorScheme(.dark)
-    }
-
-    /// The accent leads, then one lap of the tag palette. Contexts and tags are both
-    /// user-coloured labels, so they draw from the same strip rather than from a second
-    /// list that would drift away from it.
-    private static var colorOptions: [String] {
-        [Theme.blueHex] + TagSupport.colorOptions
     }
 
     private func load() {

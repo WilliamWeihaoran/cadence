@@ -514,6 +514,51 @@ struct CadenceSectionPaletteConvergenceTests {
     }
 }
 
+/// T-18375 — the T-261 fix, for a context's `colorHex`.
+///
+/// The Mac edits a context's colour from two places (the New Context sheet's
+/// `ListEditorColorStrip` and Settings > Contexts' `ColorGrid`), both on `CadenceColorPalette.colors`;
+/// iOS's `iOSContextEditorSheet` offered `[Theme.blueHex] + TagSupport.colorOptions` -- one hue in
+/// common, and Theme blue beside the tag palette's drifted `#5aa2ff`.
+@MainActor
+struct CadenceContextPaletteConvergenceTests {
+    @Test func everyContextEditorOffersTheListPalette() throws {
+        let createSheet = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/macOS/Sheets/CreateContextSheet.swift"))
+        let strip = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/macOS/Sheets/ListEditorSupportViews.swift"))
+        let settings = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/macOS/Views/SettingsSupportViews.swift"))
+        let ios = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/iOS/iOSSettingsContextSection.swift"))
+
+        // Mac, New Context: the identity header's strip, which reads the list palette.
+        #expect(createSheet.contains("ListEditorIdentityHeader("))
+        #expect(strip.contains("ListEditorColorStrip(selected: $colorHex)"))
+        #expect(strip.contains("ForEach(CadenceColorPalette.offeredColors(for: selected)"))
+        // Mac, Settings > Contexts: `ColorGrid` on its default palette, which is the same one.
+        #expect(settings.contains("ColorGrid(selected: $editColor)"))
+        #expect(createSheet.contains("var palette: [String] = CadenceColorPalette.colors"))
+
+        // iOS, new and edit: one strip, on that palette, borrowing nothing from tags.
+        #expect(ios.contains("struct iOSContextEditorSheet"), "non-vacuity: still the iOS editor")
+        #expect(ios.contains("options: CadenceColorPalette.colors"))
+        #expect(!ios.contains("TagSupport.colorOptions"), "the iOS context editor borrows the tag palette again")
+        #expect(!ios.contains("colorOptions"), "the iOS context editor has its own swatch list again")
+    }
+
+    /// The keep-stored rule survives the move: iOS's strip appends a stored hex the palette lacks
+    /// exactly as `offeredColors(for:)` does on the Mac, so the two platforms draw one menu for
+    /// every stored value -- including every hue the old iOS menu could have written.
+    @Test func bothPlatformsDrawTheSameMenuForEveryStoredContextColour() {
+        let iOSOldContextMenu = [Theme.blueHex] + TagSupport.colorOptions
+        let corpus = iOSOldContextMenu + CadenceColorPalette.colors + ["#4A9EFF", "#123456"]
+        #expect(corpus.count == 23, "non-vacuity: the corpus is the size it looks")
+
+        for stored in corpus {
+            let iosMenu = TagSupport.swatchStripOptions(CadenceColorPalette.colors, draft: stored, fallback: nil)
+            #expect(iosMenu == CadenceColorPalette.offeredColors(for: stored), "the platforms disagree for \(stored)")
+            #expect(iosMenu.contains { CadenceColorPalette.matches($0, stored) }, "a context wearing \(stored) shows nothing selected")
+        }
+    }
+}
+
 // MARK: - T-262: the last five hand-typed seeds on the macOS surface
 
 /// The `@State` colour seeds that sat beside a model default and re-typed its hex.
