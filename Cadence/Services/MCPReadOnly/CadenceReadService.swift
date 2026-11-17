@@ -882,7 +882,7 @@ final class CadenceReadService {
             hits += noteDocs.compactMap { doc in
                 let tagText = doc.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
                 guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: [doc.title, searchableBody(of: doc), doc.area?.name ?? "", doc.project?.name ?? "", tagText]) else { return nil }
-                return CadenceSearchHit(entityType: "document", entityId: doc.id.uuidString, title: doc.displayTitle, subtitle: documentContainer(doc)?.name ?? "No container", excerpt: excerpt(doc.content), score: score)
+                return CadenceSearchHit(entityType: "document", entityId: doc.id.uuidString, title: doc.displayTitle, subtitle: documentContainer(doc)?.name ?? "No container", excerpt: excerpt(searchableBody(of: doc)), score: score)
             }
         }
 
@@ -891,7 +891,7 @@ final class CadenceReadService {
                 let key = note.kind == .daily ? note.dateKey : (note.kind == .weekly ? note.weekKey : "notepad permanent note")
                 let tagText = note.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
                 guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: [key, note.title, searchableBody(of: note), tagText]) else { return nil }
-                return CadenceSearchHit(entityType: noteEntityType(note), entityId: note.id.uuidString, title: note.displayTitle, subtitle: noteSubtitle(note), excerpt: excerpt(note.content), score: score)
+                return CadenceSearchHit(entityType: noteEntityType(note), entityId: note.id.uuidString, title: note.displayTitle, subtitle: noteSubtitle(note), excerpt: excerpt(searchableBody(of: note)), score: score)
             }
         }
 
@@ -907,7 +907,7 @@ final class CadenceReadService {
                     entityId: note.id.uuidString,
                     title: title,
                     subtitle: noteSubtitle(note),
-                    excerpt: excerpt(note.content),
+                    excerpt: excerpt(searchableBody(of: note)),
                     score: score
                 )
             }
@@ -917,7 +917,7 @@ final class CadenceReadService {
             hits += notes.compactMap { note in
                 let tagText = note.sortedTags.flatMap { [$0.name, $0.slug] }.joined(separator: " ")
                 guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: [note.displayTitle, searchableBody(of: note), noteKey(note) ?? "", tagText]) else { return nil }
-                return CadenceSearchHit(entityType: noteEntityType(note), entityId: note.id.uuidString, title: note.displayTitle, subtitle: noteSubtitle(note), excerpt: excerpt(note.content), score: score)
+                return CadenceSearchHit(entityType: noteEntityType(note), entityId: note.id.uuidString, title: note.displayTitle, subtitle: noteSubtitle(note), excerpt: excerpt(searchableBody(of: note)), score: score)
             }
         }
 
@@ -1127,7 +1127,7 @@ final class CadenceReadService {
             container: documentContainer(note),
             folderPath: note.kind == .list ? CadenceNoteFolderPath.normalized(note.folderPath) : nil,
             updatedAt: format(note.updatedAt),
-            excerpt: excerpt(note.content),
+            excerpt: excerpt(searchableBody(of: note)),
             tags: tagSummaries(note.sortedTags)
         )
     }
@@ -1298,13 +1298,13 @@ final class CadenceReadService {
             title: doc.displayTitle,
             container: documentContainer(doc),
             updatedAt: format(doc.updatedAt),
-            excerpt: excerpt(doc.content),
+            excerpt: excerpt(searchableBody(of: doc)),
             tags: tagSummaries(doc.sortedTags)
         )
     }
 
     private func notePayload(_ note: Note, key: String?) -> CadenceNotePayload {
-        CadenceNotePayload(id: note.id.uuidString, kind: note.kind.rawValue, key: key, content: note.content, updatedAt: format(note.updatedAt), excerpt: excerpt(note.content), tags: tagSummaries(note.sortedTags))
+        CadenceNotePayload(id: note.id.uuidString, kind: note.kind.rawValue, key: key, content: note.content, updatedAt: format(note.updatedAt), excerpt: excerpt(searchableBody(of: note)), tags: tagSummaries(note.sortedTags))
     }
 
     private func tagSummaries(_ tags: [Tag]) -> [CadenceTagSummary] {
@@ -1606,6 +1606,8 @@ final class CadenceReadService {
     /// which `CadenceMCPServer` does not compile, so this reads the same split it is built on.
     /// Every note and document search here scores this instead of `content`, or a query for
     /// `tags` returns every tagged note. Tags stay findable by name and slug through `tagText`.
+    /// Every note and document `excerpt` (search hits, summaries, core-note payloads) reads it too,
+    /// or each one opens on `--- tags: [...] ---` ([[T-18311]]); a payload's `content` stays raw.
     private func searchableBody(of note: Note) -> String {
         MarkdownMetadataParser.splitFrontmatter(in: note.content).body
     }

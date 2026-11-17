@@ -1404,6 +1404,40 @@ struct CadenceReadServiceTests {
         #expect(Set(try service.search(query: "quarterly", scopes: ["notes"]).items.map(\.entityId)) == all)
     }
 
+    /// T-18311: a tagged note's or document's `excerpt` opens on its body, never the hidden
+    /// `--- tags: [...] ---` block -- in every search scope, both list summaries, a note's detail
+    /// summary and a core-note payload. The payload's `content` is still the raw text.
+    @Test func noteAndDocumentExcerptsSkipTheHiddenTagFrontmatter() throws {
+        let fixture = try Fixture()
+        let frontmatter = "---\ntags: [\"errand\"]\n---\n\n"
+        let doc = Note(kind: .list, title: "Groceries", content: frontmatter + "Quarterly restock list")
+        doc.project = fixture.project
+        let daily = Note(kind: .daily, title: "", content: frontmatter + "Quarterly review prep", dateKey: "2026-11-16")
+        let meeting = Note(kind: .meeting, title: "Planning sync", content: frontmatter + "Quarterly targets agreed", calendarEventID: "event-18311")
+        for note in [doc, daily, meeting] { fixture.modelContext.insert(note) }
+        try fixture.modelContext.save()
+        let bodies = [
+            doc.id.uuidString: "Quarterly restock list",
+            daily.id.uuidString: "Quarterly review prep",
+            meeting.id.uuidString: "Quarterly targets agreed",
+        ]
+        let service = fixture.service
+
+        for scope in ["documents", "core_notes", "event_notes", "notes"] {
+            let hits = try service.search(query: "quarterly", scopes: [scope]).items
+            #expect(!hits.isEmpty, "scope \(scope)")
+            for hit in hits { #expect(hit.excerpt == bodies[hit.entityId], "scope \(scope)") }
+        }
+        #expect(try service.listDocuments(query: "quarterly").items.map(\.excerpt) == ["Quarterly restock list"])
+        let notes = try service.listNotes(options: .init(query: "quarterly")).items
+        #expect(notes.count == 3)
+        for note in notes { #expect(note.excerpt == bodies[note.id]) }
+        #expect(try service.getNote(noteID: meeting.id.uuidString).summary.excerpt == "Quarterly targets agreed")
+        let dailyPayload = try #require(try service.coreNotes(dateKey: "2026-11-16").dailyNote)
+        #expect(dailyPayload.excerpt == "Quarterly review prep")
+        #expect(dailyPayload.content == frontmatter + "Quarterly review prep")
+    }
+
     @MainActor
     private final class Fixture {
         let container: ModelContainer
