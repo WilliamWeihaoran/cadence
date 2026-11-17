@@ -103,6 +103,60 @@ struct CadenceEditorLinkShortcutTests {
     }
 }
 
+/// [[T-18153]]. **The note editor's Divider key is Cmd+Option+L on both platforms, not Cmd+Option+D.**
+///
+/// macOS and iPadOS both give Cmd+Option+D to the Dock before the app sees the key, so a D binding
+/// inserted nothing. The Mac table is driven as behaviour; the iPad table is in `Cadence/iOS/`,
+/// which this macOS target does not compile, so its half is a source scan for the same input.
+@Suite
+@MainActor
+struct CadenceEditorDividerShortcutTests {
+    @Test func commandOptionLInsertsTheDivider() throws {
+        let textView = NSTextView()
+        textView.string = "a"
+        textView.setSelectedRange(NSRange(location: 1, length: 0))
+        let expected = MarkdownFormatCommandSupport.apply(.divider, text: "a", selection: NSRange(location: 1, length: 0)).text
+
+        #expect(MarkdownKeyboardShortcutSupport.handle(try keyEvent("l", [.command, .option]), in: textView))
+        #expect(textView.string == expected)
+        #expect(textView.string.contains("---"))
+    }
+
+    @Test func commandOptionDIsNoLongerTheDividerKey() throws {
+        let textView = NSTextView()
+        textView.string = "a"
+        textView.setSelectedRange(NSRange(location: 1, length: 0))
+
+        #expect(!MarkdownKeyboardShortcutSupport.handle(try keyEvent("d", [.command, .option]), in: textView))
+        #expect(textView.string == "a")
+    }
+
+    @Test func theiPadTableBindsTheSameInput() throws {
+        let editor = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownTextView.swift"))
+        let divider = "[.command, .alternate], MarkdownFormatCommandTitle.sentenceCase(for: .divider)"
+        #expect(editor.contains("command(\"l\", \(divider)"))
+        #expect(!editor.contains("command(\"d\", [.command, .alternate],"))
+        #expect(editor.components(separatedBy: "sentenceCase(for: .divider)").count - 1 == 1)
+    }
+
+    private func keyEvent(_ characters: String, _ flags: NSEvent.ModifierFlags) throws -> NSEvent {
+        try #require(
+            NSEvent.keyEvent(
+                with: .keyDown,
+                location: .zero,
+                modifierFlags: flags,
+                timestamp: 0,
+                windowNumber: 0,
+                context: nil,
+                characters: characters,
+                charactersIgnoringModifiers: characters,
+                isARepeat: false,
+                keyCode: characters == "l" ? 37 : 2
+            )
+        )
+    }
+}
+
 /// [[T-8766]]. **On iPad, Cmd+K opens Search, as it does on the Mac.** `Cadence/iOS/` is invisible
 /// to this macOS target and a hardware key cannot be pressed from it, so the wiring is read from
 /// source: the root shell binds plain Cmd+K to a button that routes both shells to Search, and the

@@ -69,7 +69,8 @@ final class iOSMarkdownTextView: UITextView {
             command("9", [.command, .shift], MarkdownFormatCommandTitle.sentenceCase(for: .quote), #selector(applyQuoteCommand)),
             command("t", [.command, .shift], MarkdownFormatCommandTitle.sentenceCase(for: .todoList), #selector(applyChecklistCommand)),
             command("c", [.command, .alternate], MarkdownFormatCommandTitle.sentenceCase(for: .codeBlock), #selector(applyCodeBlockCommand)),
-            command("d", [.command, .alternate], MarkdownFormatCommandTitle.sentenceCase(for: .divider), #selector(applyDividerCommand)),
+            // T-18153: Cmd+Option+L, matching macOS. iPadOS gives Cmd+Option+D to the Dock.
+            command("l", [.command, .alternate], MarkdownFormatCommandTitle.sentenceCase(for: .divider), #selector(applyDividerCommand)),
             command("n", [.command, .alternate], MarkdownFormatCommandTitle.sentenceCase(for: .noteLink), #selector(applyNoteLinkCommand)),
             command("r", [.command, .alternate], MarkdownFormatCommandTitle.sentenceCase(for: .taskReference), #selector(applyTaskReferenceCommand)),
             // No `MarkdownFormatCommand` case: these drive `indentationCommandHandler`, not

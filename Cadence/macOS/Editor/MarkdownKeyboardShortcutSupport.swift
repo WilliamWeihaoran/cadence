@@ -82,7 +82,9 @@ enum MarkdownKeyboardShortcutSupport {
             return apply(.todoList, in: textView)
         case ("c", [.command, .option]):
             return apply(.codeBlock, in: textView)
-        case ("d", [.command, .option]):
+        case ("l", [.command, .option]):
+            // T-18153: Cmd+Option+L, not D. macOS gives Cmd+Option+D to the Dock (hiding on/off)
+            // before the app sees the key, so a D binding here never fired. Same key as iPad.
             return apply(.divider, in: textView)
         case ("n", [.command, .option]):
             return apply(.noteLink, in: textView)
