@@ -297,14 +297,19 @@ struct TaskEmbedFieldEditorPopover: View {
         HStack(spacing: 8) {
             fieldLabel("Time")
             Spacer()
+            // [[T-18342]]: the time is drawn beside the stepper, not as its label. It used to be
+            // only the label, and `.labelsHidden()` hid it, so the row showed bare arrows. The
+            // hidden label still names the stepper for VoiceOver.
+            Text(scheduledTimeLabel)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(task.scheduledStartMin >= 0 ? Theme.text : Theme.dim)
+                .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize()
             Stepper(value: scheduledStartBinding, in: 0...1425, step: 15) {
-                Text(scheduledTimeLabel)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(task.scheduledStartMin >= 0 ? Theme.text : Theme.dim)
-                    .monospacedDigit()
+                Text("Time \(scheduledTimeLabel)")
             }
             .labelsHidden()
-            .frame(width: 84)
 
             if task.scheduledStartMin >= 0 {
                 Button {

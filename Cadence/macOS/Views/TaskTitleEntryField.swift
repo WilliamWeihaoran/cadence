@@ -244,13 +244,9 @@ struct TaskTitleEntryField: View {
     }
 
     private var tildePreview: some View {
-        HStack(spacing: 4) {
+        HStack(alignment: .lastTextBaseline, spacing: 4) {
             if !title.isEmpty {
-                Text(title)
-                    .font(previewFont)
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                    .fixedSize()
+                inlineShortcutPreviewTitle
             }
             Text("~")
                 .font(.system(size: 14, weight: .semibold))
@@ -259,6 +255,7 @@ struct TaskTitleEntryField: View {
                 .padding(.vertical, 2)
                 .background(Theme.blue)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
+                .fixedSize()
                 .popover(
                     isPresented: Binding(
                         get: { tildeMode != .none },
@@ -292,13 +289,9 @@ struct TaskTitleEntryField: View {
     }
 
     private var tagPreview: some View {
-        HStack(spacing: 4) {
+        HStack(alignment: .lastTextBaseline, spacing: 4) {
             if !title.isEmpty {
-                Text(title)
-                    .font(previewFont)
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                    .fixedSize()
+                inlineShortcutPreviewTitle
             }
             Text("#")
                 .font(.system(size: 14, weight: .semibold))
@@ -307,6 +300,7 @@ struct TaskTitleEntryField: View {
                 .padding(.vertical, 2)
                 .background(Theme.purple)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
+                .fixedSize()
                 .popover(
                     isPresented: Binding(
                         get: { isTagMode },
@@ -338,33 +332,62 @@ struct TaskTitleEntryField: View {
         )
     }
 
+    /// **[[T-18341]].** The title under the `~`/`#` badge, wrapped to the field's own `lineLimit`.
+    /// It was `.lineLimit(1).fixedSize()`, which in the board composer (`1...3`) drew one line
+    /// wider than the column while the wrapped field under it sat at opacity 0.
+    private var inlineShortcutPreviewTitle: some View {
+        Text(title)
+            .font(previewFont)
+            .foregroundStyle(Theme.text)
+            .lineLimit(lineLimit)
+            .truncationMode(.head)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// **[[T-18341]].** One `Text` in the field's own words and spacing, so it wraps where the
+    /// field (whose ink is clear under it) wraps, and stops at the field's `lineLimit`. It was an
+    /// `HStack` of `.fixedSize()` pieces, which never wrapped and ran past the composer card.
+    /// Middle truncation keeps both marks visible in the single-line New Task sheet.
     private var priorityShortcutPreview: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 0) {
             if let segments = priorityShortcutSegments {
-                if !segments.leadingMarker.isEmpty {
-                    priorityShortcutMarker(segments.leadingMarker, priority: segments.priority)
-                }
-                if !segments.title.isEmpty {
-                    Text(segments.title)
-                        .font(previewFont)
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-                        .fixedSize()
-                }
-                if !segments.trailingMarker.isEmpty {
-                    priorityShortcutMarker(segments.trailingMarker, priority: segments.priority)
-                }
+                Text(priorityShortcutPreviewText(segments))
+                    .font(previewFont)
+                    .lineLimit(lineLimit)
+                    .truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
     }
 
-    private func priorityShortcutMarker(_ marker: String, priority: TaskPriority) -> some View {
-        Text(marker)
-            .font(previewFont)
-            .foregroundStyle(Theme.priorityColor(priority))
-            .lineLimit(1)
-            .fixedSize()
+    private func priorityShortcutPreviewText(_ segments: TaskTitlePriorityShortcutSegments) -> AttributedString {
+        Self.priorityShortcutPreviewRuns(segments).reduce(into: AttributedString()) { text, run in
+            var piece = AttributedString(run.text)
+            piece.foregroundColor = run.isMarker ? Theme.priorityColor(segments.priority) : Theme.text
+            text += piece
+        }
+    }
+
+    struct PriorityShortcutPreviewRun: Equatable {
+        let text: String
+        let isMarker: Bool
+    }
+
+    /// The preview's pieces in reading order, each after the first led by one space (the gap the
+    /// field holds between them when typed as `call mom !!`, and the old `HStack`'s 4pt otherwise),
+    /// so the joined text wraps at the same words the field does.
+    static func priorityShortcutPreviewRuns(
+        _ segments: TaskTitlePriorityShortcutSegments
+    ) -> [PriorityShortcutPreviewRun] {
+        let pieces = [
+            PriorityShortcutPreviewRun(text: segments.leadingMarker, isMarker: true),
+            PriorityShortcutPreviewRun(text: segments.title, isMarker: false),
+            PriorityShortcutPreviewRun(text: segments.trailingMarker, isMarker: true),
+        ].filter { !$0.text.isEmpty }
+        return pieces.enumerated().map { index, run in
+            index == 0 ? run : PriorityShortcutPreviewRun(text: " " + run.text, isMarker: run.isMarker)
+        }
     }
 
     private func moveTagHighlight(by offset: Int) {

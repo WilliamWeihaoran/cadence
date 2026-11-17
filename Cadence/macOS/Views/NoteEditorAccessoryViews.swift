@@ -129,7 +129,11 @@ struct NoteEmptyBodyPlaceholder: View {
                     .allowsHitTesting(false)
 
                 if !templates.isEmpty {
-                    HStack(spacing: 4) {
+                    // [[T-18343]]: wraps instead of running off the editor. This was one `HStack`
+                    // of fixed-size names, so a long retitled template pushed the rest past the
+                    // right edge where they could not be clicked. Each name carries its own `·`
+                    // so a separator never ends a line, and a name wider than the editor truncates.
+                    CadenceWrappingHStack(spacing: 4, lineSpacing: 2) {
                         Text("Start with")
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.dim)
@@ -137,18 +141,22 @@ struct NoteEmptyBodyPlaceholder: View {
                             .allowsHitTesting(false)
 
                         ForEach(Array(templates.enumerated()), id: \.element.id) { index, template in
-                            if index > 0 {
-                                Text("·")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(Theme.dim)
-                                    .allowsHitTesting(false)
+                            HStack(spacing: 4) {
+                                if index > 0 {
+                                    Text("·")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Theme.dim)
+                                        .fixedSize()
+                                        .allowsHitTesting(false)
+                                }
+                                NoteTemplateTextButton(template: template) { onApply(template) }
                             }
-                            NoteTemplateTextButton(template: template) { onApply(template) }
                         }
                     }
                 }
             }
             .padding(.leading, MarkdownEditorMetrics.firstTextColumnInset)
+            .padding(.trailing, MarkdownEditorMetrics.textInset)
             .padding(.top, MarkdownEditorMetrics.toolbarHeight + MarkdownEditorMetrics.textInset)
         }
     }
@@ -168,7 +176,7 @@ private struct NoteTemplateTextButton: View {
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(isHovered ? Theme.text : Theme.muted)
                 .lineLimit(1)
-                .fixedSize()
+                .truncationMode(.tail)
                 .padding(.horizontal, 4)
                 .padding(.vertical, 2)
                 .background(

@@ -19,7 +19,8 @@ import SwiftUI
 /// per-item width clamp, below — is equally unreachable, for the same reason. None of that makes
 /// this file dead: five `Cadence/iOS/` files call it, once each (`iOSTaskViews.swift`,
 /// `iOSAINoteActionsViews.swift`, `iOSFocusView.swift`, `iOSInboxRemindersSection.swift`,
-/// `iOSTaskDetailComponents.swift`). A future "which files have no
+/// `iOSTaskDetailComponents.swift`), plus `CadenceBoardLedgerCard.swift` and the Mac's empty-note
+/// "Start with" template row (`NoteEditorAccessoryViews.swift`, [[T-18343]]). A future "which files have no
 /// test" sweep should read this comment before re-filing the gap — it is an adapter with no seam,
 /// already fully covered at the layer that can be covered.
 struct CadenceWrappingHStack: Layout {

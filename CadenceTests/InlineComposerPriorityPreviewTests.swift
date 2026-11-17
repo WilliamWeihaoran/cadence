@@ -85,13 +85,19 @@ struct InlineComposerPriorityPreviewTests {
         #expect(TaskTitleSupport.priorityShortcutSegments(in: "email! alice") == nil)
     }
 
-    /// **T-16586.** The field draws both ends' marks, not one chosen by placement.
+    /// **T-16586.** The field draws both ends' marks, not one chosen by placement. Since
+    /// [[T-18341]] the preview is one wrapping `Text` built from `priorityShortcutPreviewRuns`, so
+    /// both marks are pinned as marker runs there and the view is pinned to draw those runs.
     @Test func theTitleFieldDrawsTheMarkAtEachEnd() throws {
+        let segments = try #require(TaskTitleSupport.priorityShortcutSegments(in: "!! ship it !!!"))
+        let markers = TaskTitleEntryField.priorityShortcutPreviewRuns(segments).filter(\.isMarker)
+        #expect(markers.map(\.text) == ["!!", " !!!"])
+
         let source = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TaskTitleEntryField.swift")
         )
-        #expect(source.contains("priorityShortcutMarker(segments.leadingMarker, priority: segments.priority)"))
-        #expect(source.contains("priorityShortcutMarker(segments.trailingMarker, priority: segments.priority)"))
+        #expect(source.contains("Self.priorityShortcutPreviewRuns(segments)"))
+        #expect(source.contains("Theme.priorityColor(segments.priority)"))
     }
 }
 #endif
