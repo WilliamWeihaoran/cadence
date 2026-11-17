@@ -149,9 +149,17 @@ enum CadenceUITestStoreDirectory {
     /// destructive no-argument entry points, which is why it cost nothing; `deleteAllBackups()`
     /// written in a unit test was one line away from deleting their real backups.
     static func isRunningTests(in environment: [String: String]) -> Bool {
+        isXCTestHost(in: environment) || environment["CADENCE_UI_TEST_MODE"] == "1"
+    }
+
+    /// The narrower half of `isRunningTests`: this process is the hosted XCTest app itself, not an
+    /// app some runner or script launched in UI-test mode. `XCTestConfigurationFilePath` is set in
+    /// the process XCTest injects into, never in the app a `CadenceUITests` runner launches, so a
+    /// `CADENCE_UI_TEST_MODE=1` launch answers `false` here and `true` above ([[T-18294]]: the
+    /// quick-capture hotkey stays live for those launches, which exercise the real capture path).
+    static func isXCTestHost(in environment: [String: String]) -> Bool {
         environment["XCTestConfigurationFilePath"] != nil ||
-            environment["XCTestSessionIdentifier"] != nil ||
-            environment["CADENCE_UI_TEST_MODE"] == "1"
+            environment["XCTestSessionIdentifier"] != nil
     }
 
     /// The store directory this launch must use **instead of** the app group's, or `nil` when it

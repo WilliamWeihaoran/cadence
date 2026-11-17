@@ -64,6 +64,31 @@ struct CadenceQuickCaptureHotKeySurfaceTests {
         #expect(source.contains("QuickCaptureHotKeyCopy.shortcutSymbol"))
     }
 
+    /// T-18294. The hosted XCTest app is the one launch that must not take ⌃Space: it runs
+    /// `CadenceAppDelegate`'s launch, and the owner's own Cadence holds the key. Each XCTest
+    /// spelling alone skips; UI-test mode and the shipping app keep it. Literal environments, so
+    /// nothing here registers anything.
+    @Test func onlyTheXCTestHostSkipsTheHotKeyRegistration() {
+        #expect(!GlobalHotKeyManager.shouldRegister(in: ["XCTestConfigurationFilePath": "/tmp/x.xctestconfiguration"]))
+        #expect(!GlobalHotKeyManager.shouldRegister(in: ["XCTestSessionIdentifier": "T-18294"]))
+        #expect(GlobalHotKeyManager.shouldRegister(in: ["CADENCE_UI_TEST_MODE": "1"]))
+        #expect(GlobalHotKeyManager.shouldRegister(in: ["CADENCE_UI_TEST_MODE": "1", "CADENCE_UI_TEST_STORE_ID": "agent"]))
+        #expect(GlobalHotKeyManager.shouldRegister(in: [:]))
+    }
+
+    /// The same answer for the process actually running these tests, which is the one the app
+    /// delegate's launch asked: it carries an XCTest variable, so the launch did not register.
+    @Test func thisTestHostDidNotTakeTheHotKeyAtLaunch() {
+        let environment = ProcessInfo.processInfo.environment
+        #expect(
+            environment["XCTestConfigurationFilePath"] != nil
+                || environment["XCTestSessionIdentifier"] != nil,
+            "this process carries neither XCTest variable, so the assertions below prove nothing"
+        )
+        #expect(!GlobalHotKeyManager.shouldRegister(in: environment))
+        #expect(!GlobalHotKeyManager.shared.isRegistered)
+    }
+
     /// Both refusal paths in `GlobalHotKeyManager.registerIfNeeded` publish, rather than only
     /// logging. A `logger.error` with no `publish` beside it is exactly the defect this closes.
     @Test func bothRegistrationRefusalsPublishAFailure() throws {

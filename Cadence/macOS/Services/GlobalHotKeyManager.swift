@@ -14,7 +14,21 @@ final class GlobalHotKeyManager {
 
     private init() {}
 
+    /// [[T-18294]]. The hosted `CadenceTests` app runs `CadenceAppDelegate`'s launch, so without
+    /// this a test run took the owner's system-wide ⌃Space from their own Cadence and could open
+    /// `QuickTaskPanelController.shared` inside the test process. Only the XCTest host is skipped:
+    /// a `CADENCE_UI_TEST_MODE=1` launch (`run-macos-app.sh`, `CadenceUITests`) keeps the key,
+    /// because those launches exercise the real capture path. Pure over its input so the decision
+    /// is tested with literal environments rather than by registering a real hotkey.
+    static func shouldRegister(in environment: [String: String]) -> Bool {
+        !CadenceUITestStoreDirectory.isXCTestHost(in: environment)
+    }
+
+    /// Whether this process currently holds the Carbon registration.
+    var isRegistered: Bool { hotKeyRef != nil }
+
     func registerIfNeeded() {
+        guard Self.shouldRegister(in: ProcessInfo.processInfo.environment) else { return }
         guard hotKeyRef == nil else { return }
 
         var eventType = EventTypeSpec(
