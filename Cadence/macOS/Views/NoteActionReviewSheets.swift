@@ -281,6 +281,22 @@ private struct AITaskDraftRow: View {
                 }
             }
 
+            // [[T-18371]]: the checklist Create writes, which iOS's card has always listed and this
+            // one never did -- approving a draft made subtasks nobody was shown.
+            let subtasks = CadenceAIDraftReview.subtaskLines(for: draft)
+            if !subtasks.isEmpty {
+                AITaskDraftCaptioned(label: "Subtasks") {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(Array(subtasks.enumerated()), id: \.offset) { _, title in
+                            Text(title)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.muted)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+            }
+
             if !validation.isValid {
                 Text(validation.errors.joined(separator: " "))
                     .font(.system(size: 11))

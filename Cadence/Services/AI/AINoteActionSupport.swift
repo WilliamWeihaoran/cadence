@@ -249,6 +249,20 @@ struct CadenceAIDraftReview: Equatable, Sendable {
         )
     }
 
+    /// **[[T-18371]].** The subtasks a draft's card lists, on both cards: exactly the titles
+    /// Create writes. `CadenceTaskMutationSupport.insertSubtask` normalizes each title and drops a
+    /// blank one, so the card does the same through the same `CadenceTitleNormalization` -- a
+    /// card must not promise a subtask Create will not make, nor show one spelled differently.
+    ///
+    /// The Mac card drew no subtasks at all while iOS listed them, so approving a draft on the Mac
+    /// created checklist items the user was never shown. Nothing about pointer or width explains
+    /// that ([[T-8201]]); both cards read this now.
+    static func subtaskLines(for draft: AITaskDraft) -> [String] {
+        draft.subtaskTitles
+            .map(CadenceTitleNormalization.normalized)
+            .filter { !$0.isEmpty }
+    }
+
     func isSelected(_ draft: AITaskDraft) -> Bool {
         selectedIDs.contains(draft.id)
     }

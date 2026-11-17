@@ -317,6 +317,47 @@ struct AINoteActionReviewTests {
         #expect(created.first?.project?.id == project.id)
     }
 
+    /// **[[T-18371]].** The subtasks a card lists are exactly the subtasks Create writes: trimmed,
+    /// blanks dropped, in the model's order. The Mac card listed none of them, so this is the list
+    /// both cards now draw.
+    @Test func theSubtasksACardListsAreExactlyTheOnesCreateWrites() throws {
+        let modelContext = try emptyStore()
+        let withSubtasks = AITaskDraft(
+            title: "Plan the offsite",
+            priority: "none",
+            dueDate: "",
+            scheduledDate: "",
+            subtaskTitles: ["  Book the room ", "", "   ", "Send the agenda\n"]
+        )
+
+        let listed = CadenceAIDraftReview.subtaskLines(for: withSubtasks)
+        #expect(listed == ["Book the room", "Send the agenda"])
+        #expect(CadenceAIDraftReview.subtaskLines(for: draft(title: "No checklist")).isEmpty)
+
+        let created = try CadenceAIDraftReview(drafts: [withSubtasks]).applyApproved(
+            areas: [],
+            projects: [],
+            modelContext: modelContext
+        )
+        let written = (try #require(created.first).subtasks ?? [])
+            .sorted { $0.order < $1.order }
+            .map(\.title)
+        #expect(written == listed)
+    }
+
+    /// **[[T-18371]].** Both cards list the draft's subtasks, and both through the shared list --
+    /// neither reads the model's raw `subtaskTitles`, which carries the blanks Create drops.
+    @Test func bothDraftCardsListTheSubtasksThroughTheSharedList() throws {
+        try expectOccurrences(of: "CadenceAIDraftReview.subtaskLines(for: draft)", at: [
+            Self.iosActionsView: 2,
+            Self.macReviewSheet: 1,
+        ])
+        try expectOccurrences(of: "draft.subtaskTitles", at: [
+            Self.iosActionsView: 0,
+            Self.macReviewSheet: 0,
+        ])
+    }
+
     /// **[[T-17162]].** Created drafts reconcile reminders once, over the sheet's context. A
     /// refused review writes nothing and reconciles nothing.
     @Test func createdDraftsReconcileRemindersAndARefusalDoesNot() throws {

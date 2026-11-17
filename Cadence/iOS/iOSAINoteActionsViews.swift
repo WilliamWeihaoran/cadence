@@ -427,7 +427,8 @@ private struct iOSAITaskDraftCard: View {
                 chipRow
             }
 
-            if !draft.subtaskTitles.isEmpty {
+            // [[T-18371]]: what Create writes, read where the Mac card reads it.
+            if !CadenceAIDraftReview.subtaskLines(for: draft).isEmpty {
                 iOSEditorDivider()
                 subtaskRow
             }
@@ -592,7 +593,7 @@ private struct iOSAITaskDraftCard: View {
     private var subtaskRow: some View {
         VStack(alignment: .leading, spacing: 5) {
             iOSEditorInlineLabel(label: "Subtasks", systemImage: "checklist")
-            ForEach(Array(draft.subtaskTitles.enumerated()), id: \.offset) { _, title in
+            ForEach(Array(CadenceAIDraftReview.subtaskLines(for: draft).enumerated()), id: \.offset) { _, title in
                 Text(title)
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.muted)
