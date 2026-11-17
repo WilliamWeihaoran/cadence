@@ -103,8 +103,19 @@ enum RootCommandHandler {
         RootCommandActionSupport.handleSearchSelection(result, context: context)
     }
 
-    static func handleMenuCommand(_ command: GlobalSearchCommand, context: RootSearchSelectionContext, hasModal: Bool) {
-        RootCommandActionSupport.handleMenuCommand(command, context: context, hasModal: hasModal)
+    /// [[T-18440]]: the panel defaults to the singleton here, as in `handleViewMenuCommand`.
+    static func handleMenuCommand(
+        _ command: GlobalSearchCommand,
+        context: RootSearchSelectionContext,
+        hasModal: Bool,
+        isQuickTaskPanelVisible: Bool = QuickTaskPanelController.shared.isVisible
+    ) {
+        RootCommandActionSupport.handleMenuCommand(
+            command,
+            context: context,
+            hasModal: hasModal,
+            isQuickTaskPanelVisible: isQuickTaskPanelVisible
+        )
     }
 }
 #endif

@@ -217,10 +217,22 @@ enum RootCommandActionSupport {
     /// (z 10 beneath its 20) and Settings swapped the page behind it, and the next Return -- the
     /// one that commits a typed title -- confirmed a delete the user could no longer see. View
     /// ▸ items had `RootViewMenuGate` for exactly this; these two had nothing.
-    static func handleMenuCommand(_ command: GlobalSearchCommand, context: RootSearchSelectionContext, hasModal: Bool) {
+    ///
+    /// **[[T-18440]] — nor over the quick-task panel.** The monitor hands every Cmd-key on while
+    /// the global ⌃Space panel is up, so Cmd+N closed it and fronted the main window with a second,
+    /// blank New Task panel, and Cmd+, swapped the page behind it. The gate is the View items'
+    /// own; Cmd+K is deliberately not an input, since these two dismiss the palette as a pick
+    /// from it does. The panel is a parameter, as in [[T-16050]], so a test can pin it.
+    static func handleMenuCommand(
+        _ command: GlobalSearchCommand,
+        context: RootSearchSelectionContext,
+        hasModal: Bool,
+        isQuickTaskPanelVisible: Bool
+    ) {
         handleMenuCommand(
             command,
             hasModal: hasModal,
+            isQuickTaskPanelVisible: isQuickTaskPanelVisible,
             clearAppEditingFocus: context.clearAppEditingFocus,
             presentTaskCreation: context.presentTaskCreation,
             setSelection: context.setSelection,
@@ -233,12 +245,17 @@ enum RootCommandActionSupport {
     static func handleMenuCommand(
         _ command: GlobalSearchCommand,
         hasModal: Bool,
+        isQuickTaskPanelVisible: Bool,
         clearAppEditingFocus: () -> Void,
         presentTaskCreation: () -> Void,
         setSelection: (SidebarItem) -> Void,
         dismissSearch: () -> Void
     ) {
-        guard !hasModal else { return }
+        guard RootViewMenuGate.runs(
+            hasModal: hasModal,
+            isSearchPresented: false,
+            isQuickTaskPanelVisible: isQuickTaskPanelVisible
+        ) else { return }
         performCommand(
             command,
             clearAppEditingFocus: clearAppEditingFocus,

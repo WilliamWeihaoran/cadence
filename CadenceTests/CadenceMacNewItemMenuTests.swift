@@ -94,6 +94,7 @@ struct CadenceMacNewItemMenuTests {
         RootCommandActionSupport.handleMenuCommand(
             request.command,
             hasModal: false,
+            isQuickTaskPanelVisible: false,
             clearAppEditingFocus: { focusClears += 1 },
             presentTaskCreation: { creations += 1 },
             setSelection: { selections.append($0) },
@@ -104,6 +105,26 @@ struct CadenceMacNewItemMenuTests {
         #expect(dismissals == 1)
         #expect(focusClears == 1)
         #expect(selections.isEmpty)
+    }
+
+    /// **[[T-18440]] — Cmd+N over the global quick-task panel does nothing.** The user is already
+    /// in a New Task form; the menu used to close it and front the main window with a blank one.
+    @Test func newTaskStandsDownOverTheQuickTaskPanel() {
+        var dismissals = 0
+        var creations = 0
+        var focusClears = 0
+        RootCommandActionSupport.handleMenuCommand(
+            CadenceNewItemMenu.newTaskCommand,
+            hasModal: false,
+            isQuickTaskPanelVisible: true,
+            clearAppEditingFocus: { focusClears += 1 },
+            presentTaskCreation: { creations += 1 },
+            setSelection: { _ in },
+            dismissSearch: { dismissals += 1 }
+        )
+        #expect(creations == 0)
+        #expect(dismissals == 0)
+        #expect(focusClears == 0)
     }
 
     /// The scene half: the commands have to be attached, and the window group has to be named for

@@ -57,6 +57,7 @@ struct CadenceMacAppSettingsMenuTests {
         RootCommandActionSupport.handleMenuCommand(
             request.command,
             hasModal: false,
+            isQuickTaskPanelVisible: false,
             clearAppEditingFocus: {},
             presentTaskCreation: { creations += 1 },
             setSelection: { selections.append($0) },
@@ -112,6 +113,7 @@ struct CadenceMacAppSettingsMenuTests {
             RootCommandActionSupport.handleMenuCommand(
                 command,
                 hasModal: true,
+                isQuickTaskPanelVisible: false,
                 clearAppEditingFocus: { focusClears += 1 },
                 presentTaskCreation: { creations += 1 },
                 setSelection: { selections.append($0) },
@@ -122,6 +124,57 @@ struct CadenceMacAppSettingsMenuTests {
             #expect(dismissals == 0, "\(command)")
             #expect(focusClears == 0, "\(command)")
         }
+    }
+
+    /// **[[T-18440]] — nor over the global quick-task panel.** The root monitor hands every
+    /// Cmd-key on while the ⌃Space panel is up, so Cmd+N put the panel away and fronted the main
+    /// window with a second, blank New Task panel, and Cmd+, swapped the page behind it. Both
+    /// commands, as above; with the panel down the same call runs (the non-vacuity half).
+    @Test func noMenuCommandRunsOverTheQuickTaskPanel() {
+        for command in [CadenceNewItemMenu.newTaskCommand, CadenceAppSettingsMenu.command] {
+            var selections: [SidebarItem] = []
+            var dismissals = 0
+            var creations = 0
+            var focusClears = 0
+            RootCommandActionSupport.handleMenuCommand(
+                command,
+                hasModal: false,
+                isQuickTaskPanelVisible: true,
+                clearAppEditingFocus: { focusClears += 1 },
+                presentTaskCreation: { creations += 1 },
+                setSelection: { selections.append($0) },
+                dismissSearch: { dismissals += 1 }
+            )
+            #expect(selections.isEmpty, "\(command)")
+            #expect(creations == 0, "\(command)")
+            #expect(dismissals == 0, "\(command)")
+            #expect(focusClears == 0, "\(command)")
+
+            RootCommandActionSupport.handleMenuCommand(
+                command,
+                hasModal: false,
+                isQuickTaskPanelVisible: false,
+                clearAppEditingFocus: { focusClears += 1 },
+                presentTaskCreation: { creations += 1 },
+                setSelection: { selections.append($0) },
+                dismissSearch: { dismissals += 1 }
+            )
+            #expect(dismissals == 1, "non-vacuity: \(command) runs with the panel down")
+        }
+    }
+
+    /// [[T-18440]]: the root's arm leaves the panel to the handler's default, the singleton, so
+    /// the gate reads the live panel rather than a constant someone passed.
+    @Test func theRootArmReadsTheLiveQuickTaskPanel() throws {
+        let support = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/Views/macOSRootCommandSupport.swift")
+        #expect(support.contains("enum RootCommandHandler"), "non-vacuity: the scan read the handler")
+        #expect(CadenceSourceScan.matchCount(
+            #"static func handleMenuCommand\([^)]*isQuickTaskPanelVisible: Bool = QuickTaskPanelController\.shared\.isVisible"#,
+            in: support
+        ) == 1)
+        let root = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/macOSRootView.swift")
+        let arm = try #require(CadenceSourceScan.declarationBody(".onChange(of: menuCommandRoute.request?.token)", in: root))
+        #expect(!arm.contains("isQuickTaskPanelVisible:"))
     }
 
     /// **No double fire.** The root key monitor sees Cmd+, before the menu does; it has no arm for
