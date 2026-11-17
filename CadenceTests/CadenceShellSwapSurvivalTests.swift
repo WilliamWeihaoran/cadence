@@ -147,6 +147,7 @@ struct CadenceShellSwapWiringTests {
         for modifier in [
             ".iOSCapturePresentationHost(capturePresenter)",
             ".iOSPageEditorHost()",
+            ".iOSArchiveImportHost()",
             ".environment(placeCarry)"
         ] {
             #expect(body.contains(modifier), "iOSRootView's body no longer applies \(modifier)")
@@ -201,6 +202,9 @@ struct CadenceShellSwapWiringTests {
             "iOSCalendarQuickCreateSheet(": ["iOSPageEditorHost.swift"],
             // [[T-18252]]: six surfaces open an event; only the root's host presents its editor.
             "iOSCalendarEventEditSheet(": ["iOSPageEditorHost.swift"],
+            // [[T-18252]]: Focus's Log Session form and Settings' archive import preview.
+            "iOSFocusLogSessionSheet(": ["iOSPageEditorHost.swift"],
+            "iOSArchiveImportPreviewSheet(": ["iOSArchiveImportSettingsSection.swift"],
             "iOSCreateTaskSheet(": ["iOSCaptureRadialMenu.swift"],
         ]
         var found: [String: Set<String>] = [:]
@@ -264,6 +268,59 @@ struct CadenceShellSwapWiringTests {
         let source = try Self.code("Cadence/iOS/iOSPageEditorHost.swift")
         #expect(source.contains("case event(iOSCalendarEventSelection)"))
         #expect(source.contains("case .event(let selection): return \"event-\\(selection.id)\""))
+    }
+
+    /// [[T-18252]] item (1): Focus's Log Session form is opened on the root's page-editor host, and
+    /// its two exits run on `CadenceFocusSessionOwner` -- never on the screen, which a size-class
+    /// swap may have rebuilt by the time Log or Discard is tapped.
+    @Test func theFocusLogSessionFormIsPresentedByTheRootAndExitsThroughTheSessionOwner() throws {
+        let screen = try Self.code("Cadence/iOS/iOSFocusView.swift")
+        #expect(screen.contains("@Environment(\\.iOSPageEditor) private var pageEditor"))
+        #expect(screen.components(separatedBy: "pageEditor(.focusLogSession(task))").count - 1 == 1,
+                "the Focus screen no longer opens the form on the root's host")
+        #expect(!screen.contains("loggingTask"), "the Focus screen holds the form's presentation again")
+        #expect(!screen.contains(".sheet(item:"), "the Focus screen presents a sheet a resize would dismiss")
+        #expect(!screen.contains("CadenceFocusSupport.logSession("), "the Focus screen logs the session itself again")
+
+        let source = try Self.code("Cadence/iOS/iOSPageEditorHost.swift")
+        #expect(source.contains("case focusLogSession(AppTask)"))
+        #expect(source.contains("case .focusLogSession(let task): return \"focus-log-\\(task.id)\""))
+        let host = try cadenceFunctionBody("private struct iOSPageEditorHostModifier: ViewModifier", in: source)
+        #expect(host.contains("case .focusLogSession(let task):"))
+        #expect(host.contains("focusLogSessionSheet(for: task)"))
+        let sheet = try #require(CadenceSourceScan.declarationBody("func focusLogSessionSheet(", in: source))
+        #expect(sheet.contains("elapsedSeconds: focusSession.timerState.elapsedSeconds()"))
+        #expect(sheet.contains("try focusSession.logSession("))
+        #expect(sheet.contains("focusSession.discardSession()"))
+        #expect(sheet.components(separatedBy: "request = nil").count - 1 == 2, "an exit no longer closes the form")
+    }
+
+    /// [[T-18252]] item (6): Settings' archive import preview -- the chosen file's plan and the mode
+    /// picked for it -- is held and presented by a host on the root. The section starts the flow
+    /// and reads the root's; it holds no flow or presentation of its own.
+    @Test func theArchiveImportPreviewIsHeldAndPresentedByTheRoot() throws {
+        var perFile: [String: Int] = [:]
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence/iOS") {
+            let count = try Self.code(path).components(separatedBy: ".iOSArchiveImportHost()").count - 1
+            if count > 0 { perFile[(path as NSString).lastPathComponent] = count }
+        }
+        #expect(perFile == ["iOSRootView.swift": 1])
+
+        let source = try Self.code("Cadence/iOS/iOSArchiveImportSettingsSection.swift")
+        let section = try cadenceFunctionBody("struct iOSArchiveImportSettingsSection: View", in: source)
+        #expect(section.contains("@Environment(iOSArchiveImportCenter.self) private var importCenter"))
+        #expect(section.contains("flow.preview(result, in: modelContext.container)"))
+        #expect(!section.contains("CadenceArchiveImportFlow()"), "the section owns a flow a resize would drop")
+        for presentation in [".sheet(", ".fullScreenCover(", ".popover("] {
+            #expect(!section.contains(presentation), "the section presents \(presentation) again")
+        }
+
+        let host = try cadenceFunctionBody("private struct iOSArchiveImportHostModifier: ViewModifier", in: source)
+        #expect(host.contains("@State private var center = iOSArchiveImportCenter()"))
+        #expect(host.contains(".environment(center)"))
+        #expect(host.contains(".sheet(isPresented: previewBinding)"))
+        #expect(host.contains("iOSArchiveImportPreviewSheet("))
+        #expect(host.contains("mode: Bindable(center.flow).mode"))
     }
 
     /// [[T-18158]]: the two shells' Notes destinations opt in; Today's inspector does not.

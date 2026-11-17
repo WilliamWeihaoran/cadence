@@ -19,14 +19,22 @@ import UniformTypeIdentifiers
 ///
 /// **Nothing is written until the preview is confirmed.** Choosing a file reads, decodes and fully
 /// validates it and then shows what it would do; the store is untouched until **Import**.
+///
+/// **[[T-18252]]: the flow and its preview belong to the root, not to this section.** An iPad
+/// size-class swap rebuilds the Settings page, and a preview this section presented went with it --
+/// the chosen archive and the mode picked for it thrown away. `iOSArchiveImportHost`, applied once
+/// by `iOSRootView` above the shell switch, holds the flow and presents the preview; this section
+/// starts the flow and shows its sentence, and hears about a commit through the center's count.
 struct iOSArchiveImportSettingsSection: View {
     /// [[T-18149]]: called after an import commits, so the page re-reads its Backups list — an
     /// overwrite has just taken a Before Import backup, and this section's sentence names it.
     var onCommitted: () -> Void = {}
 
     @Environment(\.modelContext) private var modelContext
-    @State private var flow = CadenceArchiveImportFlow()
+    @Environment(iOSArchiveImportCenter.self) private var importCenter
     @State private var isChoosingFile = false
+
+    private var flow: CadenceArchiveImportFlow { importCenter.flow }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -76,26 +84,60 @@ struct iOSArchiveImportSettingsSection: View {
         .fileImporter(isPresented: $isChoosingFile, allowedContentTypes: [.json]) { result in
             flow.preview(result, in: modelContext.container)
         }
-        .sheet(isPresented: previewBinding) {
-            if let plan = flow.plan {
-                iOSArchiveImportPreviewSheet(
-                    plan: plan,
-                    mode: $flow.mode,
-                    isWriting: flow.isWriting,
-                    onCancel: { flow.cancel() },
-                    onConfirm: { if flow.confirm() { onCommitted() } }
-                )
-            }
+        // The commit is the root's; the page that hears it is whichever Settings page now stands.
+        .onChange(of: importCenter.committedCount) { _, _ in
+            onCommitted()
         }
+    }
+}
+
+/// [[T-18252]]: the archive import's flow, held for the scene rather than for the Settings page, and
+/// the count of imports it has committed -- the result channel a rebuilt page reads, since the
+/// section that started an import may not be the one standing when it lands.
+@Observable
+final class iOSArchiveImportCenter {
+    let flow = CadenceArchiveImportFlow()
+    private(set) var committedCount = 0
+
+    func confirm() {
+        if flow.confirm() { committedCount &+= 1 }
+    }
+}
+
+private struct iOSArchiveImportHostModifier: ViewModifier {
+    @State private var center = iOSArchiveImportCenter()
+
+    func body(content: Content) -> some View {
+        content
+            .environment(center)
+            .sheet(isPresented: previewBinding) {
+                if let plan = center.flow.plan {
+                    iOSArchiveImportPreviewSheet(
+                        plan: plan,
+                        mode: Bindable(center.flow).mode,
+                        isWriting: center.flow.isWriting,
+                        onCancel: { center.flow.cancel() },
+                        onConfirm: { center.confirm() }
+                    )
+                }
+            }
     }
 
     /// The sheet is presented by the flow's own state, so dismissing it by any route — the drag
     /// gesture included — drops the archive rather than leaving one this flow would still import.
     private var previewBinding: Binding<Bool> {
         Binding(
-            get: { flow.isPreviewing },
-            set: { if !$0 { flow.cancel() } }
+            get: { center.flow.isPreviewing },
+            set: { if !$0 { center.flow.cancel() } }
         )
+    }
+}
+
+extension View {
+    /// [[T-18252]]: holds the archive import flow and presents its preview. `iOSRootView` applies it
+    /// exactly once, OUTSIDE the `horizontalSizeClass` shell switch.
+    func iOSArchiveImportHost() -> some View {
+        modifier(iOSArchiveImportHostModifier())
     }
 }
 

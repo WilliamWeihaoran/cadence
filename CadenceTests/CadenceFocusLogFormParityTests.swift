@@ -26,6 +26,7 @@ struct CadenceFocusLogFormParityTests {
 
     private static let iosViewPath = "Cadence/iOS/iOSFocusView.swift"
     private static let iosSheetPath = "Cadence/iOS/iOSFocusLogSessionSheet.swift"
+    private static let iosOwnerPath = "Cadence/Shared/CadenceFocusSessionOwner.swift"
     private static let macPopoverPath = "Cadence/macOS/Views/FocusLogSessionPopovers.swift"
     private static let macViewPath = "Cadence/macOS/Views/FocusView.swift"
 
@@ -298,7 +299,8 @@ struct CadenceFocusLogFormParityTests {
         #expect(controls.contains("foreground: CadenceFocusSupport.hasLoggableTime(elapsedSeconds: elapsedSeconds) ? Theme.green : Theme.muted"))
         // The clock is paused before the form reads it, as the Mac pauses before its popover.
         #expect(controls.contains("if timerState.isRunning { timerState.toggle() }"))
-        #expect(controls.contains("loggingTask = task"))
+        // [[T-18252]]: the form is opened on the root's page-editor host, not presented by the screen.
+        #expect(controls.contains("pageEditor(.focusLogSession(task))"))
         #expect(!controls.contains("complete(task)"), "the control still completes in one tap")
 
         // The Mac's own control is the same label and the same rule, read out of its own file so
@@ -358,7 +360,8 @@ struct CadenceFocusLogFormParityTests {
 
     /// Both screens perform the same write, and neither spells the bank itself.
     @Test func bothScreensLogThroughTheOneSharedWrite() throws {
-        for path in [Self.iosViewPath, "Cadence/macOS/Views/FocusSessionSupport.swift"] {
+        // [[T-18252]]: iOS's write is the session owner's, which the root's host calls.
+        for path in [Self.iosOwnerPath, "Cadence/macOS/Views/FocusSessionSupport.swift"] {
             let code = try Self.code(path)
             #expect(code.contains("CadenceFocusSupport.logSession("), "\(path) does not use the shared write")
             #expect(
@@ -371,15 +374,15 @@ struct CadenceFocusLogFormParityTests {
     /// **Only a finished task stops being the session**, on iOS as on the Mac
     /// (`FocusLogSessionAndQuitTests.loggingWithoutCompletingKeepsTheSession`). Logging without
     /// completing leaves the picker on the same task; the advance sits inside `if complete`.
+    /// Since [[T-18252]] the move-on is `CadenceFocusSessionOwner.logSession`'s, and
+    /// `CadenceFocusSessionOwnerTests` drives it for real.
     @Test func theIOSScreenMovesOnOnlyWhenTheLogCompletedTheTask() throws {
-        let view = try Self.code(Self.iosViewPath)
-        let body = try #require(CadenceSourceScan.declarationBody("private func logSession(", in: view))
-        let gate = try #require(body.range(of: "if complete {"), "the iOS screen moves on after every log")
-        let advance = try #require(body.range(of: "adopt(next)"))
-        let ended = try #require(body.range(of: "selectedTarget = nil"))
+        let owner = try Self.code(Self.iosOwnerPath)
+        let body = try #require(CadenceSourceScan.declarationBody("func logSession(", in: owner))
+        let gate = try #require(body.range(of: "if complete {"), "the iOS session moves on after every log")
+        let advance = try #require(body.range(of: "selectedTarget = nextReadyTarget(after: task, in: modelContext)"))
         #expect(gate.upperBound <= advance.lowerBound)
-        #expect(gate.upperBound <= ended.lowerBound)
-        #expect(CadenceSourceScan.matchCount(#"adopt\(next\)"#, in: body) == 1)
+        #expect(CadenceSourceScan.matchCount(#"selectedTarget ="#, in: body) == 1)
     }
 
     // MARK: - T-8734, the notes panel

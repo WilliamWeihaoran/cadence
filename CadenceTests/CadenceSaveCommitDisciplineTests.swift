@@ -3295,9 +3295,10 @@ enum CadenceSaveCommitRule {
         // the `catch`. Pinned by `CadenceNoteMoveCommitTests`.
         // [[T-633]]'s other half — the task sheet's own scope dialog — left with the row chip's,
         // through the same unit and into the same alert.
-        // [[T-636]](c) left too: `iOSFocusView.logSession` puts its reset, its advance and the
-        // dismissal of the log form below the refusal's own `return`, so the stopwatch is cleared
-        // only once the store has the session it measured. ([[T-8732]] moved that screen off the
+        // [[T-636]](c) left too: `CadenceFocusSessionOwner.logSession` puts its reset and its
+        // advance below the shared write's throw, and the root host's form closes only below the
+        // refusal's own `return` ([[T-18252]]), so the stopwatch is cleared only once the store
+        // has the session it measured. ([[T-8732]] moved that screen off the
         // status wrapper's own focus-completion door and onto the shared log write, whose refusal
         // throws rather than answering; the reading is the same. [[T-9702]] then retired that
         // door — named here without backticks because the symbol is gone and a backticked name

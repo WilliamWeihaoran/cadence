@@ -227,6 +227,115 @@ struct CadenceFocusSessionOwnerTests {
         }
     }
 
+    // MARK: - [[T-18252]]: the Log Session form's exits run on the owner
+
+    /// The form is presented by the root, so its confirm runs here: the typed minutes are banked,
+    /// the clock is cleared, the session stays on the task it was logged against, and the record
+    /// goes with the clock.
+    @Test func loggingWithoutCompletingBanksTheTypedMinutesAndKeepsTheSubject() async throws {
+        try await withSuite { defaults in
+            let (task, project, context) = try makeTask("Write the brief")
+            let clock = Clock(epoch)
+            let owner = CadenceFocusSessionOwner(defaults: defaults, clock: { clock.now })
+            startSession(on: task, owner: owner, clock: clock, defaults: defaults)
+            clock.now = epoch.addingTimeInterval(20 * 60)
+            owner.timerState.toggle(now: clock.now)
+
+            try owner.logSession(hours: 0, minutes: 35, complete: false, task: task, in: context)
+
+            #expect(task.actualMinutes == 35)
+            #expect(project.loggedMinutes == 35)
+            #expect(task.status != .done)
+            #expect(owner.timerState.elapsedSeconds(now: clock.now) == 0)
+            #expect(owner.selectedTarget == .task(task.id))
+            #expect(CadenceFocusSessionPersistence.read(from: defaults) == nil)
+        }
+    }
+
+    /// A ticked "Mark task as complete" finishes the task and moves the session to the next ready
+    /// task, read from the store as the screen's list reads it -- so the move-on happens with the
+    /// Focus screen rebuilt, or gone.
+    @Test func loggingAndCompletingMovesTheSessionToTheNextReadyTask() async throws {
+        try await withSuite { defaults in
+            let (task, project, context) = try makeTask("Write the brief")
+            let next = AppTask(title: "Read the replies")
+            next.project = project
+            context.insert(next)
+            try context.save()
+            let clock = Clock(epoch)
+            let owner = CadenceFocusSessionOwner(defaults: defaults, clock: { clock.now })
+            startSession(on: task, owner: owner, clock: clock, defaults: defaults)
+            owner.screenDidDisappear(leaving: .task(task))
+
+            try owner.logSession(hours: 1, minutes: 5, complete: true, task: task, in: context)
+
+            #expect(task.status == .done)
+            #expect(task.actualMinutes == 65)
+            #expect(owner.selectedTarget == .task(next.id))
+            #expect(!owner.timerState.isRunning)
+            #expect(owner.timerState.accumulatedSeconds == 0)
+        }
+    }
+
+    /// Completing the last ready task leaves the session pointing at nothing, as on the Mac.
+    @Test func completingTheOnlyReadyTaskEndsOnNoSubject() async throws {
+        try await withSuite { defaults in
+            let (task, _, context) = try makeTask("Write the brief")
+            let clock = Clock(epoch)
+            let owner = CadenceFocusSessionOwner(defaults: defaults, clock: { clock.now })
+            startSession(on: task, owner: owner, clock: clock, defaults: defaults)
+
+            try owner.logSession(hours: 0, minutes: 10, complete: true, task: task, in: context)
+
+            #expect(task.status == .done)
+            #expect(owner.selectedTarget == nil)
+        }
+    }
+
+    /// T-636(c) and T-566: a refused log moves nothing -- the clock, the subject and the record
+    /// are still there, and the host keeps the form up over the throw.
+    @Test func aRefusedLogLeavesTheClockAndTheRecordToRetry() async throws {
+        try await withSuite { defaults in
+            let (task, _, context) = try makeTask("Write the brief")
+            let clock = Clock(epoch)
+            let owner = CadenceFocusSessionOwner(defaults: defaults, clock: { clock.now })
+            startSession(on: task, owner: owner, clock: clock, defaults: defaults)
+            clock.now = epoch.addingTimeInterval(12 * 60)
+
+            #expect(throws: CommitRefused.self) {
+                try owner.logSession(
+                    hours: 0, minutes: 12, complete: false, task: task, in: context,
+                    commit: { _ in throw CommitRefused() }
+                )
+            }
+
+            #expect(task.actualMinutes == 0)
+            #expect(owner.timerState.isRunning)
+            #expect(owner.timerState.elapsedSeconds(now: clock.now) == 12 * 60)
+            #expect(owner.selectedTarget == .task(task.id))
+            #expect(CadenceFocusSessionPersistence.read(from: defaults)?.taskID == task.id)
+        }
+    }
+
+    /// The form's Discard: the stopwatch is thrown away, nothing is banked, the record goes.
+    @Test func discardingThrowsTheClockAwayAndBanksNothing() async throws {
+        try await withSuite { defaults in
+            let (task, project, _) = try makeTask("Write the brief")
+            let clock = Clock(epoch)
+            let owner = CadenceFocusSessionOwner(defaults: defaults, clock: { clock.now })
+            startSession(on: task, owner: owner, clock: clock, defaults: defaults)
+            clock.now = epoch.addingTimeInterval(30 * 60)
+
+            owner.discardSession()
+
+            #expect(task.actualMinutes == 0)
+            #expect(project.loggedMinutes == 0)
+            #expect(owner.timerState.elapsedSeconds(now: clock.now) == 0)
+            #expect(owner.selectedTarget == .task(task.id))
+            #expect(CadenceFocusSessionPersistence.read(from: defaults) == nil)
+        }
+    }
+
     /// The control itself, read out of both platforms' sources: iOS's session header draws a close
     /// under the Mac's label, and it calls the owner's `endSession` with the screen's subject, the
     /// way the Mac header's `onClose` calls `focusManager.endSession(in:)`.

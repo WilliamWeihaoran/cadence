@@ -159,7 +159,9 @@ struct CadenceTaskStatusEditingSurfaceTests {
         "Cadence/iOS/iOSTaskViews.swift",
         "Cadence/iOS/iOSBoardCards.swift",
         "Cadence/iOS/iOSMarkdownEditingSurface.swift",
-        "Cadence/iOS/iOSFocusView.swift",
+        // [[T-18252]]: the Focus Log Session form's write runs on the session owner, which the
+        // root's page-editor host calls, so the file that holds the write is the one scanned.
+        "Cadence/Shared/CadenceFocusSessionOwner.swift",
         "Cadence/iOS/iOSTaskDetailSheet.swift",
         // [[T-8203]]: the deferred completion's own funnel. Its iOS hop is the wrapper, so it is
         // held to the same three bans as every surface that reaches it.
@@ -185,8 +187,10 @@ struct CadenceTaskStatusEditingSurfaceTests {
     /// is the whole of what this rule asks for; the three bans below still apply to the file, and
     /// the `CadenceFocusSupport.complete(` ban in particular is what keeps the screen from
     /// reaching the unreconciled door directly.
+    /// Since [[T-18252]] that write is `CadenceFocusSessionOwner.logSession`, so the form survives a
+    /// size-class swap that rebuilds the screen.
     private static let sharedFocusLogSurfaces: Set<String> = [
-        "Cadence/iOS/iOSFocusView.swift"
+        "Cadence/Shared/CadenceFocusSessionOwner.swift"
     ]
 
     /// The pure mutation layer's status entry points, called directly. Correct for a service or an

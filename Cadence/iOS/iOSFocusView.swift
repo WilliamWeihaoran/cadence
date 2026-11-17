@@ -36,10 +36,9 @@ struct iOSFocusView: View {
     /// What is typed in the picker's search field ([[T-8733]]), the Mac card's `searchText`.
     @State private var pickSearchText = ""
     @FocusState private var isPickSearchFocused: Bool
-    /// The task whose **Log Session** form is open ([[T-8732]]), `nil` while it is closed. The
-    /// subject is held rather than a bare flag because the sheet seeds its fields from the clock
-    /// and names the task, and the picker behind it can still move.
-    @State private var loggingTask: AppTask?
+    /// [[T-18252]]: opens the **Log Session** form ([[T-8732]]) on the root's host, so a size-class
+    /// swap that rebuilds this screen cannot dismiss it with the hours and minutes typed into it.
+    @Environment(\.iOSPageEditor) private var pageEditor
     /// Whether the task-notes editor holds the keyboard ([[T-8734]]). The editing surface writes
     /// its buffer back on focus loss, so this is the handle that releases it.
     @State private var isTaskNotesFocused = false
@@ -210,23 +209,8 @@ struct iOSFocusView: View {
             selectedNote: $selectedReferenceNote,
             selectedTask: $selectedReferenceTask
         )
-        // [[T-8732]]: the Mac's Log Session form, in the container a finger can use. Presented
-        // from the screen rather than from the control, so the picker beside it is free to move
-        // while the form is up.
-        .sheet(item: $loggingTask) { task in
-            iOSFocusLogSessionSheet(
-                task: task,
-                elapsedSeconds: elapsedSeconds,
-                onLog: { hours, minutes, complete in
-                    logSession(hours: hours, minutes: minutes, complete: complete, task: task)
-                },
-                onDiscard: {
-                    // The Mac's Discard: the stopwatch is thrown away and nothing is banked.
-                    resetTimer()
-                    loggingTask = nil
-                }
-            )
-        }
+        // [[T-8732]]'s Log Session form is presented by the root's `iOSPageEditorHost` since
+        // [[T-18252]]: a sheet presented here went with the screen when a size-class swap rebuilt it.
     }
 
     /// The narrow fallback is the phone's own stacked form. It pushes nothing, so unlike Goals and
@@ -658,7 +642,7 @@ struct iOSFocusView: View {
                     // clock, and a clock still running behind it makes the seeded figure wrong the
                     // moment it is read.
                     if timerState.isRunning { timerState.toggle() }
-                    loggingTask = task
+                    pageEditor(.focusLogSession(task))
                 }
             }
         }
@@ -960,46 +944,6 @@ struct iOSFocusView: View {
         } catch {
             CadenceTaskSettleFailureCenter.shared.record()
         }
-    }
-
-    /// **What the Log Session form's confirm button does** ([[T-8732]]).
-    ///
-    /// The write is `CadenceFocusSupport.logSession`, the one macOS's `FocusSessionSupport.logSession`
-    /// performs: the typed minutes are banked, a ticked "Mark task as complete" settles the task in
-    /// the same commit, and the bank is undone if that commit refuses. This screen owns only what
-    /// the Mac leaves to `FocusManager` — the clock and which task the picker is pointing at.
-    ///
-    /// **The clock is only cleared once the store has the session (T-636(c)).** Everything below
-    /// the catch is this screen's report that the minutes were logged — the stopwatch back at zero,
-    /// the form closed, and (when completing) the picker moved on — and the seconds it discards
-    /// exist nowhere else, so running it over a refused commit loses the work as well as lying
-    /// about it. `iOSRootView` names the refusal itself, through `CadenceTaskSettleFailureCenter`.
-    /// T-566's rule rides on the same return: the sheet stays up over a refusal, so the hours and
-    /// minutes that were typed are not lost with it.
-    private func logSession(hours: Int, minutes: Int, complete: Bool, task: AppTask) {
-        do {
-            try CadenceFocusSupport.logSession(
-                hours: hours,
-                minutes: minutes,
-                complete: complete,
-                task: task,
-                modelContext: modelContext
-            )
-        } catch {
-            CadenceTaskSettleFailureCenter.shared.record()
-            return
-        }
-        resetTimer()
-        // Only a finished task stops being the session. Logging without completing leaves the
-        // clock on the same task, because it is still being worked — macOS's rule exactly.
-        if complete {
-            if let next = pickItems.first(where: { $0.target != .task(task.id) }) {
-                adopt(next)
-            } else {
-                selectedTarget = nil
-            }
-        }
-        loggingTask = nil
     }
 
 }

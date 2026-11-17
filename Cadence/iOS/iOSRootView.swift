@@ -110,6 +110,9 @@ struct iOSRootView: View {
         // List / Edit, New / Edit Context, the Calendar's quick create) are presented from the
         // root rather than from a page, whose lifetime is one size class.
         .iOSPageEditorHost()
+        // [[T-18252]]: Settings' archive import preview -- the chosen file and its mode -- for the
+        // same reason: the Settings page is rebuilt with its shell.
+        .iOSArchiveImportHost()
         // T-636, and `macOSRootView` says the same thing in the same place for the same reason:
         // the completion control is reached from six surfaces here and owned by none of them, so
         // a refused settle is named once at the shell rather than six times badly. Both shells,

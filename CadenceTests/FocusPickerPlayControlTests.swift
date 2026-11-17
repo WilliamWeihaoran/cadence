@@ -275,13 +275,11 @@ struct FocusSessionSwitchCommitTests {
         let code = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSFocusView.swift"))
 
         #expect(code.components(separatedBy: "CadenceFocusSupport.commitElapsed(").count - 1 == 2)
-        // And the old spelling is gone from them. Three live `resetTimer()` occurrences remain:
-        // its own declaration, and the two exits of the Log Session form -- its confirm, which
-        // banks the typed minutes and then clears the clock, and its Discard, which clears the
-        // clock without banking anything ([[T-8732]]). The reset *button* passes `resetTimer`
-        // unapplied. It was three until [[T-3170]] deleted logBundleSession(_:) with the Block
-        // feature, then two until that form replaced the one-tap complete the second belonged to.
-        #expect(code.components(separatedBy: "resetTimer()").count - 1 == 3)
+        // And the old spelling is gone from them. One live `resetTimer()` occurrence remains: its
+        // own declaration. The reset *button* passes `resetTimer` unapplied. The Log Session form's
+        // two exits ([[T-8732]]) reset the clock on `CadenceFocusSessionOwner` since [[T-18252]],
+        // which hoisted the form to the root; before that they were the second and third here.
+        #expect(code.components(separatedBy: "resetTimer()").count - 1 == 1)
     }
 
     /// The scan is worthless if it reads nothing, and a scan that returns an empty string passes

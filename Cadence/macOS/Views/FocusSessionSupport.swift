@@ -43,7 +43,7 @@ enum FocusSessionSupport {
         )
         // T-5303: a completed task is not a session any more. Leaving it as `activeSession` kept
         // the page on the finished task, so the next ▶ timed it and the next log credited it.
-        // Mirror iOS `iOSFocusView.logSession(hours:minutes:complete:task:)`: adopt the next ready
+        // Mirror iOS `CadenceFocusSessionOwner.logSession`: adopt the next ready
         // task, else end the session. Read only after the settle, so the finished task is no
         // longer ready.
         if complete, focusManager.activeTask?.id == task.id {

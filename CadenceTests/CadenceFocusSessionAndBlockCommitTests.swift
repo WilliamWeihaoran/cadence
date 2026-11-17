@@ -159,20 +159,27 @@ struct CadenceFocusSessionAndBlockCommitTests {
             "the status wrapper grew a focus-completion door back ([[T-9702]] retired it)"
         )
 
-        let view = try CadenceCommitSurfaceScan.scanned(Self.focusViewPath)
-        let guarded = try CadenceCommitSurfaceScan.declarationBody(named: "logSession", in: view)
-        #expect(guarded.contains("try CadenceFocusSupport.logSession("))
+        // [[T-18252]]: the write moved to the session owner and the form to the root's page-editor
+        // host, so a size-class swap cannot dismiss it. The owner throws before it clears anything;
+        // the host's catch returns before it dismisses the form.
+        let owner = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/CadenceFocusSessionOwner.swift")
+        let write = try #require(CadenceSourceScan.declarationBody("func logSession(", in: owner))
+        let banked = try #require(write.range(of: "try CadenceFocusSupport.logSession("))
+        let cleared = try #require(write.range(of: "timerState.reset()"), "the owner no longer clears the clock after a log")
+        #expect(banked.upperBound < cleared.lowerBound, "the clock is cleared before the store has the session")
+        #expect(!write.contains("catch"), "the owner swallows a refused log instead of throwing it")
+
+        let host = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSPageEditorHost.swift")
+        let guarded = try #require(CadenceSourceScan.declarationBody("func focusLogSessionSheet(", in: host))
+        #expect(guarded.contains("try focusSession.logSession("))
         let refusal = try #require(guarded.range(of: "CadenceTaskSettleFailureCenter.shared.record()"))
         let returned = try #require(guarded.range(of: "return", range: refusal.upperBound..<guarded.endIndex))
-        for below in ["resetTimer()", "loggingTask = nil"] {
-            let hit = try #require(guarded.range(of: below), "the focus view no longer \(below) after a log")
-            #expect(
-                returned.upperBound < hit.lowerBound,
-                "\(below) runs above the refusal's return, so a refused log still clears the clock"
-            )
-        }
+        let dismissed = try #require(guarded.range(of: "request = nil"), "the host no longer closes the form after a log")
+        #expect(returned.upperBound < dismissed.lowerBound,
+                "the form closes above the refusal's return, so a refused log loses the typed figures")
         #expect(CadenceSourceScan.matchCount(#"try\?"#, in: guarded) == 0)
-        #expect(view.contains("struct iOSFocusView: View"))
+        #expect(!(try CadenceCommitSurfaceScan.scanned(Self.focusViewPath)).contains("CadenceFocusSupport.logSession("),
+                "the Focus screen logs a session itself again")
     }
 
     // MARK: - T-8734, the focus note is an editor

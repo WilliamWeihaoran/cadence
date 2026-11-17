@@ -13,7 +13,7 @@ import SwiftUI
 /// the iPhone Tasks tab's list rows), Settings' New / Edit Context, the Calendar's empty-slot
 /// quick create, and -- since [[T-18252]] -- an Apple Calendar event's editor, opened from the
 /// Board, Day/Week timeline (and Today's schedule pane), Month grid and agenda, the day inspector
-/// and Search. Each holds a draft in its own `@State`, which now lives as long as the root.
+/// and Search, and Focus's Log Session form. Each holds a draft in its own `@State`, which now lives as long as the root.
 ///
 /// The shape is `iOSTaskInspectorHost`'s: a callable action in the environment, so a page cannot
 /// hold the presentation; the request is `@State` on a modifier `iOSRootView` applies once, outside
@@ -37,6 +37,9 @@ enum iOSPageEditorRequest: Identifiable {
     /// [[T-18252]]: a tapped Apple Calendar event, edited in `iOSCalendarEventEditSheet` -- its
     /// `CadenceScheduleDraft` is the half-typed title the ticket's user lost to a Split View drag.
     case event(iOSCalendarEventSelection)
+    /// [[T-18252]]: Focus's Log Session form ([[T-8732]]) for this task -- typed hours and minutes
+    /// a resize used to throw away. Its two exits run on `CadenceFocusSessionOwner`, not the screen.
+    case focusLogSession(AppTask)
 
     var id: String {
         switch self {
@@ -44,6 +47,7 @@ enum iOSPageEditorRequest: Identifiable {
         case .context(let mode): return "context-\(mode.id)"
         case .calendarQuickCreate(_, _, let press): return "calendar-\(press)"
         case .event(let selection): return "event-\(selection.id)"
+        case .focusLogSession(let task): return "focus-log-\(task.id)"
         }
     }
 }
@@ -94,6 +98,8 @@ extension EnvironmentValues {
 }
 
 private struct iOSPageEditorHostModifier: ViewModifier {
+    @Environment(\.modelContext) private var modelContext
+    @Environment(CadenceFocusSessionOwner.self) private var focusSession
     @State private var request: iOSPageEditorRequest?
 
     func body(content: Content) -> some View {
@@ -118,8 +124,43 @@ private struct iOSPageEditorHostModifier: ViewModifier {
                     // scales its own form (`.cadenceScaledTypography()` in its body).
                     iOSCalendarEventEditSheet(event: selection.event)
                         .cadenceFixedTypography()
+                case .focusLogSession(let task):
+                    focusLogSessionSheet(for: task)
                 }
             }
+    }
+}
+
+extension iOSPageEditorHostModifier {
+    /// [[T-18252]]: the Log Session form, whose confirm and Discard run on the app's Focus session
+    /// rather than closing over the Focus screen a resize may have rebuilt. **The form stays up over
+    /// a refused log (T-566)** -- the session owner moves nothing before the store has the minutes,
+    /// and `iOSRootView` names the refusal through `CadenceTaskSettleFailureCenter` -- so what was
+    /// typed is still there to retry.
+    func focusLogSessionSheet(for task: AppTask) -> some View {
+        iOSFocusLogSessionSheet(
+            task: task,
+            elapsedSeconds: focusSession.timerState.elapsedSeconds(),
+            onLog: { hours, minutes, complete in
+                do {
+                    try focusSession.logSession(
+                        hours: hours,
+                        minutes: minutes,
+                        complete: complete,
+                        task: task,
+                        in: modelContext
+                    )
+                } catch {
+                    CadenceTaskSettleFailureCenter.shared.record()
+                    return
+                }
+                request = nil
+            },
+            onDiscard: {
+                focusSession.discardSession()
+                request = nil
+            }
+        )
     }
 }
 

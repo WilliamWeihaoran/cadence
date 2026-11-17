@@ -83,6 +83,72 @@ final class CadenceFocusSessionOwner {
         CadenceFocusSessionPersistence.clear(in: defaults)
     }
 
+    // MARK: - [[T-18252]]: the Log Session form's two exits
+
+    /// **Log Session's confirm, run here rather than on the screen** ([[T-18252]]). The form is
+    /// presented by the root's `iOSPageEditorHost`, because an iPad size-class swap rebuilds the
+    /// Focus screen and SwiftUI dismisses a sheet its view presented, typed figures and all; its
+    /// confirm therefore cannot close over the screen, which may be a different instance by the
+    /// time it is tapped.
+    ///
+    /// The write is the shared `CadenceFocusSupport.logSession` ([[T-8732]]). **The clock is cleared
+    /// only once the store has the session (T-636(c))**: a refusal throws before anything here
+    /// moves, so the seconds and the form are both still there to retry. A ticked "Mark task as
+    /// complete" moves the session to the next ready task, else to nothing -- macOS's rule; logging
+    /// without completing leaves it on the same task.
+    func logSession(
+        hours: Int,
+        minutes: Int,
+        complete: Bool,
+        task: AppTask,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        try CadenceFocusSupport.logSession(
+            hours: hours,
+            minutes: minutes,
+            complete: complete,
+            task: task,
+            modelContext: modelContext,
+            commit: commit
+        )
+        timerState.reset()
+        if complete {
+            selectedTarget = nextReadyTarget(after: task, in: modelContext)
+        }
+        writeRecord()
+    }
+
+    /// **The form's Discard** -- the Mac's: the stopwatch is thrown away and nothing is banked.
+    func discardSession() {
+        timerState.reset()
+        writeRecord()
+    }
+
+    /// The head of the ready list other than `task`, read from the store the way the screen's
+    /// `@Query` reads it, so the move-on is the same with the screen standing or not.
+    private func nextReadyTarget(after task: AppTask, in modelContext: ModelContext) -> CadenceFocusTarget? {
+        let tasks = (try? modelContext.fetch(FetchDescriptor<AppTask>(sortBy: [SortDescriptor(\.order)]))) ?? []
+        let todayKey = DateFormatters.todayKey()
+        return CadenceFocusPickItem.filtered(
+            tasks: CadenceFocusSupport.readyTasks(from: tasks, todayKey: todayKey),
+            query: "",
+            todayKey: todayKey,
+            limit: nil
+        )
+        .first { $0.target != .task(task.id) }?
+        .target
+    }
+
+    /// The record for the session as it now stands -- removed when the clock is at zero. The
+    /// screen's own writer says the same thing while it stands; this covers a swap's gap.
+    private func writeRecord() {
+        CadenceFocusSessionPersistence.write(
+            CadenceFocusSessionPersistence.record(target: selectedTarget, state: timerState, lastSeenAt: lastSeenAt),
+            to: defaults
+        )
+    }
+
     // MARK: - The screen coming and going
 
     func screenDidAppear() {

@@ -720,17 +720,23 @@ struct CadenceArchiveImportEntryPointTests {
     /// overwrite takes a Before Import backup and the card's sentence names it; without this the
     /// list beside it did not show that backup until the page was reopened.
     @Test func bothBackupListsRereadAfterACommittedImport() throws {
-        for path in [
-            "Cadence/macOS/Views/SettingsArchiveImportCard.swift",
-            "Cadence/iOS/iOSArchiveImportSettingsSection.swift",
-        ] {
-            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
-            #expect(
-                code.components(separatedBy: "if flow.confirm() { onCommitted() }").count - 1 == 1,
-                "\(path) no longer tells its page when an import commits"
-            )
-            #expect(!code.contains("onConfirm: { flow.confirm() }"), "\(path) drops the commit signal")
-        }
+        let card = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SettingsArchiveImportCard.swift")
+        )
+        #expect(card.components(separatedBy: "if flow.confirm() { onCommitted() }").count - 1 == 1,
+                "the Mac card no longer tells its page when an import commits")
+        #expect(!card.contains("onConfirm: { flow.confirm() }"), "the Mac card drops the commit signal")
+        // [[T-18252]]: on iOS the flow is the root's, so the commit is counted there and whichever
+        // Settings page stands hears the count.
+        let section = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSArchiveImportSettingsSection.swift")
+        )
+        #expect(section.components(separatedBy: "if flow.confirm() { committedCount &+= 1 }").count - 1 == 1,
+                "the iOS import center no longer counts a committed import")
+        #expect(section.contains("onConfirm: { center.confirm() }"), "the iOS preview drops the commit signal")
+        let heard = try #require(section.range(of: ".onChange(of: importCenter.committedCount)"),
+                                 "the iOS section no longer hears a committed import")
+        #expect(section[heard.upperBound...].prefix(80).contains("onCommitted()"))
         let mac = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SettingsDataSafetySection.swift")
         )
