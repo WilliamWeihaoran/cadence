@@ -124,4 +124,28 @@ struct MarkdownStyleSignatureTests {
         )
         #expect(signature == reversed)
     }
+
+    /// **[[T-18429]]: midnight has to restyle an open note.** iOS bakes each task-embed card into
+    /// an image whose Do and Due chips are worded against today, and the day-change pass reaches the
+    /// gate with the same text and the same tasks, so the day is the only input that moved.
+    @Test
+    func aNewDayChangesTheSignature() {
+        #expect(
+            MarkdownStyleSignature.current(revealedBlockRange: nil, imageAssets: [], dayKey: "2026-11-17@America/New_York")
+                != MarkdownStyleSignature.current(revealedBlockRange: nil, imageAssets: [], dayKey: "2026-11-18@America/New_York")
+        )
+        #expect(
+            MarkdownStyleSignature.current(revealedBlockRange: nil, renderAssets: [:], dayKey: "2026-11-17@America/New_York")
+                != MarkdownStyleSignature.current(revealedBlockRange: nil, renderAssets: [:], dayKey: "2026-11-17@America/Los_Angeles")
+        )
+    }
+
+    /// The live feed is the app's today scoped to the current zone, and a width-only advance keeps it.
+    @Test
+    func theDefaultDayKeyIsTheZoneScopedToday() {
+        let signature = MarkdownStyleSignature.current(revealedBlockRange: nil, imageAssets: [])
+        #expect(signature.dayKey == CadenceTimeZoneChangeSupport.zoneScopedKey(DateFormatters.todayKey()))
+        let pinned = MarkdownStyleSignature.current(revealedBlockRange: nil, imageAssets: [], dayKey: "2026-11-17@UTC")
+        #expect(pinned.advancingContentWidth(to: 400).dayKey == "2026-11-17@UTC")
+    }
 }

@@ -49,13 +49,21 @@ struct MarkdownStyleSignature: Equatable {
     let contentWidthBucket: Int
     let imageAssetRevision: String
     let taskEmbedRevision: String
+    /// The app's today, scoped to the zone ([[T-18429]], the [[T-17442]] rule). A task-embed card's
+    /// Do and Due chips are worded and toned against today ("Due today" in amber, "Do Tomorrow"),
+    /// and iOS bakes the card into an image at styling time, so a note left open across midnight —
+    /// or across a zone change — compared an unchanged signature on the day-change pass, skipped,
+    /// and kept yesterday's chips until the next keystroke. Recorded on macOS too, where nothing
+    /// reads it: the Mac card reads its chips at draw time.
+    let dayKey: String
 
     static func current(
         revealedBlockRange: NSRange?,
         imageAssets: [MarkdownImageAsset],
         taskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo] = [:],
         contentWidth: CGFloat = 0,
-        tableSourceAnchors: Set<Int> = []
+        tableSourceAnchors: Set<Int> = [],
+        dayKey: String = currentDayKey
     ) -> MarkdownStyleSignature {
         MarkdownStyleSignature(
             theme: currentTheme,
@@ -68,7 +76,8 @@ struct MarkdownStyleSignature: Equatable {
                 .sorted { $0.id.uuidString < $1.id.uuidString }
                 .map { "\($0.id.uuidString):\($0.updatedAt.timeIntervalSinceReferenceDate):\($0.displayWidth)" }
                 .joined(separator: "|"),
-            taskEmbedRevision: revision(of: taskEmbeds)
+            taskEmbedRevision: revision(of: taskEmbeds),
+            dayKey: dayKey
         )
     }
 
@@ -89,7 +98,8 @@ struct MarkdownStyleSignature: Equatable {
         renderAssets: [UUID: MarkdownImageRenderAsset],
         taskEmbeds: [UUID: MarkdownTaskEmbedRenderInfo] = [:],
         contentWidth: CGFloat = 0,
-        tableSourceAnchors: Set<Int> = []
+        tableSourceAnchors: Set<Int> = [],
+        dayKey: String = currentDayKey
     ) -> MarkdownStyleSignature {
         MarkdownStyleSignature(
             theme: currentTheme,
@@ -100,7 +110,8 @@ struct MarkdownStyleSignature: Equatable {
                 .sorted { $0.id.uuidString < $1.id.uuidString }
                 .map { "\($0.id.uuidString):\($0.displayWidth):\($0.pixelSize.width)x\($0.pixelSize.height)" }
                 .joined(separator: "|"),
-            taskEmbedRevision: revision(of: taskEmbeds)
+            taskEmbedRevision: revision(of: taskEmbeds),
+            dayKey: dayKey
         )
     }
 
@@ -108,6 +119,12 @@ struct MarkdownStyleSignature: Equatable {
     /// editors make outside their stylists ([[T-18203]]).
     static var currentTheme: String {
         CadenceAccentPaletteSelection.shared.palette.id
+    }
+
+    /// The `dayKey` every live signature records: `DateFormatters.todayKey()` (so the UI-test
+    /// today override reaches it, [[T-15200]]) scoped to the current zone.
+    static var currentDayKey: String {
+        CadenceTimeZoneChangeSupport.zoneScopedKey(DateFormatters.todayKey())
     }
 
     /// The one place a content width is reduced to the value the signature compares, so the two
@@ -157,7 +174,8 @@ struct MarkdownStyleSignature: Equatable {
             tableSourceAnchors: tableSourceAnchors,
             contentWidthBucket: Self.bucket(for: contentWidth),
             imageAssetRevision: imageAssetRevision,
-            taskEmbedRevision: taskEmbedRevision
+            taskEmbedRevision: taskEmbedRevision,
+            dayKey: dayKey
         )
     }
 }

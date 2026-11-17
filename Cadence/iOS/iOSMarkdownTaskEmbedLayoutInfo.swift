@@ -198,9 +198,10 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
     }
 
     /// The row is `CadenceTaskEmbedTouchChips`' ([[T-9271]], [[T-14324]]); only the measuring is
-    /// this file's.
+    /// this file's. Worded against the app's now, not `Date()`, so the UI-test today override
+    /// reaches the baked card ([[T-18429]]); `MarkdownStyleSignature.dayKey` re-bakes it at midnight.
     private var chips: [(title: String, tint: UIColor, width: CGFloat, importance: Int)] {
-        CadenceTaskEmbedTouchChips.chips(for: task).map { chip in
+        CadenceTaskEmbedTouchChips.chips(for: task, relativeTo: DateFormatters.now()).map { chip in
             let width = min(150, max(44, ceil(chip.title.size(withAttributes: chipAttributes).width) + 16))
             return (chip.title, UIColor(chip.tint), width, chip.importance)
         }
