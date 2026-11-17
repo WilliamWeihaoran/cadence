@@ -17,8 +17,8 @@ struct GlobalSearchSectionsList: View {
         if sections.isEmpty {
             GlobalSearchEmptyState(withheldCompletedTaskCount: withheldCompletedTaskCount, includesEvents: includesEvents)
         } else {
-            // [[T-8063]]: the palette is a fixed 760x620 card and `onMoveCommand` only rewrites
-            // `highlightedResultID`, so Down walked the highlight off the bottom edge within about
+            // [[T-8063]]: the palette is a card at most 620pt tall ([[T-18355]]) and
+            // `onMoveCommand` only rewrites `highlightedResultID`, so Down walked the highlight off the bottom edge within about
             // ten presses and Return opened a row the user never saw. The list now follows the
             // highlight — every arrow move, hover and reveal (a reveal moves it to the section's
             // first new row) — as the editor's slash-command menu does ([[T-7233]]). `scrollTo`
@@ -79,6 +79,16 @@ struct GlobalSearchSectionsList: View {
     }
 }
 
+/// [[T-18355]]: the Cmd+K card's size. It was a fixed 760x620 card in a window whose floor is
+/// 600pt tall (`CadenceApp`'s `minHeight: 600`), so a short window cut its corners, outline and
+/// shadow off at both edges. The height is now a ceiling: the card takes what the window has less
+/// `windowMargin` above and below, and the results list -- a `ScrollView` -- takes the shortfall.
+enum GlobalSearchOverlayLayout {
+    static let cardWidth: CGFloat = 760
+    static let maxCardHeight: CGFloat = 620
+    static let windowMargin: CGFloat = 24
+}
+
 struct GlobalSearchOverlayShell<Content: View>: View {
     let onDismiss: () -> Void
     @ViewBuilder let content: () -> Content
@@ -91,9 +101,11 @@ struct GlobalSearchOverlayShell<Content: View>: View {
                 .onTapGesture(perform: onDismiss)
 
             content()
-                .frame(width: 760, height: 620)
+                .frame(width: GlobalSearchOverlayLayout.cardWidth)
+                .frame(maxHeight: GlobalSearchOverlayLayout.maxCardHeight)
                 .background(Theme.surface)
                 .cadenceOverlayCard() // [[T-10041]]
+                .padding(.vertical, GlobalSearchOverlayLayout.windowMargin)
         }
     }
 }

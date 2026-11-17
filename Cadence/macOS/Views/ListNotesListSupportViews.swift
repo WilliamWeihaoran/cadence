@@ -193,6 +193,16 @@ struct ListNoteRow: View {
         case refusedBlank
     }
 
+    /// [[T-18356]]: why Return did nothing on a blank draft. The refusal keeps the field open so
+    /// the name can be typed; this says so, under the row, until the next Return or rename.
+    nonisolated static let blankTitleNotice = "A note needs a title."
+
+    /// What the row says after a rename ends. Leaving the field drops a blank draft and closes on
+    /// the stored name, so there is nothing to explain; Return on one keeps the field open.
+    nonisolated static func renameNotice(after outcome: RenameOutcome, leavingField: Bool) -> String? {
+        outcome == .refusedBlank && !leavingField ? blankTitleNotice : nil
+    }
+
     /// [[T-18082]]: the rename's one write. Normalises the draft, refuses a blank one, writes the
     /// title and `updatedAt`, and commits, putting both back if the commit throws — the
     /// `ContextSettingsRow.commitRename` shape. Static, and the commit a parameter, so the refused
@@ -282,7 +292,7 @@ struct ListNoteRow: View {
             if leavingField { isEditingTitle = false }
             return
         }
-        renameFailureNotice = nil
+        renameFailureNotice = Self.renameNotice(after: outcome, leavingField: leavingField)
         if outcome == .refusedBlank && !leavingField { return }
         isEditingTitle = false
     }

@@ -166,6 +166,12 @@ struct NoteFolderListRow: View {
     /// the focus, so it is the one that can tell; the caller decides what leaving means.
     var onTitleFocusLost: (() -> Void)?
 
+    /// [[T-18356]]: the rename field's placeholder and its name to assistive tech. It was
+    /// `TextField("", ...)`, so an untitled note's row became a blank, unlabeled box. Not the row's
+    /// "Untitled" fallback: a blank field is refused, not saved as "Untitled", and the placeholder
+    /// must not read like the name it would get.
+    nonisolated static let renameFieldLabel = "Note title"
+
     @State private var isHovered = false
     @FocusState private var isTitleFocused: Bool
 
@@ -197,8 +203,9 @@ struct NoteFolderListRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 if let editingTitle {
-                    TextField("", text: editingTitle)
+                    TextField(Self.renameFieldLabel, text: editingTitle)
                         .textFieldStyle(.plain)
+                        .accessibilityLabel(Self.renameFieldLabel)
                         .font(.system(size: metrics.titleSize))
                         .foregroundStyle(Theme.text)
                         .focused($isTitleFocused)

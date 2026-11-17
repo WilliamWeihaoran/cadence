@@ -170,5 +170,38 @@ struct CadenceListNoteRowRenameTests {
         ))
         #expect(shared.contains("onTitleFocusLost?()"))
     }
+
+    /// **[[T-18356]] (a): the rename field is labelled.** It was `TextField("", ...)`, so an untitled
+    /// note's row became a blank box with nothing for VoiceOver to name it by. It now carries the
+    /// placeholder the editor's own title field uses, as its accessibility label too.
+    @Test func theRenameFieldHasAPlaceholderAndAnAccessibilityLabel() throws {
+        #expect(NoteFolderListRow.renameFieldLabel == "Note title")
+        let shared = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceNoteFolderSupport.swift"))
+        let row = try #require(CadenceSourceScan.declarationBody("struct NoteFolderListRow: View", in: shared))
+        #expect(!row.contains("TextField(\"\""), "the rename field has no placeholder again")
+        #expect(row.contains("TextField(Self.renameFieldLabel, text: editingTitle)"))
+        #expect(row.contains(".accessibilityLabel(Self.renameFieldLabel)"))
+
+        let editor = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/NoteEditorPane.swift"))
+        #expect(editor.contains("TextField(\"\(NoteFolderListRow.renameFieldLabel)\", text: titleBinding)"),
+                "the row's rename field and the editor's title field name the same thing two ways")
+    }
+
+    /// **[[T-18356]] (b): a refused blank Return says why.** The field stays open, as [[T-18082]]
+    /// decided, and the row now says the note needs a title; leaving the field drops the draft and
+    /// closes on the stored name, so it says nothing, and neither does a rename that went through.
+    @Test func aRefusedBlankReturnSaysTheNoteNeedsATitle() throws {
+        #expect(ListNoteRow.renameNotice(after: .refusedBlank, leavingField: false) == ListNoteRow.blankTitleNotice)
+        #expect(ListNoteRow.blankTitleNotice == "A note needs a title.")
+        #expect(ListNoteRow.renameNotice(after: .refusedBlank, leavingField: true) == nil)
+        for leaving in [false, true] {
+            #expect(ListNoteRow.renameNotice(after: .saved, leavingField: leaving) == nil)
+            #expect(ListNoteRow.renameNotice(after: .unchanged, leavingField: leaving) == nil)
+        }
+
+        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListNotesListSupportViews.swift"))
+        let finish = try #require(CadenceSourceScan.declarationBody("private func finishRename(leavingField: Bool)", in: source))
+        #expect(finish.contains("renameFailureNotice = Self.renameNotice(after: outcome, leavingField: leavingField)"))
+    }
 }
 #endif
