@@ -94,6 +94,14 @@ enum CadenceListRelatedNotes {
     /// A note survives when it carries **every** required tag and, given a query, the query is in
     /// its title, its body (task embeds read under the task's live title — see
     /// `MarkdownTaskEmbedTitleCache`), or one of its tags' names or slugs.
+    ///
+    /// **[[T-18412]]: "is in" means what Cmd+K and iOS Search mean.** Both legs asked
+    /// `localizedCaseInsensitiveContains` of the whole trimmed query, which folds case but not
+    /// diacritics and needs the words in the typed order, so `cafe` hid "Café menu" and
+    /// `report draft` hid "Draft report" -- notes the other two search surfaces find from the same
+    /// words. The match now goes through `CadenceSearchMatcher.matchScore`, the one scorer, as the
+    /// Focus picker's did in [[T-13871]]. This is a filter, not a ranking: the rows keep the order
+    /// they came in, and the required-tag gate is unchanged.
     static func filter(
         _ notes: [Note],
         query rawQuery: String,
@@ -104,14 +112,16 @@ enum CadenceListRelatedNotes {
         guard !query.isEmpty || !requiredTagSlugs.isEmpty else { return notes }
         // Built once here, not once per note.
         let taskTitles = MarkdownTaskEmbedTitleCache.titles(for: tasks)
+        let prepared = CadenceSearchMatcher.PreparedQuery(query)
         return notes.filter { note in
             let noteTagSlugs = Set((note.tags ?? []).map(\.slug))
             guard requiredTagSlugs.isSubset(of: noteTagSlugs) else { return false }
             guard !query.isEmpty else { return true }
-            return note.displayTitle.localizedCaseInsensitiveContains(query) ||
-                CadenceSearchNoteText.body(of: note, taskTitles: taskTitles)
-                    .localizedCaseInsensitiveContains(query) ||
-                anyTag(note.sortedTags, matches: query)
+            return matches(prepared, fields: [
+                note.displayTitle,
+                CadenceSearchNoteText.body(of: note, taskTitles: taskTitles),
+                CadenceSearchTagSupport.text(for: note.sortedTags),
+            ])
         }
     }
 
@@ -128,21 +138,23 @@ enum CadenceListRelatedNotes {
         requiredTagSlugs: Set<String>
     ) -> [AppTask] {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prepared = CadenceSearchMatcher.PreparedQuery(query)
         return taskNotes.filter {
             let taskTagSlugs = Set(($0.tags ?? []).map(\.slug))
             guard requiredTagSlugs.isSubset(of: taskTagSlugs) else { return false }
             guard !query.isEmpty else { return true }
-            return $0.title.localizedCaseInsensitiveContains(query) ||
-                $0.notes.localizedCaseInsensitiveContains(query) ||
-                anyTag($0.sortedTags, matches: query)
+            return matches(prepared, fields: [
+                $0.title,
+                $0.notes,
+                CadenceSearchTagSupport.text(for: $0.sortedTags),
+            ])
         }
     }
 
-    /// The tag leg both predicates share: the query in a tag's name, or its slug form in the slug.
-    private static func anyTag(_ tags: [Tag], matches query: String) -> Bool {
-        tags.contains { tag in
-            tag.name.localizedCaseInsensitiveContains(query) ||
-                tag.slug.localizedCaseInsensitiveContains(TagSupport.slug(for: query))
-        }
+    /// The match both predicates share ([[T-18412]]): the shared scorer over title, body and the
+    /// tags' names and slugs (`CadenceSearchTagSupport.text`, as Cmd+K and iOS Search read them).
+    /// A non-blank query with nothing searchable in it -- `"`, `---` -- matches nothing (T-3099).
+    private static func matches(_ query: CadenceSearchMatcher.PreparedQuery, fields: [String]) -> Bool {
+        CadenceSearchMatcher.matchScore(query: query, fields: fields) != nil
     }
 }

@@ -148,6 +148,50 @@ struct CadenceListRelatedNotesTests {
         #expect(offered.map(\.slug) == [urgent.slug])
     }
 
+    /// [[T-18412]]: the field matches through the one scorer Cmd+K and iOS Search use, so an
+    /// unaccented query finds an accented title and the words may come in either order, on both
+    /// overloads -- and a note that has neither word stays filtered out. The raw substring test
+    /// this replaced dropped both hits.
+    @Test func theNotesTabSearchMatchesThroughTheSharedScorer() throws {
+        let context = try makeContext()
+        let area = Area(name: "Home")
+        context.insert(area)
+
+        let cafe = Note(kind: .list, title: "Café menu", content: "# Café menu\n\nespresso")
+        let report = Note(kind: .list, title: "Draft report", content: "# Draft report\n\nfigures")
+        let other = Note(kind: .list, title: "Garden", content: "# Garden\n\ntomatoes")
+        for note in [cafe, report, other] { context.insert(note) }
+
+        let cafeTask = task("Café rota", notes: "who opens", area: area, in: context)
+        let reportTask = task("Draft report", notes: "for Monday", area: area, in: context)
+        let otherTask = task("Water plants", notes: "back garden", area: area, in: context)
+        try context.save()
+
+        let notes = [cafe, report, other]
+        let taskNotes = [cafeTask, reportTask, otherTask]
+        func noteIDs(_ query: String) -> [UUID] {
+            CadenceListRelatedNotes.filter(notes, query: query, requiredTagSlugs: [], tasks: []).map(\.id)
+        }
+        func taskIDs(_ query: String) -> [UUID] {
+            CadenceListRelatedNotes.filter(taskNotes: taskNotes, query: query, requiredTagSlugs: []).map(\.id)
+        }
+
+        // Diacritics fold.
+        #expect(noteIDs("cafe") == [cafe.id])
+        #expect(taskIDs("cafe") == [cafeTask.id])
+        // Each word matches on its own, in any order.
+        #expect(noteIDs("report draft") == [report.id])
+        #expect(taskIDs("report draft") == [reportTask.id])
+        // A note with neither word stays out, and so does one with only one of the words.
+        #expect(noteIDs("report garden").isEmpty)
+        #expect(taskIDs("report garden").isEmpty)
+        #expect(noteIDs("pizza").isEmpty)
+        #expect(taskIDs("pizza").isEmpty)
+        // Filtering, not ranking: a query every row answers keeps the incoming order.
+        #expect(noteIDs("e") == notes.map(\.id))
+        #expect(taskIDs("e") == taskNotes.map(\.id))
+    }
+
     /// [[T-14451]]: the bar's whole decision is this one shared list, for both platforms. Nine
     /// active tags yield nine (the Mac's old cap was eight), an archived tag and a second row
     /// sharing a slug add nothing, and the order is the catalogue's.
