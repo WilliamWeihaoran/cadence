@@ -429,4 +429,63 @@ struct MacTagPickerReturnPickTests {
         #expect(body.contains("selectedTags = picked"))
     }
 }
+
+/// **[[T-17962]] -- the Mac tag popover adds a no-match name on dismiss**, as the phone's does
+/// (owner option (a), [[T-5175]]), through the one gate both ask, `TagSupport.pickerDismissCommits`.
+/// It used to drop it. Driven against a real in-memory container; never the owner's store.
+struct MacTagPickerDismissCommitTests {
+
+    private func makeTags() throws -> (ModelContainer, [Cadence.Tag]) {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let work = Cadence.Tag(name: "Work", slug: "work")
+        let deepWork = Cadence.Tag(name: "Deep Work", slug: "deep-work")
+        let old = Cadence.Tag(name: "Old Project", slug: "old-project")
+        old.isArchived = true
+        let tags = [work, deepWork, old]
+        for tag in tags { context.insert(tag) }
+        return (container, tags)
+    }
+
+    /// What the gate lets through, the Mac's Return path (`commitQueriedField`) can act on: a new
+    /// name reaches the Create row's rules and an archived one the Unarchive row's, never the
+    /// active-name pick, which belongs to a query that drew a row and so never commits on dismiss.
+    @Test func theGateLetsThroughOnlyANameTheReturnPathCreatesOrRestores() throws {
+        let (_, tags) = try makeTags()
+        let decision = TagSupport.pickerQuery("Garden", in: tags)
+        #expect(TagSupport.pickerDismissCommits("Garden", in: tags))
+        #expect(decision.canCreate && decision.archivedMatch == nil)
+        #expect(TagPickerPopover.returnPick("Garden", in: tags, selected: []) == nil)
+
+        #expect(TagSupport.pickerDismissCommits("Old Project", in: tags))
+        #expect(TagSupport.pickerQuery("Old Project", in: tags).archivedMatch?.slug == "old-project")
+
+        for search in ["wor", "work", " WORK ", "deep"] {
+            #expect(!TagSupport.pickerQuery(search, in: tags).matches.isEmpty, "non-vacuity: \(search)")
+            #expect(!TagSupport.pickerDismissCommits(search, in: tags), "dismissing a search for \(search) commits it")
+        }
+        for refused in ["", "  ", "--", "#"] {
+            #expect(!TagSupport.pickerDismissCommits(refused, in: tags), "\(refused) commits on dismiss")
+        }
+    }
+
+    /// Source shape: `.onDisappear` is not callable. One dismiss handler, asking the shared gate
+    /// on the popover's own `query` before the Return path runs.
+    @Test func dismissingThePopoverRunsTheReturnPathBehindTheSharedGate() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TagPickerPopoverViews.swift")
+        #expect(raw.count > 1_000)
+        let file = CadenceSourceScan.codeOnly(CadenceSourceScan.strippingComments(raw))
+        let popover = try #require(CadenceSourceScan.declarationBody("struct TagPickerPopover: View", in: file))
+        let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: popover))
+        #expect(body.contains(".onDisappear(perform: commitQueriedFieldOnDismiss)"), "the Mac drops a no-match name on dismiss (T-17962)")
+        #expect(CadenceSourceScan.matchCount(#"\.onDisappear"#, in: popover) == 1)
+        let onDismiss = try #require(CadenceSourceScan.functionBody(named: "commitQueriedFieldOnDismiss", in: popover))
+        let gated = try #require(
+            onDismiss.range(of: "guard TagSupport.pickerDismissCommits(query, in: allTags) else { return }"),
+            "the dismiss no longer asks the shared gate, so a search commits (T-17935)"
+        )
+        let committed = try #require(onDismiss.range(of: "commitQueriedField()"), "the dismiss no longer commits")
+        #expect(gated.upperBound <= committed.lowerBound)
+    }
+}
 #endif

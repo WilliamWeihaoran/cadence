@@ -144,7 +144,9 @@ extension TagSupport {
     /// attached. The keeper's ruling keeps T-5175 for a name that matches nothing and drops it for a
     /// search: the dismiss commits only when the list drew no active row for the query, and only
     /// what the `+` would commit (`pickerFieldCommit`). An archived exact match still un-archives,
-    /// since archived tags are never rows. The Mac popover never commits on dismiss, an open owner call.
+    /// since archived tags are never rows. [[T-17962]]: the Mac's `TagPickerPopover` asks this same
+    /// question on dismiss (`commitQueriedFieldOnDismiss`), so both platforms keep a no-match name,
+    /// and the phone clears a search it does not commit, as the Mac's per-open field always has.
     static func pickerDismissCommits(_ query: String, in allTags: [Tag]) -> Bool {
         pickerQuery(query, in: allTags).matches.isEmpty && pickerFieldCommit(query, in: allTags).commits
     }

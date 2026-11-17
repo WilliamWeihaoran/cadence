@@ -491,8 +491,15 @@ struct iOSTaskTagPickerPopover: View {
     ///
     /// **[[T-17935]].** Only for a query `pickerDismissCommits` allows: one that drew no active
     /// row. A query that narrowed the list to `work` is a search, and dismissing it creates nothing.
+    ///
+    /// **[[T-17962]].** A query the dismiss does not commit is cleared, so it does not pre-filter
+    /// the next open: the Mac's field is popover state and always opens empty. A refused commit
+    /// still leaves the name in the field (T-5175), and the Mac asks this same gate on dismiss.
     private func addTagOnDismiss() {
-        guard TagSupport.pickerDismissCommits(newTagName, in: allTags) else { return }
+        guard TagSupport.pickerDismissCommits(newTagName, in: allTags) else {
+            newTagName = ""
+            return
+        }
         tagFailureNotice = nil
         addTag()
         if let tagFailureNotice {

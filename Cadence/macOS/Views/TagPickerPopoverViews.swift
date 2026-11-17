@@ -163,6 +163,19 @@ struct TagPickerPopover: View {
         .onAppear {
             DispatchQueue.main.async { isSearchFocused = true }
         }
+        // **[[T-17962]] (keeper option (b), [[T-18280]]).** A name typed here that matches no tag
+        // and is never sent with Return or the Create row is added as the popover closes, as the
+        // phone's popover does (owner option (a), [[T-5175]]). Every dismissal counts -- a click
+        // outside, Escape, the trigger -- because the phone's has no discard path either.
+        .onDisappear(perform: commitQueriedFieldOnDismiss)
+    }
+
+    /// **[[T-17962]].** The field's own Return path, behind the one dismiss decision the phone's
+    /// `iOSTaskTagPickerPopover.addTagOnDismiss` asks: a query that drew an active row is a search
+    /// and commits nothing ([[T-17935]]); an archived exact name un-archives through `restore(_:)`.
+    private func commitQueriedFieldOnDismiss() {
+        guard TagSupport.pickerDismissCommits(query, in: allTags) else { return }
+        commitQueriedField()
     }
 
     private func tagRow(_ tag: Tag) -> some View {

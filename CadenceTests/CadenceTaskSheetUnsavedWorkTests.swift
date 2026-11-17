@@ -138,11 +138,23 @@ struct CadenceTaskSheetUnsavedWorkTests {
         // [[T-17935]]: the field is a search field, so the dismiss adds only a name that matched no
         // row, and asks that before anything else -- the decision `CadenceTagPickerQueryTests`
         // drives as values.
-        let gated = try #require(
-            onDismiss.range(of: "guard TagSupport.pickerDismissCommits(newTagName, in: allTags) else { return }"),
-            "the dismiss commits a partial query that matched a row (T-17935)"
+        // [[T-17962]]: a query the gate does not commit is cleared, so it does not pre-filter the
+        // next open (the Mac's field always opens empty). Read with literals intact, since
+        // `codeOnly` blanks the `""` this needs.
+        let popoverWithLiterals = try #require(CadenceSourceScan.declarationBody(
+            "struct iOSTaskTagPickerPopover: View", in: CadenceSourceScan.strippingComments(raw)
+        ))
+        let dismissWithLiterals = try #require(
+            CadenceSourceScan.functionBody(named: "addTagOnDismiss", in: popoverWithLiterals)
         )
-        let added = try #require(onDismiss.range(of: "addTag()"))
+        let gated = try #require(
+            dismissWithLiterals.range(
+                of: #"guard TagSupport\.pickerDismissCommits\(newTagName, in: allTags\) else \{\s*newTagName = ""\s*return\s*\}"#,
+                options: .regularExpression
+            ),
+            "the dismiss commits a partial query that matched a row (T-17935), or keeps it in the field (T-17962)"
+        )
+        let added = try #require(dismissWithLiterals.range(of: "addTag()"))
         #expect(gated.lowerBound < added.lowerBound, "addTag runs before the dismiss gate")
         #expect(CadenceSourceScan.matchCount(#"\.onDisappear"#, in: popover) == 1)
         // Read with string literals intact: `codeOnly` blanks them, which made this a check of
