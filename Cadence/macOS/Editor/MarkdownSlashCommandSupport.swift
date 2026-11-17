@@ -166,6 +166,20 @@ enum MarkdownSlashCommandPickerMetrics {
     }
 }
 
+/// **[[T-18395]] — the keyboard highlight of the `/`, `[[` and `#` popovers goes back to the first
+/// row whenever the typed query changes**, as the `~` panel's does ([[T-8101]]) and the calendar
+/// picker's. Each controller re-filters on every keystroke; it used to keep the row NUMBER and only
+/// clamp it, so after an arrow key and more typing, Return or Tab applied whichever choice had
+/// slid under that row -- for `#`, a different tag than the token typed, which [[T-14472]] had
+/// fixed only for the opening state. A refresh with the same query (a caret re-anchor, a store
+/// change) keeps the row the user moved to, clamped to the new list.
+enum MarkdownPickerHighlight {
+    static func index(current: Int, previousQuery: String?, query: String, count: Int) -> Int {
+        guard previousQuery == query else { return 0 }
+        return min(max(current, 0), max(count - 1, 0))
+    }
+}
+
 final class MarkdownSlashCommandPickerController {
     private let popover = NSPopover()
     private weak var textView: NSTextView?
@@ -204,9 +218,11 @@ final class MarkdownSlashCommandPickerController {
             return
         }
 
+        highlightedIndex = MarkdownPickerHighlight.index(
+            current: highlightedIndex, previousQuery: self.context?.query, query: context.query, count: filtered.count
+        )
         self.context = context
         commands = filtered
-        highlightedIndex = min(highlightedIndex, max(filtered.count - 1, 0))
 
         let rootView = MarkdownSlashCommandPickerView(
             commands: filtered,
@@ -347,9 +363,11 @@ final class MarkdownReferencePickerController {
             return
         }
 
+        highlightedIndex = MarkdownPickerHighlight.index(
+            current: highlightedIndex, previousQuery: self.context?.query, query: context.query, count: matches.count
+        )
         self.context = context
         suggestions = matches
-        highlightedIndex = min(highlightedIndex, max(matches.count - 1, 0))
 
         let rootView = MarkdownReferencePickerView(
             suggestions: matches,
@@ -534,9 +552,11 @@ final class MarkdownTagPickerController {
             return
         }
 
+        highlightedIndex = MarkdownPickerHighlight.index(
+            current: highlightedIndex, previousQuery: self.context?.query, query: context.query, count: nextChoices.count
+        )
         self.context = context
         choices = nextChoices
-        highlightedIndex = min(highlightedIndex, max(nextChoices.count - 1, 0))
 
         let rootView = MarkdownTagPickerView(
             query: query,

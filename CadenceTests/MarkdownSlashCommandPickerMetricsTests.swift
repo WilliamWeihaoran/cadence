@@ -134,5 +134,42 @@ struct MarkdownSlashCommandPickerMetricsTests {
             #expect(!body.contains(": Color.clear"), "\(declaration) paints its own clear row fill again")
         }
     }
+
+    /// **[[T-18395]].** A narrowed query puts the keyboard highlight back on the first row, so Return
+    /// applies the row the user sees first; the same query (a re-render) keeps the row moved to.
+    @Test func aChangedQueryPutsTheHighlightBackOnTheFirstRow() {
+        // Down twice on `#`, then `work` typed: the list narrows and the third row must not stay lit.
+        #expect(MarkdownPickerHighlight.index(current: 2, previousQuery: "", query: "work", count: 3) == 0)
+        #expect(MarkdownPickerHighlight.index(current: 2, previousQuery: "wor", query: "work", count: 5) == 0)
+        // A fresh open has no previous query.
+        #expect(MarkdownPickerHighlight.index(current: 4, previousQuery: nil, query: "", count: 9) == 0)
+        // Same query: the row is kept, and only clamped when the list shrank under it.
+        #expect(MarkdownPickerHighlight.index(current: 2, previousQuery: "work", query: "work", count: 3) == 2)
+        #expect(MarkdownPickerHighlight.index(current: 5, previousQuery: "work", query: "work", count: 3) == 2)
+        #expect(MarkdownPickerHighlight.index(current: 1, previousQuery: "work", query: "work", count: 0) == 0)
+    }
+
+    /// The three controllers are AppKit popovers with no seam to drive from here, so each `update`
+    /// is read from source: it asks the shared rule, with the PREVIOUS context's query (read before
+    /// `self.context` is replaced), and no longer only clamps.
+    @Test func everyCompletionPopoverResetsItsHighlightThroughTheSharedRule() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Editor/MarkdownSlashCommandSupport.swift"))
+        let controllers = [
+            "final class MarkdownSlashCommandPickerController",
+            "final class MarkdownReferencePickerController",
+            "final class MarkdownTagPickerController",
+        ]
+        for declaration in controllers {
+            let body = try #require(CadenceSourceScan.declarationBody(declaration, in: source))
+            let update = try #require(CadenceSourceScan.declarationBody("func update(", in: body))
+                .filter { !$0.isWhitespace }
+            let rule = try #require(update.range(of: "highlightedIndex=MarkdownPickerHighlight.index(current:highlightedIndex,previousQuery:self.context?.query,query:context.query,"),
+                                    "\(declaration).update does not reset its highlight through the shared rule")
+            let replaced = try #require(update.range(of: "self.context=context"))
+            #expect(rule.lowerBound < replaced.lowerBound, "\(declaration) reads the previous query after replacing it")
+            #expect(!update.contains("highlightedIndex=min(highlightedIndex"), "\(declaration) only clamps again")
+        }
+    }
 }
 #endif
