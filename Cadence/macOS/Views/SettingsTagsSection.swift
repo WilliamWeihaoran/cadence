@@ -242,6 +242,9 @@ private struct SettingsTagRow: View {
     @State private var draftColorHex = ""
     /// T-497: the row's own failure line, which is why the row can stay open over a refused save.
     @State private var saveFailureNotice: String?
+    /// [[T-18408]]: the editor opens from the card's pencil, which takes no keyboard focus, so the
+    /// Name field takes it on appear; per card, so the card just opened is the one focused.
+    @FocusState private var isNameFocused: Bool
     /// T-6261: the notes whose prose mentions this tag, counted when Save is pressed and held
     /// here while the user answers. Non-`nil` only when the count is non-zero.
     @State private var inlineMentionPrompt: CadenceTagRenameInlineMentions.Prompt?
@@ -382,6 +385,8 @@ private struct SettingsTagRow: View {
                     HStack(spacing: 10) {
                         editField(CadenceTagSettingsCopy.nameFieldPlaceholder, text: $draftName)
                             .frame(minWidth: 180)
+                            .focused($isNameFocused)
+                            .onAppear { isNameFocused = true }
                         editField(CadenceTagSettingsCopy.descriptionFieldPlaceholder, text: $draftDescription)
                     }
 

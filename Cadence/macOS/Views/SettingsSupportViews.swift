@@ -51,6 +51,10 @@ struct ContextSettingsRow: View {
     @State private var editColor = ""
     @State private var editIcon = ""
     @State private var renameFailureNotice: String?
+    /// [[T-18408]]: the rename opens from a hover pencil, which takes no keyboard focus, so the
+    /// "Context name" field takes it on appear. Per row: several rows can be open at once, and only
+    /// the field just inserted runs its `onAppear`, so the one just opened is the one focused.
+    @FocusState private var isNameFocused: Bool
 
     /// [[T-9622]]: where the label starts, so the card's hairline can start there too.
     static let horizontalPadding: CGFloat = 2
@@ -130,6 +134,8 @@ struct ContextSettingsRow: View {
                         // [[T-10033]]: Return saves through the Save button's own `saveEdit`,
                         // which refuses a blank name as the disabled button does.
                         .onSubmit(saveEdit)
+                        .focused($isNameFocused)
+                        .onAppear { isNameFocused = true }
 
                     SectionEyebrowLabel(text: "Color")
                     ColorGrid(selected: $editColor)

@@ -25,6 +25,14 @@ struct CadenceMacInlineFormKeyboardTests {
         compact.components(separatedBy: needle).count - 1
     }
 
+    /// The compact source from `start` up to (not including) `end`, or `nil` when either is missing.
+    private static func slice(_ compact: String, from start: String, to end: String) -> String? {
+        guard let lower = compact.range(of: start),
+              let upper = compact.range(of: end, range: lower.upperBound..<compact.endIndex)
+        else { return nil }
+        return String(compact[lower.lowerBound..<upper.lowerBound])
+    }
+
     /// [[T-10061]]: the list page's "+ Section" row (shared, drawn on the Mac list page and both
     /// iOS list pages) had an xmark and nothing listening for Escape.
     @Test func sectionCreationRowCancelsOnEscapeThroughItsOwnCancel() throws {
@@ -146,6 +154,68 @@ struct CadenceMacInlineFormKeyboardTests {
             "cancelEditing must close the editor"
         )
         #expect(Self.count(".keyboardShortcut(", in: row) + Self.count("shortcut:.", in: row) == 0)
+    }
+
+    /// **[[T-18408]]: each of the three editors puts the caret in its first field on open.** All
+    /// three open from a button (the "Add Link" button, a context row's hover pencil, a tag card's
+    /// pencil) that takes no keyboard focus on a Mac without Full Keyboard Access, so with no field
+    /// focused typing went nowhere and neither Return nor the focus-scoped Escape pinned above
+    /// fired. Each now carries the `CadenceSectionCreationRow` shape: a `@FocusState` on its first
+    /// field, set on that field's own `onAppear` -- per row, so of several open context rows or tag
+    /// cards the one just inserted is the one focused.
+    @Test func addLinkFormFocusesItsTitleFieldOnOpen() throws {
+        let bar = try Self.compactBody(
+            "private struct AddLinkBar: View",
+            in: "Cadence/macOS/Views/LinksView.swift"
+        )
+        #expect(bar.contains("@FocusStateprivatevarisTitleFocused:Bool"), "the add-link form holds no focus state")
+        let titleField = try #require(
+            Self.slice(bar, from: "TextField(\"Title(optional)\",text:$title)", to: "TextField(\"URL\""),
+            "the slice is not the add-link form's Title field"
+        )
+        #expect(
+            titleField.contains(".focused($isTitleFocused).onAppear{isTitleFocused=true}"),
+            "the Title field must take focus when the form opens"
+        )
+        #expect(Self.count(".focused(", in: bar) == 1, "exactly one add-link field is focused on open")
+    }
+
+    @Test func settingsContextRenameFocusesItsNameFieldOnOpen() throws {
+        let row = try Self.compactBody(
+            "struct ContextSettingsRow: View",
+            in: "Cadence/macOS/Views/SettingsSupportViews.swift"
+        )
+        #expect(row.contains("@FocusStateprivatevarisNameFocused:Bool"), "the context row holds no focus state")
+        let nameField = try #require(
+            Self.slice(row, from: "TextField(\"Contextname\",text:$editName)", to: "SectionEyebrowLabel("),
+            "the slice is not the context rename's name field"
+        )
+        #expect(
+            nameField.contains(".focused($isNameFocused).onAppear{isNameFocused=true}"),
+            "the Context name field must take focus when the rename opens"
+        )
+        #expect(Self.count(".focused(", in: row) == 1, "exactly one context-rename field is focused on open")
+    }
+
+    @Test func settingsTagCardEditorFocusesItsNameFieldOnOpen() throws {
+        let row = try Self.compactBody(
+            "private struct SettingsTagRow: View",
+            in: "Cadence/macOS/Views/SettingsTagsSection.swift"
+        )
+        #expect(row.contains("@FocusStateprivatevarisNameFocused:Bool"), "the tag card holds no focus state")
+        let nameField = try #require(
+            Self.slice(
+                row,
+                from: "editField(CadenceTagSettingsCopy.nameFieldPlaceholder,text:$draftName)",
+                to: "editField(CadenceTagSettingsCopy.descriptionFieldPlaceholder"
+            ),
+            "the slice is not the tag card's Name field"
+        )
+        #expect(
+            nameField.contains(".frame(minWidth:180).focused($isNameFocused).onAppear{isNameFocused=true}"),
+            "the tag card's Name field must take focus when the editor opens"
+        )
+        #expect(Self.count(".focused(", in: row) == 1, "exactly one tag-card field is focused on open")
     }
 }
 

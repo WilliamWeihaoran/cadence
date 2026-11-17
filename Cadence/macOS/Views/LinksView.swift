@@ -155,6 +155,12 @@ private struct AddLinkBar: View {
     let onSave: () -> Void
     let onCancel: () -> Void
 
+    /// [[T-18408]]: the form opens from the "Add Link" button, which takes no keyboard focus on a
+    /// Mac without Full Keyboard Access, so nothing was first responder: typing went nowhere and
+    /// the focus-scoped Escape below never fired. The Title field takes focus on appear, as the
+    /// list-note rename and `CadenceSectionCreationRow` do.
+    @FocusState private var isTitleFocused: Bool
+
     var body: some View {
         VStack(spacing: 8) {
             TextField("Title (optional)", text: $title)
@@ -164,6 +170,8 @@ private struct AddLinkBar: View {
                 .padding(9)
                 .background(Theme.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                .focused($isTitleFocused)
+                .onAppear { isTitleFocused = true }
 
             TextField("URL", text: $url)
                 .textFieldStyle(.plain)
