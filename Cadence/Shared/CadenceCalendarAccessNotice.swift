@@ -142,6 +142,33 @@ nonisolated enum CadenceCalendarAccessNotice: Equatable {
     }
 
     static let notConnectedSentence = "Apple Calendar is not connected, so its events are not shown."
+
+    /// **What an event composer says in place of its calendar picker without access** ([[T-18385]]).
+    ///
+    /// The Mac's drag-create popover and Cmd+N composer and the iOS timeline draft popover each
+    /// typed "Turn it on in Settings, then try again." on `isAuthorized` alone. A never-asked
+    /// iPhone has no Calendars switch on Cadence's Settings app page yet, and a refused Mac is sent
+    /// on from Cadence's Settings to System Settings, so neither state was named. Now the remedy
+    /// is this notice's own per state and platform: the offer names Cadence's Settings > Calendar
+    /// button by its title, and a refusal reuses `detail(on:)`, the Settings card's sentence
+    /// ([[T-9572]]'s one-spelling rule). `nil` when access is granted.
+    static func eventCreationUnavailableSentence(
+        isAuthorized: Bool,
+        isDenied: Bool,
+        on platform: Platform = .current
+    ) -> String? {
+        guard let notice = resolve(isAuthorized: isAuthorized, isDenied: isDenied) else { return nil }
+        let remedy: String
+        switch notice {
+        case .connectOffer:
+            remedy = "Choose \(notice.actionTitle(on: platform)) under Calendar in Cadence's Settings."
+        case .denied:
+            remedy = notice.detail(on: platform)
+        }
+        return "\(eventCreationNeedsAccessSentence) \(remedy)"
+    }
+
+    static let eventCreationNeedsAccessSentence = "Calendar access is needed to create events."
 }
 
 /// **One glyph per access action on every iOS access card** ([[T-9953]]).

@@ -445,8 +445,11 @@ struct CreateTaskSheet: View {
     /// popover does.
     private var calendarUnavailableNotice: String? {
         guard draft.kind == .event else { return nil }
-        if !calendarManager.isAuthorized {
-            return "Calendar access is needed to create events. Turn it on in Settings, then try again."
+        if let sentence = CadenceCalendarAccessNotice.eventCreationUnavailableSentence(
+            isAuthorized: calendarManager.isAuthorized,
+            isDenied: calendarManager.isDenied
+        ) {
+            return sentence
         }
         if calendarManager.writableCalendars.isEmpty {
             return "No writable calendars are available."

@@ -100,6 +100,55 @@ struct CadenceCalendarAccessNoticeTests {
         }
     }
 
+    /// [[T-18385]]: an event composer without access names each state's own remedy on each
+    /// platform -- the offer sends the reader to Cadence's Settings > Calendar Allow Access, a
+    /// refusal reuses the Settings card's denied sentence -- and says nothing once access is granted.
+    @Test func theEventComposersNameEachStatesOwnRemedyOnEachPlatform() {
+        let lead = CadenceCalendarAccessNotice.eventCreationNeedsAccessSentence
+        for platform in [CadenceCalendarAccessNotice.Platform.mac, .mobile] {
+            #expect(CadenceCalendarAccessNotice.eventCreationUnavailableSentence(
+                isAuthorized: true, isDenied: false, on: platform) == nil)
+            #expect(CadenceCalendarAccessNotice.eventCreationUnavailableSentence(
+                isAuthorized: true, isDenied: true, on: platform) == nil)
+            #expect(
+                CadenceCalendarAccessNotice.eventCreationUnavailableSentence(
+                    isAuthorized: false, isDenied: false, on: platform)
+                    == "\(lead) Choose Allow Access under Calendar in Cadence's Settings."
+            )
+            #expect(
+                CadenceCalendarAccessNotice.eventCreationUnavailableSentence(
+                    isAuthorized: false, isDenied: true, on: platform)
+                    == "\(lead) \(CadenceCalendarAccessNotice.denied.detail(on: platform))"
+            )
+        }
+        #expect(lead == "Calendar access is needed to create events.")
+        #expect(
+            CadenceCalendarAccessNotice.eventCreationUnavailableSentence(isAuthorized: false, isDenied: true, on: .mac)?
+                .contains("System Settings") == true
+        )
+        #expect(
+            CadenceCalendarAccessNotice.eventCreationUnavailableSentence(isAuthorized: false, isDenied: true, on: .mobile)
+                == "\(lead) Allow Calendars access on Cadence's page in the Settings app."
+        )
+    }
+
+    /// [[T-18385]]: the three event composers read that sentence with their manager's `isDenied`,
+    /// and none hand-types the old one-size remedy.
+    @Test func theEventComposersReadTheSharedSentenceAndNeverTheOldLiteral() throws {
+        let composers = [
+            "Cadence/macOS/Views/QuickCreateChoicePopover.swift",
+            "Cadence/macOS/Sheets/CreateTaskSheet.swift",
+            "Cadence/iOS/iOSTimelineDraftCreate.swift",
+        ]
+        for path in composers {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(code.contains("CadenceCalendarAccessNotice.eventCreationUnavailableSentence("), "\(path) no longer reads the shared sentence")
+            #expect(code.contains("isDenied: calendarManager.isDenied"), "\(path) no longer tells a refusal from an offer")
+            #expect(!code.contains("Turn it on in Settings"), "\(path) hand-types the old remedy again")
+            #expect(!code.contains("\"Calendar access is needed to create events."), "\(path) types the lead sentence again")
+        }
+    }
+
     // MARK: - The empty copy
 
     @Test func nothingThisMonthIsSaidOnlyWhenEventsCouldHaveBeenRead() {

@@ -426,8 +426,11 @@ struct iOSTimelineDraftPanelHost: View {
     /// raise a system permission prompt, so this names what is missing and leaves the request to
     /// the surface that owns it.
     private var calendarUnavailableNotice: String? {
-        if !calendarManager.isAuthorized {
-            return "Calendar access is needed to create events. Turn it on in Settings, then try again."
+        if let sentence = CadenceCalendarAccessNotice.eventCreationUnavailableSentence(
+            isAuthorized: calendarManager.isAuthorized,
+            isDenied: calendarManager.isDenied
+        ) {
+            return sentence
         }
         if calendarManager.writableCalendars.isEmpty {
             return "No writable calendars are available."
