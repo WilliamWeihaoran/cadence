@@ -466,6 +466,10 @@ enum MacTaskRowMenuFailure: Equatable {
     case date
     /// [[T-11614]]: the Priority submenu. Titled as iOS titles it.
     case priority
+    /// [[T-18292]]: a refused tag write from the board card's tag popover, made by the field's
+    /// commit as the popover closes, so there is no line left to say it on. A Mac-only title:
+    /// the phone's tag pickers say it on the control's own line.
+    case tags(String)
 
     var title: String {
         switch self {
@@ -474,13 +478,14 @@ enum MacTaskRowMenuFailure: Equatable {
         case .duplicate: CadenceTaskMutationSupport.duplicateFailureAlertTitle
         case .date: CadenceTaskMutationSupport.dateFailureAlertTitle
         case .priority: CadenceTaskMutationSupport.priorityFailureAlertTitle
+        case .tags: "Couldn't Change Tags"
         }
     }
 
     var message: String {
         switch self {
         case .move, .duplicate, .date, .priority: CadenceTaskFieldEditCommit.saveFailureNotice
-        case .recurrence(let notice): notice
+        case .recurrence(let notice), .tags(let notice): notice
         }
     }
 }

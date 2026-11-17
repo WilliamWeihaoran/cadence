@@ -553,4 +553,73 @@ struct MacTagPickerDismissCommitTests {
         }
     }
 }
+
+/// **[[T-18292]] -- the board card's tag popover, brought to [[T-18288]]'s shape.** It held its
+/// field in its own `@State`, swallowed the selection setter's refusal (`try?` over a raw `save()`)
+/// and said nothing about a refused create. Driven against a real in-memory container; never the
+/// owner's store.
+@MainActor
+struct KanbanTagPickerRefusalTests {
+    private struct Refused: Error {}
+
+    /// The selection setter commits through the inspector's tag write: a refusal answers the
+    /// sentence and leaves the task -- in memory and in the store -- with the tags it had.
+    @Test func aRefusedSelectionIsNamedAndUndone() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Card")
+        let first = Cadence.Tag(name: "First", slug: "first")
+        let second = Cadence.Tag(name: "Second", slug: "second")
+        context.insert(task)
+        context.insert(first)
+        context.insert(second)
+        try context.save()
+
+        #expect(KanbanTagPickerPopover.setTags([first], on: task, in: context) == nil)
+        let refusal = KanbanTagPickerPopover.setTags([first, second], on: task, in: context, commit: { _ in throw Refused() })
+        #expect(refusal == CadenceTaskFieldEditCommit.saveFailureNotice)
+        #expect(task.tags?.map(\.id) == [first.id])
+        let stored = try #require(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(stored.tags?.map(\.id) == [first.id])
+    }
+
+    /// While the popover is open its own line says it; a refusal from the field's dismiss commit
+    /// lands after it closed, so it goes to the card's alert; a write the store took clears both.
+    @Test func aRefusalIsSaidWhereItCanBeSeen() {
+        #expect(KanbanTagPickerPopover.refusalRoute("No", pickerOpen: true) == .inline("No"))
+        #expect(KanbanTagPickerPopover.refusalRoute("No", pickerOpen: false) == .alert("No"))
+        #expect(KanbanTagPickerPopover.refusalRoute(nil, pickerOpen: true) == .cleared)
+        #expect(KanbanTagPickerPopover.refusalRoute(nil, pickerOpen: false) == .cleared)
+        #expect(MacTaskRowMenuFailure.tags("No").message == "No")
+        #expect(MacTaskRowMenuFailure.tags("No").title == "Couldn't Change Tags")
+    }
+
+    /// **Source shape** for what no unit test can open: the popover hands its field and its
+    /// refusals to the card, and the card decides by the popover's state, not the popover's.
+    @Test func theCardHoldsTheFieldAndSaysEveryRefusal() throws {
+        func scanned(_ path: String) throws -> String {
+            let raw = try CadenceSourceScan.sourceFile(path)
+            #expect(raw.count > 1_000, "non-vacuity: \(path)")
+            return CadenceSourceScan.strippingComments(raw)
+        }
+        let meta = try scanned("Cadence/macOS/Views/KanbanCardMetaSupportViews.swift")
+        let popover = try #require(CadenceSourceScan.declarationBody("struct KanbanTagPickerPopover: View", in: meta))
+        #expect(CadenceSourceScan.matchCount(#"try\?"#, in: popover) == 0, "a tag write swallows its refusal again")
+        #expect(popover.contains("@Binding var query: String"))
+        #expect(!popover.contains("@State private var query"), "the field closes with the popover again")
+        #expect(popover.contains("query: $query,"))
+        #expect(popover.contains("onDismissRefusal: { report($0) }"), "a refused dismiss commit is dropped")
+        #expect(popover.contains("set: { report(Self.setTags($0, on: task, in: modelContext)) }"))
+        #expect(popover.contains("report(tag == nil ? CadencePendingChangePersistence.editFailureNotice : nil)"))
+        #expect(popover.contains("CadenceInlineFailureNotice(text: failureNotice)"))
+
+        let card = try scanned("Cadence/macOS/Views/KanbanCardView.swift")
+        #expect(card.contains(#"@State private var tagQuery = """#))
+        #expect(card.contains("query: $tagQuery,"), "the card no longer hands its field to the popover")
+        #expect(card.contains("report: reportTagWrite"))
+        let route = try #require(CadenceSourceScan.functionBody(named: "reportTagWrite", in: card))
+        #expect(route.contains("KanbanTagPickerPopover.refusalRoute(refusal, pickerOpen: showTagPicker)"))
+        #expect(route.contains("menuFailure = .tags(notice)"), "a refusal after the popover closed is not raised")
+    }
+}
 #endif

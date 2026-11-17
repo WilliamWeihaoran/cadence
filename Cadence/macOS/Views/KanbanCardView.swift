@@ -51,6 +51,12 @@ struct KanbanCard: View {
     /// exactly as on `MacTaskRow` ([[T-8062]]).
     @State private var pendingRecurrenceRule: TaskRecurrenceRule?
     @State private var menuFailure: MacTaskRowMenuFailure?
+    /// **[[T-18292]].** The tag popover's field, held here so a name its dismiss commit could not
+    /// land is offered again on the next open, as `TagPickerControl` holds it.
+    @State private var tagQuery = ""
+    /// A refused tag write made while the tag popover is open, drawn inside it. See
+    /// `reportTagWrite`.
+    @State private var tagFailureNotice: String?
 
     var body: some View {
         CadenceLedgerCard(
@@ -152,7 +158,12 @@ struct KanbanCard: View {
         // the inspector ran into, it is not a flat rule about chaining, and this card is evidence
         // against reading it as one.
         .popover(isPresented: $showTagPicker, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
-            KanbanTagPickerPopover(task: task)
+            KanbanTagPickerPopover(
+                task: task,
+                query: $tagQuery,
+                failureNotice: tagFailureNotice,
+                report: reportTagWrite
+            )
         }
         .popover(isPresented: $showDurationPicker, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
             // The same roller the inspector uses. A card and an inspector editing one field
@@ -484,9 +495,26 @@ struct KanbanCard: View {
     }
 
     private func openTagPicker() {
+        tagFailureNotice = nil
         showTagPicker = true
         setAttributeFocused(true)
         syncInteractiveHoverState()
+    }
+
+    /// **[[T-18292]].** Where a tag write's answer is said, decided by
+    /// `KanbanTagPickerPopover.refusalRoute` against the popover's state as the write lands: a
+    /// refusal from the field's dismiss commit arrives after the popover has closed, so it goes to
+    /// the card's refusal alert, which is on screen, rather than a line inside a closed popover.
+    private func reportTagWrite(_ refusal: String?) {
+        switch KanbanTagPickerPopover.refusalRoute(refusal, pickerOpen: showTagPicker) {
+        case .cleared:
+            tagFailureNotice = nil
+        case .inline(let notice):
+            tagFailureNotice = notice
+        case .alert(let notice):
+            tagFailureNotice = nil
+            menuFailure = .tags(notice)
+        }
     }
 
     private func openTaskInspectorFromCardTap() {
