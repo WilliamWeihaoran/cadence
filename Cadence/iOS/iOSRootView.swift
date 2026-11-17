@@ -171,6 +171,12 @@ struct iOSRootView: View {
                 .frame(width: 0, height: 0)
                 .accessibilityHidden(true)
         }
+        // [[T-17173]]: Cmd+, opens Settings, the Mac's Cadence > Settings… key. See `iOSHardwareKeyCommand`.
+        // Both shells, one route, as Cmd+K's `openSearch` does: the sidebar item, or More, pushed.
+        .iOSCommandKey(iOSHardwareKeyCommand.settingsTitle, key: iOSHardwareKeyCommand.settingsKey) {
+            selection = CadenceFeatureDestination.settings.item
+            apply(CadenceFeatureDestination.settings.compactRoute)
+        }
         .iOSCaptureHost(keyboardCapture)
         // [[T-18157]]: every `+`'s composer is presented here, once, outside the shell switch, so
         // a Split View or Stage Manager resize keeps the draft on screen. After the Cmd+N host so

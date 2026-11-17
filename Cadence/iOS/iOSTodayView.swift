@@ -265,6 +265,11 @@ struct iOSTodayView: View {
             )
             .layoutPriority(0.42)
         }
+        // [[T-17173]]: Cmd+\, the Mac's View > Toggle Timeline, on the one iPad layout that shows a
+        // timeline beside a page. The compact layout has no inspector pane, so no key.
+        .iOSCommandKey(iOSHardwareKeyCommand.toggleTimelineTitle, key: iOSHardwareKeyCommand.toggleTimelineKey) {
+            sidePanelRaw = sidePanel.togglingTimeline.rawValue
+        }
     }
 
     /// The two-pane inspector's body. Neither panel draws its own page title here: the switcher row

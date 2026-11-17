@@ -113,6 +113,11 @@ struct iPadMacStyleRootShell<Content: View>: View {
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
             .clipped()
+            // [[T-17173]]: Cmd+O, the Mac's View > Toggle Sidebar -- the fold when docked, the
+            // drawer when not, the same two arms the collapse button and the expand handle take.
+            .iOSCommandKey(iOSHardwareKeyCommand.toggleSidebarTitle, key: iOSHardwareKeyCommand.toggleSidebarKey) {
+                setSidebarVisible(!isSidebarVisible, isDrawerMode: isDrawerMode)
+            }
             .onChange(of: isDrawerMode) { _, _ in
                 isDrawerPresented = false
             }
