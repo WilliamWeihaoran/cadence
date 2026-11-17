@@ -144,7 +144,7 @@ struct TimelineTaskBlock: View {
         // [[T-10205]]: right-click is the task menu ([[T-1479]]), not a second click; a
         // `RightClickActionTrigger` overlay ran the click's own select-and-open. Edit is the click;
         // a confirmed delete tears down what the hover's Cmd+Delete path tears down.
-        .modifier(MacTaskContextMenuHost(task: task, openDetail: handleBlockTap, willDelete: clearAfterDelete))
+        .modifier(MacTaskContextMenuHost(task: task, openDetail: handleBlockTap, willDelete: clearAfterDelete, namesHoverKeys: true))
         .onDrag {
             guard resizeSession == nil else {
                 return NSItemProvider()

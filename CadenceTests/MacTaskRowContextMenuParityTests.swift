@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -179,7 +180,7 @@ struct MacTaskRowContextMenuParityTests {
         #expect(blockFile.contains("struct TimelineTaskBlock: View"), "non-vacuity: wrong file read")
         #expect(CadenceSourceScan.matchCount(#"\.onTapGesture \{\s*handleBlockTap\(\)\s*\}"#, in: block) == 1)
         #expect(CadenceSourceScan.matchCount(
-            #"\.modifier\(MacTaskContextMenuHost\(task: task, openDetail: handleBlockTap, willDelete: clearAfterDelete\)\)"#,
+            #"\.modifier\(MacTaskContextMenuHost\(task: task, openDetail: handleBlockTap, willDelete: clearAfterDelete, namesHoverKeys: true\)\)"#,
             in: block
         ) == 1)
         #expect(CadenceSourceScan.matchCount("RightClickActionTrigger", in: blockFile) == 0,
@@ -206,6 +207,37 @@ struct MacTaskRowContextMenuParityTests {
         #expect(!source.contains("RightClickEditView"))
         #expect(!source.contains("RightClickActionTrigger("))
         #expect(source.contains(".contextMenu {"))
+    }
+
+    /// **[[T-16532]] — Edit and Delete Task name the hover keys that run them.** Cmd+E and
+    /// Cmd+Delete were named by no menu. The shortcut each item shows must be the key the root
+    /// monitor answers, and a surface that registers no hover (the Calendar's chips) names none.
+    @Test func editAndDeleteNameTheHoverKeysOnlyWhereTheSurfaceAnswersThem() throws {
+        #expect(MacTaskRowContextMenu.hoverKey(.edit, namedHere: true) == KeyboardShortcut("e", modifiers: .command))
+        #expect(MacTaskRowContextMenu.hoverKey(.delete, namedHere: true) == KeyboardShortcut(.delete, modifiers: .command))
+        for key in MacTaskRowContextMenu.HoverKey.allCases {
+            #expect(MacTaskRowContextMenu.hoverKey(key, namedHere: false) == nil, "\(key) is named on a surface without hover")
+            #expect(RootCommandTextEditingGate.hoverScopedKeyCodes.contains(key.monitorKeyCode),
+                    "\(key)'s key code \(key.monitorKeyCode) is not a hover-scoped key")
+        }
+
+        // The monitor's arms for those codes are still the edit and delete triggers.
+        let monitor = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/macOSRootCommandEventSupport.swift")
+        )
+        #expect(CadenceSourceScan.matchCount(#"case 14:\s*if context\.hoveredEditableManager\.triggerEdit\(\)"#, in: monitor) == 1)
+        #expect(CadenceSourceScan.matchCount(#"case 51:\s*if context\.hoveredEditableManager\.triggerDelete\(\)"#, in: monitor) == 1)
+
+        // The menu wears each hint once, gated on the surface; the host names none by default,
+        // and the Month chips use that default.
+        let menu = try body("struct MacTaskRowContextMenu: View", in: Self.macMenuPath)
+        #expect(CadenceSourceScan.matchCount(#"\.keyboardShortcut\(Self\.hoverKey\(\.edit, namedHere: namesHoverKeys\)\)"#, in: menu) == 1)
+        #expect(CadenceSourceScan.matchCount(#"\.keyboardShortcut\(Self\.hoverKey\(\.delete, namedHere: namesHoverKeys\)\)"#, in: menu) == 1)
+        #expect(CadenceSourceScan.matchCount(#"\.keyboardShortcut\("#, in: menu) == 2, "a menu item names a key no hover arm runs")
+        let menuFile = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.macMenuPath))
+        let host = try #require(CadenceSourceScan.declarationBody("struct MacTaskContextMenuHost: ViewModifier", in: menuFile))
+        #expect(host.contains("var namesHoverKeys: Bool = false"))
+        #expect(host.contains("namesHoverKeys: namesHoverKeys"))
     }
 
     @Test func aRefusedMenuWriteIsTitledLikeIOSTitlesIt() {

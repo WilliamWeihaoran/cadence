@@ -34,6 +34,9 @@ struct MacTaskRowContextMenu: View {
     /// A menu closes itself on the click and has nowhere to say a write was refused, so a refusal
     /// is handed back to the row, which raises `MacTaskRowMenuOutcomeModifier`'s alert.
     @Binding var failure: MacTaskRowMenuFailure?
+    /// [[T-16532]]: whether this surface answers the hover keys, so the menu may name them beside
+    /// Edit and Delete Task. `false` on a surface that registers no hover (the Calendar's chips).
+    var namesHoverKeys: Bool = true
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
@@ -57,6 +60,7 @@ struct MacTaskRowContextMenu: View {
         Button(action: openDetail) {
             Label("Edit", systemImage: "square.and.pencil")
         }
+        .keyboardShortcut(Self.hoverKey(.edit, namedHere: namesHoverKeys))
 
         focusMenuItem
 
@@ -77,6 +81,7 @@ struct MacTaskRowContextMenu: View {
             Label("Delete Task", systemImage: "trash")
         }
         .cadenceDestructiveMenuRow()
+        .keyboardShortcut(Self.hoverKey(.delete, namedHere: namesHoverKeys))
     }
 
     /// Absent on a settled task, not disabled — the predicate the row's ▶ and iOS's entry share
@@ -417,6 +422,40 @@ struct MacTaskRowContextMenu: View {
     }
 }
 
+/// **[[T-16532]] — the menu names the hover keys that do exactly what its item does.**
+///
+/// Cmd+E and Cmd+Delete over a hovered task are the root key monitor's (`RootCommandEventSupport.
+/// handleCommandKeyEvent`, key codes 14 and 51) and no menu named them, so nothing on screen said
+/// they existed. Edit and Delete Task run the same paths those keys run, so the items show the
+/// keys as their equivalents. Only exact matches: Do Date ▸ Today always sets today while Cmd+T
+/// toggles it, so it names nothing. Mac-only because the keys act on the task under the POINTER,
+/// which touch does not have ([[T-8201]]). Outside the body so no literal joins the parity set.
+extension MacTaskRowContextMenu {
+    enum HoverKey: CaseIterable {
+        case edit
+        case delete
+
+        var shortcut: KeyboardShortcut {
+            switch self {
+            case .edit: KeyboardShortcut("e", modifiers: .command)
+            case .delete: KeyboardShortcut(.delete, modifiers: .command)
+            }
+        }
+
+        /// The root monitor's arm for this key.
+        var monitorKeyCode: UInt16 {
+            switch self {
+            case .edit: 14
+            case .delete: 51
+            }
+        }
+    }
+
+    static func hoverKey(_ key: HoverKey, namedHere: Bool) -> KeyboardShortcut? {
+        namedHere ? key.shortcut : nil
+    }
+}
+
 /// Not a menu action, so outside the menu's struct: `MacTaskRowContextMenuParityTests` compares
 /// what the menu itself calls with iOS's menu, and these entry points belong to the pickers.
 extension MacTaskRowContextMenu {
@@ -566,6 +605,8 @@ struct MacTaskContextMenuHost: ViewModifier {
     let task: AppTask
     let openDetail: () -> Void
     var willDelete: () -> Void = {}
+    /// [[T-16532]]: `true` only where the host registers the hover keys (the timeline block).
+    var namesHoverKeys: Bool = false
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(FocusManager.self) private var focusManager
@@ -581,7 +622,8 @@ struct MacTaskContextMenuHost: ViewModifier {
                     startFocus: startFocus,
                     requestDelete: presentDelete,
                     pendingRecurrenceRule: $pendingRecurrenceRule,
-                    failure: $menuFailure
+                    failure: $menuFailure,
+                    namesHoverKeys: namesHoverKeys
                 )
             }
             .modifier(MacTaskRowMenuOutcomeModifier(
