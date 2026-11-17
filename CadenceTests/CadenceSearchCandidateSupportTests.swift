@@ -322,10 +322,105 @@ struct CadenceSearchCandidateSupportTests {
         // The Inbox has no sections at all.
         #expect(CadenceTaskSearchSupport.resultSubtitle(for: fixture.scheduled) == "Inbox")
 
-        // And iOS Search draws exactly this helper rather than its own join.
+        // And iOS Search draws exactly this helper rather than its own join -- through the row
+        // facts both search surfaces share since [[T-16473]], which lead with it.
+        #expect(CadenceTaskSearchRowFacts(task: fixture.active).subtitle == "Operations / Billing")
         let view = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath))
-        #expect(view.contains("CadenceTaskSearchSupport.resultSubtitle(for: task)"))
+        #expect(view.contains("CadenceTaskSearchRowFacts(task: task)"))
         #expect(!view.contains("task.resolvedSectionName].joined"))
+    }
+
+    // MARK: - T-16473: one task row's facts on both search surfaces
+
+    private func rowFactsFixture() throws -> (context: ModelContext, task: AppTask) {
+        let context = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let area = Area(name: "Work")
+        let urgent = Cadence.Tag(name: "urgent")
+        let client = Cadence.Tag(name: "client")
+        let task = AppTask(title: "Ship the launch post")
+        context.insert(area)
+        context.insert(urgent)
+        context.insert(client)
+        context.insert(task)
+        task.area = area
+        task.sectionName = "Launch"
+        task.tags = [urgent, client]
+        task.scheduledDate = DateFormatters.todayKey()
+        task.estimatedMinutes = 30
+        task.dueDate = "2026-11-09"
+        task.priority = .high
+        try context.save()
+        return (context, task)
+    }
+
+    /// The ticket's own example: a task in "Work / Launch", tagged, with a do date and a 30m
+    /// estimate. The subtitle is the container + named section and the tags; the detail is the do
+    /// day and the estimate; there is no trailing lifecycle word; the glyph is the priority colour.
+    @Test func aTaskRowsFactsAreTheSectionedContainerTagsDoDayAndEstimate() throws {
+        let (_, task) = try rowFactsFixture()
+        let facts = CadenceTaskSearchRowFacts(task: task, todayKey: "2026-11-16")
+
+        #expect(facts.subtitle == "Work / Launch • client, urgent")
+        #expect(facts.detail == "Do \(DateFormatters.relativeDate(from: task.scheduledDate)) · 30m")
+        #expect(facts.dueLabel == CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: "2026-11-16"))
+        #expect(facts.dueLabel?.hasPrefix("Overdue ") == true, "non-vacuity: the fixture is overdue")
+        #expect(facts.glyphTint == Theme.priorityColor(.high))
+        #expect(facts.glyphTint != Theme.priorityColor(.none), "non-vacuity: high and none tint apart")
+        #expect(!facts.subtitle.contains("Active") && !facts.detail.contains("Active"))
+    }
+
+    /// A finished task's row says nothing the glyph already says, and its glyph is the done fill
+    /// every task row converges on once done -- the same tint `CadenceTaskCompletionGlyph` gives.
+    @Test func aFinishedTasksRowDropsTheLifecycleWordAndTakesTheDoneTint() throws {
+        let (_, task) = try rowFactsFixture()
+        task.status = .done
+        let facts = CadenceTaskSearchRowFacts(task: task, todayKey: "2026-11-16")
+        #expect(facts.glyphTint == Theme.doneFill)
+        #expect(facts.glyphTint == CadenceTaskCompletionGlyph.resolve(task: task).tint)
+        #expect(!facts.subtitle.contains("Completed") && !facts.detail.contains("Completed"))
+        #expect(facts.subtitle.hasPrefix("Work / Launch"), "non-vacuity: the row still names its list")
+    }
+
+    /// A bare task -- Inbox, no tags, no do date, no estimate -- reads just "Inbox" and no detail,
+    /// rather than a dangling separator.
+    @Test func aBareTasksRowIsItsContainerAlone() {
+        let task = AppTask(title: "Loose end")
+        task.estimatedMinutes = 0 // `AppTask` defaults to a 30m estimate
+        let facts = CadenceTaskSearchRowFacts(task: task, todayKey: "2026-11-16")
+        #expect(facts.subtitle == "Inbox")
+        #expect(facts.detail == "")
+        #expect(facts.dueLabel == nil)
+        #expect(facts.glyphTint == Theme.priorityColor(.none))
+
+        task.estimatedMinutes = 45
+        #expect(CadenceTaskSearchRowFacts(task: task).detail == "45m", "the estimate alone, no leading separator")
+    }
+
+    /// Cmd+K's row draws the shared facts field for field.
+    @Test func theCmdKTaskRowReadsTheSharedFacts() throws {
+        let (_, task) = try rowFactsFixture()
+        let facts = CadenceTaskSearchRowFacts(task: task, todayKey: "2026-11-16")
+        let row = GlobalSearchIndexSupport.taskResult(for: task, todayKey: "2026-11-16")
+        #expect(row.subtitle == facts.subtitle)
+        #expect(row.detail == facts.detail)
+        #expect(row.dueLabel == facts.dueLabel)
+        #expect(row.glyphTint == facts.glyphTint)
+        #expect(row.tint == facts.glyphTint)
+        #expect(!row.detail.isEmpty, "non-vacuity: the fixture has a detail line")
+    }
+
+    /// iOS Search's row is behind `#if os(iOS)`, so its wiring is read as source: every field
+    /// comes from the shared facts, and none of the hand-rolled halves is left.
+    @Test func theIOSSearchTaskRowReadsTheSharedFacts() throws {
+        let view = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath))
+        let body = try #require(CadenceSourceScan.functionBody(named: "taskResult", in: view))
+        #expect(body.contains("CadenceTaskSearchRowFacts(task: task)"))
+        for field in ["subtitle: facts.subtitle", "detail: facts.detail", "color: facts.glyphTint", "dueLabel: facts.dueLabel"] {
+            #expect(body.contains(field), "the iOS task row no longer reads \(field)")
+        }
+        #expect(!view.contains("Theme.priorityColor(task.priority)"))
+        #expect(CadenceSourceScan.functionBody(named: "taskDetail", in: view) == nil)
+        #expect(CadenceSourceScan.functionBody(named: "taskSubtitle", in: view) == nil)
     }
 
     // MARK: - T-378: one list-inclusion policy

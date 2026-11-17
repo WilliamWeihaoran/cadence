@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 // What global search can *see*, and which words reach it.
 //
@@ -270,6 +271,58 @@ nonisolated enum CadenceTaskSearchSupport {
             else { return }
             count += 1
         }
+    }
+}
+
+/// One matched task row's facts, read by Cmd+K's palette row and iOS Search's row alike
+/// ([[T-16473]], under [[T-8201]]).
+///
+/// The two rows had drifted with no hardware reason: Cmd+K read "Work • urgent • Do Today •
+/// Active" with the glyph in the list colour and no estimate; iOS read "Work / Launch" over
+/// "Do Today · 30m" with the glyph in the priority colour and no tags. Both now read the same
+/// lines:
+///
+/// - **subtitle** -- the container with " / <section>" for a section the user named
+///   (`CadenceTaskSearchSupport.resultSubtitle`, [[T-5880]]), then the tag names.
+/// - **detail** -- "Do <day>" and the estimate.
+/// - **dueLabel** -- the one due vocabulary ([[T-15491]]), its own field so it is never truncated.
+/// - **glyphTint** -- the completion glyph's tint every task row on both platforms draws
+///   (`CadenceTaskCompletionGlyph`): the priority colour while open, `Theme.doneFill` once done.
+///
+/// No trailing "Active" / "Completed" word: the glyph says it since [[T-14012]].
+///
+/// Main-actor, unlike the rest of this file, because the estimate and due words come from
+/// `CadenceTaskPresentationSupport`; both callers are views.
+@MainActor
+struct CadenceTaskSearchRowFacts: Equatable {
+    static let subtitleSeparator = " • "
+    static let detailSeparator = " · "
+
+    let subtitle: String
+    let detail: String
+    let dueLabel: String?
+    let glyphTint: Color
+
+    init(task: AppTask, todayKey: String = DateFormatters.todayKey()) {
+        let tags = task.sortedTags.map(\.name)
+        subtitle = [
+            CadenceTaskSearchSupport.resultSubtitle(for: task),
+            tags.isEmpty ? nil : tags.joined(separator: ", "),
+        ]
+        .compactMap { $0 }
+        .joined(separator: Self.subtitleSeparator)
+
+        var details: [String] = []
+        if !task.scheduledDate.isEmpty {
+            details.append("Do \(DateFormatters.relativeDate(from: task.scheduledDate))")
+        }
+        if task.estimatedMinutes > 0 {
+            details.append(CadenceTaskPresentationSupport.estimateLabel(for: task))
+        }
+        detail = details.joined(separator: Self.detailSeparator)
+
+        dueLabel = CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: todayKey)
+        glyphTint = CadenceTaskCompletionGlyph.resolve(task: task).tint
     }
 }
 

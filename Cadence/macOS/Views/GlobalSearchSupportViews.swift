@@ -209,7 +209,9 @@ struct GlobalSearchResult: Identifiable, Hashable {
     let title: String
     let subtitle: String
     let icon: String
-    let tintHex: String
+    /// The row's tint as a hex: a list's or calendar's colour, a page's sidebar tint. A task row
+    /// leaves it empty and carries `glyphTint` instead.
+    var tintHex: String = ""
     let destination: GlobalSearchDestination
     /// A third line under the subtitle, empty for every kind but a note, which carries
     /// `CadenceSearchNoteExcerpt`'s body excerpt as an iOS Search note row does ([[T-8763]]).
@@ -226,8 +228,11 @@ struct GlobalSearchResult: Identifiable, Hashable {
     /// `CadenceCalendarEventVisibility.isCancelled` answer, as iOS's `iOSSearchResult.isCancelled`
     /// carries it. `false` for every other kind.
     var isCancelled = false
+    /// A task row's tint, `CadenceTaskSearchRowFacts.glyphTint` -- the completion glyph's priority
+    /// or done colour every task row draws, which has no hex spelling ([[T-16473]]).
+    var glyphTint: Color? = nil
 
-    var tint: Color { Color(hex: tintHex) }
+    var tint: Color { glyphTint ?? Color(hex: tintHex) }
 }
 
 /// Everything a category matched, and how many of them the palette lists before it has to say

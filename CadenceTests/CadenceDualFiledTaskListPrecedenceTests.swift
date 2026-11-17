@@ -216,12 +216,13 @@ struct CadenceDualFiledTaskListPrecedenceTests {
     }
 
     #if os(macOS)
-    /// Cmd+K's row and its pick agree: the row names and tints the project, and Return opens it.
+    /// Cmd+K's row and its pick agree: the row names the project, and Return opens it. (The row's
+    /// glyph is tinted as every task row's completion glyph is, not in a list colour: [[T-16473]].)
     @Test func cmdKsRowAndItsPickNameTheSameList() throws {
         let s = try seed()
         let row = GlobalSearchIndexSupport.taskResult(for: s.task, todayKey: "2026-11-10")
         #expect(row.subtitle.hasPrefix("Kitchen Reno"), "the Cmd+K row reads \(row.subtitle)")
-        #expect(row.tintHex == "#1177cc")
+        #expect(!row.subtitle.contains("Home"), "the Cmd+K row names the area: \(row.subtitle)")
 
         let navigation = ListNavigationManager.shared
         navigation.request = nil

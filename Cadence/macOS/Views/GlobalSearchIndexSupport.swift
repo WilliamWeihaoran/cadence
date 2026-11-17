@@ -321,29 +321,21 @@ enum GlobalSearchIndexSupport {
         .map(\.result)
     }
 
-    /// One palette task row.
+    /// One palette task row. Its words and glyph tint are `CadenceTaskSearchRowFacts`', the facts
+    /// iOS Search's row reads too ([[T-16473]]); the due words travel in their own field
+    /// ([[T-16471]]: see `GlobalSearchResult.dueLabel`).
     static func taskResult(for task: AppTask, todayKey: String = DateFormatters.todayKey()) -> GlobalSearchResult {
-        let container = CadenceTaskSearchSupport.containerLabel(for: task)
-        let tags = task.sortedTags
-
-        let meta: [String] = [
-            container,
-            tags.isEmpty ? nil : tags.map(\.name).joined(separator: ", "),
-            task.scheduledDate.isEmpty ? nil : "Do \(DateFormatters.relativeDate(from: task.scheduledDate))",
-            task.isDone ? "Completed" : "Active"
-        ].compactMap { $0 }
-
+        let facts = CadenceTaskSearchRowFacts(task: task, todayKey: todayKey)
         return GlobalSearchResult(
             id: CadenceSearchIdentity.task(task.id),
             category: .tasks,
             title: TaskTitleSupport.displayTitle(task.title),
-            subtitle: meta.joined(separator: " • "),
+            subtitle: facts.subtitle,
             icon: CadenceTaskSearchSupport.glyph(for: task).systemImage,
-            tintHex: task.containerColor,
             destination: .task(task.id),
-            // [[T-15491]]: the one due-date vocabulary, "Overdue Nov 9" / "Due today". Its own
-            // field, not a subtitle part ([[T-16471]]): see `GlobalSearchResult.dueLabel`.
-            dueLabel: CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: todayKey)
+            detail: facts.detail,
+            dueLabel: facts.dueLabel,
+            glyphTint: facts.glyphTint
         )
     }
 

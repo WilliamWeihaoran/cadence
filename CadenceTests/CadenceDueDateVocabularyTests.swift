@@ -220,7 +220,9 @@ struct CadenceDueDateVocabularyTests {
     @Test func theIOSSurfacesReadTheBuilderAndAddNoPrefix() throws {
         let files: [(path: String, needle: String)] = [
             ("Cadence/iOS/iOSTaskViews.swift", "CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: todayKey)"),
-            ("Cadence/iOS/iOSSearchView.swift", "CadenceTaskPresentationSupport.dueDateLabel(for: task)"),
+            // [[T-16473]]: iOS Search's task row reads the row facts Cmd+K shares, which read the builder.
+            ("Cadence/iOS/iOSSearchView.swift", "dueLabel: facts.dueLabel"),
+            ("Cadence/Shared/CadenceSearchCandidateSupport.swift", "CadenceTaskPresentationSupport.dueDateLabel(for: task, todayKey: todayKey)"),
             ("Cadence/iOS/iOSMarkdownAccessoryViews.swift", "CadenceTaskPresentationSupport.dueDateLabel(for: task)"),
         ]
         for (path, needle) in files {

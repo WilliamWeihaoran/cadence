@@ -329,17 +329,20 @@ struct iOSSearchView: View {
         .map(\.row)
     }
 
+    /// The row's words and glyph tint are `CadenceTaskSearchRowFacts`', the facts Cmd+K's palette
+    /// row reads too ([[T-16473]]).
     private func taskResult(_ task: AppTask, score: Int) -> iOSSearchResult {
-        iOSSearchResult(
+        let facts = CadenceTaskSearchRowFacts(task: task)
+        return iOSSearchResult(
             id: CadenceSearchIdentity.task(task.id),
             destination: .task(task),
             title: TaskTitleSupport.displayTitle(task.title),
-            subtitle: taskSubtitle(task),
-            detail: taskDetail(task),
+            subtitle: facts.subtitle,
+            detail: facts.detail,
             icon: CadenceTaskSearchSupport.glyph(for: task).systemImage,
-            color: Theme.priorityColor(task.priority),
+            color: facts.glyphTint,
             score: score,
-            dueLabel: taskDueLabel(task)
+            dueLabel: facts.dueLabel
         )
     }
 
@@ -801,27 +804,6 @@ struct iOSSearchView: View {
     private func openAppSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         openURL(url)
-    }
-
-    private func taskSubtitle(_ task: AppTask) -> String {
-        CadenceTaskSearchSupport.resultSubtitle(for: task)
-    }
-
-    private func taskDetail(_ task: AppTask) -> String {
-        var parts: [String] = []
-        if !task.scheduledDate.isEmpty {
-            parts.append("Do \(DateFormatters.relativeDate(from: task.scheduledDate))")
-        }
-        if task.estimatedMinutes > 0 {
-            parts.append(CadenceTaskPresentationSupport.estimateLabel(for: task))
-        }
-        return parts.joined(separator: " · ")
-    }
-
-    /// Carried beside `detail` rather than inside it — see `iOSSearchResult.dueLabel`.
-    /// [[T-15491]]: the builder's words carry their own "Due" / "Overdue".
-    private func taskDueLabel(_ task: AppTask) -> String? {
-        CadenceTaskPresentationSupport.dueDateLabel(for: task)
     }
 
     /// The shared ranking list Cmd+K reads too ([[T-12803]]); this view supplies only its row's
