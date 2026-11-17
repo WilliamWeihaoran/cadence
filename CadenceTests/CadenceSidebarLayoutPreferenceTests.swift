@@ -124,15 +124,15 @@ struct CadenceSidebarLayoutPreferenceTests {
             "Cadence/Shared/CadenceSidebarLayoutPreferenceStore.swift",
             "Cadence/Services/CadenceUITestSupport.swift",
         ]
-        let root = CadenceSourceScan.repositoryRoot()
-        let base = root.appendingPathComponent("Cadence")
-        let enumerator = try #require(FileManager.default.enumerator(at: base, includingPropertiesForKeys: nil))
+        // The shared walker answers repository-relative paths, so no absolute path is cut here: a
+        // tree reached through a symlink (`/var` -> `/private/var`) enumerates under the resolved
+        // spelling, and cutting it by the unresolved base's length misread every allowed file as an
+        // offender (T-18293).
         var scanned = 0
         var offenders: [String] = []
-        for case let url as URL in enumerator where url.pathExtension == "swift" {
+        for relative in try CadenceSourceScan.swiftFiles(under: "Cadence") {
             scanned += 1
-            let relative = "Cadence/" + url.path.dropFirst(base.path.count + 1)
-            let code = CadenceSourceScan.strippingComments(try String(contentsOf: url, encoding: .utf8))
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(relative))
             let names = code.contains("CadencePreferenceKeys.sidebarTabOrder")
                 || code.contains("CadencePreferenceKeys.sidebarHiddenTabs")
                 || code.contains("\"sidebarTabOrder\"")
