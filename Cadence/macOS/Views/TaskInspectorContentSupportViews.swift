@@ -797,20 +797,15 @@ enum TaskInspectorScheduleCommit {
         let current = CadenceScheduleDraft(editing: task)
         // [[T-16625]]: notes are written as typed, so Save carries the task's own, never the copy
         // the draft opened with — the one rule the iOS sheet's Save reads too.
-        var payload = CadenceTaskInspectorNotes.savePayload(draft, for: task)
-        // An untouched recurrence draft must not overwrite a sync or another editor's change.
-        if !draft.changesRecurrence(from: opened) {
-            payload.repeatRule = current.repeatRule
-            payload.seriesEndMode = current.seriesEndMode
-            payload.seriesEndDateKey = current.seriesEndDateKey
-            payload.seriesEndCount = current.seriesEndCount
-        }
-        payload.seriesOccurrenceNumber = current.seriesOccurrenceNumber
-        payload.isSettled = current.isSettled
-        let clearsSchedule = (payload.startDateKey.isEmpty && !current.startDateKey.isEmpty)
-            || (payload.scheduledStartMin < 0 && current.scheduledStartMin >= 0)
+        let payload = CadenceTaskInspectorNotes.savePayload(draft, for: task)
+        // [[T-18443]]: the commit is a three-way write against the draft the popover OPENED with,
+        // so every field the user left alone -- the series included -- keeps what a sync or another
+        // editor wrote meanwhile. Passing `current` here made every drafted field look moved.
+        let clearsSchedule = payload.changesSlot(from: opened)
+            && ((payload.startDateKey.isEmpty && !current.startDateKey.isEmpty)
+                || (payload.scheduledStartMin < 0 && current.scheduledStartMin >= 0))
         return CadenceTaskEditDraftCommit.save(
-            payload, opened: current, to: task, area: area, project: project,
+            payload, opened: opened, to: task, area: area, project: project,
             allTasks: allTasks, scope: scope, in: modelContext,
             commit: { context in
                 // Keep the legacy Unschedule link inside the same refusal snapshot.

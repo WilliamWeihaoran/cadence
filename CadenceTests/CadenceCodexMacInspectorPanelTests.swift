@@ -53,6 +53,37 @@ struct CadenceCodexMacInspectorPanelTests {
         #expect(stored.status == .inProgress)
     }
 
+    /// [[T-18443]]: the Mac popover's Save is three-way against the draft it OPENED with, not
+    /// the task re-read at Save -- which made every drafted field look moved and wrote the opened
+    /// snapshot back over another window's edit.
+    @Test func codexInspectorSaveKeepsAnotherWindowsEditToAFieldLeftAlone() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Report")
+        task.dueDate = "2026-10-23"
+        context.insert(task)
+        try context.save()
+        let opened = CadenceScheduleDraft(editing: task)
+        var draft = opened
+        draft.priority = .high
+        task.title = "Quarterly report"
+        task.dueDate = "2026-10-26"
+        task.scheduledDate = "2026-10-21"
+        task.calendarEventID = "legacy-link"
+        try context.save()
+        #expect(TaskInspectorScheduleCommit.save(
+            draft, opened: opened, to: task, areas: [], projects: [], allTasks: [task], in: context,
+            commit: { try $0.save() }
+        ))
+        let stored = try #require(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(stored.priority == .high)
+        #expect(stored.title == "Quarterly report", "the popover wrote its opened title back")
+        #expect(stored.dueDate == "2026-10-26", "the popover wrote its opened due date back")
+        #expect(stored.scheduledDate == "2026-10-21", "the popover wrote its opened do date back")
+        // The popover opened undated; a date set elsewhere is not an Unschedule by this Save.
+        #expect(stored.calendarEventID == "legacy-link", "an untouched schedule dropped the legacy link")
+    }
+
     @Test func codexInspectorRefusedDraftRestoresFieldsAndLeavesTheRetryDraft() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)

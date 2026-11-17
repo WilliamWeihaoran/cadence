@@ -80,6 +80,18 @@ extension CadenceScheduleDraft {
         repeatRule != opened.repeatRule || changesRecurrenceEnd(from: opened)
     }
 
+    /// [[T-18443]]: whether the do date or its time moved. One unit, because a time names a slot
+    /// on a day: a day written without its minute (or the reverse) could pair a stored time with a
+    /// day it was never picked for.
+    func changesSlot(from opened: CadenceScheduleDraft) -> Bool {
+        startDateKey != opened.startDateKey || scheduledStartMin != opened.scheduledStartMin
+    }
+
+    /// [[T-18443]]: whether the list or the section moved -- one placement, as the picker draws it.
+    func changesPlacement(from opened: CadenceScheduleDraft) -> Bool {
+        listToken != opened.listToken || sectionName != opened.sectionName
+    }
+
     fileprivate func changesRecurrenceEnd(from opened: CadenceScheduleDraft) -> Bool {
         let mode = effectiveSeriesEndMode
         let openedMode = opened.effectiveSeriesEndMode
@@ -103,9 +115,11 @@ enum CadenceTaskEditDraftCommit {
     /// still holds what the user chose.
     ///
     /// - Parameters:
-    ///   - opened: the draft as the panel opened it. Only the series edit is gated on it: the
-    ///     rule and the end condition are applied only when they moved, because applying either
-    ///     stamps series metadata and walks the series.
+    ///   - opened: the draft as the panel opened it. **Every field is gated on it** ([[T-18443]]):
+    ///     a field is written only where the draft moved from it, so one the user did not touch
+    ///     keeps whatever the store holds NOW -- a change another window, a sync import or MCP made
+    ///     while the panel was open survives Save. The series rule and end condition were gated
+    ///     first, because applying either also stamps series metadata and walks the series.
     ///   - area, project: the list `draft.listToken` names, resolved by the host against the store.
     ///   - scope: how far a series edit reaches. Ignored when the series did not move.
     ///   - commit: see `CadenceTaskFieldEditCommit.commit`.
@@ -161,20 +175,37 @@ enum CadenceTaskEditDraftCommit {
         case .todo, .inProgress: task.completedAt = nil
         case .done, .cancelled: break
         }
-        task.title = draft.title
-        task.notes = draft.notes
-        task.priority = draft.priority
-        task.estimatedMinutes = draft.estimateMinutes
-        task.dueDate = draft.dueDateKey
-        task.scheduledDate = draft.startDateKey
-        // [[T-14233]]: capped where the draft's own read caps it, not at `setScheduledTime`'s
-        // 1425. That was the last QUARTER-hour, and the panel's Start roller steps in five minutes
-        // ([[T-3171]]), so a picked 11:50 or 11:55 PM saved as 11:45 PM -- and a task already at
-        // 23:50 (a five-minute block dragged to the end of the timeline) moved to 23:45 on any
-        // unrelated Save, a rename included, against "read exactly, write once" above.
-        let minute = draft.scheduledStartMin
-        task.scheduledStartMin = minute < 0 ? -1 : min(minute, CadenceScheduleDraft.lastTaskStartMinute)
+        // [[T-18443]]: a three-way write. The panel snapshots the task once, so writing a field
+        // the user left alone wrote the snapshot back over any change made to it elsewhere while
+        // the panel was open -- another window's due date, a synced rename -- silently reverted.
+        if draft.title != opened.title { task.title = draft.title }
+        // The inline panel drafts notes; both inspectors hand in the task's own ([[T-16625]]).
+        if draft.notes != opened.notes { task.notes = draft.notes }
+        if draft.priority != opened.priority { task.priority = draft.priority }
+        if draft.estimateMinutes != opened.estimateMinutes { task.estimatedMinutes = draft.estimateMinutes }
+        if draft.dueDateKey != opened.dueDateKey { task.dueDate = draft.dueDateKey }
+        if draft.changesSlot(from: opened) {
+            task.scheduledDate = draft.startDateKey
+            // [[T-14233]]: capped where the draft's own read caps it, not at `setScheduledTime`'s
+            // 1425. That was the last QUARTER-hour, and the panel's Start roller steps in five
+            // minutes ([[T-3171]]), so a picked 11:50 or 11:55 PM saved as 11:45 PM.
+            let minute = draft.scheduledStartMin
+            task.scheduledStartMin = minute < 0 ? -1 : min(minute, CadenceScheduleDraft.lastTaskStartMinute)
+        }
 
+        if !draft.changesPlacement(from: opened) {
+            // Untouched: the task stays wherever the store has it now. A task still in the list it
+            // opened in keeps its own current section, retained as the open read retains it -- so
+            // a name no column holds still normalizes, and a column the list holds is kept.
+            if CadenceTaskMutationSupport.isAlreadyInContainer(task, area: area, project: project) {
+                let kept = CadenceTaskMutationSupport.retainedSectionName(
+                    task.resolvedSectionName, area: area, project: project
+                )
+                if task.sectionName != kept { task.sectionName = kept }
+            }
+            applySeries(draft, opened: opened, to: task, allTasks: allTasks, scope: scope)
+            return
+        }
         let sectionName = CadenceTaskMutationSupport.normalizedSectionName(draft.sectionName, area: area, project: project)
         if CadenceTaskMutationSupport.isAlreadyInContainer(task, area: area, project: project) {
             // **Not `assignContainer`** (T-726's ground, one frame lower): re-asserting the list a
@@ -193,7 +224,17 @@ enum CadenceTaskEditDraftCommit {
                 allTasks: allTasks
             )
         }
+        applySeries(draft, opened: opened, to: task, allTasks: allTasks, scope: scope)
+    }
 
+    /// The series half of `apply`: the rule and the end condition, each only where it moved.
+    private static func applySeries(
+        _ draft: CadenceScheduleDraft,
+        opened: CadenceScheduleDraft,
+        to task: AppTask,
+        allTasks: [AppTask],
+        scope: CadenceTaskRecurrenceEditScope
+    ) {
         if draft.repeatRule != opened.repeatRule {
             CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
                 draft.repeatRule,

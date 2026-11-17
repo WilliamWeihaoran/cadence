@@ -1332,6 +1332,80 @@ struct CadenceScheduleDraftTaskEditingTests {
         #expect(stored.notes == "Synced from another device", "Save wrote the opened notes back over another writer")
     }
 
+    /// [[T-18443]]: Save is a three-way write. A panel snapshots its task once, so a field the
+    /// user did not touch must keep whatever the store holds at Save -- another window's due date,
+    /// a synced rename, a moved do date, a list move -- not the copy the panel opened with.
+    @Test("Save leaves a field the user did not touch as another writer left it")
+    func saveLeavesUntouchedFieldsAsAnotherWriterLeftThem() throws {
+        let (container, context) = try store()
+        let work = Area(name: "Work")
+        let home = Area(name: "Home")
+        context.insert(work)
+        context.insert(home)
+        let task = try filedTask(in: context, area: work)
+        let opened = CadenceScheduleDraft(editing: task)
+        var draft = opened
+        draft.priority = .high
+
+        // Another window or a sync import, while the panel is open.
+        task.title = "Renamed elsewhere"
+        task.dueDate = "2026-10-26"
+        task.scheduledDate = "2026-10-21"
+        task.scheduledStartMin = 15 * 60
+        task.estimatedMinutes = 50
+        task.notes = "Synced notes"
+        task.area = home
+        task.recurrenceRule = .weekly
+        try context.save()
+
+        #expect(CadenceTaskEditDraftCommit.save(
+            draft, opened: opened, to: task, area: work, project: nil,
+            allTasks: [task], scope: .thisTask, in: context, reconciler: .inert
+        ))
+        let stored = try #require(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(stored.priority == .high, "the one field the user changed did not land")
+        #expect(stored.title == "Renamed elsewhere", "Save wrote the opened title back over another writer")
+        #expect(stored.dueDate == "2026-10-26", "Save wrote the opened due date back over another writer")
+        #expect(stored.scheduledDate == "2026-10-21", "Save wrote the opened do date back")
+        #expect(stored.scheduledStartMin == 15 * 60, "Save wrote the opened time back")
+        #expect(stored.estimatedMinutes == 50, "Save wrote the opened estimate back")
+        #expect(stored.notes == "Synced notes", "the inline panel's drafted notes overwrote another writer")
+        #expect(stored.area?.id == home.id, "Save moved the task back to the list it opened in")
+        #expect(stored.recurrenceRule == .weekly)
+    }
+
+    /// [[T-18443]]'s other half: where the user DID change a field, the draft wins over the outside
+    /// writer -- the three-way write keeps an edit, it does not drop one.
+    @Test("A field the user changed still wins over another writer")
+    func aFieldTheUserChangedStillWins() throws {
+        let (container, context) = try store()
+        let work = Area(name: "Work")
+        context.insert(work)
+        let task = try filedTask(in: context, area: work)
+        let opened = CadenceScheduleDraft(editing: task)
+        var draft = opened
+        draft.title = "Mine"
+        draft.dueDateKey = "2026-10-30"
+        draft.startDateKey = "2026-10-22"
+        draft.moveStart(toMinute: 9 * 60)
+
+        task.title = "Theirs"
+        task.dueDate = "2026-10-26"
+        task.scheduledDate = "2026-10-21"
+        task.scheduledStartMin = 15 * 60
+        try context.save()
+
+        #expect(CadenceTaskEditDraftCommit.save(
+            draft, opened: opened, to: task, area: work, project: nil,
+            allTasks: [task], scope: .thisTask, in: context, reconciler: .inert
+        ))
+        let stored = try #require(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(stored.title == "Mine")
+        #expect(stored.dueDate == "2026-10-30")
+        #expect(stored.scheduledDate == "2026-10-22")
+        #expect(stored.scheduledStartMin == 9 * 60, "a moved slot wrote its day without its time")
+    }
+
     /// A series edit reaches later occurrences only when asked to, and the rule is applied only
     /// when it moved — applying it stamps series metadata.
     @Test("A series edit reaches the later occurrences only for this-and-future")
