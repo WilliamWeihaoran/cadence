@@ -11,7 +11,6 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     var markdownTaskEmbedRects: [UUID: MarkdownTaskEmbedHitRects] = [:]
     var hoveredMarkdownTaskEmbed: MarkdownTaskEmbedHover?
     var selectedMarkdownImageID: UUID?
-    var referenceSuggestions: [MarkdownReferenceSuggestion] = []
     var tagSuggestions: [MarkdownTagSuggestion] = []
     var onOpenMarkdownReference: ((MarkdownReferenceTarget) -> Void)?
     var onCreateEmbeddedMarkdownTask: ((String) -> MarkdownEmbeddedTaskCreation<MarkdownReferenceSuggestion>?)?

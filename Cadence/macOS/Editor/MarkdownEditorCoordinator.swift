@@ -536,7 +536,8 @@ extension MarkdownEditorCoordinator {
         referencePicker.update(
             for: textView,
             context: context,
-            suggestions: parent.referenceSuggestions
+            notes: parent.referenceNotes,
+            tasks: parent.referenceTasks
         ) { [weak self] suggestion, context in
             self?.applyReferenceSuggestion(suggestion, context: context, in: textView)
         }

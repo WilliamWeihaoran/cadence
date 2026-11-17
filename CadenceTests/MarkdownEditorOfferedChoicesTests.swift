@@ -90,13 +90,25 @@ struct MarkdownEditorOfferedChoicesTests {
     }
 
     /// **Why filtering the editor's `referenceNotes` cannot thin out anything but the `[[` menu.**
-    /// The Mac editor reads the array in exactly one place — the completion source. The reference
-    /// strip and backlinks are each host's own, computed from the full set.
+    /// The Mac editor reads the array only as a completion source: the toolbar's note menu, and
+    /// (handed to the text view's coordinator since [[T-18396]]) the `[[` picker, which filters it
+    /// by the typed query. The reference strip and backlinks are each host's own, computed from the
+    /// full set.
     @Test func theMacEditorReadsItsReferenceNotesOnlyForCompletion() throws {
         let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Editor/MarkdownEditorView.swift"))
         #expect(code.contains("var referenceNotes: [Note] = []"), "non-vacuity: wrong file read")
-        #expect(CadenceSourceScan.matchCount(#"\breferenceNotes\b"#, in: code) == 2)
+        // Two declarations (the editor and the text view's representable), the toolbar menu's
+        // read, and the hand-off `referenceNotes: referenceNotes`.
+        #expect(CadenceSourceScan.matchCount(#"\breferenceNotes\b"#, in: code) == 5)
+        #expect(CadenceSourceScan.matchCount(#"var referenceNotes: \[Note\] = \[\]"#, in: code) == 2)
         #expect(code.contains("MarkdownReferenceCompletionSupport.candidateNotes(from: referenceNotes, query: \"\")"))
+        #expect(code.contains("referenceNotes: referenceNotes,"))
+
+        let coordinator = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Editor/MarkdownEditorCoordinator.swift")
+        )
+        #expect(CadenceSourceScan.matchCount(#"\bparent\.referenceNotes\b"#, in: coordinator) == 1)
+        #expect(coordinator.contains("notes: parent.referenceNotes,"))
     }
 
     /// **`TaskNoteEditorPane` (`ListNotesSupportViews`) has no note of its own to exclude.** It

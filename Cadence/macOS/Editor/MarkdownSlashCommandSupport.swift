@@ -341,7 +341,8 @@ final class MarkdownReferencePickerController {
     func update(
         for textView: NSTextView,
         context: MarkdownReferenceCompletionContext?,
-        suggestions allSuggestions: [MarkdownReferenceSuggestion],
+        notes: [Note],
+        tasks: [AppTask],
         onSelect: @escaping (MarkdownReferenceSuggestion, MarkdownReferenceCompletionContext) -> Void
     ) {
         self.onSelect = onSelect
@@ -351,10 +352,9 @@ final class MarkdownReferencePickerController {
             return
         }
 
-        let query = context.query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let filtered = allSuggestions
-            .filter { $0.kind == context.kind }
-            .filter { $0.matches(query: query) }
+        // [[T-18396]]: the typed query goes to the shared rule, as on iOS's strip.
+        let filtered = MarkdownReferenceSuggestion
+            .completions(kind: context.kind, query: context.query, notes: notes, tasks: tasks)
             .prefix(MarkdownReferenceCompletionSupport.inlineShortlistLimit)
 
         let matches = Array(filtered)

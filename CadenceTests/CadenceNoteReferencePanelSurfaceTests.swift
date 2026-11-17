@@ -918,10 +918,13 @@ struct CadenceNoteReferenceDisplayTitleTests {
         #expect(suggestion.title == NoteReferencePanelSupport.searchTitle(daily))
         #expect(suggestion.title != daily.displayTitle)
         #expect(suggestion.markdown == NoteReferenceParser.noteReferenceMarkdown(for: daily))
-        #expect(suggestion.matches(query: "2026-10-30"))
-        #expect(suggestion.matches(query: suggestion.title))
-        #expect(suggestion.matches(query: ""))
-        #expect(!suggestion.matches(query: "zzqx"))
+        func offered(_ query: String) -> [UUID] {
+            MarkdownReferenceSuggestion.completions(kind: .note, query: query, notes: [daily], tasks: []).map(\.targetID)
+        }
+        #expect(offered("2026-10-30") == [daily.id])
+        #expect(offered(suggestion.title) == [daily.id])
+        #expect(offered("") == [daily.id])
+        #expect(offered("zzqx").isEmpty)
 
         let typed = MarkdownReferenceSuggestion.note(Note(kind: .daily, title: "Offsite day", dateKey: "2026-10-30"))
         #expect(typed.title == "Offsite day")
@@ -930,8 +933,8 @@ struct CadenceNoteReferenceDisplayTitleTests {
 
     /// [[T-8691]]: the Mac `[[` picker's subtitle is the shared kind label, the one iOS's strip
     /// draws, so an event note reads "Event note" and not `rawValue.capitalized`'s "Meeting" (the
-    /// retired tab name). The subtitle is also a match field, so "event note" finds it; "meeting"
-    /// no longer does, which is the point -- the app no longer calls these notes that.
+    /// retired tab name). [[T-18396]] reversed T-8691's other half: the label is drawn, never
+    /// matched, so "event note" no longer finds a note that does not say it -- as on iOS.
     @Test func theMacSuggestionSubtitleIsTheSharedKindLabel() {
         #if os(macOS)
         for kind in [NoteKind.daily, .weekly, .permanent, .list, .meeting] {
@@ -941,7 +944,49 @@ struct CadenceNoteReferenceDisplayTitleTests {
         let event = MarkdownReferenceSuggestion.note(Note(kind: .meeting, title: "Offsite"))
         #expect(event.subtitle == "Event note")
         #expect(event.subtitle != NoteKind.meeting.rawValue.capitalized)
-        #expect(event.matches(query: "event note"))
+        let eventNote = Note(kind: .meeting, title: "Offsite")
+        #expect(MarkdownReferenceSuggestion.completions(kind: .note, query: "event note", notes: [eventNote], tasks: []).isEmpty)
+        #endif
+    }
+
+    /// [[T-18396]]: the Mac `[[` picker filters through the shared rule iOS's strip uses, so a
+    /// note's kind label is not matched and its body is. Before, `[[note` offered every note in the
+    /// library (every label but "Notepad" ends in "note", and that one starts with it) and a note
+    /// whose body alone held the query was never offered on the Mac.
+    @Test func theMacReferencePickerMatchesTheBodyAndNeverTheKindLabel() {
+        #if os(macOS)
+        let unrelated = [
+            Note(kind: .daily, title: "Offsite day", content: "Agenda and travel", dateKey: "2026-10-30"),
+            Note(kind: .weekly, title: "Week plan", content: "Ship the beta"),
+            Note(kind: .permanent, title: "Recipes", content: "Bread and soup"),
+            Note(kind: .list, title: "Shopping", content: "- milk"),
+            Note(kind: .meeting, title: "Standup", content: "Blockers"),
+        ]
+        #expect(Set(unrelated.map { NoteReferencePanelSupport.noteKindLabel($0.kind) }.filter {
+            $0.localizedCaseInsensitiveContains("note")
+        }).count == 5, "non-vacuity: every kind label must contain the query")
+
+        func macOffers(_ query: String, from notes: [Note]) -> [UUID] {
+            MarkdownReferenceSuggestion.completions(kind: .note, query: query, notes: notes, tasks: []).map(\.targetID)
+        }
+        for query in ["note", "notes", "list", "event", "daily", "notepad"] {
+            #expect(macOffers(query, from: unrelated).isEmpty, "[[\(query) offered a note by its kind label")
+            #expect(MarkdownReferenceCompletionSupport.candidateNotes(from: unrelated, query: query).isEmpty)
+        }
+
+        let bodyOnly = Note(kind: .permanent, title: "Q3 plan", content: "Draft the release notes by Friday")
+        let library = unrelated + [bodyOnly]
+        #expect(macOffers("release notes", from: library) == [bodyOnly.id])
+        #expect(macOffers("note", from: library) == [bodyOnly.id])
+        #expect(macOffers("note", from: library)
+            == MarkdownReferenceCompletionSupport.candidateNotes(from: library, query: "note").map(\.id))
+        #expect(macOffers("", from: library).count == library.count)
+
+        let task = AppTask(title: "Call the venue")
+        task.notes = "ask about the projector"
+        #expect(MarkdownReferenceSuggestion.completions(kind: .task, query: "projector", notes: library, tasks: [task])
+            .map(\.targetID) == [task.id])
+        #expect(MarkdownReferenceSuggestion.completions(kind: .note, query: "projector", notes: library, tasks: [task]).isEmpty)
         #endif
     }
 
@@ -996,10 +1041,13 @@ struct CadenceNoteReferenceDisplayTitleTests {
             #expect(suggestion.subtitle == MarkdownReferenceCompletionSupport.taskSubtitle(for: task))
         }
         #expect(suggestions[0].subtitle == "Inbox")
-        #expect(suggestions.filter { $0.matches(query: "inbox") }.map(\.targetID) == [loose.id, done.id])
-        #expect(suggestions.filter { $0.matches(query: "documents") }.map(\.targetID) == [filed.id])
-        #expect(!suggestions.contains { $0.matches(query: "todo") })
-        #expect(!suggestions.contains { $0.matches(query: "completed") })
+        func macOffers(_ query: String) -> [UUID] {
+            MarkdownReferenceSuggestion.completions(kind: .task, query: query, notes: [], tasks: tasks).map(\.targetID)
+        }
+        #expect(Set(macOffers("inbox")) == [loose.id, done.id])
+        #expect(macOffers("documents") == [filed.id])
+        #expect(macOffers("todo").isEmpty)
+        #expect(macOffers("completed").isEmpty)
         #endif
     }
 
@@ -1032,7 +1080,8 @@ struct CadenceNoteReferenceDisplayTitleTests {
         #expect(!strip.contains("backlink.displayTitle"))
 
         let picker = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Editor/MarkdownSlashCommandSupport.swift"))
-        #expect(picker.contains(".filter { $0.matches(query: query) }"))
+        #expect(picker.contains(".completions(kind: context.kind, query: context.query, notes: notes, tasks: tasks)"))
+        #expect(!picker.contains("matches(query:"), "[[T-18396]]: the Mac picker filters by its own rule again")
 
         let accessories = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownAccessoryViews.swift"))
         #expect(accessories.contains("Text(NoteReferencePanelSupport.searchTitle(note))"))

@@ -87,8 +87,9 @@ struct MarkdownEditor: View {
     // consumers cap at 8 and 12. Alphabetical order under a cap does not rank, it filters by first
     // letter, so an empty `[[` on a vault of a few hundred notes offered eight titles beginning
     // with "A" and could not reach anything else without typing. Recency is the useful eight.
-    // Sorting still matters once a query is typed, because the query filter downstream preserves
-    // this order rather than scoring.
+    // Sorting still matters once a query is typed, because the query filter preserves this order
+    // rather than scoring. These two empty-query lists feed the toolbar menus; the `[[` picker
+    // asks the same functions with the typed query itself ([[T-18396]]).
 
     @MainActor private var noteSuggestions: [MarkdownReferenceSuggestion] {
         MarkdownReferenceCompletionSupport.candidateNotes(from: referenceNotes, query: "")
@@ -98,10 +99,6 @@ struct MarkdownEditor: View {
     @MainActor private var taskSuggestions: [MarkdownReferenceSuggestion] {
         MarkdownReferenceCompletionSupport.candidateTasks(from: referenceTasks, query: "")
             .map(MarkdownReferenceSuggestion.task)
-    }
-
-    @MainActor private var referenceSuggestions: [MarkdownReferenceSuggestion] {
-        noteSuggestions + taskSuggestions
     }
 
     @MainActor private var tagSuggestions: [MarkdownTagSuggestion] {
@@ -151,7 +148,8 @@ struct MarkdownEditor: View {
                 onCreateImages: createAssets,
                 onResizeImage: resizeImage,
                 onChooseImages: chooseImages,
-                referenceSuggestions: referenceSuggestions,
+                referenceNotes: referenceNotes,
+                referenceTasks: referenceTasks,
                 tagSuggestions: tagSuggestions,
                 taskEmbedInfos: taskEmbedInfos,
                 onOpenReference: openReference,
@@ -486,7 +484,9 @@ struct MarkdownEditorView: NSViewRepresentable {
     var onCreateImages: ([NSImage], [URL]) -> [MarkdownImageAsset] = { _, _ in [] }
     var onResizeImage: (UUID, CGFloat) -> Void = { _, _ in }
     var onChooseImages: () -> Void = {}
-    var referenceSuggestions: [MarkdownReferenceSuggestion] = []
+    /// What the `[[` picker filters by the typed query ([[T-18396]]), as iOS's strip does.
+    var referenceNotes: [Note] = []
+    var referenceTasks: [AppTask] = []
     var tagSuggestions: [MarkdownTagSuggestion] = []
     var taskEmbedInfos: [UUID: MarkdownTaskEmbedRenderInfo] = [:]
     var onOpenReference: (MarkdownReferenceTarget) -> Void = { _ in }
@@ -620,7 +620,6 @@ struct MarkdownEditorView: NSViewRepresentable {
             }
             didUpdateRenderedContent = true
         }
-        textView.referenceSuggestions = referenceSuggestions
         textView.tagSuggestions = tagSuggestions
         textView.onOpenMarkdownReference = onOpenReference
         textView.onCreateEmbeddedMarkdownTask = onCreateEmbeddedTask

@@ -15,15 +15,9 @@ struct MarkdownReferenceSuggestion: Identifiable, Hashable {
     /// What the picker draws. For a note, `searchTitle` ([[T-8585]]): an untitled daily note reads
     /// `Oct 30`, not its storage key.
     let title: String
-    /// What a typed query is also matched against: the note's `displayTitle`, so `[[2026-10-30`
-    /// still finds the note whose row now says `Oct 30`. Equal to `title` for a task.
-    let matchTitle: String
+    /// Drawn only, never matched: what a typed query matches is `completions(kind:query:notes:tasks:)`'s
+    /// business ([[T-18396]]).
     let subtitle: String
-    /// What a typed query is matched against besides the titles. A note's kind label, the same as
-    /// `subtitle`; a task's list label only, without the " · Completed" status ([[T-14412]]), so
-    /// "completed" does not list every finished task -- and "todo", which the raw status once
-    /// matched, lists none.
-    let matchSubtitle: String
     /// Written into the text. Built from `displayTitle`, never from `title`.
     let markdown: String
 
@@ -31,12 +25,28 @@ struct MarkdownReferenceSuggestion: Identifiable, Hashable {
         "\(kind)-\(targetID.uuidString)"
     }
 
-    /// Whether the `[[` picker offers this row for `query` (already trimmed). Empty matches all.
-    func matches(query: String) -> Bool {
-        query.isEmpty
-            || title.localizedCaseInsensitiveContains(query)
-            || matchTitle.localizedCaseInsensitiveContains(query)
-            || matchSubtitle.localizedCaseInsensitiveContains(query)
+    /// The rows the `[[` picker offers for what was typed after `[[` (or `[[task:`), in the
+    /// shared order.
+    ///
+    /// [[T-18396]]: filtered by the shared rule iOS's strip uses -- `candidateNotes` and
+    /// `candidateTasks` given the typed query, so a note matches by its title, the title its row
+    /// draws, and its body, and a task by its title, notes, container and list label. The Mac used
+    /// to ask those for every row and filter afterwards on the row's own subtitle, which for a note
+    /// is its kind label: `[[note` matched the whole library (every label but "Notepad" ends in
+    /// "note") and a body-only match was never offered, so one query listed different notes on
+    /// the two platforms. This reverses [[T-8691]]'s "event note" match on purpose.
+    @MainActor static func completions(
+        kind: MarkdownReferenceKind,
+        query: String,
+        notes: [Note],
+        tasks: [AppTask]
+    ) -> [MarkdownReferenceSuggestion] {
+        switch kind {
+        case .note:
+            MarkdownReferenceCompletionSupport.candidateNotes(from: notes, query: query).map(note)
+        case .task:
+            MarkdownReferenceCompletionSupport.candidateTasks(from: tasks, query: query).map(task)
+        }
     }
 
     static func note(_ note: Note) -> MarkdownReferenceSuggestion {
@@ -47,9 +57,7 @@ struct MarkdownReferenceSuggestion: Identifiable, Hashable {
             kind: .note,
             targetID: note.id,
             title: NoteReferencePanelSupport.searchTitle(note),
-            matchTitle: note.displayTitle,
             subtitle: kindLabel,
-            matchSubtitle: kindLabel,
             markdown: NoteReferenceParser.noteReferenceMarkdown(for: note)
         )
     }
@@ -59,11 +67,9 @@ struct MarkdownReferenceSuggestion: Identifiable, Hashable {
             kind: .task,
             targetID: task.id,
             title: TaskTitleSupport.displayTitle(task.title),
-            matchTitle: TaskTitleSupport.displayTitle(task.title),
             // [[T-14412]]: the shared subtitle the iOS strip and sheet draw, not the raw status
             // word ("Todo") for a task in no list.
             subtitle: MarkdownReferenceCompletionSupport.taskSubtitle(for: task),
-            matchSubtitle: MarkdownReferenceCompletionSupport.taskListLabel(for: task),
             markdown: NoteReferenceParser.taskReferenceMarkdown(for: task)
         )
     }
