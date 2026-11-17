@@ -80,12 +80,21 @@ enum RootCommandHandler {
     /// the quick-task panel, and from there the key reaches the menu item's key equivalent. The
     /// gate keeps that from opening Search behind a delete confirmation, which the key alone never
     /// could.
-    static func handleViewMenuCommand(_ command: CadenceViewMenuCommand, context: RootCommandContext) {
+    ///
+    /// [[T-16050]]: the panel's visibility is a parameter because it is the one gate input the
+    /// context does not carry. Read from the singleton inside, a test could pin the other three
+    /// and still not this one, and a quick panel left up in the test host (the host registers the
+    /// global ⌃Space, [[T-18294]]) closed the gate for a test that never touched it.
+    static func handleViewMenuCommand(
+        _ command: CadenceViewMenuCommand,
+        context: RootCommandContext,
+        isQuickTaskPanelVisible: Bool = QuickTaskPanelController.shared.isVisible
+    ) {
         guard RootViewMenuGate.runs(
             hasModal: context.deleteConfirmationManager.request != nil
                 || context.hoveredTaskDatePickerManager.request != nil,
             isSearchPresented: context.globalSearchManager.isPresented,
-            isQuickTaskPanelVisible: QuickTaskPanelController.shared.isVisible
+            isQuickTaskPanelVisible: isQuickTaskPanelVisible
         ) else { return }
         RootCommandEventSupport.performViewCommand(command, context: context)
     }

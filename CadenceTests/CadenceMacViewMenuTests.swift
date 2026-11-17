@@ -99,8 +99,17 @@ struct CadenceMacViewMenuTests {
         #expect(result == nil)
         #expect(toggles == 1)
 
-        RootCommandHandler.handleViewMenuCommand(.toggleSidebar, context: context)
+        // [[T-16050]]: the panel is passed, not read off `QuickTaskPanelController.shared`. The
+        // other three gate inputs are pinned by the `#require`s above, and this body never
+        // suspends, so nothing can flip them between the halves; the panel was the one input left
+        // to whatever the test host had on screen, and `toggles -> 1` here was that gate closing.
+        RootCommandHandler.handleViewMenuCommand(.toggleSidebar, context: context, isQuickTaskPanelVisible: false)
         #expect(toggles == 2)
+
+        // Non-vacuity: the passed value is the one the gate reads -- over a visible panel the item
+        // stands down, as the monitor does.
+        RootCommandHandler.handleViewMenuCommand(.toggleSidebar, context: context, isQuickTaskPanelVisible: true)
+        #expect(toggles == 2, "the item acted over the quick-task panel")
     }
 
     /// Every View key is consumed by its arm, which runs that item's command. [[T-18067]]: an arm
