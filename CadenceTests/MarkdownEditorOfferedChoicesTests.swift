@@ -128,7 +128,7 @@ struct MarkdownEditorOfferedChoicesTests {
             CadenceSourceScan.functionBody(named: "applyToolbarCommand", in: code),
             "applyToolbarCommand() could not be read"
         )
-        #expect(toolbar.contains("case .noteLink where !linkableNotes.isEmpty:"))
+        #expect(toolbar.contains("case .noteLink where MarkdownReferenceCompletionSupport.offersNoteCandidates(linkableNotes):"))
 
         // The Insert Note Link sheet, presented from `body`.
         #expect(code.contains("kind: kind,\n                notes: linkableNotes,"))

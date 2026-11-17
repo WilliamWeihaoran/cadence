@@ -142,7 +142,8 @@ struct iOSMarkdownEditingSurface: View {
             iOSMarkdownReferencePickerSheet(
                 kind: kind,
                 notes: linkableNotes,
-                tasks: referenceTasks
+                tasks: referenceTasks,
+                insertBlank: { applyCommandToDraft(kind.blankCommand) }
             ) { markdown in
                 insertReferenceMarkdown(markdown)
             }
@@ -923,11 +924,13 @@ struct iOSMarkdownEditingSurface: View {
 
     private func applyToolbarCommand(_ command: MarkdownFormatCommand) {
         switch command {
-        case .noteLink where !linkableNotes.isEmpty:
+        // [[T-18367]]: gated on the list the sheet draws, not the raw arrays -- a library of only
+        // cancelled tasks opened a "No tasks yet" sheet instead of inserting the scaffold.
+        case .noteLink where MarkdownReferenceCompletionSupport.offersNoteCandidates(linkableNotes):
             commitDraftImmediately()
             isFocused = false
             referencePickerKind = .note
-        case .taskReference where !referenceTasks.isEmpty:
+        case .taskReference where MarkdownReferenceCompletionSupport.offersTaskCandidates(referenceTasks):
             commitDraftImmediately()
             isFocused = false
             referencePickerKind = .task

@@ -61,6 +61,22 @@ enum iOSMarkdownReferencePickerKind: String, Identifiable {
         }
     }
 
+    /// [[T-18367]]: the sheet's first row, the Mac menu's first entry -- one string, both read it.
+    var blankTitle: String {
+        switch self {
+        case .note: return MarkdownReferenceCompletionSupport.blankNoteLinkTitle
+        case .task: return MarkdownReferenceCompletionSupport.blankTaskReferenceTitle
+        }
+    }
+
+    /// The scaffold the blank row inserts: the command the toolbar runs for an empty library.
+    var blankCommand: MarkdownFormatCommand {
+        switch self {
+        case .note: return .noteLink
+        case .task: return .taskReference
+        }
+    }
+
     var emptyTitle: String {
         switch self {
         case .note: return "No notes yet"
@@ -102,6 +118,8 @@ struct iOSMarkdownReferencePickerSheet: View {
     let kind: iOSMarkdownReferencePickerKind
     let notes: [Note]
     let tasks: [AppTask]
+    /// Inserts the blank `[[]]` / `[[task:]]` scaffold ([[T-18367]]).
+    let insertBlank: () -> Void
     let insert: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -147,12 +165,18 @@ struct iOSMarkdownReferencePickerSheet: View {
                 if isEmpty {
                     // The shared pane-level empty state rather than a fourth hand-rolled
                     // icon/title/subtitle stack. Picker empty states keep their subtitle — it
-                    // says something the screen does not.
-                    iOSEmptyPanel(
-                        systemImage: hasNothingToOffer ? kind.emptyIcon : kind.noMatchIcon,
-                        title: hasNothingToOffer ? kind.emptyTitle : kind.noMatchTitle,
-                        subtitle: hasNothingToOffer ? kind.emptySubtitle : kind.noMatchSubtitle
-                    )
+                    // says something the screen does not. The blank row still leads it: a search
+                    // that missed is exactly when a reader may want to type the name themselves.
+                    VStack(spacing: 0) {
+                        blankReferenceRow
+                            .padding(.horizontal, 10)
+                            .padding(.top, 8)
+                        iOSEmptyPanel(
+                            systemImage: hasNothingToOffer ? kind.emptyIcon : kind.noMatchIcon,
+                            title: hasNothingToOffer ? kind.emptyTitle : kind.noMatchTitle,
+                            subtitle: hasNothingToOffer ? kind.emptySubtitle : kind.noMatchSubtitle
+                        )
+                    }
                 } else {
                     referenceList
                 }
@@ -186,6 +210,7 @@ struct iOSMarkdownReferencePickerSheet: View {
 
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 2) {
+                blankReferenceRow
                 switch kind {
                 case .note:
                     ForEach(filteredNotes) { note in
@@ -212,6 +237,31 @@ struct iOSMarkdownReferencePickerSheet: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
         }
+    }
+}
+
+extension iOSMarkdownReferencePickerSheet {
+    /// [[T-18367]]: the Mac menu's first entry, "Blank Note Link" / "Blank Task Reference", as the
+    /// sheet's first row. Inserts the scaffold the toolbar inserts for an empty library and closes.
+    var blankReferenceRow: some View {
+        Button {
+            insertBlank()
+            dismiss()
+        } label: {
+            HStack(alignment: .center, spacing: 12) {
+                iOSIconTile(systemImage: "plus", color: Theme.blue, iconSize: 16)
+                Text(kind.blankTitle)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.iosPressable)
     }
 }
 

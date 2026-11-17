@@ -458,7 +458,7 @@ struct CadenceMacPageAccessibilityAuditTests {
             (noteLink, 28, 26, AnyView(MarkdownReferenceMenuButton(
                 systemName: "text.badge.plus",
                 accessibilityLabel: noteLink,
-                emptyTitle: "Blank Note Link",
+                emptyTitle: MarkdownReferenceCompletionSupport.blankNoteLinkTitle,
                 suggestions: [],
                 blankAction: {},
                 selectAction: { _ in }

@@ -97,6 +97,31 @@ nonisolated enum MarkdownReferenceCompletionSupport {
         return notes.filter { $0.id != noteID }
     }
 
+    // MARK: - The toolbar's reference buttons
+    //
+    // [[T-18367]], under [[T-8201]]: the note-link and task-reference toolbar buttons are a menu on
+    // the Mac and a picker sheet on iPhone/iPad -- presentation, which the input forces -- but
+    // whether they offer a blank `[[]]` / `[[task:]]` scaffold is not. Both platforms lead with the
+    // entry below, spelled once here.
+
+    /// The first entry of the note-link button's menu (Mac) and picker sheet (iOS).
+    nonisolated static let blankNoteLinkTitle = "Blank Note Link"
+    /// The first entry of the task-reference button's menu (Mac) and picker sheet (iOS).
+    nonisolated static let blankTaskReferenceTitle = "Blank Task Reference"
+
+    /// Whether the note-link button has an existing note to offer, asked of the list the picker
+    /// draws rather than of the raw array, so the button never opens a picker with nothing in it.
+    nonisolated static func offersNoteCandidates(_ notes: [Note]) -> Bool {
+        !candidateNotes(from: notes, query: "").isEmpty
+    }
+
+    /// Whether the task-reference button has an existing task to offer. `candidateTasks` drops
+    /// cancelled tasks, so a library of only cancelled tasks offers none: the button then inserts
+    /// the blank scaffold, as for an empty library, instead of opening a "No tasks yet" dead end.
+    @MainActor static func offersTaskCandidates(_ tasks: [AppTask]) -> Bool {
+        !candidateTasks(from: tasks, query: "").isEmpty
+    }
+
     /// The notes a `[[` completion offers: most recently edited first, then title.
     ///
     /// `updatedAt` is a `Date` and `id` is unique, so this pair is already total.

@@ -188,4 +188,56 @@ struct CadenceNoteEditorCommandParityTests {
         let picker = try code("Cadence/macOS/Editor/MarkdownSlashCommandSupport.swift")
         #expect(picker.contains(".prefix(MarkdownReferenceCompletionSupport.inlineShortlistLimit)"))
     }
+
+    // MARK: - The reference buttons' blank entry ([[T-18367]])
+
+    /// The note-link and task-reference toolbar buttons open a picker only when the picker has a
+    /// row to show. The gate asks the same candidate list the sheet draws, so a library holding
+    /// only cancelled tasks (which `candidateTasks` drops) inserts the blank scaffold instead of
+    /// opening onto "No tasks yet".
+    @MainActor @Test func theReferenceButtonsOpenAPickerOnlyWhenItHasARowToShow() {
+        let cancelled = AppTask(title: "Dropped plan")
+        cancelled.status = .cancelled
+        #expect(!MarkdownReferenceCompletionSupport.offersTaskCandidates([cancelled]),
+                "a library of only cancelled tasks opens an empty picker")
+        #expect(!MarkdownReferenceCompletionSupport.offersTaskCandidates([]))
+        let open = AppTask(title: "Book venue")
+        #expect(MarkdownReferenceCompletionSupport.offersTaskCandidates([cancelled, open]))
+
+        #expect(!MarkdownReferenceCompletionSupport.offersNoteCandidates([]))
+        #expect(MarkdownReferenceCompletionSupport.offersNoteCandidates([Note(kind: .permanent, title: "Peer")]))
+    }
+
+    @Test func theIOSToolbarGatesThePickerOnTheSheetsCandidates() throws {
+        let surface = try code(Self.iOSSurfacePath)
+        #expect(surface.contains("case .noteLink where MarkdownReferenceCompletionSupport.offersNoteCandidates(linkableNotes)"))
+        #expect(surface.contains("case .taskReference where MarkdownReferenceCompletionSupport.offersTaskCandidates(referenceTasks)"))
+        #expect(!surface.contains("where !referenceTasks.isEmpty"), "the gate reads the raw task array again")
+    }
+
+    /// Both platforms lead the reference button's choices with one blank entry, named by one
+    /// shared string. The Mac menu is a view this target hosts; the iOS sheet is not compiled here,
+    /// so its half is a source scan that the blank row is drawn in both of the sheet's states.
+    @Test func bothPlatformsLeadTheReferencePickerWithTheSharedBlankEntry() throws {
+        #expect(MarkdownReferenceCompletionSupport.blankNoteLinkTitle == "Blank Note Link")
+        #expect(MarkdownReferenceCompletionSupport.blankTaskReferenceTitle == "Blank Task Reference")
+
+        let mac = try code(Self.macToolbarPath)
+        #expect(mac.contains("emptyTitle: MarkdownReferenceCompletionSupport.blankNoteLinkTitle"))
+        #expect(mac.contains("emptyTitle: MarkdownReferenceCompletionSupport.blankTaskReferenceTitle"))
+        #expect(!mac.contains("\"Blank Note Link\"") && !mac.contains("\"Blank Task Reference\""),
+                "the Mac spells the blank entry itself again")
+
+        let ios = try code(Self.iOSToolbarPath)
+        #expect(ios.contains("case .note: return MarkdownReferenceCompletionSupport.blankNoteLinkTitle"))
+        #expect(ios.contains("case .task: return MarkdownReferenceCompletionSupport.blankTaskReferenceTitle"))
+        let sheet = try #require(CadenceSourceScan.declarationBody("struct iOSMarkdownReferencePickerSheet: View", in: ios))
+        #expect(CadenceSourceScan.matchCount(#"blankReferenceRow"#, in: sheet) == 2,
+                "the blank row must lead both the list and the empty/no-match state")
+        let row = try #require(CadenceSourceScan.declarationBody("var blankReferenceRow: some View", in: ios))
+        #expect(row.contains("insertBlank()") && row.contains("Text(kind.blankTitle)"))
+
+        let surface = try code(Self.iOSSurfacePath)
+        #expect(surface.contains("insertBlank: { applyCommandToDraft(kind.blankCommand) }"))
+    }
 }

@@ -342,7 +342,7 @@ private struct MarkdownEditorToolbar: View {
             MarkdownReferenceMenuButton(
                 systemName: name,
                 accessibilityLabel: item.title,
-                emptyTitle: "Blank Note Link",
+                emptyTitle: MarkdownReferenceCompletionSupport.blankNoteLinkTitle,
                 suggestions: noteSuggestions,
                 blankAction: { textView?.performMarkdownFormatCommand(.noteLink) },
                 selectAction: { textView?.insertMarkdownReference($0.markdown) }
@@ -351,7 +351,7 @@ private struct MarkdownEditorToolbar: View {
             MarkdownReferenceMenuButton(
                 systemName: name,
                 accessibilityLabel: item.title,
-                emptyTitle: "Blank Task Reference",
+                emptyTitle: MarkdownReferenceCompletionSupport.blankTaskReferenceTitle,
                 suggestions: taskSuggestions,
                 blankAction: { textView?.performMarkdownFormatCommand(.taskReference) },
                 selectAction: { textView?.insertMarkdownReference($0.markdown) }
