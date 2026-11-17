@@ -153,7 +153,7 @@ struct iOSCalendarQuickCreateSheet: View {
     /// answered by `calendarAccessRequest` directly below it.
     private var calendarUnavailableNotice: String? {
         if !calendarManager.isAuthorized {
-            return "Calendar access is needed to create events."
+            return CadenceCalendarAccessNotice.eventCreationNeedsAccessSentence
         }
         if calendarManager.writableCalendars.isEmpty {
             return "No writable calendars are available."

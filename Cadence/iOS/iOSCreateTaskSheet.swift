@@ -164,7 +164,7 @@ struct iOSCreateTaskSheet: View {
     }
     private var calendarUnavailableNotice: String? {
         guard draft.kind == .event else { return nil }
-        if !calendarManager.isAuthorized { return "Calendar access is needed to create events." }
+        if !calendarManager.isAuthorized { return CadenceCalendarAccessNotice.eventCreationNeedsAccessSentence }
         return calendarManager.writableCalendars.isEmpty ? "No writable calendars are available." : nil
     }
 
