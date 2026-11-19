@@ -51,15 +51,22 @@ struct iOSTaskDetailSheet: View {
 
     /// The draft as the sheet opened it. Save compares against it to decide whether the series
     /// moved — the one edit that asks how far it reaches — and an unsaved difference from it is
-    /// what keeps a swipe from discarding the edit.
-    private let openedDraft: CadenceScheduleDraft
+    /// what keeps a swipe from discarding the edit. State, not a constant, because an outside
+    /// change to a field the user has not moved is adopted into it ([[T-18451]]).
+    @State private var openedDraft: CadenceScheduleDraft
 
     init(task: AppTask) {
         _task = Bindable(wrappedValue: task)
-        var opened = CadenceScheduleDraft(editing: task)
-        opened.estimateIsExplicit = task.estimatedMinutes > 0
-        openedDraft = opened
+        let opened = Self.storedDraft(of: task)
+        _openedDraft = State(initialValue: opened)
         _draft = State(initialValue: opened)
+    }
+
+    /// The task as this sheet reads it: on open, and again whenever another writer changes it.
+    private static func storedDraft(of task: AppTask) -> CadenceScheduleDraft {
+        var stored = CadenceScheduleDraft(editing: task)
+        stored.estimateIsExplicit = task.estimatedMinutes > 0
+        return stored
     }
 
     /// What closing the sheet now would discard: the swipe guard, Focus This Task and Save all read
@@ -194,6 +201,10 @@ struct iOSTaskDetailSheet: View {
             saveTask()
         }
         .onChange(of: task.actualMinutes) { _, _ in saveTask() }
+        // [[T-18451]]: another device, a sync or MCP changed the task -- untouched fields follow it.
+        .onChange(of: Self.storedDraft(of: task)) { _, stored in
+            CadenceScheduleDraft.rebase(draft: &draft, opened: &openedDraft, onto: stored)
+        }
     }
 
     private var editorScrollView: some View {

@@ -726,6 +726,10 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
         // repaired when the task is opened, and only then. A coherent count is not written.
         .onAppear { CadenceTaskRecurrenceWorkflowSupport.repairEndCountOnOpen(task, in: modelContext) }
         .onChange(of: task.statusRaw) { _, _ in draft.isSettled = CadenceTaskQuerySupport.isFinishedTask(task) }
+        // [[T-18451]]: another window, a sync or MCP changed the task -- untouched fields follow it.
+        .onChange(of: CadenceScheduleDraft(editing: task)) { _, stored in
+            CadenceScheduleDraft.rebase(draft: &draft, opened: &openedDraft, onto: stored)
+        }
         .confirmationDialog(
             CadenceRecurrenceScopeCopy.taskScopeTitle,
             isPresented: $isAskingRecurrenceScope,

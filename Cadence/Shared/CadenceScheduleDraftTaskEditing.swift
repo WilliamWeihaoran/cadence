@@ -92,6 +92,117 @@ extension CadenceScheduleDraft {
         listToken != opened.listToken || sectionName != opened.sectionName
     }
 
+    /// [[T-18451]]: an open editor follows a change made to its task elsewhere.
+    ///
+    /// The hosts snapshot the task once, so after another window, a sync import or MCP moved a
+    /// field the panel went on SHOWING the value it opened with ([[T-18443]] made Save leave the
+    /// outside value alone, but the panel still read stale until it was reopened). `stored` is a
+    /// fresh read of the task (`init(editing:)`, plus whatever the host adjusts on open). Each unit
+    /// the user has NOT moved -- `draft` still equals `opened` there -- adopts the stored value into
+    /// both drafts, the way `NoteEditorPane` adopts an outside body ([[T-9171]]); a unit the user
+    /// moved keeps the user's value AND the opened value it is measured against, so Save's
+    /// three-way write and the dismiss guards (`CadenceTaskSheetUnsavedWork`, which compare against
+    /// `opened`) still see exactly the user's edit, and an adopted unit never reads as unsaved.
+    ///
+    /// The units are the commit's own, read through the commit's own predicates, so a unit is the
+    /// user's exactly when Save would write it: the do slot (`changesSlot`), the estimate,
+    /// placement (`changesPlacement`), and the series (`changesRecurrence` -- rule and end condition
+    /// together, so a half-moved series is never re-paired with someone else's other half). A unit
+    /// Save would leave alone shows the store, never a stale read Save would not write either. The
+    /// block's `endMin` follows its start and estimate, as `setEstimate` draws it. The two read-only
+    /// mirrors -- `isSettled` and the occurrence number -- always follow the store. A read of a
+    /// different task is refused outright: adopting it would leave a draft half one task, half
+    /// another, for Save to write over this one.
+    static func rebase(
+        draft: inout CadenceScheduleDraft,
+        opened: inout CadenceScheduleDraft,
+        onto stored: CadenceScheduleDraft
+    ) {
+        guard stored.subject == opened.subject else { return }
+        func adopt<Value: Equatable>(_ field: WritableKeyPath<CadenceScheduleDraft, Value>) {
+            guard draft[keyPath: field] == opened[keyPath: field] else { return }
+            draft[keyPath: field] = stored[keyPath: field]
+            opened[keyPath: field] = stored[keyPath: field]
+        }
+        adopt(\.title)
+        adopt(\.notes)
+        adopt(\.priority)
+        adopt(\.dueDateKey)
+
+        let slotUntouched = !draft.changesSlot(from: opened)
+        let estimateUntouched = draft.estimateMinutes == opened.estimateMinutes
+            && draft.estimateIsExplicit == opened.estimateIsExplicit
+        let slotMoves = slotUntouched && stored.changesSlot(from: opened)
+        let estimateMoves = estimateUntouched
+            && (stored.estimateMinutes != opened.estimateMinutes
+                || stored.estimateIsExplicit != opened.estimateIsExplicit)
+        if slotUntouched && estimateUntouched {
+            // Nothing about the block is the user's: it is the stored block, exactly.
+            draft.takeTiming(from: stored)
+            opened.takeTiming(from: stored)
+        } else if slotMoves || estimateMoves {
+            // One half is the user's: take the other half, and redraw the end from the pair.
+            if slotMoves {
+                draft.takeSlot(from: stored)
+                opened.takeSlot(from: stored)
+            }
+            if estimateMoves {
+                draft.takeEstimate(from: stored)
+                opened.takeEstimate(from: stored)
+            }
+            draft.redrawEndFromEstimate()
+            opened.redrawEndFromEstimate()
+        }
+
+        if !draft.changesPlacement(from: opened) {
+            draft.listToken = stored.listToken
+            draft.sectionName = stored.sectionName
+            opened.listToken = stored.listToken
+            opened.sectionName = stored.sectionName
+        }
+
+        if !draft.changesRecurrence(from: opened) {
+            draft.takeSeries(from: stored)
+            opened.takeSeries(from: stored)
+        }
+
+        draft.isSettled = stored.isSettled
+        opened.isSettled = stored.isSettled
+        draft.seriesOccurrenceNumber = stored.seriesOccurrenceNumber
+        opened.seriesOccurrenceNumber = stored.seriesOccurrenceNumber
+    }
+
+    private mutating func takeSlot(from stored: CadenceScheduleDraft) {
+        startDateKey = stored.startDateKey
+        endDateKey = stored.endDateKey
+        startMin = stored.startMin
+        isAllDay = stored.isAllDay
+    }
+
+    private mutating func takeEstimate(from stored: CadenceScheduleDraft) {
+        estimateMinutes = stored.estimateMinutes
+        estimateIsExplicit = stored.estimateIsExplicit
+    }
+
+    private mutating func takeTiming(from stored: CadenceScheduleDraft) {
+        takeSlot(from: stored)
+        takeEstimate(from: stored)
+        endMin = stored.endMin
+    }
+
+    private mutating func takeSeries(from stored: CadenceScheduleDraft) {
+        repeatRule = stored.repeatRule
+        seriesEndMode = stored.seriesEndMode
+        seriesEndDateKey = stored.seriesEndDateKey
+        seriesEndCount = stored.seriesEndCount
+    }
+
+    /// `init(editing:)`'s own end: one block of the estimate's length, floored to a snap step and
+    /// stopped at midnight.
+    private mutating func redrawEndFromEstimate() {
+        endMin = min(24 * 60, startMin + max(Self.minimumDurationMinutes, estimateMinutes))
+    }
+
     fileprivate func changesRecurrenceEnd(from opened: CadenceScheduleDraft) -> Bool {
         let mode = effectiveSeriesEndMode
         let openedMode = opened.effectiveSeriesEndMode

@@ -49,8 +49,9 @@ struct CadenceTaskInlinePanel: View {
     @State private var isAskingRecurrenceScope = false
 
     /// The draft as the panel opened it: Save compares against it to decide whether the series
-    /// moved, the one edit that asks how far it reaches.
-    private let openedDraft: CadenceScheduleDraft
+    /// moved, the one edit that asks how far it reaches. State, not a constant, because an outside
+    /// change to a field the user has not moved is adopted into it ([[T-18451]]).
+    @State private var openedDraft: CadenceScheduleDraft
 
     init(
         task: AppTask,
@@ -63,7 +64,7 @@ struct CadenceTaskInlinePanel: View {
         self.onClose = onClose
         self.onSaved = onSaved
         let opened = CadenceScheduleDraft(editing: task)
-        openedDraft = opened
+        _openedDraft = State(initialValue: opened)
         _draft = State(initialValue: opened)
     }
 
@@ -104,6 +105,10 @@ struct CadenceTaskInlinePanel: View {
         // [[T-6191]]: an After count stored below this occurrence before [[T-6114]]'s floor is
         // repaired when the task is opened, and only then. A coherent count is not written.
         .onAppear { CadenceTaskRecurrenceWorkflowSupport.repairEndCountOnOpen(task, in: modelContext) }
+        // [[T-18451]]: another window, a sync or MCP changed the task -- untouched fields follow it.
+        .onChange(of: CadenceScheduleDraft(editing: task)) { _, stored in
+            CadenceScheduleDraft.rebase(draft: &draft, opened: &openedDraft, onto: stored)
+        }
         .confirmationDialog(
             CadenceRecurrenceScopeCopy.taskScopeTitle,
             isPresented: $isAskingRecurrenceScope,
