@@ -1220,6 +1220,21 @@ extension CadenceTaskMutationSupport {
         titles.compactMap { insertSubtask(titled: $0, into: parent, modelContext: modelContext) }
     }
 
+    /// **[[T-18458]]: a saved subtask's retitle ends where `insertSubtask` would.** Both rows that
+    /// edit a title in place (the Mac inspector's `SubtaskRow`, iOS's `iOSSubtaskRow`) bind it to
+    /// the model per keystroke; at Return, focus loss or close they settle it here. A blank title
+    /// restores `openedWith`, the title the edit began from, instead of keeping an "Untitled"
+    /// subtask no add path would make; a padded one is stored trimmed. The shared rule is
+    /// `CadenceTitleNormalization.settledRetitle`. Writes the model only and answers whether it
+    /// changed anything; the row commits.
+    @discardableResult
+    static func settleSubtaskRetitle(_ subtask: Subtask, openedWith: String) -> Bool {
+        let settled = CadenceTitleNormalization.settledRetitle(subtask.title, openedWith: openedWith)
+        guard settled != subtask.title else { return false }
+        subtask.title = settled
+        return true
+    }
+
     /// The one place a single subtask is deleted from.
     ///
     /// It exists for the same reason the loop in `deleteTasks` above writes `subtask.parentTask = nil`

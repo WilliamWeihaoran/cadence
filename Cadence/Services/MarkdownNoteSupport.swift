@@ -737,6 +737,19 @@ nonisolated enum MarkdownNoteTitleSync {
         }
     }
 
+    /// **[[T-18457]].** Ends a title-field edit of `note` that began from `openedWith`: a blank
+    /// title restores `openedWith` (and its heading), a padded one is stored trimmed —
+    /// `CadenceTitleNormalization.settledRetitle`, the rule the list row's rename and the H1 rule
+    /// already keep. Writes the model only and answers whether it changed anything; the caller
+    /// commits.
+    @discardableResult
+    static func settleTitleEdit(_ note: Note, openedWith: String) -> Bool {
+        let settled = CadenceTitleNormalization.settledRetitle(note.title, openedWith: openedWith)
+        guard settled != note.title else { return false }
+        rename(note, to: settled)
+        return true
+    }
+
     /// Applies the rule to a note. **The one write path** — both platforms' commit paths call this
     /// and nothing spells the `hasPrefix("# ")` test itself.
     ///

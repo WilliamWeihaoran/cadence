@@ -264,9 +264,11 @@ struct MarkdownEditorFallbackCommitTests {
         let path = "Cadence/macOS/Views/NoteEditorPane.swift"
         let source = CadenceSourceScan.codeOnly(try cadenceTestSource(path))
         let binding = try #require(CadenceSourceScan.declarationBody("private var titleBinding", in: source))
-        #expect(binding.contains(
-            "MarkdownEditorTerminationFlush.shared.registerCommit(titleTerminationFlushID, in: modelContext)"
-        ))
+        // [[T-18457]]: a commit that settles the title first, so a field left blank at Cmd-Q
+        // commits the title it opened with; `CadenceBlankRetitleSettleTests` pins the order.
+        #expect(binding.contains("registerTitleQuitCommit(edit)"))
+        let quit = try #require(CadenceSourceScan.functionBody(named: "registerTitleQuitCommit", in: source))
+        #expect(quit.contains("MarkdownEditorTerminationFlush.shared.register(titleTerminationFlushID) {"))
         let body = try #require(CadenceSourceScan.declarationBody("struct NoteEditorPane", in: source))
         let disappear = try #require(body.range(of: ".onDisappear {"))
         #expect(

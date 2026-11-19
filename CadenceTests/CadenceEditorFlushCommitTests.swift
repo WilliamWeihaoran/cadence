@@ -122,9 +122,12 @@ struct CadenceEditorFlushCommitTests {
         let onTitleBlur = try #require(
             CadenceSourceScan.declarationBody(".onChange(of: isTitleFieldFocused)", in: source)
         )
-        #expect(onTitleBlur.contains("flushPendingEditorContent()"))
+        // [[T-18457]]: through `flushTitleEdit`, which lands the body and then settles the title.
+        #expect(onTitleBlur.contains("flushTitleEdit()"))
+        let titleFlush = try #require(CadenceSourceScan.functionBody(named: "flushTitleEdit", in: source))
+        #expect(titleFlush.contains("flushPendingEditorContent()"))
         #expect(CadenceSourceScan.codeOnly(source).contains(".focused($isTitleFieldFocused)"))
-        #expect(CadenceSourceScan.codeOnly(source).contains(".onSubmit { flushPendingEditorContent() }"))
+        #expect(CadenceSourceScan.codeOnly(source).contains(".onSubmit { flushTitleEdit() }"))
     }
 
     /// Not per keystroke: the title binding's setter writes the model and does not commit. Since

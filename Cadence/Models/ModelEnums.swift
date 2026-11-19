@@ -146,6 +146,16 @@ nonisolated enum CadenceTitleNormalization {
         normalized(raw).isEmpty
     }
 
+    /// **[[T-18457]] / [[T-18458]]: what a title field typed straight into the model settles to**
+    /// at Return, focus loss or close. A blank field restores `openedWith`, the title the edit
+    /// began from, rather than storing a blank no create or rename path would accept; anything else
+    /// is stored `normalized`. One rule for the Mac note title field and both platforms' subtask
+    /// rows ([[T-8201]]); the field itself still binds every keystroke, so a title being retyped
+    /// may be blank in between.
+    static func settledRetitle(_ draft: String, openedWith: String) -> String {
+        isBlank(draft) ? openedWith : normalized(draft)
+    }
+
     /// The normalized title, or `fallback` when it is blank. Note that this returns the
     /// *trimmed* title, so a caller cannot accidentally store the untrimmed original after
     /// testing the trimmed one for emptiness.

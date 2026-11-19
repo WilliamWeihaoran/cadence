@@ -117,6 +117,10 @@ struct SubtaskRow: View {
     var editsTitle: Bool = false
     var onDelete: (() -> Void)? = nil
     @Environment(\.modelContext) private var modelContext
+    /// [[T-18458]]: the title the field's edit began from, set by its first keystroke and cleared
+    /// when the edit settles. See `settleTitleEdit()`.
+    @State private var titleAtEditStart: String?
+    @FocusState private var isTitleFocused: Bool
 
     // T-673: the same normalisation the visible title below already reads, shared so the
     // completion circle and the delete glyph announce the same subject the row displays.
@@ -152,8 +156,16 @@ struct SubtaskRow: View {
                     .foregroundStyle(titleInk.color(isDone: subtask.isDone))
                     .strikethrough(subtask.isDone, color: Theme.dim)
                     .lineLimit(1)
-                    .onSubmit { Self.commitTitle(in: modelContext) }
-                    .onChange(of: subtask.title) { _, _ in Self.commitTitle(in: modelContext) }
+                    .focused($isTitleFocused)
+                    .onSubmit { settleTitleEdit() }
+                    .onChange(of: subtask.title) { previous, _ in
+                        if isTitleFocused, titleAtEditStart == nil { titleAtEditStart = previous }
+                        Self.commitTitle(in: modelContext)
+                    }
+                    .onChange(of: isTitleFocused) { _, isFocused in
+                        if !isFocused { settleTitleEdit() }
+                    }
+                    .onDisappear { settleTitleEdit() }
             } else {
                 // [[T-17764]]: a preview (under a task row, on a Kanban card) takes the metadata
                 // role iOS's `iOSTaskRowSubtaskRow` draws, so the checklist reads a step under the
@@ -203,6 +215,22 @@ struct SubtaskRow: View {
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
         CadenceNoteTaskEmbedEditing.toggleSubtask(subtask, in: modelContext, commit: commit)
+    }
+
+    /// [[T-18458]]: Return, leaving the field, or the inspector closing ends the edit through the
+    /// shared `CadenceTaskMutationSupport.settleSubtaskRetitle`, so a cleared title restores the
+    /// one it opened with and a padded one is stored trimmed -- what iOS's `iOSSubtaskRow` does.
+    /// A row deleted mid-edit is left alone.
+    private func settleTitleEdit() {
+        guard let openedWith = titleAtEditStart else { return }
+        titleAtEditStart = nil
+        guard !subtask.isDeleted, subtask.modelContext != nil else { return }
+        if CadenceTaskMutationSupport.settleSubtaskRetitle(subtask, openedWith: openedWith) {
+            Self.commitTitle(in: modelContext)
+        }
+        // Still in the field after Return: the next edit begins from the title just settled, not
+        // from the write above, which `onChange` would otherwise take as a first keystroke.
+        if isTitleFocused { titleAtEditStart = subtask.title }
     }
 
     /// The title field's commit ([[T-13161]]), on every edit as iOS's `iOSSubtaskRow.save()` does.

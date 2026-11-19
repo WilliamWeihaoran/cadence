@@ -1245,8 +1245,12 @@ struct CadenceEditorSaveCommitSurfaceTests {
         let rowBody = try #require(CadenceSourceScan.declarationBody("struct SubtaskRow: View", in: row))
         #expect(rowBody.contains(#"TextField("Subtask", text: $subtask.title)"#))
         // Every edit commits, as iOS's `onChange` does; Return alone would leave typing pending.
-        #expect(rowBody.contains(".onChange(of: subtask.title) { _, _ in Self.commitTitle(in: modelContext) }"))
-        #expect(rowBody.contains(".onSubmit { Self.commitTitle(in: modelContext) }"))
+        let onEdit = try #require(CadenceSourceScan.declarationBody(".onChange(of: subtask.title)", in: rowBody))
+        #expect(onEdit.contains("Self.commitTitle(in: modelContext)"))
+        // [[T-18458]]: Return settles the title (`CadenceBlankRetitleSettleTests`), committing it.
+        #expect(rowBody.contains(".onSubmit { settleTitleEdit() }"))
+        let settle = try #require(CadenceSourceScan.functionBody(named: "settleTitleEdit", in: rowBody))
+        #expect(settle.contains("Self.commitTitle(in: modelContext)"))
         #expect(rowBody.contains("var editsTitle: Bool = false"))
 
         let preview = try #require(CadenceSourceScan.declarationBody("struct MacTaskSubtaskPreviewList: View", in: row))

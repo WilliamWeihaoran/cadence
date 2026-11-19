@@ -71,6 +71,14 @@ struct NoteEditorPane: View {
     @State private var tagFailureNotice: String?
     /// The title field's focus, read only so leaving it is a flush point (T-4971).
     @FocusState private var isTitleFieldFocused: Bool
+    /// [[T-18457]]: the note the title field is editing and the title the edit began from, set by
+    /// the first keystroke and cleared when the edit settles.
+    @State private var pendingTitleEdit: PendingTitleEdit?
+
+    private struct PendingTitleEdit {
+        let note: Note
+        let openedWith: String
+    }
 
     private var titleBinding: Binding<String> {
         Binding(
@@ -80,10 +88,13 @@ struct NoteEditorPane: View {
                 // rename would read the old name back. Land it first, then rename body and title
                 // together — the buffer adopts the rewritten heading through `adoptStoreContentIfIdle`.
                 if pendingFallbackContentSyncTask != nil { flushPendingEditorContent() }
+                let edit = pendingTitleEdit ?? PendingTitleEdit(note: note, openedWith: note.title)
+                pendingTitleEdit = edit
                 MarkdownNoteTitleSync.rename(note, to: $0)
                 note.updatedAt = Date()
-                // T-7832: typed straight into the model, so a quit before Return or blur commits it.
-                MarkdownEditorTerminationFlush.shared.registerCommit(titleTerminationFlushID, in: modelContext)
+                // T-7832: typed straight into the model, so a quit before Return or blur commits it
+                // -- settled first ([[T-18457]]), so a field left blank commits the opening title.
+                registerTitleQuitCommit(edit)
             }
         )
     }
@@ -199,10 +210,10 @@ struct NoteEditorPane: View {
                         // T-4971: the title is typed straight into the model; Return and leaving
                         // the field are its flush points, the same as the body's focus loss.
                         .focused($isTitleFieldFocused)
-                        .onSubmit { flushPendingEditorContent() }
+                        .onSubmit { flushTitleEdit() }
                         .onChange(of: isTitleFieldFocused) { _, isFocused in
                             guard !isFocused else { return }
-                            flushPendingEditorContent()
+                            flushTitleEdit()
                         }
                 } else {
                     Text(headerTitle)
@@ -369,6 +380,8 @@ struct NoteEditorPane: View {
             TagSupport.syncNoteTagsFromMarkdownCommittingInsertions(note, in: modelContext)
         }
         .onChange(of: note.id) { _, _ in
+            // [[T-18457]]: the edit belongs to the note being left; `pendingTitleEdit` holds it.
+            commitSettledTitleEdit()
             loadEditorStateIfNeeded(force: true)
         }
         // T-9171: an outside write to this note's body (sync, MCP, another editor) reaches the
@@ -384,6 +397,7 @@ struct NoteEditorPane: View {
         }
         .onDisappear {
             flushPendingEditorContent()
+            commitSettledTitleEdit()
             MarkdownEditorTerminationFlush.shared.unregister(terminationFlushID)
             MarkdownEditorTerminationFlush.shared.unregister(titleTerminationFlushID)
             pendingDerivedStateTask?.cancel()
@@ -492,6 +506,43 @@ struct NoteEditorPane: View {
         refreshDerivedState(for: editorContent)
         // T-4971: a title typed with an unchanged body reaches no commit in the persist above, so
         // the flush commits too. A no-op when nothing is pending.
+        CadencePendingChangePersistence.commitTypedContent(in: modelContext)
+    }
+
+    /// T-7832's quit commit for the title, settled first ([[T-18457]]). Registered per keystroke,
+    /// run only by `MarkdownEditorTerminationFlush` -- the keystroke itself commits nothing. It
+    /// holds the edit only while the edit is open: settling puts the plain commit back.
+    private func registerTitleQuitCommit(_ edit: PendingTitleEdit) {
+        MarkdownEditorTerminationFlush.shared.register(titleTerminationFlushID) { [modelContext] in
+            if !edit.note.isDeleted, edit.note.modelContext != nil {
+                MarkdownNoteTitleSync.settleTitleEdit(edit.note, openedWith: edit.openedWith)
+            }
+            CadencePendingChangePersistence.commitTypedContent(in: modelContext)
+        }
+    }
+
+    /// [[T-18457]]: the title field's flush points (Return, leaving it). Lands the body first, so
+    /// the buffer holds the heading the last keystroke wrote, then settles the title -- a blank one
+    /// back to the title the edit opened with -- and commits both.
+    private func flushTitleEdit() {
+        flushPendingEditorContent()
+        commitSettledTitleEdit()
+    }
+
+    /// Settles and clears `pendingTitleEdit`, then commits what that wrote. A restored heading is
+    /// taken into the buffer at once, so the next body commit cannot write `"# "` back. The quit
+    /// commit goes back to the plain one, so a settled edit's closure never outlives it -- it holds
+    /// the note, which a switch then a delete would leave it reading at Cmd-Q.
+    private func commitSettledTitleEdit() {
+        guard let edit = pendingTitleEdit else { return }
+        pendingTitleEdit = nil
+        MarkdownEditorTerminationFlush.shared.registerCommit(titleTerminationFlushID, in: modelContext)
+        guard !edit.note.isDeleted, edit.note.modelContext != nil else { return }
+        guard MarkdownNoteTitleSync.settleTitleEdit(edit.note, openedWith: edit.openedWith) else { return }
+        if loadedNoteID == edit.note.id {
+            editorContent = edit.note.content
+            refreshDerivedState(for: editorContent)
+        }
         CadencePendingChangePersistence.commitTypedContent(in: modelContext)
     }
 

@@ -685,6 +685,10 @@ struct iOSSubtaskRow: View {
     let toggle: () -> Void
     let delete: () -> Void
     @Environment(\.modelContext) private var modelContext
+    /// [[T-18458]]: the title the field's edit began from, set by its first keystroke and cleared
+    /// when the edit settles. See `settleTitleEdit()`.
+    @State private var titleAtEditStart: String?
+    @FocusState private var isTitleFocused: Bool
 
     /// [[T-7011]]: the subject both buttons announce, normalised the way macOS's `SubtaskRow` names
     /// its own (T-673). Without it every row in the block read "Complete subtask" and "Delete
@@ -713,10 +717,16 @@ struct iOSSubtaskRow: View {
                 .strikethrough(subtask.isDone, color: Theme.dim)
                 .lineLimit(2)
                 .submitLabel(.done)
-                .onSubmit(save)
-                .onChange(of: subtask.title) { _, _ in
+                .focused($isTitleFocused)
+                .onSubmit(settleTitleEdit)
+                .onChange(of: subtask.title) { previous, _ in
+                    if isTitleFocused, titleAtEditStart == nil { titleAtEditStart = previous }
                     save()
                 }
+                .onChange(of: isTitleFocused) { _, isFocused in
+                    if !isFocused { settleTitleEdit() }
+                }
+                .onDisappear(perform: settleTitleEdit)
 
             Spacer(minLength: 8)
 
@@ -751,6 +761,20 @@ struct iOSSubtaskRow: View {
     /// text field.
     private func save() {
         try? modelContext.save()
+    }
+
+    /// [[T-18458]]: Return, leaving the field, or the sheet closing ends the edit through the
+    /// shared `CadenceTaskMutationSupport.settleSubtaskRetitle` -- the Mac inspector's `SubtaskRow`
+    /// rule -- so a cleared title restores the one it opened with and a padded one is stored
+    /// trimmed. A row deleted mid-edit is left alone.
+    private func settleTitleEdit() {
+        guard let openedWith = titleAtEditStart else { return }
+        titleAtEditStart = nil
+        guard !subtask.isDeleted, subtask.modelContext != nil else { return }
+        if CadenceTaskMutationSupport.settleSubtaskRetitle(subtask, openedWith: openedWith) { save() }
+        // Still in the field after Return: the next edit begins from the title just settled, not
+        // from the write above, which `onChange` would otherwise take as a first keystroke.
+        if isTitleFocused { titleAtEditStart = subtask.title }
     }
 }
 
