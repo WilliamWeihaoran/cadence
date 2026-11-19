@@ -294,6 +294,51 @@ struct WidgetSupportTests {
         #expect(CadenceSourceScan.matchCount(#"unavailableSnapshot\(\s*\)"#, in: code) == 0)
     }
 
+    /// **[[T-18461]].** A selection built once, as the widget extension's `shared` is, adopts a
+    /// palette stored **after** it was built — and adopting writes nothing back, because the
+    /// widget must never move the key or ask for a reload of its own.
+    @Test func aBuiltSelectionAdoptsAPaletteStoredAfterItAndWritesNothing() throws {
+        try withTemporaryDefaults("cadence.tests.widgetAccentPalette") { defaults in
+            CadenceAccentPaletteStore.storeSelected(.cadence, userDefaults: defaults)
+            let selection = CadenceAccentPaletteSelection(userDefaults: defaults)
+            #expect(selection.palette == .cadence)
+
+            CadenceAccentPaletteStore.storeSelected(.ember, userDefaults: defaults)
+            #expect(selection.palette == .cadence, "nothing re-reads until asked")
+            selection.adoptStoredSelection(userDefaults: defaults)
+            #expect(selection.palette == .ember)
+
+            CadenceAccentPaletteStore.storeSelected(.glacier, userDefaults: defaults)
+            selection.adoptStoredSelection(userDefaults: defaults)
+            #expect(selection.palette == .glacier)
+
+            // Adopting never writes: clear the key, adopt, and it is still absent.
+            CadenceAccentPaletteStore.clearSelection(userDefaults: defaults)
+            selection.adoptStoredSelection(userDefaults: defaults)
+            #expect(defaults.object(forKey: CadenceAccentPaletteStore.defaultsKey) == nil)
+            #expect(selection.palette == CadenceAccentPalette.palette(id: nil))
+        }
+    }
+
+    /// The providers are not in the test target, so this pins the call [[T-18461]] added: both
+    /// providers re-read the palette at the top of `getSnapshot` **and** `getTimeline`, before the
+    /// entry is built, and neither ever selects with `persist` left on.
+    @Test func bothWidgetProvidersReadThePalettePerSnapshotAndPerTimeline() throws {
+        for path in ["CadenceWidgets/TodayTasksWidget.swift", "CadenceWidgets/CalendarSnapshotWidget.swift"] {
+            let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            for name in ["getSnapshot", "getTimeline"] {
+                let body = try #require(CadenceSourceScan.functionBody(named: name, in: code), "\(path) \(name)")
+                let adopt = try #require(
+                    body.range(of: "CadenceAccentPaletteSelection.shared.adoptStoredSelection()"),
+                    "\(path) \(name) does not re-read the palette"
+                )
+                let entry = try #require(body.range(of: "Entry("), "\(path) \(name) builds no entry")
+                #expect(adopt.lowerBound < entry.lowerBound, "\(path) \(name) reads the palette after building the entry")
+            }
+            #expect(!code.contains(".select("), "\(path) must not select a palette, which persists and reloads")
+        }
+    }
+
     /// **[[T-15331]], seen in a recorded iPad frame.** The large Calendar tile in its unavailable
     /// state drew a bold `0` and `0 overdue` / `0 upcoming` above "Calendar widget needs Cadence",
     /// beside a Today tile that already drew a dash ([[T-12332]]). The snapshot spells the figure,

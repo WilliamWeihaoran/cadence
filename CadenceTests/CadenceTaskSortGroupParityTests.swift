@@ -390,7 +390,7 @@ struct CadenceTaskSortGroupParityTests {
 
         // And the Mac's Today badge, which reads the same vocabulary through `pickerLabel`.
         let panel = try literalBearingCode("Cadence/macOS/Views/TasksPanel.swift")
-        #expect(panel.contains("CadenceEnumPickerBadge(title: \"Sort\", selection: $localSortMode)"))
+        #expect(panel.contains("CadenceEnumPickerBadge(title: \"Sort\", selection: sortModeBinding)"))
         #expect(!panel.contains("excluded:"), "the Mac's Today badge filters its cases")
     }
 

@@ -239,12 +239,10 @@ enum CadenceLookPreferenceStore {
     /// one Today and not the other would leave the single page both devices open on visibly
     /// unsynced, which is the whole complaint. It is one row of this table.
     ///
-    /// **When an adopted value appears.** Every mirror but one is read through `@AppStorage`, which
+    /// **When an adopted value appears.** Every mirror is read through `@AppStorage`, which
     /// observes its own key, so a palette or a sort arriving from another device repaints the
-    /// surface at once. `todaySortMode` is the exception: `TasksPanel` seeds `@State` from it in
-    /// `init`, so a Today sort adopted while that panel is on screen is drawn at the next launch
-    /// rather than immediately. Left alone rather than rewired — moving Today's chip onto
-    /// `@AppStorage` is a change to a surface this ticket was not asked to touch.
+    /// surface at once. `todaySortMode` was the exception until [[T-18460]]: `TasksPanel` seeded
+    /// `@State` from it in `init`, so an adopted Today sort waited for the next launch.
     ///
     /// macOS's per-list `_sortField` / `_sortDir` keys are deliberately absent. They are keyed by
     /// list id — a different setting from iOS's one app-wide `ios.listDetail.sortMode`, not the

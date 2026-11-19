@@ -39,23 +39,39 @@ struct TasksPanel: View {
     @State private var reorderOffScreenNotice: String?
     @State private var collapsedGroupIDs: Set<String> = []
     @State private var isCompletedCollapsed = true
-    @State private var localSortMode: CadenceTaskSortMode = .macOSTodayDefault
+    /// Today's Sort, read **live** from `todaySortMode` rather than copied once ([[T-18460]]).
+    ///
+    /// This was `@State` seeded in `init`, so a sort picked in a second Mac window, or adopted
+    /// from another device by `CadenceLookPreferenceStore`'s mirror, was not drawn by a Today panel
+    /// already on screen — and picking in that stale panel then wrote its old view back over the
+    /// other window's choice. iOS Today reads its key through `@AppStorage` (`iOSTodayView`), and so
+    /// do All Tasks and Inbox here; this is the same observation, not a Mac-only variant (T-8201).
+    /// `nil` while nothing has been written, which is what lets the legacy `todaySortField`
+    /// migration in `sortMode(storedRaw:legacyRaw:fallback:)` keep answering until the first pick.
+    @AppStorage(CadencePreferenceKeys.todaySortMode) private var storedSortModeRaw: String?
+    /// The pre-T-606 key, observed for the same reason: it is only ever read, but a read that
+    /// happens on every body must not be a second, unobserved `UserDefaults` lookup.
+    @AppStorage(TasksPanel.legacySortFieldDefaultsKey) private var legacySortFieldRaw: String?
     @State private var frozenTaskOrder: [AppTask]? = nil
     @State private var dragOverTaskID: UUID? = nil
 
+    /// `defaults` is for tests: `nil`, every live call site, resolves through the scene's
+    /// `defaultAppStorage`, which is `CadenceDefaults.store`.
     init(
         showsHeader: Bool = true,
         sortMode: CadenceTaskSortMode = .macOSTodayDefault,
         enableControls: Bool = false,
         useStandardHeaderHeight: Bool = false,
-        bottomClearance: CGFloat = 0
+        bottomClearance: CGFloat = 0,
+        defaults: UserDefaults? = nil
     ) {
         self.showsHeader = showsHeader
         self.sortMode = sortMode
         self.enableControls = enableControls
         self.useStandardHeaderHeight = useStandardHeaderHeight
         self.bottomClearance = bottomClearance
-        _localSortMode = State(initialValue: Self.storedSortMode(in: CadenceDefaults.store, fallback: sortMode))
+        _storedSortModeRaw = AppStorage(Self.sortModeDefaultsKey, store: defaults)
+        _legacySortFieldRaw = AppStorage(Self.legacySortFieldDefaultsKey, store: defaults)
     }
 
     /// Which `CadenceTaskSurface` this panel is drawing, so the chrome answers come from the
@@ -70,7 +86,26 @@ struct TasksPanel: View {
         CadenceTaskSurfaceOptions.options(for: surface)
     }
 
-    private var activeSortMode: CadenceTaskSortMode { enableControls ? localSortMode : sortMode }
+    /// What this panel sorts by. Not `private`: `CadenceTodaySortVocabularyTests` constructs a
+    /// panel and asserts this follows a write made after construction ([[T-18460]]).
+    var activeSortMode: CadenceTaskSortMode { enableControls ? storedSortMode : sortMode }
+
+    /// The chip's mode, decoded from the observed keys on every read.
+    var storedSortMode: CadenceTaskSortMode {
+        Self.sortMode(storedRaw: storedSortModeRaw, legacyRaw: legacySortFieldRaw, fallback: sortMode)
+    }
+
+    /// The Sort chip's binding. Reads through `storedSortMode`'s fallback rules and writes the
+    /// mode's raw value straight to `todaySortMode` — the only write this panel makes to it.
+    var sortModeBinding: Binding<CadenceTaskSortMode> {
+        let stored = $storedSortModeRaw
+        let legacy = legacySortFieldRaw
+        let fallback = sortMode
+        return Binding(
+            get: { Self.sortMode(storedRaw: stored.wrappedValue, legacyRaw: legacy, fallback: fallback) },
+            set: { stored.wrappedValue = $0.rawValue }
+        )
+    }
 
     /// Where this panel's sort preference is written. It used to be
     /// `mode == .todayOverview ? "today" : "allTasks"`; the second half went with `.byDoDate`
@@ -87,7 +122,7 @@ struct TasksPanel: View {
     /// below have one reader each and stay built.
     static let sortModeDefaultsKey = CadencePreferenceKeys.todaySortMode
 
-    /// The pre-T-606 keys. Still read once, by `storedSortMode(in:fallback:)`, and deliberately
+    /// The pre-T-606 keys. Still read, by `sortMode(storedRaw:legacyRaw:fallback:)`, and deliberately
     /// **not** deleted: nothing is gained by destroying the only record of what the user chose,
     /// and a build rolled back to the two chips still finds its preference intact.
     static let legacySortFieldDefaultsKey = udPrefix + "SortField"
@@ -105,12 +140,21 @@ struct TasksPanel: View {
     /// through both `init(rawValue:)` calls to `fallback`, which is `.macOSTodayDefault` at every
     /// live call site.
     static func storedSortMode(in defaults: UserDefaults, fallback: CadenceTaskSortMode) -> CadenceTaskSortMode {
-        if let raw = defaults.string(forKey: sortModeDefaultsKey),
-           let mode = CadenceTaskSortMode(rawValue: raw) {
+        sortMode(
+            storedRaw: defaults.string(forKey: sortModeDefaultsKey),
+            legacyRaw: defaults.string(forKey: legacySortFieldDefaultsKey),
+            fallback: fallback
+        )
+    }
+
+    /// `storedSortMode(in:fallback:)` over raw values already read, so the panel's observed
+    /// `@AppStorage` copies decode through exactly the same rules ([[T-18460]]).
+    static func sortMode(storedRaw: String?, legacyRaw: String?, fallback: CadenceTaskSortMode) -> CadenceTaskSortMode {
+        if let storedRaw, let mode = CadenceTaskSortMode(rawValue: storedRaw) {
             return mode
         }
-        guard let legacy = defaults.string(forKey: legacySortFieldDefaultsKey) else { return fallback }
-        return CadenceTaskSortMode.migratedFromMacOSTodaySortField(legacy)
+        guard let legacyRaw else { return fallback }
+        return CadenceTaskSortMode.migratedFromMacOSTodaySortField(legacyRaw)
     }
 
     /// Read through `observedDay` so this body depends on the day, and is re-run at midnight by
@@ -213,9 +257,6 @@ struct TasksPanel: View {
             .onAppear {
                 isCompletedCollapsed = true
             }
-            .onChange(of: localSortMode) { _, v in
-                CadenceDefaults.store.set(v.rawValue, forKey: Self.sortModeDefaultsKey)
-            }
             .cadenceTracksDayChanges($observedDay)
     }
 
@@ -249,7 +290,7 @@ struct TasksPanel: View {
                 // Today's one chip, still built here — see `TasksPanelHeader.trailing` for why the
                 // header takes a slot rather than the binding.
                 if enableControls, options.showsSort {
-                    CadenceEnumPickerBadge(title: "Sort", selection: $localSortMode)
+                    CadenceEnumPickerBadge(title: "Sort", selection: sortModeBinding)
                 }
             }
             .frame(height: useStandardHeaderHeight ? todayPanelHeaderHeight : nil, alignment: .top)

@@ -6,6 +6,7 @@
 import CoreGraphics
 import Foundation
 import SwiftData
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -2065,7 +2066,39 @@ struct CadenceTodaySortVocabularyTests {
         let code = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanel.swift"))
         #expect(code.contains("legacySortFieldDefaultsKey"))
         #expect(!code.contains("removeObject"))
-        #expect(code.components(separatedBy: "CadenceDefaults.store.set").count - 1 == 1)
+        // Since [[T-18460]] the one write is the chip binding's, through the observed
+        // `@AppStorage`; nothing writes the store directly and nothing assigns the legacy copy.
+        #expect(code.components(separatedBy: "CadenceDefaults.store.set").count - 1 == 0)
+        #expect(code.components(separatedBy: "stored.wrappedValue = $0.rawValue").count - 1 == 1)
+        #expect(!code.contains(" legacySortFieldRaw ="))
+    }
+
+    /// **[[T-18460]].** A Today panel already on screen draws a sort written to `todaySortMode`
+    /// **after** it was built — by a second Mac window's chip, or by the look mirror adopting
+    /// another device's pick. The chip used to be `@State` seeded once in `init`, so this read
+    /// stayed on the construction-time value.
+    @MainActor @Test func aTodayPanelFollowsASortWrittenAfterItWasBuilt() throws {
+        try withTemporaryDefaults("cadence.tests.todaySortMode.live") { defaults in
+            let panel = TasksPanel(enableControls: true, defaults: defaults)
+            #expect(panel.activeSortMode == .doDate)
+
+            // The legacy key still migrates while nothing has been written under the new one.
+            defaults.set("Priority", forKey: TasksPanel.legacySortFieldDefaultsKey)
+            #expect(panel.activeSortMode == .priority)
+
+            // Another writer moves the key: this panel follows without being rebuilt.
+            defaults.set(CadenceTaskSortMode.dueDate.rawValue, forKey: TasksPanel.sortModeDefaultsKey)
+            #expect(panel.activeSortMode == .dueDate)
+            #expect(panel.sortModeBinding.wrappedValue == .dueDate)
+
+            // And this panel's chip writes the key the other panels read.
+            panel.sortModeBinding.wrappedValue = .listOrder
+            #expect(defaults.string(forKey: TasksPanel.sortModeDefaultsKey) == CadenceTaskSortMode.listOrder.rawValue)
+            #expect(TasksPanel(enableControls: true, defaults: defaults).activeSortMode == .listOrder)
+
+            // A panel without controls keeps the mode its host handed it.
+            #expect(TasksPanel(sortMode: .priority, defaults: defaults).activeSortMode == .priority)
+        }
     }
 
     // MARK: - The chips themselves

@@ -18,6 +18,9 @@ struct CalendarSnapshotWidgetProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: TimelineProviderContext, completion: @escaping (CalendarSnapshotWidgetEntry) -> Void) {
+        // This process's palette was read once, when it started; re-read it per request so a
+        // palette picked while the extension stays alive is drawn on this reload ([[T-18461]]).
+        CadenceAccentPaletteSelection.shared.adoptStoredSelection()
         // The widget gallery asks for a snapshot with `isPreview` set, and `placeholder(in:)` is
         // only the redacted loading frame. Answering the gallery from the live store meant a new
         // install advertised this widget as empty and the sample content below was shown to no
@@ -31,6 +34,7 @@ struct CalendarSnapshotWidgetProvider: TimelineProvider {
     }
 
     func getTimeline(in context: TimelineProviderContext, completion: @escaping (Timeline<CalendarSnapshotWidgetEntry>) -> Void) {
+        CadenceAccentPaletteSelection.shared.adoptStoredSelection()  // [[T-18461]], as in getSnapshot
         let entry = CalendarSnapshotWidgetEntry(
             date: Date(),
             snapshot: currentSnapshot(for: context.family)

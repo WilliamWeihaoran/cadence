@@ -171,9 +171,11 @@ nonisolated final class CadenceAccentResolution: @unchecked Sendable {
 ///
 /// The key lives in the **app group** suite, not `.standard`, because `CadenceWidgets` is a
 /// separate process that compiles this same file. `CadenceWidgetRefreshCenter` already crosses
-/// that boundary through the same suite, so a widget picks the palette up on its next timeline
-/// reload with no new plumbing — which is why the widget half of this ticket shipped rather than
-/// being deferred.
+/// that boundary through the same suite. A widget picks the palette up on its next timeline reload
+/// because each provider calls `CadenceAccentPaletteSelection.adoptStoredSelection` at the top of
+/// `getSnapshot` and `getTimeline` ([[T-18461]]): `shared` reads this key once, in `init`, and an
+/// extension process that outlives a reload would otherwise keep drawing the palette it started
+/// with.
 nonisolated enum CadenceAccentPaletteStore {
     static let defaultsKey = "cadence.appearance.accentPaletteID"
 
@@ -232,6 +234,14 @@ nonisolated final class CadenceAccentPaletteSelection: @unchecked Sendable {
         guard persist else { return }
         CadenceAccentPaletteStore.storeSelected(palette, userDefaults: userDefaults)
         CadenceWidgetRefreshCenter.reloadAllWidgets(force: true)
+    }
+
+    /// Re-reads the stored selection and adopts it **without** writing it back or asking for a
+    /// reload ([[T-18461]]). The widget extension calls this per snapshot and per timeline, since
+    /// `shared` is built once per process and the app's `select` cannot reach another process's
+    /// copy. The app never needs it: its own `select` is what moves the key.
+    func adoptStoredSelection(userDefaults: UserDefaults? = nil) {
+        select(CadenceAccentPaletteStore.loadSelected(userDefaults: userDefaults), persist: false)
     }
 }
 

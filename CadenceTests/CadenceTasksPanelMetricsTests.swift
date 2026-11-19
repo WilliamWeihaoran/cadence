@@ -391,7 +391,7 @@ struct CadenceTasksPanelMetricsTests {
         // In the header's trailing slot, and nowhere else in the panel: the second row is the one
         // thing this whole change is for.
         #expect(
-            header.contains(#"CadenceEnumPickerBadge(title: "Sort", selection: $localSortMode)"#),
+            header.contains(#"CadenceEnumPickerBadge(title: "Sort", selection: sortModeBinding)"#),
             "Today's Sort chip is not in its header's trailing slot"
         )
         #expect(header.contains("if enableControls, options.showsSort"))
