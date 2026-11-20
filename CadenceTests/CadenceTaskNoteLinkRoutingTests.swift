@@ -143,12 +143,15 @@ struct CadenceTaskNoteLinkRoutingTests {
         #expect(notes.request == nil)
     }
 
+    /// [[T-18552]]: an id resolves to its row or to nothing. A stale id (its note deleted) beside a
+    /// live note sharing the label opens nothing -- the T-348 retarget -- as on iOS. Only a
+    /// title-only link matches by title.
     @Test func aLinkResolvesByIDFirstThenByTitle() {
         let first = Note(kind: .permanent, title: "Roadmap")
         let second = Note(kind: .permanent, title: "Ideas")
         let notes = [first, second]
         #expect(TaskNoteLinkRouting.note(id: second.id, title: "Roadmap", in: notes) === second)
-        #expect(TaskNoteLinkRouting.note(id: UUID(), title: "  roadmap ", in: notes) === first)
+        #expect(TaskNoteLinkRouting.note(id: UUID(), title: "  roadmap ", in: notes) == nil)
         #expect(TaskNoteLinkRouting.note(id: nil, title: "IDEAS", in: notes) === second)
         #expect(TaskNoteLinkRouting.note(id: nil, title: "Nowhere", in: notes) == nil)
         #expect(TaskNoteLinkRouting.note(id: nil, title: "  ", in: notes) == nil)
@@ -334,6 +337,22 @@ struct CadenceTaskNoteLinkRoutingTests {
         let handler = try #require(CadenceSourceScan.functionBody(named: "openNoteReference", in: panel))
         #expect(handler.contains("TaskNoteLinkRouting.note(id: id, title: title, in: referenceNotes)"))
         #expect(handler.contains("TaskNoteLinkRouting.open(note)"))
+    }
+
+    /// [[T-18552]]: the Notes page's editor and a list's task-note pane carried hand copies of the
+    /// resolver that fell through to the title after a stale id. Both now call the shared one, and
+    /// neither keeps a title match of its own.
+    @Test func theNotesPageAndListNoteEditorsResolveThroughTheSharedRouter() throws {
+        for (path, declaration, notes) in [
+            ("Cadence/macOS/Views/NoteEditorPane.swift", "struct NoteEditorPane", "referenceNotes"),
+            ("Cadence/macOS/Views/ListNotesSupportViews.swift", "struct TaskNoteEditorPane", "relatedNotes")
+        ] {
+            let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            let pane = try #require(CadenceSourceScan.declarationBody(declaration, in: source), "\(path)")
+            let handler = try #require(CadenceSourceScan.functionBody(named: "openNoteReference", in: pane), "\(path)")
+            #expect(handler.contains("TaskNoteLinkRouting.note(id: id, title: title, in: \(notes))"), "\(path)")
+            #expect(!handler.contains("caseInsensitiveCompare"), "\(path) keeps its own title match")
+        }
     }
 
     /// [[T-6461]]: the Focus page's task-notes panel passed neither `referenceNotes:` nor

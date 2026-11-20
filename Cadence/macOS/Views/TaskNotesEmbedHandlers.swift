@@ -172,14 +172,19 @@ final class TaskNotesEmbedHandlers {
 
     // MARK: - Handlers
 
-    /// A `[[task]]` link: by id, then by trimmed, case-insensitive title, against the host's tasks.
+    /// A `[[task]]` link: by id, else -- only when the link names no id -- by trimmed,
+    /// case-insensitive title, against the host's tasks. [[T-18552]]: an id that resolves to no
+    /// task opens nothing, never a live task sharing its label ([[T-348]]; iOS's
+    /// `iOSMarkdownReferenceResolver.task` gives the same answer).
     /// **[[T-6781]]: the id lookup reads the creation cache in every host,** as the card handlers
     /// below always have — a task created from this note a moment ago opens from its link before the
     /// host's query holds it. Safe everywhere because `embeddedTask(id:in:)` tries the live tasks
     /// first and re-checks a cached task against the store ([[T-349]]), so a deleted one does not open.
     func openTaskReference(id: UUID?, title: String, in scope: TaskNotesEmbedScope) {
-        if let id, let linkedTask = embeddedTask(id: id, in: scope) {
-            linkedTaskForPopover = linkedTask
+        if let id {
+            if let linkedTask = embeddedTask(id: id, in: scope) {
+                linkedTaskForPopover = linkedTask
+            }
             return
         }
 

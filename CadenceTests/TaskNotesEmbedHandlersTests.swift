@@ -49,12 +49,35 @@ struct TaskNotesEmbedHandlersTests {
         handlers.openTaskReference(id: nil, title: "  sHIP THE beta \n", in: scope)
         #expect(handlers.linkedTaskForPopover?.id == beta.id)
 
-        // An unknown id falls through to the title; an empty or unknown title changes nothing.
+        // [[T-18552]]: an unknown id opens nothing rather than falling through to the title; an
+        // empty or unknown title changes nothing.
         handlers.openTaskReference(id: UUID(), title: "write the notes", in: scope)
-        #expect(handlers.linkedTaskForPopover?.id == notes.id)
+        #expect(handlers.linkedTaskForPopover?.id == beta.id)
         handlers.openTaskReference(id: nil, title: "   ", in: scope)
         handlers.openTaskReference(id: nil, title: "No such task", in: scope)
-        #expect(handlers.linkedTaskForPopover?.id == notes.id)
+        #expect(handlers.linkedTaskForPopover?.id == beta.id)
+    }
+
+    /// [[T-18552]]: a `[[task:<id>|Call Ana]]` link whose task was deleted, beside a live task also
+    /// called "Call Ana", opens nothing -- not the live task the user never linked (the [[T-348]]
+    /// retarget), matching `iOSMarkdownReferenceResolver.task`.
+    @Test func aStaleTaskLinkDoesNotOpenALiveTaskWithTheSameTitle() throws {
+        let (_, modelContext) = try context()
+        let owner = try seededTask("Owner", in: modelContext)
+        let deleted = try seededTask("Call Ana", in: modelContext)
+        let live = try seededTask("Call Ana", in: modelContext)
+        let staleID = deleted.id
+        modelContext.delete(deleted)
+        try modelContext.save()
+        let handlers = TaskNotesEmbedHandlers(hoverIDPrefix: "test-")
+        let scope = scope([owner, live], owner: owner, modelContext)
+
+        handlers.openTaskReference(id: staleID, title: "Call Ana", in: scope)
+        #expect(handlers.linkedTaskForPopover == nil)
+
+        // The same label with no id still resolves by title.
+        handlers.openTaskReference(id: nil, title: "Call Ana", in: scope)
+        #expect(handlers.linkedTaskForPopover?.id == live.id)
     }
 
     @Test func clickingACardBodyOpensItsTaskAndAMissingCardDoesNothing() throws {

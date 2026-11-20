@@ -268,10 +268,14 @@ struct TaskNotesExpandedEditorSheet: View {
 /// `listNoteID:` overload global search uses ([[T-3084]]). Without the id the tab selected whatever
 /// document it reached first ([[T-6092]]).
 enum TaskNoteLinkRouting {
-    /// Same resolution as `TaskNoteEditorPane.openNoteReference`: the id first, then the title.
+    /// Where a clicked `[[note]]` link resolves, for every macOS host. [[T-18552]]: an id resolves
+    /// to its row or to **nothing** -- a link whose note was deleted no longer opens another note
+    /// that shares its label ([[T-348]]), the answer `iOSMarkdownReferenceResolver.note` gives.
+    /// Only a title-only link (`id == nil`) matches by title.
     static func note(id: UUID?, title: String, in notes: [Note]) -> Note? {
-        if let id, let note = notes.first(where: { $0.id == id }) {
-            return note
+        let target: NoteReferenceTarget = id.map { .identified($0) } ?? .titleOnly
+        if case .identified(let id) = target {
+            return notes.first { $0.id == id }
         }
         let targetTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !targetTitle.isEmpty else { return nil }

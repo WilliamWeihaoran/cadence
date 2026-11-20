@@ -655,17 +655,9 @@ struct NoteEditorPane: View {
         return tag
     }
 
+    /// [[T-18552]]: the shared resolver, so a link to a deleted note opens nothing.
     private func openNoteReference(id: UUID?, title: String) {
-        if let id, let note = referenceNotes.first(where: { $0.id == id }) {
-            onOpenNote(note)
-            return
-        }
-
-        let targetTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !targetTitle.isEmpty,
-              let note = referenceNotes.first(where: {
-                  $0.displayTitle.caseInsensitiveCompare(targetTitle) == .orderedSame
-              }) else { return }
+        guard let note = TaskNoteLinkRouting.note(id: id, title: title, in: referenceNotes) else { return }
         onOpenNote(note)
     }
 
