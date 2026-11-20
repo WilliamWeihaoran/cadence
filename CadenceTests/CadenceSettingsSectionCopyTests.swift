@@ -1735,6 +1735,12 @@ struct CadenceSettingsSectionCopyTests {
             statement.contains("AI actions send a note's title, full text, and list name to OpenAI only when you run one."),
             "the card does not name the three fields an AI action sends"
         )
+        // [[T-18530]]: both platforms read Apple Reminders and mark one complete, so the card
+        // that says what Cadence reaches must name them beside Calendar and OpenAI.
+        #expect(
+            statement.contains("Reminders access shows your incomplete reminders in Inbox and marks one complete when you check it off"),
+            "the Privacy card does not name Reminders access"
+        )
     }
 
     private static func strippedSource(at path: String) throws -> String {

@@ -652,12 +652,15 @@ nonisolated enum CadenceUnmanagedStoreCopy {
 /// (`SettingsPrivacyStatementSection`, [[T-7208]] for the AI clause); the phone's Data Safety
 /// screen had no such card, so the one place a reader looks for "what leaves my device" said it on
 /// one platform and nothing on the other. Every clause is true of both: the store is local and in
-/// the private iCloud database on each, both read EventKit for the Calendar, and both send the
+/// the private iCloud database on each, both read EventKit for the Calendar, both read Reminders
+/// through EventKit and mark one complete when it is checked off in the Inbox (the only change
+/// Cadence makes to a reminder -- `docs/privacy.html`'s "Reminders Access" and the
+/// `NSRemindersFullAccessUsageDescription` string say the same; [[T-18530]]), and both send the
 /// same AI request (`CadenceAISettingsCopy.keyPrivacyDisclosure`). One title, one sentence, one
 /// glyph, so neither card can come to describe a different app.
 nonisolated enum CadenceDataSafetyPrivacyCopy {
     static let title = "Privacy"
-    static let statement = "Cadence stores planning data locally and in your private iCloud database when sync is available. Calendar access is used for calendar features, and AI actions send a note's title, full text, and list name to OpenAI only when you run one."
+    static let statement = "Cadence stores planning data locally and in your private iCloud database when sync is available. Calendar access is used for calendar features, Reminders access shows your incomplete reminders in Inbox and marks one complete when you check it off, and AI actions send a note's title, full text, and list name to OpenAI only when you run one."
     static let systemImage = "hand.raised.fill"
 }
 
