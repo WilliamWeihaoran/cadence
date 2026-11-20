@@ -689,13 +689,29 @@ nonisolated enum CadenceWidgetDateSupport {
     /// `"SAT"`. Pinned to `en_US_POSIX` via `DateFormatters.dayOfWeek`, so it reads the same on
     /// every host — see the note on this enum for what following the host looked like.
     nonisolated static func weekdayLabel(from date: Date) -> String {
-        DateFormatters.dayOfWeek.string(from: date).uppercased()
+        weekdayLabel(from: date, calendar: .current)
     }
 
     /// `"15"`. Pinned too, and the numerals are the reason: `DateFormatters.dayNumber` documents
-    /// that an unpinned `"d"` renders Arabic-Indic digits under an `ar` host.
+    /// that an unpinned `"d"` renders Arabic-Indic digits under an `ar` host; `String(Int)` is
+    /// ASCII on every host.
     nonisolated static func dayNumberLabel(from date: Date) -> String {
-        DateFormatters.dayNumber.string(from: date)
+        dayNumberLabel(from: date, calendar: .current)
+    }
+
+    /// Calendar-injectable cores of the two labels above, read in `calendar`'s zone so a
+    /// Calendar-widget cell's labels name the same day as its key ([[T-18617]]). Gregorian through
+    /// `storageCalendar` like the key, and the weekday spelled from `DateFormatters.dayOfWeek`'s own
+    /// `en_US_POSIX` symbols, so both read as the pinned formatters do -- the formatters themselves
+    /// read the host's zone, which a stated calendar must not.
+    nonisolated static func weekdayLabel(from date: Date, calendar: Calendar) -> String {
+        let weekday = DateFormatters.storageCalendar(inheritingTimeZoneFrom: calendar)
+            .component(.weekday, from: date)
+        return DateFormatters.dayOfWeek.shortWeekdaySymbols[weekday - 1].uppercased()
+    }
+
+    nonisolated static func dayNumberLabel(from date: Date, calendar: Calendar) -> String {
+        String(DateFormatters.storageCalendar(inheritingTimeZoneFrom: calendar).component(.day, from: date))
     }
 
     /// Cadence's single due-date vocabulary: `nil` (no due date at all), "Due today",

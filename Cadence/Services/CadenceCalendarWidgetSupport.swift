@@ -136,30 +136,35 @@ nonisolated enum CadenceCalendarWidgetSupport {
         return built
     }
 
-    /// The pure half of `daySnapshots(modelContext:...)`. `snapshot(from:today:dayCount:)` walks
-    /// days in `Calendar.current`, so the entries are split in it too.
+    /// The pure half of `daySnapshots(modelContext:...)`. The entries are split, and each strip is
+    /// walked, in ONE `calendar` ([[T-18617]]): the widget passes nothing and gets
+    /// `Calendar.current`, as before; a test states the zone it means instead of inheriting the
+    /// host's.
     nonisolated static func daySnapshots(
         from tasks: [AppTask],
         dayCount: Int,
-        now: Date
+        now: Date,
+        calendar: Calendar = .current
     ) -> [(date: Date, snapshot: CadenceCalendarWidgetSnapshot)] {
-        CadenceWidgetDayTurnTimeline.entries(now: now, calendar: .current) { day in
-            snapshot(from: tasks, today: day, dayCount: dayCount)
+        CadenceWidgetDayTurnTimeline.entries(now: now, calendar: calendar) { day in
+            snapshot(from: tasks, today: day, dayCount: dayCount, calendar: calendar)
         }
     }
 
+    /// `calendar` decides which day each cell is, its storage key and its labels ([[T-18617]]);
+    /// `today` must be a start of day in it.
     nonisolated static func snapshot(
         from tasks: [AppTask],
         today: Date = Calendar.current.startOfDay(for: Date()),
-        dayCount: Int
+        dayCount: Int,
+        calendar: Calendar = .current
     ) -> CadenceCalendarWidgetSnapshot {
         let safeDayCount = max(dayCount, 1)
-        let calendar = Calendar.current
-        let todayKey = CadenceWidgetDateSupport.dateKey(from: today)
+        let todayKey = CadenceWidgetDateSupport.dateKey(from: today, calendar: calendar)
         let openTasks = tasks.filter { !$0.isDone && !$0.isCancelled }
         let days = (0..<safeDayCount).compactMap { offset -> CadenceCalendarWidgetDay? in
             guard let date = calendar.date(byAdding: .day, value: offset, to: today) else { return nil }
-            let dateKey = CadenceWidgetDateSupport.dateKey(from: date)
+            let dateKey = CadenceWidgetDateSupport.dateKey(from: date, calendar: calendar)
             let due = openTasks.filter { $0.dueDate == dateKey }
             let scheduledOnly = openTasks.filter {
                 $0.scheduledDate == dateKey && $0.dueDate != dateKey
@@ -168,8 +173,8 @@ nonisolated enum CadenceCalendarWidgetSupport {
             let scheduledOnlyCount = scheduledOnly.count
             return CadenceCalendarWidgetDay(
                 dateKey: dateKey,
-                weekdayLabel: CadenceWidgetDateSupport.weekdayLabel(from: date),
-                dayNumberLabel: CadenceWidgetDateSupport.dayNumberLabel(from: date),
+                weekdayLabel: CadenceWidgetDateSupport.weekdayLabel(from: date, calendar: calendar),
+                dayNumberLabel: CadenceWidgetDateSupport.dayNumberLabel(from: date, calendar: calendar),
                 dueCount: dueCount,
                 scheduledCount: scheduledOnlyCount,
                 totalCount: dueCount + scheduledOnlyCount,

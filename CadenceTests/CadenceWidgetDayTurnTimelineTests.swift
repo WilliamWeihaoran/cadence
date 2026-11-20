@@ -82,31 +82,44 @@ struct CadenceWidgetDayTurnTimelineTests {
         #expect(tomorrow.tasks.map(\.title) == ["due today", "due tomorrow"])
     }
 
-    /// `snapshot(from:today:dayCount:)` walks days in `Calendar.current`, so this one is built in it.
-    @Test func theCalendarTilesSecondEntryStartsItsStripOnTheNextDay() {
-        let calendar = Calendar.current
-        let todayStart = calendar.startOfDay(for: Date())
-        let tomorrowStart = calendar.date(byAdding: .day, value: 1, to: todayStart)!
-        let now = calendar.date(byAdding: .minute, value: 23 * 60 + 30, to: todayStart)!
-        let todayKey = CadenceWidgetDateSupport.dateKey(from: todayStart)
-        let tomorrowKey = CadenceWidgetDateSupport.dateKey(from: tomorrowStart)
-        let dueToday = Self.task("due today", due: todayKey)
+    /// [[T-18617]]: the strip is walked in the calendar the caller states, so this runs in every
+    /// zone of `CadenceTestTimeZones` -- in one that is not the host's, a strip walked in
+    /// `Calendar.current` keys its first cell a day early.
+    @Test(arguments: CadenceTestTimeZones.identifiers)
+    func theCalendarTilesSecondEntryStartsItsStripOnTheNextDay(_ zone: String) throws {
+        let calendar = try CadenceTestTimeZones.calendar(zone)
+        let now = Self.instant(2026, 11, 20, 23, 30, in: calendar)
+        let dueToday = Self.task("due today", due: "2026-11-20")
 
-        let entries = CadenceCalendarWidgetSupport.daySnapshots(from: [dueToday], dayCount: 14, now: now)
+        let entries = CadenceCalendarWidgetSupport.daySnapshots(
+            from: [dueToday],
+            dayCount: 14,
+            now: now,
+            calendar: calendar
+        )
 
         #expect(entries.count == 2)
         #expect(entries[0].date == now)
-        #expect(entries[0].snapshot.days.first?.dateKey == todayKey)
-        #expect(entries[0].snapshot.days.first?.isToday == true)
-        #expect(entries[0].snapshot.overdueCount == 0)
+        let today = entries[0].snapshot
+        #expect(today.date == Self.instant(2026, 11, 20, 0, 0, in: calendar))
+        #expect(today.days.first?.dateKey == "2026-11-20")
+        #expect(today.days.first?.weekdayLabel == "FRI")
+        #expect(today.days.first?.dayNumberLabel == "20")
+        #expect(today.days.first?.isToday == true)
+        #expect(today.days.first?.dueCount == 1)
+        #expect(today.overdueCount == 0)
 
-        #expect(entries[1].date == calendar.startOfDay(for: tomorrowStart))
+        let midnight = Self.instant(2026, 11, 21, 0, 0, in: calendar)
+        #expect(entries[1].date == midnight)
         let turned = entries[1].snapshot
-        #expect(CadenceWidgetDateSupport.dateKey(from: turned.date) == tomorrowKey)
+        #expect(turned.date == midnight)
         #expect(turned.days.count == 14)
-        #expect(turned.days.first?.dateKey == tomorrowKey)
+        #expect(turned.days.first?.dateKey == "2026-11-21")
+        #expect(turned.days.first?.weekdayLabel == "SAT")
+        #expect(turned.days.first?.dayNumberLabel == "21")
         #expect(turned.days.first?.isToday == true)
-        #expect(turned.days.contains { $0.dateKey == todayKey } == false)
+        #expect(turned.days.last?.dateKey == "2026-12-04")
+        #expect(turned.days.contains { $0.dateKey == "2026-11-20" } == false)
         #expect(turned.overdueCount == 1)
     }
 }
