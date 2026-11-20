@@ -66,6 +66,8 @@ struct macOSRootView: View {
     @State private var pendingAppDataRefresh: DispatchWorkItem?
     @State private var hasPendingExternalDataRefresh = false
     @State private var keyMonitor: Any? = nil
+    /// [[T-18603]]: this root's window, so with two open a command acts in the one in front only.
+    @State private var rootWindow = RootWindowHandle()
     /// [[T-18163]]: remembered across relaunch -- every writer is the user's own Cmd+\, menu item
     /// or close button.
     @AppStorage(CadencePreferenceKeys.macTimelinePanelShown) private var showTimelineSidebar = false
@@ -146,6 +148,8 @@ struct macOSRootView: View {
         // root selection can name an area or project that has since been deleted, and nothing else
         // in this view watches for that.
         .background { SidebarSelectionNormalizer(selection: $selection) }
+        .background { RootWindowReader(handle: rootWindow) }
+        .environment(\.cadenceRootWindowHandle, rootWindow)
         .ignoresSafeArea(.container, edges: .top)
         .onOpenURL { url in
             CadenceDeepLinkManager.shared.handle(url)
@@ -198,7 +202,7 @@ struct macOSRootView: View {
         // T-7232. Cadence ▸ Settings… (Cmd+,) and, since [[T-17170]], File ▸ New Task (Cmd+N) — a
         // menu item has no handle on `selection`. Neither runs behind a modal (T-17170).
         .onChange(of: menuCommandRoute.request?.token) { _, _ in
-            guard let request = menuCommandRoute.request else { return }
+            guard let request = menuCommandRoute.request, rootWindow.isAddressed() else { return }
             RootCommandHandler.handleMenuCommand(
                 request.command,
                 context: makeSearchSelectionContext(),
@@ -207,7 +211,7 @@ struct macOSRootView: View {
         }
         // T-7203. View ▸ Search / Toggle Sidebar / Toggle Timeline — the key monitor's own actions.
         .onChange(of: viewMenuRoute.request?.token) { _, _ in
-            guard let request = viewMenuRoute.request else { return }
+            guard let request = viewMenuRoute.request, rootWindow.isAddressed() else { return }
             RootCommandHandler.handleViewMenuCommand(request.command, context: makeCommandContext())
         }
         .onChange(of: selection) { oldValue, newValue in
@@ -237,13 +241,14 @@ struct macOSRootView: View {
             )
         }
         .onChange(of: listNavigationManager.request?.token) { _, _ in
-            guard let request = listNavigationManager.request else { return }
+            guard let request = listNavigationManager.request, rootWindow.isAddressed() else { return }
             macOSRootLifecycleSupport.handleListNavigationRequest(
                 request: request,
                 selection: &selection
             )
         }
         .onChange(of: notesNavigationManager.request?.token) { _, _ in
+            guard rootWindow.isAddressed() else { return }
             macOSRootLifecycleSupport.handleNotesNavigationRequest(
                 request: notesNavigationManager.request,
                 selection: &selection
@@ -273,7 +278,9 @@ struct macOSRootView: View {
     private func installKeyMonitorIfNeeded() {
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            RootCommandHandler.handle(event, context: makeCommandContext())
+            // [[T-18603]]: another window's key passes on untouched, so its own monitor gets it.
+            guard rootWindow.isAddressed() else { return event }
+            return RootCommandHandler.handle(event, context: makeCommandContext())
         }
     }
 

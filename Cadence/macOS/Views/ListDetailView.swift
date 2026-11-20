@@ -87,6 +87,7 @@ private struct ListDetailView: View {
     var project: Project?
 
     @Environment(ListNavigationManager.self) private var listNavigationManager
+    @Environment(\.cadenceRootWindowHandle) private var rootWindow
     @AppStorage(CadencePreferenceKeys.listDetailDefaultPage) private var defaultPageRawValue = ListDetailPage.tasks.rawValue
     @Environment(\.cadenceRootRetainedPageScope) private var retainedScope
     @State private var tab: ListDetailPage = .tasks
@@ -187,6 +188,8 @@ private struct ListDetailView: View {
     }
 
     private func applyPendingNavigationIfNeeded() {
+        // [[T-18603]]: a request is the front window's; another window on this list leaves it.
+        guard rootWindow?.isAddressed() ?? true else { return }
         guard let request = listNavigationManager.consumeIfMatches(
             areaID: area?.id,
             projectID: project?.id
@@ -213,6 +216,7 @@ private struct ListDetailView: View {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             guard flags.contains(.command), flags.contains(.shift) else { return event }
+            guard rootWindow?.isAddressed() ?? true else { return event }
             switch event.keyCode {
             case 33: // [
                 moveTab(by: -1)

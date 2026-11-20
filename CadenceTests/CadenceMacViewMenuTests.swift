@@ -160,6 +160,62 @@ struct CadenceMacViewMenuTests {
         #expect(root.contains("RootCommandHandler.handleViewMenuCommand(request.command, context: makeCommandContext())"))
     }
 
+    // MARK: - [[T-18603]]: with two windows, a command is the front window's
+
+    /// The front (main) window's root claims; the other passes. Either side unknown claims, which
+    /// is the one-window behaviour from before a second window existed.
+    @Test func aCommandBelongsToTheRootWhoseWindowIsMain() {
+        let own = makeWindow()
+        let other = makeWindow()
+        defer { own.close(); other.close() }
+
+        #expect(RootWindowAddressing.claims(ownWindow: own, mainWindow: own))
+        #expect(!RootWindowAddressing.claims(ownWindow: own, mainWindow: other), "the back window acted")
+        #expect(RootWindowAddressing.claims(ownWindow: nil, mainWindow: other))
+        #expect(RootWindowAddressing.claims(ownWindow: own, mainWindow: nil))
+
+        // Two roots, one main window: exactly one of them is addressed, whichever window is main.
+        let front = RootWindowHandle()
+        let back = RootWindowHandle()
+        #expect(front.isAddressed(mainWindow: own), "a root that has not joined a window yet must still act")
+        front.window = own
+        back.window = other
+        for main in [own, other] {
+            let claimed = [front, back].filter { $0.isAddressed(mainWindow: main) }
+            #expect(claimed.count == 1)
+            #expect(claimed.first?.window === main)
+        }
+    }
+
+    /// Every way a command reaches a root consults the gate: the key monitor before any arm runs,
+    /// and the four `.shared` routes before adopting a request. A page that takes a navigation
+    /// request itself, or keeps a key monitor of its own, consults it too.
+    @Test func everyRootCommandPathConsultsTheWindowGate() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let root = try read("Cadence/macOS/macOSRootView.swift")
+        #expect(root.contains(".background { RootWindowReader(handle: rootWindow) }"))
+        #expect(root.contains(".environment(\\.cadenceRootWindowHandle, rootWindow)"))
+        let monitor = try #require(CadenceSourceScan.declarationBody("private func installKeyMonitorIfNeeded", in: root))
+        #expect(CadenceSourceScan.matchCount(
+            #"guard rootWindow\.isAddressed\(\) else \{ return event \}\s*return RootCommandHandler\.handle\(event"#,
+            in: monitor
+        ) == 1, "the root monitor runs another window's key")
+        for route in ["menuCommandRoute", "viewMenuRoute", "listNavigationManager", "notesNavigationManager"] {
+            let arm = try #require(CadenceSourceScan.declarationBody(".onChange(of: \(route).request?.token)", in: root))
+            #expect(arm.contains("rootWindow.isAddressed()"), "\(route) is adopted by every window")
+        }
+
+        for page in ["Cadence/macOS/Views/ListDetailView.swift", "Cadence/macOS/Views/NotesView.swift"] {
+            let source = try read(page)
+            #expect(source.contains("@Environment(\\.cadenceRootWindowHandle) private var rootWindow"), "\(page)")
+            let apply = try #require(CadenceSourceScan.declarationBody("private func applyPendingNavigationIfNeeded", in: source))
+            #expect(apply.contains("guard rootWindow?.isAddressed() ?? true else { return }"), "\(page)")
+        }
+        let list = try read("Cadence/macOS/Views/ListDetailView.swift")
+        let listMonitor = try #require(CadenceSourceScan.declarationBody("private func installKeyMonitorIfNeeded", in: list))
+        #expect(listMonitor.contains("guard rootWindow?.isAddressed() ?? true else { return event }"))
+    }
+
     // MARK: - Fixtures
 
     private func makeWindow() -> NSWindow {

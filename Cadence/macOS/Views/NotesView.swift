@@ -34,6 +34,7 @@ struct NotesView: View {
     }
 
     @Environment(NotesNavigationManager.self) private var notesNavigationManager
+    @Environment(\.cadenceRootWindowHandle) private var rootWindow
     @Environment(\.cadenceRootRetainedPageScope) private var retainedScope
     /// [[T-18162]]: the tab, and each tab's open note below, are kept across the root's
     /// data-refresh rebuild (an MCP write, a widget tick), which used to drop the owner back on
@@ -125,6 +126,8 @@ struct NotesView: View {
     }
 
     private func applyPendingNavigationIfNeeded() {
+        // [[T-18603]]: a request is the front window's; another window on Notes leaves it.
+        guard rootWindow?.isAddressed() ?? true else { return }
         guard let request = notesNavigationManager.request else { return }
         show(request.page)
         requestedNoteID = request.noteID ?? request.eventNoteID
