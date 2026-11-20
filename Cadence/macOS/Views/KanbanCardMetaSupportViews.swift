@@ -80,11 +80,17 @@ struct KanbanContainerPickerPopover: View {
             area = nil
             project = nil
         case .area(let id):
-            area = areas.first { $0.id == id }
+            // [[T-18556]]: a list gone from the popover's query between draw and click (deleted
+            // or synced away) moves nothing. A miss used to fall through as `nil, nil`, which
+            // `moveToContainer` reads as the Inbox. `true` closes the popover as the row's list
+            // chip does (`MacTaskRowContextMenu.moveToList(_:selection:...)`, `.settled`).
+            guard let target = areas.first(where: { $0.id == id }) else { return true }
+            area = target
             project = nil
         case .project(let id):
+            guard let target = projects.first(where: { $0.id == id }) else { return true }
             area = nil
-            project = projects.first { $0.id == id }
+            project = target
         }
 
         guard CadenceTaskMutationSupport.moveToContainer(

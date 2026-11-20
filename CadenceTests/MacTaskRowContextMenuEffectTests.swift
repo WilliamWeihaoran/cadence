@@ -255,6 +255,27 @@ struct MacTaskRowContextMenuEffectTests {
         #expect(f.subject.order == 0)
     }
 
+    /// [[T-18556]]: a list gone from the popover's query between draw and click moves nothing.
+    /// A miss used to reach `moveToContainer` as `nil, nil` -- the Inbox. Closed like the row
+    /// chip's `.settled`, with no commit, for either kind.
+    @Test func aCardListTokenPickForAListNoLongerQueriedMovesNothing() throws {
+        let f = try makeFixture()
+        var commits = 0
+
+        for selection in [TaskContainerSelection.area(UUID()), .project(UUID())] {
+            let moved = KanbanContainerPickerPopover.move(
+                f.subject, to: selection, areas: [f.area], projects: [f.project],
+                allTasks: f.allTasks, modelContext: f.context, commit: { commits += 1; try $0.save() }
+            )
+            #expect(moved, "a vanished list is not a refusal; the popover closes")
+        }
+
+        #expect(commits == 0, "a pick for a vanished list committed a move")
+        let committed = try #require(try f.committed(f.subject))
+        #expect(committed.area?.id == f.area.id && committed.project == nil, "the card left its list (the Inbox fallback)")
+        #expect(committed.sectionName == "Later")
+    }
+
     // MARK: - T-5353: the pickers and the drop move a task the way the menu does
 
     /// The row's list chip speaks `TaskContainerSelection`; it used to write the relationships
