@@ -727,7 +727,8 @@ struct SidebarStaticDestinationBridgeTests {
         #expect(CadenceSourceScan.matchCount("draggable\\(", in: rowView) == 1)
         let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: rowView))
         #expect(body.contains("if isOrderable {"))
-        #expect(body.contains("row.draggable(destination.rawValue)"))
+        // [[T-18634]]: the payload goes through the drag context, which records it for the edge line.
+        #expect(body.contains("row.draggable(SettingsRowDragContext.shared.begin(destination.rawValue))"))
 
         // The shared row carries the drop target and no drag, so a row without a handle can still
         // be dropped onto.

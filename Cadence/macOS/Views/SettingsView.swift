@@ -216,7 +216,8 @@ struct SettingsView: View {
                     sidebarLayoutNotice = nil
                     editingSidebarTab = $0
                 },
-                onDropBefore: moveSidebarTab(_:onto:)
+                onDropBefore: moveSidebarTab(_:onto:),
+                orderAfterDrop: { SettingsRowDropIndicator.sidebarTabs(afterDropping: $0, onto: $1, in: sidebarLayout) }
             )
         case .contexts:
             SettingsContextsSection(

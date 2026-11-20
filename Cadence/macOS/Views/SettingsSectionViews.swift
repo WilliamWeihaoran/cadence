@@ -463,6 +463,8 @@ struct SettingsSidebarSection: View {
     let sidebarTabColorsRaw: String
     let onEdit: (SidebarStaticDestination) -> Void
     let onDropBefore: (SidebarStaticDestination, SidebarStaticDestination) -> Void
+    /// [[T-18634]]: the rows as this pane will draw them once `(dragged, target)` is dropped.
+    let orderAfterDrop: (SidebarStaticDestination, SidebarStaticDestination) -> [SidebarStaticDestination]?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -475,7 +477,16 @@ struct SettingsSidebarSection: View {
                             tintHex: destination.resolvedColorHex(from: sidebarTabColorsRaw),
                             isVisible: !hiddenTabs.contains(destination),
                             onEdit: { onEdit(destination) },
-                            onDropBefore: { onDropBefore($0, destination) }
+                            onDropBefore: { onDropBefore($0, destination) },
+                            dropEdge: { payload in
+                                let dragged = payload.flatMap(SidebarStaticDestination.init(rawValue:))
+                                return SettingsRowDropIndicator.edge(
+                                    dragged: dragged,
+                                    target: destination,
+                                    drawn: orderedSidebarTabs,
+                                    afterDrop: dragged.flatMap { orderAfterDrop($0, destination) }
+                                )
+                            }
                         )
                         if index < orderedSidebarTabs.count - 1 {
                             CadenceRowDivider(leadingInset: SidebarTabSettingsRow.dividerLeadingInset)

@@ -679,6 +679,21 @@ struct SettingsContextsSection: View {
                                     // the target, matching `SidebarTabSettingsRow`'s wiring. Reversed,
                                     // dropping C onto A moved A and left C where it was.
                                     onDropDraggedContext: { draggedID in onMoveContext(draggedID, context.id) },
+                                    // [[T-18634]]: over the active rows, the ones drawn. The drop
+                                    // reorders every context, archived included, but a row taking
+                                    // its target's slot sits beside the target in both orders.
+                                    dropEdge: { payload in
+                                        let drawn = activeContexts.map(\.id)
+                                        let dragged = payload.flatMap(UUID.init(uuidString:))
+                                        return SettingsRowDropIndicator.edge(
+                                            dragged: dragged,
+                                            target: context.id,
+                                            drawn: drawn,
+                                            afterDrop: dragged.flatMap {
+                                                CadenceOrderReassignment.moved(activeContexts, $0, onto: context.id)?.map(\.id)
+                                            }
+                                        )
+                                    },
                                     onArchive: { onArchiveContext(context) },
                                     onDelete: { onDeleteContext(context) },
                                     contexts: activeContexts

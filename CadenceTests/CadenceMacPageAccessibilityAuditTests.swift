@@ -364,7 +364,7 @@ struct CadenceMacPageAccessibilityAuditTests {
             )
             let rows = allNodes(in: VStack(spacing: 0) {
                 ArchivedContextRow(context: Context(name: "Work"), onRestore: {}, onDelete: {})
-                SidebarTabSettingsRow(destination: .today, tintHex: "#4a9eff", isVisible: true, onEdit: {}, onDropBefore: { _ in })
+                SidebarTabSettingsRow(destination: .today, tintHex: "#4a9eff", isVisible: true, onEdit: {}, onDropBefore: { _ in }, dropEdge: { _ in nil })
                 ListLifecycleRow(
                     icon: "list.bullet",
                     title: "Errands",

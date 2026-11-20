@@ -527,7 +527,14 @@ struct TaskInspectorLayerView: View {
             .allowsHitTesting(false)
             .popover(isPresented: isPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
                 if let task = requestedTask {
+                    // [[T-18600]]: keyed by the task. Cmd+K is an app-wide local monitor, so it
+                    // opens the palette with this popover's window key, and `present(taskID:)`
+                    // overwrites the request without closing anything; whether AppKit closes the
+                    // popover first is its timing, not ours. Unkeyed, a request swapped in place
+                    // would hand this task's notes editor -- its undo history and pending flush --
+                    // to the next one ([[T-18593]]'s class).
                     TaskDetailPopover(task: task)
+                        .id(task.id)
                 }
             }
             .zIndex(22)

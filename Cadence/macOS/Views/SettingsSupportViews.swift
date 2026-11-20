@@ -37,6 +37,9 @@ struct ContextSettingsRow: View {
     /// call site duly passed it into the target slot and this row's `context.id` into the dragged
     /// slot, so dropping C onto A reordered A instead of C.
     let onDropDraggedContext: (UUID) -> Void
+    /// [[T-18634]]: the edge of this row a drag of the given payload lands against, from the pane's
+    /// drawn order (`SettingsRowDropIndicator.edge`), or `nil` when the drop moves nothing.
+    let dropEdge: (String?) -> SidebarListDropPlacement.Edge?
     let onArchive: () -> Void
     let onDelete: () -> Void
     /// Every context the rename is checked against ([[T-4722]]). Passed in rather than queried per
@@ -66,6 +69,11 @@ struct ContextSettingsRow: View {
     /// "Untitled Context" when blank, the title `iOSSettingsContextRow` already draws. A context
     /// named "" (MCP, sync) drew an empty row here, and VoiceOver read "Rename ".
     private var displayName: String { CadenceContextPickerSupport.title(for: context) }
+
+    /// The line is drawn only while a drag hovers this row, on the edge the drop writes.
+    private var dropLineEdge: SidebarListDropPlacement.Edge? {
+        isDropTarget ? dropEdge(SettingsRowDragContext.shared.draggedPayload) : nil
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -115,14 +123,9 @@ struct ContextSettingsRow: View {
             .padding(.vertical, 10)
             .padding(.horizontal, Self.horizontalPadding)
             .contentShape(Rectangle())
-            .background(
-                RoundedRectangle(cornerRadius: Theme.radiusControl)
-                    .fill(isDropTarget ? Theme.blue.opacity(0.10) : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.radiusControl)
-                    .strokeBorder(isDropTarget ? Theme.blue.opacity(0.45) : Color.clear, lineWidth: 1)
-            )
+            // [[T-18634]]: the edge the drop lands on, not a whole-row wash.
+            .overlay { SettingsRowDropLine(edge: dropLineEdge) }
+            .animation(.easeInOut(duration: 0.15), value: isDropTarget)
 
             if isEditing {
                 VStack(alignment: .leading, spacing: 12) {
@@ -180,11 +183,12 @@ struct ContextSettingsRow: View {
         }
         .animation(.easeInOut(duration: 0.15), value: isEditing)
         .onHover { isHovered = $0 }
-        .draggable(context.id.uuidString)
+        .draggable(SettingsRowDragContext.shared.begin(context.id.uuidString))
         .dropDestination(for: String.self) { items, _ in
+            SettingsRowDragContext.shared.end()
+            isDropTarget = false
             guard let draggedID = items.compactMap(UUID.init(uuidString:)).first else { return false }
             onDropDraggedContext(draggedID)
-            isDropTarget = false
             return true
         } isTargeted: { targeted in
             isDropTarget = targeted
@@ -346,8 +350,14 @@ struct SidebarTabSettingsRow: View {
     let isVisible: Bool
     let onEdit: () -> Void
     let onDropBefore: (SidebarStaticDestination) -> Void
+    /// [[T-18634]]: as `ContextSettingsRow.dropEdge`, over the pane's drawn tab order.
+    let dropEdge: (String?) -> SidebarListDropPlacement.Edge?
 
     @State private var isDropTarget = false
+
+    private var dropLineEdge: SidebarListDropPlacement.Edge? {
+        isDropTarget ? dropEdge(SettingsRowDragContext.shared.draggedPayload) : nil
+    }
 
     /// [[T-9622]]: the row's leading geometry, named so the card's hairline can start where the
     /// label does. The section drew `CadenceRowDivider(leadingInset: 42)`, `ContextSettingsRow`'s
@@ -384,7 +394,7 @@ struct SidebarTabSettingsRow: View {
     /// same `row`, so the two spellings cannot drift.
     var body: some View {
         if isOrderable {
-            row.draggable(destination.rawValue)
+            row.draggable(SettingsRowDragContext.shared.begin(destination.rawValue))
         } else {
             row
         }
@@ -427,14 +437,9 @@ struct SidebarTabSettingsRow: View {
         }
         .padding(.vertical, 10)
         .padding(.horizontal, Self.horizontalPadding)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.radiusControl)
-                .fill(isDropTarget ? Theme.blue.opacity(0.10) : Color.clear)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.radiusControl)
-                .strokeBorder(isDropTarget ? Theme.blue.opacity(0.45) : Color.clear, lineWidth: 1)
-        )
+        // [[T-18634]]: the edge the drop lands on, not a whole-row wash.
+        .overlay { SettingsRowDropLine(edge: dropLineEdge) }
+        .animation(.easeInOut(duration: 0.15), value: isDropTarget)
         // **The drop target stays on every row, Focus included**, and that is not an oversight.
         // The dragged row takes the slot of the row dropped on ([[T-18630]],
         // `order(in:moving:onto:)`), so a drop on the last nav row already reaches the bottom of
@@ -442,9 +447,10 @@ struct SidebarTabSettingsRow: View {
         // walking the secondary group after the primary one -- lands there too. Dropping *onto* an
         // unorderable row moves the dragged row; it does not claim to move this one.
         .dropDestination(for: String.self) { items, _ in
+            SettingsRowDragContext.shared.end()
+            isDropTarget = false
             guard let raw = items.first, let dragged = SidebarStaticDestination(rawValue: raw) else { return false }
             onDropBefore(dragged)
-            isDropTarget = false
             return true
         } isTargeted: { targeted in
             isDropTarget = targeted

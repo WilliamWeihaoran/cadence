@@ -47,7 +47,7 @@ struct MarkdownEditorHostIdentityCensusTests {
             reason: "FocusNotesPanel: FocusView keys it by task (callerKeyedSites, T-17043)"
         ),
         "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift": .perDocument(
-            reason: "TaskDetailNotesSection: drawn inside a TaskDetailPopover presented per task; the global inspector layer can swap its task in place, T-18600"
+            reason: "TaskDetailNotesSection: drawn inside a TaskDetailPopover presented per task; the global inspector layer keys it by task (callerKeyedSites, T-18600)"
         ),
         "Cadence/macOS/Views/TimelineEventBlockSupportViews.swift": .perDocument(
             reason: "CalendarEventEditPopover: presented per event"
@@ -61,6 +61,7 @@ struct MarkdownEditorHostIdentityCensusTests {
         ("Cadence/macOS/Views/NotesView.swift", "NoteEditorPane", [".id(note.id)"], 4),
         ("Cadence/macOS/Views/ListNotesView.swift", "NoteEditorPane", [".id(eventNote.id)", ".id(note.id)"], 2),
         ("Cadence/macOS/Views/ListNotesView.swift", "TaskNoteEditorPane", [".id(task.id)"], 1),
+        ("Cadence/macOS/Views/macOSRootSupportViews.swift", "TaskDetailPopover", [".id(task.id)"], 1),
     ]
 
     // MARK: - Scanning
