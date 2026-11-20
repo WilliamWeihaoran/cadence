@@ -259,6 +259,13 @@ struct NotePanel: View {
         .onChange(of: note.content) { priorContent, storeContent in
             adoptStoreContentIfIdle(storeContent, priorStoreContent: priorContent, for: note)
         }
+        // [[T-18595]]: one editor per note, as every other note host keys it. The day (or week)
+        // turning reloads `todayNote` inside one handler, so the `if let note` branch never draws
+        // a nil frame; unkeyed, the same text view and coordinator kept yesterday's undo history
+        // and took today's body as an undoable rewrite, and Cmd+Z wrote yesterday's text into
+        // today's note. Keyed on the id, not the object: a context swap on refresh hands back a
+        // new `Note` for the same note and must not rebuild the editor.
+        .id(note.id)
     }
 
     /// [[T-9171]]: adopt an outside change to `note.content` unless typing is still pending —

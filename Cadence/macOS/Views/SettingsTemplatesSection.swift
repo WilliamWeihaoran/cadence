@@ -206,6 +206,12 @@ struct SettingsTemplatesSection: View {
                         // is given — so this is the editor's height, as the 280pt floor under the
                         // `TextEditor` was. The toolbar takes 44 of it.
                         .frame(minHeight: 280)
+                        // [[T-18593]]: one editor per template, as iOS keys its body editor. A row
+                        // click only moves `selectedTemplateID`, so unkeyed the same text view and
+                        // coordinator survived the switch and the incoming body landed as an
+                        // undoable external rewrite: Cmd+Z put the previous template's body into
+                        // this one and saved it as a customisation.
+                        .id(selectedTemplate.id)
                     }
                 }
                 .disabled(storedOverridesAreUnreadable)
