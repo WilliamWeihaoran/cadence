@@ -511,7 +511,7 @@ struct iOSSettingsView: View {
 
     /// Move a context one place, and **report it if the store refuses**.
     ///
-    /// macOS's `SettingsView.moveContext(_:before:)` writes the same `order` fields and ends in
+    /// macOS's `SettingsView.moveContext(_:onto:)` writes the same `order` fields and ends in
     /// `try? modelContext.save()`. That is inside the letter of the `try? save()` rule — no
     /// insert, no delete, nothing after it claiming success — but the row still visibly moves, and
     /// a move that the store did not take is a move the next launch un-does with nothing said. So

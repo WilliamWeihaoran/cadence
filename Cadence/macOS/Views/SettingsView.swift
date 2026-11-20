@@ -33,7 +33,7 @@ struct SettingsView: View {
     /// dialog, because the `confirmationDialog` has already closed by the time the delete runs and
     /// the section it was about is what the user is still looking at.
     @State private var deleteFailureNotice: String?
-    /// Set when a context reorder was refused by the store. See `moveContext(_:before:)` — the
+    /// Set when a context reorder was refused by the store. See `moveContext(_:onto:)` — the
     /// rows have already been put back by then, so the pane and this sentence agree.
     @State private var contextOrderFailureNotice: String?
     /// Set when a sidebar layout edit was refused — by the store, or by the one-visible-row floor.
@@ -216,13 +216,13 @@ struct SettingsView: View {
                     sidebarLayoutNotice = nil
                     editingSidebarTab = $0
                 },
-                onDropBefore: moveSidebarTab(_:before:)
+                onDropBefore: moveSidebarTab(_:onto:)
             )
         case .contexts:
             SettingsContextsSection(
                 activeContexts: contexts.filter { !$0.isArchived },
                 archivedContexts: contexts.filter(\.isArchived),
-                onMoveContext: moveContext(_:before:),
+                onMoveContext: moveContext(_:onto:),
                 onArchiveContext: archiveContext(_:),
                 onDeleteContext: { pendingDeleteContext = $0 },
                 onRestoreContext: restoreContext(_:),
@@ -327,12 +327,14 @@ struct SettingsView: View {
         sidebarTabColorsRaw = SidebarStaticDestination.rawColorString(from: colors)
     }
 
-    private func moveSidebarTab(_ dragged: SidebarStaticDestination, before target: SidebarStaticDestination) {
+    /// The drop lands in the slot of the row dropped ON ([[T-18630]]): `order(in:moving:onto:)`,
+    /// not the step spelling `before:`, which made a drop on the next row down a no-op.
+    private func moveSidebarTab(_ dragged: SidebarStaticDestination, onto target: SidebarStaticDestination) {
         let layout = sidebarLayout
         guard let order = CadenceSidebarLayoutPreferenceStore.order(
             in: layout,
             moving: dragged.feature,
-            before: target.feature
+            onto: target.feature
         ) else { return }
         writeSidebarLayout(.init(order: order, hidden: layout.hidden))
     }
@@ -340,9 +342,11 @@ struct SettingsView: View {
     /// The drop half of the contexts pane's drag reorder.
     ///
     /// The arithmetic moved to `CadenceOrderReassignment` in T-581 rather than being copied for
-    /// iPhone: the same "insert before" is `toIndex` upwards and `toIndex - 1` downwards, and a
-    /// second hand-written copy of that on the other platform is how two lists come to disagree
-    /// about where a dropped row lands.
+    /// iPhone, and a second hand-written copy of that on the other platform is how two lists come
+    /// to disagree about where a dropped row lands. Since [[T-18630]] the drag reads the helper's
+    /// **drag** spelling, `moved(_:_:onto:)` -- the row dropped on gives up its slot, so a drop on
+    /// the next row down moves one place and a drop on the last row reaches the bottom -- while
+    /// iOS's Move Up / Move Down keeps the step spelling `before:` behind `neighbourStep`.
     ///
     /// **The commit is reported, and the swallow that used to be here was the wrong half of a
     /// split decision (T-614).** T-583 recorded this `try?` as deliberate — `order` is a field on
@@ -363,9 +367,9 @@ struct SettingsView: View {
     /// The renumber runs over **every** context, archived rows included, for the reason iOS's
     /// copy records: `order` is one sequence, and numbering only the visible slice hands them
     /// indices the archived rows already hold.
-    private func moveContext(_ draggedID: UUID, before targetID: UUID) {
+    private func moveContext(_ draggedID: UUID, onto targetID: UUID) {
         let snapshot = contexts
-        guard let ordered = CadenceOrderReassignment.moved(snapshot, draggedID, before: targetID) else { return }
+        guard let ordered = CadenceOrderReassignment.moved(snapshot, draggedID, onto: targetID) else { return }
 
         let previousOrders = snapshot.map(\.order)
         for (index, context) in ordered.enumerated() {

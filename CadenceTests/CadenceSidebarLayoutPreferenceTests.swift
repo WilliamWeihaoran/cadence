@@ -192,6 +192,55 @@ struct CadenceSidebarLayoutPreferenceTests {
         #expect(store.order(in: layout, moving: .today, before: .today) == nil)
     }
 
+    /// **The Mac Settings drag: the row dropped on gives up its slot ([[T-18630]]).** Through
+    /// `before:` a drop on the next row down did nothing.
+    @Test func aDragOntoTheNextRowDownMovesOnePlace() {
+        let store = CadenceSidebarLayoutPreferenceStore.self
+        let layout = CadenceSidebarLayoutPreferenceStore.Layout()
+
+        #expect(
+            store.order(in: layout, moving: .today, onto: .allTasks)
+                == [.allTasks, .today, .calendar, .notes, .focus]
+        )
+        // The step spelling's answer for the same pair, which is the no-op the drag used to make.
+        #expect(
+            store.order(in: layout, moving: .today, before: .allTasks)
+                == [.today, .allTasks, .calendar, .notes, .focus]
+        )
+        // Upwards it still lands in the target's slot.
+        #expect(
+            store.order(in: layout, moving: .notes, onto: .allTasks)
+                == [.today, .notes, .allTasks, .calendar, .focus]
+        )
+        #expect(store.order(in: layout, moving: .today, onto: .today) == nil)
+    }
+
+    /// A drop on the last nav row reaches the bottom of the nav group, and so does a drop on Focus,
+    /// which sorts last and has no drawn place of its own among the nav rows.
+    @Test func aDragOntoTheLastRowReachesTheBottomOfTheNavGroup() throws {
+        let store = CadenceSidebarLayoutPreferenceStore.self
+        let layout = CadenceSidebarLayoutPreferenceStore.Layout()
+
+        let ontoNotes = try #require(store.order(in: layout, moving: .today, onto: .notes))
+        #expect(ontoNotes == [.allTasks, .calendar, .notes, .today, .focus])
+
+        let ontoFocus = try #require(store.order(in: layout, moving: .today, onto: .focus))
+        let drawn = store.orderedCustomisableDestinations(for: .init(order: ontoFocus, hidden: []))
+        #expect(drawn == [.allTasks, .calendar, .notes, .today, .focus])
+    }
+
+    /// The Mac drop handler reads the drag spelling, not the step one.
+    @Test func theMacSidebarTabDropReadsTheDragSpelling() throws {
+        let source = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/SettingsView.swift")
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "moveSidebarTab", in: source),
+            "SettingsView.moveSidebarTab(_:onto:) is gone"
+        )
+        #expect(body.contains("onto: target.feature"))
+        #expect(!body.contains("before: target.feature"), "the Mac sidebar-tab drop reads the step spelling again")
+        #expect(body.contains("writeSidebarLayout("), "non-vacuity: still the writing body")
+    }
+
     /// The written order is the **whole** customisable list, not just the row that moved: a stored
     /// order naming a subset only constrains that subset, so a one-name string would let the next
     /// row added above it jump the queue.

@@ -436,10 +436,10 @@ struct SidebarTabSettingsRow: View {
                 .strokeBorder(isDropTarget ? Theme.blue.opacity(0.45) : Color.clear, lineWidth: 1)
         )
         // **The drop target stays on every row, Focus included**, and that is not an oversight.
-        // The drop is "insert *before* this row", so the last row in the list is the only way to
-        // say "go to the bottom of the nav group" — Focus sorts last here
-        // (`orderedCustomisableDestinations` walks the secondary group after the primary one), so
-        // taking its drop target away would make the bottom slot unreachable. Dropping *onto* an
+        // The dragged row takes the slot of the row dropped on ([[T-18630]],
+        // `order(in:moving:onto:)`), so a drop on the last nav row already reaches the bottom of
+        // the nav group; a drop on Focus -- which sorts last here, `orderedCustomisableDestinations`
+        // walking the secondary group after the primary one -- lands there too. Dropping *onto* an
         // unorderable row moves the dragged row; it does not claim to move this one.
         .dropDestination(for: String.self) { items, _ in
             guard let raw = items.first, let dragged = SidebarStaticDestination(rawValue: raw) else { return false }

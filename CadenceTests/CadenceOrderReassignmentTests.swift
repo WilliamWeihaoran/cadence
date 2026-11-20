@@ -88,6 +88,70 @@ struct CadenceOrderReassignmentTests {
         #expect(CadenceOrderReassignment.moved([Row](), "a", before: "b") == nil)
     }
 
+    // MARK: - The drag spelling: the row dropped on gives up its slot ([[T-18630]])
+
+    /// **A drop on the row directly below moves one place.** Through `before:` this pair was a
+    /// no-op -- "insert me before the row already after me" -- which is what the Mac's Settings >
+    /// Contexts drag did until T-18630.
+    @Test func aDropOnTheNextRowDownMovesOnePlace() {
+        let rows = ["work", "home", "errands"].map(Row.init)
+
+        #expect(CadenceOrderReassignment.moved(rows, "work", onto: "home")?.map(\.id) == ["home", "work", "errands"])
+        // The step spelling's answer for the same pair, so the two cannot be quietly merged.
+        #expect(CadenceOrderReassignment.moved(rows, "work", before: "home")?.map(\.id) == ["work", "home", "errands"])
+    }
+
+    /// **A drop on the last row reaches the last place**, which the contexts pane had no other
+    /// way to say: the New Context row takes no drop.
+    @Test func aDropOnTheLastRowReachesTheLastPlace() {
+        let rows = ["work", "home", "errands"].map(Row.init)
+
+        #expect(CadenceOrderReassignment.moved(rows, "work", onto: "errands")?.map(\.id) == ["home", "errands", "work"])
+    }
+
+    /// Upwards the target still goes below the dragged row: the row dropped on is displaced
+    /// towards where the dragged one came from, in both directions.
+    @Test func anUpwardDropLandsInTheTargetsSlot() {
+        let rows = ["a", "b", "c", "d"].map(Row.init)
+
+        #expect(CadenceOrderReassignment.moved(rows, "d", onto: "b")?.map(\.id) == ["a", "d", "b", "c"])
+        #expect(CadenceOrderReassignment.moved(rows, "a", onto: "a") == nil)
+        #expect(CadenceOrderReassignment.moved(rows, "z", onto: "a") == nil)
+        #expect(CadenceOrderReassignment.moved(rows, "a", onto: "z") == nil)
+    }
+
+    /// Every ordered pair: the dragged row ends at the index the target held, nothing is lost.
+    @Test func everyDropPutsTheDraggedRowAtTheTargetsIndex() {
+        let ids = ["a", "b", "c", "d"]
+        let rows = ids.map(Row.init)
+        for dragged in ids {
+            for target in ids where target != dragged {
+                let result = CadenceOrderReassignment.moved(rows, dragged, onto: target)?.map(\.id)
+                #expect(Set(result ?? []) == Set(ids), "\(dragged) onto \(target) lost or duplicated a row")
+                #expect(result?.count == ids.count)
+                #expect(result?.firstIndex(of: dragged) == ids.firstIndex(of: target), "\(dragged) onto \(target) produced \(result ?? [])")
+            }
+        }
+    }
+
+    /// Over the whole collection with an archived row after the visible target, the dropped row
+    /// lands directly after the target and the archived row keeps a distinct order.
+    @Test func aDropOnTheLastVisibleContextLandsAfterItAmongArchivedRows() {
+        let contexts = ["Work", "Home", "Errands", "Old"].enumerated().map { index, name -> Context in
+            let context = Context(name: name)
+            context.order = index
+            return context
+        }
+        contexts[3].isArchived = true
+
+        guard let reordered = CadenceOrderReassignment.moved(contexts, contexts[0].id, onto: contexts[2].id) else {
+            Issue.record("the drop produced nothing")
+            return
+        }
+        #expect(reordered.map(\.name) == ["Home", "Errands", "Work", "Old"])
+        #expect(reordered.filter { !$0.isArchived }.last?.name == "Work")
+    }
+
     // MARK: - One step, in the list the user can see
 
     /// Moving **down** hands back the row *below* as the dragged one. The obvious spelling —
@@ -215,10 +279,14 @@ struct CadenceOrderReassignmentTests {
         let source = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/SettingsView.swift")
         let body = try #require(
             CadenceSourceScan.functionBody(named: "moveContext", in: source),
-            "SettingsView.moveContext(_:before:) is gone"
+            "SettingsView.moveContext(_:onto:) is gone"
         )
 
         #expect(body.contains("CadenceOrderReassignment.moved("))
+        // [[T-18630]]: the drag hands `(dragged, droppedOn)`, so it must read the drag spelling;
+        // `before:` made a drop on the next row down a no-op and the last slot unreachable.
+        #expect(body.contains("onto: targetID"), "the Mac context drop reads the step spelling again")
+        #expect(!body.contains("before: targetID"), "the Mac context drop reads the step spelling again")
         #expect(!body.contains("insert(moved, at:"), "the hand-written insert index is back")
         #expect(body.contains("context.order = index"), "non-vacuity: still the renumbering body")
     }
@@ -239,7 +307,7 @@ struct CadenceOrderReassignmentTests {
         let source = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/SettingsView.swift")
         let body = try #require(
             CadenceSourceScan.functionBody(named: "moveContext", in: source),
-            "SettingsView.moveContext(_:before:) is gone"
+            "SettingsView.moveContext(_:onto:) is gone"
         )
 
         #expect(body.contains("context.order = index"), "non-vacuity: still the renumbering body")

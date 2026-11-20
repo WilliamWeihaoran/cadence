@@ -201,6 +201,31 @@ enum CadenceSidebarLayoutPreferenceStore {
         return current
     }
 
+    /// The order after dropping `dragged` ONTO `target` -- the Mac Settings drag ([[T-18630]]).
+    ///
+    /// The target takes the slot: a downward drop lands after it, an upward one before it, the rule
+    /// `CadenceOrderReassignment.moved(_:_:onto:)` gives every pointer reorder. `before:` above is
+    /// the step spelling iOS's Move Up / Move Down feeds through `neighbourStep`; handed a drag's
+    /// pair it made a drop on the next row down a no-op.
+    ///
+    /// Dropped on Focus, which sorts last and has no place of its own in the drawn order, a nav row
+    /// lands after it in the stored string -- which the sidebar draws as the bottom of the nav
+    /// group, since each group resolves its own members in stored order.
+    static func order(
+        in layout: Layout,
+        moving dragged: CadenceFeatureDestination,
+        onto target: CadenceFeatureDestination
+    ) -> [CadenceFeatureDestination]? {
+        let current = orderedCustomisableDestinations(for: layout)
+        return CadenceOrderReassignment.moved(current.map(OrderedDestination.init), dragged, onto: target)?
+            .map(\.id)
+    }
+
+    /// `CadenceFeatureDestination` as an `Identifiable`, so the order reads the one shared helper.
+    private struct OrderedDestination: Identifiable {
+        let id: CadenceFeatureDestination
+    }
+
     // MARK: - Writing
 
     /// Writes a layout, creating the synced row the first time.

@@ -49,6 +49,29 @@ nonisolated enum CadenceOrderReassignment {
         return ordered
     }
 
+    /// `items` with `draggedID` moved into `targetID`'s slot: the row dropped ON is the destination
+    /// itself, so a downward drag lands immediately AFTER the target and an upward one immediately
+    /// before it ([[T-18630]]).
+    ///
+    /// This is the **drag** spelling, and the one every pointer reorder in the app uses -- board
+    /// columns ([[T-13931]]) and sidebar lists (`CadenceSidebarListReorder.reordered`, whose
+    /// arithmetic this calls). `moved(_:_:before:)` is the **step** spelling, fed by
+    /// `neighbourStep`; handed a drag's `(dragged, droppedOn)` pair it makes a drop on the next row
+    /// down a no-op and leaves the last slot unreachable, which is what Settings' Contexts pane
+    /// did until [[T-18630]].
+    ///
+    /// `nil` exactly when `moved(_:_:before:)` would be: the same id twice, or either id missing.
+    static func moved<Item: Identifiable>(
+        _ items: [Item],
+        _ draggedID: Item.ID,
+        onto targetID: Item.ID
+    ) -> [Item]? {
+        guard draggedID != targetID,
+              let fromIndex = items.firstIndex(where: { $0.id == draggedID }),
+              let toIndex = items.firstIndex(where: { $0.id == targetID }) else { return nil }
+        return CadenceSidebarListReorder.reordered(items, moving: fromIndex, onto: toIndex)
+    }
+
     /// Turns "move this row up/down one place in the list I can see" into the `(dragged, target)`
     /// pair `moved(_:_:before:)` takes.
     ///
