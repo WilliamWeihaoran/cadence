@@ -148,6 +148,12 @@ struct iOSCalendarTimelineGrid: View {
     /// page's call site is byte-for-byte unchanged and keeps its tap-opens-a-sheet behaviour until
     /// [[T-3171]] takes the panel there too.
     var drawsDraftBlocks: Bool = false
+    /// Bumped by the host when the user asks for **now** -- the Calendar title popover's Today row
+    /// ([[T-18549]]). Each change scrolls the canvas to `CadenceScheduleSupport.nowTimelineHour`,
+    /// the hour the Mac's Today button scrolls to. Separate from `leadingDate` on purpose: that
+    /// binding is written by every picked day and every scroll report, and none of those may move
+    /// the canvas vertically (see `placeInitialScroll`). Defaulted, so Today's pane is unchanged.
+    var nowJumpToken: Int = 0
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
@@ -379,6 +385,22 @@ struct iOSCalendarTimelineGrid: View {
                 return
             }
             alignWindow(to: newDate, animated: true)
+        }
+        .onChange(of: nowJumpToken) { _, _ in jumpToNow() }
+    }
+
+    /// The vertical half of Today ([[T-18549]]); `alignWindow` has already been asked for the
+    /// horizontal half by the `leadingDate` write that came with it. Latches the opening placement
+    /// as done, so an opening retry still in flight cannot pull the canvas back off the hour the
+    /// user just asked for.
+    private func jumpToNow() {
+        didPlaceInitialScroll = true
+        openingScrollGeometry = nil
+        let hour = CadenceScheduleSupport.nowTimelineHour(calendar: calendar)
+        withAnimation(.easeInOut(duration: 0.25)) {
+            verticalScrollPosition.scrollTo(
+                y: CadenceScheduleSupport.timelineScrollOffset(forHour: hour, hourHeight: hourHeight)
+            )
         }
     }
 

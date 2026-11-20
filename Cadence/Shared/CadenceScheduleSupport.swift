@@ -243,13 +243,31 @@ enum CadenceScheduleSupport {
                 endHour: endHour
             )
         }
-        let lastHour = max(startHour, endHour - 1)
-        let preferred: Int
         if showsToday {
-            preferred = calendar.component(.hour, from: now) - max(0, leadHours)
-        } else {
-            preferred = CalendarWorkHoursPreferences.normalizedStartMinute(workHoursStartMinute) / 60
+            return nowTimelineHour(now: now, leadHours: leadHours, startHour: startHour, endHour: endHour, calendar: calendar)
         }
+        let lastHour = max(startHour, endHour - 1)
+        let preferred = CalendarWorkHoursPreferences.normalizedStartMinute(workHoursStartMinute) / 60
+        return min(max(preferred, startHour), lastHour)
+    }
+
+    /// The hour a timeline scrolls to when asked to show **now**: the current hour backed off by
+    /// `leadHours`, clamped to the rows the canvas draws.
+    ///
+    /// One rule for both platforms ([[T-18549]]). The Mac's Today button
+    /// (`CalendarTimelineScrollSupport.applyTodayVerticalJump`) and the iOS/iPadOS title popover's
+    /// Today row (`iOSCalendarTimelineGrid.jumpToNow`) both scroll here, and it is also the
+    /// second rung of `initialTimelineHour`, so the hour a grid opens at on an empty today and the
+    /// hour Today brings it back to cannot drift apart.
+    static func nowTimelineHour(
+        now: Date = Date(),
+        leadHours: Int = 1,
+        startHour: Int = calendarStartHour,
+        endHour: Int = calendarEndHour,
+        calendar: Calendar = .current
+    ) -> Int {
+        let lastHour = max(startHour, endHour - 1)
+        let preferred = calendar.component(.hour, from: now) - max(0, leadHours)
         return min(max(preferred, startHour), lastHour)
     }
 

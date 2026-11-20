@@ -742,6 +742,76 @@ struct CalendarTimelineRangeTests {
         #expect(CadenceScheduleSupport.initialTimelineHour(showsToday: true, now: elevenPM, calendar: calendar) == 22)
     }
 
+    // MARK: - Today scrolls to now ([[T-18549]])
+
+    /// The hour Today scrolls a timeline to, on both platforms: the current hour less one, never
+    /// above the canvas's first row. Minutes inside the hour do not move it.
+    @Test func nowTimelineHourIsTheCurrentHourLessOneClampedAtTheTop() throws {
+        #expect(
+            CadenceScheduleSupport.nowTimelineHour(now: try date("2026-08-15", hour: 0, minute: 30), calendar: calendar)
+                == CadenceScheduleSupport.calendarStartHour
+        )
+        #expect(CadenceScheduleSupport.nowTimelineHour(now: try date("2026-08-15", hour: 13, minute: 10), calendar: calendar) == 12)
+        #expect(CadenceScheduleSupport.nowTimelineHour(now: try date("2026-08-15", hour: 23, minute: 50), calendar: calendar) == 22)
+        // Clamped at a start hour above zero, as `calStartHour` was on the Mac.
+        #expect(
+            CadenceScheduleSupport.nowTimelineHour(
+                now: try date("2026-08-15", hour: 6, minute: 5), startHour: 6, calendar: calendar
+            ) == 6
+        )
+        // And it is the opening rule's "today" rung, so the two cannot drift.
+        for hour in [0, 1, 9, 13, 23] {
+            let now = try date("2026-08-15", hour: hour, minute: 40)
+            #expect(
+                CadenceScheduleSupport.initialTimelineHour(showsToday: true, now: now, calendar: calendar)
+                    == CadenceScheduleSupport.nowTimelineHour(now: now, calendar: calendar)
+            )
+        }
+    }
+
+    /// The iOS Today row reaches `verticalScrollPosition.scrollTo` through the shared rule, by a
+    /// signal of its own; the `leadingDate` path (`alignWindow`) still moves nothing vertical; and
+    /// the Mac's Today button reads the same rule. iOS is behind `#if os(iOS)`, so this is source.
+    @Test func todayScrollsTheIOSGridToTheSharedNowHour() throws {
+        let grid = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
+        )
+        let jump = try #require(CadenceSourceScan.functionBody(named: "jumpToNow", in: grid))
+        #expect(jump.contains("CadenceScheduleSupport.nowTimelineHour("))
+        #expect(jump.contains("verticalScrollPosition.scrollTo("))
+        let onToken = try #require(CadenceSourceScan.declarationBody(".onChange(of: nowJumpToken)", in: grid))
+        #expect(onToken.contains("jumpToNow()"))
+        let align = try #require(CadenceSourceScan.functionBody(named: "alignWindow", in: grid))
+        #expect(align.contains("scrollToLeadingIndex("), "non-vacuity: alignWindow no longer scrolls through scrollToLeadingIndex")
+        let leading = try #require(CadenceSourceScan.functionBody(named: "scrollToLeadingIndex", in: grid))
+        #expect(leading.contains("horizontalScrollPosition.scrollTo("), "non-vacuity: the leading jump is no longer horizontal")
+        for body in [align, leading] {
+            #expect(!body.contains("verticalScrollPosition"))
+            #expect(!body.contains("jumpToNow"))
+        }
+        let onLeading = try #require(CadenceSourceScan.declarationBody(".onChange(of: leadingDate)", in: grid))
+        #expect(!onLeading.contains("verticalScrollPosition"))
+        #expect(!onLeading.contains("jumpToNow"))
+
+        // The popover's now row is what fires it, and the Calendar page wires it to the grid.
+        let title = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSDateJumpTitle.swift")
+        )
+        let nowRow = try #require(CadenceSourceScan.declarationBody("onNow:", in: title))
+        #expect(nowRow.contains("onJumpToNow?()"))
+        let page = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarView.swift")
+        )
+        #expect(page.contains("onJumpToNow: { nowJumpToken &+= 1 }"))
+        #expect(page.contains("nowJumpToken: nowJumpToken"))
+
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/CalendarTimelineScrollSupport.swift")
+        )
+        let macJump = try #require(CadenceSourceScan.functionBody(named: "applyTodayVerticalJump", in: mac))
+        #expect(macJump.contains("CadenceScheduleSupport.nowTimelineHour("))
+    }
+
     /// A week that is not this week has no "now" to honour. The sensible default is the user's own
     /// work-hours start — the window the amber band on each column is already drawn from — rather
     /// than a second hardcoded hour.

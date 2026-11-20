@@ -29,6 +29,10 @@ struct iOSCalendarView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var anchorDate = Calendar.current.startOfDay(for: Date())
+    /// Bumped by the title popover's Today row ([[T-18549]]), so the timed grid can move to the
+    /// current hour as well as to today's column. An ordinary `anchorDate` write -- a picked day, a
+    /// scroll report -- leaves the hour alone; only this asks for it.
+    @State private var nowJumpToken = 0
     /// [[T-18227]]: the empty-slot quick create opens on the root's host, never on this page -- an
     /// iPad resize across the compact/regular boundary rebuilds this page and would dismiss it.
     @Environment(\.iOSPageEditor) private var pageEditor
@@ -257,7 +261,8 @@ struct iOSCalendarView: View {
                     isCompact: isCompact,
                     presentation: presentation,
                     viewMode: viewMode
-                )
+                ),
+                onJumpToNow: { nowJumpToken &+= 1 }
             )
 
             // [[T-5954]]: every event read on this page answers empty without access, so say why.
@@ -402,7 +407,8 @@ struct iOSCalendarView: View {
                 zoom: $zoomLevel,
                 onCreateAt: openQuickCreate,
                 onDropTaskAtMinute: dropTask,
-                resolveDroppedTask: { CadenceTimelineBlockEdit.droppedTask($0, among: allTasks) }
+                resolveDroppedTask: { CadenceTimelineBlockEdit.droppedTask($0, among: allTasks) },
+                nowJumpToken: nowJumpToken
             )
         }
     }

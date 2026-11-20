@@ -63,6 +63,11 @@ struct iOSDateJumpTitle: View {
     /// The calendar the popover's month grid is laid out in. Notes' Weekly tab passes a
     /// Monday-first one so each row is the ISO week a tap opens ([[T-15492]]).
     var pickerCalendar: Calendar = .current
+    /// Called after the popover's now row has written `date`, and only from that row ([[T-18549]]).
+    /// A picked day writes `date` too, so the bound value alone cannot say "go to now"; a surface
+    /// whose idea of now has a second axis -- the timed calendar grids' current hour -- needs this
+    /// separate signal to move it. `nil` everywhere a date is the whole answer.
+    var onJumpToNow: (() -> Void)? = nil
 
     @State private var isOpen = false
     @State private var viewMonth = Date()
@@ -112,7 +117,10 @@ struct iOSDateJumpTitle: View {
                 isAtNow: isAtNow,
                 nowTitle: nowTitle,
                 calendar: pickerCalendar,
-                onNow: { date = anchor(Date()) }
+                onNow: {
+                    date = anchor(Date())
+                    onJumpToNow?()
+                }
             )
             // Same reason `CadenceDatePicker` sets it: compact width would otherwise promote a
             // 256×294 calendar to a full-height sheet.

@@ -152,8 +152,8 @@ enum CalendarTimelineScrollSupport {
         isRestoringVerticalScroll: Binding<Bool>,
         vProxy: ScrollViewProxy
     ) {
-        let currentHour = Calendar.current.component(.hour, from: Date())
-        let scrollHour = max(calStartHour, currentHour - 1)
+        // The shared now-hour rule, which the iOS/iPadOS Today row also reads ([[T-18549]]).
+        let scrollHour = CadenceScheduleSupport.nowTimelineHour()
         DispatchQueue.main.async {
             vProxy.scrollTo("tl_\(scrollHour)", anchor: .top)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
