@@ -83,6 +83,29 @@ final class CadenceFocusSessionOwner {
         CadenceFocusSessionPersistence.clear(in: defaults)
     }
 
+    // MARK: - [[T-18514]]: the subject deleted
+
+    /// Whether deleting `taskIDs` takes this session's subject with it. Asked by the shared delete
+    /// core **before** the rows go, as the Mac's `deferFocusTeardown` asks `FocusManager`: after
+    /// the commit there is no row left to compare against.
+    func isSubject(amongDeleted taskIDs: Set<UUID>) -> Bool {
+        guard let subjectID = selectedTarget?.taskID else { return false }
+        return taskIDs.contains(subjectID)
+    }
+
+    /// **The Mac's delete teardown, on iOS** -- `FocusManager.activeSession = nil` and `reset()`.
+    /// Run by the shared delete core only once the delete has committed. Nothing is banked: the
+    /// task the seconds would be logged against is gone. The clock goes to zero, the subject is
+    /// released so the screen falls back to the head of the ready list, the record is cleared so
+    /// an eviction does not resume a session against nothing, and the settle watch is stood down
+    /// because the row it observes is deleted.
+    func endSessionForDeletedSubject() {
+        standDownSettleWatch()
+        timerState.reset()
+        selectedTarget = nil
+        CadenceFocusSessionPersistence.clear(in: defaults)
+    }
+
     // MARK: - [[T-18252]]: the Log Session form's two exits
 
     /// **Log Session's confirm, run here rather than on the screen** ([[T-18252]]). The form is

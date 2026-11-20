@@ -893,13 +893,15 @@ extension CadenceTaskMutationSupport {
         _ task: AppTask,
         modelContext: ModelContext,
         recurrenceScope: CadenceTaskRecurrenceDeleteScope = .wholeSeries,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
+        commit: (ModelContext) throws -> Void = { try $0.save() },
+        focusSession: CadenceFocusSessionOwner? = nil
     ) -> Bool {
         deleteTasks(
             withIDs: [task.id],
             modelContext: modelContext,
             recurrenceScope: recurrenceScope,
-            commit: commit
+            commit: commit,
+            focusSession: focusSession
         )
     }
 
@@ -1002,6 +1004,11 @@ extension CadenceTaskMutationSupport {
     ///   the reason `CadencePendingChangePersistence` gives — a `save()` that throws cannot be
     ///   provoked out of an in-memory container, and a rollback no test can reach is a rollback no
     ///   test can prove.
+    ///
+    /// - Parameter focusSession: The iOS Focus session to end when its subject is among the doomed
+    ///   ([[T-18514]]); `nil` means `CadenceFocusSessionOwner.shared`. A parameter so a test can
+    ///   hand in an owner on its own defaults suite. On macOS the owner never holds a subject, so
+    ///   this is inert there and the Mac's own `FocusManager` teardown stays in its wrapper.
     @discardableResult
     static func deleteTasks(
         withIDs taskIDs: Set<UUID>,
@@ -1010,7 +1017,8 @@ extension CadenceTaskMutationSupport {
         commitsImmediately: Bool = true,
         commit: (ModelContext) throws -> Void = { try $0.save() },
         willDelete: (Set<UUID>) -> Void = { _ in },
-        didDeleteBundles: (Set<UUID>) -> Void = { _ in }
+        didDeleteBundles: (Set<UUID>) -> Void = { _ in },
+        focusSession: CadenceFocusSessionOwner? = nil
     ) -> Bool {
         guard !taskIDs.isEmpty else { return true }
 
@@ -1023,6 +1031,15 @@ extension CadenceTaskMutationSupport {
 
         // Only now that the reads have succeeded and there is real work to do.
         willDelete(taskIDs)
+
+        // **[[T-18514]]: the iOS Focus session ends with its subject, as the Mac's does.** Decided
+        // here, while the rows exist, and applied below only once the delete has committed --
+        // the Mac wrapper's `deferFocusTeardown` rule, held in the core so every iOS delete
+        // surface (board card, detail sheet, row action, list cascade) takes it without each one
+        // remembering to. Before this the clock kept running against a deleted id, with no row
+        // left on the Focus screen to draw the control that stops it.
+        let focusSession = focusSession ?? CadenceFocusSessionOwner.shared
+        let endsFocusSession = focusSession.isSubject(amongDeleted: taskIDs)
 
         // The writes below that land on rows which **survive** this delete, captured before any of
         // them happens (T-1336). Both halves build one now (T-1377): the deferred half makes no
@@ -1151,6 +1168,18 @@ extension CadenceTaskMutationSupport {
             NotificationManager.cancelReminders(taskIDs: Array(taskIDs))
         } else {
             NotificationManager.deferReminderCancellation(taskIDs: Array(taskIDs))
+        }
+
+        // [[T-18514]]: below the commit when this call owns it; handed to the cascade's queue when
+        // it does not, so a refused list delete leaves the session running with its task back.
+        if endsFocusSession {
+            if !commitsImmediately, let effects = CadenceDeferredDeleteEffects.current {
+                effects.hold(taskIDs: Array(taskIDs), habitIDs: []) {
+                    MainActor.assumeIsolated { focusSession.endSessionForDeletedSubject() }
+                }
+            } else {
+                focusSession.endSessionForDeletedSubject()
+            }
         }
         return true
     }

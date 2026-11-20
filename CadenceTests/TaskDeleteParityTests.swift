@@ -293,6 +293,8 @@ struct TaskDeleteParityTests {
     /// halves: the deferring half hands its ids to the enclosing cascade instead of cancelling
     /// outright. That the deferred half defers, and that the committing half queues nothing, is
     /// behaviour in `CadenceDeferredReminderCancellationTests`; this is the ordering it cannot see.
+    /// The needle ends on [[T-18514]]'s iOS Focus teardown, which sits below the same commit for the
+    /// same reason; its behaviour is pinned in `CadenceFocusSessionOwnerTests`.
     @Test func theSharedDeleteCancelsRemindersOnlyBelowItsOwnCommit() throws {
         let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTaskMutationSupport.swift")
         #expect(raw.count > 400, "the delete core read as \(raw.count) characters")
@@ -301,7 +303,7 @@ struct TaskDeleteParityTests {
         #expect(core.count == raw.count, "the stripper changed the length")
         #expect(core.contains("static func deleteTasks("), "the shared task-deletion core moved")
 
-        let cancelsAfterTheCommit = #"catch \{\s*return false\s*\}\s*\}\s*if commitsImmediately \{\s*NotificationManager\.cancelReminders\(taskIDs: Array\(taskIDs\)\)\s*\} else \{\s*NotificationManager\.deferReminderCancellation\(taskIDs: Array\(taskIDs\)\)\s*\}\s*return true"#
+        let cancelsAfterTheCommit = #"catch \{\s*return false\s*\}\s*\}\s*if commitsImmediately \{\s*NotificationManager\.cancelReminders\(taskIDs: Array\(taskIDs\)\)\s*\} else \{\s*NotificationManager\.deferReminderCancellation\(taskIDs: Array\(taskIDs\)\)\s*\}\s*if endsFocusSession \{"#
         #expect(
             CadenceSourceScan.matchCount(cancelsAfterTheCommit, in: core) == 1,
             "a refused or uncommitted delete now cancels the reminder for a task it just put back"
@@ -315,7 +317,7 @@ struct TaskDeleteParityTests {
         #expect(
             CadenceSourceScan.matchCount(
                 cancelsAfterTheCommit,
-                in: "catch {\n                return false\n            }\n        }\n\n        if commitsImmediately {\n            NotificationManager.cancelReminders(taskIDs: Array(taskIDs))\n        } else {\n            NotificationManager.deferReminderCancellation(taskIDs: Array(taskIDs))\n        }\n        return true"
+                in: "catch {\n                return false\n            }\n        }\n\n        if commitsImmediately {\n            NotificationManager.cancelReminders(taskIDs: Array(taskIDs))\n        } else {\n            NotificationManager.deferReminderCancellation(taskIDs: Array(taskIDs))\n        }\n\n        if endsFocusSession {\n        }\n        return true"
             ) == 1,
             "the ordering needle does not match the spelling it is hunting"
         )

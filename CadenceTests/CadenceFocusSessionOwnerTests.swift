@@ -355,4 +355,137 @@ struct CadenceFocusSessionOwnerTests {
         let macView = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusView.swift")
         #expect(macView.contains("onClose: { reportingFocusFailure { try focusManager.endSession(in: modelContext) } }"))
     }
+
+    // MARK: - [[T-18514]]: deleting the session's task
+
+    /// The ticket's steps: start Focus on a task, leave Focus, delete the task from Today. The
+    /// shared delete core ends the session once the delete commits, as the Mac's wrapper ends
+    /// `FocusManager`'s: no subject, clock at zero, no record for an eviction to resume, and
+    /// nothing banked against a task that is gone.
+    @Test func deletingTheSessionsTaskEndsTheSessionAfterTheCommit() async throws {
+        try await withSuite { defaults in
+            let (task, _, context) = try makeTask("Write the brief")
+            let clock = Clock(epoch)
+            let owner = CadenceFocusSessionOwner(defaults: defaults, clock: { clock.now })
+            startSession(on: task, owner: owner, clock: clock, defaults: defaults)
+            clock.now = epoch.addingTimeInterval(10 * 60)
+            owner.screenDidDisappear(leaving: .task(task))
+
+            let deleted = CadenceTaskMutationSupport.delete(task, modelContext: context, focusSession: owner)
+
+            #expect(deleted)
+            #expect(owner.selectedTarget == nil)
+            #expect(!owner.timerState.isRunning)
+            #expect(owner.timerState.elapsedSeconds(now: clock.now) == 0)
+            #expect(!owner.hasLiveSession)
+            #expect(CadenceFocusSessionPersistence.read(from: defaults) == nil)
+        }
+    }
+
+    /// Deleting some other task is not the subject going: the session runs on untouched.
+    @Test func deletingAnotherTaskLeavesTheSessionRunning() async throws {
+        try await withSuite { defaults in
+            let (task, project, context) = try makeTask("Write the brief")
+            let other = AppTask(title: "Unrelated")
+            other.project = project
+            context.insert(other)
+            try context.save()
+            let clock = Clock(epoch)
+            let owner = CadenceFocusSessionOwner(defaults: defaults, clock: { clock.now })
+            startSession(on: task, owner: owner, clock: clock, defaults: defaults)
+
+            #expect(CadenceTaskMutationSupport.delete(other, modelContext: context, focusSession: owner))
+
+            #expect(owner.selectedTarget == .task(task.id))
+            #expect(owner.timerState.isRunning)
+            #expect(CadenceFocusSessionPersistence.read(from: defaults)?.taskID == task.id)
+        }
+    }
+
+    /// A refused commit puts the task back, so the session it was running must still be there.
+    @Test func aRefusedDeleteLeavesTheSessionRunning() async throws {
+        try await withSuite { defaults in
+            let (task, _, context) = try makeTask("Write the brief")
+            let clock = Clock(epoch)
+            let owner = CadenceFocusSessionOwner(defaults: defaults, clock: { clock.now })
+            startSession(on: task, owner: owner, clock: clock, defaults: defaults)
+
+            let deleted = CadenceTaskMutationSupport.delete(
+                task,
+                modelContext: context,
+                commit: { _ in throw CommitRefused() },
+                focusSession: owner
+            )
+
+            #expect(!deleted)
+            #expect(owner.selectedTarget == .task(task.id))
+            #expect(owner.timerState.isRunning)
+            #expect(CadenceFocusSessionPersistence.read(from: defaults)?.taskID == task.id)
+        }
+    }
+
+    /// The list cascade's shape (`commitsImmediately: false` inside `commitCascade`, as
+    /// `iOSListDeletionSupport` runs it): the session is still running when the core returns,
+    /// because nothing has committed yet, and ends only once the cascade's own commit lands.
+    @Test func aListCascadeEndsTheSessionOnlyOnceItsCommitLands() async throws {
+        try await withSuite { defaults in
+            let (task, _, context) = try makeTask("Write the brief")
+            let clock = Clock(epoch)
+            let owner = CadenceFocusSessionOwner(defaults: defaults, clock: { clock.now })
+            startSession(on: task, owner: owner, clock: clock, defaults: defaults)
+            let effects = CadenceDeferredDeleteEffects()
+            var runningBeforeCommit = false
+
+            try CadencePendingChangePersistence.commitCascade(in: context, refusing: false, effects: effects) {
+                let deleted = CadenceTaskMutationSupport.deleteTasks(
+                    withIDs: [task.id],
+                    modelContext: context,
+                    commitsImmediately: false,
+                    focusSession: owner
+                )
+                runningBeforeCommit = owner.selectedTarget == .task(task.id) && owner.timerState.isRunning
+                return deleted
+            }
+
+            #expect(runningBeforeCommit)
+            #expect(effects.releasedTaskIDs.contains(task.id))
+            #expect(owner.selectedTarget == nil)
+            #expect(!owner.timerState.isRunning)
+            #expect(!owner.hasLiveSession)
+            #expect(CadenceFocusSessionPersistence.read(from: defaults) == nil)
+        }
+    }
+
+    /// A refused cascade puts its tasks back, so the held teardown never runs.
+    @Test func aRefusedListCascadeLeavesTheSessionRunning() async throws {
+        try await withSuite { defaults in
+            let (task, _, context) = try makeTask("Write the brief")
+            let clock = Clock(epoch)
+            let owner = CadenceFocusSessionOwner(defaults: defaults, clock: { clock.now })
+            startSession(on: task, owner: owner, clock: clock, defaults: defaults)
+            let effects = CadenceDeferredDeleteEffects()
+
+            #expect(throws: CommitRefused.self) {
+                try CadencePendingChangePersistence.commitCascade(
+                    in: context,
+                    commit: { _ in throw CommitRefused() },
+                    refusing: false,
+                    effects: effects
+                ) {
+                    CadenceTaskMutationSupport.deleteTasks(
+                        withIDs: [task.id],
+                        modelContext: context,
+                        commitsImmediately: false,
+                        focusSession: owner
+                    )
+                }
+            }
+
+            #expect(effects.pendingTaskIDs.contains(task.id))
+            #expect(effects.releasedTaskIDs.isEmpty)
+            #expect(owner.selectedTarget == .task(task.id))
+            #expect(owner.timerState.isRunning)
+            #expect(CadenceFocusSessionPersistence.read(from: defaults)?.taskID == task.id)
+        }
+    }
 }
