@@ -173,9 +173,12 @@ struct CadenceCodexWidgetFollowupTests {
         let calendar = CadenceSourceScan.codeOnly(try read("CadenceWidgets/CalendarSnapshotWidget.swift"))
         #expect(CadenceSourceScan.matchCount("context\\.isPreview\\s*\\?\\s*placeholderSnapshot\\(for: context\\.family\\)", in: today) == 1)
         #expect(calendar.contains("context.isPreview ? placeholderSnapshot() : currentSnapshot(for: context.family)"))
-        // Non-vacuity: the live path is still what the timeline draws.
-        #expect(CadenceSourceScan.matchCount("currentSnapshot\\(for: context\\.family\\)", in: today) == 2)
-        #expect(CadenceSourceScan.matchCount("currentSnapshot\\(for: context\\.family\\)", in: calendar) == 2)
+        // Non-vacuity: the live path is still what the timeline draws -- its day snapshots since
+        // [[T-18582]], of which `currentSnapshot` is the first.
+        #expect(CadenceSourceScan.matchCount("currentSnapshot\\(for: context\\.family\\)", in: today) == 1)
+        #expect(CadenceSourceScan.matchCount("currentSnapshot\\(for: context\\.family\\)", in: calendar) == 1)
+        #expect(CadenceSourceScan.matchCount("currentDaySnapshots\\(for: context\\.family, now: Date\\(\\)\\)", in: today) == 1)
+        #expect(CadenceSourceScan.matchCount("currentDaySnapshots\\(for: context\\.family, now: Date\\(\\)\\)", in: calendar) == 1)
     }
 
     /// T-7123 / T-7124: the state card's title wraps and is laid out before its message, and the

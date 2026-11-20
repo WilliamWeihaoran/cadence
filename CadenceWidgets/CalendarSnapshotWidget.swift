@@ -35,14 +35,15 @@ struct CalendarSnapshotWidgetProvider: TimelineProvider {
 
     func getTimeline(in context: TimelineProviderContext, completion: @escaping (Timeline<CalendarSnapshotWidgetEntry>) -> Void) {
         CadenceAccentPaletteSelection.shared.adoptStoredSelection()  // [[T-18461]], as in getSnapshot
-        let entry = CalendarSnapshotWidgetEntry(
-            date: Date(),
-            snapshot: currentSnapshot(for: context.family)
-        )
+        // [[T-18582]]: today's strip, then the next day's at its start, so the highlighted day
+        // turns on time even when WidgetKit defers the reload below.
+        let entries = currentDaySnapshots(for: context.family, now: Date()).map {
+            CalendarSnapshotWidgetEntry(date: $0.date, snapshot: $0.snapshot)
+        }
         completion(
             Timeline(
-                entries: [entry],
-                policy: .after(CadenceCalendarWidgetSupport.recommendedReloadDate(for: entry.snapshot))
+                entries: entries,
+                policy: .after(CadenceCalendarWidgetSupport.recommendedReloadDate(for: entries[0].snapshot))
             )
         )
     }
@@ -93,8 +94,12 @@ struct CalendarSnapshotWidgetProvider: TimelineProvider {
     /// where the cost was: this fetch carried no predicate until [[T-1366]]'s sweep measured what
     /// the rows it could not use were costing, and it now materialises the dated open population
     /// alone. `CadenceCalendarWidgetSupport.snapshot(modelContext:dayCount:probe:)` carries the
-    /// numbers and the equivalence argument.
-    private func currentSnapshot(for family: WidgetFamily) -> CadenceCalendarWidgetSnapshot {
+    /// numbers and the equivalence argument. Never empty; see `TodayTasksWidgetProvider` for the
+    /// second, next-day entry ([[T-18582]]).
+    private func currentDaySnapshots(
+        for family: WidgetFamily,
+        now: Date
+    ) -> [(date: Date, snapshot: CadenceCalendarWidgetSnapshot)] {
         let probe = CadenceWidgetGenerationProbe(kind: CadenceWidgetRefreshCenter.calendarWidgetKind)
         do {
             let container = try CadenceStoreSupport.makePrimaryContainer(
@@ -103,31 +108,41 @@ struct CalendarSnapshotWidgetProvider: TimelineProvider {
             )
             probe.finished(.containerOpen)
             let modelContext = ModelContext(container)
-            let snapshot = try CadenceCalendarWidgetSupport.snapshot(
+            let days = try CadenceCalendarWidgetSupport.daySnapshots(
                 modelContext: modelContext,
                 dayCount: 14,
+                now: now,
                 probe: probe
             )
+            let snapshot = days[0].snapshot
             probe.recordGeneration(
                 outcome: snapshot.state == .empty ? .empty : .ready,
                 renderedCount: snapshot.state == .ready
                     ? min(snapshot.days.count, family.cadenceLayout.calendarDayLimit) : 0,
                 sourceSnapshotAt: snapshot.date
             )
-            return snapshot
+            return days
         } catch {
             probe.recordRefusal(error)
             // [[T-12381]]: the family decides the sentence, as the Today widget's catch does
             // ([[T-12335]]). Below the `Calendar` header and the two-line state title, the
             // `systemSmall` tile has about two ~23-character lines of 10pt text on an iPhone 15,
             // and the 58-character full sentence needs three.
-            return CadenceCalendarWidgetSupport.unavailableSnapshot(
-                message: CadenceTodayWidgetSupport.unavailableMessage(
-                    for: family.cadenceLayout,
-                    full: CadenceCalendarWidgetSupport.fullUnavailableMessage
+            return [(
+                date: now,
+                snapshot: CadenceCalendarWidgetSupport.unavailableSnapshot(
+                    message: CadenceTodayWidgetSupport.unavailableMessage(
+                        for: family.cadenceLayout,
+                        full: CadenceCalendarWidgetSupport.fullUnavailableMessage
+                    )
                 )
-            )
+            )]
         }
+    }
+
+    /// The snapshot `getSnapshot` answers with: the first, today's, of `currentDaySnapshots`.
+    private func currentSnapshot(for family: WidgetFamily) -> CadenceCalendarWidgetSnapshot {
+        currentDaySnapshots(for: family, now: Date())[0].snapshot
     }
 }
 

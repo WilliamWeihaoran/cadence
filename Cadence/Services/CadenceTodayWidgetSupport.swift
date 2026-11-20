@@ -259,6 +259,48 @@ nonisolated enum CadenceTodayWidgetSupport {
         try snapshot(modelContext: modelContext, todayKey: currentTodayKey(), limit: limit, probe: probe)
     }
 
+    /// The Today timeline's entries ([[T-18582]]): today's snapshot at `now` and the next day's at
+    /// its start, both from ONE fetch, so the tile turns the day with no reload. The first entry is
+    /// the one the reload policy and the probe read.
+    nonisolated static func daySnapshots(
+        modelContext: ModelContext,
+        limit: Int = 3,
+        now: Date = Date(),
+        probe: CadenceWidgetGenerationProbe? = nil
+    ) throws -> [(date: Date, snapshot: CadenceTodayWidgetSnapshot)] {
+        let tasks = try modelContext.fetch(datedOpenTaskFetchDescriptor())
+        probe?.finished(.fetch, rows: tasks.count)
+        let expirations = CadenceWidgetRefreshCenter.taskCompletionExpirations()
+        let built = daySnapshots(
+            from: tasks,
+            limit: limit,
+            now: now,
+            suppressionExpirations: expirations
+        )
+        probe?.finished(.derive)
+        return built
+    }
+
+    /// The pure half of `daySnapshots(modelContext:...)`: each entry's snapshot is built for the
+    /// key of the day that entry draws, in `calendar`.
+    nonisolated static func daySnapshots(
+        from tasks: [AppTask],
+        limit: Int = 3,
+        now: Date,
+        calendar: Calendar = .current,
+        suppressionExpirations: [UUID: Date] = [:]
+    ) -> [(date: Date, snapshot: CadenceTodayWidgetSnapshot)] {
+        CadenceWidgetDayTurnTimeline.entries(now: now, calendar: calendar) { day in
+            snapshot(
+                from: tasks,
+                todayKey: CadenceWidgetDateSupport.dateKey(from: day, calendar: calendar),
+                limit: limit,
+                suppressedTaskIDs: Set(suppressionExpirations.keys),
+                suppressionExpirations: suppressionExpirations
+            )
+        }
+    }
+
     /// `probe` is [[T-1366]]'s instrument and nothing else: with it left `nil` — which is every
     /// caller outside the four timeline providers — this reads exactly as it did before, and with
     /// one supplied the store fetch and the in-memory derivation are timed apart and the row count
@@ -541,7 +583,10 @@ nonisolated enum CadenceTodayWidgetSupport {
 ///
 /// Three of the four `Cadence*WidgetSupport` types already computed the same shape by hand: a
 /// fallback interval keyed by state, clamped to no later than the next midnight so a widget that
-/// goes stale right before a day turns over still definitely reloads once it does. Milestone
+/// goes stale right before a day turns over asks to reload once it does. **Asks, not gets**
+/// ([[T-18582]]): WidgetKit treats the date as a request it may defer under a daily budget, so the
+/// day itself turns on the second timeline entry `CadenceWidgetDayTurnTimeline` adds, and this
+/// reload only refreshes the rows behind it. Milestone
 /// Momentum's own copy never adopted the clamp — it returned `referenceDate.addingTimeInterval(_:)`
 /// unbounded, so an empty pool at 23:50 reloaded around 00:50 the next day instead of 00:01. Widgets
 /// ship inside the submitted binary, so that is not a hypothetical: it is a stale home screen a real
@@ -568,6 +613,48 @@ nonisolated enum CadenceWidgetReloadPolicy {
 
         let fallbackInterval: TimeInterval = isUnavailable ? unavailableInterval : (isEmpty ? emptyInterval : readyInterval)
         return min(referenceDate.addingTimeInterval(fallbackInterval), nextStartOfDay)
+    }
+}
+
+/// **The day a widget draws turns on a timeline entry, not on a reload** ([[T-18582]]).
+///
+/// The Today and Calendar providers handed WidgetKit one entry built for `Date()` and asked for a
+/// reload by next midnight + 60s. A reload date is a request WidgetKit may defer under its daily
+/// budget, and the ready cadence (every 15 / 20 minutes) spends a lot of that budget, so a tile
+/// could keep yesterday's list, its "Due today" counts and a strip highlighting yesterday into the
+/// next morning. Entries already in a timeline are shown at their dates and cost no reload, so each
+/// timeline now carries a second entry, dated at the next start of day and built from the same
+/// fetched rows for that day. The reload policy is unchanged and still refreshes the rows.
+nonisolated enum CadenceWidgetDayTurnTimeline {
+    /// The start of the day after the one `now` falls in, in `calendar`. Built from the start of
+    /// today rather than `now + 1 day`, so a DST day of 23 or 25 hours still lands on midnight.
+    nonisolated static func nextStartOfDay(after now: Date, calendar: Calendar = .current) -> Date? {
+        let today = calendar.startOfDay(for: now)
+        guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: today) else { return nil }
+        return calendar.startOfDay(for: tomorrow)
+    }
+
+    /// The entries a day-keyed timeline carries: one at `now` drawing today, and one at the next
+    /// start of day drawing that day. `day` is the start of the day an entry draws.
+    nonisolated static func entryDays(
+        now: Date,
+        calendar: Calendar = .current
+    ) -> [(date: Date, day: Date)] {
+        let today = calendar.startOfDay(for: now)
+        guard let next = nextStartOfDay(after: now, calendar: calendar), next > now else {
+            return [(now, today)]
+        }
+        return [(now, today), (next, next)]
+    }
+
+    /// `entryDays`, each built into a snapshot by `build`, which is handed the start of the day
+    /// the entry draws.
+    nonisolated static func entries<Snapshot>(
+        now: Date,
+        calendar: Calendar = .current,
+        build: (Date) -> Snapshot
+    ) -> [(date: Date, snapshot: Snapshot)] {
+        entryDays(now: now, calendar: calendar).map { (date: $0.date, snapshot: build($0.day)) }
     }
 }
 

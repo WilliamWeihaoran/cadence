@@ -49,13 +49,14 @@ struct TodayTasksWidgetProvider: TimelineProvider {
         completion: @escaping (Timeline<TodayTasksWidgetEntry>) -> Void
     ) {
         CadenceAccentPaletteSelection.shared.adoptStoredSelection()  // [[T-18461]], as in getSnapshot
-        let entry = TodayTasksWidgetEntry(
-            date: Date(),
-            snapshot: currentSnapshot(for: context.family)
-        )
+        // [[T-18582]]: today's entry, then the next day's at its start, so the day turns on time
+        // even when WidgetKit defers the reload below.
+        let entries = currentDaySnapshots(for: context.family, now: Date()).map {
+            TodayTasksWidgetEntry(date: $0.date, snapshot: $0.snapshot)
+        }
         completion(Timeline(
-            entries: [entry],
-            policy: .after(CadenceTodayWidgetSupport.recommendedReloadDate(for: entry.snapshot))
+            entries: entries,
+            policy: .after(CadenceTodayWidgetSupport.recommendedReloadDate(for: entries[0].snapshot))
         ))
     }
 
@@ -142,8 +143,13 @@ struct TodayTasksWidgetProvider: TimelineProvider {
     /// `CadenceWidgetGenerationLedger.enabledDefaultsKey` is set in the app group, and when it is,
     /// this generation leaves its container-open, fetch and derive durations, the rows the fetch
     /// materialised, the rows this family actually draws, the process footprint, and — separately
-    /// from an empty result — the refusal, if the store could not be read.
-    private func currentSnapshot(for family: WidgetFamily) -> CadenceTodayWidgetSnapshot {
+    /// from an empty result — the refusal, if the store could not be read. Never empty: the first
+    /// entry is today's (or the unavailable one), and a second, for the next day, follows it when
+    /// the store was read ([[T-18582]]).
+    private func currentDaySnapshots(
+        for family: WidgetFamily,
+        now: Date
+    ) -> [(date: Date, snapshot: CadenceTodayWidgetSnapshot)] {
         let probe = CadenceWidgetGenerationProbe(kind: CadenceWidgetRefreshCenter.todayWidgetKind)
         do {
             let container = try CadenceStoreSupport.makePrimaryContainer(
@@ -152,25 +158,35 @@ struct TodayTasksWidgetProvider: TimelineProvider {
             )
             probe.finished(.containerOpen)
             let modelContext = ModelContext(container)
-            let snapshot = try CadenceTodayWidgetSupport.snapshot(
+            let days = try CadenceTodayWidgetSupport.daySnapshots(
                 modelContext: modelContext,
                 limit: snapshotLimit(for: family),
+                now: now,
                 probe: probe
             )
+            let snapshot = days[0].snapshot
             probe.recordGeneration(
                 outcome: snapshot.state == .empty ? .empty : .ready,
                 renderedCount: snapshot.tasks.count,
                 sourceSnapshotAt: snapshot.date
             )
-            return snapshot
+            return days
         } catch {
             probe.recordRefusal(error)
             // [[T-12335]]: the family decides the sentence, because `systemSmall` has one line
             // for it and the full one stopped mid-word there.
-            return CadenceTodayWidgetSupport.unavailableSnapshot(
-                message: CadenceTodayWidgetSupport.unavailableMessage(for: family.cadenceLayout)
-            )
+            return [(
+                date: now,
+                snapshot: CadenceTodayWidgetSupport.unavailableSnapshot(
+                    message: CadenceTodayWidgetSupport.unavailableMessage(for: family.cadenceLayout)
+                )
+            )]
         }
+    }
+
+    /// The snapshot `getSnapshot` answers with: the first, today's, of `currentDaySnapshots`.
+    private func currentSnapshot(for family: WidgetFamily) -> CadenceTodayWidgetSnapshot {
+        currentDaySnapshots(for: family, now: Date())[0].snapshot
     }
 
     private func snapshotLimit(for family: WidgetFamily) -> Int {

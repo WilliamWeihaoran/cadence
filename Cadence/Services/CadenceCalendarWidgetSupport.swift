@@ -119,6 +119,35 @@ nonisolated enum CadenceCalendarWidgetSupport {
         return built
     }
 
+    /// The Calendar timeline's entries ([[T-18582]]): the strip from today at `now`, and the strip
+    /// from the next day at its start, both from ONE fetch, so the highlighted day, the overdue
+    /// count and "Next up" turn over with no reload. The first entry is the one the reload policy
+    /// and the probe read.
+    nonisolated static func daySnapshots(
+        modelContext: ModelContext,
+        dayCount: Int,
+        now: Date = Date(),
+        probe: CadenceWidgetGenerationProbe? = nil
+    ) throws -> [(date: Date, snapshot: CadenceCalendarWidgetSnapshot)] {
+        let tasks = try modelContext.fetch(CadenceTodayWidgetSupport.datedOpenTaskFetchDescriptor())
+        probe?.finished(.fetch, rows: tasks.count)
+        let built = daySnapshots(from: tasks, dayCount: dayCount, now: now)
+        probe?.finished(.derive)
+        return built
+    }
+
+    /// The pure half of `daySnapshots(modelContext:...)`. `snapshot(from:today:dayCount:)` walks
+    /// days in `Calendar.current`, so the entries are split in it too.
+    nonisolated static func daySnapshots(
+        from tasks: [AppTask],
+        dayCount: Int,
+        now: Date
+    ) -> [(date: Date, snapshot: CadenceCalendarWidgetSnapshot)] {
+        CadenceWidgetDayTurnTimeline.entries(now: now, calendar: .current) { day in
+            snapshot(from: tasks, today: day, dayCount: dayCount)
+        }
+    }
+
     nonisolated static func snapshot(
         from tasks: [AppTask],
         today: Date = Calendar.current.startOfDay(for: Date()),
