@@ -156,12 +156,20 @@ nonisolated enum CadenceTaskSearchSupport {
     /// one, as the Focus picker already matches ([[T-13871]]). The raw title was blank, so
     /// `untitled` did not find the row that says it, and `CadenceSearchMatcher` drops empty fields
     /// before taking `fields[0]` as the title, so the task's LIST name was scored as its title.
+    ///
+    /// **[[T-18702]]: a subtask's title is body text.** The inspector, the task row and the board
+    /// card all draw a task's subtasks, but nothing searched them, so `bank` found
+    /// `- [ ] call the bank` in the notes and not the same step added as a subtask. They join
+    /// after the notes, in checklist order, and never as `fields[0]`, so a task titled for the
+    /// query still outranks one whose subtask says it. **Done subtasks count too**: notes text is
+    /// matched whatever its checkbox says, and a finished step is still drawn, struck through.
     static func searchFields(for task: AppTask) -> [String] {
         [
             TaskTitleSupport.displayTitle(task.title),
             containerLabel(for: task),
             task.context?.name ?? "",
             task.notes,
+            subtaskText(for: task),
             [
                 lifecycleAliases(for: task),
                 task.priority.label,
@@ -169,6 +177,11 @@ nonisolated enum CadenceTaskSearchSupport {
                 CadenceSearchTagSupport.text(for: task.sortedTags)
             ].joined(separator: " ")
         ]
+    }
+
+    /// Every subtask title, done or not, in checklist order. See `searchFields(for:)`.
+    static func subtaskText(for task: AppTask) -> String {
+        (task.subtasks ?? []).subtaskSorted().map(\.title).joined(separator: " ")
     }
 
     static func matchScore(query: String, task: AppTask) -> Int? {

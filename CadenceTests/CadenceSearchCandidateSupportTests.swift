@@ -305,6 +305,41 @@ struct CadenceSearchCandidateSupportTests {
         #expect(CadenceListSearchSupport.matchScore(query: "untitled", area: area) == nil)
     }
 
+    // MARK: - T-18702: a subtask's title is searchable body text
+
+    /// A word only a subtask holds finds its task on both surfaces, a finished subtask's word
+    /// included, and a task titled for the word still ranks above the one whose subtask says it.
+    @Test func aSubtaskTitleFindsItsTaskBelowATaskTitledForTheWord() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let parent = AppTask(title: "Sort out the mortgage")
+        let open = Subtask(title: "Call the bank")
+        let done = Subtask(title: "Scan the payslips")
+        done.isDone = true
+        done.order = 1
+        parent.subtasks = [open, done]
+        let titled = AppTask(title: "Bank holiday plans")
+        let unrelated = AppTask(title: "Water the plants")
+        modelContext.insert(parent)
+        modelContext.insert(open)
+        modelContext.insert(done)
+        modelContext.insert(titled)
+        modelContext.insert(unrelated)
+        try modelContext.save()
+
+        #expect(CadenceTaskSearchSupport.searchFields(for: parent).first == "Sort out the mortgage",
+                "a subtask is never the title field")
+        let openScore = try #require(CadenceTaskSearchSupport.matchScore(query: "bank", task: parent))
+        #expect(CadenceTaskSearchSupport.matchScore(query: "payslips", task: parent) != nil,
+                "a done subtask's title still finds its task")
+        #expect(CadenceTaskSearchSupport.matchScore(query: "bank", task: unrelated) == nil)
+        let titleScore = try #require(CadenceTaskSearchSupport.matchScore(query: "bank", task: titled))
+        #expect(titleScore > openScore)
+
+        let ranked = GlobalSearchIndexSupport.taskResults(tasks: [unrelated, parent, titled], query: "bank")
+        #expect(ranked.map(\.destination) == [.task(titled.id), .task(parent.id)])
+    }
+
     // MARK: - T-5880: the default section is never named in a result subtitle
 
     @Test func aTaskResultSubtitleNamesOnlyASectionTheUserNamed() throws {

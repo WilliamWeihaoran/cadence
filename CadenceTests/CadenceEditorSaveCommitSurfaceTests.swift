@@ -1243,7 +1243,7 @@ struct CadenceEditorSaveCommitSurfaceTests {
     @Test func theT13161InspectorSubtaskTitleIsAnEditableFieldAsOnIOS() throws {
         let row = try scanned("Cadence/macOS/Views/TasksPanelSupportViews.swift")
         let rowBody = try #require(CadenceSourceScan.declarationBody("struct SubtaskRow: View", in: row))
-        #expect(rowBody.contains(#"TextField("Subtask", text: $subtask.title)"#))
+        #expect(rowBody.contains(#"TextField("Subtask", text: $subtask.title, axis: .vertical)"#))
         // Every edit commits, as iOS's `onChange` does; Return alone would leave typing pending.
         let onEdit = try #require(CadenceSourceScan.declarationBody(".onChange(of: subtask.title)", in: rowBody))
         #expect(onEdit.contains("Self.commitTitle(in: modelContext)"))

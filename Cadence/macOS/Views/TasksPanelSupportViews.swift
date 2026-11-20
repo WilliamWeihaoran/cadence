@@ -150,12 +150,15 @@ struct SubtaskRow: View {
             .accessibilityValue(displayTitle)
 
             if editsTitle {
-                TextField("Subtask", text: $subtask.title)
+                // [[T-18703]]: wraps to two lines as iOS's `iOSSubtaskRow` does, rather than
+                // clipping a long title at the 336pt popover's edge. Return still submits a
+                // vertical field on macOS. The preview branch below stays one line.
+                TextField("Subtask", text: $subtask.title, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                     .foregroundStyle(titleInk.color(isDone: subtask.isDone))
                     .strikethrough(subtask.isDone, color: Theme.dim)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .focused($isTitleFocused)
                     .onSubmit { settleTitleEdit() }
                     .onChange(of: subtask.title) { previous, _ in

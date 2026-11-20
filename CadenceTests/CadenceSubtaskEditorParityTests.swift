@@ -46,7 +46,7 @@ struct CadenceSubtaskEditorParityTests {
     @Test func theMacSubtaskPreviewTakesTheIOSMetadataRole() throws {
         let row = try body("struct SubtaskRow: View", in: Self.tasksPanelSupportPath)
         let preview = try #require(row.range(of: "Text(displayTitle)"))
-        let field = try #require(row.range(of: "TextField(\"Subtask\", text: $subtask.title)"))
+        let field = try #require(row.range(of: "TextField(\"Subtask\", text: $subtask.title, axis: .vertical)"))
         let previewTail = row[preview.upperBound...]
         let previewFont = try #require(previewTail.range(of: ".cadenceFont(.metadata)"))
         // The role sits on the preview Text itself, before the row's next element.
@@ -60,6 +60,24 @@ struct CadenceSubtaskEditorParityTests {
 
         let iOSPreview = try body("struct iOSTaskRowSubtaskRow: View", in: Self.iOSTaskRowActionViewsPath)
         #expect(iOSPreview.contains(".cadenceFont(.metadata)"))
+    }
+
+    /// [[T-18703]]: the Mac inspector's editable title wraps to the two lines iOS's sheet field
+    /// does, instead of clipping on one; the Mac preview branch keeps its one line.
+    @Test func theMacInspectorSubtaskFieldWrapsToTheLinesTheIOSSheetFieldDoes() throws {
+        let row = try body("struct SubtaskRow: View", in: Self.tasksPanelSupportPath)
+        let field = try #require(row.range(of: "TextField(\"Subtask\", text: $subtask.title, axis: .vertical)"))
+        let preview = try #require(row.range(of: "Text(displayTitle)"))
+        #expect(field.upperBound < preview.lowerBound, "non-vacuity: the field branch precedes the preview")
+        let fieldBranch = row[field.upperBound..<preview.lowerBound]
+        #expect(fieldBranch.contains(".lineLimit(2)"))
+        #expect(!fieldBranch.contains(".lineLimit(1)"))
+        let previewEnd = try #require(row[preview.upperBound...].range(of: "Spacer(minLength: 0)"))
+        #expect(row[preview.upperBound..<previewEnd.lowerBound].contains(".lineLimit(1)"))
+
+        let sheetRow = try body("struct iOSSubtaskRow: View", in: Self.iOSTaskDetailComponentsPath)
+        #expect(sheetRow.contains("TextField(\"Subtask\", text: $subtask.title, axis: .vertical)"))
+        #expect(sheetRow.contains(".lineLimit(2)"))
     }
 
     @Test func everyOtherSubtaskTitleReadsTheSharedInk() throws {
