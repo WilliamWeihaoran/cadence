@@ -64,12 +64,15 @@ struct MacTaskRowContextMenuParityTests {
         // struct; the Mac menu calls it inline. [[T-9122]] adds the scope-answer half beside it
         // (`applyRecurrenceRule(_:scope:for:modelContext:)`, and the `recurrenceTargets` it hands
         // the commit), which iOS keeps in its scope dialog modifier: on the Mac it is a static on
-        // the menu because the row's dialog and the note embed card's dialog share it. Those two
-        // calls are the only allowed difference.
+        // the menu because the row's dialog and the note embed card's dialog share it. [[T-18520]]
+        // gates the scope dialog on `recurrenceEditOffersScopeChoice`, which iOS calls from its
+        // repeat picker content (`iOSTaskRowRepeatPickerContent`), also outside its menu struct.
+        // Those three calls are the only allowed difference.
         #expect(iOS.subtracting(mac).isEmpty, "the Mac menu does not call \(iOS.subtracting(mac).sorted())")
         #expect(
             mac.subtracting(iOS) == [
                 "CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule",
+                "CadenceTaskRecurrenceWorkflowSupport.recurrenceEditOffersScopeChoice",
                 "CadenceTaskRecurrenceWorkflowSupport.recurrenceTargets",
             ],
             "the Mac menu calls \(mac.subtracting(iOS).sorted()), which iOS's menu does not"
