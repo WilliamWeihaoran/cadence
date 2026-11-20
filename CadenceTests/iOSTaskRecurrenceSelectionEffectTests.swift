@@ -68,7 +68,12 @@ struct iOSTaskRecurrenceSelectionEffectTests {
         let context = ModelContext(try CadenceTestStore.container())
         let task = AppTask(title: "Stand-up")
         task.recurrenceRule = .weekly
+        // [[T-18520]]: asked only where the scopes differ -- here, an occurrence that has spawned.
+        let successor = AppTask(title: "Stand-up")
+        successor.recurrenceRule = .weekly
+        task.recurrenceSpawnedTaskID = successor.id
         context.insert(task)
+        context.insert(successor)
         try context.save()
 
         #expect(task.isRecurrenceSeriesMember, "fixture is not the series case this test is about")
@@ -77,7 +82,7 @@ struct iOSTaskRecurrenceSelectionEffectTests {
         let landed = iOSTaskRecurrenceSelection.select(
             .monthly,
             for: task,
-            allTasks: [task],
+            allTasks: [task, successor],
             modelContext: context,
             pendingRecurrenceRule: Binding(get: { parked }, set: { parked = $0 })
         )
@@ -89,6 +94,33 @@ struct iOSTaskRecurrenceSelectionEffectTests {
             "a series member's rule was rewritten before the user chose a scope"
         )
         #expect(context.hasChanges == false, "the series branch wrote to the store")
+    }
+
+    /// **[[T-18520]]: a live occurrence is not parked.** Nothing comes after it yet, so both
+    /// scopes would reach it alone; the rule lands at once and the successor its completion
+    /// spawns carries it.
+    @Test func aLiveOccurrenceTakesTheRuleAtOnceAndItsSuccessorKeepsIt() throws {
+        let context = ModelContext(try CadenceTestStore.container())
+        let task = AppTask(title: "Stand-up")
+        task.recurrenceRule = .weekly
+        task.scheduledDate = "2026-11-16"
+        context.insert(task)
+        try context.save()
+
+        var parked: TaskRecurrenceRule?
+        let landed = iOSTaskRecurrenceSelection.select(
+            .daily,
+            for: task,
+            allTasks: [task],
+            modelContext: context,
+            pendingRecurrenceRule: Binding(get: { parked }, set: { parked = $0 })
+        )
+
+        #expect(landed)
+        #expect(parked == nil, "a live occurrence with nothing after it armed the scope dialog")
+        #expect(task.recurrenceRule == .daily)
+        let successor = try #require(CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: context))
+        #expect(successor.recurrenceRule == .daily)
     }
 
     /// Re-picking the rule a task already has is a no-op that still lets the picker close.

@@ -170,6 +170,33 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         task.isRecurring && task.recurrenceSpawnedTaskID == nil && !task.recurrenceHasEnded
     }
 
+    /// Whether a rule or end edit on `task` has two different answers to "Only This Task" and
+    /// "This And Future Tasks" ([[T-18520]]) -- the one gate all five doors read before asking
+    /// "Change repeating task?": the Mac row (Repeat submenu, chip, note embed card, all through
+    /// `MacTaskRowContextMenu.selectRecurrenceRule`), the iOS row (`iOSTaskRecurrenceSelection`),
+    /// the Mac inspector's Save (`TaskInspectorScheduleCommit.needsRecurrenceScope`), the shared
+    /// inline panel (`CadenceTaskInlinePanel.asksSeriesScope`) and the iOS sheet's Save.
+    ///
+    /// **Being a series member is not enough.** The open occurrence of a series has no successor
+    /// yet -- one is minted only on completion, skip or delete-this -- so `recurrenceTargets`
+    /// reaches the task alone under either scope, and the successor spawned later copies the
+    /// task's rule and end (`makeNextRecurringTask`). "Only This Task" therefore changed, or with
+    /// Never / an end condition ended, the whole series, against `taskScopeMessage`'s promise.
+    /// The model has no stored series rule to keep a one-occurrence override against, so the
+    /// honest door asks only where the two scopes reach different rows: the task has spawned its
+    /// successor, or `allTasks` holds a later member that "this and future" would rewrite.
+    /// Otherwise the edit lands at once; the doors pass `.thisTask`, which then reaches exactly the
+    /// rows `.thisAndFuture` would.
+    ///
+    /// The spawned link alone is enough to ask even when the successor is missing from `allTasks`:
+    /// the Mac row fetches the whole store for "this and future", so a caller's partial list must
+    /// not decide that a linked series has nothing ahead of it.
+    static func recurrenceEditOffersScopeChoice(for task: AppTask, allTasks: [AppTask]) -> Bool {
+        guard task.isRecurrenceSeriesMember else { return false }
+        if task.recurrenceSpawnedTaskID != nil { return true }
+        return recurrenceTargets(from: task, allTasks: allTasks, scope: .thisAndFuture).count > 1
+    }
+
     /// If a predecessor's recorded `recurrenceSpawnedTaskID` points at a task being deleted, that
     /// predecessor would otherwise believe the series already has a live next occurrence forever —
     /// even though that occurrence no longer exists. That silently kills the series: the predecessor

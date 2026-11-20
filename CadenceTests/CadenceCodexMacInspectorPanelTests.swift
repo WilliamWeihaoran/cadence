@@ -209,15 +209,15 @@ struct CadenceCodexMacInspectorPanelTests {
         let opened = CadenceScheduleDraft(editing: task)
         var draft = opened
         draft.title = "Edited"
-        #expect(!TaskInspectorScheduleCommit.needsRecurrenceScope(draft, opened: opened, task: task))
+        #expect(!TaskInspectorScheduleCommit.needsRecurrenceScope(draft, opened: opened, task: task, allTasks: tasks))
         var endOnly = opened
         endOnly.selectSeriesEnd(.afterCount)
-        #expect(TaskInspectorScheduleCommit.needsRecurrenceScope(endOnly, opened: opened, task: task))
+        #expect(TaskInspectorScheduleCommit.needsRecurrenceScope(endOnly, opened: opened, task: task, allTasks: tasks))
         draft.repeatRule = .weekly
         draft.selectSeriesEnd(.afterCount)
         draft.setSeriesEndCount(1)
         #expect(draft.seriesEndCount == task.recurrenceOccurrenceNumber)
-        #expect(TaskInspectorScheduleCommit.needsRecurrenceScope(draft, opened: opened, task: task))
+        #expect(TaskInspectorScheduleCommit.needsRecurrenceScope(draft, opened: opened, task: task, allTasks: tasks))
         // Editing, cancelling the draft, or cancelling scope has no record write to undo.
         #expect(tasks.allSatisfy { $0.recurrenceRule == .daily })
         #expect(task.title == "Occurrence 1")
@@ -272,7 +272,7 @@ struct CadenceCodexMacInspectorPanelTests {
         var singleDraft = CadenceScheduleDraft(editing: single)
         singleDraft.repeatRule = .daily
         #expect(!TaskInspectorScheduleCommit.needsRecurrenceScope(
-            singleDraft, opened: CadenceScheduleDraft(editing: single), task: single
+            singleDraft, opened: CadenceScheduleDraft(editing: single), task: single, allTasks: [single]
         ))
     }
 
@@ -296,7 +296,7 @@ struct CadenceCodexMacInspectorPanelTests {
         #expect(editor.contains("offersTaskRepeat: true"))
         #expect(editor.contains("guard beforeSave() else"))
         let save = try #require(CadenceSourceScan.functionBody(named: "save", in: editor))
-        #expect(save.contains("TaskInspectorScheduleCommit.needsRecurrenceScope(draft, opened: openedDraft, task: task)"))
+        #expect(save.contains("TaskInspectorScheduleCommit.needsRecurrenceScope(draft, opened: openedDraft, task: task, allTasks: allTasks)"))
         #expect(save.contains("isAskingRecurrenceScope = true"))
         #expect(editor.contains(".confirmationDialog("))
         #expect(editor.contains("saveFailureNotice = applySave(scope: .thisTask)"))

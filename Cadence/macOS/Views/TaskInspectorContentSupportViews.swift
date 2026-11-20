@@ -754,7 +754,7 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
     /// again drew the sentence twice. The popover stays open either way; only Save's dismiss closes it.
     private func save() -> String? {
         guard beforeSave() else { return nil }
-        if TaskInspectorScheduleCommit.needsRecurrenceScope(draft, opened: openedDraft, task: task) {
+        if TaskInspectorScheduleCommit.needsRecurrenceScope(draft, opened: openedDraft, task: task, allTasks: allTasks) {
             isAskingRecurrenceScope = true
             return nil
         }
@@ -776,10 +776,12 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
 /// platforms since [[T-16625]] (`CadenceTaskInspectorNotes`).
 @MainActor
 enum TaskInspectorScheduleCommit {
+    /// [[T-18520]]: asked only where the two scopes reach different rows.
     static func needsRecurrenceScope(
-        _ draft: CadenceScheduleDraft, opened: CadenceScheduleDraft, task: AppTask
+        _ draft: CadenceScheduleDraft, opened: CadenceScheduleDraft, task: AppTask, allTasks: [AppTask]
     ) -> Bool {
-        draft.changesRecurrence(from: opened) && task.isRecurrenceSeriesMember
+        draft.changesRecurrence(from: opened)
+            && CadenceTaskRecurrenceWorkflowSupport.recurrenceEditOffersScopeChoice(for: task, allTasks: allTasks)
     }
 
     static func save(

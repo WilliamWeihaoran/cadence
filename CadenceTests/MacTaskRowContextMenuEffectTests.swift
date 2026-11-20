@@ -466,6 +466,8 @@ struct MacTaskRowContextMenuEffectTests {
     @Test func repeatOnASeriesMemberWaitsForTheScopeAndWritesNothing() throws {
         let f = try makeFixture()
         f.subject.recurrenceRule = .weekly
+        // [[T-18520]]: asked only where the scopes differ -- here, an occurrence that has spawned.
+        f.subject.recurrenceSpawnedTaskID = f.sibling.id
         try f.context.save()
         var commits = 0
 

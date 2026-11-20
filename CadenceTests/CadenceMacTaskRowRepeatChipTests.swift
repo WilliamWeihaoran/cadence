@@ -143,13 +143,18 @@ struct CadenceMacTaskRowRepeatChipTests {
         let context = ModelContext(container)
         let task = AppTask(title: "Weekly review")
         task.recurrenceRule = .weekly
+        // [[T-18520]]: asked only where the scopes differ -- here, an occurrence that has spawned.
+        let successor = AppTask(title: "Weekly review")
+        successor.recurrenceRule = .weekly
+        task.recurrenceSpawnedTaskID = successor.id
         context.insert(task)
+        context.insert(successor)
         try context.save()
 
         let outcome = MacTaskRowContextMenu.selectRecurrenceRule(
             .daily,
             for: task,
-            allTasks: [task],
+            allTasks: [task, successor],
             modelContext: context
         )
 
@@ -161,7 +166,8 @@ struct CadenceMacTaskRowRepeatChipTests {
 
     /// **[[T-16961]]: repeat on, off, on again is not a series question.** Driven through the real
     /// writers in the order a user meets them on the row: a plain task takes Daily at once, its
-    /// Never is asked about (it repeats) and answered "Only This Task", and the Weekly that follows
+    /// Never lands at once too (it has no successor, so both scopes reach it alone, [[T-18520]]),
+    /// and the Weekly that follows
     /// lands at once again -- it used to stop at "Change repeating task?" because the first rule
     /// had stamped the task's own id as its series and nothing ever took the stamp off.
     @Test func aTaskWhoseRepeatWasTurnedOffTakesANewRuleWithoutTheScopeQuestion() throws {
@@ -172,13 +178,37 @@ struct CadenceMacTaskRowRepeatChipTests {
         try context.save()
 
         #expect(MacTaskRowContextMenu.selectRecurrenceRule(.daily, for: task, allTasks: [task], modelContext: context) == .settled)
-        #expect(MacTaskRowContextMenu.selectRecurrenceRule(.none, for: task, allTasks: [task], modelContext: context) == .needsRecurrenceScope(.none))
-        #expect(MacTaskRowContextMenu.applyRecurrenceRule(.none, scope: .thisTask, for: task, modelContext: context) == .settled)
+        #expect(MacTaskRowContextMenu.selectRecurrenceRule(.none, for: task, allTasks: [task], modelContext: context) == .settled)
         #expect(task.recurrenceRule == .none, "fixture never turned the repeat off")
 
         let outcome = MacTaskRowContextMenu.selectRecurrenceRule(.weekly, for: task, allTasks: [task], modelContext: context)
         #expect(outcome == .settled, "a task that no longer repeats was asked which occurrences to change")
         #expect(task.recurrenceRule == .weekly)
+    }
+
+    /// **[[T-18520]], through the real Mac writer.** A weekly task's live occurrence takes Daily
+    /// at once -- no "Change repeating task?" whose "Only This Task" would have done the same --
+    /// and the occurrence its completion spawns repeats daily. The settled one, which now has a
+    /// successor, is asked again.
+    @Test func aLiveOccurrenceTakesANewRuleAtOnceAndItsSuccessorKeepsIt() throws {
+        let context = ModelContext(try CadenceTestStore.container())
+        let task = AppTask(title: "Weekly review")
+        task.recurrenceRule = .weekly
+        task.scheduledDate = "2026-11-16"
+        context.insert(task)
+        try context.save()
+
+        let outcome = MacTaskRowContextMenu.selectRecurrenceRule(.daily, for: task, allTasks: [task], modelContext: context)
+        #expect(outcome == .settled, "a live occurrence with nothing after it was asked which occurrences to change")
+        #expect(task.recurrenceRule == .daily)
+
+        let successor = try #require(CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: context))
+        #expect(successor.recurrenceRule == .daily)
+        #expect(
+            MacTaskRowContextMenu.selectRecurrenceRule(.monthly, for: task, allTasks: [task, successor], modelContext: context)
+                == .needsRecurrenceScope(.monthly),
+            "an occurrence whose successor exists lost the scope question"
+        )
     }
 
     // MARK: - [[T-9122]]: the note embed card's Repeat field is the same picker

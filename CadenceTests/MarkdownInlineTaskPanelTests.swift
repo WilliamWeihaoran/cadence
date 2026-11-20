@@ -366,18 +366,20 @@ struct CadenceTaskInlinePanelSeriesScopeTests {
         var moved = opened
         moved.repeatRule = .weekly
 
-        #expect(!CadenceTaskInlinePanel.asksSeriesScope(draft: opened, opened: opened, task: single))
+        #expect(!CadenceTaskInlinePanel.asksSeriesScope(draft: opened, opened: opened, task: single, allTasks: [single]))
         // No series to reach, so a new rule lands without the question.
-        #expect(!CadenceTaskInlinePanel.asksSeriesScope(draft: moved, opened: opened, task: single))
+        #expect(!CadenceTaskInlinePanel.asksSeriesScope(draft: moved, opened: opened, task: single, allTasks: [single]))
 
         let member = AppTask(title: "Water plants")
         member.recurrenceRule = .daily
+        // [[T-18520]]: a member is asked only where the scopes differ -- here, it has spawned.
+        member.recurrenceSpawnedTaskID = UUID()
         let memberOpened = CadenceScheduleDraft(editing: member)
         var memberMoved = memberOpened
         memberMoved.repeatRule = .weekly
         #expect(member.isRecurrenceSeriesMember)
-        #expect(CadenceTaskInlinePanel.asksSeriesScope(draft: memberMoved, opened: memberOpened, task: member))
-        #expect(!CadenceTaskInlinePanel.asksSeriesScope(draft: memberOpened, opened: memberOpened, task: member))
+        #expect(CadenceTaskInlinePanel.asksSeriesScope(draft: memberMoved, opened: memberOpened, task: member, allTasks: [member]))
+        #expect(!CadenceTaskInlinePanel.asksSeriesScope(draft: memberOpened, opened: memberOpened, task: member, allTasks: [member]))
     }
 
     /// **[[T-16961]]: a task that only USED to repeat is not a series.** Giving a task a rule
@@ -394,7 +396,7 @@ struct CadenceTaskInlinePanelSeriesScopeTests {
         moved.repeatRule = .weekly
         #expect(lapsed.recurrenceRule == .none, "fixture is not the lapsed case it claims")
         #expect(!lapsed.isRecurrenceSeriesMember, "a lone task reads as a series member on its own stamp")
-        #expect(!CadenceTaskInlinePanel.asksSeriesScope(draft: moved, opened: opened, task: lapsed))
+        #expect(!CadenceTaskInlinePanel.asksSeriesScope(draft: moved, opened: opened, task: lapsed, allTasks: [lapsed]))
 
         let root = AppTask(title: "Water plants")
         let successor = AppTask(title: "Water plants")
@@ -407,6 +409,51 @@ struct CadenceTaskInlinePanelSeriesScopeTests {
         root.recurrenceSeriesIDRaw = root.id.uuidString
         root.recurrenceSpawnedTaskID = successor.id
         #expect(root.isRecurrenceSeriesMember, "a root with a linked successor stopped being a member")
+    }
+
+    /// **[[T-18520]]: the scope question is asked only where its two answers differ.** The live
+    /// occurrence of a series has no successor yet, so "Only This Task" and "This And Future
+    /// Tasks" both reach that one row, and the successor its completion spawns copies whatever
+    /// rule it carries -- every door asked anyway, and "Only This Task" quietly changed the whole
+    /// series. The shared predicate every door reads now answers false there, and true once the
+    /// task has spawned, while a later member is in reach, or while its link names a successor the
+    /// caller's list does not hold.
+    @Test func theScopeQuestionIsAskedOnlyWhereTheTwoScopesReachDifferentRows() throws {
+        let context = ModelContext(try CadenceTestStore.container())
+        let live = AppTask(title: "Weekly review")
+        live.recurrenceRule = .weekly
+        live.scheduledDate = "2026-11-16"
+        context.insert(live)
+        try context.save()
+        #expect(live.isRecurrenceSeriesMember, "fixture is not a series member")
+        #expect(!CadenceTaskRecurrenceWorkflowSupport.recurrenceEditOffersScopeChoice(for: live, allTasks: [live]),
+                "a live occurrence with nothing after it was asked a question with one answer")
+
+        // The edit lands as the doors land it, and rides into the next occurrence: a series change.
+        CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(.daily, to: live, allTasks: [live], scope: .thisTask)
+        let successor = try #require(CadenceTaskRecurrenceWorkflowSupport.markDone(live, in: context))
+        #expect(successor.recurrenceRule == .daily)
+        #expect(live.recurrenceSpawnedTaskID == successor.id)
+
+        // Now the scopes differ for the settled one, and not for the new live one.
+        let all = [live, successor]
+        #expect(CadenceTaskRecurrenceWorkflowSupport.recurrenceEditOffersScopeChoice(for: live, allTasks: all))
+        #expect(CadenceTaskRecurrenceWorkflowSupport.recurrenceEditOffersScopeChoice(for: live, allTasks: [live]),
+                "a spawned link was ignored because the caller's list lacked the successor")
+        #expect(!CadenceTaskRecurrenceWorkflowSupport.recurrenceEditOffersScopeChoice(for: successor, allTasks: all),
+                "an earlier, settled occurrence counted as a future one")
+
+        // A later member with no link (a repaired chain) is still something "this and future" reaches.
+        let later = AppTask(title: "Weekly review")
+        later.recurrenceRule = .weekly
+        later.recurrenceSeriesIDRaw = successor.recurrenceSeriesID.uuidString
+        later.recurrenceOccurrenceIndex = successor.recurrenceOccurrenceIndex + 1
+        later.scheduledDate = "2026-12-01"
+        #expect(CadenceTaskRecurrenceWorkflowSupport.recurrenceEditOffersScopeChoice(for: successor, allTasks: all + [later]))
+
+        // A plain task never is.
+        let plain = AppTask(title: "Water plants")
+        #expect(!CadenceTaskRecurrenceWorkflowSupport.recurrenceEditOffersScopeChoice(for: plain, allTasks: [plain]))
     }
 
     /// The panel's half of [[T-3253]] (a): which of its rows a named opening row expands. `nil` —

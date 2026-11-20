@@ -381,7 +381,9 @@ struct iOSTaskDetailSheet: View {
         // alone writes them a frame later, after the sheet has committed and closed.
         notesFlush.flush()
         isNotesFocused = false
-        if draft.changesRecurrence(from: openedDraft) && task.isRecurrenceSeriesMember {
+        // [[T-18520]]: asked only where the two scopes reach different rows.
+        if draft.changesRecurrence(from: openedDraft)
+            && CadenceTaskRecurrenceWorkflowSupport.recurrenceEditOffersScopeChoice(for: task, allTasks: allTasks) {
             isAskingRecurrenceScope = true
             return nil
         }

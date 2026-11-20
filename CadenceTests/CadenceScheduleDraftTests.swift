@@ -1609,7 +1609,8 @@ struct CadenceTaskEditorPanelAdoptionTests {
     func saveAsksTheSeriesQuestionOnlyForASeries() throws {
         let sheet = try code("Cadence/iOS/iOSTaskDetailSheet.swift")
         let save = try #require(CadenceSourceScan.functionBody(named: "save", in: sheet))
-        #expect(save.contains("if draft.changesRecurrence(from: openedDraft) && task.isRecurrenceSeriesMember {"))
+        // [[T-18520]]: the shared predicate, not bare series membership.
+        #expect(save.contains("CadenceTaskRecurrenceWorkflowSupport.recurrenceEditOffersScopeChoice(for: task, allTasks: allTasks)"))
         #expect(save.contains("isAskingRecurrenceScope = true"))
         let apply = try #require(CadenceSourceScan.functionBody(named: "applySave", in: sheet))
         #expect(apply.contains("guard CadenceTaskEditDraftCommit.save("))

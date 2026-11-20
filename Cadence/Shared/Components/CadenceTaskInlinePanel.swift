@@ -141,7 +141,7 @@ struct CadenceTaskInlinePanel: View {
     /// `nil` always: a series edit stops at the scope question, and every outcome is reported
     /// through `saveFailureNotice`.
     private func save() -> String? {
-        if Self.asksSeriesScope(draft: draft, opened: openedDraft, task: task) {
+        if Self.asksSeriesScope(draft: draft, opened: openedDraft, task: task, allTasks: allTasks) {
             isAskingRecurrenceScope = true
             return nil
         }
@@ -150,9 +150,12 @@ struct CadenceTaskInlinePanel: View {
     }
 
     /// Whether Save has to ask "only this task, or this and future ones?" first: only when the
-    /// draft moved the series **and** there is a series to reach.
-    static func asksSeriesScope(draft: CadenceScheduleDraft, opened: CadenceScheduleDraft, task: AppTask) -> Bool {
-        draft.changesRecurrence(from: opened) && task.isRecurrenceSeriesMember
+    /// draft moved the series **and** the two scopes reach different rows ([[T-18520]]).
+    static func asksSeriesScope(
+        draft: CadenceScheduleDraft, opened: CadenceScheduleDraft, task: AppTask, allTasks: [AppTask]
+    ) -> Bool {
+        draft.changesRecurrence(from: opened)
+            && CadenceTaskRecurrenceWorkflowSupport.recurrenceEditOffersScopeChoice(for: task, allTasks: allTasks)
     }
 
     private func applySave(scope: CadenceTaskRecurrenceEditScope) {

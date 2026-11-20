@@ -303,7 +303,8 @@ struct MacTaskRowContextMenu: View {
     }
 
     /// The same three-way answer `iOSTaskRecurrenceSelection.select` gives: unchanged, parked for
-    /// the scope dialog (a series member must say "this one" or "this and future" first), or
+    /// the scope dialog (a task whose two scopes differ must say "this one" or "this and future"
+    /// first, [[T-18520]]), or
     /// committed — and a refused commit is reported, not dropped (T-761(c)).
     static func selectRecurrenceRule(
         _ rule: TaskRecurrenceRule,
@@ -313,7 +314,10 @@ struct MacTaskRowContextMenu: View {
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> ActionOutcome {
         guard task.recurrenceRule != rule else { return .settled }
-        guard !task.isRecurrenceSeriesMember else { return .needsRecurrenceScope(rule) }
+        // [[T-18520]]: asked only where the two scopes reach different rows.
+        guard !CadenceTaskRecurrenceWorkflowSupport.recurrenceEditOffersScopeChoice(for: task, allTasks: allTasks) else {
+            return .needsRecurrenceScope(rule)
+        }
         let landed = CadenceTaskFieldEditCommit.commit(task, in: modelContext, commit: commit) {
             CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
                 rule,

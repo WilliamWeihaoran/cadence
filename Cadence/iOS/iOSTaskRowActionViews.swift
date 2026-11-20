@@ -411,7 +411,8 @@ enum iOSTaskRecurrenceSelection {
         pendingRecurrenceRule: Binding<TaskRecurrenceRule?>
     ) -> Bool {
         guard task.recurrenceRule != rule else { return true }
-        guard !task.isRecurrenceSeriesMember else {
+        // [[T-18520]]: asked only where the two scopes reach different rows.
+        guard !CadenceTaskRecurrenceWorkflowSupport.recurrenceEditOffersScopeChoice(for: task, allTasks: allTasks) else {
             pendingRecurrenceRule.wrappedValue = rule
             return true
         }
