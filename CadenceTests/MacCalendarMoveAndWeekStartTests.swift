@@ -127,6 +127,52 @@ struct MacCalendarMoveAndWeekStartTests {
         #expect(CadenceSourceScan.matchCount(#"snappedMinute\(fromY:"#, in: code) == 0)
     }
 
+    // MARK: - T-18548: a resize released where it started is not a resize
+
+    @Test("A resize that ends on the stored range writes nothing")
+    func aResizeBackToTheStoredRangeWritesNothing() throws {
+        #expect(!TimelineEventBlockEditGate.commitsResize(start: 600, end: 660, storedStart: 600, storedEnd: 660))
+        #expect(TimelineEventBlockEditGate.commitsResize(start: 600, end: 665, storedStart: 600, storedEnd: 660))
+        #expect(TimelineEventBlockEditGate.commitsResize(start: 595, end: 660, storedStart: 600, storedEnd: 660))
+
+        // An event already ending at 24:00 whose end handle is pulled below the grid clamps back
+        // to its stored end, so the release writes nothing; pulled up instead, it does.
+        let metrics = Self.fullDay
+        let blockTop = metrics.yOffset(for: 23 * 60)
+        let blockHeight = metrics.yOffset(for: 24 * 60) - blockTop
+        let grabY = TimelineBlockGeometry.resizeHandleHeight(blockHeight: blockHeight) / 2
+        let session = TimelineResizeSession.begin(
+            edge: .end,
+            localY: grabY,
+            blockTopY: blockTop,
+            blockDrawnHeight: blockHeight,
+            originStartMin: 23 * 60,
+            originEndMin: 24 * 60,
+            metrics: metrics
+        )
+        let pastMidnight = metrics.resizedRange(
+            session: session, localY: grabY + 120, blockTopY: blockTop, blockDrawnHeight: blockHeight)
+        #expect(pastMidnight.start == 23 * 60 && pastMidnight.end == 24 * 60)
+        #expect(!TimelineEventBlockEditGate.commitsResize(
+            start: pastMidnight.start, end: pastMidnight.end, storedStart: 23 * 60, storedEnd: 24 * 60))
+        let pulledUp = metrics.resizedRange(
+            session: session, localY: grabY - 30, blockTopY: blockTop, blockDrawnHeight: blockHeight)
+        #expect(pulledUp.end < 24 * 60)
+        #expect(TimelineEventBlockEditGate.commitsResize(
+            start: pulledUp.start, end: pulledUp.end, storedStart: 23 * 60, storedEnd: 24 * 60))
+    }
+
+    @Test("The timeline block resizes through the gate and compares against the stored range")
+    func theBlockResizesThroughTheGate() throws {
+        let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineEventBlock.swift"))
+        #expect(code.count > 1_000)
+        #expect(
+            CadenceSourceScan.matchCount(#"private func endResize\(\) \{\s*let finalStart\s*= liveStartMin\s*\?\? effectiveStartMin\s*let finalDuration = liveDurationMinutes \?\? effectiveDuration\s*guard TimelineEventBlockEditGate\.commitsResize\(\s*start: finalStart,\s*end: finalStart \+ finalDuration,\s*storedStart: item\.startMin,\s*storedEnd: item\.startMin \+ item\.durationMinutes\s*\) else \{\s*liveStartMin = nil\s*liveDurationMinutes = nil\s*resizeSession = nil\s*return\s*\}\s*requestEventMutation\(\.resize\("#, in: code) == 1,
+            "a resize that changed nothing is written again, or leaves its live state behind"
+        )
+        #expect(CadenceSourceScan.matchCount(#"TimelineEventBlockEditGate\.commitsResize\("#, in: code) == 1)
+    }
+
     // MARK: - T-5361: one week start for the headings and the tiling
 
     private static func calendar(firstWeekday: Int) -> Calendar {

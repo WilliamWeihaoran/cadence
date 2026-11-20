@@ -92,6 +92,17 @@ enum TimelineEventBlockEditGate {
         newStartMin != storedStartMin
     }
 
+    /// Whether a finished resize gesture writes anything ([[T-18548]]).
+    ///
+    /// A handle dragged past the 3pt activation distance and released back on its own row, or an
+    /// end handle pulled below 24:00 on an event that already ends there (the range clamps to the
+    /// day), resolves to the range the event already spans. Writing it raised "Change recurring
+    /// event?" for nothing on a series member -- the move's [[T-5354]] rule, for the edges.
+    /// Compared against the stored range, never the live one.
+    static func commitsResize(start: Int, end: Int, storedStart: Int, storedEnd: Int) -> Bool {
+        start != storedStart || end != storedEnd
+    }
+
     /// The start minute a move gesture resolves to for a block whose top is at canvas `topY`
     /// ([[T-5355]]).
     ///

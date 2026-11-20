@@ -300,8 +300,8 @@ struct TimelineEventBlock: View {
                             updateResize(localY: value.location.y)
                         }
                         .onEnded { value in
-                            // `endResize` writes back to EventKit unconditionally, and on a
-                            // recurring event that raises the "Change recurring event?" dialog. It
+                            // `endResize` writes back to EventKit whenever the range changed, and on
+                            // a recurring event that raises the "Change recurring event?" dialog. It
                             // used to run for a press that never moved, because `minimumDistance: 0`
                             // guarantees an `onChanged` on mouse-down and that always opened a
                             // session. A click is now a click.
@@ -351,6 +351,19 @@ struct TimelineEventBlock: View {
     private func endResize() {
         let finalStart    = liveStartMin        ?? effectiveStartMin
         let finalDuration = liveDurationMinutes ?? effectiveDuration
+        // A resize released on the range the event already spans writes nothing ([[T-18548]]):
+        // no write means no refresh, so the live state is put back here, not by `onChange`.
+        guard TimelineEventBlockEditGate.commitsResize(
+            start: finalStart,
+            end: finalStart + finalDuration,
+            storedStart: item.startMin,
+            storedEnd: item.startMin + item.durationMinutes
+        ) else {
+            liveStartMin = nil
+            liveDurationMinutes = nil
+            resizeSession = nil
+            return
+        }
         // The end is the row the user let go on, a wall-clock reading ([[T-16578]]).
         requestEventMutation(.resize(startMin: finalStart, endMin: finalStart + finalDuration))
         // Keep live state until item refreshes (onChange clears it)
