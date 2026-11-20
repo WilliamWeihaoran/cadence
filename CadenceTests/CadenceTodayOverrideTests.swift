@@ -1,5 +1,7 @@
 import Combine
 import Foundation
+import notify
+import os
 import Testing
 @testable import Cadence
 
@@ -101,21 +103,69 @@ struct CadenceTodayOverrideTests {
 
     /// The route an agent actually has: `simctl spawn <udid> notifyutil -p <name>`. A unique name,
     /// so nothing else on this Mac can post it and the live name is never touched.
-    @Test func aDarwinPostOfTheListenedNameAdvancesTheOverride() async throws {
+    ///
+    /// [[T-18570]]: this was the lone red of many full runs. Measured, it was never late delivery:
+    /// notifyd recorded the post, the main queue answered in under a millisecond, and a raw
+    /// `notify_register_dispatch` on a private queue never fired either. Every GCD worker in the
+    /// test host was parked for good in `-[NSAnimation _runBlocking]` (an AppKit window-transform
+    /// animation each test window leaves behind), so libnotify -- which needs a worker before it
+    /// can hand anything to the main thread -- could deliver nothing. The scheme's
+    /// `-NSAutomaticWindowAnimationsEnabled NO` removes the leak; the test below pins it.
+    ///
+    /// The wait is on the signal `advance()` itself sends, not a polled budget; `.timeLimit` is only
+    /// the hang guard, and a raw notify witness says which side failed if it ever trips again.
+    @Test(.timeLimit(.minutes(1)))
+    func aDarwinPostOfTheListenedNameAdvancesTheOverride() async throws {
         let name = "com.haoranwei.Cadence.tests.todayOverride.\(UUID().uuidString)"
-        let override = CadenceTodayOverride(offsetDays: 0, center: NotificationCenter())
+        let center = NotificationCenter()
+        let override = CadenceTodayOverride(offsetDays: 0, center: center)
+        // Observe before posting; the stream buffers, so a delivery that beats the await is kept.
+        let (signals, signal) = AsyncStream<Bool>.makeStream()
+        let token = center.addObserver(forName: .NSCalendarDayChanged, object: nil, queue: nil) { _ in
+            signal.yield(true)
+        }
+        defer { center.removeObserver(token) }
         override.listen(forDarwinNotificationNamed: name)
         defer { override.stopListening(forDarwinNotificationNamed: name) }
+
+        let transportDelivered = OSAllocatedUnfairLock(initialState: false)
+        var witness: Int32 = 0
+        _ = notify_register_dispatch(name, &witness, DispatchQueue(label: "CadenceTodayOverrideTests.witness")) { _ in
+            transportDelivered.withLock { $0 = true }
+        }
+        defer { notify_cancel(witness) }
 
         CFNotificationCenterPostNotification(
             CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName(name as CFString), nil, nil, true
         )
-        // Delivery is asynchronous (the main run loop); poll for the COUNT, not for a time.
-        for _ in 0..<200 where override.offsetDays == 0 {
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
+        var iterator = signals.makeAsyncIterator()
+        let delivered = await iterator.next() ?? false
+        #expect(delivered, """
+            the Darwin post never reached the listener; a raw notify listener \
+            \(transportDelivered.withLock { $0 } ? "did" : "did NOT -- the process cannot receive notify at all") get it
+            """)
+        // The callout runs on the main thread; a main-actor hop is queued behind it, so any further
+        // advance the same post caused has landed before the count is read -- exactly one.
+        await MainActor.run {}
         #expect(override.offsetDays == 1)
     }
+
+    #if os(macOS)
+    /// [[T-18570]]'s root cause, pinned where it bit. On this OS every test window ordered on or
+    /// off screen (titled, borderless or a sheet; measured standalone) parks one GCD worker forever
+    /// in an AppKit window-transform animation. Sixty-four of them exhaust the pool, after which no
+    /// global or private queue runs -- Darwin delivery was only the first casualty. Setting the
+    /// default in the argument domain stops it for every window, SwiftUI's included. The host's
+    /// own argv is read, so a scheme edit that drops the argument fails here, not as a flake later.
+    @Test func theTestHostRunsWithoutWindowAnimations() throws {
+        let arguments = ProcessInfo.processInfo.arguments
+        let flag = try #require(
+            arguments.firstIndex(of: "-NSAutomaticWindowAnimationsEnabled"),
+            "the scheme's TestAction no longer passes -NSAutomaticWindowAnimationsEnabled NO"
+        )
+        #expect(arguments.indices.contains(flag + 1) && arguments[flag + 1] == "NO")
+    }
+    #endif
 
     // MARK: - now() / today() (T-15231)
 

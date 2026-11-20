@@ -50,6 +50,10 @@
             argument = "-CadenceSuiteName xctest-host"
             isEnabled = "YES">
          </CommandLineArgument>
+         <CommandLineArgument
+            argument = "-NSAutomaticWindowAnimationsEnabled NO"
+            isEnabled = "YES">
+         </CommandLineArgument>
       </CommandLineArguments>
       <EnvironmentVariables>
          <EnvironmentVariable
