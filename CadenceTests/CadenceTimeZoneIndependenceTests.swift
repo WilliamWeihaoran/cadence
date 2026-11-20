@@ -630,6 +630,9 @@ struct CadenceTimeZoneIndependenceTests {
     static let bareNowLedger: [String: Int] = [
         // 2 since T-15302's `listHabitsNamesTheUnitItsStreakIsCountedIn` (T-15400): `listHabits`
         // takes no `now`, so a streak test must place completions against the real current week.
+        // 2 since T-18610 (4dd10517): the archive-cancellation tests stamp `completedAt` now so the
+        // rows land on today's Completed Today, which is the surface under test (T-18678).
+        "CadenceTests/CadenceCancelledTaskReachabilityTests.swift": 2,
         "CadenceTests/CadenceReadServiceTests.swift": 2,
         "CadenceTests/CadenceRegularPaneLayoutTests.swift": 1,
         "CadenceTests/CadenceTaskComposerLayoutTests.swift": 1,
