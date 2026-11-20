@@ -532,10 +532,7 @@ enum GlobalSearchIndexSupport {
         let written = notes.filter(CadenceSearchIdleSuggestions.hasVisibleText)
         return rankedByScore(written.compactMap { note -> (result: GlobalSearchResult, score: Int)? in
             guard let subtitle = noteSubtitle(for: note) else { return nil }
-            let title = NoteReferencePanelSupport.searchTitle(note)
-            let content = CadenceSearchNoteText.body(of: note, taskTitles: taskTitles)
-            let tags = CadenceSearchTagSupport.text(for: note.sortedTags)
-            let fields = [title, content, subtitle, tags] + NoteReferencePanelSupport.searchKeyFields(note)
+            let fields = CadenceSearchNoteFields.fields(for: note, drawnSubtitle: subtitle, taskTitles: taskTitles)
             guard let score = CadenceSearchMatcher.matchScore(query: preparedQuery, fields: fields) else { return nil }
             return (noteResult(note, subtitle: subtitle, taskTitles: taskTitles), score)
         })
@@ -586,7 +583,7 @@ enum GlobalSearchIndexSupport {
     /// row here.
     static func listNoteSubtitle(for note: Note) -> String {
         guard let container = NoteReferencePanelSupport.listContainerName(note) else { return "List" }
-        return "List • \(container)"
+        return CadenceSearchNoteFields.listDocumentSubtitle(container: container)
     }
 
     /// **T-372a: `id` is the tie-break.** `GlobalSearchResult.id` is already the

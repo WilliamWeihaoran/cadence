@@ -90,8 +90,12 @@ struct CadenceSearchNoteFrontmatterTests {
         let code = CadenceSourceScan.codeOnly(raw)
         #expect(code.contains("struct iOSSearchView"))
         let builder = try #require(CadenceSourceScan.functionBody(named: "noteSectionResults", in: code))
+        // [[T-18597]]: the body is matched through the field list Cmd+K shares, which reads it.
+        #expect(CadenceSourceScan.matchCount(#"CadenceSearchNoteFields\.fields\("#, in: builder) == 1)
+        let fields = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceSearchNoteExcerpt.swift"))
+        let shared = try #require(CadenceSourceScan.functionBody(named: "fields", in: fields))
         #expect(CadenceSourceScan.matchCount(
-            #"CadenceSearchNoteText\.body\(of: note, taskTitles: taskTitles\)"#, in: builder
+            #"CadenceSearchNoteText\.body\(of: note, taskTitles: taskTitles\)"#, in: shared
         ) == 1)
         #expect(CadenceSourceScan.matchCount(#"resolving\(note\.content"#, in: code) == 0)
     }

@@ -401,8 +401,14 @@ struct CadenceNoteReferencePanelSurfaceTests {
         #endif
 
         let search = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchView.swift"))
-        #expect(search.components(separatedBy: "NoteReferencePanelSupport.searchTitle(note)").count - 1 == 2)
-        #expect(search.components(separatedBy: "NoteReferencePanelSupport.searchKeyFields(note)").count - 1 == 1)
+        // [[T-18597]]: the match fields -- the title and the key among them -- are the shared
+        // `CadenceSearchNoteFields.fields`, which Cmd+K scores too; the row's title is the other use.
+        #expect(search.components(separatedBy: "NoteReferencePanelSupport.searchTitle(note)").count - 1 == 1)
+        #expect(search.components(separatedBy: "CadenceSearchNoteFields.fields(").count - 1 == 1)
+        #expect(!search.contains("NoteReferencePanelSupport.searchKeyFields(note)"))
+        let fields = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceSearchNoteExcerpt.swift"))
+        #expect(fields.contains("NoteReferencePanelSupport.searchTitle(note),"))
+        #expect(fields.contains("] + NoteReferencePanelSupport.searchKeyFields(note)"))
         #expect(!search.contains("title: note.displayTitle,"))
     }
 

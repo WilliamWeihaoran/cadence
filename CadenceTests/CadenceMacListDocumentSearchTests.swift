@@ -92,6 +92,50 @@ struct CadenceMacListDocumentSearchTests {
         #expect(tagged.map(\.id) == [CadenceSearchIdentity.note(fixture.taggedNote.id)])
     }
 
+    /// **[[T-18597]]: the word `list` finds a list document in iOS Search as it does in Cmd+K.**
+    /// Cmd+K scores the drawn `List • Marketing`; iOS Search draws `Marketing` and scored only
+    /// that, so `list` and `list marketing` found the document on the Mac and not on the phone.
+    /// Both now score `CadenceSearchNoteFields.fields`. iOS Search is `#if os(iOS)` and invisible
+    /// here, so its half is the shared field list fed the subtitle iOS draws (`noteKindDetail`),
+    /// scored by the same matcher -- `CadenceSearchSectionParityTests`' approach -- and the call
+    /// site is pinned in source by `CadenceSearchCandidateSupportTests`.
+    @Test func theWordListFindsAListDocumentOnBothSearchSurfaces() throws {
+        let fixture = try Fixture()
+        let filed = [fixture.areaNote, fixture.projectNote, fixture.taggedNote]
+        func iOSFinds(_ query: String) -> Set<UUID> {
+            let prepared = CadenceSearchMatcher.PreparedQuery(query)
+            return Set(filed.filter { note in
+                let fields = CadenceSearchNoteFields.fields(
+                    for: note, drawnSubtitle: NoteReferencePanelSupport.noteKindDetail(note), taskTitles: [:]
+                )
+                return CadenceSearchMatcher.matchScore(query: prepared, fields: fields) != nil
+            }.map(\.id))
+        }
+        func macFinds(_ query: String) -> Set<UUID> {
+            let ids = Set(GlobalSearchIndexSupport.noteResults(notes: filed, query: query, taskTitles: [:]).map(\.id))
+            return Set(filed.filter { ids.contains(CadenceSearchIdentity.note($0.id)) }.map(\.id))
+        }
+
+        // The drawn lines still differ by platform; only what is scored is shared.
+        #expect(NoteReferencePanelSupport.noteKindDetail(fixture.areaNote) == "Marketing")
+        #expect(CadenceSearchNoteFields.scoredSubtitle(for: fixture.areaNote, drawnSubtitle: "Marketing") == "List • Marketing")
+
+        let everyFiled = Set(filed.map(\.id))
+        #expect(iOSFinds("list") == everyFiled)
+        #expect(macFinds("list") == everyFiled)
+        let marketing: Set<UUID> = [fixture.areaNote.id, fixture.taggedNote.id]
+        #expect(iOSFinds("list marketing") == marketing)
+        #expect(macFinds("list marketing") == marketing)
+        #expect(iOSFinds("list launch") == [fixture.projectNote.id])
+        #expect(macFinds("list launch") == [fixture.projectNote.id])
+
+        // A list note filed under no list keeps the line it draws (iOS's `List note`).
+        #expect(CadenceSearchNoteFields.scoredSubtitle(for: fixture.orphanNote, drawnSubtitle: "List note") == "List note")
+        // Other kinds score what they draw.
+        let notepad = Note(kind: .permanent, title: "Notepad")
+        #expect(CadenceSearchNoteFields.scoredSubtitle(for: notepad, drawnSubtitle: "Notepad") == "Notepad")
+    }
+
     /// **A list document filed under no list is not offered**, because nothing can open one: the
     /// Documents tab is the only surface that draws a `.list` note and it is reached through a
     /// list. Dropping the `GlobalSearchListNoteRoute.route(for:) != nil` guard in

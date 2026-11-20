@@ -251,12 +251,14 @@ struct iOSSearchView: View {
 
         if isSearching {
             return iOSSearchIndexSupport.rankedResults(searchableNotes.compactMap { note in
-                let tagText = CadenceSearchTagSupport.text(for: note.sortedTags)
-                let content = CadenceSearchNoteText.body(of: note, taskTitles: taskTitles)
+                // [[T-18597]]: scored on Cmd+K's fields, so `list` finds a list document here too.
                 guard let score = CadenceSearchMatcher.matchScore(
                     query: trimmedQuery,
-                    fields: [NoteReferencePanelSupport.searchTitle(note), content, noteSubtitle(note), tagText]
-                        + NoteReferencePanelSupport.searchKeyFields(note)
+                    fields: CadenceSearchNoteFields.fields(
+                        for: note,
+                        drawnSubtitle: noteSubtitle(note),
+                        taskTitles: taskTitles
+                    )
                 ) else {
                     return nil
                 }

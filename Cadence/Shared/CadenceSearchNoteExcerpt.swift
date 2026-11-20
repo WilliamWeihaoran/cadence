@@ -43,3 +43,36 @@ enum CadenceSearchNoteText {
         )
     }
 }
+
+/// **The fields a note's search row is scored on, in Cmd+K and iOS Search alike** ([[T-18597]]).
+///
+/// Cmd+K draws and scores a list document's line as `List • Marketing`; iOS Search draws the bare
+/// `Marketing` and scored only that, so `list` -- or `list marketing` -- found Marketing's
+/// documents on the Mac and none of them on the phone. Every other kind's kind word (`Daily`,
+/// `Weekly`, `Notepad`) is scored on both, so the list document's is too: the scored line is the
+/// Mac's on both platforms, while each platform keeps drawing its own (`drawnSubtitle`). The order
+/// -- title, body, subtitle, tags, storage keys -- is the one both scorers already used.
+enum CadenceSearchNoteFields {
+    /// `List • <list>`, the line Cmd+K draws for a filed list document.
+    static func listDocumentSubtitle(container: String) -> String {
+        "List • \(container)"
+    }
+
+    /// The subtitle a note is scored on: a filed list document's `List • <list>`, else what the
+    /// row draws. A list note filed under no list keeps its drawn line (iOS's `List note`).
+    static func scoredSubtitle(for note: Note, drawnSubtitle: String) -> String {
+        guard note.kind == .list, let container = NoteReferencePanelSupport.listContainerName(note) else {
+            return drawnSubtitle
+        }
+        return listDocumentSubtitle(container: container)
+    }
+
+    static func fields(for note: Note, drawnSubtitle: String, taskTitles: [UUID: String]) -> [String] {
+        [
+            NoteReferencePanelSupport.searchTitle(note),
+            CadenceSearchNoteText.body(of: note, taskTitles: taskTitles),
+            scoredSubtitle(for: note, drawnSubtitle: drawnSubtitle),
+            CadenceSearchTagSupport.text(for: note.sortedTags),
+        ] + NoteReferencePanelSupport.searchKeyFields(note)
+    }
+}

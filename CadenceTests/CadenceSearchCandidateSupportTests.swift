@@ -642,7 +642,12 @@ struct CadenceSearchCandidateSupportTests {
         #expect(stripped.contains("CadenceTaskSearchSupport.isSearchable("))
         #expect(stripped.contains("CadenceTaskSearchSupport.matchScore(query: trimmedQuery, task: task)"))
         #expect(stripped.contains("CadenceTaskSearchSupport.glyph(for: task)"))
-        #expect(stripped.contains("CadenceSearchTagSupport.text(for: note.sortedTags)"))
+        // [[T-18597]]: a note's tag text is scored through the shared field list Cmd+K reads.
+        #expect(stripped.contains("fields: CadenceSearchNoteFields.fields("))
+        let noteFields = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceSearchNoteExcerpt.swift")
+        )
+        #expect(noteFields.contains("CadenceSearchTagSupport.text(for: note.sortedTags)"))
 
         // [[T-11195]] (a): the symbols are the shared glyph's own, not a switch of this screen's.
         #expect(stripped.contains("CadenceTaskSearchSupport.glyph(for: task).systemImage"))
