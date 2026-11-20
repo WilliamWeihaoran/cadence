@@ -312,7 +312,10 @@ extension TagSupport {
         let previousUpdatedAt = note.updatedAt
         note.tags = resolution.tags
         if writeFrontmatter {
-            note.content = MarkdownMetadataParser.content(note.content, replacingFrontmatterTags: names)
+            note.content = MarkdownMetadataParser.content(
+                note.content,
+                replacingFrontmatterTags: frontmatterTagNames(writing: names, into: note.content)
+            )
         }
         note.updatedAt = Date()
         do {

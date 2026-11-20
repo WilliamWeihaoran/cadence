@@ -297,9 +297,31 @@ nonisolated enum TagSupport {
         guard let resolved = resolveTags(named: resolvedNames, in: context) else { return }
         note.tags = resolved
         if writeFrontmatter {
-            note.content = MarkdownMetadataParser.content(note.content, replacingFrontmatterTags: names)
+            note.content = MarkdownMetadataParser.content(
+                note.content,
+                replacingFrontmatterTags: frontmatterTagNames(writing: names, into: note.content)
+            )
         }
         note.updatedAt = Date()
+    }
+
+    /// The names a chip write may put on the hidden frontmatter `tags:` line ([[T-18614]]).
+    ///
+    /// Both chip paths hand `setTagsCommittingInsertions` the note's whole tag set plus or minus
+    /// the edit, and `note.tags` already holds every tag folded in from an inline `#mention`. So
+    /// writing `names` as-is copied each INLINE-ONLY tag into the frontmatter, and deleting that
+    /// `#tag` from the text afterwards no longer removed its chip -- the hidden block kept it, and
+    /// the chip's `x` was the only way out. A name the prose mentions and the frontmatter did not
+    /// already hold stays the prose's: the inline mention keeps it on the note (`resolvedNames`
+    /// in `setTagsCommittingInsertions`), and the text alone decides when it goes. A name already
+    /// in the frontmatter, or mentioned nowhere in the prose, is written as before.
+    nonisolated static func frontmatterTagNames(writing names: [String], into content: String) -> [String] {
+        let written = Set(MarkdownMetadataParser.frontmatterTagNames(in: content).map(slug(for:)))
+        let inline = Set(MarkdownMetadataParser.inlineTagNames(in: content).map(slug(for:)))
+        return names.filter { name in
+            let key = slug(for: name)
+            return written.contains(key) || !inline.contains(key)
+        }
     }
 
     @discardableResult

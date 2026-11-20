@@ -121,6 +121,46 @@ struct CadenceNoteTagEditingTests {
         #expect(note.content.contains("Body #gamma"))
     }
 
+    /// **[[T-18614]]: a chip edit no longer promotes an inline-only `#tag` into the frontmatter.**
+    /// The removal above handed the write `note.tags` minus `beta` -- `gamma` included, folded in
+    /// from the prose -- and the frontmatter came out `[alpha, gamma]`, so deleting `#gamma` from
+    /// the text afterwards left its chip on the note for good.
+    @Test func aChipEditLeavesAnInlineOnlyTagToTheTextThatMentionsIt() throws {
+        let (_, context) = try makeContext()
+        let alpha = Tag(name: "alpha", slug: "alpha")
+        let beta = Tag(name: "beta", slug: "beta")
+        let gamma = Tag(name: "gamma", slug: "gamma")
+        let note = Note(kind: .permanent, title: "Kickoff", content: "Idea #gamma")
+        for tag in [alpha, beta, gamma] { context.insert(tag) }
+        context.insert(note)
+        try context.save()
+        #expect(CadenceNoteTagEditing.setTags([alpha, beta], on: note, in: context))
+        #expect(CadenceNoteTagEditing.remove(beta, from: note, in: context))
+        #expect(Set(note.tags?.map(\.slug) ?? []) == ["alpha", "gamma"], "the prose still keeps gamma")
+        #expect(MarkdownMetadataParser.frontmatterTagNames(in: note.content) == ["alpha"])
+
+        note.content = note.content.replacingOccurrences(of: "Idea #gamma", with: "Idea")
+        TagSupport.syncNoteTagsFromMarkdown(note, in: context)
+
+        #expect(note.tags?.map(\.slug) == ["alpha"], "deleting #gamma from the text removes its chip")
+    }
+
+    /// The other half: a name the frontmatter already held is still written there when the prose
+    /// also mentions it, and a newly picked name the prose does not mention goes in as before.
+    @Test func aChipEditKeepsAFrontmatterTagTheProseAlsoMentions() throws {
+        let (_, context) = try makeContext()
+        let note = Note(kind: .permanent, title: "Kickoff", content: "---\ntags: [\"alpha\"]\n---\n\nBody #alpha #gamma")
+        context.insert(note)
+        try context.save()
+
+        #expect(TagSupport.setTagsCommittingInsertions(
+            named: ["alpha", "gamma", "fresh"], on: note, in: context, writeFrontmatter: true
+        ))
+
+        #expect(MarkdownMetadataParser.frontmatterTagNames(in: note.content) == ["alpha", "fresh"])
+        #expect(Set(note.tags?.map(\.slug) ?? []) == ["alpha", "fresh", "gamma"])
+    }
+
     /// A refused mint writes nothing, which is what lets the popover's `onCommit` answer `false`
     /// with nothing to restore.
     @Test func aRefusedMintFromTheIOSNoteChromeLeavesTheNoteUntouched() throws {
