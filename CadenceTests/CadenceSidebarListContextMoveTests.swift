@@ -111,6 +111,60 @@ struct CadenceSidebarListContextMoveTests {
         #expect(stored.context == nil)
     }
 
+    /// [[T-18566]]: a list dropped on a context with no lists lands as its only row, at 0
+    /// among none, with its task re-pointed -- the drop the empty-context row now takes.
+    @Test func aListDroppedOnAnEmptyContextMovesIntoIt() throws {
+        let f = try makeEmptyContextFixture()
+        let landed = SidebarListContextMove.commit(
+            .area(f.base.moving),
+            into: f.empty,
+            onto: SidebarListDropPlacement.destinationIndex(draggedIndex: nil, targetIndex: nil, count: 0) ?? -1,
+            among: [],
+            in: f.base.modelContext
+        )
+        #expect(landed)
+        let stored = try #require(try storedArea(f.base.moving.id, in: f.base.container))
+        #expect(stored.context?.id == f.empty.id, "the list did not move into the empty context")
+        #expect(stored.order == 0)
+        let taskID = f.base.movingTask.id
+        let storedTask = try #require(
+            try ModelContext(f.base.container).fetch(FetchDescriptor<AppTask>(predicate: #Predicate { $0.id == taskID })).first
+        )
+        #expect(storedTask.context?.id == f.empty.id, "the list's task kept the old context")
+    }
+
+    /// [[T-18566]]: a list dropped past another section's last row lands last there, so one drag
+    /// does it rather than a second drag within the section.
+    @Test func aListDroppedPastAnotherSectionsLastRowLandsLast() throws {
+        let f = try fixture()
+        let homeEntries: [SidebarListEntry] = [.area(f.homeArea), .project(f.homeProject)]
+        let index = try #require(
+            SidebarListDropPlacement.destinationIndex(draggedIndex: nil, targetIndex: nil, count: homeEntries.count)
+        )
+
+        let landed = SidebarListContextMove.commit(
+            .area(f.moving), into: f.home, onto: index, among: homeEntries, in: f.modelContext
+        )
+
+        #expect(landed)
+        #expect(f.homeArea.order == 0)
+        #expect(f.homeProject.order == 1)
+        #expect(f.moving.order == 2, "the list did not land last")
+        let sorted = CadenceSidebarLists.sorted(
+            [SidebarListEntry.area(f.moving), .area(f.homeArea), .project(f.homeProject)],
+            item: { $0.sidebarListItem }
+        ).map(\.id)
+        #expect(sorted.last == SidebarListEntry.area(f.moving).id)
+    }
+
+    private func makeEmptyContextFixture() throws -> (base: Fixture, empty: Context) {
+        let base = try fixture()
+        let empty = Context(name: "Empty")
+        base.modelContext.insert(empty)
+        try base.modelContext.save()
+        return (base, empty)
+    }
+
     /// A refused commit puts the context, the task's context and every order back, and says so.
     @Test func aRefusedMovePutsEverythingBack() throws {
         let f = try fixture()
@@ -172,6 +226,25 @@ struct CadenceSidebarListContextMoveTests {
             try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SidebarView.swift")
         )
         #expect(view.contains("context: owner,"), "the section is not told which context it files under")
+    }
+
+    /// [[T-18566]]: the empty-context row and the strip under a populated section's last row both
+    /// register a list drop past the end, through the same delegate as the rows.
+    @Test func theEmptyContextRowAndTheEndStripTakeAListDrop() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SidebarComponents.swift")
+        )
+        let section = try #require(CadenceSourceScan.declarationBody("struct ContextSection: View", in: source))
+        let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: section))
+        let endDrop = "\\.onDrop\\(of: \\[UTType\\.text\\], delegate: SidebarListDropDelegate\\(\\s*target: \\.end,\\s*dragOverItem: \\$dragOverListItem,\\s*onDrop: reorderList"
+        let emptyRow = "SidebarAddFirstListButton\\([\\s\\S]*?action: onAddList\\s*\\)\\s*\\.overlay\\(alignment: \\.top\\) \\{ endDropIndicator \\}\\s*" + endDrop
+        #expect(CadenceSourceScan.matchCount(emptyRow, in: body) == 1, "the empty-context row takes no list drop")
+        #expect(body.contains("endDropZone"), "the populated section draws no strip past its last row")
+        let zone = try #require(CadenceSourceScan.declarationBody("private var endDropZone: some View", in: section))
+        #expect(CadenceSourceScan.matchCount(endDrop, in: zone) == 1, "the strip past the last row takes no list drop")
+        let reorder = try #require(CadenceSourceScan.functionBody(named: "reorderList", in: source))
+        #expect(reorder.contains("SidebarListDropPlacement.destinationIndex("))
+        #expect(reorder.contains("case .end:"))
     }
 }
 #endif

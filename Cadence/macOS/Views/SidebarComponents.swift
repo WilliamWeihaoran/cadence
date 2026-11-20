@@ -29,6 +29,20 @@ final class SidebarDragContext {
         return dragged
     }
 
+    /// The same for any drop target in a section ([[T-18566]]). A drop past the section's last row
+    /// is never a drop on the dragged list itself, so it hands back whatever was in flight; whether
+    /// that moves anything is `SidebarListDropPlacement.destinationIndex`'s call.
+    func endDrag(onto target: SidebarListDropTarget) -> SidebarListDragItem? {
+        switch target {
+        case .row(let item):
+            return endDrag(onto: item)
+        case .end:
+            let dragged = draggedListItem
+            draggedListItem = nil
+            return dragged
+        }
+    }
+
     /// A row saw a drag whose payload is not the list this context thinks is in flight, so that
     /// list's drag ended without a drop on any row. Forget it, unless a newer list drag has
     /// already replaced it.
@@ -49,6 +63,15 @@ nonisolated struct SidebarListDragItem: Equatable {
     var providerText: NSString {
         "\(kind.rawValue):\(id.uuidString)" as NSString
     }
+}
+
+/// What a list drag in one sidebar section is over ([[T-18566]]): a list row, or the place past
+/// the section's last row -- the strip under it, or on a context with no lists, its only row.
+/// Before `.end` every target was a row, so a context with no lists took no drop at all and a list
+/// from another section could never land last.
+nonisolated enum SidebarListDropTarget: Equatable {
+    case row(SidebarListDragItem)
+    case end
 }
 
 /// The Mac's drag half of `SidebarListEntry`, which itself moved to
@@ -172,7 +195,7 @@ struct ContextSection: View {
     @Environment(\.modelContext) private var modelContext
     @State private var areaForEdit: Area? = nil
     @State private var projectForEdit: Project? = nil
-    @State private var dragOverListItem: SidebarListDragItem? = nil
+    @State private var dragOverListItem: SidebarListDropTarget? = nil
     /// Set when the store refused a list drag (T-868). The rows are already back in their old
     /// order by then, so the column and this sentence agree.
     @State private var reorderFailureNotice: String? = nil
@@ -243,7 +266,7 @@ struct ContextSection: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: SidebarMetrics.contextLeadingDropZoneHeight)
                             .onDrop(of: [UTType.text], delegate: SidebarListDropDelegate(
-                                target: firstItem,
+                                target: .row(firstItem),
                                 dragOverItem: $dragOverListItem,
                                 onDrop: reorderList
                             ))
@@ -258,13 +281,29 @@ struct ContextSection: View {
                         }
                     }
                 }
+                // Bottom drop zone ([[T-18566]]) -- a list from another section can land LAST.
+                // An overlay hung below the rows, inside the section's bottom padding, so it adds
+                // no height and `SidebarContextHeaderRhythm` has nothing new to count.
+                .overlay(alignment: .bottom) {
+                    endDropZone
+                        .frame(height: SidebarMetrics.contextSectionBottomSpacing)
+                        .alignmentGuide(.bottom) { $0[.top] }
+                }
             } else {
                 // [[T-17811]]: one shape on both columns (`iOSSidebarListsRegion.listSection`
                 // draws the same row), titled by whether the context already held lists.
+                // [[T-18566]]: and it takes a list drop, so a context with no lists can be
+                // filled by dragging rather than only from the edit sheet's Context row.
                 SidebarAddFirstListButton(
                     title: CadenceEmptyStateCopy.sidebarEmptyContextAction(holdsInactiveLists: holdsInactiveLists),
                     action: onAddList
                 )
+                .overlay(alignment: .top) { endDropIndicator }
+                .onDrop(of: [UTType.text], delegate: SidebarListDropDelegate(
+                    target: .end,
+                    dragOverItem: $dragOverListItem,
+                    onDrop: reorderList
+                ))
             }
         }
         .padding(.bottom, SidebarMetrics.contextSectionBottomSpacing)
@@ -327,10 +366,24 @@ struct ContextSection: View {
     /// is the commit.
     ///
     /// A list dragged in from ANOTHER section is not among `entries`; it moves into this section's
-    /// context instead ([[T-7260]](b), `SidebarListContextMove`).
-    private func reorderList(dropped: SidebarListDragItem, target: SidebarListDragItem) {
-        guard let toIndex = entries.firstIndex(where: { $0.matches(target) }) else { return }
-        guard let fromIndex = entries.firstIndex(where: { $0.matches(dropped) }) else {
+    /// context instead ([[T-7260]](b), `SidebarListContextMove`). A drop past the last row
+    /// ([[T-18566]]) lands last, which on a context with no lists is index 0 among none.
+    private func reorderList(dropped: SidebarListDragItem, target: SidebarListDropTarget) {
+        let targetIndex: Int?
+        switch target {
+        case .row(let item):
+            guard let index = entries.firstIndex(where: { $0.matches(item) }) else { return }
+            targetIndex = index
+        case .end:
+            targetIndex = nil
+        }
+        let draggedIndex = entries.firstIndex(where: { $0.matches(dropped) })
+        guard let toIndex = SidebarListDropPlacement.destinationIndex(
+            draggedIndex: draggedIndex,
+            targetIndex: targetIndex,
+            count: entries.count
+        ) else { return }
+        guard let fromIndex = draggedIndex else {
             moveListIntoContext(dropped, onto: toIndex)
             return
         }
@@ -399,7 +452,7 @@ struct ContextSection: View {
     /// context move puts it ([[T-7260]](b)); until then it drew none, because that drop did nothing.
     @ViewBuilder
     private func dropIndicator(for target: SidebarListDragItem) -> some View {
-        if dragOverListItem == target,
+        if dragOverListItem == .row(target),
            let dragged = SidebarDragContext.shared.draggedListItem,
            let toIndex = entries.firstIndex(where: { $0.matches(target) }),
            let edge = SidebarListDropPlacement.indicatorEdge(
@@ -413,6 +466,36 @@ struct ContextSection: View {
             }
             .transition(.opacity)
         }
+    }
+
+    /// The 2pt line for a drop past the last row ([[T-18566]]), drawn only when that drop would
+    /// move something -- the section's own last row dragged there draws none.
+    @ViewBuilder
+    private var endDropIndicator: some View {
+        if dragOverListItem == .end,
+           let dragged = SidebarDragContext.shared.draggedListItem,
+           SidebarListDropPlacement.destinationIndex(
+               draggedIndex: entries.firstIndex(where: { $0.matches(dragged) }),
+               targetIndex: nil,
+               count: entries.count
+           ) != nil {
+            Rectangle().fill(Theme.blue).frame(height: 2)
+                .transition(.opacity)
+        }
+    }
+
+    /// The strip under a populated section's last row that takes a drop past it ([[T-18566]]).
+    private var endDropZone: some View {
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .overlay(alignment: .top) { endDropIndicator }
+            .animation(.easeInOut(duration: 0.15), value: dragOverListItem)
+            .onDrop(of: [UTType.text], delegate: SidebarListDropDelegate(
+                target: .end,
+                dragOverItem: $dragOverListItem,
+                onDrop: reorderList
+            ))
     }
 
     private func areaRow(_ area: Area, target: SidebarListDragItem) -> some View {
@@ -436,7 +519,7 @@ struct ContextSection: View {
             return NSItemProvider(object: target.providerText)
         }
         .onDrop(of: [UTType.text], delegate: SidebarListDropDelegate(
-            target: target,
+            target: .row(target),
             dragOverItem: $dragOverListItem,
             onDrop: reorderList
         ))
@@ -465,7 +548,7 @@ struct ContextSection: View {
             return NSItemProvider(object: target.providerText)
         }
         .onDrop(of: [UTType.text], delegate: SidebarListDropDelegate(
-            target: target,
+            target: .row(target),
             dragOverItem: $dragOverListItem,
             onDrop: reorderList
         ))
@@ -602,6 +685,21 @@ nonisolated enum SidebarListDropPlacement {
         return result
     }
 
+    /// The index a drop writes ([[T-18566]]), or `nil` when it moves nothing. `draggedIndex` is
+    /// the dragged row's place in this section (`nil`: it comes from another section);
+    /// `targetIndex` is the row dropped on, `nil` for the place past the last row.
+    ///
+    /// A row: that row's index, as `reordered` and `inserted` read it. Past the last row: a row
+    /// of this section moves onto the last index (nothing, if it is already last), and a row from
+    /// another section is inserted at `count` -- on a context with no lists, 0 among none.
+    static func destinationIndex(draggedIndex: Int?, targetIndex: Int?, count: Int) -> Int? {
+        guard let targetIndex else {
+            guard let draggedIndex else { return count }
+            return draggedIndex == count - 1 ? nil : count - 1
+        }
+        return draggedIndex == targetIndex ? nil : targetIndex
+    }
+
     /// The edge of the target row the dragged row will sit against once dropped, or `nil` when
     /// the drop moves nothing (the row itself). A row from another section (`nil` index) is
     /// inserted above the target, so its line is the top edge ([[T-7260]](b)).
@@ -674,9 +772,9 @@ struct SidebarAddFirstListButton: View {
 // MARK: - Drop Delegates
 
 private struct SidebarListDropDelegate: DropDelegate {
-    let target: SidebarListDragItem
-    @Binding var dragOverItem: SidebarListDragItem?
-    let onDrop: (SidebarListDragItem, SidebarListDragItem) -> Void
+    let target: SidebarListDropTarget
+    @Binding var dragOverItem: SidebarListDropTarget?
+    let onDrop: (SidebarListDragItem, SidebarListDropTarget) -> Void
 
     /// Refused outright when no list drag is in flight, so a task hovering a list row draws no
     /// line and its drop is not taken for a reorder ([[T-7701]]).

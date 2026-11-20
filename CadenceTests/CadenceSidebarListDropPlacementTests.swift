@@ -53,5 +53,44 @@ struct CadenceSidebarListDropPlacementTests {
         #expect(SidebarListDropPlacement.indicatorEdge(draggedIndex: nil, targetIndex: 2) == .top)
         #expect(SidebarListDropPlacement.indicatorEdge(draggedIndex: 2, targetIndex: 2) == nil)
     }
+
+    // MARK: - [[T-18566]]: the drop past the last row
+
+    /// A list from another section dropped past the last row lands LAST -- and on a context with
+    /// no lists, at 0 among none. Every target before [[T-18566]] was a row, and a foreign row
+    /// is inserted above its target, so it could never land last.
+    @Test func aForeignRowDroppedPastTheLastRowLandsLast() {
+        for count in 0...rows.count {
+            let section = Array(rows.prefix(count))
+            let index = SidebarListDropPlacement.destinationIndex(draggedIndex: nil, targetIndex: nil, count: count)
+            #expect(index == count, "count \(count): measured \(String(describing: index))")
+            let result = SidebarListDropPlacement.inserted("X", into: section, at: index ?? -1)
+            #expect(result == section + ["X"], "count \(count): landed at \(result)")
+        }
+        #expect(SidebarListDropPlacement.destinationIndex(draggedIndex: nil, targetIndex: nil, count: 0) == 0)
+    }
+
+    /// A row of this section dropped past the last row moves to the end; the last row itself
+    /// moves nothing, so it draws no line.
+    @Test func anOwnRowDroppedPastTheLastRowMovesLastOrNowhere() throws {
+        for from in rows.indices {
+            let index = SidebarListDropPlacement.destinationIndex(draggedIndex: from, targetIndex: nil, count: rows.count)
+            if from == rows.count - 1 {
+                #expect(index == nil, "the last row dropped past itself moved")
+                continue
+            }
+            let to = try #require(index)
+            let result = SidebarListDropPlacement.reordered(rows, moving: from, onto: to)
+            #expect(result.last == rows[from], "\(rows[from]) past the end landed at \(result)")
+            #expect(result.count == rows.count)
+        }
+    }
+
+    /// A row target keeps its pre-[[T-18566]] index, and a row onto itself moves nothing.
+    @Test func aRowTargetStillResolvesToThatRow() {
+        #expect(SidebarListDropPlacement.destinationIndex(draggedIndex: nil, targetIndex: 2, count: 5) == 2)
+        #expect(SidebarListDropPlacement.destinationIndex(draggedIndex: 0, targetIndex: 3, count: 5) == 3)
+        #expect(SidebarListDropPlacement.destinationIndex(draggedIndex: 3, targetIndex: 3, count: 5) == nil)
+    }
 }
 #endif

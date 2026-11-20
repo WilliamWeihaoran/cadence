@@ -63,5 +63,20 @@ struct CadenceSidebarListDragEndTests {
         context.forgetStale(first)
         #expect(context.draggedListItem == second)
     }
+
+    /// [[T-18566]]: a drop past a section's last row hands back whatever list was in flight --
+    /// it is never the list's own row -- and ends the drag on every path. A row target still
+    /// refuses the list's own row.
+    @Test func aDropPastTheLastRowHandsBackTheListAndEndsTheDrag() {
+        let context = SidebarDragContext()
+        context.draggedListItem = first
+        #expect(context.endDrag(onto: SidebarListDropTarget.end) == first)
+        #expect(context.draggedListItem == nil)
+        #expect(context.endDrag(onto: SidebarListDropTarget.end) == nil, "nothing in flight is no move")
+
+        context.draggedListItem = first
+        #expect(context.endDrag(onto: SidebarListDropTarget.row(first)) == nil)
+        #expect(context.draggedListItem == nil)
+    }
 }
 #endif
