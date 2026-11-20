@@ -701,7 +701,9 @@ struct CadenceCancelledTaskReachabilityTests {
     /// macOS's Today Completed section is the stricter filter — in `.todayOverview` it asks about
     /// `completedAt` and has no do-date or due-date ground to fall back on — so it is the surface
     /// where an untimestamped bulk cancellation disappeared completely. Pinned separately for the
-    /// same reason `macOSTodayCompletedAlsoAdmitsTheCancelledTask` is.
+    /// same reason `macOSTodayCompletedAlsoAdmitsTheCancelledTask` is. [[T-18610]]: this pins the
+    /// settle's TIMESTAMP alone -- the column here is never stored archived; once it is, its
+    /// cancellations leave Today (`archivingAKanbanColumnKeepsItsCancellationsOutOfTodaysCompletedSection`).
     @Test func macOSTodayCompletedAdmitsTheTasksAKanbanColumnArchiveCancelled() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
@@ -743,6 +745,115 @@ struct CadenceCancelledTaskReachabilityTests {
 
         #expect(first.completedAt != nil)
         #expect(first.completedAt == second.completedAt)
+    }
+
+    // MARK: - An archive's cancellations are not the day's work (T-18610)
+
+    /// The real wind-downs, end to end: the container is archived the way every archive call site
+    /// archives it (status first, then the settle), and Today is asked afterwards. Six tasks dated
+    /// next week were drawn as "Completed Today 6" and counted as "6 done".
+    @Test func archivingAListKeepsItsCancellationsOutOfTodaysCompletedSection() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let today = DateFormatters.todayKey()
+        let nextWeek = task("next week", doDate: "2999-01-08")
+        let dateless = task("dateless")
+        let area = containerArea("filed away", holding: [nextWeek, dateless], in: context)
+        let child = Project(name: "child", area: area)
+        context.insert(child)
+        let inChild = task("in a child project")
+        context.insert(inChild)
+        inChild.project = child
+        let archivedProject = Project(name: "archived project")
+        context.insert(archivedProject)
+        let inProject = task("in an archived project")
+        context.insert(inProject)
+        inProject.project = archivedProject
+
+        area.status = .archived
+        TaskContainerLifecycleService.cancelRemainingActiveTasks(in: area, includingChildProjects: true, in: context)
+        archivedProject.status = .archived
+        TaskContainerLifecycleService.cancelRemainingActiveTasks(in: archivedProject, in: context)
+
+        let settled = [nextWeek, dateless, inChild, inProject]
+        #expect(settled.allSatisfy { $0.isCancelled && $0.completedAt != nil }, "precondition: the archive stamped them")
+        #expect(settled.allSatisfy(CadenceTaskQuerySupport.isWindDownCancellation))
+        #expect(CadenceTaskQuerySupport.completedTodayTasks(from: settled, todayKey: today).isEmpty)
+        #expect(TasksPanelDerivedState(allTasks: settled, todayKey: today).doneTasks.isEmpty)
+        let summary = CadenceTodayPresentationSupport.summary(
+            activeTasks: [],
+            timedTasks: [],
+            completedTasks: CadenceTaskQuerySupport.completedTodayTasks(from: settled, todayKey: today)
+        )
+        #expect(summary.completedCount == 0)
+
+        // Unarchiving puts the list back, and its rows with it: nothing was rewritten.
+        area.status = .active
+        #expect(
+            CadenceTaskQuerySupport.completedTodayTasks(from: [nextWeek, dateless], todayKey: today)
+                .map(\.title).sorted() == ["dateless", "next week"]
+        )
+    }
+
+    /// The board's Archive Column: the column is archived in the container's `sectionConfigs`, on
+    /// an area board and on a project board, and the cards it cancelled leave Today with it.
+    @Test func archivingAKanbanColumnKeepsItsCancellationsOutOfTodaysCompletedSection() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let today = DateFormatters.todayKey()
+        let areaCard = task("area card")
+        areaCard.sectionName = "Doing"
+        let bystander = task("other column")
+        bystander.sectionName = "Later"
+        let area = containerArea("board", holding: [areaCard, bystander], in: context)
+        let project = Project(name: "project board")
+        context.insert(project)
+        let projectCard = task("project card")
+        projectCard.sectionName = "doing"
+        context.insert(projectCard)
+        projectCard.project = project
+
+        var archivedColumn = TaskSectionConfig(name: "Doing")
+        archivedColumn.isArchived = true
+        area.sectionConfigs = area.sectionConfigs + [archivedColumn, TaskSectionConfig(name: "Later")]
+        project.sectionConfigs = project.sectionConfigs + [archivedColumn, TaskSectionConfig(name: "Later")]
+        let doing = try #require(area.sectionConfigs.first { $0.name == "Doing" })
+        #expect(doing.isArchived, "precondition: the column is stored archived")
+        TaskContainerLifecycleService.cancelRemainingActiveTasks(in: doing, area: area, project: nil, in: context)
+        TaskContainerLifecycleService.cancelRemainingActiveTasks(in: doing, area: nil, project: project, in: context)
+        bystander.status = .cancelled
+        bystander.completedAt = Date()
+
+        #expect(areaCard.isCancelled && projectCard.isCancelled)
+        #expect(
+            CadenceTaskQuerySupport.completedTodayTasks(from: [areaCard, projectCard, bystander], todayKey: today)
+                .map(\.title) == ["other column"],
+            "a cancellation in a live column is still today's"
+        )
+    }
+
+    /// What stays: a single cancellation in a live list, and a DONE task in an archived one (Complete
+    /// List is the owner's to decide, not this predicate's), are still today's.
+    @Test func aWindDownCancellationIsOnlyACancelledTaskInAnArchivedContainer() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let live = task("cancelled in a live list", status: .cancelled, completedAt: Date())
+        let done = task("done, list archived later", status: .done, completedAt: Date())
+        let completedList = task("cancelled, list completed", status: .cancelled, completedAt: Date())
+        let liveArea = containerArea("live", holding: [live], in: context)
+        let archivedArea = containerArea("archived", holding: [done], in: context)
+        archivedArea.status = .archived
+        let doneArea = containerArea("completed", holding: [completedList], in: context)
+        doneArea.status = .done
+        _ = liveArea
+
+        #expect(!CadenceTaskQuerySupport.isWindDownCancellation(live))
+        #expect(!CadenceTaskQuerySupport.isWindDownCancellation(done))
+        #expect(!CadenceTaskQuerySupport.isWindDownCancellation(completedList))
+        #expect(
+            CadenceTaskQuerySupport.completedTodayTasks(from: [live, done, completedList], todayKey: DateFormatters.todayKey())
+                .count == 3
+        )
     }
 
     /// The other half of the ticket, and the half the ticket got backwards: it asked for this path
@@ -868,7 +979,9 @@ struct CadenceCancelledTaskReachabilityTests {
                 // `CadenceWidgets` compiles that folder and not `Shared/`. The count going *down*
                 // here is the shared rule arriving, not a filter losing its guard —
                 // `TodayScopeParityTests` pins that finished and cancelled work stays off Today.
-                "Cadence/Shared/CadenceTaskQuerySupport.swift": 2,
+                // The third is `isWindDownCancellation`'s guard ([[T-18610]]): not a settled guard
+                // but the one question a cancellation alone answers -- did an archive produce it.
+                "Cadence/Shared/CadenceTaskQuerySupport.swift": 3,
                 // openTasks, isFinishedTask, isOpenTask. `inboxTasks` is no longer one of them.
                 "Cadence/Shared/CadenceTaskQuerySharedSupport.swift": 3
             ]

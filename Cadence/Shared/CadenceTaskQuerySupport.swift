@@ -57,14 +57,42 @@ enum CadenceTaskQuerySupport {
         return tasks
             .filter { task in
                 guard isFinishedTask(task), let completedAt = task.completedAt else { return false }
-                guard let todayRange else {
+                let settledToday: Bool
+                if let todayRange {
+                    settledToday = todayRange.contains(completedAt)
+                } else {
                     // Unreachable in practice (`todayKey` is produced by the same formatter);
                     // keep the per-task comparison as the safety net.
-                    return DateFormatters.dateKey(from: completedAt) == todayKey
+                    settledToday = DateFormatters.dateKey(from: completedAt) == todayKey
                 }
-                return todayRange.contains(completedAt)
+                // Tested after the day, so the container reads (a JSON decode for a column) are
+                // paid only by the handful of rows settled today.
+                return settledToday && !isWindDownCancellation(task)
             }
             .taskCompletionSorted()
+    }
+
+    /// **A cancellation an archive produced is not the day's work ([[T-18610]]).** Archiving a
+    /// list or a kanban column cancels everything left in it through
+    /// `TaskContainerLifecycleService.settle`, which stamps `completedAt = now` -- right for the
+    /// logbook's order, and T-212's reason for the stamp. But `completedTodayTasks` had no
+    /// container test, so archiving a project holding six tasks dated next week grew Today a
+    /// "Completed Today 6" of struck-through rows from a list that had just left the sidebar, and
+    /// the eyebrow said "6 done" on a day nothing was done.
+    ///
+    /// Read from the store, no new field: a CANCELLED task whose list is archived -- its project,
+    /// the area that project sits in (an area archive also walks its child projects), or its own
+    /// area -- or whose column is archived on the board that draws it (a task holding both edges
+    /// is the project's card, [[T-15431]]). A single cancellation in a live list, and every DONE
+    /// task (Complete List / Complete Column included), are untouched; the list's own Completed
+    /// tab still lists the archived rows, and unarchiving the list brings them back.
+    static func isWindDownCancellation(_ task: AppTask) -> Bool {
+        guard task.isCancelled else { return false }
+        if task.project?.isArchived == true || task.project?.area?.isArchived == true { return true }
+        if task.area?.isArchived == true { return true }
+        let columns = task.project?.sectionConfigs ?? task.area?.sectionConfigs ?? []
+        let column = task.resolvedSectionName
+        return columns.contains { $0.isArchived && $0.name.caseInsensitiveCompare(column) == .orderedSame }
     }
 
     /// The half-open span of instants belonging to the calendar day `dateKey` names, or `nil` if it
