@@ -60,4 +60,60 @@ struct CadenceContextPickerKeyboardTests {
         #expect(CadenceContextPickerKeyboard.highlightIndex(items: [], selectedID: nil, query: "w", current: 3) == 0)
     }
 }
+
+/// **T-18637.** The Mac calendar picker's search field, under the [[T-14791]] rule above: the unlinked
+/// row (id `""`) is always first, so a typed query used to leave the highlight on it when nothing was
+/// linked, and a query that matched nothing left only that hidden row, which Return picked --
+/// unlinking an area's or project's calendar on Save.
+@MainActor
+struct CadenceCalendarPickerKeyboardTests {
+    private let none = CadenceCalendarPickerKeyboard.noneID
+    private let work = "cal-work"
+    private let home = "cal-home"
+
+    @Test func aTypedQueryWithNothingLinkedHighlightsTheFirstCalendar() {
+        let index = CadenceCalendarPickerKeyboard.highlightIndex(
+            itemIDs: [none, work], selectedID: none, query: "Work", current: 0
+        )
+        #expect(index == 1)
+        #expect(CadenceCalendarPickerKeyboard.submitTarget(itemIDs: [none, work], query: "Work", highlightIndex: index) == work)
+    }
+
+    @Test func aTypedQueryHighlightsTheFirstCalendarEvenWhenTheLinkedOneAlsoMatches() {
+        #expect(CadenceCalendarPickerKeyboard.highlightIndex(
+            itemIDs: [none, home, work], selectedID: work, query: "o", current: 0
+        ) == 1)
+    }
+
+    @Test func returnOverACalendarQueryThatMatchedNothingUnlinksNothing() {
+        #expect(CadenceCalendarPickerKeyboard.searchFoundNothing(itemIDs: [none], query: "zzz"))
+        let index = CadenceCalendarPickerKeyboard.highlightIndex(itemIDs: [none], selectedID: work, query: "zzz", current: 2)
+        #expect(index == 0)
+        #expect(CadenceCalendarPickerKeyboard.submitTarget(itemIDs: [none], query: "zzz", highlightIndex: index) == nil)
+        // allowNone off: nothing at all matched.
+        #expect(CadenceCalendarPickerKeyboard.submitTarget(itemIDs: [], query: "zzz", highlightIndex: 0) == nil)
+    }
+
+    @Test func withNoQueryTheHighlightFollowsTheSelectionAndReturnCanUnlink() {
+        #expect(CadenceCalendarPickerKeyboard.highlightIndex(itemIDs: [none, home, work], selectedID: work, query: "  ", current: 0) == 2)
+        #expect(CadenceCalendarPickerKeyboard.highlightIndex(itemIDs: [none, home, work], selectedID: none, query: "", current: 2) == 0)
+        #expect(!CadenceCalendarPickerKeyboard.searchFoundNothing(itemIDs: [none], query: ""))
+        #expect(CadenceCalendarPickerKeyboard.submitTarget(itemIDs: [none, home, work], query: "", highlightIndex: 0) == none)
+    }
+
+    @Test func anOutOfRangeCalendarHighlightPicksNothing() {
+        #expect(CadenceCalendarPickerKeyboard.submitTarget(itemIDs: [none, work], query: "", highlightIndex: 5) == nil)
+        #expect(CadenceCalendarPickerKeyboard.highlightIndex(itemIDs: [], selectedID: none, query: "w", current: 3) == 0)
+        #expect(CadenceCalendarPickerKeyboard.highlightIndex(itemIDs: [none, home], selectedID: "gone", query: "", current: 7) == 1)
+    }
+
+    /// The view reads the helper for both the highlight and Return, rather than its own rule.
+    @Test func thePickerRoutesItsKeyboardThroughTheHelper() throws {
+        let file = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/CadenceCalendarPicker.swift"))
+        let list = try #require(CadenceSourceScan.declarationBody("struct CadenceCalendarPickerList: View", in: file))
+        #expect(list.contains("CadenceCalendarPickerKeyboard.submitTarget("))
+        #expect(list.contains("CadenceCalendarPickerKeyboard.highlightIndex("))
+        #expect(list.contains("if searchFoundNothing || (groups.isEmpty && !allowNone) {"))
+    }
+}
 #endif

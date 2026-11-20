@@ -410,13 +410,12 @@ struct ListEditorContextRow: View {
             showPicker.toggle()
         }
         .popover(isPresented: $showPicker, arrowEdge: .bottom) {
-            ScrollView {
-                CadenceContextPickerList(
-                    contexts: contexts,
-                    selectedID: $selectedID,
-                    onPick: { showPicker = false }
-                )
-            }
+            // The list scrolls its own rows ([[T-18639]]).
+            CadenceContextPickerList(
+                contexts: contexts,
+                selectedID: $selectedID,
+                onPick: { showPicker = false }
+            )
             .frame(width: 260)
             .frame(maxHeight: 320)
             .background(Theme.surface)
@@ -592,14 +591,13 @@ struct ListEditorCalendarRow: View {
             showPicker.toggle()
         }
         .popover(isPresented: $showPicker, arrowEdge: .bottom) {
-            ScrollView {
-                CadenceCalendarPickerList(
-                    calendars: link.pickableCalendars(from: allCalendars),
-                    selectedID: $selectedID,
-                    link: link,
-                    onPick: { showPicker = false }
-                )
-            }
+            // The list scrolls its own rows ([[T-18639]]).
+            CadenceCalendarPickerList(
+                calendars: link.pickableCalendars(from: allCalendars),
+                selectedID: $selectedID,
+                link: link,
+                onPick: { showPicker = false }
+            )
             .frame(width: 260)
             .frame(maxHeight: 320)
             .background(Theme.surface)

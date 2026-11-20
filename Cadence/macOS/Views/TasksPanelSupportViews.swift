@@ -420,6 +420,15 @@ struct TaskSectionPickerBadge: View {
     /// ([[T-17465]]); the calendar picker already answers the same miss in words.
     static let noMatchesText = "No matching sections"
 
+    /// **[[T-18638]]: the highlight opens on the task's own section** -- [[T-8101]]'s rule for the
+    /// list picker and the `~` panel, never carried to this chip. It opened on row 0, and the row
+    /// drew its checkmark from the highlight, so a task in "Doing" opened onto "checkmark Backlog"
+    /// and one Return re-filed it there. Case-insensitive, as `matchedSection` is; 0 when the
+    /// selection names no listed section.
+    static func openingHighlightIndex(selection: String, in sections: [String]) -> Int {
+        sections.firstIndex(where: { $0.caseInsensitiveCompare(selection) == .orderedSame }) ?? 0
+    }
+
     private var highlightedSection: String? {
         guard !filteredSections.isEmpty else { return nil }
         return filteredSections[min(highlightIdx, filteredSections.count - 1)]
@@ -508,6 +517,7 @@ struct TaskSectionPickerBadge: View {
                         SectionPickerRow(
                             section: section,
                             isHighlighted: section == highlightedSection,
+                            isSelected: section == matchedSection,
                             action: {
                                 selection = section
                                 showPicker = false
@@ -520,7 +530,7 @@ struct TaskSectionPickerBadge: View {
             .frame(minWidth: 170)
             .background(Theme.surfaceElevated)
             .onAppear {
-                highlightIdx = 0
+                highlightIdx = Self.openingHighlightIndex(selection: selection, in: filteredSections)
                 DispatchQueue.main.async { isSearchFocused = true }
             }
             .onChange(of: showPicker) { _, isShown in
@@ -536,9 +546,12 @@ struct TaskSectionPickerBadge: View {
     }
 }
 
+/// The checkmark marks `isSelected` -- the section the task is in -- and the keyboard cursor is the
+/// fill alone ([[T-18638]], as `ContainerPickerRow` since [[T-8101]]).
 private struct SectionPickerRow: View {
     let section: String
     let isHighlighted: Bool
+    let isSelected: Bool
     let action: () -> Void
 
     var body: some View {
@@ -551,7 +564,7 @@ private struct SectionPickerRow: View {
                     .frame(width: 16)
                 Text(section).font(.system(size: 13)).foregroundStyle(Theme.text).lineLimit(1)
                 Spacer()
-                if isHighlighted {
+                if isSelected {
                     Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.blue)
                 }
             }

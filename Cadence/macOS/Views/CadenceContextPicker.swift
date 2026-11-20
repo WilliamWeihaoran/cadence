@@ -60,14 +60,13 @@ struct CadenceContextPickerButton: View {
         }
         .buttonStyle(.cadencePlain(cornerRadius: style.cornerRadius))
         .popover(isPresented: $showPicker, arrowEdge: .bottom) {
-            ScrollView {
-                CadenceContextPickerList(
-                    contexts: contexts,
-                    selectedID: $selectedID,
-                    allowNone: allowNone,
-                    onPick: { showPicker = false }
-                )
-            }
+            // The list scrolls its own rows ([[T-18639]]).
+            CadenceContextPickerList(
+                contexts: contexts,
+                selectedID: $selectedID,
+                allowNone: allowNone,
+                onPick: { showPicker = false }
+            )
             .frame(width: 260)
             .frame(maxHeight: 320)
             .background(Theme.surface)
@@ -110,26 +109,22 @@ struct CadenceContextPickerList: View {
         CadenceContextPickerKeyboard.searchFoundNothing(items: pickerItems, query: searchQuery)
     }
 
+    /// **[[T-18639]].** The rows scroll under a pinned search field, inside a reader that keeps the
+    /// arrow-key highlight on screen -- the Cmd+K palette's rule ([[T-8063]]). The hosts used to wrap
+    /// this whole list in their own `ScrollView`, where nothing could reach the proxy, so holding
+    /// Down walked the highlight below the popover's 320pt floor and Return picked an unseen row.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             searchField
 
             Divider().background(Theme.borderSubtle).padding(.top, 6)
 
-            if searchFoundNothing {
-                Text("No matching contexts")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                ForEach(pickerItems) { item in
-                    row(item)
-                    if item.isNone {
-                        Divider().background(Theme.borderSubtle).padding(.vertical, 2)
-                    }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    rows
                 }
+                .onAppear { scrollToHighlighted(proxy) }
+                .onChange(of: highlightedItemID) { _, _ in scrollToHighlighted(proxy) }
             }
         }
         .padding(.vertical, 4)
@@ -149,6 +144,38 @@ struct CadenceContextPickerList: View {
                 highlightIndex = max(highlightIndex - 1, 0)
             default:
                 break
+            }
+        }
+    }
+
+    /// The highlighted row's scroll id: the context's id, or `nil`-wrapped for "No context". Each
+    /// row is tagged with exactly `item.id` below.
+    private var highlightedItemID: UUID?? {
+        highlightIndex >= 0 && highlightIndex < pickerItems.count ? .some(pickerItems[highlightIndex].id) : nil
+    }
+
+    private func scrollToHighlighted(_ proxy: ScrollViewProxy) {
+        guard let highlightedItemID else { return }
+        proxy.scrollTo(highlightedItemID)
+    }
+
+    @ViewBuilder
+    private var rows: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if searchFoundNothing {
+                Text("No matching contexts")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.dim)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ForEach(pickerItems) { item in
+                    row(item)
+                    if item.isNone {
+                        Divider().background(Theme.borderSubtle).padding(.vertical, 2)
+                    }
+                }
             }
         }
     }
@@ -223,6 +250,7 @@ struct CadenceContextPickerList: View {
         // [[T-9465]]: the row style is the one hover plate.
         .buttonStyle(.cadenceMenuRow)
         .padding(.horizontal, 4)
+        .id(item.id)
     }
 
     private func pick(_ id: UUID?) {

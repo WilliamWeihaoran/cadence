@@ -209,69 +209,79 @@ struct ContainerPickerPopoverContent: View {
 
             Divider().background(Theme.borderSubtle)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    // Inbox matches an empty field, so this only draws once something is typed.
-                    if flatFiltered.isEmpty {
-                        Text(Self.noMatchesText)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Theme.dim)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+            // [[T-18639]]: the reader keeps the arrow-key highlight on screen, as the Cmd+K palette
+            // does ([[T-8063]]) -- and the highlight can OPEN below the fold, on a list in a later
+            // context group ([[T-8101]]). `scrollTo` with no anchor moves the least distance.
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        // Inbox matches an empty field, so this only draws once something is typed.
+                        if flatFiltered.isEmpty {
+                            Text(Self.noMatchesText)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.dim)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
 
-                    if showsInbox {
-                        ContainerPickerRow(
-                            icon: CadenceListKindIcon.inbox,
-                            name: "Inbox",
-                            color: Theme.dim,
-                            isHighlighted: highlighted == .inbox,
-                            isSelected: selection == .inbox,
-                            action: { onSelect(.inbox) }
-                        )
-                    }
-
-                    if !groups.isEmpty {
-                        Divider().background(Theme.borderSubtle).padding(.vertical, 2)
-
-                        ForEach(groups) { group in
-                            SectionEyebrowLabel(
-                                text: group.title,
-                                size: .compact,
-                                tint: group.tint
+                        if showsInbox {
+                            ContainerPickerRow(
+                                icon: CadenceListKindIcon.inbox,
+                                name: "Inbox",
+                                color: Theme.dim,
+                                isHighlighted: highlighted == .inbox,
+                                isSelected: selection == .inbox,
+                                action: { onSelect(.inbox) }
                             )
-                                .padding(.horizontal, 12)
-                                .padding(.top, 6)
-                                .padding(.bottom, 2)
+                            .id(TaskContainerSelection.inbox)
+                        }
 
-                            ForEach(group.areas) { area in
-                                ContainerPickerRow(
-                                    icon: CadenceListKindIcon.area,
-                                    name: ContainerPickerFilterSupport.rowName(for: area),
-                                    color: Color(hex: area.colorHex),
-                                    isHighlighted: highlighted == .area(area.id),
-                                    isSelected: selection == .area(area.id),
-                                    action: { onSelect(.area(area.id)) }
-                                )
-                            }
+                        if !groups.isEmpty {
+                            Divider().background(Theme.borderSubtle).padding(.vertical, 2)
 
-                            ForEach(group.projects) { project in
-                                ContainerPickerRow(
-                                    icon: CadenceListKindIcon.project,
-                                    name: ContainerPickerFilterSupport.rowName(for: project),
-                                    color: Color(hex: project.colorHex),
-                                    isHighlighted: highlighted == .project(project.id),
-                                    isSelected: selection == .project(project.id),
-                                    action: { onSelect(.project(project.id)) }
+                            ForEach(groups) { group in
+                                SectionEyebrowLabel(
+                                    text: group.title,
+                                    size: .compact,
+                                    tint: group.tint
                                 )
+                                    .padding(.horizontal, 12)
+                                    .padding(.top, 6)
+                                    .padding(.bottom, 2)
+
+                                ForEach(group.areas) { area in
+                                    ContainerPickerRow(
+                                        icon: CadenceListKindIcon.area,
+                                        name: ContainerPickerFilterSupport.rowName(for: area),
+                                        color: Color(hex: area.colorHex),
+                                        isHighlighted: highlighted == .area(area.id),
+                                        isSelected: selection == .area(area.id),
+                                        action: { onSelect(.area(area.id)) }
+                                    )
+                                    .id(TaskContainerSelection.area(area.id))
+                                }
+
+                                ForEach(group.projects) { project in
+                                    ContainerPickerRow(
+                                        icon: CadenceListKindIcon.project,
+                                        name: ContainerPickerFilterSupport.rowName(for: project),
+                                        color: Color(hex: project.colorHex),
+                                        isHighlighted: highlighted == .project(project.id),
+                                        isSelected: selection == .project(project.id),
+                                        action: { onSelect(.project(project.id)) }
+                                    )
+                                    .id(TaskContainerSelection.project(project.id))
+                                }
                             }
                         }
                     }
+                    .padding(.vertical, 6)
                 }
-                .padding(.vertical, 6)
+                .frame(maxHeight: 320)
+                .onAppear { scrollToHighlighted(proxy) }
+                .onChange(of: highlighted) { _, _ in scrollToHighlighted(proxy) }
             }
-            .frame(maxHeight: 320)
         }
         .frame(minWidth: 190)
         .background(Theme.surfaceElevated)
@@ -294,6 +304,12 @@ struct ContainerPickerPopoverContent: View {
         .onChange(of: searchQuery) { _, _ in
             highlightIdx = 0
         }
+    }
+
+    /// Each row is tagged with exactly its `TaskContainerSelection` above.
+    private func scrollToHighlighted(_ proxy: ScrollViewProxy) {
+        guard let highlighted else { return }
+        proxy.scrollTo(highlighted)
     }
 
     private var searchBar: some View {

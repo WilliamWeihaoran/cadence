@@ -122,4 +122,38 @@ struct TaskSectionPickerFilterTests {
     }
 }
 
+/// **T-18638.** The section chip's popover opens on the task's own section and checks it -- the
+/// [[T-8101]] rule the list picker and the `~` panel already follow. It opened on row 0 with the
+/// checkmark on the highlight, so one Return re-filed the task into the first section.
+@MainActor
+struct TaskSectionPickerOpeningTests {
+    private let sections = ["Backlog", "Doing", "Done"]
+
+    @Test func theHighlightOpensOnTheTasksOwnSection() {
+        #expect(TaskSectionPickerBadge.openingHighlightIndex(selection: "Doing", in: sections) == 1)
+        #expect(TaskSectionPickerBadge.openingHighlightIndex(selection: "done", in: sections) == 2)
+    }
+
+    @Test func aSelectionNamingNoListedSectionOpensOnTheFirstRow() {
+        #expect(TaskSectionPickerBadge.openingHighlightIndex(selection: "Gone", in: sections) == 0)
+        #expect(TaskSectionPickerBadge.openingHighlightIndex(selection: "", in: sections) == 0)
+        #expect(TaskSectionPickerBadge.openingHighlightIndex(selection: "Doing", in: []) == 0)
+    }
+
+    @Test func theRowCheckmarksTheTasksSectionAndNotTheHighlight() throws {
+        let file = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanelSupportViews.swift")
+        )
+        let row = try #require(CadenceSourceScan.declarationBody("private struct SectionPickerRow: View", in: file))
+        #expect(row.contains("let isSelected: Bool"))
+        #expect(CadenceSourceScan.matchCount("if isSelected \\{\\s*Image\\(systemName: \"checkmark\"\\)", in: row) == 1)
+        #expect(CadenceSourceScan.matchCount("if isHighlighted", in: row) == 0)
+        #expect(row.contains(".background(isHighlighted ? Theme.blue.opacity(0.08) : Color.clear)"))
+
+        let badge = try #require(CadenceSourceScan.declarationBody("struct TaskSectionPickerBadge: View", in: file))
+        #expect(CadenceSourceScan.matchCount("isSelected: section == matchedSection", in: badge) == 1)
+        #expect(badge.contains("highlightIdx = Self.openingHighlightIndex(selection: selection, in: filteredSections)"))
+    }
+}
+
 #endif

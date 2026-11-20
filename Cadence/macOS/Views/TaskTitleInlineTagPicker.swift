@@ -30,35 +30,45 @@ struct TaskTitleInlineTagPicker: View {
 
             Divider().background(Theme.borderSubtle)
 
-            ScrollView {
-                VStack(spacing: 2) {
-                    ForEach(Array(filteredTags.enumerated()), id: \.element.id) { index, tag in
-                        InlineTagPickerRow(
-                            tag: tag,
-                            isHighlighted: index == highlightIndex,
-                            isSelected: selectedTags.contains { $0.id == tag.id },
-                            action: { onSelect(tag) }
+            // [[T-18639]]: the reader keeps the arrow-key highlight on screen, as the Cmd+K palette
+            // does ([[T-8063]]). Rows are tagged with their highlight index -- the Create/Unarchive
+            // row is index `filteredTags.count` -- so `scrollTo(highlightIndex)` reaches each one.
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 2) {
+                        ForEach(Array(filteredTags.enumerated()), id: \.element.id) { index, tag in
+                            InlineTagPickerRow(
+                                tag: tag,
+                                isHighlighted: index == highlightIndex,
+                                isSelected: selectedTags.contains { $0.id == tag.id },
+                                action: { onSelect(tag) }
+                            )
+                            .id(index)
+                        }
+
+                        if let archivedMatch {
+                            unarchiveRow(archivedMatch, isHighlighted: highlightIndex == filteredTags.count)
+                                .id(filteredTags.count)
+                        } else if canCreate {
+                            createRow(isHighlighted: highlightIndex == filteredTags.count)
+                                .id(filteredTags.count)
+                        }
+
+                        TagPickerPlaceholderRow(
+                            placeholder: TagPickerPlaceholder.resolve(
+                                hasActiveTags: hasActiveTags,
+                                matchCount: filteredTags.count,
+                                canCreate: canCreate,
+                                canRestore: archivedMatch != nil
+                            )
                         )
                     }
-
-                    if let archivedMatch {
-                        unarchiveRow(archivedMatch, isHighlighted: highlightIndex == filteredTags.count)
-                    } else if canCreate {
-                        createRow(isHighlighted: highlightIndex == filteredTags.count)
-                    }
-
-                    TagPickerPlaceholderRow(
-                        placeholder: TagPickerPlaceholder.resolve(
-                            hasActiveTags: hasActiveTags,
-                            matchCount: filteredTags.count,
-                            canCreate: canCreate,
-                            canRestore: archivedMatch != nil
-                        )
-                    )
+                    .padding(6)
                 }
-                .padding(6)
+                .frame(maxHeight: 220)
+                .onAppear { proxy.scrollTo(highlightIndex) }
+                .onChange(of: highlightIndex) { _, _ in proxy.scrollTo(highlightIndex) }
             }
-            .frame(maxHeight: 220)
         }
         .frame(width: 240)
         // [[T-9802]]: the Mac picker-popover surface, as `TagPickerPopover` (the same tags, picked

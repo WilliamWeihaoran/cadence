@@ -76,6 +76,12 @@ struct CadenceCalendarPickerList: View {
         return items
     }
 
+    /// A search that matched no calendar. The unlinked row goes with it: picking it while looking
+    /// for something named is not what the search was for ([[T-18637]]).
+    private var searchFoundNothing: Bool {
+        CadenceCalendarPickerKeyboard.searchFoundNothing(itemIDs: flattenedItems.map(\.id), query: searchQuery)
+    }
+
     /// A calendar's name in this list. An excluded one carries the link's wording, so the calendar
     /// the field row calls "Team (Hidden)" — or "Holidays (Read-only)" — is the same words in the
     /// menu the row opens.
@@ -84,13 +90,49 @@ struct CadenceCalendarPickerList: View {
             ?? calendar.title
     }
 
+    /// **[[T-18639]].** The rows scroll under a pinned search field, inside a reader that keeps the
+    /// arrow-key highlight on screen -- the Cmd+K palette's rule ([[T-8063]]). The hosts used to wrap
+    /// this whole list in their own `ScrollView`, where nothing could reach the proxy, so holding
+    /// Down walked the highlight below the popover's 320pt floor and Return picked an unseen row.
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             searchField
 
             Divider().background(Theme.borderSubtle).padding(.top, 6)
 
-            if groups.isEmpty && !(allowNone && searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    rows
+                }
+                .onAppear { scrollToHighlighted(proxy) }
+                .onChange(of: highlightedItemID) { _, _ in scrollToHighlighted(proxy) }
+            }
+        }
+        .padding(.vertical, 4)
+        .frame(minWidth: 240)
+        .onAppear {
+            isSearchFocused = true
+            syncHighlight()
+        }
+        .onChange(of: searchQuery) { _, _ in
+            syncHighlight()
+        }
+    }
+
+    /// The highlighted row's id; each row is tagged with exactly its item id below.
+    private var highlightedItemID: String? {
+        highlightIdx >= 0 && highlightIdx < flattenedItems.count ? flattenedItems[highlightIdx].id : nil
+    }
+
+    private func scrollToHighlighted(_ proxy: ScrollViewProxy) {
+        guard let highlightedItemID else { return }
+        proxy.scrollTo(highlightedItemID)
+    }
+
+    @ViewBuilder
+    private var rows: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if searchFoundNothing || (groups.isEmpty && !allowNone) {
                 Text("No matching calendars")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.dim)
@@ -118,15 +160,6 @@ struct CadenceCalendarPickerList: View {
                     }
                 }
             }
-        }
-        .padding(.vertical, 4)
-        .frame(minWidth: 240)
-        .onAppear {
-            isSearchFocused = true
-            syncHighlight()
-        }
-        .onChange(of: searchQuery) { _, _ in
-            syncHighlight()
         }
     }
 
@@ -170,6 +203,7 @@ struct CadenceCalendarPickerList: View {
         // [[T-9465]]: the row style is the one hover plate.
         .buttonStyle(.cadenceMenuRow)
         .padding(.horizontal, 4)
+        .id(id)
     }
 
     private var searchField: some View {
@@ -184,8 +218,12 @@ struct CadenceCalendarPickerList: View {
                 .foregroundStyle(Theme.text)
                 .focused($isSearchFocused)
                 .onSubmit {
-                    guard highlightIdx >= 0, highlightIdx < flattenedItems.count else { return }
-                    pick(flattenedItems[highlightIdx].id)
+                    guard let target = CadenceCalendarPickerKeyboard.submitTarget(
+                        itemIDs: flattenedItems.map(\.id),
+                        query: searchQuery,
+                        highlightIndex: highlightIdx
+                    ) else { return }
+                    pick(target)
                 }
 
             CadenceSearchFieldClearButton(text: $searchQuery, glyphSize: 12, focus: $isSearchFocused)
@@ -214,15 +252,56 @@ struct CadenceCalendarPickerList: View {
     }
 
     private func syncHighlight() {
-        guard !flattenedItems.isEmpty else {
-            highlightIdx = 0
-            return
+        highlightIdx = CadenceCalendarPickerKeyboard.highlightIndex(
+            itemIDs: flattenedItems.map(\.id),
+            selectedID: selectedID,
+            query: searchQuery,
+            current: highlightIdx
+        )
+    }
+}
+
+/// What the calendar picker's search field does with the keyboard ([[T-18637]]) -- the
+/// [[T-14791]] rule `CadenceContextPickerKeyboard` already applies to its context sibling.
+///
+/// The unlinked row (id `noneID`) is always first in `flattenedItems` when `allowNone`, even while a
+/// query is typed and even when the body draws "No matching calendars" in its place, and the
+/// highlight used to follow the current selection whenever it was in the list. So with nothing
+/// linked, typing `Work` and pressing Return picked the unlinked row again; and a query that
+/// matched nothing left only that hidden row, which Return picked -- unlinking the list's calendar
+/// on Save. While a query is typed the highlight now moves to the first matching calendar, and
+/// Return over no match picks nothing; an empty field still follows the selection.
+enum CadenceCalendarPickerKeyboard {
+    /// The unlinked row's id, which is also what `selectedID` holds when nothing is linked.
+    static let noneID = ""
+
+    private static func isSearching(_ query: String) -> Bool {
+        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// A typed query that matched no calendar. The unlinked row alone is not a match.
+    static func searchFoundNothing(itemIDs: [String], query: String) -> Bool {
+        isSearching(query) && itemIDs.allSatisfy { $0 == noneID }
+    }
+
+    /// The row to highlight after the list or the query changes: the first matching calendar while
+    /// searching, otherwise the current selection.
+    static func highlightIndex(itemIDs: [String], selectedID: String, query: String, current: Int) -> Int {
+        guard !itemIDs.isEmpty else { return 0 }
+        if isSearching(query) {
+            return itemIDs.firstIndex(where: { $0 != noneID }) ?? 0
         }
-        if let selectedIndex = flattenedItems.firstIndex(where: { $0.id == selectedID }) {
-            highlightIdx = selectedIndex
-        } else {
-            highlightIdx = min(highlightIdx, flattenedItems.count - 1)
+        if let selectedIndex = itemIDs.firstIndex(of: selectedID) {
+            return selectedIndex
         }
+        return min(max(current, 0), itemIDs.count - 1)
+    }
+
+    /// The id Return picks -- `noneID` is "unlink" -- or `nil` for nothing at all.
+    static func submitTarget(itemIDs: [String], query: String, highlightIndex: Int) -> String? {
+        guard !searchFoundNothing(itemIDs: itemIDs, query: query),
+              highlightIndex >= 0, highlightIndex < itemIDs.count else { return nil }
+        return itemIDs[highlightIndex]
     }
 }
 
@@ -292,15 +371,14 @@ struct CadenceCalendarPickerButton: View {
         }
         .buttonStyle(.cadencePlain(cornerRadius: style.cornerRadius))
         .popover(isPresented: $showPicker, arrowEdge: .bottom) {
-            ScrollView {
-                CadenceCalendarPickerList(
-                    calendars: calendars,
-                    selectedID: $selectedID,
-                    link: link,
-                    allowNone: allowNone,
-                    onPick: { showPicker = false }
-                )
-            }
+            // The list scrolls its own rows ([[T-18639]]).
+            CadenceCalendarPickerList(
+                calendars: calendars,
+                selectedID: $selectedID,
+                link: link,
+                allowNone: allowNone,
+                onPick: { showPicker = false }
+            )
             .frame(maxHeight: 320)
             .background(Theme.surface)
         }
