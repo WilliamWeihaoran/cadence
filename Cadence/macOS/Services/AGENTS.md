@@ -54,7 +54,8 @@ Beyond the long-standing managers, note:
   service at its new path when you add them to `CadenceSchema`, or a reset leaves orphans.
 - `CadenceMCPRefreshCoordinator.swift` - watches a `.cadence-mcp-refresh` marker file beside the
   store so the app reloads after the MCP server writes to it from another process. See
-  `CadenceMCPServer/AGENTS.md`.
+  `CadenceMCPServer/AGENTS.md`. The same file holds `CadenceExternalWriteReminderWatch` (T-18622),
+  the app-delegate-owned watch that reconciles reminders on every marker post, active or not.
 - Also here and previously unlisted: `NoteExportService.swift`, `AppleAccountManager.swift`,
   `GlobalSearchManager.swift`.
 

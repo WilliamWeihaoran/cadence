@@ -789,6 +789,21 @@ struct NotificationManagerCentreSeamTests {
         }
     }
 
+    /// [[T-18623]]: the termination spelling. No `await` between the call and the read -- that is
+    /// the whole claim, since `applicationWillTerminate` cannot wait for a hop.
+    @Test func withdrawRemindersNowRemovesBothRemindersBeforeReturning() async throws {
+        let (a, b) = (UUID(), UUID())
+        let ids = { (id: UUID) in [NotificationIdentifiers.taskStart(taskID: id), NotificationIdentifiers.taskDue(taskID: id)] }
+        let centre = FakeCentre(pending: ids(a) + ids(b), delivered: ids(a))
+
+        try await withManager(centre) { manager in
+            manager.withdrawRemindersNow(taskIDs: [a])
+            #expect(centre.removed == Set(ids(a)))
+            #expect(Set(centre.pending) == Set(ids(b)))
+            #expect(centre.delivered.isEmpty)
+        }
+    }
+
     @Test func cancelHabitIDsRemovesExactlyTheGivenHabitReminders() async throws {
         let (a, b) = (UUID(), UUID())
         let taskID = NotificationIdentifiers.taskDue(taskID: a)

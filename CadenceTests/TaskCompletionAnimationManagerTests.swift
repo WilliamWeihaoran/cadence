@@ -392,6 +392,45 @@ struct TaskCompletionAnimationManagerTests {
         #expect(context.hasChanges == false)
     }
 
+    /// **[[T-18623]].** The write's own reconcile is an unstructured `Task` that a quit never lets
+    /// run, so the settle hands the tasks it finished to a synchronous withdrawal before it
+    /// returns -- exactly those: one already finished elsewhere is not this settle's to withdraw.
+    @Test func aSettleOnQuitWithdrawsTheRemindersOfExactlyTheTasksItFinished() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let manager = TaskCompletionAnimationManager.shared
+        let injected = manager.modelContext
+        manager.modelContext = context
+        defer { manager.modelContext = injected }
+
+        let ticked = AppTask(title: "ticked")
+        let dropped = AppTask(title: "dropped")
+        let elsewhere = AppTask(title: "finished by MCP mid-fill")
+        let untouched = AppTask(title: "never tapped")
+        for task in [ticked, dropped, elsewhere, untouched] { context.insert(task) }
+        try context.save()
+
+        manager.toggleCompletion(for: ticked)
+        manager.toggleCancellation(for: dropped)
+        manager.toggleCompletion(for: elsewhere)
+        CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries(elsewhere, as: .done)
+        try context.save()
+
+        var withdrawals: [[UUID]] = []
+        manager.settleAllPendingBeforeTermination { withdrawals.append($0) }
+
+        #expect(ticked.status == .done && dropped.status == .cancelled)
+        #expect(withdrawals.count == 1, "the settle withdrew \(withdrawals.count) times")
+        #expect(
+            Set(withdrawals.flatMap { $0 }) == [ticked.id, dropped.id],
+            "a task settled at Cmd+Q keeps its pending reminder (T-18623)"
+        )
+
+        // Nothing pending: no withdrawal at all, so an idle quit never reaches the centre.
+        manager.settleAllPendingBeforeTermination { withdrawals.append($0) }
+        #expect(withdrawals.count == 1)
+    }
+
     /// The settle replaces the timer's write; it must not be followed by it. A recurring task
     /// settled twice would spawn two successors, so this waits past the fill and counts them.
     @Test func aSettleOnQuitIsNotRepeatedWhenTheFillWouldHaveEnded() async throws {

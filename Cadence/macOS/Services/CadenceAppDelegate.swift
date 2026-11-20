@@ -9,6 +9,12 @@ final class CadenceAppDelegate: NSObject, NSApplicationDelegate {
         CadenceRemoteNotificationRegistrar.registerIfNeeded()
         CadenceSyncActivityLog.shared.startIfNeeded()
         GlobalHotKeyManager.shared.registerIfNeeded()
+        // [[T-18622]]: an MCP or widget write withdraws or re-arms its reminders now, not when
+        // Cadence is next frontmost, and with no window open. Not in a test host, whose marker
+        // would be the one beside the app's own store.
+        if !NotificationManager.isTestEnvironment {
+            CadenceExternalWriteReminderWatch.shared.start()
+        }
         CadenceWindowRestorationSupport.clampWindowsOntoConnectedScreens(
             NSApplication.shared.windows,
             screens: NSScreen.screens
@@ -21,7 +27,9 @@ final class CadenceAppDelegate: NSObject, NSApplicationDelegate {
         MarkdownEditorTerminationFlush.shared.flushAllBeforeTermination()
         // T-5305: the focus stopwatch is memory-only; bank it before it is gone.
         FocusManager.shared.bankBeforeTermination()
-        // T-5360: a tick still inside its 2.5s fill has not been written yet; finish it.
+        // T-5360: a tick still inside its fill (`CadenceTaskCompletionTiming.animationDuration`)
+        // has not been written yet; finish it. [[T-18623]]: this also withdraws its reminders
+        // synchronously, since the write's own async reconcile cannot outlive this method.
         TaskCompletionAnimationManager.shared.settleAllPendingBeforeTermination()
         GlobalHotKeyManager.shared.unregister()
     }

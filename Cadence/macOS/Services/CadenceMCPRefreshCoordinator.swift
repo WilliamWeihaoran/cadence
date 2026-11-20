@@ -31,13 +31,70 @@ final class CadenceMCPRefreshCoordinator {
     }
 }
 
-private final class CadenceMCPRefreshMonitor {
+/// **[[T-18622]]: the reminder half of adopting an out-of-process write, held for the app's life.**
+///
+/// The only reconcile for an MCP or widget write used to be the last line of
+/// `macOSRootView.refreshAppData()`, and that swap waits for `NSApp.isActive` -- while Claude
+/// Desktop, the surface the owner drives MCP from, is frontmost. So a task an agent completed,
+/// deleted or moved kept its old "Due today" / "Starting now" until Cadence was next clicked. The
+/// watch was also `@State` on the root view, so with the window closed (the app still running)
+/// nothing heard the marker at all. This watch is owned by `CadenceAppDelegate`, needs no window,
+/// and reconciles from a fresh read whatever the activation state; the UI swap stays deferred
+/// exactly as it was ([[T-18162]]). The [[T-3046]] half-imported-store caution does not apply: a
+/// local SQLite write is complete before its marker is posted.
+@MainActor
+final class CadenceExternalWriteReminderWatch {
+    static let shared = CadenceExternalWriteReminderWatch(
+        reconcile: { CadenceExternalWriteReminderWatch.reconcileFromStore() }
+    )
+
+    private var monitor: CadenceMCPRefreshMonitor?
+    private let reconcile: @MainActor () -> Void
+
+    init(reconcile: @escaping @MainActor () -> Void) {
+        self.reconcile = reconcile
+    }
+
+    var isWatching: Bool { monitor != nil }
+
+    /// `markerURL` is injectable for the tests; the app passes nothing and watches the real
+    /// marker. Never in a test host for `shared`: that marker sits beside the app's store.
+    func start(markerURL: URL? = nil) {
+        guard monitor == nil,
+              let url = markerURL ?? (try? CadenceModelContainerFactory.refreshMarkerURL()) else { return }
+        monitor = CadenceMCPRefreshMonitor(markerURL: url) { [weak self] in
+            self?.reconcile()
+        }
+    }
+
+    func stop() {
+        monitor = nil
+    }
+
+    /// The becoming-active arm's own input (`NotificationReconcileObserver`): a fresh context over
+    /// the store, so no registered row predates the write. A failed read reconciles nothing.
+    static func reconcileFromStore() {
+        guard !NotificationManager.isTestEnvironment,
+              let container = PersistenceController.shared.container else { return }
+        Task {
+            guard let snapshot = try? CadenceForegroundNotificationSnapshot(container: container) else { return }
+            await NotificationManager.shared.reconcile(tasks: snapshot.tasks, completeStore: snapshot.completeStore)
+            withExtendedLifetime(snapshot) {}
+        }
+    }
+}
+
+final class CadenceMCPRefreshMonitor {
     private let queue = DispatchQueue(label: "com.haoranwei.Cadence.mcp-refresh-monitor")
     private let source: DispatchSourceFileSystemObject
     private var pendingRefresh: DispatchWorkItem?
 
-    init?(onChange: @escaping @MainActor @Sendable () -> Void) {
+    convenience init?(onChange: @escaping @MainActor @Sendable () -> Void) {
         guard let markerURL = try? CadenceModelContainerFactory.refreshMarkerURL() else { return nil }
+        self.init(markerURL: markerURL, onChange: onChange)
+    }
+
+    init?(markerURL: URL, onChange: @escaping @MainActor @Sendable () -> Void) {
         try? FileManager.default.createDirectory(
             at: markerURL.deletingLastPathComponent(),
             withIntermediateDirectories: true

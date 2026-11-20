@@ -92,12 +92,13 @@ struct CadenceAgentOperatingRuleTests {
         #expect(
             touching == [
                 "cancel(habitIDs)",
-                "cancel(taskIDs)",
                 "cancelAll()",
                 "init()",
                 "reconcile()",
                 "refreshAuthorizationState()",
                 "requestAuthorization()",
+                // [[T-18623]]: `cancel(taskIDs:)` is now this synchronous spelling plus an `await`.
+                "withdrawRemindersNow(taskIDs)",
             ],
             "the declarations touching `center.` are now \(touching)"
         )

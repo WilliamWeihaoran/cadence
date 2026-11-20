@@ -367,6 +367,14 @@ final class NotificationManager: NSObject {
     /// sit in Notification Center naming a task that no longer exists. The same identifiers, so
     /// nothing outside these tasks' two reminders is touched.
     func cancel(taskIDs: [UUID]) async {
+        withdrawRemindersNow(taskIDs: taskIDs)
+    }
+
+    /// `cancel(taskIDs:)` without the `async`, for a caller that cannot wait for a hop
+    /// ([[T-18623]]): `applicationWillTerminate` returns and the process exits, so an unstructured
+    /// `Task` it starts never runs. Both centre calls are synchronous; the async spelling above is
+    /// this one, so the two cannot drift.
+    func withdrawRemindersNow(taskIDs: [UUID]) {
         guard centreIsInjected || !Self.isTestEnvironment, !taskIDs.isEmpty else { return }
         let identifiers = taskIDs.flatMap {
             [NotificationIdentifiers.taskStart(taskID: $0), NotificationIdentifiers.taskDue(taskID: $0)]

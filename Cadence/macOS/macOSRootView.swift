@@ -363,6 +363,10 @@ struct macOSRootView: View {
         //
         // After the swap, over `currentModelContext`, because the outgoing context predates the
         // write and would diff against rows the other process never touched.
+        //
+        // [[T-18622]]: no longer the only one. This swap waits for `NSApp.isActive`, so the prompt
+        // reconcile is `CadenceExternalWriteReminderWatch`'s, held by the app delegate; this one is
+        // the redundant pass over the context the window now reads.
         HabitNotificationReconcileSupport.scheduleReconcile(in: currentModelContext)
     }
 

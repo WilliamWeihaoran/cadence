@@ -241,13 +241,37 @@ final class TaskCompletionAnimationManager {
     /// and was rejected: the deferral is what keeps a hovered row in its group until the fill ends
     /// and what makes a second tap a free undo, and both are pinned by this manager's tests.
     /// `CadenceAppDelegate.applicationWillTerminate` calls this beside the focus bank.
-    func settleAllPendingBeforeTermination() {
+    ///
+    /// **[[T-18623]]: and withdraws the settled tasks' reminders before returning.** The write's
+    /// own reconcile is an unstructured `Task` (`HabitNotificationReconcileSupport`), and on a
+    /// quit the process exits as soon as `applicationWillTerminate` returns, so it never ran: the
+    /// task was saved done and its "Due today" fired anyway, from the OS. The withdrawal is
+    /// synchronous and keyed on exactly the tasks this call finished -- a refused write that put
+    /// the task back is still open and keeps its reminder. A repeating task's successor gets its
+    /// reminder from the next reconcile, as before. iOS reaches this through
+    /// `settleAllPending(onLeaving:)`, where the leaving-active reconcile follows anyway; one
+    /// spelling for both, so a settle never depends on the process outliving it.
+    ///
+    /// - Parameter withdrawReminders: `nil` means `NotificationManager.shared.withdrawRemindersNow`;
+    ///   `? = nil` because a default argument is evaluated nonisolated.
+    func settleAllPendingBeforeTermination(withdrawReminders: (([UUID]) -> Void)? = nil) {
         let completions = pendingTargets
         let cancellations = pendingCancelTargets
         for id in completions.keys { cancelPending(for: id) }
         for id in cancellations.keys { cancelCancelPending(for: id) }
-        for task in completions.values where !wasSettledElsewhere(task) { write(.done, to: task) }
-        for task in cancellations.values where !wasSettledElsewhere(task) { write(.cancelled, to: task) }
+        var settled: [AppTask] = []
+        for task in completions.values where !wasSettledElsewhere(task) {
+            write(.done, to: task)
+            settled.append(task)
+        }
+        for task in cancellations.values where !wasSettledElsewhere(task) {
+            write(.cancelled, to: task)
+            settled.append(task)
+        }
+        let finishedIDs = settled.filter(CadenceTaskQuerySupport.isFinishedTask).map(\.id)
+        guard !finishedIDs.isEmpty else { return }
+        let withdraw = withdrawReminders ?? { NotificationManager.shared.withdrawRemindersNow(taskIDs: $0) }
+        withdraw(finishedIDs)
     }
 
     /// **The iOS spelling of termination ([[T-8203]], hazard 1).** iOS has no Cmd-Q to hear: it

@@ -252,6 +252,49 @@ struct CadenceExternalWriteReconcileTests {
         #expect(swap.lowerBound < reconcile.lowerBound)
     }
 
+#if os(macOS)
+    /// **[[T-18622]].** The reminder half of adopting an MCP write no longer waits for the UI
+    /// swap, which waits for `NSApp.isActive` -- false the whole time Claude Desktop is frontmost.
+    /// This watch is built here with no window and no activation, as the app delegate holds it, and
+    /// a marker post alone reaches its reconcile.
+    @Test func aMarkerPostReconcilesRemindersWithNoWindowAndNoActivation() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("default.store")
+        let markerURL = CadenceStoreSupport.externalWriteMarkerURL(besideStoreAt: storeURL)
+        final class Count { var value = 0 }
+        let reconciles = Count()
+        let watch = CadenceExternalWriteReminderWatch(reconcile: { reconciles.value += 1 })
+        watch.start(markerURL: markerURL)
+        defer { watch.stop() }
+
+        #expect(watch.isWatching)
+        try await Task.sleep(nanoseconds: 400_000_000)
+        #expect(reconciles.value == 0, "the watch reconciled before anything was written")
+
+        #expect(CadenceStoreSupport.postExternalWrite(besideStoreAt: storeURL, now: Date()))
+        let deadline = Date().addingTimeInterval(10)
+        while reconciles.value == 0, Date() < deadline {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        #expect(
+            reconciles.value >= 1,
+            "an MCP write's marker no longer reconciles reminders until Cadence is frontmost (T-18622)"
+        )
+    }
+
+    /// The watch has to outlive the window, so it is the app delegate's, started at launch -- not
+    /// `macOSRootView`'s `@State`, which a closed window drops.
+    @Test func theAppDelegateStartsTheReminderWatchAtLaunch() throws {
+        let source = strippingComments(try sourceFile("Cadence/macOS/Services/CadenceAppDelegate.swift"))
+        let body = try cadenceFunctionBody("func applicationDidFinishLaunching", in: source)
+        #expect(body.contains("CadenceExternalWriteReminderWatch.shared.start()"))
+
+        let root = strippingComments(try sourceFile("Cadence/macOS/macOSRootView.swift"))
+        #expect(!root.contains("CadenceExternalWriteReminderWatch"), "the reminder watch is tied to a window again")
+    }
+#endif
+
     /// iOS has no marker watcher, so becoming active is its only checkpoint for a write the widget
     /// extension made while the app was away. `Cadence/iOS/` is inside `#if os(iOS)` and invisible
     /// to this macOS-built target, which is what leaves a scan as the only tool here.
