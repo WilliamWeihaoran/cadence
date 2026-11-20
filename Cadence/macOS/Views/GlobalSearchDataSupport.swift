@@ -2,6 +2,40 @@
 import SwiftUI
 import EventKit
 
+/// **One Events fetch: the query it ran for, the events it matched, and the rows built from them**
+/// ([[T-18658]]).
+///
+/// The fetch runs behind a 40 ms commit debounce plus an 80 ms delay, so for that window the
+/// palette's query is newer than its event rows. Keeping the matched `EKEvent`s beside the rows is
+/// what lets `GlobalSearchDataSupport.buildSections` re-gate them against the CURRENT query, the
+/// way iOS Search re-scores its cached events on every render, instead of drawing -- and letting
+/// Return open -- rows the field no longer matches.
+struct GlobalSearchEventFetch {
+    let query: String
+    let events: [EKEvent]
+    let results: [GlobalSearchResult]
+
+    static let empty = GlobalSearchEventFetch(query: "", events: [], results: [])
+
+    init(query: String, events: [EKEvent], results: [GlobalSearchResult]) {
+        self.query = query
+        self.events = events
+        self.results = results
+    }
+
+    init(query: String, events: [EKEvent]) {
+        self.init(query: query, events: events, results: GlobalSearchDataSupport.eventResults(from: events, query: query))
+    }
+
+    /// The Events rows for `currentQuery`: the fetch's own rows when it ran for this query, and
+    /// otherwise its events re-scored against it -- a non-refining query keeps none of them, so no
+    /// event row is drawn under a query it does not match while the re-fetch is pending.
+    func results(for currentQuery: String) -> [GlobalSearchResult] {
+        guard currentQuery != query else { return results }
+        return GlobalSearchDataSupport.eventResults(from: events, query: currentQuery)
+    }
+}
+
 enum GlobalSearchDataSupport {
     static func buildSections(
         query: String,
@@ -10,7 +44,7 @@ enum GlobalSearchDataSupport {
         projects: [Project],
         tasks: [AppTask],
         notes: [Note],
-        eventResults: [GlobalSearchResult],
+        eventFetch: GlobalSearchEventFetch,
         sidebarTabColorsRaw: String,
         includesCompletedTasks: Bool
     ) -> [GlobalSearchSection] {
@@ -21,7 +55,7 @@ enum GlobalSearchDataSupport {
             projects: projects,
             tasks: tasks,
             notes: notes,
-            eventResults: eventResults,
+            eventResults: eventFetch.results(for: query),
             sidebarTabColorsRaw: sidebarTabColorsRaw,
             includesCompletedTasks: includesCompletedTasks
         ).sections

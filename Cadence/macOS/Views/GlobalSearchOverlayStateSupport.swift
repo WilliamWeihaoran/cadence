@@ -72,11 +72,11 @@ enum GlobalSearchOverlayStateSupport {
         calendarManager: CalendarManager,
         cancelPending: () -> Void,
         storePending: @escaping (DispatchWorkItem?) -> Void,
-        updateResults: @escaping ([GlobalSearchResult]) -> Void
+        updateResults: @escaping (GlobalSearchEventFetch) -> Void
     ) {
         cancelPending()
         guard calendarManager.isAuthorized else {
-            updateResults([])
+            updateResults(.empty)
             return
         }
 
@@ -87,7 +87,7 @@ enum GlobalSearchOverlayStateSupport {
                 futureDays: CadenceCalendarEventSearchSupport.windowFutureDays
             )
             DispatchQueue.main.async {
-                updateResults(GlobalSearchDataSupport.eventResults(from: matchedEvents, query: query))
+                updateResults(GlobalSearchEventFetch(query: query, events: matchedEvents))
             }
         }
 

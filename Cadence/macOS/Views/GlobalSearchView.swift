@@ -27,7 +27,8 @@ struct GlobalSearchOverlay: View {
     /// hides is an account-wide record rather than this Mac's preference.
     @Query private var sidebarLayoutPreferences: [SidebarLayoutPreference]
 
-    @State private var eventResults: [GlobalSearchResult] = []
+    /// The last Events fetch, re-gated against `query` in `buildSections` ([[T-18658]]).
+    @State private var eventFetch = GlobalSearchEventFetch.empty
     @State private var highlightedResultID: String?
     /// [[T-8092]]: keeps a resting pointer from taking the highlight back from the keyboard.
     @State private var hoverGate = GlobalSearchHoverGate()
@@ -71,7 +72,7 @@ struct GlobalSearchOverlay: View {
             projects: projects,
             tasks: tasks,
             notes: notes,
-            eventResults: eventResults,
+            eventFetch: eventFetch,
             sidebarTabColorsRaw: sidebarTabColorsRaw,
             includesCompletedTasks: includesCompletedTasks
         )
@@ -172,8 +173,8 @@ struct GlobalSearchOverlay: View {
             calendarManager: calendarManager,
             cancelPending: { pendingEventSearch?.cancel() },
             storePending: { pendingEventSearch = $0 }
-        ) { results in
-            eventResults = results
+        ) { fetch in
+            eventFetch = fetch
             syncHighlightToAvailableResults()
         }
     }

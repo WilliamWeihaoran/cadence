@@ -291,6 +291,42 @@ struct GlobalSearchEventResultsTests {
         )
         #expect(hook.contains("runEventSearch()"), "the store-change hook does not re-run the Events fetch")
     }
+
+    // MARK: - [[T-18658]] rows from an older query are re-gated, not drawn as fetched
+
+    private func sections(query: String, eventFetch: GlobalSearchEventFetch) -> [GlobalSearchSection] {
+        GlobalSearchDataSupport.buildSections(
+            query: query, hiddenTabs: [], areas: [], projects: [], tasks: [], notes: [],
+            eventFetch: eventFetch, sidebarTabColorsRaw: "", includesCompletedTasks: false
+        )
+    }
+
+    /// **The Events fetch lands at least 120 ms after the query changes**, so the palette builds
+    /// its sections from rows fetched for the PREVIOUS query in between. Those rows used to be
+    /// appended as fetched: type `dentist`, pause, then select all, type `zzz` and Return at once,
+    /// and the stale Dentist row was the only row and Return opened it. They are now re-scored
+    /// against the current query, as iOS Search re-scores its cached events on every render.
+    @Test func aPendingFetchNeverDrawsAnEventTheCurrentQueryDoesNotMatch() {
+        let fetch = GlobalSearchEventFetch(
+            query: "dentist",
+            events: [event(title: "Dentist", start: now.addingTimeInterval(3_600))]
+        )
+
+        // Non-vacuity: under its own query the fetch draws its row.
+        let own = sections(query: "dentist", eventFetch: fetch)
+        #expect(own.first { $0.category == .events }?.results.map(\.title) == ["Dentist"])
+
+        let stale = sections(query: "zzz", eventFetch: fetch)
+        #expect(stale.first { $0.category == .events } == nil, "an Events row is drawn under a query it does not match")
+        let rows = GlobalSearchOverlayStateSupport.keyboardRows(
+            from: GlobalSearchDataSupport.visibleSections(from: stale, expandedCategories: [])
+        )
+        #expect(rows.isEmpty, "Return can reach a row the query does not match")
+
+        // Backspacing to a broader query keeps the rows that still match while the re-fetch runs.
+        let refined = sections(query: "dent", eventFetch: fetch)
+        #expect(refined.first { $0.category == .events }?.results.map(\.title) == ["Dentist"])
+    }
 }
 
 #endif
