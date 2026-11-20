@@ -38,6 +38,41 @@ struct KanbanContainerPickerPopover: View {
     }
 
     private func select(_ selection: TaskContainerSelection) {
+        // T-497: this closed the popover unconditionally over a swallowed `save()`, so a refused
+        // move looked exactly like one that landed — the picker shut and the card kept the list it
+        // had never left. The popover holds no draft, so the move undoes cleanly and the honest
+        // answer is to stay open and say so.
+        guard Self.move(
+            task,
+            to: selection,
+            areas: areas,
+            projects: projects,
+            allTasks: allTasks,
+            modelContext: modelContext
+        ) else {
+            moveFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
+            return
+        }
+        moveFailureNotice = nil
+        isPresented = false
+    }
+
+    /// The card's move, `static` so a test can make it: the popover is SwiftUI and cannot be
+    /// presented from a unit test. Answers whether the store took it.
+    ///
+    /// [[T-18545]]: this called `moveToContainer` without `sectionName:`, so it took the helper's
+    /// "Default" -- a card moved to a list holding its own column landed in the first one, and
+    /// re-picking the checked current list refiled it out of its column. It carries the card's
+    /// section, as the row's Move to List (`MacTaskRowContextMenu.moveToList`) and iOS do.
+    static func move(
+        _ task: AppTask,
+        to selection: TaskContainerSelection,
+        areas: [Area],
+        projects: [Project],
+        allTasks: [AppTask],
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
         let area: Area?
         let project: Project?
         switch selection {
@@ -52,22 +87,18 @@ struct KanbanContainerPickerPopover: View {
             project = projects.first { $0.id == id }
         }
 
-        // T-497: this closed the popover unconditionally over a swallowed `save()`, so a refused
-        // move looked exactly like one that landed — the picker shut and the card kept the list it
-        // had never left. The popover holds no draft, so the move undoes cleanly and the honest
-        // answer is to stay open and say so.
         guard CadenceTaskMutationSupport.moveToContainer(
             task,
             area: area,
             project: project,
+            sectionName: task.resolvedSectionName,
             allTasks: allTasks,
-            modelContext: modelContext
+            modelContext: modelContext,
+            commit: commit
         ) else {
-            moveFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
-            return
+            return false
         }
-        moveFailureNotice = nil
-        isPresented = false
+        return true
     }
 }
 

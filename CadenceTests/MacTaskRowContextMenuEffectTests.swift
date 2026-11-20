@@ -202,6 +202,59 @@ struct MacTaskRowContextMenuEffectTests {
         #expect(f.subject.sectionName == "Later")
     }
 
+    // MARK: - [[T-18545]]: the board card's list token keeps the card's column
+
+    /// The card's popover took the helper's "Default" section, so re-picking the checked current
+    /// list refiled a card out of its non-first column. "Later" is the area's second column.
+    @Test func theCardsListTokenRePickingTheCurrentListKeepsANonFirstColumn() throws {
+        let f = try makeFixture()
+
+        let moved = KanbanContainerPickerPopover.move(
+            f.subject, to: .area(f.area.id), areas: [f.area], projects: [f.project],
+            allTasks: f.allTasks, modelContext: f.context
+        )
+
+        #expect(moved)
+        let committed = try #require(try f.committed(f.subject))
+        #expect(committed.area?.id == f.area.id)
+        #expect(committed.sectionName == "Later", "re-picking the card's own list refiled it out of its column")
+        #expect(committed.order == 0, "re-picking the card's own list re-ordered it")
+    }
+
+    /// A genuine move to a list holding a same-named column lands the card there, not in the
+    /// destination's first column ("Plan"), and commits through the caller's `commit:`.
+    @Test func theCardsListTokenMoveKeepsASameNamedColumnInTheNewList() throws {
+        let f = try makeFixture()
+        var commits = 0
+
+        let moved = KanbanContainerPickerPopover.move(
+            f.subject, to: .project(f.project.id), areas: [f.area], projects: [f.project],
+            allTasks: f.allTasks, modelContext: f.context, commit: { commits += 1; try $0.save() }
+        )
+
+        #expect(moved)
+        #expect(commits == 1)
+        let committed = try #require(try f.committed(f.subject))
+        #expect(committed.project?.id == f.project.id && committed.area == nil)
+        #expect(committed.sectionName == "Later", "the card landed in the new list's first column instead of its own")
+        let sibling = try #require(try f.committed(f.sibling))
+        #expect(sibling.area?.id == f.area.id && sibling.sectionName == "Now", "the sibling moved")
+    }
+
+    @Test func aRefusedCardListTokenMoveIsReportedAndUndone() throws {
+        let f = try makeFixture()
+
+        let moved = KanbanContainerPickerPopover.move(
+            f.subject, to: .project(f.project.id), areas: [f.area], projects: [f.project],
+            allTasks: f.allTasks, modelContext: f.context, commit: { _ in throw CommitRefused() }
+        )
+
+        #expect(!moved)
+        #expect(f.subject.area?.id == f.area.id && f.subject.project == nil)
+        #expect(f.subject.sectionName == "Later")
+        #expect(f.subject.order == 0)
+    }
+
     // MARK: - T-5353: the pickers and the drop move a task the way the menu does
 
     /// The row's list chip speaks `TaskContainerSelection`; it used to write the relationships

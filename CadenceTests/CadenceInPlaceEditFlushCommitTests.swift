@@ -305,9 +305,16 @@ struct CadenceInPlaceEditFlushCommitTests {
         let view = try CadenceCommitSurfaceScan.scanned(path)
         let body = try CadenceCommitSurfaceScan.declarationBody(named: "select", in: view)
 
+        // [[T-18545]] moved the move itself into the static `move`, which a unit test can make;
+        // `select` guards on its answer, and `move` guards on the store's.
         #expect(
-            body.contains("guard CadenceTaskMutationSupport.moveToContainer("),
+            body.contains("guard Self.move("),
             "\(path).select does not guard on the move"
+        )
+        let move = try CadenceCommitSurfaceScan.declarationBody(named: "move", in: view)
+        #expect(
+            move.contains("guard CadenceTaskMutationSupport.moveToContainer("),
+            "\(path).move does not guard on the store's answer"
         )
         #expect(
             body.contains("moveFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice"),
