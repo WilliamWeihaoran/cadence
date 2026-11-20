@@ -260,7 +260,16 @@ struct ListTasksView: View {
             frozenGroupedTasks = nil
             frozenTaskOrder = nil
         }
-        return reorderTask(droppedID: droppedID, targetID: targetID)
+        // [[T-18629]]: the same release for a drop that only renumbered within its group. The
+        // freeze holds the order the rows had when the pointer arrived -- the moment the user
+        // pointed at the row to pick it up -- so without this the tab drew the PRE-drag order
+        // until the pointer left the list, and the drop read as ignored.
+        let reordered = reorderTask(droppedID: droppedID, targetID: targetID)
+        if reordered {
+            frozenGroupedTasks = nil
+            frozenTaskOrder = nil
+        }
+        return reordered
     }
 
     /// Drag a row into a new place on a list's own Tasks tab.

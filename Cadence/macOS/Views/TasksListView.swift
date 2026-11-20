@@ -198,7 +198,10 @@ struct TasksListView: View {
             assignTask: { task, dropKey in assignTask(task, for: dropKey) },
             reorderTask: { droppedID, targetID, scopeTasks in
                 reorderTask(droppedID: droppedID, targetID: targetID, scopeTasks: scopeTasks)
-            }
+            },
+            // [[T-18629]]: a drop the store took is drawn in its new order at once, not after
+            // the pointer leaves the page.
+            onDropLanded: { frozenTaskOrder = nil }
         )
     }
 

@@ -233,7 +233,10 @@ struct TasksPanel: View {
                 reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
                 reorderOffScreenNotice = reordered ? landing : nil
                 return reordered
-            }
+            },
+            // [[T-18629]]: a drop the store took is drawn in its new order at once, not after
+            // the pointer leaves the page.
+            onDropLanded: { frozenTaskOrder = nil }
         )
     }
 

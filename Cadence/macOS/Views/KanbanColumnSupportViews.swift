@@ -258,6 +258,15 @@ struct KanbanFreezeObserver: View {
                     }
                 }
             }
+            // [[T-18629]]: a card that left this column for another one is not held here as well.
+            // The hovered id need not change -- the pointer can stay on the moved card -- so the
+            // release is asked of the column's membership, not of the hover.
+            .onChange(of: columnTaskIDs) { _, ids in
+                guard frozenColumnLostAMovedCard(frozenTasks, columnTaskIDs: ids) else { return }
+                withAnimation(releaseAnimation) {
+                    frozenTasks = nil
+                }
+            }
     }
 }
 

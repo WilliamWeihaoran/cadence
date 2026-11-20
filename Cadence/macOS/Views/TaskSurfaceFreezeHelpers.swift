@@ -29,20 +29,31 @@ struct TaskGroupFreezeObserver: View {
                     ) else { return }
                     frozenOrder = freezeState.frozenOrder
                     frozenGroups = freezeState.primarySnapshot
-                } else if !isPointerInsideSurface, frozenOrder != nil || frozenGroups != nil {
-                    withAnimation(TaskSurfaceFreezeSupport.releaseAnimation) {
-                        var freezeState = TaskSurfaceFreezeState<FrozenTaskGroupSnapshot, Never>(
-                            frozenOrder: frozenOrder,
-                            primarySnapshot: frozenGroups,
-                            secondarySnapshot: nil
-                        )
-                        freezeState.release()
-                        frozenOrder = freezeState.frozenOrder
-                        frozenGroups = freezeState.primarySnapshot
-                    }
+                } else if !isPointerInsideSurface {
+                    releaseFreeze()
                 }
             }
-            .onHover { isPointerInsideSurface = $0 }
+            .onHover { inside in
+                isPointerInsideSurface = inside
+                // [[T-18629]]: also asked on the way out of the surface -- see `HoverFreezeObserver`.
+                // A pointer that reached the surface's own gap first raised its only hovered-id
+                // change while still inside, and nothing asked again.
+                if !inside, hoveredTaskManager.hoveredTask == nil { releaseFreeze() }
+            }
+    }
+
+    private func releaseFreeze() {
+        guard frozenOrder != nil || frozenGroups != nil else { return }
+        withAnimation(TaskSurfaceFreezeSupport.releaseAnimation) {
+            var freezeState = TaskSurfaceFreezeState<FrozenTaskGroupSnapshot, Never>(
+                frozenOrder: frozenOrder,
+                primarySnapshot: frozenGroups,
+                secondarySnapshot: nil
+            )
+            freezeState.release()
+            frozenOrder = freezeState.frozenOrder
+            frozenGroups = freezeState.primarySnapshot
+        }
     }
 }
 #endif

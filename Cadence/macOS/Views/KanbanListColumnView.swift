@@ -184,6 +184,10 @@ struct TaskListKanbanColumn: View {
             in: modelContext,
             assigning: { onAssignTask(task) }
         )
+        // [[T-18629]]: a drop the store took is drawn in its new order at once. The freeze was
+        // captured when the pointer arrived on the card to pick it up, and it is released on a
+        // hover change, so it kept drawing the pre-drag order while the pointer stayed here.
+        if reordered { frozenTasks = nil }
         reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
         reorderOffScreenNotice = reordered ? CadenceReorderVisibility.cardDropNotice(
             dropped: task,

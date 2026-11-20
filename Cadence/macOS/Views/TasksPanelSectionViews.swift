@@ -312,19 +312,31 @@ struct HoverFreezeObserver: View {
                         sourceSecondarySnapshot: []
                     ) else { return }
                     frozenOrder = freezeState.frozenOrder
-                } else if !isPointerInsideSurface, frozenOrder != nil {
-                    withAnimation(TaskSurfaceFreezeSupport.releaseAnimation) {
-                        var freezeState = TaskSurfaceFreezeState<Never, Never>(
-                            frozenOrder: frozenOrder,
-                            primarySnapshot: nil,
-                            secondarySnapshot: nil
-                        )
-                        freezeState.release()
-                        frozenOrder = freezeState.frozenOrder
-                    }
+                } else if !isPointerInsideSurface {
+                    releaseFreeze()
                 }
             }
-            .onHover { isPointerInsideSurface = $0 }
+            .onHover { inside in
+                isPointerInsideSurface = inside
+                // [[T-18629]]: the release is asked here too. A pointer that leaves a row into the
+                // surface's own gap (hovered id -> nil while still inside) and then leaves the
+                // surface raised no second hovered-id change, so the freeze stayed up until the
+                // next hover -- and a later drop inherited it.
+                if !inside, hoveredTaskManager.hoveredTask == nil { releaseFreeze() }
+            }
+    }
+
+    private func releaseFreeze() {
+        guard frozenOrder != nil else { return }
+        withAnimation(TaskSurfaceFreezeSupport.releaseAnimation) {
+            var freezeState = TaskSurfaceFreezeState<Never, Never>(
+                frozenOrder: frozenOrder,
+                primarySnapshot: nil,
+                secondarySnapshot: nil
+            )
+            freezeState.release()
+            frozenOrder = freezeState.frozenOrder
+        }
     }
 }
 

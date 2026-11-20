@@ -11,6 +11,17 @@ struct TasksPanelDropCoordinator {
     /// Answers whether the new order is in the store — see `handleTaskDrop`. It was `Void` until
     /// T-868, over a `try? modelContext.save()` that could not have told anyone anyway.
     let reorderTask: (UUID, UUID, [AppTask]) -> Bool
+    /// Runs once for every drop this answers `true` for -- a header drop that re-filed, a row
+    /// drop whose order is in the store -- and never for one it refuses ([[T-18629]]).
+    ///
+    /// Both surfaces hand it the release of their hover freeze. The freeze is captured when the
+    /// pointer arrives on a row, which is the moment the user points at the row to pick it up, and
+    /// it used to be released only on a hover-id change with the pointer outside the surface -- so
+    /// a drop that renumbered the rows was drawn in the PRE-drag order for as long as the pointer
+    /// stayed over the list, and read as a drop that was ignored. One hook here, rather than a line
+    /// in each surface's `reorderTask` and `assignTask`, is what keeps the header drop and the row
+    /// drop from disagreeing about it.
+    var onDropLanded: () -> Void = {}
 
     /// Curried because the `Optional` is the point: a group with no `dropKey` gets `nil`, and
     /// `TasksPanelIntentSectionView` / `TasksListSectionView` take `((String) -> Bool)?` so the
@@ -39,7 +50,7 @@ struct TasksPanelDropCoordinator {
     /// says the move happened.
     func handleSectionDrop(payload: String, dropKey: String) -> Bool {
         guard let (_, droppedTask) = droppedTask(from: payload) else { return false }
-        return assignTask(droppedTask, dropKey) == .applied
+        return landed(assignTask(droppedTask, dropKey) == .applied)
     }
 
     /// **`dropKey` has no default (T-715).** It carried `= nil`, and both call sites — Today's
@@ -97,7 +108,13 @@ struct TasksPanelDropCoordinator {
         // `false`, one failure mode further along — and the panel draws
         // `CadenceOrderCommit.failureNotice` beside it, because a drop that silently declines is
         // indistinguishable from a drop the user aimed badly.
-        return reorderTask(droppedID, targetTask.id, scope)
+        return landed(reorderTask(droppedID, targetTask.id, scope))
+    }
+
+    /// `answer`, after telling the surface a drop landed when it did ([[T-18629]]).
+    private func landed(_ answer: Bool) -> Bool {
+        if answer { onDropLanded() }
+        return answer
     }
 
     private func droppedTask(from payload: String) -> (UUID, AppTask)? {

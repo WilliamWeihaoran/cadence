@@ -82,6 +82,28 @@ func applyFrozenTaskOrder(_ sorted: [AppTask], frozen: [AppTask]?, storeTasks: [
     return activeFrozen + sorted.filter { !frozenIDs.contains($0.id) }
 }
 
+/// **Whether a board column's freeze is holding a card that was MOVED out of the column
+/// ([[T-18629]]).**
+///
+/// A card belongs to exactly one column, so a frozen card that is still open and still stored but
+/// no longer among the column's own cards has gone to another column -- a drag from Doing to Done,
+/// or a move made anywhere else while the pointer is on the board. `applyFrozenTaskOrder` keeps such
+/// a row on purpose (T-342, for Today's rescheduled rows), which on a board drew the card in BOTH
+/// columns: in Done because it is one of Done's, and in Doing because Doing's freeze still held it,
+/// until the hovered card changed to one outside Doing -- never, if the pointer stayed on the moved
+/// card. `KanbanFreezeObserver` releases the column's freeze when this answers `true`.
+///
+/// A finished or deleted card answers `false`: `applyFrozenTaskOrder` already drops it, so the rest
+/// of the column keeps its frozen order under the pointer, which is the freeze's whole job.
+func frozenColumnLostAMovedCard(_ frozen: [AppTask]?, columnTaskIDs: Set<UUID>) -> Bool {
+    guard let frozen else { return false }
+    return frozen.contains { card in
+        !columnTaskIDs.contains(card.id)
+            && !frozenRowLeftTheStore(card)
+            && !CadenceTaskQuerySupport.isFinishedTask(card)
+    }
+}
+
 /// Which frozen rows the surface's store read still holds, by `persistentModelID` -- not by `id`,
 /// since a duplicated UUID (a CloudKit double insert) must not keep a deleted twin drawn. Runs only
 /// while a freeze is up, and stops scanning once every frozen row is found.

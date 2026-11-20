@@ -552,6 +552,129 @@ struct TaskSurfaceFreezeSupportTests {
         #expect(rows.contains("todayGroupedTaskItems(showRolloverNotice:"))
     }
 
+    // MARK: - A committed drop releases the freeze ([[T-18629]])
+
+    /// **The defect, on real models.** The freeze is captured when the pointer arrives on a row --
+    /// the moment the user points at it to pick it up -- and Today / All Tasks drew every frame
+    /// through it until the pointer left the page. A drop that renumbered the store was therefore
+    /// drawn in the PRE-drag order. Through the coordinator's `onDropLanded`, the drop the store
+    /// took is the order drawn.
+    @Test func aRowDropThatLandsIsDrawnInItsNewOrderNotTheFrozenOne() throws {
+        let rows = ["a", "b", "c", "d"].enumerated().map { task(title: $1, order: $0) }
+        try container.mainContext.save()
+        var frozen: [AppTask]? = rows
+        let coordinator = TasksPanelDropCoordinator(
+            allTasks: rows,
+            taskIDFromPayload: { TasksPanelSupport.taskID(from: $0) },
+            assignTask: { _, _ in .resolvedNothing },
+            reorderTask: { droppedID, targetID, scope in
+                TasksPanelSupport.reorderTask(
+                    droppedID: droppedID,
+                    targetID: targetID,
+                    scopeTasks: scope,
+                    spanTasks: rows,
+                    modelContext: self.container.mainContext
+                )
+            },
+            onDropLanded: { frozen = nil }
+        )
+
+        let landed = coordinator.handleTaskDrop(
+            payload: TasksPanelSupport.taskDragPayload(for: rows[0]),
+            targetTask: rows[3],
+            scopeTasks: rows,
+            dropKey: nil
+        )
+
+        #expect(landed)
+        let natural = rows.sorted { $0.order < $1.order }
+        #expect(natural.map(\.title) != ["a", "b", "c", "d"], "self-check: the drop renumbered nothing")
+        #expect(frozen == nil, "the drop landed and the freeze is still up")
+        #expect(applyFrozenTaskOrder(natural, frozen: frozen, storeTasks: stored()).map(\.title) == natural.map(\.title))
+        // The shape it replaces: the freeze held, the pre-drag order drawn over a store that moved.
+        #expect(applyFrozenTaskOrder(natural, frozen: rows, storeTasks: stored()).map(\.title) == ["a", "b", "c", "d"])
+    }
+
+    /// The hook fires for a drop the coordinator answers `true` for and for no other: a refused
+    /// reorder and a header drop that re-filed nothing leave the freeze holding the rows still.
+    @Test func onlyADropThatLandedReleasesTheFreeze() throws {
+        let dropped = task(title: "dropped", order: 0)
+        let target = task(title: "target", order: 1)
+        var landings = 0
+        func coordinator(assign: TasksPanelDropOutcome, reorder: Bool) -> TasksPanelDropCoordinator {
+            TasksPanelDropCoordinator(
+                allTasks: [dropped, target],
+                taskIDFromPayload: { TasksPanelSupport.taskID(from: $0) },
+                assignTask: { _, _ in assign },
+                reorderTask: { _, _, _ in reorder },
+                onDropLanded: { landings += 1 }
+            )
+        }
+        let payload = TasksPanelSupport.taskDragPayload(for: dropped)
+
+        _ = coordinator(assign: .applied, reorder: false)
+            .handleTaskDrop(payload: payload, targetTask: target, scopeTasks: [dropped, target], dropKey: nil)
+        _ = coordinator(assign: .refused, reorder: true)
+            .handleTaskDrop(payload: payload, targetTask: target, scopeTasks: [dropped, target], dropKey: "k")
+        _ = coordinator(assign: .resolvedNothing, reorder: true).handleSectionDrop(payload: payload, dropKey: "k")
+        #expect(landings == 0, "a drop that did not land released the freeze")
+
+        _ = coordinator(assign: .applied, reorder: true)
+            .handleTaskDrop(payload: payload, targetTask: target, scopeTasks: [dropped, target], dropKey: nil)
+        #expect(landings == 1)
+        _ = coordinator(assign: .applied, reorder: false).handleSectionDrop(payload: payload, dropKey: "k")
+        #expect(landings == 2, "a header drop that re-filed did not release the freeze")
+    }
+
+    /// A board column's freeze lets go of a card that went to another column -- open, stored, no
+    /// longer the column's -- and of nothing else.
+    @Test func aBoardColumnReleasesOnlyForACardMovedToAnotherColumn() throws {
+        let stays = task(title: "stays", order: 0)
+        let moved = task(title: "moved", order: 1)
+        let finished = task(title: "finished", order: 2)
+        try container.mainContext.save()
+        let frozen = [stays, moved, finished]
+
+        #expect(!frozenColumnLostAMovedCard(nil, columnTaskIDs: []))
+        #expect(!frozenColumnLostAMovedCard(frozen, columnTaskIDs: Set(frozen.map(\.id))))
+        // Moved to Done: still open, still stored, no longer one of this column's.
+        #expect(frozenColumnLostAMovedCard(frozen, columnTaskIDs: [stays.id, finished.id]))
+
+        // A finished card leaving the column is `applyFrozenTaskOrder`'s, and the rest stay held.
+        finished.status = .done
+        #expect(!frozenColumnLostAMovedCard(frozen, columnTaskIDs: [stays.id, moved.id]))
+        // So is a deleted one.
+        container.mainContext.delete(moved)
+        try container.mainContext.save()
+        #expect(!frozenColumnLostAMovedCard(frozen, columnTaskIDs: [stays.id]))
+    }
+
+    /// The call sites: every Mac reorder surface lets its freeze go when a drop lands, and the two
+    /// list observers ask the release again when the pointer leaves the surface.
+    @Test func everyReorderSurfaceReleasesItsFreezeWhenADropLands() throws {
+        func code(_ file: String) throws -> String {
+            CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/\(file)"))
+        }
+        for file in ["TasksPanel.swift", "TasksListView.swift"] {
+            #expect(try code(file).contains("onDropLanded: { frozenTaskOrder = nil }"), "\(file)")
+        }
+        let list = try code("ListDetailComponents.swift")
+        let drop = try #require(CadenceSourceScan.declarationBody("private func dropTask(", in: list))
+        #expect(drop.contains("let reordered = reorderTask(droppedID: droppedID, targetID: targetID)"))
+        #expect(CadenceSourceScan.matchCount(#"frozenTaskOrder = nil"#, in: drop) == 2, "the list tab's renumber keeps its freeze")
+        for file in ["KanbanListColumnView.swift", "KanbanSectionColumnView.swift"] {
+            let move = try #require(CadenceSourceScan.declarationBody("private func moveTask(", in: try code(file)), "\(file)")
+            #expect(move.contains("if reordered { frozenTasks = nil }"), "\(file) keeps its freeze over a drop")
+        }
+        let board = try #require(CadenceSourceScan.declarationBody("struct KanbanFreezeObserver", in: try code("KanbanColumnSupportViews.swift")))
+        #expect(board.contains(".onChange(of: columnTaskIDs)"))
+        #expect(board.contains("frozenColumnLostAMovedCard(frozenTasks, columnTaskIDs: ids)"))
+        for (file, observer) in [("TasksPanelSectionViews.swift", "struct HoverFreezeObserver"), ("TaskSurfaceFreezeHelpers.swift", "struct TaskGroupFreezeObserver")] {
+            let body = try #require(CadenceSourceScan.declarationBody(observer, in: try code(file)), "\(file)")
+            #expect(body.contains("if !inside, hoveredTaskManager.hoveredTask == nil { releaseFreeze() }"), "\(file)")
+        }
+    }
+
     // MARK: - Helpers
 
     /// The surface's store read ([[T-16572]]): every task the main context still has, as the pages'

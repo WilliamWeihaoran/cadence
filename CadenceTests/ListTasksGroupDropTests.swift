@@ -263,7 +263,8 @@ struct ListTasksGroupDropTests {
         #expect(source.contains("onReorderTask: { dropTask(droppedID: $0, targetID: $1, into: group) }"),
                 "the group rows still hand their drop straight to the renumber")
         let refile = try #require(body.range(of: "ListTasksGroupDrop.refile("), "the drop never refiles")
-        let reorder = try #require(body.range(of: "return reorderTask(droppedID: droppedID, targetID: targetID)"))
+        // [[T-18629]]: the answer is held so a committed renumber can release the hover freeze.
+        let reorder = try #require(body.range(of: "let reordered = reorderTask(droppedID: droppedID, targetID: targetID)"))
         #expect(refile.lowerBound < reorder.lowerBound, "the renumber runs before the refile")
         #expect(body.contains("return false"), "a refused refile still falls through to the renumber")
     }

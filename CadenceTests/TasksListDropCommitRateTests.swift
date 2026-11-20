@@ -343,7 +343,8 @@ struct TasksListDropCommitRateTests {
             try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanelDropCoordinator.swift")
         )
         #expect(
-            coordinator.contains("return assignTask(droppedTask, dropKey) == .applied"),
+            // [[T-18629]]: wrapped in `landed(_:)`, which releases the hover freeze on a `true`.
+            coordinator.contains("return landed(assignTask(droppedTask, dropKey) == .applied)"),
             "a header drop reports a drop the store did not take"
         )
         #expect(
