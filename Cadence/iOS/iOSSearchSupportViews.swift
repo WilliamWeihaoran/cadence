@@ -319,7 +319,14 @@ struct iOSSearchResultGroup<Row: View>: View {
     /// section is already listing every match, so a section drawing all of its results cannot
     /// accidentally draw a "0 more results" row.
     var continuation: iOSSearchResultContinuation?
+    /// Each drawn row's frame in this group's own coordinates, by index -- `nil` for the
+    /// continuation row -- so the hardware-keyboard highlight can be scrolled to its ROW, not just
+    /// to this group ([[T-18659]], `CadenceSearchRowScroll`).
+    var reportRowFrame: ((Int?, CGRect) -> Void)?
     @ViewBuilder let row: (Int) -> Row
+
+    /// Named once for every group: a named space resolves to the nearest ancestor carrying it.
+    static var rowSpace: String { "iOSSearchResultGroup.rows" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -329,6 +336,9 @@ struct iOSSearchResultGroup<Row: View>: View {
             VStack(spacing: 0) {
                 ForEach(0..<count, id: \.self) { index in
                     row(index)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.rowSpace)) } action: { frame in
+                            reportRowFrame?(index, frame)
+                        }
 
                     // The continuation row is inside the same card as the results, so the last
                     // result needs a rule under it too when one follows.
@@ -339,12 +349,16 @@ struct iOSSearchResultGroup<Row: View>: View {
 
                 if let continuation {
                     iOSSearchMoreResultsRow(continuation: continuation)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.rowSpace)) } action: { frame in
+                            reportRowFrame?(nil, frame)
+                        }
                 }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
             .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
         }
+        .coordinateSpace(.named(Self.rowSpace))
     }
 }
 

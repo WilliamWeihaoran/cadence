@@ -59,6 +59,10 @@ struct iOSSearchView: View {
     /// has no highlight to show, so nothing is drawn for a reader who never reaches for the keys
     /// -- and cleared with the result set it pointed into.
     @State private var highlightedResultID: String?
+    /// Where the rows, their groups and the visible list sit, for scrolling the highlighted ROW
+    /// into view ([[T-18659]]). A reference box, not observed state: a group's frame changes on
+    /// every scroll frame, and writing that into `@State` would re-render the screen each frame.
+    @State private var highlightGeometry = iOSSearchHighlightGeometry()
     /// [[T-18430]]: the idle Tasks list and every task row's Do and Due words are measured against
     /// today, and this page stands open as the iPad sidebar's Search and the phone's More > Search.
     /// Nothing else in its inputs moves at midnight, so it observes the day itself (T-3104).
@@ -355,6 +359,18 @@ struct iOSSearchView: View {
     var body: some View {
         ScrollViewReader { proxy in
             searchList
+                .onGeometryChange(for: CGRect.self) { proxy in
+                    let frame = proxy.frame(in: .global)
+                    let insets = proxy.safeAreaInsets
+                    return CGRect(
+                        x: frame.minX,
+                        y: frame.minY + insets.top,
+                        width: frame.width,
+                        height: max(0, frame.height - insets.top - insets.bottom)
+                    )
+                } action: { visible in
+                    highlightGeometry.viewport = visible
+                }
                 .onChange(of: highlightedResultID) { _, id in
                     scrollToHighlighted(id, proxy: proxy)
                 }
@@ -677,10 +693,19 @@ struct iOSSearchView: View {
                                 expandedSections.insert(title)
                             }
                         }
+                    },
+                    reportRowFrame: { [highlightGeometry] index, frame in
+                        highlightGeometry.rowFrames[index.map { visible[$0].id } ?? continuationID] = frame
                     }
                 ) { index in
                     searchResultRow(visible[index])
                 }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { [highlightGeometry] frame in
+                    highlightGeometry.groupFrames[title] = frame
+                }
+                // A torn-down cell's last frame is stale; without one the scroll falls back to the
+                // group, which is right for a section that is off screen.
+                .onDisappear { [highlightGeometry] in highlightGeometry.groupFrames[title] = nil }
                 .id(Self.sectionScrollID(title))
             }
             .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
@@ -771,12 +796,18 @@ struct iOSSearchView: View {
         "search-section-\(title)"
     }
 
-    /// Brings the highlighted row's group on screen. A whole group is one `List` row (see
-    /// `iOSSearchResultGroup`), and `scrollTo` reaches rows, not views inside one.
+    /// Brings the highlighted ROW on screen ([[T-18659]]). A whole group is one `List` row (see
+    /// `iOSSearchResultGroup`), and `scrollTo` reaches rows, not views inside one, so the target is
+    /// still the group -- `CadenceSearchRowScroll` picks the anchor that shows the row inside it,
+    /// and leaves the list alone when the row is already fully visible. Without a measured row and
+    /// group (a section off screen, a row not laid out yet) it falls back to the group's minimal
+    /// scroll, which reaches a section that is off screen.
     private func scrollToHighlighted(_ id: String?, proxy: ScrollViewProxy) {
         guard let id, let stop = keyboardStops.first(where: { $0.id == id }) else { return }
+        let plan = highlightGeometry.plan(rowID: id, sectionTitle: stop.sectionTitle)
+        guard case .group(let anchor) = plan else { return }
         withAnimation(.easeInOut(duration: 0.15)) {
-            proxy.scrollTo(Self.sectionScrollID(stop.sectionTitle))
+            proxy.scrollTo(Self.sectionScrollID(stop.sectionTitle), anchor: anchor)
         }
     }
 
@@ -883,4 +914,26 @@ struct iOSSearchView: View {
 
 }
 
+/// The measured geometry `iOSSearchView.scrollToHighlighted` plans from ([[T-18659]]).
+final class iOSSearchHighlightGeometry {
+    /// A row's frame in its group's coordinates, by highlight id.
+    var rowFrames: [String: CGRect] = [:]
+    /// A group's global frame, by section title, while its cell is alive.
+    var groupFrames: [String: CGRect] = [:]
+    /// The list's visible area, global, inside its safe area.
+    var viewport: CGRect = .zero
+
+    func plan(rowID: String, sectionTitle: String) -> CadenceSearchRowScroll.Plan {
+        guard let row = rowFrames[rowID], let group = groupFrames[sectionTitle], viewport.height > 0 else {
+            return .group(anchor: nil)
+        }
+        return CadenceSearchRowScroll.plan(
+            rowTop: row.minY,
+            rowBottom: row.maxY,
+            groupTop: group.minY - viewport.minY,
+            groupHeight: group.height,
+            viewportHeight: viewport.height
+        )
+    }
+}
 #endif

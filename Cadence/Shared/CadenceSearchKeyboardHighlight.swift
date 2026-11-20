@@ -94,3 +94,50 @@ extension View {
         modifier(CadenceSearchHighlightPlate(isHighlighted: isHighlighted, tint: tint))
     }
 }
+
+/// **How iOS Search brings the keyboard highlight's ROW into view, not just its section**
+/// ([[T-18659]]).
+///
+/// Each section is one `List` row (`iOSSearchResultGroup` draws its rows in one card), and a
+/// `List`'s `scrollTo` reaches rows, not views inside one, so the only scroll target is the whole
+/// group. A minimal-distance scroll to a group taller than the viewport does nothing once part of
+/// it is on screen, and Down walked the highlight off the bottom of a 24-row Tasks card.
+///
+/// The group is still the target; what changes is the **anchor**. `scrollTo(id, anchor: f)`
+/// lines the group's point at fraction `f` of its height up with the viewport's point at fraction
+/// `f`, which puts the group's top at `-f * (groupHeight - viewportHeight)`. Solving that for the
+/// row's top (scrolled up to) or bottom (scrolled down to) gives the minimal scroll that shows it.
+nonisolated enum CadenceSearchRowScroll {
+    enum Plan: Equatable {
+        /// The row is already fully on screen: leave the list where it is.
+        case none
+        /// Scroll to the row's group with this anchor; `nil` is the minimal-distance scroll, which
+        /// shows a group that fits the viewport whole.
+        case group(anchor: UnitPoint?)
+    }
+
+    /// Breathing room kept between the row and the viewport's edge, which also absorbs the list
+    /// row's own insets around the group.
+    static let margin: CGFloat = 12
+
+    /// - Parameters:
+    ///   - rowTop/rowBottom: the row's edges in its group's own coordinates.
+    ///   - groupTop: the group's top in viewport coordinates (0 is the viewport's top edge).
+    static func plan(
+        rowTop: CGFloat,
+        rowBottom: CGFloat,
+        groupTop: CGFloat,
+        groupHeight: CGFloat,
+        viewportHeight: CGFloat
+    ) -> Plan {
+        let topOnScreen = groupTop + rowTop
+        let bottomOnScreen = groupTop + rowBottom
+        if topOnScreen >= 0, bottomOnScreen <= viewportHeight { return .none }
+        let overflow = groupHeight - viewportHeight
+        guard overflow > 0 else { return .group(anchor: nil) }
+        let fraction = bottomOnScreen > viewportHeight
+            ? (rowBottom + margin - viewportHeight) / overflow
+            : (rowTop - margin) / overflow
+        return .group(anchor: UnitPoint(x: 0.5, y: min(max(fraction, 0), 1)))
+    }
+}
