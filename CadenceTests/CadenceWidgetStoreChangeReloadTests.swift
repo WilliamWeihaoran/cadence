@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -110,4 +111,44 @@ struct CadenceWidgetStoreChangeReloadTests {
         #expect(beforeScenePhase.contains("widgetReloader.storeDidSave()"))
     }
     #endif
+
+    // MARK: - [[T-18674]]: iOS reloads on the leaving-active edge, forced
+
+    /// Every one of the nine (from, to) pairs. Only leaving `.active` reloads: arriving through
+    /// `.inactive` must not, because that reload stamped the throttle and the departure a few
+    /// seconds later was dropped, so the home-screen widget kept a task ticked in the app.
+    @Test func onlyTheLeavingActiveEdgeReloadsTheWidgets() {
+        let phases: [(ScenePhase, String)] = [(.active, "active"), (.inactive, "inactive"), (.background, "background")]
+        var reloading: [String] = []
+        var visited = 0
+        for (from, fromName) in phases {
+            for (to, toName) in phases {
+                visited += 1
+                if CadenceWidgetRefreshCenter.reloadsOnScenePhaseChange(from: from, to: to) {
+                    reloading.append("\(fromName)->\(toName)")
+                }
+            }
+        }
+        #expect(visited == 9)
+        #expect(reloading.sorted() == ["active->background", "active->inactive"])
+        // The arrival path that caused the defect, named outright.
+        #expect(!CadenceWidgetRefreshCenter.reloadsOnScenePhaseChange(from: .background, to: .inactive))
+        #expect(!CadenceWidgetRefreshCenter.reloadsOnScenePhaseChange(from: .inactive, to: .background))
+    }
+
+    /// The iOS observer is a SwiftUI modifier no unit test can fire, and `Cadence/iOS/` is not
+    /// compiled into this target, so its shape is pinned: the reload is gated on the edge decision
+    /// and forced, and no throttled reload remains in the observer.
+    @Test func theIOSObserverReloadsForcedOnTheLeavingEdgeOnly() throws {
+        let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootView.swift"))
+        let observer = try #require(CadenceSourceScan.declarationBody(".onChange(of: scenePhase)", in: source))
+        let gate = "if CadenceWidgetRefreshCenter.reloadsOnScenePhaseChange(from: oldPhase, to: phase)"
+        let branch = try #require(CadenceSourceScan.declarationBody(gate, in: observer), "the reload is not gated on the leaving edge")
+        #expect(branch.contains("CadenceWidgetRefreshCenter.reloadAllWidgets(force: true)"), "the departure reload is throttled again")
+        #expect(
+            observer.components(separatedBy: "CadenceWidgetRefreshCenter.reloadAllWidgets(").count - 1 == 1,
+            "the observer reloads widgets outside the leaving edge"
+        )
+        #expect(!observer.contains("if phase != .active {"), "the observer reloads on arriving through .inactive again")
+    }
 }

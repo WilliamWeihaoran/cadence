@@ -310,8 +310,10 @@ struct CadenceExternalWriteReconcileTests {
         #expect(body.contains("NotificationManager.shared.reconcile"))
         // The reconcile must sit outside the leaving-active branch. It used to be the only thing
         // in it, which is why a widget write while the app was backgrounded was never swept.
-        let guardRange = try #require(body.range(of: "if phase != .active {"))
-        let branch = try cadenceFunctionBody("if phase != .active", in: String(body[guardRange.lowerBound...]))
+        // [[T-18674]]: the iOS widget reload sits on the leaving-active edge, not every non-active phase.
+        let leaving = "if CadenceWidgetRefreshCenter.reloadsOnScenePhaseChange(from: oldPhase, to: phase)"
+        let guardRange = try #require(body.range(of: leaving + " {"))
+        let branch = try cadenceFunctionBody(leaving, in: String(body[guardRange.lowerBound...]))
         #expect(
             !branch.contains("NotificationManager.shared.reconcile"),
             "the reconcile is back inside the leaving-active branch, so an App Intent write is swept only on the way out (T-312)"

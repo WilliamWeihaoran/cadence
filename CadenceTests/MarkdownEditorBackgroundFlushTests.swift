@@ -91,9 +91,9 @@ struct MarkdownEditorBackgroundFlushTests {
     /// (the hook itself decides on the phase), before anything else in the observer.
     @Test func theIOSRootSceneObserverDrainsTheEditorsFirst() throws {
         let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootView.swift"))
-        let observer = try #require(source.range(of: ".onChange(of: scenePhase) { _, phase in"))
+        let observer = try #require(source.range(of: ".onChange(of: scenePhase) { oldPhase, phase in"))
         // Comments are blanked to spaces, not removed; collapse whitespace before reading order.
-        let head = String(source[observer.upperBound...].prefix(800))
+        let head = String(source[observer.upperBound...].prefix(1200))
             .split(whereSeparator: \.isWhitespace).joined(separator: " ")
         let hook = try #require(
             head.range(of: "MarkdownEditorTerminationFlush.shared.flushPendingEditorContentOnLeavingActive("),
@@ -101,7 +101,7 @@ struct MarkdownEditorBackgroundFlushTests {
         )
         #expect(head.hasPrefix("MarkdownEditorTerminationFlush."), "the flush is not the observer's first act")
         #expect(head[hook.upperBound...].hasPrefix(" phase, committing: modelContext )"))
-        let widgets = try #require(head.range(of: "CadenceWidgetRefreshCenter.reloadAllWidgets()"))
+        let widgets = try #require(head.range(of: "CadenceWidgetRefreshCenter.reloadAllWidgets(force: true)"))
         #expect(hook.lowerBound < widgets.lowerBound)
     }
 

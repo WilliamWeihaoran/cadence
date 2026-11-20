@@ -249,7 +249,7 @@ struct iOSRootView: View {
             guard pending != nil else { return }
             routeToFocus()
         }
-        .onChange(of: scenePhase) { _, phase in
+        .onChange(of: scenePhase) { oldPhase, phase in
             // [[T-7871]]: first, so the widgets and the reconcile below read the typing too. iOS
             // kills a suspended app without notice; held editor text must be in the store now.
             MarkdownEditorTerminationFlush.shared.flushPendingEditorContentOnLeavingActive(
@@ -258,8 +258,10 @@ struct iOSRootView: View {
             )
             // [[T-8203]]: settle a running completion fill before the widgets reload.
             TaskCompletionAnimationManager.shared.settleAllPending(onLeaving: phase)
-            if phase != .active {
-                CadenceWidgetRefreshCenter.reloadAllWidgets()
+            // [[T-18674]]: on the leaving edge only, and forced. Arriving passes through
+            // `.inactive` too; reloading there stamped the throttle and dropped this reload.
+            if CadenceWidgetRefreshCenter.reloadsOnScenePhaseChange(from: oldPhase, to: phase) {
+                CadenceWidgetRefreshCenter.reloadAllWidgets(force: true)
             }
             // [[T-15548]]: the Focus session notes the gap here, so it is noted with Focus gone too.
             switch phase {

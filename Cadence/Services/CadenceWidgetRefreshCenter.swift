@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 #if canImport(WidgetKit)
 import WidgetKit
@@ -32,6 +33,19 @@ nonisolated enum CadenceWidgetRefreshCenter {
         defaults.set(timestamp, forKey: reloadTimestampDefaultsKey)
         WidgetCenter.shared.reloadAllTimelines()
         #endif
+    }
+
+    /// **Whether a scene-phase change is the one that reloads the widgets on iOS: leaving active,
+    /// and only that edge** ([[T-18674]]).
+    ///
+    /// The iOS observer used to reload, throttled, on every non-active phase. Returning from the
+    /// background passes through `.inactive`, so ARRIVING reloaded and stamped the 15 s throttle,
+    /// and the departure a few seconds later -- the one reload that carries what the user just did
+    /// in the app -- fell inside the window and was dropped, leaving a ticked task on the home
+    /// screen for the widget's own 15-minute timeline. The caller forces the reload this answers
+    /// `true` for: one per departure, never throttled by an arrival.
+    static func reloadsOnScenePhaseChange(from oldPhase: ScenePhase, to newPhase: ScenePhase) -> Bool {
+        oldPhase == .active && newPhase != .active
     }
 
     /// When this type last asked WidgetKit to reload, or `nil` if it has not since the stored
