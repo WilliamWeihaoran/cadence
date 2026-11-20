@@ -273,10 +273,10 @@ enum CalendarPageBoardDropSupport {
 
 /// The Calendar Board: day columns that scroll horizontally, flanked by two pinned rails.
 ///
-/// The rails are what the retired Planning page turned into. Overdue and Unscheduled were two of
-/// its five buckets; the other three (Today / This Week / Later) *are* day columns here, so they
-/// needed no equivalent. Everything else Planning did — its bucketing, its drag-to-reschedule, its
-/// drag-back-to-unscheduled, its "N unscheduled · N overdue" summary — lives on this surface now.
+/// The rails are what the retired Planning page turned into. Leftover (Planning's Overdue) and
+/// Unscheduled were two of its five buckets; the other three (Today / This Week / Later) *are* day
+/// columns here, so they needed no equivalent. Everything else Planning did — its bucketing, its drag-to-reschedule, its
+/// drag-back-to-unscheduled, its "N unscheduled · N leftover" summary — lives on this surface now.
 struct CalendarPageBoardView: View {
     private static let columnWidth = CadenceCalendarBoardLayout.dayColumnWidth
     private static let columnSpacing = CadenceCalendarBoardLayout.dayColumnSpacing
@@ -326,7 +326,7 @@ struct CalendarPageBoardView: View {
         CalendarBoardPlannerSupport.plannerRenderDayCount
     }
 
-    /// Floored at today: this board's Overdue rail already shows every past-dated card, so a past
+    /// Floored at today: this board's Leftover rail already shows every past-dated card, so a past
     /// day column would show the same card twice.
     private var activeWindowStartDate: Date {
         windowStartDate ?? CalendarBoardPlannerSupport.plannerWindowStart(
@@ -378,7 +378,7 @@ struct CalendarPageBoardView: View {
             }
 
             HStack(spacing: 0) {
-                rail(.overdue, tasks: rails[.overdue] ?? [], boardForm: boardForm)
+                rail(.leftover, tasks: rails[.leftover] ?? [], boardForm: boardForm)
                 dayColumns
                 rail(.unscheduled, tasks: rails[.unscheduled] ?? [], boardForm: boardForm)
             }
@@ -395,7 +395,7 @@ struct CalendarPageBoardView: View {
         return userExpandedRail == rail ? .expanded : .collapsed
     }
 
-    /// The Planning page's "N unscheduled · N overdue" line, kept because it is the one thing the
+    /// The Planning page's "N unscheduled · N leftover" line, kept because it is the one thing the
     /// rails cannot say on their own: each header counts its own pile, this reads both at a glance.
     /// Indented to the toolbar's page padding, not the board's, so it lines up under "Calendar".
     private func summary(_ rails: [CalendarBoardRail: [AppTask]]) -> some View {
@@ -413,7 +413,7 @@ struct CalendarPageBoardView: View {
         tasks: [AppTask],
         boardForm: CadenceCalendarBoardRailForm
     ) -> some View {
-        // Only the Unscheduled rail takes drops or offers an add row; the Overdue rail gets `nil`
+        // Only the Unscheduled rail takes drops or offers an add row; the Leftover rail gets `nil`
         // for both because a card cannot be dragged — or created — *into* being late.
         CalendarBoardRailColumn(
             rail: rail,
@@ -486,7 +486,7 @@ struct CalendarPageBoardView: View {
             }
             .onChange(of: todayKey) { _, newTodayKey in
                 // The window is floored at today, so the day that just ended is still column 0
-                // and its cards are now also in the Overdue rail. Re-floor, keeping the selection
+                // and its cards are now also in the Leftover rail. Re-floor, keeping the selection
                 // (`resetWindowAndScroll` clamps it to the new today if it was the old one).
                 guard Self.windowNeedsRefloor(
                     windowStart: windowStartDate,

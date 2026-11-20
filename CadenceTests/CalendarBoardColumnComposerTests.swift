@@ -30,7 +30,7 @@ struct CalendarBoardColumnComposerTests {
     }
 
     @Test func absentBehaviorDoesNotOpenTheInlineComposer() {
-        // The Overdue rail: no add affordance at all, because a task cannot be created *into* being
+        // The Leftover rail: no add affordance at all, because a task cannot be created *into* being
         // late.
         let behavior: KanbanColumnAddBehavior? = nil
         #expect(!behavior.opensInlineComposer)
@@ -41,7 +41,7 @@ struct CalendarBoardColumnComposerTests {
     @Test func dayColumnsComposeAndTheRailsDoNot() {
         #expect(composerOpens(for: .day("2026-06-18")))
         #expect(!composerOpens(for: .rail(.unscheduled)))
-        #expect(!composerOpens(for: .rail(.overdue)))
+        #expect(!composerOpens(for: .rail(.leftover)))
     }
 
     /// Mirrors `CalendarPageBoardSupportViews.addBehavior(for:)`: the add action a target declares,

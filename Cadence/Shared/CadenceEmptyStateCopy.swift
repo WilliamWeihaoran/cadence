@@ -133,7 +133,7 @@ nonisolated enum CadenceEmptyStateCopy {
     /// constant this ticket touched.
     static let nothingScheduledTitle = "Nothing scheduled"
 
-    /// **T-5013(a).** The Calendar Board's Overdue rail, which draws a header over nothing in the
+    /// **T-5013(a).** The Calendar Board's Leftover rail, which draws a header over nothing in the
     /// state it is in for anyone who keeps up. `form(for:boardForm:)` returns `.expanded` whenever
     /// the pane is wide enough regardless of the count, `addBehavior` answers `nil` for this rail
     /// (a task cannot be dragged — or created — into being late), and `KanbanColumnScroll` then
@@ -146,7 +146,10 @@ nonisolated enum CadenceEmptyStateCopy {
     ///
     /// Phrased as a state rather than an instruction, unlike `nothingScheduledTitle`'s neighbours
     /// that sit beside an add row: there is no control here to point at, and there should not be.
-    static let nothingOverdueTitle = "Nothing overdue"
+    ///
+    /// [[T-18666]]: "Nothing left over", not "Nothing overdue" -- the rail holds do dates gone by,
+    /// which By Date calls `CadenceTaskDisplayGroup.pastDoTitle`; "overdue" is a passed due date.
+    static let nothingLeftOverTitle = "Nothing left over"
 
     /// **T-5013(b).** iOS Search with an empty query on a narrowed scope. `resultSection` draws
     /// nothing for an empty array and the "No results" panel is gated on `isSearching`, so

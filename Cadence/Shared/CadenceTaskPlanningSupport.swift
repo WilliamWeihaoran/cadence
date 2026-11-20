@@ -339,6 +339,13 @@ enum CadenceTaskGroupFold {
 }
 
 struct CadenceTaskDisplayGroup: Identifiable {
+    /// **The one word and hue for a do date gone by** ([[T-12323]], [[T-18666]]). By Date's
+    /// "past-do" group heads with it, and the Mac Calendar Board's Leftover rail and its summary
+    /// read it rather than restating it, so the board can never call these rows "Overdue" -- the
+    /// word the rest of the app keeps for a passed *due* date -- while By Date calls them this.
+    static let pastDoTitle = "Leftover"
+    static var pastDoAccent: Color { Theme.amber }
+
     let id: String
     let title: String
     let accent: Color

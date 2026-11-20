@@ -6,7 +6,7 @@ import SwiftUI
 /// Structurally this is a day column: the same `CadenceBoardColumnHeader`, the same `KanbanColumnScroll`,
 /// the same `KanbanCard`. The one deliberate difference is the plate. Day columns sit straight on
 /// the board canvas (`Theme.bg`); a rail sits on `Theme.surfaceRecessed`, because a rail is an
-/// *inbox* — Overdue and Unscheduled are not dates, and must not read as though they were. The
+/// *inbox* — Leftover and Unscheduled are not dates, and must not read as though they were. The
 /// recess is also what tells the eye these two columns are pinned while the days scroll past them.
 ///
 /// **`form` is a reduction, not a fork** (T-251). The plate, the insets, the closing hairline, the
@@ -18,7 +18,7 @@ struct CalendarBoardRailColumn: View {
     let tasks: [AppTask]
     /// The board's observed day, for the cards' chips ([[T-5012]]).
     let todayKey: String
-    /// `nil` on the Overdue rail — see `KanbanColumnScroll.add`. The Unscheduled rail passes
+    /// `nil` on the Leftover rail — see `KanbanColumnScroll.add`. The Unscheduled rail passes
     /// `.presentSheet`: a backlog has neither a day nor a list, so there is nothing for the inline
     /// composer the day columns use to pre-fill.
     let add: KanbanColumnAddBehavior?
@@ -44,7 +44,7 @@ struct CalendarBoardRailColumn: View {
         .frame(maxHeight: .infinity, alignment: .top)
         .onHover { isHovered = $0 }
         .background(Theme.surfaceRecessed)
-        .overlay(alignment: rail == .overdue ? .trailing : .leading) {
+        .overlay(alignment: rail == .leftover ? .trailing : .leading) {
             Rectangle()
                 .fill(Theme.borderSubtle)
                 .frame(width: 1)
@@ -89,7 +89,7 @@ struct CalendarBoardRailColumn: View {
                 // exactly the near-copy the board components exist to avoid.
                 if let onToggleForm {
                     Button(action: onToggleForm) {
-                        Image(systemName: rail == .overdue ? "chevron.left" : "chevron.right")
+                        Image(systemName: rail == .leftover ? "chevron.left" : "chevron.right")
                             .font(.system(size: CadenceBoardColumnHeaderMetrics.labelSize, weight: .semibold))
                             .foregroundStyle(Theme.dim)
                             .frame(width: 16, height: 16)
@@ -166,13 +166,13 @@ struct CalendarBoardRailColumn: View {
 /// T-5013(a). **Which rail draws a sentence when it holds nothing, and why only one does.**
 ///
 /// A column with an add row is never actually blank — the ghost "Add task" row stands in the empty
-/// space and says what the column is for. The Overdue rail is the one column on this board with no
-/// add row, because overdue is a derived state and a task cannot be created into being late, so it
-/// is the one column whose empty state is 200pt of nothing under a header reading "Overdue 0".
-/// That is the board's resting state for anyone who keeps up, which is exactly why the owner wanted
+/// space and says what the column is for. The Leftover rail is the one column on this board with no
+/// add row, because leftover is a derived state and a task cannot be created into being late, so it
+/// is the one column whose empty state was 200pt of nothing under a header reading "Overdue 0"
+/// (the rail's name until [[T-18666]]). That is the board's resting state for anyone who keeps up, which is exactly why the owner wanted
 /// it to read as deliberate.
 ///
-/// Derived from "no cards and no add row" rather than written as `rail == .overdue`: the rule is
+/// Derived from "no cards and no add row" rather than written as `rail == .leftover`: the rule is
 /// about what the column actually draws, and a second rail that ever loses its add row would want
 /// this for the same reason.
 ///
@@ -184,14 +184,14 @@ nonisolated enum CalendarBoardRailEmptySupport {
     static func line(for rail: CalendarBoardRail, taskCount: Int, add: KanbanColumnAddBehavior?) -> String? {
         guard taskCount == 0, add == nil else { return nil }
         switch rail {
-        case .overdue: return CadenceEmptyStateCopy.nothingOverdueTitle
+        case .leftover: return CadenceEmptyStateCopy.nothingLeftOverTitle
         case .unscheduled: return CadenceEmptyStateCopy.nothingScheduledTitle
         }
     }
 }
 
-/// Installs the drop destination only on rails that accept one. Overdue is a derived state —
-/// dropping a task "into overdue" would mean backdating it — so it never becomes a drop target
+/// Installs the drop destination only on rails that accept one. Leftover is a derived state —
+/// dropping a task "into leftover" would mean backdating it — so it never becomes a drop target
 /// rather than accepting a drop and silently no-oping.
 private struct CalendarBoardRailDropModifier: ViewModifier {
     let rail: CalendarBoardRail

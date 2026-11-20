@@ -5,33 +5,42 @@ import SwiftUI
 
 /// The two rails pinned either side of the Calendar Board's day columns.
 ///
-/// A rail is an **inbox**, not a day: Overdue holds work whose do date has already passed,
+/// A rail is an **inbox**, not a day: Leftover holds work whose do date has already passed,
 /// Unscheduled holds work with no do date at all. Neither is a date, which is why the board
 /// plates them differently from a day column — see `CalendarBoardRailColumn`.
+///
+/// **Leftover, not Overdue ([[T-18666]]).** The rail buckets on the do date, and everywhere else in
+/// the app "Overdue" means a passed *due* date (the sidebar's Today badge, By Date's red heading,
+/// the cards' own "Overdue" flags) while a do date gone by is "Leftover" in amber ([[T-12323]]).
+/// The rail used to say "OVERDUE" in red, so a late task could sit under Unscheduled while the
+/// board read "0 overdue" beside a sidebar reading "1 overdue". The word and the hue are read from
+/// `CadenceTaskDisplayGroup.pastDoTitle` / `.pastDoAccent`, the By Date group's, so the two
+/// surfaces cannot drift apart again. The bucketing stays on the do date: it is what partitions
+/// the board and what every drop writes.
 enum CalendarBoardRail: String, CaseIterable, Identifiable {
-    case overdue
+    case leftover
     case unscheduled
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .overdue:     return "OVERDUE"
+        case .leftover:    return CadenceTaskDisplayGroup.pastDoTitle.uppercased()
         case .unscheduled: return "UNSCHEDULED"
         }
     }
 
     var dotColor: Color {
         switch self {
-        case .overdue:     return Theme.red
+        case .leftover:    return CadenceTaskDisplayGroup.pastDoAccent
         case .unscheduled: return Theme.dim
         }
     }
 
-    /// Overdue is derived from a do date already in the past, and backdating a task is never what
+    /// Leftover is derived from a do date already in the past, and backdating a task is never what
     /// a drag means — so the rail refuses drops rather than accepting one and no-oping. Must stay
     /// in agreement with `CalendarBoardPlannerSupport.dropAction(for:)` returning `nil`.
-    var acceptsDrops: Bool { self != .overdue }
+    var acceptsDrops: Bool { self != .leftover }
 }
 
 /// Where a card was released on the Calendar Board.
@@ -109,7 +118,7 @@ enum CalendarBoardPlannerSupport {
     /// anchor, so the board can be scrolled backwards as well as forwards.
     ///
     /// Pass `notBefore` to floor that window at a day — the macOS board passes today, because its
-    /// Overdue rail already shows every past-dated card and a past day column would show the same
+    /// Leftover rail already shows every past-dated card and a past day column would show the same
     /// card twice. The floor is **opt-in**: a board without rails (iOS) has nothing to catch what a
     /// floor would hide, so it keeps the full leading buffer and stays scrollable into the past.
     static func plannerWindowStart(
@@ -255,7 +264,7 @@ enum CalendarBoardPlannerSupport {
     }
 
     /// Day-column bucketing for the **macOS** Calendar Board, which pairs its day columns with the
-    /// Overdue and Unscheduled rails.
+    /// Leftover and Unscheduled rails.
     ///
     /// Buckets **strictly by do date** — the one field a board drop writes. Folding a due-only task
     /// into its due column instead would mean the board bucketed on either date while every drop
@@ -316,7 +325,7 @@ enum CalendarBoardPlannerSupport {
     static func rail(for task: AppTask, todayKey: String) -> CalendarBoardRail? {
         let doDate = task.scheduledDate
         guard !doDate.isEmpty else { return .unscheduled }
-        return doDate < todayKey ? .overdue : nil
+        return doDate < todayKey ? .leftover : nil
     }
 
     static func railTasks(from allTasks: [AppTask], todayKey: String) -> [CalendarBoardRail: [AppTask]] {
@@ -332,11 +341,12 @@ enum CalendarBoardPlannerSupport {
         }
     }
 
-    /// "N unscheduled · N overdue" — carried over from the Planning page this board absorbed.
+    /// "N unscheduled · N leftover" — carried over from the Planning page this board absorbed, with
+    /// the past-do word By Date uses ([[T-18666]]).
     static func railSummaryLine(_ railTasks: [CalendarBoardRail: [AppTask]]) -> String {
         let unscheduled = railTasks[.unscheduled]?.count ?? 0
-        let overdue = railTasks[.overdue]?.count ?? 0
-        return "\(unscheduled) unscheduled · \(overdue) overdue"
+        let leftover = railTasks[.leftover]?.count ?? 0
+        return "\(unscheduled) unscheduled · \(leftover) \(CadenceTaskDisplayGroup.pastDoTitle.lowercased())"
     }
 
     /// What dropping a card on this target writes. `nil` means the target refuses drops outright —
@@ -347,13 +357,13 @@ enum CalendarBoardPlannerSupport {
             return dateKey.isEmpty ? nil : .setDoDate(dateKey)
         case .rail(.unscheduled):
             return .clearDoDate
-        case .rail(.overdue):
+        case .rail(.leftover):
             return nil
         }
     }
 
     /// What the "+" on this column creates, or `nil` when the column has no add affordance at all
-    /// (Overdue, which is a derived state nothing can be created into).
+    /// (Leftover, which is a derived state nothing can be created into).
     ///
     /// A day column inserts inline because the column itself supplies the do date. The Unscheduled
     /// rail has no date to supply, so a bare inline insert would leave an untitled, unplaced card
@@ -365,7 +375,7 @@ enum CalendarBoardPlannerSupport {
             return dateKey.isEmpty ? nil : .insertInline(dateKey: dateKey)
         case .rail(.unscheduled):
             return .presentCreateSheet
-        case .rail(.overdue):
+        case .rail(.leftover):
             return nil
         }
     }

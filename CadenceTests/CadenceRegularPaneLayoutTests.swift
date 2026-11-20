@@ -669,7 +669,7 @@ struct CadenceCalendarBoardLayoutTests {
         let unscheduled = AppTask(title: "someday")
         unscheduled.dueDate = "2026-09-01"
 
-        #expect(CalendarBoardPlannerSupport.rail(for: overdue, todayKey: todayKey) == .overdue)
+        #expect(CalendarBoardPlannerSupport.rail(for: overdue, todayKey: todayKey) == .leftover)
         #expect(CalendarBoardPlannerSupport.rail(for: unscheduled, todayKey: todayKey) == .unscheduled)
 
         // The macOS board's own bucketing: neither task lands in any day column.

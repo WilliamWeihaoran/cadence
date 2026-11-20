@@ -214,12 +214,12 @@ struct CadenceMacPageAccessibilityAuditTests {
         #expect(!elsewhere.isEmpty, "non-vacuity: the header is not on the tree")
     }
 
-    /// The Board's collapsed rail is one button, "Expand Overdue". The column around it carries
-    /// "Overdue, 0 tasks" on a stack that was not an accessibility element — the shape [[T-7034]]
+    /// The Board's collapsed rail is one button, "Expand Leftover". The column around it carries
+    /// "Leftover, 0 tasks" on a stack that was not an accessibility element — the shape [[T-7034]]
     /// suspected hands a label to every child. Measured here: the button keeps its own verb.
     @Test func theCollapsedBoardRailKeepsItsOwnButtonName() {
         let nodes = allNodes(in: CalendarBoardRailColumn(
-            rail: .overdue,
+            rail: .leftover,
             tasks: [],
             todayKey: "2026-10-26",
             add: nil,
@@ -228,11 +228,11 @@ struct CadenceMacPageAccessibilityAuditTests {
             onDrop: { _ in false }
         ), size: NSSize(width: 120, height: 360))
         #expect(
-            nodes.contains { $0.role == Self.buttonRole && $0.label == "Expand Overdue" },
+            nodes.contains { $0.role == Self.buttonRole && $0.label == "Expand Leftover" },
             "the collapsed rail's button lost its own name to the column's: \(nodes)"
         )
         #expect(
-            nodes.contains { $0.label == "Overdue, 0 tasks" },
+            nodes.contains { $0.label == "Leftover, 0 tasks" },
             "the rail column no longer names itself: \(nodes)"
         )
     }

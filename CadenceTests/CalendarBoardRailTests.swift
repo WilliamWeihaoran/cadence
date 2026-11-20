@@ -23,10 +23,10 @@ struct CalendarBoardRailTests {
 
     // MARK: - Bucketing
 
-    @Test func pastDoDateLandsInOverdue() {
+    @Test func pastDoDateLandsInLeftover() {
         let overdue = task("Overdue", doDate: "2026-06-14")
 
-        #expect(CalendarBoardPlannerSupport.rail(for: overdue, todayKey: todayKey) == .overdue)
+        #expect(CalendarBoardPlannerSupport.rail(for: overdue, todayKey: todayKey) == .leftover)
     }
 
     @Test func missingDoDateLandsInUnscheduled() {
@@ -56,7 +56,7 @@ struct CalendarBoardRailTests {
     /// The rails and the *rendered* day columns must partition the board's open work exactly once:
     /// every open task is in one rail or one day column, and never in both. The board renders day
     /// columns from today forward, so only those keys count — past keys still exist in the
-    /// bucketing but have no column to appear in, which is exactly what the Overdue rail covers.
+    /// bucketing but have no column to appear in, which is exactly what the Leftover rail covers.
     @Test func railsAndRenderedDayColumnsPartitionOpenWorkExactlyOnce() {
         let overdue = task("Overdue", doDate: "2026-06-01")
         let today = task("Today", doDate: todayKey)
@@ -119,9 +119,9 @@ struct CalendarBoardRailTests {
         #expect(scheduled.dueDate == "2026-06-20")
     }
 
-    @Test func overdueRailRefusesDropsInsteadOfNoOping() {
-        #expect(CalendarBoardPlannerSupport.dropAction(for: .rail(.overdue)) == nil)
-        #expect(!CalendarBoardRail.overdue.acceptsDrops)
+    @Test func leftoverRailRefusesDropsInsteadOfNoOping() {
+        #expect(CalendarBoardPlannerSupport.dropAction(for: .rail(.leftover)) == nil)
+        #expect(!CalendarBoardRail.leftover.acceptsDrops)
         #expect(CalendarBoardRail.unscheduled.acceptsDrops)
     }
 
@@ -143,15 +143,53 @@ struct CalendarBoardRailTests {
 
         let rails = CalendarBoardPlannerSupport.railTasks(from: all, todayKey: todayKey)
 
-        #expect(rails[.overdue]?.count == 2)
+        #expect(rails[.leftover]?.count == 2)
         #expect(rails[.unscheduled]?.count == 3)
-        #expect(CalendarBoardPlannerSupport.railSummaryLine(rails) == "3 unscheduled · 2 overdue")
+        #expect(CalendarBoardPlannerSupport.railSummaryLine(rails) == "3 unscheduled · 2 leftover")
     }
 
     @Test func summaryReadsZeroWhenBothRailsAreEmpty() {
         let rails = CalendarBoardPlannerSupport.railTasks(from: [task("Today", doDate: todayKey)], todayKey: todayKey)
 
-        #expect(CalendarBoardPlannerSupport.railSummaryLine(rails) == "0 unscheduled · 0 overdue")
+        #expect(CalendarBoardPlannerSupport.railSummaryLine(rails) == "0 unscheduled · 0 leftover")
+    }
+
+    // MARK: - Vocabulary ([[T-18666]])
+
+    /// **The past-do rail speaks By Date's word for the same rows, not the passed-deadline one.**
+    /// The rail buckets on the do date; By Date files those rows under "Leftover" in amber and
+    /// keeps "Overdue", red, for a passed due date. The rail used to say "OVERDUE" in red, so a task
+    /// do-dated yesterday was "overdue" on the board and "Leftover" one page over, while a task
+    /// actually past its deadline sat under Unscheduled beside a "0 overdue" summary.
+    @Test func theLeftoverRailSharesByDatesPastDoWordAndHue() throws {
+        let plannedYesterday = task("Planned yesterday", doDate: "2026-06-14")
+        let dueYesterday = task("Due yesterday", dueDate: "2026-06-14")
+
+        #expect(CalendarBoardPlannerSupport.rail(for: plannedYesterday, todayKey: todayKey) == .leftover)
+
+        let groups = CadenceTaskQuerySupport.dateDisplayGroups(
+            from: [plannedYesterday, dueYesterday],
+            todayKey: todayKey
+        )
+        let pastDo = try #require(groups.first { $0.tasks.contains { $0.id == plannedYesterday.id } })
+        let pastDue = try #require(groups.first { $0.tasks.contains { $0.id == dueYesterday.id } })
+        #expect(pastDo.id == "past-do" && pastDue.id == "overdue", "non-vacuity: By Date tells the two apart")
+
+        // The relation: the rail holding the past-do rows wears that group's word and hue ...
+        #expect(CalendarBoardRail.leftover.label == pastDo.title.uppercased())
+        #expect(CalendarBoardRail.leftover.dotColor == pastDo.accent)
+        // ... and never the passed-deadline group's.
+        #expect(CalendarBoardRail.leftover.label != pastDue.title.uppercased())
+        #expect(CalendarBoardRail.leftover.dotColor != pastDue.accent)
+
+        // And what a reviewer signed off, so a change to the shared word is a visible decision.
+        #expect(CalendarBoardRail.leftover.label == "LEFTOVER")
+        #expect(CalendarBoardRail.leftover.dotColor == Theme.amber)
+        #expect(CadenceEmptyStateCopy.nothingLeftOverTitle == "Nothing left over")
+
+        let rails = CalendarBoardPlannerSupport.railTasks(from: [plannedYesterday, dueYesterday], todayKey: todayKey)
+        #expect(CalendarBoardPlannerSupport.railSummaryLine(rails) == "1 unscheduled · 1 leftover")
+        #expect(!CalendarBoardPlannerSupport.railSummaryLine(rails).contains("overdue"))
     }
 
     // MARK: - Ordering
@@ -234,7 +272,7 @@ struct CalendarBoardRailTests {
     }
 
     /// The floor belongs to the board that has rails to compensate for it. A caller that does not
-    /// ask for one — the iOS board, which has no Overdue rail — keeps the full leading buffer and
+    /// ask for one — the iOS board, which has no Leftover rail — keeps the full leading buffer and
     /// stays scrollable into the past.
     @Test func theTodayForwardFloorIsOptInNotDefaultedOn() {
         let calendar = Calendar(identifier: .gregorian)
@@ -430,7 +468,7 @@ struct CalendarBoardRailTests {
         #expect(CalendarBoardPlannerSupport.addAction(for: .day("")) == nil)
     }
 
-    @Test func theOverdueRailHasNoAddAffordance() {
-        #expect(CalendarBoardPlannerSupport.addAction(for: .rail(.overdue)) == nil)
+    @Test func theLeftoverRailHasNoAddAffordance() {
+        #expect(CalendarBoardPlannerSupport.addAction(for: .rail(.leftover)) == nil)
     }
 }

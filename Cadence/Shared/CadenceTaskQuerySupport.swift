@@ -506,7 +506,12 @@ enum CadenceTaskQuerySupport {
             // accent is that old heading's. The header refuses drops (`TasksListView.dateDropKey`
             // has no arm for it) for the reason Overdue's does: there is no "make this late"
             // assignment.
-            CadenceTaskDisplayGroup(id: "past-do", title: "Leftover", accent: Theme.amber, tasks: pastDo)
+            CadenceTaskDisplayGroup(
+                id: "past-do",
+                title: CadenceTaskDisplayGroup.pastDoTitle,
+                accent: CadenceTaskDisplayGroup.pastDoAccent,
+                tasks: pastDo
+            )
         ]
         if includeDueToday {
             // [[T-18056]]: `text`, not red. Red is Overdue's -- a deadline is red only once it has
