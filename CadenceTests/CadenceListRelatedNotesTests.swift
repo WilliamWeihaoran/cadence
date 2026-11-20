@@ -237,6 +237,61 @@ struct CadenceListRelatedNotesTests {
         #expect(!iPadTab.contains(".filter { !$0.isArchived }"), "the iPad tab re-spells the archived rule")
     }
 
+    // MARK: - A new note is revealed
+
+    /// [[T-18596]]: a note the tab just made is blank and untagged. A query it does not match, or
+    /// any chip, would hide it from the column beside the editor writing it, so both controls clear
+    /// together; a filter the note already passes -- none, or a query its "Untitled" title meets --
+    /// is kept. The note is never tagged to fit the chips.
+    @Test func aNewNoteTheFilterWouldHideClearsTheSearchAndChips() throws {
+        let context = try makeContext()
+        let urgent = Tag(name: "Urgent")
+        context.insert(urgent)
+        let created = Note(kind: .list, title: "", content: "")
+        context.insert(created)
+        try context.save()
+
+        typealias Controls = CadenceListRelatedNotes.FilterControls
+        func reveal(_ current: Controls, slugs: Set<String>) -> Controls {
+            CadenceListRelatedNotes.controls(revealing: created, from: current, requiredTagSlugs: slugs, tasks: [])
+        }
+
+        // A query the blank note does not match: both controls clear, chips too.
+        let queried = Controls(query: "budget", selectedTagIDs: [urgent.id])
+        #expect(reveal(queried, slugs: [urgent.slug]) == .cleared)
+        #expect(reveal(Controls(query: "budget", selectedTagIDs: []), slugs: []) == .cleared)
+
+        // A chip alone: the untagged note fails it, so the chip clears.
+        #expect(reveal(Controls(query: "", selectedTagIDs: [urgent.id]), slugs: [urgent.slug]) == .cleared)
+
+        // Nothing on, or a query the note meets: the controls are kept as they were.
+        let idle = Controls(query: "", selectedTagIDs: [])
+        #expect(reveal(idle, slugs: []) == idle)
+        let untitled = Controls(query: "untitled", selectedTagIDs: [])
+        #expect(reveal(untitled, slugs: []) == untitled)
+
+        // Whatever the controls become, the note now passes them -- and was not tagged to do so.
+        let after = reveal(queried, slugs: [urgent.slug])
+        #expect(CadenceListRelatedNotes.filter([created], query: after.query, requiredTagSlugs: [], tasks: []).map(\.id) == [created.id])
+        #expect((created.tags ?? []).isEmpty)
+    }
+
+    /// Both tabs' create paths -- the Mac's and iPad's `addNote`, and the iPad folder sheet's
+    /// `.created` adoption -- ask the shared rule and write back both controls.
+    @Test func bothTabsRevealANewNoteThroughTheSharedRule() throws {
+        for path in ["Cadence/macOS/Views/ListNotesView.swift", "Cadence/iOS/iOSListNotesView.swift"] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(code.contains("CadenceListRelatedNotes.controls(\n            revealing: note,"), "\(path)")
+            #expect(code.contains("searchText = controls.query"), "\(path)")
+            #expect(code.contains("selectedTagFilterIDs = controls.selectedTagIDs"), "\(path)")
+        }
+        let mac = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListNotesView.swift"))
+        #expect(mac.contains("revealInColumn(note)\n        select(.list(note.id), clearsRequestedEventNote: false)"))
+        let ios = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListNotesView.swift"))
+        #expect(ios.contains("revealInColumn(note)\n        selectedNoteID = note.id"))
+        #expect(ios.contains("if let created { revealInColumn(created) }"))
+    }
+
     // MARK: - Both tabs read it
 
     /// macOS kept these as private members of `ListNotesView`; the iPad tab had none of them. Both

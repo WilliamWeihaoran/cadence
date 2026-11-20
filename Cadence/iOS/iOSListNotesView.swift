@@ -593,9 +593,23 @@ struct iOSListNotesView: View {
             return
         }
         createFailureNotice = nil
+        revealInColumn(note)
         selectedNoteID = note.id
         guard layout == .oneColumn else { return }
         presentedNote = note
+    }
+
+    /// [[T-18596]]: a new note the search or chips would hide clears them, so the column lists the
+    /// note the pane is writing -- the Mac tab's rule, from `CadenceListRelatedNotes`.
+    private func revealInColumn(_ note: Note) {
+        let controls = CadenceListRelatedNotes.controls(
+            revealing: note,
+            from: .init(query: searchText, selectedTagIDs: selectedTagFilterIDs),
+            requiredTagSlugs: requiredTagFilterSlugs,
+            tasks: allTasks
+        )
+        searchText = controls.query
+        selectedTagFilterIDs = controls.selectedTagIDs
     }
 
     /// [[T-18252]]: the folder sheet, opened on the root's host with the list it files into and
@@ -612,9 +626,11 @@ struct iOSListNotesView: View {
         switch outcome.kind {
         case .created(let noteID):
             createFailureNotice = nil
+            let created = allNotes.first { $0.id == noteID }
+            if let created { revealInColumn(created) }
             selectedNoteID = noteID
             guard layout == .oneColumn else { return }
-            presentedNote = allNotes.first { $0.id == noteID }
+            presentedNote = created
         case .createFailed:
             createFailureNotice = CadencePendingChangePersistence.editFailureNotice
         case .moved:

@@ -373,7 +373,21 @@ struct ListNotesView: View {
             return
         }
         createFailureNotice = nil
+        revealInColumn(note)
         select(.list(note.id), clearsRequestedEventNote: false)
+    }
+
+    /// [[T-18596]]: a new note the search or chips would hide clears them, so the column lists the
+    /// note the editor is writing.
+    private func revealInColumn(_ note: Note) {
+        let controls = CadenceListRelatedNotes.controls(
+            revealing: note,
+            from: .init(query: searchText, selectedTagIDs: selectedTagFilterIDs),
+            requiredTagSlugs: requiredTagFilterSlugs,
+            tasks: allTasks
+        )
+        searchText = controls.query
+        selectedTagFilterIDs = controls.selectedTagIDs
     }
 
     private func openListNote(_ note: Note) {

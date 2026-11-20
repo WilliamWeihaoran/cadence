@@ -91,6 +91,31 @@ enum CadenceListRelatedNotes {
         selectedTagIDs.intersection(filterableTags.map(\.id))
     }
 
+    /// The search text and chip selection a Notes tab holds -- the two controls `filter` reads.
+    struct FilterControls: Equatable {
+        var query: String
+        var selectedTagIDs: Set<UUID>
+
+        static let cleared = FilterControls(query: "", selectedTagIDs: [])
+    }
+
+    /// The controls to hold once `created` -- a note the tab just made and selected -- is on screen:
+    /// unchanged when the note already passes `filter`, otherwise cleared, query and chips both.
+    ///
+    /// **[[T-18596]].** Both tabs selected a new note with the filter left on, and a new note is
+    /// blank and untagged, so any query it does not match or any chip hid it: the editor wrote a
+    /// note the column beside it did not list, or listed "No matches" beside. The filter is a view,
+    /// not an assignment, so the note is never tagged from the chips -- the filter gives way.
+    static func controls(
+        revealing created: Note,
+        from current: FilterControls,
+        requiredTagSlugs: Set<String>,
+        tasks: [AppTask]
+    ) -> FilterControls {
+        let passes = !filter([created], query: current.query, requiredTagSlugs: requiredTagSlugs, tasks: tasks).isEmpty
+        return passes ? current : .cleared
+    }
+
     /// A note survives when it carries **every** required tag and, given a query, the query is in
     /// its title, its body (task embeds read under the task's live title — see
     /// `MarkdownTaskEmbedTitleCache`), or one of its tags' names or slugs.
