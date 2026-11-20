@@ -47,7 +47,7 @@ struct MarkdownEditor: View {
     var onCreateEmbeddedTask: (String) -> MarkdownEmbeddedTaskCreation<MarkdownReferenceSuggestion>? = { _ in nil }
     var onToggleEmbeddedTask: (UUID) -> Void = { _ in }
     var onToggleEmbeddedSubtask: (UUID, UUID) -> Void = { _, _ in }
-    var onRenameEmbeddedTask: (UUID, String) -> Void = { _, _ in }
+    var onRenameEmbeddedTask: (UUID, String) -> MarkdownEmbeddedTaskRenameUndo? = { _, _ in nil }
     var onOpenEmbeddedTask: (UUID) -> Void = { _ in }
     var onEditEmbeddedTask: (UUID, MarkdownTaskEmbedField) -> Void = { _, _ in }
     var onHoverEmbeddedTask: (UUID, Bool) -> Void = { _, _ in }
@@ -494,7 +494,7 @@ struct MarkdownEditorView: NSViewRepresentable {
     var onCreateEmbeddedTask: (String) -> MarkdownEmbeddedTaskCreation<MarkdownReferenceSuggestion>? = { _ in nil }
     var onToggleEmbeddedTask: (UUID) -> Void = { _ in }
     var onToggleEmbeddedSubtask: (UUID, UUID) -> Void = { _, _ in }
-    var onRenameEmbeddedTask: (UUID, String) -> Void = { _, _ in }
+    var onRenameEmbeddedTask: (UUID, String) -> MarkdownEmbeddedTaskRenameUndo? = { _, _ in nil }
     var onOpenEmbeddedTask: (UUID) -> Void = { _ in }
     var onEditEmbeddedTask: (UUID, MarkdownTaskEmbedField) -> Void = { _, _ in }
     var onHoverEmbeddedTask: (UUID, Bool) -> Void = { _, _ in }

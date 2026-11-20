@@ -137,7 +137,7 @@ final class TaskNotesEmbedHandlers {
         let createEmbeddedTask: (String) -> MarkdownEmbeddedTaskCreation<MarkdownReferenceSuggestion>?
         let toggleEmbeddedTask: (UUID) -> Void
         let toggleEmbeddedSubtask: (UUID, UUID) -> Void
-        let renameEmbeddedTask: (UUID, String) -> Void
+        let renameEmbeddedTask: (UUID, String) -> MarkdownEmbeddedTaskRenameUndo?
         let openEmbeddedTask: (UUID) -> Void
         let editEmbeddedTask: (UUID, MarkdownTaskEmbedField) -> Void
         let hoverEmbeddedTask: (UUID, Bool) -> Void
@@ -361,15 +361,32 @@ final class TaskNotesEmbedHandlers {
     /// the banner fired under the old name — while every sibling edit from the same card (the
     /// status popover, the task panel's Save) already reconciled. A refused rename puts the title
     /// back, so there is nothing to re-read and it does not reconcile.
-    func renameEmbeddedTask(id: UUID, title: String, in scope: TaskNotesEmbedScope) {
-        guard let embeddedTask = embeddedTask(id: id, in: scope) else { return }
+    ///
+    /// **[[T-18594]]: it hands back the rename's inverse**, which the editor registers in the
+    /// undo group that rewrites the note's reference title, so Cmd+Z renames the task back with the
+    /// text instead of reverting only the hidden title. `nil` when nothing was renamed.
+    @discardableResult
+    func renameEmbeddedTask(id: UUID, title: String, in scope: TaskNotesEmbedScope) -> MarkdownEmbeddedTaskRenameUndo? {
+        guard let embeddedTask = embeddedTask(id: id, in: scope) else { return nil }
+        let before = MarkdownEmbeddedTaskRenameUndo.Title(embeddedTask)
         guard CadenceNoteTaskEmbedEditing.rename(embeddedTask, to: title, in: scope.modelContext, commit: commit) else {
             embeddedTaskFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
-            return
+            return nil
         }
         embeddedTaskFailureNotice = nil
         (reconciler ?? .default).run(in: scope.modelContext)
         refreshEmbeddedTask(embeddedTask)
+        return MarkdownEmbeddedTaskRenameUndo(
+            task: embeddedTask,
+            before: before,
+            modelContext: scope.modelContext,
+            commit: commit,
+            didApply: { [weak self] task in
+                guard let self else { return }
+                (self.reconciler ?? .default).run(in: scope.modelContext)
+                self.repaintEmbeddedTaskCard(task)
+            }
+        )
     }
 
     func openEmbeddedTask(id: UUID, in scope: TaskNotesEmbedScope) {
@@ -436,8 +453,14 @@ final class TaskNotesEmbedHandlers {
     }
 
     func refreshEmbeddedTask(_ embeddedTask: AppTask) {
-        editorTextView?.markdownTaskEmbeds[embeddedTask.id] = MarkdownTaskEmbedRenderInfo.task(embeddedTask)
         editorTextView?.replaceEmbeddedTaskReferenceTitle(id: embeddedTask.id, title: embeddedTask.title)
+        repaintEmbeddedTaskCard(embeddedTask)
+    }
+
+    /// The card half of `refreshEmbeddedTask`, without the reference rewrite: what an undo or redo
+    /// of an inline rename repaints, since its own undo group already moves the text ([[T-18594]]).
+    func repaintEmbeddedTaskCard(_ embeddedTask: AppTask) {
+        editorTextView?.markdownTaskEmbeds[embeddedTask.id] = MarkdownTaskEmbedRenderInfo.task(embeddedTask)
         if let editorTextView {
             MarkdownStylist.apply(to: editorTextView)
             editorTextView.needsDisplay = true

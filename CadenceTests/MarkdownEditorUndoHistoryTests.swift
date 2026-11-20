@@ -233,5 +233,80 @@ struct MarkdownEditorUndoHistoryTests {
         harness.manager.redo()
         #expect(try harness.tasks(titled: "Milk").count == 1, "redo duplicated a task undo had kept")
     }
+
+    // MARK: - [[T-18594]]: undo of an inline rename over a task card
+
+    /// A note holding one card for a committed "Milk" task, wired to the real handlers the way
+    /// every Mac host wires them.
+    private static func renameHarness() throws -> (EmbedHarness, AppTask) {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let task = AppTask(title: "Milk")
+        modelContext.insert(task)
+        try modelContext.save()
+        let handlers = TaskNotesEmbedHandlers(hoverIDPrefix: "undo-test-")
+        let scope = TaskNotesEmbedScope(referenceTasks: [task], embedTarget: .coreNotes, modelContext: modelContext)
+        let coordinator = MarkdownEditorCoordinator(parent: MarkdownEditorView(text: .constant("")))
+        let view = makeTextView("Buy [[task:\(task.id.uuidString)|Milk]] today")
+        view.delegate = coordinator
+        view.markdownTaskEmbeds[task.id] = MarkdownTaskEmbedRenderInfo.task(task)
+        view.onRenameEmbeddedMarkdownTask = { handlers.renameEmbeddedTask(id: $0, title: $1, in: scope) }
+        handlers.editorTextView = view
+        coordinator.undoManager.groupsByEvent = false
+        let harness = EmbedHarness(
+            container: container,
+            modelContext: modelContext,
+            handlers: handlers,
+            coordinator: coordinator,
+            view: view
+        )
+        return (harness, task)
+    }
+
+    /// The defect: renaming the card "Milk" -> "Eggs" and pressing Cmd+Z took back only the hidden
+    /// title inside the reference; the task (and so the card, drawn from it) kept "Eggs". Undo now
+    /// renames the task back with the text, redo renames both forward, and the cycle repeats.
+    @Test func undoOfAnInlineCardRenameRenamesTheTaskBack() throws {
+        let (harness, task) = try Self.renameHarness()
+        let id = task.id
+
+        harness.manager.beginUndoGrouping()
+        harness.view.commitInlineTaskRename(id: id, typed: "Eggs")
+        harness.manager.endUndoGrouping()
+        #expect(task.title == "Eggs")
+        #expect(harness.view.string == "Buy [[task:\(id.uuidString)|Eggs]] today")
+
+        harness.manager.undo()
+        #expect(task.title == "Milk", "undo left the task renamed")
+        #expect(harness.view.string == "Buy [[task:\(id.uuidString)|Milk]] today")
+        #expect(harness.view.markdownTaskEmbeds[id]?.title == "Milk", "the card was not repainted")
+        #expect(try harness.tasks(titled: "Milk").map(\.id) == [id], "the store does not hold the undone title")
+
+        harness.manager.redo()
+        #expect(task.title == "Eggs", "redo did not rename the task forward")
+        #expect(harness.view.string == "Buy [[task:\(id.uuidString)|Eggs]] today")
+
+        harness.manager.undo()
+        #expect(task.title == "Milk")
+        #expect(harness.view.string == "Buy [[task:\(id.uuidString)|Milk]] today")
+    }
+
+    /// Undo never overwrites a title the task has been given elsewhere since: the text reverts,
+    /// the task keeps the later name, and redo does not resurrect "Eggs" over it.
+    @Test func undoOfAnInlineCardRenameLeavesATaskRenamedSince() throws {
+        let (harness, task) = try Self.renameHarness()
+
+        harness.manager.beginUndoGrouping()
+        harness.view.commitInlineTaskRename(id: task.id, typed: "Eggs")
+        harness.manager.endUndoGrouping()
+        task.title = "Bread"
+        try harness.modelContext.save()
+
+        harness.manager.undo()
+        #expect(task.title == "Bread", "undo overwrote a rename made after it")
+
+        harness.manager.redo()
+        #expect(task.title == "Bread", "redo overwrote a rename made after it")
+    }
 }
 #endif

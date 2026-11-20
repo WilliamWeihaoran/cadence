@@ -16,7 +16,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     var onCreateEmbeddedMarkdownTask: ((String) -> MarkdownEmbeddedTaskCreation<MarkdownReferenceSuggestion>?)?
     var onToggleEmbeddedMarkdownTask: ((UUID) -> Void)?
     var onToggleEmbeddedMarkdownSubtask: ((UUID, UUID) -> Void)?
-    var onRenameEmbeddedMarkdownTask: ((UUID, String) -> Void)?
+    var onRenameEmbeddedMarkdownTask: ((UUID, String) -> MarkdownEmbeddedTaskRenameUndo?)?
     var onOpenEmbeddedMarkdownTask: ((UUID) -> Void)?
     var onEditEmbeddedMarkdownTask: ((UUID, MarkdownTaskEmbedField) -> Void)?
     var onHoverEmbeddedMarkdownTask: ((UUID, Bool) -> Void)?
@@ -682,20 +682,35 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
               let editor = inlineTaskTitleEditor,
               let taskID = inlineTaskTitleTaskID else { return }
         isEndingInlineTaskTitleEdit = true
-        let rawTitle = TaskTitleSupport.normalized(editor.stringValue)
-        let referenceTitle = TaskTitleSupport.priorityShortcut(in: rawTitle)?.title ?? rawTitle
+        let typed = editor.stringValue
         editor.delegate = nil
         editor.removeFromSuperview()
         inlineTaskTitleEditor = nil
         inlineTaskTitleTaskID = nil
-        // [[T-17190]]: a cleared or marks-only title is a cancel, so neither the task nor the
-        // note's reference text is renamed to nothing.
-        if commit, CadenceNoteTaskEmbedEditing.namesTask(rawTitle) {
-            onRenameEmbeddedMarkdownTask?(taskID, rawTitle)
-            replaceEmbeddedTaskReferenceTitle(id: taskID, title: referenceTitle)
-        }
+        if commit { commitInlineTaskRename(id: taskID, typed: typed) }
         isEndingInlineTaskTitleEdit = false
         needsDisplay = true
+    }
+
+    /// The commit half of the inline rename over a card: renames the task through the host and
+    /// rewrites the note's `[[task:UUID|Title]]` reference to match.
+    ///
+    /// [[T-18594]]: the two are one undo step, so Cmd+Z renames the task back with the hidden text
+    /// rather than reverting the text alone -- which moved nothing on screen, because the card is
+    /// drawn from the live task. Grouped explicitly, as [[T-18174]]'s creation is, rather than
+    /// trusting the event's group, which a headless caller does not have.
+    func commitInlineTaskRename(id taskID: UUID, typed: String) {
+        let rawTitle = TaskTitleSupport.normalized(typed)
+        // [[T-17190]]: a cleared or marks-only title is a cancel, so neither the task nor the
+        // note's reference text is renamed to nothing.
+        guard CadenceNoteTaskEmbedEditing.namesTask(rawTitle) else { return }
+        let referenceTitle = TaskTitleSupport.priorityShortcut(in: rawTitle)?.title ?? rawTitle
+        let manager = undoManager
+        manager?.beginUndoGrouping()
+        defer { manager?.endUndoGrouping() }
+        let renameUndo = onRenameEmbeddedMarkdownTask?(taskID, rawTitle)
+        if let manager { renameUndo?.register(on: manager) }
+        replaceEmbeddedTaskReferenceTitle(id: taskID, title: referenceTitle)
     }
 
     func controlTextDidEndEditing(_ obj: Notification) {
