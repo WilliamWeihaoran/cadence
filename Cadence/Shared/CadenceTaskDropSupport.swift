@@ -566,13 +566,13 @@ enum CadenceTaskDropSupport {
             // 9:30 AM" in a `·`-separated list of placements reads as a fourth, separate field.
             // `TimeFormatters` because this is a clock time shown to a person, and this layer may
             // not mint a formatter of its own.
-            var day = "Do \(dayLabel(seed.doDateKey, todayKey: todayKey))"
+            var day = "Do \(relativeDayLabel(seed.doDateKey, todayKey: todayKey))"
             if seed.scheduledStartMin >= 0 {
                 day += " at \(TimeFormatters.timeString(from: seed.scheduledStartMin))"
             }
             parts.append(day)
         }
-        if !seed.dueDateKey.isEmpty { parts.append("Due \(dayLabel(seed.dueDateKey, todayKey: todayKey))") }
+        if !seed.dueDateKey.isEmpty { parts.append(dueDayLabel(seed.dueDateKey, todayKey: todayKey)) }
         // Only a priority *group* header emits `priority:` — no row does, deliberately. Spelled
         // "High priority" rather than bare "High" because it sits in a list beside "Inbox" and
         // "Do Today", where a lone adjective would not say which field it is setting. Without this
@@ -600,12 +600,40 @@ enum CadenceTaskDropSupport {
         )
     }
 
+    /// **[[T-18841]]: the Do day in the capture card's words** -- `Today`, `Tomorrow`, `in 4 days`
+    /// inside the seven-day window, then the date -- because the card this drop opens draws its Do
+    /// chip through `CadenceScheduleDraft.doRowLabel`, which is `DateFormatters.relativeDate` over
+    /// the same window. The ghost spelled every day but today as the bare date, so a task due
+    /// tomorrow read "Do Nov 22" under the finger and "Tomorrow" on the card it opened.
+    private static func relativeDayLabel(_ key: String, todayKey: String) -> String {
+        DateFormatters.relativeDate(from: key, relativeTo: reference(forTodayKey: todayKey))
+    }
+
+    /// **[[T-18841]]: the Due day, "Due" included.** Today and tomorrow are the row's own chip
+    /// words, `CadenceWidgetDateSupport.dueLabel`'s "Due today" / "Due tomorrow"; every other day
+    /// is the capture card's Due chip (`dueRowLabel`, the same window as the Do day) after "Due",
+    /// so "Due in 4 days" then "Due Dec 3". The past never reaches here -- `seed` drops it.
+    private static func dueDayLabel(_ key: String, todayKey: String) -> String {
+        let today = reference(forTodayKey: todayKey)
+        if let offset = DateFormatters.dayOffset(from: key, relativeTo: today),
+           offset == 0 || offset == 1,
+           let label = CadenceWidgetDateSupport.dueLabel(for: key, todayKey: todayKey) {
+            return label
+        }
+        return "Due \(DateFormatters.relativeDate(from: key, relativeTo: today))"
+    }
+
+    private static func reference(forTodayKey todayKey: String) -> Date {
+        DateFormatters.date(from: todayKey, in: .current) ?? Date()
+    }
+
+    /// The event branch's day: "Today", else the date. Not yet the card's words -- see [[T-18850]].
     private static func dayLabel(_ key: String, todayKey: String) -> String {
         key == todayKey
             ? "Today"
             : DateFormatters.shortDateString(
                 from: key,
-                relativeTo: DateFormatters.date(from: todayKey, in: .current) ?? Date()
+                relativeTo: reference(forTodayKey: todayKey)
             )
     }
 

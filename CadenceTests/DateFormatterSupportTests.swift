@@ -129,13 +129,14 @@ struct DateFormatterSupportTests {
         ) == "Until Mar 1")
 
         let fromLastYear = CadenceTaskDropSupport.placementCaption(
-            forDropKey: "list:inbox|date:2027-01-04", todayKey: "2026-12-28", listName: ""
+            forDropKey: "list:inbox|date:2027-01-20", todayKey: "2026-12-28", listName: ""
         )
         let fromSameYear = CadenceTaskDropSupport.placementCaption(
-            forDropKey: "list:inbox|date:2027-01-04", todayKey: "2027-01-02", listName: ""
+            forDropKey: "list:inbox|date:2027-01-20", todayKey: "2027-01-02", listName: ""
         )
-        #expect(fromLastYear == "Inbox · Do Jan 4, 2027")
-        #expect(fromSameYear == "Inbox · Do Jan 4")
+        // Past the seven-day window ([[T-18841]]), so the caption spells the date.
+        #expect(fromLastYear == "Inbox · Do Jan 20, 2027")
+        #expect(fromSameYear == "Inbox · Do Jan 20")
     }
 
     /// `normalizedDateKey` is the single spelling of "this text is a storage key".

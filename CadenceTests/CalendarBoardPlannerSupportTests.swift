@@ -9,7 +9,7 @@ struct CalendarBoardPlannerSupportTests {
         let calendar = Calendar(identifier: .gregorian)
         let anchor = calendar.date(from: DateComponents(year: 2026, month: 5, day: 29))!
 
-        #expect(CalendarBoardPlannerSupport.title(for: anchor, relativeTo: anchor, calendar: calendar) == "May 29 - Jun 4")
+        #expect(CalendarBoardPlannerSupport.title(for: anchor, relativeTo: anchor, calendar: calendar) == "May 29 – Jun 4")
     }
 
     /// [[T-6434]]: the year appears only outside the reference year, on whichever end lies there.
@@ -24,15 +24,28 @@ struct CalendarBoardPlannerSupportTests {
         }
 
         // Same year as the reference: unchanged, both shapes.
-        #expect(title(day(2026, 10, 5)) == "Oct 5-11")
-        #expect(title(day(2026, 10, 29)) == "Oct 29 - Nov 4")
+        #expect(title(day(2026, 10, 5)) == "Oct 5–11")
+        #expect(title(day(2026, 10, 29)) == "Oct 29 – Nov 4")
         // Entirely in another year: the year once, at the end.
-        #expect(title(day(2027, 1, 5)) == "Jan 5-11, 2027")
-        #expect(title(day(2027, 5, 29)) == "May 29 - Jun 4, 2027")
+        #expect(title(day(2027, 1, 5)) == "Jan 5–11, 2027")
+        #expect(title(day(2027, 5, 29)) == "May 29 – Jun 4, 2027")
         // Spanning the new year: only the end outside the reference year carries it.
-        #expect(title(day(2026, 12, 28)) == "Dec 28 - Jan 3, 2027")
-        #expect(title(day(2026, 12, 28), day(2027, 1, 1)) == "Dec 28, 2026 - Jan 3")
-        #expect(title(day(2027, 12, 28)) == "Dec 28, 2027 - Jan 3, 2028")
+        #expect(title(day(2026, 12, 28)) == "Dec 28 – Jan 3, 2027")
+        #expect(title(day(2026, 12, 28), day(2027, 1, 1)) == "Dec 28, 2026 – Jan 3")
+        #expect(title(day(2027, 12, 28)) == "Dec 28, 2027 – Jan 3, 2028")
+    }
+
+    /// [[T-18844]]: the Board and Notes name the same Monday-to-Sunday week in one spelling --
+    /// en dash and all -- rather than the Board's hyphen beside Notes' en dash.
+    @Test func titleSpellsAWeekTheWayTheNotesWeekLabelDoes() {
+        let calendar = Calendar.current
+        for (monday, expected) in [("2026-11-16", "Nov 16–22"), ("2026-11-30", "Nov 30 – Dec 6")] {
+            let anchor = DateFormatters.date(from: monday, in: calendar)!
+            let title = CalendarBoardPlannerSupport.title(for: anchor, relativeTo: anchor, calendar: calendar)
+            #expect(title == expected)
+            #expect(title == DateFormatters.noteWeekRangeLabel(forDayKey: monday, now: anchor, calendar: calendar))
+            #expect(!title.contains("-"))
+        }
     }
 
     @Test func boardTasksIncludeDueOnlyWithoutMutatingSchedule() {

@@ -317,7 +317,7 @@ struct CadenceTaskDropSupportTests {
             listName: "Home"
         )
 
-        #expect(caption == "Home › Backlog · Do Aug 20 · Due Aug 22")
+        #expect(caption == "Home › Backlog · Do in 3 days · Due in 5 days")
     }
 
     /// The default section is what a task in that list gets anyway; naming it says nothing the
@@ -339,6 +339,49 @@ struct CadenceTaskDropSupportTests {
             todayKey: "2026-08-17",
             listName: ""
         ) == "Inbox · Do Today")
+    }
+
+    /// **[[T-18841]]: the ghost names a day in the words of the card the drop opens.** The capture
+    /// card's Do and Due chips read `CadenceScheduleDraft.doRowLabel` / `dueRowLabel` --
+    /// `DateFormatters.relativeDate` inside the seven-day window -- and the row's own due chip
+    /// reads `CadenceWidgetDateSupport.dueLabel`. The ghost printed the bare date for every day
+    /// but today: "Do Nov 22 · Due Nov 22" over a card reading "Tomorrow".
+    @Test func theGhostSpellsTomorrowTheWayTheCardAndTheRowDo() throws {
+        let todayKey = "2026-11-21"
+        let caption = CadenceTaskDropSupport.placementCaption(
+            forDropKey: "list:inbox|date:2026-11-22|due:2026-11-22",
+            todayKey: todayKey,
+            listName: ""
+        )
+        #expect(caption == "Inbox · Do Tomorrow · Due tomorrow")
+
+        // The relation, not just the literal: the Do segment IS the card's Do chip, and the Due
+        // segment IS the row's due chip.
+        var draft = CadenceScheduleDraft(dateKey: "2026-11-22", startMin: 9 * 60, kind: .task)
+        draft.dueDateKey = "2026-11-22"
+        let today = try #require(DateFormatters.date(from: todayKey, in: .current))
+        #expect(caption.contains("Do \(draft.doRowLabel(relativeTo: today))"))
+        #expect(caption.hasSuffix(try #require(CadenceWidgetDateSupport.dueLabel(for: "2026-11-22", todayKey: todayKey))))
+    }
+
+    /// Inside the window but past tomorrow, both segments carry the card's words; past the window,
+    /// both carry the date -- the card's own cutoff, so the two turn over on the same day.
+    @Test func theGhostTurnsToTheDateWhereTheCardDoes() {
+        #expect(CadenceTaskDropSupport.placementCaption(
+            forDropKey: "list:inbox|date:2026-11-25|due:2026-11-28",
+            todayKey: "2026-11-21",
+            listName: ""
+        ) == "Inbox · Do in 4 days · Due in 7 days")
+        #expect(CadenceTaskDropSupport.placementCaption(
+            forDropKey: "list:inbox|date:2026-11-29|due:2026-12-03",
+            todayKey: "2026-11-21",
+            listName: ""
+        ) == "Inbox · Do Nov 29 · Due Dec 3")
+        #expect(CadenceTaskDropSupport.placementCaption(
+            forDropKey: "list:inbox|due:2026-11-21",
+            todayKey: "2026-11-21",
+            listName: ""
+        ) == "Inbox · Due today")
     }
 
     /// The caption cannot advertise what the seed drops. A row in Overdue offers a date already
@@ -372,7 +415,7 @@ struct CadenceTaskDropSupportTests {
             listName: "   "
         )
 
-        #expect(caption == "Backlog · Due Aug 22")
+        #expect(caption == "Backlog · Due in 5 days")
     }
 
     /// A key that names Inbox *and* a section contradicts itself and the seed resolves the list's

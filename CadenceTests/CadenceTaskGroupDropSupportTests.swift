@@ -196,11 +196,14 @@ struct CadenceTaskGroupDropSupportTests {
     /// defaults to `.inbox`, so reading the resolved seed alone made a header like "Due Today" —
     /// which names a date and nothing else — claim it would put the task in the Inbox. No task row
     /// could ever produce this, because a row always emits a `list:` part; a header can.
+    ///
+    /// [[T-18841]]: the caption reads "Due today", the row chips' `dueLabel` spelling, not the
+    /// header's title-case "Due Today" -- the caption names the placement in the task's words.
     @Test func theGhostDoesNotClaimInboxWhenTheKeyNeverNamedAList() {
         #expect(CadenceTaskDropSupport.placementCaption(
             forGroup: .todayDate(.dueToday),
             todayKey: todayKey
-        ) == "Due Today")
+        ) == "Due today")
 
         #expect(CadenceTaskDropSupport.placementCaption(
             forGroup: .todayDate(.plannedToday),
