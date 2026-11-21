@@ -297,6 +297,92 @@ struct iOSMarkdownEditorUndoHistoryTests {
         #expect(try Self.tasks(titled: "Milk", in: modelContext).count == 1, "undo deleted an edited task")
         _ = container
     }
+
+    // MARK: - [[T-18594]]: a reference-title sync is never an undo step of its own
+
+    /// What `updateUIView` hands the coordinator once the surface's reconcile has run after a
+    /// rename in the task sheet or the inline panel: the editor carrying the new embed table, and
+    /// the draft with the reference title caught up.
+    private static func syncReference(of task: AppTask, to title: String, in hosted: Hosted) {
+        task.title = title
+        hosted.coordinator.parent = iOSMarkdownEditor(
+            text: .constant(""),
+            isFocused: .constant(true),
+            taskEmbeds: [task.id: MarkdownTaskEmbedRenderInfo.task(task)]
+        )
+        let current: String = hosted.view.text ?? ""
+        let synced = MarkdownTaskEmbedParser.reconcilingReferenceTitles(
+            in: current,
+            titles: [task.id: title],
+            fallback: MarkdownTaskEmbedRenderInfo.untitledTaskTitle
+        ) ?? current
+        hosted.coordinator.applyRewrite(synced, to: hosted.view)
+        turnRunLoop()
+    }
+
+    /// The defect, on iOS: type, rename the task in its sheet, dismiss -- the first undo took back
+    /// the hidden reference title and left the typing. Now it takes the typing (the reference reads
+    /// as it did then), the next the typing before it, and redo replays both.
+    @Test func iOSUndoAfterASheetRenameTakesBackTheTypingNotTheHiddenTitle() throws {
+        let task = AppTask(title: "Milk")
+        let id = task.id.uuidString
+        let hosted = try Self.host("Buy [[task:\(id)|Milk]] today")
+        Self.type(" now", atEndOf: hosted)
+        // A second visible step after the typing: a host rewrite, its own step ([[T-17184]]).
+        hosted.coordinator.applyRewrite("# Buy [[task:\(id)|Milk]] today now", to: hosted.view)
+        Self.turnRunLoop()
+
+        Self.syncReference(of: task, to: "Oat milk", in: hosted)
+        #expect(hosted.view.text == "# Buy [[task:\(id)|Oat milk]] today now")
+
+        Self.undo(hosted)
+        #expect(hosted.view.text == "Buy [[task:\(id)|Milk]] today now", "the undo landed on the hidden title")
+        Self.undo(hosted)
+        #expect(hosted.view.text == "Buy [[task:\(id)|Milk]] today")
+
+        Self.redo(hosted)
+        #expect(hosted.view.text == "Buy [[task:\(id)|Milk]] today now")
+        Self.redo(hosted)
+        #expect(hosted.view.text == "# Buy [[task:\(id)|Oat milk]] today now")
+        #expect(hosted.manager.canRedo == false)
+    }
+
+    /// Typing after the sync is its own step again (UIKit coalesces consecutive typing into one
+    /// step, so the sync is what separates the two runs here), and the step before it still
+    /// carries the sync.
+    @Test func iOSTypingAfterASheetRenameSyncIsItsOwnStep() throws {
+        let task = AppTask(title: "Milk")
+        let id = task.id.uuidString
+        let hosted = try Self.host("Buy [[task:\(id)|Milk]] today")
+        Self.type(" one", atEndOf: hosted)
+        Self.syncReference(of: task, to: "Oat milk", in: hosted)
+        Self.type(" two", atEndOf: hosted)
+
+        Self.undo(hosted)
+        #expect(hosted.view.text == "Buy [[task:\(id)|Oat milk]] today one")
+        Self.undo(hosted)
+        #expect(hosted.view.text == "Buy [[task:\(id)|Milk]] today", "the undo landed on the hidden title")
+        #expect(hosted.manager.canUndo == false)
+    }
+
+    /// A host rewrite that changes more than the reference titles is still its own step.
+    @Test func iOSARewriteBeyondTheReferenceTitlesStaysItsOwnStep() throws {
+        let task = AppTask(title: "Milk")
+        let id = task.id.uuidString
+        let hosted = try Self.host("Buy [[task:\(id)|Milk]] today")
+        Self.type(" now", atEndOf: hosted)
+        task.title = "Oat milk"
+        hosted.coordinator.parent = iOSMarkdownEditor(
+            text: .constant(""),
+            isFocused: .constant(true),
+            taskEmbeds: [task.id: MarkdownTaskEmbedRenderInfo.task(task)]
+        )
+        hosted.coordinator.applyRewrite("# Buy [[task:\(id)|Oat milk]] today now", to: hosted.view)
+        Self.turnRunLoop()
+
+        Self.undo(hosted)
+        #expect(hosted.view.text == "Buy [[task:\(id)|Milk]] today now")
+    }
 }
 #endif
 

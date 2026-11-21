@@ -308,5 +308,101 @@ struct MarkdownEditorUndoHistoryTests {
         harness.manager.redo()
         #expect(task.title == "Bread", "redo overwrote a rename made after it")
     }
+
+    // MARK: - [[T-18594]]: a reference-title sync is never an undo step of its own
+
+    /// The task renamed outside the note's text -- the popover, the inline panel, a field chip --
+    /// committed to the store and handed to the editor's embed table, as the host does. A longer
+    /// title, so an earlier record replayed at stale offsets would show.
+    private static func renameOutsideTheNote(_ task: AppTask, to title: String, in harness: EmbedHarness) throws {
+        task.title = title
+        try harness.modelContext.save()
+        harness.view.markdownTaskEmbeds[task.id] = MarkdownTaskEmbedRenderInfo.task(task)
+    }
+
+    /// The defect: type, rename the task in its popover, close it, Cmd+Z -- the press took back the
+    /// hidden reference title and left the typing. Now the press takes the typing back (the
+    /// reference reads as it did then), the next press the typing before it, and redo replays both
+    /// steps against the text they were recorded on.
+    @Test func undoAfterAPopoverRenameTakesBackTheTypingNotTheHiddenTitle() throws {
+        let (harness, task) = try Self.renameHarness()
+        let id = task.id.uuidString
+        Self.type(" one", atEndOf: harness.view, in: harness.manager)
+        Self.type(" two", atEndOf: harness.view, in: harness.manager)
+
+        try Self.renameOutsideTheNote(task, to: "Oat milk", in: harness)
+        harness.handlers.reconcileEmbeddedTaskReferenceTitles()
+        #expect(harness.view.string == "Buy [[task:\(id)|Oat milk]] today one two")
+
+        harness.manager.undo()
+        #expect(harness.view.string == "Buy [[task:\(id)|Milk]] today one", "the press landed on the hidden title")
+        harness.manager.undo()
+        #expect(harness.view.string == "Buy [[task:\(id)|Milk]] today")
+        #expect(harness.manager.canUndo == false)
+
+        harness.manager.redo()
+        #expect(harness.view.string == "Buy [[task:\(id)|Milk]] today one")
+        harness.manager.redo()
+        #expect(harness.view.string == "Buy [[task:\(id)|Oat milk]] today one two")
+        #expect(harness.manager.canRedo == false)
+        #expect(task.title == "Oat milk", "undo is not meant to rename the task back")
+
+        harness.manager.undo()
+        #expect(harness.view.string == "Buy [[task:\(id)|Milk]] today one")
+    }
+
+    /// The inline panel's and field chip's saves take `refreshEmbeddedTask`: the same rule, and
+    /// typing after the sync is its own step again.
+    @Test func undoAfterAPanelSaveRenameTakesBackTheTyping() throws {
+        let (harness, task) = try Self.renameHarness()
+        let id = task.id.uuidString
+        Self.type(" abc", atEndOf: harness.view, in: harness.manager)
+
+        try Self.renameOutsideTheNote(task, to: "Oat milk", in: harness)
+        harness.handlers.refreshEmbeddedTask(task)
+        #expect(harness.view.string == "Buy [[task:\(id)|Oat milk]] today abc")
+        Self.type(" def", atEndOf: harness.view, in: harness.manager)
+
+        harness.manager.undo()
+        #expect(harness.view.string == "Buy [[task:\(id)|Oat milk]] today abc")
+        harness.manager.undo()
+        #expect(harness.view.string == "Buy [[task:\(id)|Milk]] today", "the press landed on the hidden title")
+        #expect(harness.manager.canUndo == false)
+    }
+
+    /// The pointer leaving a card after an undo must not empty the redo stack: the sync waits while
+    /// there is something to redo, and catches up once there is not.
+    @Test func aHoverExitAfterAnUndoKeepsTheRedo() throws {
+        let (harness, task) = try Self.renameHarness()
+        let id = task.id.uuidString
+        let scope = TaskNotesEmbedScope(referenceTasks: [task], embedTarget: .coreNotes, modelContext: harness.modelContext)
+        Self.type(" abc", atEndOf: harness.view, in: harness.manager)
+        try Self.renameOutsideTheNote(task, to: "Oat milk", in: harness)
+        harness.handlers.reconcileEmbeddedTaskReferenceTitles()
+
+        harness.manager.undo()
+        #expect(harness.view.string == "Buy [[task:\(id)|Milk]] today")
+        harness.handlers.hoverEmbeddedTask(
+            id: task.id,
+            hovering: false,
+            in: scope,
+            hoveredTaskManager: .shared,
+            hoveredEditableManager: .shared
+        )
+        #expect(harness.view.string == "Buy [[task:\(id)|Milk]] today")
+        #expect(harness.manager.canRedo, "a hover exit emptied the redo stack")
+
+        harness.manager.redo()
+        #expect(harness.view.string == "Buy [[task:\(id)|Oat milk]] today abc")
+    }
+
+    /// With nothing on the stack there is no step for the sync to ride on, and it adds none.
+    @Test func aSyncIntoAnUntouchedNoteAddsNoUndoStep() throws {
+        let (harness, task) = try Self.renameHarness()
+        try Self.renameOutsideTheNote(task, to: "Oat milk", in: harness)
+        harness.handlers.reconcileEmbeddedTaskReferenceTitles()
+        #expect(harness.view.string == "Buy [[task:\(task.id.uuidString)|Oat milk]] today")
+        #expect(harness.manager.canUndo == false)
+    }
 }
 #endif

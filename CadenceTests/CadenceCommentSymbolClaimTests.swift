@@ -2081,7 +2081,6 @@ enum CadenceCommentSymbolClaim {
         "Cadence/macOS/Editor/MarkdownEditorInteractionSupport.swift `updateDragTypeRegistration`",
         "Cadence/macOS/Views/TasksPanel.swift `todaySortDirection`",
         "Cadence/macOS/Views/TasksPanel.swift `todaySortField`",
-        "Cadence/macOS/Views/macOSRootLifecycleSupport.swift `setActionName`",
         "Cadence/macOS/Views/macOSRootShellViews.swift `initialFirstResponder`",
         "CadenceTests/CadenceArchiveImportSurfaceTests.swift `keyNotFound`",
         "CadenceTests/CadenceEmptyTitleFallbackSweepTests.swift `nilTitle`",
@@ -2284,7 +2283,7 @@ enum CadenceCommentSymbolClaim {
             }
         }
         #expect(groups.map(\.count).reduce(0, +) == ledger.count)
-        // 182 + 230 test-root memorials, 25 + 30 non-symbols, 55 needles ([[T-7641]]; 414 before
+        // 182 + 230 test-root memorials, 24 + 30 non-symbols, 55 needles ([[T-7641]]; 414 before
         // [[T-8181]] rewrote the iOSBoardCards tombstone the 414th covered, then 413 and 56 before
         // [[T-8001]]'s macOS all-day-band suite landed in CadenceUITests/ spelling railLabel — a
         // name two of these entries recorded as spelled by nobody. The list only ever shrinks,
@@ -2292,7 +2291,7 @@ enum CadenceCommentSymbolClaim {
         // without backticks on purpose: backticked, this suite's own bare sweep would read them as
         // comment claims that resolve to nothing and hold them as findings.
         #expect(Self.bareMemorials.count == 412)
-        #expect(Self.bareNonSymbols.count == 55)
+        #expect(Self.bareNonSymbols.count == 54)
         #expect(Self.bareNeedles.count == 55)
         #expect(Self.bareStaleClaims.isEmpty, "a held stale claim is a comment to fix in place")
         // The needle group is the test roots' own, and is what it says: each name is in the string

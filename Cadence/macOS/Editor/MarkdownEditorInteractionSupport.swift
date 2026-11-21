@@ -451,6 +451,32 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         didChangeText()
     }
 
+    /// `replaceEmbeddedTaskReferenceTitle` as a **sync**: the task was renamed somewhere other than
+    /// this note's text, and the hidden title is only catching up. [[T-18594]]: the write rides on
+    /// the undo step before it (`MarkdownReferenceTitleSyncUndo`), so the next Cmd+Z never lands on
+    /// text nobody can see. `waitWhileRedoable` leaves the text alone while there is something to
+    /// redo, for a sync no user action asked for (the pointer leaving a card): writing then would
+    /// empty the redo stack, and the drift is invisible until the next sync.
+    func syncEmbeddedTaskReferenceTitle(id: UUID, title: String, waitWhileRedoable: Bool = false) {
+        guard MarkdownTaskEmbedParser.replacingReferenceTitles(
+            of: id,
+            in: string,
+            with: title,
+            fallback: MarkdownTaskEmbedRenderInfo.untitledTaskTitle
+        ) != nil else { return }
+        guard let manager = undoManager else {
+            replaceEmbeddedTaskReferenceTitle(id: id, title: title)
+            return
+        }
+        if waitWhileRedoable, manager.canRedo { return }
+        breakUndoCoalescing()
+        let before = string
+        MarkdownReferenceTitleSyncUndo.attached(to: manager).perform {
+            replaceEmbeddedTaskReferenceTitle(id: id, title: title)
+            return string != before
+        }
+    }
+
     /// Brings every `[[task:UUID|Title]]` in this note back in line with the task it points at.
     ///
     /// The many-tasks spelling of `replaceEmbeddedTaskReferenceTitle`, and the one the app needs.
@@ -467,8 +493,9 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     /// one per candidate. Same call iOS makes when its task sheet dismisses.
     ///
     /// Applied as the one minimal edit that turns the current text into the reconciled text, so a
-    /// note the user is sitting in keeps its caret, its scroll position and one undo step, instead
-    /// of being replaced wholesale.
+    /// note the user is sitting in keeps its caret and its scroll position instead of being
+    /// replaced wholesale. [[T-18594]]: and it is no undo step of its own -- it rides on the one
+    /// before it (`MarkdownReferenceTitleSyncUndo`).
     func reconcileEmbeddedTaskReferenceTitles(titles: [UUID: String]) {
         guard let textStorage,
               let reconciled = MarkdownTaskEmbedParser.reconcilingReferenceTitles(
@@ -481,14 +508,23 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         let updated = reconciled as NSString
         let edit = MarkdownTextEditDiff.minimalEdit(from: current, to: updated)
         let replacement = updated.substring(with: edit.replacementRange)
-        guard shouldChangeText(in: edit.range, replacementString: replacement) else { return }
-
-        let selection = selectedRange()
-        textStorage.replaceCharacters(in: edit.range, with: replacement)
-        didChangeText()
-        setSelectedRange(
-            MarkdownTextEditDiff.selection(selection, after: edit, in: textStorage.length)
-        )
+        let write = { [self] () -> Bool in
+            guard shouldChangeText(in: edit.range, replacementString: replacement) else { return false }
+            let selection = selectedRange()
+            textStorage.replaceCharacters(in: edit.range, with: replacement)
+            didChangeText()
+            setSelectedRange(
+                MarkdownTextEditDiff.selection(selection, after: edit, in: textStorage.length)
+            )
+            return true
+        }
+        // [[T-18594]]: a sync, so it rides on the undo step before it rather than being one.
+        guard let manager = undoManager else {
+            _ = write()
+            return
+        }
+        breakUndoCoalescing()
+        MarkdownReferenceTitleSyncUndo.attached(to: manager).perform(write)
     }
 
     /// [[T-17181]]: a body rewritten from outside the text view — linking an unlinked mention,

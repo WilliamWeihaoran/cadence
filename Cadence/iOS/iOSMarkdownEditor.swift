@@ -385,11 +385,34 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                let edit = MarkdownProgrammaticEditSupport.minimalEdit(from: current, to: text) {
                 isApplyingRewrite = true
                 defer { isApplyingRewrite = false }
-                replaceProgrammatically(edit.range, with: edit.replacement, in: textView)
+                let write = { self.replaceProgrammatically(edit.range, with: edit.replacement, in: textView) }
+                if let manager, isReferenceTitleSync(from: current, to: text) {
+                    // [[T-18594]]: the sheet's or inline panel's rename caught up in the hidden
+                    // reference title -- a sync, which rides on the undo step before it rather
+                    // than being one, so the next undo never lands on text nobody can see.
+                    MarkdownReferenceTitleSyncUndo.attached(to: manager).perform(write)
+                } else {
+                    _ = write()
+                }
             }
             // Restyles the text just written, or — for the load, a replay or a refused write —
             // shows the body wholesale, as before.
             applyMarkdownStyle(to: textView, text: text)
+        }
+
+        /// Whether `updated` is `current` with nothing changed but its `[[task:UUID|Title]]` titles
+        /// brought in line with the embed table -- what `iOSMarkdownEditingSurface`'s reconcile
+        /// writes after a rename in the task sheet or the inline panel. Decided on the text, so
+        /// every route to such a rewrite is covered, and a rewrite that changes anything else is an
+        /// ordinary undoable edit.
+        func isReferenceTitleSync(from current: String, to updated: String) -> Bool {
+            let titles = parent.taskEmbeds.mapValues(\.title)
+            guard !titles.isEmpty else { return false }
+            return MarkdownTaskEmbedParser.reconcilingReferenceTitles(
+                in: current,
+                titles: titles,
+                fallback: MarkdownTaskEmbedRenderInfo.untitledTaskTitle
+            ) == updated
         }
 
         /// Brings the text view's first-responder state in line with the host's `isFocused`, **on

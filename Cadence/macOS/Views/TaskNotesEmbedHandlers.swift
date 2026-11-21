@@ -375,6 +375,8 @@ final class TaskNotesEmbedHandlers {
         }
         embeddedTaskFailureNotice = nil
         (reconciler ?? .default).run(in: scope.modelContext)
+        // Inside the editor's undo group with the rename's inverse, so the sync's write joins that
+        // group unmarked (`MarkdownReferenceTitleSyncUndo`'s already-grouped rule).
         refreshEmbeddedTask(embeddedTask)
         return MarkdownEmbeddedTaskRenameUndo(
             task: embeddedTask,
@@ -424,7 +426,7 @@ final class TaskNotesEmbedHandlers {
         } else {
             hoveredTaskManager.endHovering(embeddedTask)
             hoveredEditableManager.endHovering(id: embeddedTaskHoverID(id))
-            refreshEmbeddedTask(embeddedTask)
+            refreshEmbeddedTask(embeddedTask, waitWhileRedoable: true)
         }
     }
 
@@ -452,8 +454,17 @@ final class TaskNotesEmbedHandlers {
         )
     }
 
-    func refreshEmbeddedTask(_ embeddedTask: AppTask) {
-        editorTextView?.replaceEmbeddedTaskReferenceTitle(id: embeddedTask.id, title: embeddedTask.title)
+    /// The task was edited outside the note's text (a panel or popover save, a subtask tick, the
+    /// pointer leaving its card): bring the reference title along and repaint the card.
+    ///
+    /// [[T-18594]]: the title write is a sync, never an undo step of its own; a hover exit passes
+    /// `waitWhileRedoable`, so merely moving the pointer cannot empty the redo stack.
+    func refreshEmbeddedTask(_ embeddedTask: AppTask, waitWhileRedoable: Bool = false) {
+        editorTextView?.syncEmbeddedTaskReferenceTitle(
+            id: embeddedTask.id,
+            title: embeddedTask.title,
+            waitWhileRedoable: waitWhileRedoable
+        )
         repaintEmbeddedTaskCard(embeddedTask)
     }
 
