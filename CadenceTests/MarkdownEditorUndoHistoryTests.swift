@@ -144,6 +144,120 @@ struct MarkdownEditorUndoHistoryTests {
         #expect(view.string == "Note")
     }
 
+    // MARK: - [[T-19009]]: a typing transform that changes nothing
+
+    /// The defect: a hand-typed `1. ` is rewritten to itself, and that identical write was a
+    /// registered edit. In the app the marker's keystrokes have already joined NSTextView's
+    /// coalesced typing record, so the space's event held nothing but that write -- a Cmd+Z that
+    /// changed no text. Run here as the transform pass alone, grouped by event as the app is: a
+    /// pass that writes nothing registers nothing, so there is no group to undo.
+    @Test func aHandTypedCanonicalNumberedMarkerRegistersNoUndoStep() {
+        let coordinator = MarkdownEditorCoordinator(parent: MarkdownEditorView(text: .constant("")))
+        let view = Self.makeTextView("")
+        view.delegate = coordinator
+        view.string = "1. "
+        view.setSelectedRange(NSRange(location: 3, length: 0))
+
+        coordinator.textDidChange(Notification(name: NSText.didChangeNotification, object: view))
+
+        #expect(view.string == "1. ")
+        #expect(coordinator.undoManager.canUndo == false)
+    }
+
+    // MARK: - [[T-19010]]: the title field's rename folded into one body step
+
+    private static func coalescingCoordinator(
+        _ text: String
+    ) -> (MarkdownEditorCoordinator, CadenceTextView, UndoManager) {
+        let coordinator = MarkdownEditorCoordinator(parent: MarkdownEditorView(text: .constant("")))
+        let view = Self.makeTextView(text)
+        view.delegate = coordinator
+        let manager = coordinator.undoManager
+        manager.groupsByEvent = false
+        return (coordinator, view, manager)
+    }
+
+    private static func setCoalescing(_ coalesces: Bool, on coordinator: MarkdownEditorCoordinator) {
+        coordinator.update(parent: MarkdownEditorView(text: .constant(""), coalescesExternalText: coalesces))
+    }
+
+    /// One title keystroke: an event of its own, so a group of its own.
+    private static func write(_ text: String, from coordinator: MarkdownEditorCoordinator,
+                              to view: CadenceTextView, in manager: UndoManager) {
+        manager.beginUndoGrouping()
+        coordinator.applyExternalText(text, to: view)
+        manager.endUndoGrouping()
+    }
+
+    /// The text after each Cmd+Z, until nothing is left. A press that changes nothing is dropped:
+    /// a headless test groups by hand, so a keystroke that rightly registers nothing still leaves
+    /// an empty group, which the app's event grouping never makes.
+    private static func undoneTexts(_ view: CadenceTextView, in manager: UndoManager) -> [String] {
+        var texts: [String] = []
+        var last = view.string
+        var presses = 0
+        while manager.canUndo, presses < 20 {
+            manager.undo()
+            presses += 1
+            if view.string != last { texts.append(view.string) }
+            last = view.string
+        }
+        return texts
+    }
+
+    /// The defect: every title keystroke rewrote the `# H1` as its own body step, so Cmd+Z in the
+    /// body took a rename back one letter at a time. Three keystrokes, then the edit settles: one
+    /// press returns the opening heading, the next the body typing before it.
+    @Test func aTitleRenameIsOneBodyUndoStep() {
+        let (coordinator, view, manager) = Self.coalescingCoordinator("# Groceries\n\nMilk")
+        Self.type(" and eggs", atEndOf: view, in: manager)
+
+        Self.setCoalescing(true, on: coordinator)
+        Self.write("# W\n\nMilk and eggs", from: coordinator, to: view, in: manager)
+        Self.write("# We\n\nMilk and eggs", from: coordinator, to: view, in: manager)
+        Self.write("# Wee\n\nMilk and eggs", from: coordinator, to: view, in: manager)
+        #expect(view.string == "# Wee\n\nMilk and eggs")
+
+        Self.setCoalescing(false, on: coordinator)
+        manager.beginUndoGrouping()
+        coordinator.settleCoalescedExternalText(in: view)
+        manager.endUndoGrouping()
+        #expect(view.string == "# Wee\n\nMilk and eggs")
+
+        #expect(Self.undoneTexts(view, in: manager) == ["# Groceries\n\nMilk and eggs", "# Groceries\n\nMilk"])
+        while manager.canRedo { manager.redo() }
+        #expect(view.string == "# Wee\n\nMilk and eggs")
+    }
+
+    /// The settle that lands with the fold's last text -- a title left blank restores the opening
+    /// heading as the field ends -- is the same one step, not a step of its own.
+    @Test func aWriteAsTheRenameSettlesJoinsTheRenamesStep() {
+        let (coordinator, view, manager) = Self.coalescingCoordinator("# Groceries\n\nMilk")
+        Self.type(" and eggs", atEndOf: view, in: manager)
+
+        Self.setCoalescing(true, on: coordinator)
+        Self.write("# \n\nMilk and eggs", from: coordinator, to: view, in: manager)
+        Self.write("# X\n\nMilk and eggs", from: coordinator, to: view, in: manager)
+        Self.setCoalescing(false, on: coordinator)
+        Self.write("# Groceries list\n\nMilk and eggs", from: coordinator, to: view, in: manager)
+        #expect(view.string == "# Groceries list\n\nMilk and eggs")
+
+        #expect(Self.undoneTexts(view, in: manager) == ["# Groceries\n\nMilk and eggs", "# Groceries\n\nMilk"])
+    }
+
+    /// The pane asks to fold exactly while a title edit is open -- the window in which every
+    /// keystroke rewrites the heading. A source read: the pane is SwiftUI state this target cannot
+    /// drive.
+    @Test func theNotePaneFoldsTheTitleFieldsHeadingWrites() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(
+            contentsOf: root.appendingPathComponent("Cadence/macOS/Views/NoteEditorPane.swift"),
+            encoding: .utf8
+        )
+        let code = CadenceSourceScan.strippingComments(source)
+        #expect(code.components(separatedBy: "coalescesExternalText: pendingTitleEdit != nil").count == 2)
+    }
+
     // MARK: - [[T-18174]]: undo of the edit that made a task card
 
     @MainActor

@@ -16,6 +16,10 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
     private var slashCommandUpdateIsScheduled = false
     private var referenceUpdateIsScheduled = false
     private var tagUpdateIsScheduled = false
+    /// [[T-19010]]: the text the undo stack last described, held while
+    /// `MarkdownEditorView.coalescesExternalText` folds outside writes into one step. `nil` when
+    /// nothing is being folded.
+    private var coalescedExternalTextBase: String?
 
     /// [[T-17182]]: this editor's own undo history, handed to its text view through
     /// `undoManager(for:)`.
@@ -50,7 +54,19 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
     /// through it lands every older record on the text it was recorded against. The edit's own
     /// `textDidChange` is skipped: the binding already holds this text, and the typing transforms
     /// and pickers answer keystrokes, not a body handed in from outside.
+    ///
+    /// [[T-19010]]: while the host asks for it (`coalescesExternalText`, the Mac note title field
+    /// rewriting the `# H1` per keystroke) the writes are shown unregistered and folded into the one
+    /// edit `settleCoalescedExternalText` registers when the host stops asking -- one Cmd+Z for a
+    /// rename, not one per letter. Checked before the load rule: the host only asks once the note
+    /// is open, so an empty body there is the note's real text, not a load.
     func applyExternalText(_ displayText: String, to textView: CadenceTextView) {
+        if parent.coalescesExternalText || coalescedExternalTextBase != nil {
+            if coalescedExternalTextBase == nil { coalescedExternalTextBase = textView.string }
+            Self.assignWholesale(displayText, to: textView)
+            settleCoalescedExternalText(in: textView)
+            return
+        }
         if textView.string.isEmpty, !undoManager.canUndo, !undoManager.canRedo {
             Self.assignWholesale(displayText, to: textView)
             return
@@ -60,6 +76,23 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         if !textView.replaceMarkdownRegisteringUndo(with: displayText), textView.string != displayText {
             // A refused edit still has to show the note's text; it just cannot be undone.
             Self.assignWholesale(displayText, to: textView)
+        }
+    }
+
+    /// [[T-19010]]: once the host stops asking to coalesce, registers the folded writes as one
+    /// edit from the text the stack describes to the text on screen. The view is put back on the
+    /// base first, unregistered, so the edit -- and every older record -- replays against the text
+    /// it was recorded on. A no-op while the host still asks, or with nothing folded.
+    func settleCoalescedExternalText(in textView: CadenceTextView) {
+        guard !parent.coalescesExternalText, let base = coalescedExternalTextBase else { return }
+        coalescedExternalTextBase = nil
+        let settled = textView.string
+        guard settled != base else { return }
+        Self.assignWholesale(base, to: textView)
+        isApplyingEditorMutations = true
+        defer { isApplyingEditorMutations = false }
+        if !textView.replaceMarkdownRegisteringUndo(with: settled), textView.string != settled {
+            Self.assignWholesale(settled, to: textView)
         }
     }
 
@@ -431,7 +464,17 @@ extension MarkdownEditorCoordinator {
     /// `shouldChangeText` opens an undo group and text-checking state that `didChangeText` is
     /// contractually required to close — leaving it open here left the typing-transform hot path
     /// accumulating unclosed groups.
+    ///
+    /// [[T-19009]]: a transform that changes nothing — a hand-typed canonical `1. ` rewritten to
+    /// itself — writes nothing, the rule `apply(_:to:)` and iOS's `minimalEdit` keep. Registering it
+    /// left a Cmd+Z step that changed no text. Coalescing is still broken there, so the marker stays
+    /// its own step ahead of the item's text, as it is when the transform does rewrite it.
     private func replaceText(in textView: NSTextView, range: NSRange, with replacement: String, selection: NSRange) {
+        if (textView.string as NSString).substring(with: range) == replacement {
+            textView.breakUndoCoalescing()
+            textView.setSelectedRange(selection)
+            return
+        }
         guard textView.shouldChangeText(in: range, replacementString: replacement) else { return }
         textView.textStorage?.replaceCharacters(in: range, with: replacement)
         textView.setSelectedRange(selection)

@@ -59,6 +59,10 @@ struct MarkdownEditor: View {
     /// is this editor passes its dismissal, because a `.cancelAction` button there would be a key
     /// equivalent and take every Escape ahead of the editor.
     var onUnhandledEscape: (() -> Void)? = nil
+    /// **[[T-19010]].** While true, a body handed in from outside is shown at once but folded into
+    /// one undo step, registered when this turns false. The Mac note pane sets it while its title
+    /// field is mid-rename, whose every keystroke rewrites the body's `# H1`.
+    var coalescesExternalText = false
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
     @Query(sort: \Tag.order) private var tags: [Tag]
@@ -167,7 +171,8 @@ struct MarkdownEditor: View {
                     onTextViewChanged($0)
                 },
                 onUnhandledEscape: onUnhandledEscape,
-                allowsImageInsertion: allowsImageInsertion
+                allowsImageInsertion: allowsImageInsertion,
+                coalescesExternalText: coalescesExternalText
             )
             .zIndex(0)
         }
@@ -505,6 +510,8 @@ struct MarkdownEditorView: NSViewRepresentable {
     /// `MarkdownEditor.allowsImageInsertion`, carried down to the text view so the drop path can
     /// refuse in the same breath as the toolbar button, the `/` menu and the paste (T-478).
     var allowsImageInsertion = true
+    /// `MarkdownEditor.coalescesExternalText`, read by the coordinator ([[T-19010]]).
+    var coalescesExternalText = false
 
     func makeNSView(context: NSViewRepresentableContext<MarkdownEditorView>) -> NSScrollView {
         let scrollView = MarkdownEditorScrollView()
@@ -565,6 +572,8 @@ struct MarkdownEditorView: NSViewRepresentable {
         let displayText = currentText == text ? currentText : MarkdownListSupport.normalizedMarkdownListPrefixes(in: text)
         let didUpdateText = currentText != displayText
 
+        // [[T-19010]]: a fold the host has just ended with no new text still owes its one edit.
+        if !didUpdateText { context.coordinator.settleCoalescedExternalText(in: textView) }
         guard didUpdateText || didUpdateRenderedContent else { return }
 
         if didUpdateText {

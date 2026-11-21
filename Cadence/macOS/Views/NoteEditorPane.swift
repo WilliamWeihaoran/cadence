@@ -351,7 +351,10 @@ struct NoteEditorPane: View {
                     { [embeds] in
                         if !embeds.closeOpenPopover() { hostEscape() }
                     }
-                }
+                },
+                // [[T-19010]]: each title keystroke rewrites the `# H1`; the open edit is one
+                // body undo step, registered when it settles, not one per letter.
+                coalescesExternalText: pendingTitleEdit != nil
             )
             .zIndex(0)
             .overlay(alignment: .topLeading) {
