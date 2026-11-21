@@ -530,7 +530,9 @@ struct TaskSectionPickerBadge: View {
                 }
                 .padding(.vertical, 6)
             }
-            .frame(minWidth: 170)
+            // [[T-18815]]: the list-family width, so a long section name truncates in its row
+            // rather than stretching the popover.
+            .frame(width: CadenceMacListPickerMetrics.width)
             .background(Theme.surfaceElevated)
             .onAppear {
                 highlightIdx = Self.openingHighlightIndex(selection: selection, in: filteredSections)
@@ -565,7 +567,7 @@ private struct SectionPickerRow: View {
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.dim)
                     .frame(width: 16)
-                Text(section).font(.system(size: 13)).foregroundStyle(Theme.text).lineLimit(1)
+                Text(section).font(.system(size: 13)).foregroundStyle(Theme.text).lineLimit(1).truncationMode(.tail)
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.blue)

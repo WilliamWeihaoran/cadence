@@ -140,7 +140,7 @@ struct TagPickerPopover: View {
                     .padding(.vertical, 8)
             }
         }
-        .frame(width: 240)
+        .frame(width: CadenceMacListPickerMetrics.width)
         // [[T-9802]]: the surface every other Mac picker popover sits on (the context picker
         // beside it in the inspector, the list editor's pickers, the column editor). The tag
         // pickers alone were a shade lighter, so two adjacent popovers read as two families.

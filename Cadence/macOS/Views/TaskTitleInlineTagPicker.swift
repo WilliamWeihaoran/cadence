@@ -70,7 +70,7 @@ struct TaskTitleInlineTagPicker: View {
                 .onChange(of: highlightIndex) { _, _ in proxy.scrollTo(highlightIndex) }
             }
         }
-        .frame(width: 240)
+        .frame(width: CadenceMacListPickerMetrics.width)
         // [[T-9802]]: the Mac picker-popover surface, as `TagPickerPopover` (the same tags, picked
         // from the inspector) and every other Mac picker popover draw it.
         .background(Theme.surface)

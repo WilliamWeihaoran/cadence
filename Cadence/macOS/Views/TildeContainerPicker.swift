@@ -199,22 +199,34 @@ struct TildeContainerPicker: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
             } else {
-                VStack(spacing: 2) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        TildeContainerPickerRow(
-                            icon: item.icon,
-                            name: item.name,
-                            color: item.color,
-                            isHighlighted: index == clampedHighlightIndex,
-                            isSelected: selection == item.tag,
-                            action: { onSelect(item.tag) }
-                        )
+                // [[T-18815]]: capped and scrolled as `ContainerPickerPopoverContent` is, so many
+                // lists scroll instead of growing the panel downward without bound, and the
+                // highlight is scrolled into view as [[T-18639]] made every capped picker do.
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 2) {
+                            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                                TildeContainerPickerRow(
+                                    icon: item.icon,
+                                    name: item.name,
+                                    color: item.color,
+                                    isHighlighted: index == clampedHighlightIndex,
+                                    isSelected: selection == item.tag,
+                                    action: { onSelect(item.tag) }
+                                )
+                                .id(index)
+                            }
+                        }
+                        .padding(.vertical, 6)
                     }
+                    .frame(maxHeight: CadenceMacListPickerMetrics.maxListHeight)
+                    .onAppear { proxy.scrollTo(clampedHighlightIndex) }
+                    .onChange(of: highlightIndex) { _, _ in proxy.scrollTo(clampedHighlightIndex) }
                 }
-                .padding(.vertical, 6)
             }
         }
-        .frame(minWidth: 200)
+        // [[T-18815]]: the list-family width; `minWidth:` alone let the widest name size the panel.
+        .frame(width: CadenceMacListPickerMetrics.width)
         .background(Theme.surfaceElevated)
         .onAppear {
             highlightIndex = TildeContainerPickerSupport.openingHighlightIndex(selection: selection, in: items)

@@ -1,6 +1,19 @@
 #if os(macOS)
 import SwiftUI
 
+/// **T-18815.** The one width every Mac list-family picker popover holds: the `~` panel, the list
+/// chip's `ContainerPickerPopoverContent`, the section chip's popover, and the `#` panel and tag
+/// popover beside them. A macOS popover sizes to its content's ideal size, and a `Text`'s ideal
+/// width is its whole string on one line whatever its `lineLimit`, so a `minWidth:` with no cap let
+/// one long list or section name stretch the whole popover; a fixed width gives every row the same
+/// edge to tail-truncate against. One figure, so two choosers of one list cannot drift apart
+/// ([[T-8201]]).
+enum CadenceMacListPickerMetrics {
+    static let width: CGFloat = 240
+    /// The scrolled list's height cap, so many lists scroll rather than grow the popover downward.
+    static let maxListHeight: CGFloat = 320
+}
+
 /// Pure filtering and ordering behind the container picker. Split out from the view so the
 /// prefix match, the context grouping, and the flat order the arrow keys walk can be exercised
 /// without SwiftUI.
@@ -278,12 +291,12 @@ struct ContainerPickerPopoverContent: View {
                     }
                     .padding(.vertical, 6)
                 }
-                .frame(maxHeight: 320)
+                .frame(maxHeight: CadenceMacListPickerMetrics.maxListHeight)
                 .onAppear { scrollToHighlighted(proxy) }
                 .onChange(of: highlighted) { _, _ in scrollToHighlighted(proxy) }
             }
         }
-        .frame(minWidth: 190)
+        .frame(width: CadenceMacListPickerMetrics.width)
         .background(Theme.surfaceElevated)
         .onAppear {
             // This is also the reset-on-close: popover content is rebuilt per presentation, so
@@ -349,7 +362,7 @@ private struct ContainerPickerRow: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: icon).font(.system(size: 12)).foregroundStyle(color).frame(width: 16)
-                Text(name).font(.system(size: 13)).foregroundStyle(Theme.text).lineLimit(1)
+                Text(name).font(.system(size: 13)).foregroundStyle(Theme.text).lineLimit(1).truncationMode(.tail)
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.blue)

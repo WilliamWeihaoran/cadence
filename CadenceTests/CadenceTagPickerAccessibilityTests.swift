@@ -138,10 +138,10 @@ struct CadenceTagPickerAccessibilityTests {
     /// context picker's surface is asserted too, so the pair cannot drift apart from the other end.
     @Test func macTagPickersSitOnThePickerPopoverSurface() throws {
         let popover = try Self.compactBody("struct TagPickerPopover: View", in: Self.macPopoverPath)
-        #expect(popover.contains(".frame(width:240).background(Theme.surface).sheet(item:$editingTag)"))
+        #expect(popover.contains(".frame(width:CadenceMacListPickerMetrics.width).background(Theme.surface).sheet(item:$editingTag)"))
 
         let inline = try Self.compactBody("struct TaskTitleInlineTagPicker: View", in: Self.macInlinePath)
-        #expect(inline.contains(".frame(width:240).background(Theme.surface).onAppear{"))
+        #expect(inline.contains(".frame(width:CadenceMacListPickerMetrics.width).background(Theme.surface).onAppear{"))
 
         let context = try Self.compactBody("struct CadenceContextPickerButton: View", in: "Cadence/macOS/Views/CadenceContextPicker.swift")
         #expect(context.contains(".frame(width:260).frame(maxHeight:320).background(Theme.surface)"))

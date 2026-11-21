@@ -161,7 +161,9 @@ struct TildeContainerPickerRow: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: icon).font(.system(size: 12)).foregroundStyle(color).frame(width: 16)
-                Text(name).font(.system(size: 13)).foregroundStyle(Theme.text)
+                // [[T-18815]]: one line, tail-truncated, as its twin `ContainerPickerRow` draws it --
+                // the panel's fixed width is the edge it truncates against.
+                Text(name).font(.system(size: 13)).foregroundStyle(Theme.text).lineLimit(1).truncationMode(.tail)
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.blue)
