@@ -15,7 +15,12 @@ enum AIKeychainError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .unexpectedStatus(let status):
-            return "Keychain returned status \(status)."
+            // T-18923: one sentence naming the Keychain, never the OSStatus. It is also embedded
+            // in parentheses by the data-reset sentence, so it stays a single sentence.
+            if status == errSecInteractionNotAllowed {
+                return "The Keychain is locked until this device is unlocked."
+            }
+            return "The Keychain couldn't complete the request."
         case .invalidSecretData:
             return "The stored API key could not be read."
         }

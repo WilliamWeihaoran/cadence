@@ -82,6 +82,78 @@ struct OpenAIResponsesProviderTests {
 /// away — the shape this repository keeps finding, a guard that pins what is there rather than what
 /// must be. `summarizeRequestBody` / `extractTasksRequestBody` are the exact values
 /// `summarizeNote` and `extractTasks` hand to `send`, so these assert both shipping actions.
+/// Every response is a 200 whose body is not JSON. One class per canned answer, so no shared
+/// mutable handler races a parallel test.
+private final class UnreadableOKURLProtocol: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data("<html>gateway</html>".utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+/// T-18923: AI errors are read by the user on both platforms through `AIErrorPresenter`, so their
+/// sentences carry no HTTP status, no OSStatus and no decoder diagnostic.
+@MainActor
+struct AIErrorCopyTests {
+    private static let everyError: [any LocalizedError] = [
+        AIProviderError.missingAPIKey,
+        AIProviderError.emptyResponse,
+        AIProviderError.invalidResponse,
+        AIProviderError.apiError(statusCode: 400, message: "Unsupported parameter."),
+        AIProviderError.apiError(statusCode: 401, message: "Incorrect API key provided."),
+        AIProviderError.apiError(statusCode: 403, message: "Forbidden"),
+        AIProviderError.apiError(statusCode: 429, message: "You exceeded your current quota."),
+        AIProviderError.apiError(statusCode: 503, message: "service unavailable"),
+        AIProviderError.decodingFailed("The data couldn't be read because it is missing."),
+        AIKeychainError.unexpectedStatus(-25308),
+        AIKeychainError.unexpectedStatus(-34018),
+        AIKeychainError.invalidSecretData,
+    ]
+
+    @Test func noAIErrorSentenceCarriesAStatusCodeOrADecoderDiagnostic() throws {
+        for error in Self.everyError {
+            let message = AIErrorPresenter.message(for: error)
+            #expect(!message.isEmpty)
+            #expect(message.range(of: #"\(\d+\)"#, options: .regularExpression) == nil, "\(message)")
+            #expect(!message.contains("status -"), "\(message)")
+            #expect(message.range(of: #"-?\d{3,}"#, options: .regularExpression) == nil, "\(message)")
+            #expect(!message.localizedCaseInsensitiveContains("decode"), "\(message)")
+            #expect(!message.contains("couldn't be read because"), "\(message)")
+        }
+    }
+
+    @Test func theCommonOpenAIStatusesNameWhatTheUserCanDo() {
+        #expect(AIProviderError.apiError(statusCode: 401, message: "x").errorDescription?.contains("Settings → AI") == true)
+        #expect(AIProviderError.apiError(statusCode: 403, message: "x").errorDescription?.contains("API key") == true)
+        #expect(AIProviderError.apiError(statusCode: 429, message: "x").errorDescription?.contains("rate limit") == true)
+        #expect(AIProviderError.apiError(statusCode: 502, message: "x").errorDescription?.contains("having trouble") == true)
+        // Anything uncommon keeps OpenAI's own explanation, without the number.
+        #expect(AIProviderError.apiError(statusCode: 400, message: "Unsupported parameter.").errorDescription
+            == "OpenAI couldn't complete the request: Unsupported parameter.")
+    }
+
+    @Test func aSuccessfulResponseCadenceCannotReadIsInvalidResponse() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UnreadableOKURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let provider = OpenAIResponsesProvider(
+            apiKey: "sk-test",
+            model: "gpt-test",
+            session: session,
+            endpoint: URL(string: "https://example.invalid/v1/responses")!
+        )
+
+        await #expect(throws: AIProviderError.invalidResponse) {
+            _ = try await provider.summarizeNote(AITextNoteContext(title: "T", content: "Body"))
+        }
+    }
+}
+
 struct OpenAIResponseRequestStorageTests {
     private func encodedBody(_ body: OpenAIResponseRequest) throws -> [String: Any] {
         let provider = OpenAIResponsesProvider(apiKey: "sk-test", model: "gpt-test")

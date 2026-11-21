@@ -80,9 +80,25 @@ enum AIProviderError: LocalizedError, Equatable {
         case .invalidResponse:
             return "OpenAI returned a response Cadence could not read."
         case .apiError(let statusCode, let message):
-            return "OpenAI request failed (\(statusCode)): \(message)"
-        case .decodingFailed(let message):
-            return "Could not decode the AI response: \(message)"
+            // T-18923: the status picks the sentence and never appears in it. The common failures
+            // each name what the user can do; anything else carries OpenAI's own message.
+            switch statusCode {
+            case 401, 403:
+                return "OpenAI didn't accept the API key. Check it in Settings → AI."
+            case 429:
+                return "OpenAI's rate limit or quota for this API key was reached. Try again later."
+            case 500..<600:
+                return "OpenAI is having trouble right now. Try again in a moment."
+            default:
+                let detail = message.trimmingCharacters(in: .whitespacesAndNewlines)
+                return detail.isEmpty
+                    ? "OpenAI couldn't complete the request."
+                    : "OpenAI couldn't complete the request: \(detail)"
+            }
+        case .decodingFailed:
+            // T-18923: the associated reason is a decoder's diagnostic, kept for debugging and
+            // never shown.
+            return "OpenAI's answer wasn't in the shape Cadence expects. Try again."
         }
     }
 }
@@ -182,7 +198,11 @@ final class OpenAIResponsesProvider: AIProvider {
                 message: OpenAIErrorPayload.message(from: data) ?? HTTPURLResponse.localizedString(forStatusCode: httpResponse.statusCode)
             )
         }
-        let decoded = try decoder.decode(OpenAIResponsePayload.self, from: data)
+        // T-18923: a 2xx body Cadence cannot read is `.invalidResponse`, not Foundation's generic
+        // decode sentence.
+        guard let decoded = try? decoder.decode(OpenAIResponsePayload.self, from: data) else {
+            throw AIProviderError.invalidResponse
+        }
         guard let text = decoded.outputText?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
             throw AIProviderError.emptyResponse
         }

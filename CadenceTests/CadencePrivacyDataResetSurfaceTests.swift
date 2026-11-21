@@ -1040,7 +1040,7 @@ struct CadencePrivacyDataResetSurfaceTests {
                 "the reset still swallows a refused Keychain deletion (T-1101)"
             )
 
-            #expect(reason == "Keychain returned status -34018.")
+            #expect(reason == "The Keychain couldn't complete the request.")
             // The key is still there, and the app still says so — which is what makes Settings →
             // AI's Delete API Key button a retry rather than a no-op.
             #expect(try manager.loadAPIKey() == "sk-live")
