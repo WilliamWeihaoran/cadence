@@ -25,6 +25,10 @@ nonisolated enum RootModalKeyDisposition: Equatable {
     /// own `.defaultAction` / `.cancelAction` buttons can take it — but keep it away from the app's
     /// global shortcuts, which must not fire behind an open modal.
     case passToOverlay
+    /// [[T-18796]]: a modal is up, but the key is the global quick-task panel's. Hand it on
+    /// untouched: the panel's Return commits its typed title and must never confirm a delete (or a
+    /// date) standing behind it in the main window, which the user may not even be looking at.
+    case passToQuickTaskPanel
     /// Nothing is up. Carry on with normal shortcut handling.
     case noModal
 }
@@ -76,8 +80,14 @@ enum RootCommandEventSupport {
     static func modalKeyDisposition(
         keyCode: UInt16,
         hasDeleteRequest: Bool,
-        hasDatePickerRequest: Bool
+        hasDatePickerRequest: Bool,
+        isQuickTaskPanelKey: Bool = false
     ) -> RootModalKeyDisposition {
+        // [[T-18796]]: before either modal claims Return / Enter / Escape.
+        if isQuickTaskPanelKey && (hasDeleteRequest || hasDatePickerRequest) {
+            return .passToQuickTaskPanel
+        }
+
         if hasDeleteRequest {
             switch keyCode {
             case 36, 76: return .act(.confirmDelete)
@@ -104,7 +114,8 @@ enum RootCommandEventSupport {
         let disposition = modalKeyDisposition(
             keyCode: event.keyCode,
             hasDeleteRequest: context.deleteConfirmationManager.request != nil,
-            hasDatePickerRequest: context.hoveredTaskDatePickerManager.request != nil
+            hasDatePickerRequest: context.hoveredTaskDatePickerManager.request != nil,
+            isQuickTaskPanelKey: QuickTaskPanelController.shared.owns(event.window)
         )
 
         switch disposition {
@@ -116,7 +127,7 @@ enum RootCommandEventSupport {
             context.hoveredTaskDatePickerManager.confirm(in: context.modelContext)
         case .act(.cancelDatePicker):
             context.hoveredTaskDatePickerManager.cancel()
-        case .passToOverlay, .noModal:
+        case .passToOverlay, .passToQuickTaskPanel, .noModal:
             break
         }
 

@@ -22,12 +22,14 @@ struct RootModalKeyDispositionTests {
     private func disposition(
         _ keyCode: UInt16,
         delete: Bool = false,
-        datePicker: Bool = false
+        datePicker: Bool = false,
+        quickTaskPanel: Bool = false
     ) -> RootModalKeyDisposition {
         RootCommandEventSupport.modalKeyDisposition(
             keyCode: keyCode,
             hasDeleteRequest: delete,
-            hasDatePickerRequest: datePicker
+            hasDatePickerRequest: datePicker,
+            isQuickTaskPanelKey: quickTaskPanel
         )
     }
 
@@ -72,6 +74,32 @@ struct RootModalKeyDispositionTests {
         // answers, and it must not confirm both.
         #expect(disposition(Self.returnKey, delete: true, datePicker: true) == .act(.confirmDelete))
         #expect(disposition(Self.escape, delete: true, datePicker: true) == .act(.cancelDelete))
+    }
+
+    /// **[[T-18796]] — the global quick-task panel's Return is its own.** With the delete
+    /// confirmation (or the date picker) left up and the app in the background, ⌃Space shows the
+    /// floating panel; its Return reached the root monitor's modal step first and confirmed a delete
+    /// the user could not see, and nothing was captured.
+    @Test("A quick-panel key never answers a modal behind it")
+    func aQuickPanelKeyNeverAnswersAModalBehindIt() {
+        for key in [Self.returnKey, Self.keypadEnter, Self.escape, Self.unrelatedKey] {
+            #expect(disposition(key, delete: true, quickTaskPanel: true) == .passToQuickTaskPanel)
+            #expect(disposition(key, datePicker: true, quickTaskPanel: true) == .passToQuickTaskPanel)
+            #expect(disposition(key, delete: true, datePicker: true, quickTaskPanel: true) == .passToQuickTaskPanel)
+            // With nothing up the panel's key carries on exactly as before.
+            #expect(disposition(key, quickTaskPanel: true) == .noModal)
+        }
+        // The main window's own Return still confirms.
+        #expect(disposition(Self.returnKey, delete: true, quickTaskPanel: false) == .act(.confirmDelete))
+    }
+
+    /// The handler returns the panel's key before anything else may read it.
+    @Test("The root handler hands a quick-panel key on")
+    func theRootHandlerHandsAQuickPanelKeyOn() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/macOSRootCommandSupport.swift")
+        #expect(source.contains("case .passToOverlay, .passToQuickTaskPanel:\n            return event"))
+        let events = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/macOSRootCommandEventSupport.swift")
+        #expect(events.contains("isQuickTaskPanelKey: QuickTaskPanelController.shared.owns(event.window)"))
     }
 }
 #endif

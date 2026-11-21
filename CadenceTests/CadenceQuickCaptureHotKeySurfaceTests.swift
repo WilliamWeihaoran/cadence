@@ -98,5 +98,35 @@ struct CadenceQuickCaptureHotKeySurfaceTests {
         #expect(source.contains("publish(.failed(registerStatus))"))
         #expect(source.contains("publish(.registered)"))
     }
+
+    /// **[[T-18796]] — ⌃Space in front opens New Task through the menu route, never direct.**
+    /// The direct `TaskCreationManager.shared.present()` opened New Task under a standing delete
+    /// confirmation, and the Return that committed the title confirmed the delete.
+    @Test func theInAppHotKeyRoutesNewTaskThroughTheMenuGate() throws {
+        typealias Action = GlobalHotKeyManager.TaskPanelShortcutAction
+        func action(panel: Bool, active: Bool, presented: Bool) -> Action {
+            GlobalHotKeyManager.taskPanelShortcutAction(
+                isQuickTaskPanelVisible: panel,
+                isAppActive: active,
+                isTaskCreationPresented: presented
+            )
+        }
+        for active in [false, true] {
+            for presented in [false, true] {
+                #expect(action(panel: true, active: active, presented: presented) == .closeQuickTaskPanel)
+            }
+            #expect(action(panel: false, active: false, presented: active) == .showQuickTaskPanel)
+        }
+        #expect(action(panel: false, active: true, presented: true) == .dismissTaskCreation)
+        #expect(action(panel: false, active: true, presented: false) == .routeNewTask)
+
+        let source = try CadenceSourceScan.sourceFile("Cadence/macOS/Services/GlobalHotKeyManager.swift")
+        #expect(source.contains("""
+                case .routeNewTask:
+                    logger.debug("Global hotkey routing New Task through the menu route")
+                    CadenceMenuCommandRoute.shared.send(CadenceNewItemMenu.newTaskCommand)
+        """))
+        #expect(!source.contains("TaskCreationManager.shared.present()"), "the hotkey opens New Task past the modal gate")
+    }
 }
 #endif

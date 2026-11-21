@@ -133,25 +133,58 @@ final class GlobalHotKeyManager {
         return noErr
     }
 
+    /// What one ⌃Space press does.
+    nonisolated enum TaskPanelShortcutAction: Equatable {
+        /// The floating quick panel is up: the key closes it.
+        case closeQuickTaskPanel
+        /// The in-app New Task panel is up: the key closes it.
+        case dismissTaskCreation
+        /// Cmd+K's own New Task command, through the menu route File ▸ New Task uses.
+        case routeNewTask
+        /// The app is not in front: the floating quick panel.
+        case showQuickTaskPanel
+    }
+
+    /// **[[T-18796]] — the hotkey's in-app arm goes through the menu route, as File ▸ New Task
+    /// does.** It used to call the manager's `present()` direct -- the call
+    /// [[T-17170]] moved File ▸ New Task off -- so ⌃Space opened New Task under a standing delete
+    /// confirmation or hovered-task date picker, and the Return that committed the typed title
+    /// confirmed the delete (or wrote the date) instead; with Cmd+K open it left the palette
+    /// standing over the panel. `.routeNewTask` reaches `RootCommandHandler.handleMenuCommand`,
+    /// whose `RootViewMenuGate` stands it down behind a modal and which dismisses Cmd+K. The
+    /// panel arm needs no gate here: the root monitor passes a key addressed to the panel before
+    /// the modal step (`RootModalKeyDisposition.passToQuickTaskPanel`).
+    ///
+    /// Pure over its inputs so the table is tested without a hotkey, a panel or an active app.
+    nonisolated static func taskPanelShortcutAction(
+        isQuickTaskPanelVisible: Bool,
+        isAppActive: Bool,
+        isTaskCreationPresented: Bool
+    ) -> TaskPanelShortcutAction {
+        if isQuickTaskPanelVisible { return .closeQuickTaskPanel }
+        guard isAppActive else { return .showQuickTaskPanel }
+        return isTaskCreationPresented ? .dismissTaskCreation : .routeNewTask
+    }
+
     private func handleTaskPanelShortcut() {
-        if QuickTaskPanelController.shared.isVisible {
+        let action = Self.taskPanelShortcutAction(
+            isQuickTaskPanelVisible: QuickTaskPanelController.shared.isVisible,
+            isAppActive: NSApp.isActive,
+            isTaskCreationPresented: TaskCreationManager.shared.isPresented
+        )
+        switch action {
+        case .closeQuickTaskPanel:
             logger.debug("Global hotkey toggled quick panel closed")
             QuickTaskPanelController.shared.close()
-            return
+        case .dismissTaskCreation:
+            logger.debug("Global hotkey toggled in-app task panel closed")
+            TaskCreationManager.shared.dismiss()
+        case .routeNewTask:
+            logger.debug("Global hotkey routing New Task through the menu route")
+            CadenceMenuCommandRoute.shared.send(CadenceNewItemMenu.newTaskCommand)
+        case .showQuickTaskPanel:
+            QuickTaskPanelController.shared.show()
         }
-
-        if NSApp.isActive {
-            if TaskCreationManager.shared.isPresented {
-                logger.debug("Global hotkey toggled in-app task panel closed")
-                TaskCreationManager.shared.dismiss()
-            } else {
-                logger.debug("Global hotkey opening in-app task panel")
-                TaskCreationManager.shared.present()
-            }
-            return
-        }
-
-        QuickTaskPanelController.shared.show()
     }
 }
 #endif

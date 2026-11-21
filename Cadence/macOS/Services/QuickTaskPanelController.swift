@@ -26,6 +26,13 @@ final class QuickTaskPanelController: NSObject {
 
     var isVisible: Bool { panel?.isVisible == true }
 
+    /// [[T-18796]]: whether a key event's window is this panel, so the root monitor hands it on
+    /// instead of reading its Return as a confirmation of a modal standing in the main window.
+    func owns(_ window: NSWindow?) -> Bool {
+        guard let window, let panel else { return false }
+        return window === panel
+    }
+
     func show(seed: TaskCreationSeed = TaskCreationSeed()) {
         // T-817: `container` is `nil` on the one launch where nothing SwiftData could open
         // worked at all. There is no task store to capture into, and the global hotkey that

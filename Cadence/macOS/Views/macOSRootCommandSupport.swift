@@ -135,7 +135,7 @@ enum RootCommandHandler {
         switch RootCommandEventSupport.handleModalConfirmations(event, context: context) {
         case .act:
             return nil
-        case .passToOverlay:
+        case .passToOverlay, .passToQuickTaskPanel:
             return event
         case .noModal:
             break
