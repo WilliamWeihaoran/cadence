@@ -112,12 +112,40 @@ struct ListSectionKanbanColumn: View {
         CadenceBoardColumnTint.base(for: section).color(listAccent: Theme.dim)
     }
 
-    private var sectionHoverID: String {
-        "kanban-column-\(section.id.uuidString)"
+    private var sectionHoverID: String { Self.columnHoverID(sectionID: section.id) }
+
+    private var sectionEditHoverID: String { Self.editHoverID(sectionID: section.id) }
+
+    static func columnHoverID(sectionID: UUID) -> String {
+        "kanban-column-\(sectionID.uuidString)"
     }
 
-    private var sectionEditHoverID: String {
-        "kanban-section-edit-\(section.id.uuidString)"
+    static func editHoverID(sectionID: UUID) -> String {
+        "kanban-section-edit-\(sectionID.uuidString)"
+    }
+
+    /// [[T-18719]]: the `.onDisappear` half of the column's three hover registrations -- Cmd+N
+    /// (`HoveredKanbanColumnManager`), Cmd+Return (`HoveredSectionManager`) and the header's Cmd+E
+    /// (`HoveredEditableManager`). A column leaves the screen under a parked pointer when the board
+    /// is switched away by keyboard (Cmd+Shift+] to the next tab), and `.onHover(false)` never
+    /// fires then, so without this the managers keep the gone column's closures: Cmd+N is
+    /// swallowed into a dead composer and Cmd+Return completes a column nobody can see.
+    ///
+    /// Guarded on the column's own hover, as the task row's and the card's teardowns are, so a
+    /// column that was never hovered touches nothing; each manager's `endHovering` is
+    /// identity-guarded too, so a column the pointer has already left for another no-ops.
+    static func endHoverRegistrationsOnDisappear(
+        isHovered: inout Bool,
+        sectionID: UUID,
+        hoveredKanbanColumnManager: HoveredKanbanColumnManager,
+        hoveredSectionManager: HoveredSectionManager,
+        hoveredEditableManager: HoveredEditableManager
+    ) {
+        guard isHovered else { return }
+        isHovered = false
+        hoveredKanbanColumnManager.endHovering(id: columnHoverID(sectionID: sectionID))
+        hoveredSectionManager.endHovering(id: sectionID)
+        hoveredEditableManager.endHovering(id: editHoverID(sectionID: sectionID))
     }
 
     private var hideColumnDueDateIfEmpty: Bool {
@@ -229,6 +257,15 @@ struct ListSectionKanbanColumn: View {
                 hoveredKanbanColumnManager.endHovering(id: sectionHoverID)
                 hoveredSectionManager.endHovering(id: section.id)
             }
+        }
+        .onDisappear {
+            Self.endHoverRegistrationsOnDisappear(
+                isHovered: &isHovered,
+                sectionID: section.id,
+                hoveredKanbanColumnManager: hoveredKanbanColumnManager,
+                hoveredSectionManager: hoveredSectionManager,
+                hoveredEditableManager: hoveredEditableManager
+            )
         }
         // [[T-15662]]: the sidebar's list confirmation, in the sidebar's words, over a column.
         .confirmationDialog(

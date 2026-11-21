@@ -47,6 +47,21 @@ struct CalendarBoardDayColumn: View {
         "calendar-board-day-column-\(dateKey)"
     }
 
+    /// [[T-18719]]: the `.onDisappear` half of the day column's Cmd+N registration. The board can
+    /// be switched away by keyboard under a parked pointer, and `.onHover(false)` never fires
+    /// then, so without this `HoveredKanbanColumnManager` keeps the gone column's composer closure
+    /// and Cmd+N is swallowed. Guarded on the column's own hover, like the task row's teardown;
+    /// `endHovering` is identity-guarded, so a column the pointer has already left no-ops.
+    static func endHoverRegistrationOnDisappear(
+        isHovered: inout Bool,
+        dateKey: String,
+        hoveredKanbanColumnManager: HoveredKanbanColumnManager
+    ) {
+        guard isHovered else { return }
+        isHovered = false
+        hoveredKanbanColumnManager.endHovering(id: hoverID(dateKey: dateKey))
+    }
+
     private var isToday: Bool {
         dateKey == todayKey
     }
@@ -96,6 +111,13 @@ struct CalendarBoardDayColumn: View {
             } else {
                 hoveredKanbanColumnManager.endHovering(id: columnHoverID)
             }
+        }
+        .onDisappear {
+            Self.endHoverRegistrationOnDisappear(
+                isHovered: &isHovered,
+                dateKey: dateKey,
+                hoveredKanbanColumnManager: hoveredKanbanColumnManager
+            )
         }
         .background(laneBackground)
         .overlay(alignment: .trailing) {

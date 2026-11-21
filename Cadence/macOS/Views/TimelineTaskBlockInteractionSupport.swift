@@ -65,6 +65,26 @@ enum TimelineTaskBlockInteractionSupport {
         hoveredEditableManager.endHovering(id: "timeline-task-\(task.id.uuidString)")
     }
 
+    /// [[T-18718]]: the `.onDisappear` half of the block's hover. A block leaves the canvas under
+    /// a parked pointer -- Cmd+T unschedules it, or Cmd+\ closes the timeline overlay -- and
+    /// `.onHover(false)` never fires then, so without this the managers keep the gone block: the
+    /// next Cmd+Return / Cmd+P / Cmd+Delete acts on a task that is no longer on screen.
+    ///
+    /// Guarded on the block's own hover, as the task row's teardown is: the same task can be a row
+    /// in the list beside the timeline, and an unguarded `endHovering(task)` from a block that was
+    /// never hovered would end that row's hover. Both managers' `endHovering` are identity-guarded,
+    /// so a block the pointer has already left for another no-ops.
+    static func endHoverOnDisappear(
+        isHovered: inout Bool,
+        task: AppTask,
+        hoveredTaskManager: HoveredTaskManager,
+        hoveredEditableManager: HoveredEditableManager
+    ) {
+        guard isHovered else { return }
+        isHovered = false
+        endHover(task: task, hoveredTaskManager: hoveredTaskManager, hoveredEditableManager: hoveredEditableManager)
+    }
+
     static func beginResize(
         task: AppTask,
         selectedTaskID: Binding<UUID?>,

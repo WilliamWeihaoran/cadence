@@ -122,6 +122,14 @@ struct TimelineTaskBlock: View {
                 )
             }
         }
+        .onDisappear {
+            TimelineTaskBlockInteractionSupport.endHoverOnDisappear(
+                isHovered: &isHovered,
+                task: task,
+                hoveredTaskManager: hoveredTaskManager,
+                hoveredEditableManager: hoveredEditableManager
+            )
+        }
         .onTapGesture {
             handleBlockTap()
         }
