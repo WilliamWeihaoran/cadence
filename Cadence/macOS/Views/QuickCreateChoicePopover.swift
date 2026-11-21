@@ -107,7 +107,7 @@ struct QuickCreateEventDraft: Equatable {
     var seriesEndDateKey: String = ""
     var seriesEndCount: Int = 0
     /// `yyyy-MM-dd`: the day the panel's Ends row names ([[T-6582]]). Empty, or equal to `dateKey`,
-    /// for an event inside one day — the case the write builds from a day and a length.
+    /// for an event inside one day — read as `dateKey` by `writtenRange`.
     var endDateKey: String = ""
 
     /// The day to create on: the draft's own, or `hostDay` only when the key does not parse — which
@@ -127,10 +127,28 @@ struct QuickCreateEventDraft: Equatable {
     /// both platforms. `nil` for an event inside one day, and for keys that cannot form a range.
     func multiDayRange(calendar: Calendar = .current) -> (start: Date, end: Date)? {
         guard spansMultipleDays else { return nil }
+        return writtenRange(calendar: calendar)
+    }
+
+    /// Whether the write takes its two instants from `writtenRange` — every draft but a one-day
+    /// all-day event, which covers `dateKey`'s day bounds.
+    var writesOwnRange: Bool {
+        spansMultipleDays || !isAllDay
+    }
+
+    /// The two instants the event write saves for every timed draft and every multi-day one
+    /// ([[T-18986]]): **`CadenceScheduleDraft.eventDateRange`'s answer**, so a one-day timed End is
+    /// a wall-clock reading too, as it is on iOS and in every Mac edit and resize. It used to be
+    /// written as `endMin - startMin` elapsed minutes after the start, which on a transition day
+    /// saved 1:00 – 4:00 AM as 1:00 – 5:00 and 1:00 – 2:00 AM (fall back) as 1:00 – 1:00. `nil` for
+    /// a one-day all-day draft (`writesOwnRange` is false), and for keys or minutes that cannot
+    /// form a range — which the write refuses, as iOS does.
+    func writtenRange(calendar: Calendar = .current) -> (start: Date, end: Date)? {
+        guard writesOwnRange else { return nil }
         var schedule = CadenceScheduleDraft(dateKey: dateKey, startMin: startMin, kind: .event)
         schedule.startMin = startMin
         schedule.endMin = endMin
-        schedule.endDateKey = endDateKey
+        schedule.endDateKey = spansMultipleDays ? endDateKey : dateKey
         schedule.isAllDay = isAllDay
         return schedule.eventDateRange(calendar: calendar)
     }

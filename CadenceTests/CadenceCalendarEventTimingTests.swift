@@ -35,6 +35,12 @@
 //  introducing the bug, not removing it, so the elapsed spelling is pinned from both directions:
 //  behaviourally, and in the source of the three call sites.
 //
+//  **[[T-18986]] narrowed that to the writes that really hold a LENGTH.** The Mac drag-create /
+//  composer draft now carries an End control, not a Duration ([[T-3171]]), so its end is a
+//  wall-clock reading set through `CadenceScheduleDraft.eventDateRange`, as iOS create, every Mac
+//  edit and Mac resize already were. `createStandaloneEvent`'s `durationMinutes` arm survives for
+//  callers that hold a length; no create door in the UI reaches it.
+//
 
 import Foundation
 import Testing
@@ -547,10 +553,12 @@ struct CadenceCalendarEventTimingTests {
         )
         #expect(setInstead.timeIntervalSince(fallStart) != 3600)
 
-        // T-3051: the same claim for `createStandaloneEvent`'s end, whose duration is a dragged
-        // `endMin - startMin` rather than a fixed hour. A 30-minute drag is 30 minutes of real time
-        // on every one of the three days; it used to be `startMin + 30` measured from midnight, so
-        // it inherited the start's error instead of being a duration at all.
+        // T-3051: the same claim for `createStandaloneEvent`'s `durationMinutes` arm. A 30-minute
+        // length is 30 minutes of real time on every one of the three days; it used to be
+        // `startMin + 30` measured from midnight, so it inherited the start's error instead of
+        // being a duration at all. [[T-18986]]: the drag-create draft no longer reaches this arm —
+        // its End is a wall-clock reading (`QuickCreateEventDraft.writtenRange`, pinned in
+        // `CadenceQuickCreateTaskInspectorTests`) — so this holds for callers with a real length.
         for dateKey in Self.everyDay {
             let base = try midnight(dateKey, calendar)
             let start = try #require(
@@ -563,8 +571,10 @@ struct CadenceCalendarEventTimingTests {
         }
     }
 
-    /// The call sites, in source: each sets its start through `CadenceCalendarEventTiming` and each
-    /// macOS one keeps its end as a duration added to that start. The two macOS sites are scanned
+    /// The call sites, in source: each sets its start through `CadenceCalendarEventTiming`, and each
+    /// macOS write that holds a LENGTH keeps its end as a duration added to that start, while
+    /// every create from a draft with an End sets that End on the wall ([[T-18986]]). The two
+    /// macOS sites are scanned
     /// because their end legs are unreachable without an authorized `EKEventStore`, which this
     /// suite must never open.
     ///
@@ -574,7 +584,7 @@ struct CadenceCalendarEventTimingTests {
     /// behaviourally at the gap minute. The sheet now has an End time, not a Duration, so its end
     /// is a time on the wall and no longer an elapsed length; the scan below holds that it has no
     /// arithmetic of its own left and that the shared helper is the one place the range is made.
-    @Test func everyEventStartWriteSetsTheClockAndEveryEventEndStaysADuration() throws {
+    @Test func everyEventStartWriteSetsTheClockAndOnlyALengthIsAddedAsDuration() throws {
         let manager = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Services/CalendarManager.swift")
         let sheet = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
         let creation = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTimelineDraftCreate.swift")
@@ -616,8 +626,20 @@ struct CadenceCalendarEventTimingTests {
         )
         #expect(
             manager.contains("timingCalendar.date(byAdding: .minute, value: max(5, durationMinutes), to: startDate)"),
-            "createStandaloneEvent's end is durationMinutes of real time after its start (T-3051)"
+            "createStandaloneEvent's durationMinutes arm is real time after its start (T-3051)"
         )
+
+        // [[T-18986]]: the draft-taking create forms its own wall-clock range for every timed
+        // draft and refuses one that cannot form, so no drag-create End reaches that arm.
+        let forwarding = try #require(
+            CadenceSourceScan.declarationBody(
+                "func createStandaloneEvent(_ draft: QuickCreateEventDraft, hostDay: Date)",
+                in: manager
+            )
+        )
+        #expect(forwarding.contains("let spanning = draft.writtenRange()"), "a one-day End is written as elapsed time again")
+        #expect(forwarding.contains("if draft.writesOwnRange && spanning == nil { return record(.invalidRange) }"))
+        #expect(forwarding.contains("spanning: spanning"))
 
         // Negative: no minute-of-day is added to a day's midnight anywhere in these two files.
         for (path, source) in [

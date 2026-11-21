@@ -426,6 +426,56 @@ struct CadenceQuickCreateTaskInspectorTests {
         #expect(oneDay.multiDayRange(calendar: calendar) == nil)
     }
 
+    /// **A one-day timed End is a wall-clock reading, as on iOS** ([[T-18986]]). The write used to
+    /// add `endMin - startMin` elapsed minutes to the start, which on a transition day saved an end
+    /// an hour off the one iOS writes from the same draft. Pinned in `America/New_York`, on both
+    /// transition days and the gap, as the range `writtenRange` forms — and as a relation to
+    /// `CadenceScheduleDraft.eventDateRange`, the function iOS create writes through.
+    @Test func aOneDayTimedEndIsAWallClockReadingOnTransitionDays() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "America/New_York"))
+        func range(_ key: String, _ start: Int, _ end: Int) throws -> (start: Date, end: Date) {
+            let schedule = dragDraft(dateKey: key, startMin: start, endMin: end, kind: .event)
+            let payload = QuickCreateEventDraft(scheduleDraft: schedule)
+            #expect(!payload.spansMultipleDays && payload.writesOwnRange)
+            let written = try #require(payload.writtenRange(calendar: calendar), "\(key) \(start)-\(end)")
+            let iOS = try #require(schedule.eventDateRange(calendar: calendar))
+            #expect(written.start == iOS.start && written.end == iOS.end, "Mac and iOS write different events")
+            return written
+        }
+        func clock(_ date: Date) -> Int {
+            let parts = calendar.dateComponents([.hour, .minute], from: date)
+            return (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
+        }
+
+        // Spring forward, 1:00 - 4:00 AM: three hours on the wall, two in the world.
+        let spring = try range("2026-03-08", 60, 240)
+        #expect(clock(spring.start) == 60)
+        #expect(clock(spring.end) == 240, "saved as 1:00 - 5:00 when End was elapsed time")
+        #expect(spring.end.timeIntervalSince(spring.start) == 2 * 3600)
+
+        // The gap, 2:30 - 3:30 AM: the start collapses to 3:00 as everywhere else; the end stays 3:30.
+        let gap = try range("2026-03-08", 150, 210)
+        #expect(clock(gap.start) == 180)
+        #expect(clock(gap.end) == 210, "saved as 4:00 when End was elapsed time")
+
+        // Fall back, 1:00 - 2:00 AM: ends at 2:00 EST, not in the repeated hour at 1:00.
+        let fall = try range("2026-11-01", 60, 120)
+        #expect(clock(fall.end) == 120, "saved as 1:00 EST when End was elapsed time")
+        #expect(fall.end.timeIntervalSince(fall.start) == 2 * 3600)
+
+        // Ordinary day: wall-clock and elapsed agree, so nothing changed there.
+        let ordinary = try range("2026-06-15", 540, 570)
+        #expect(ordinary.end.timeIntervalSince(ordinary.start) == 1800)
+
+        // A one-day all-day draft still covers its day bounds through the write's own arm.
+        var allDay = dragDraft(kind: .event)
+        allDay.isAllDay = true
+        let allDayPayload = QuickCreateEventDraft(scheduleDraft: allDay)
+        #expect(!allDayPayload.writesOwnRange)
+        #expect(allDayPayload.writtenRange(calendar: calendar) == nil)
+    }
+
     /// **The forwarding site hands the range to the write, and the write uses it** ([[T-6582]]).
     /// Source, because the write sits behind an authorized `EKEventStore`, which this suite must
     /// never open; the range itself is run above.
@@ -437,10 +487,10 @@ struct CadenceQuickCreateTaskInspectorTests {
                 in: manager
             )
         )
-        #expect(forwarding.contains("let spanning = draft.multiDayRange()"))
+        #expect(forwarding.contains("let spanning = draft.writtenRange()"))
         #expect(forwarding.contains("spanning: spanning"), "the multi-day range is formed and dropped")
         #expect(
-            forwarding.contains("if draft.spansMultipleDays && spanning == nil { return record(.invalidRange) }"),
+            forwarding.contains("if draft.writesOwnRange && spanning == nil { return record(.invalidRange) }"),
             "an unformable multi-day draft would be written as a one-day event"
         )
         let write = try #require(CadenceSourceScan.declarationBody("func createStandaloneEvent(\n", in: manager))

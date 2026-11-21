@@ -326,9 +326,9 @@ final class CalendarManager {
     /// `startMin`/`durationMinutes` are not read for it.
     ///
     /// **A range across days** ([[T-6582]]). `spanning`, when set, is the event's two instants
-    /// already formed — a multi-day draft's, from `QuickCreateEventDraft.multiDayRange` — and
-    /// `date`, `startMin` and `durationMinutes` are not read. It is `nil` for everything inside one
-    /// day, which is written exactly as before.
+    /// already formed — every timed or multi-day draft's, from `QuickCreateEventDraft.writtenRange`
+    /// ([[T-18986]]) — and `date`, `startMin` and `durationMinutes` are not read. It is `nil` for a
+    /// one-day all-day draft and for callers that hold a length rather than an End.
     ///
     /// - Parameter timingCalendar: see `CadenceCalendarEventTiming.startDate`. `.current` in
     ///   production; a test passes an explicit DST-observing zone because the scheme pins the test
@@ -414,10 +414,15 @@ final class CalendarManager {
     /// **A multi-day draft writes its own range** ([[T-6582]]): `multiDayRange` is iOS's
     /// `eventDateRange`, and a multi-day draft whose range cannot form is refused here rather than
     /// written as a one-day event over the top of what the user said.
+    ///
+    /// **So does a one-day timed draft** ([[T-18986]]): the panel's End is a time on the wall, not
+    /// a length, so `writtenRange` sets it rather than adding `endMin - startMin` elapsed minutes —
+    /// which on a transition day saved an end an hour off the one iOS writes from the same draft.
+    /// The `durationMinutes` arm below is left for callers that really hold a length.
     @discardableResult
     func createStandaloneEvent(_ draft: QuickCreateEventDraft, hostDay: Date) -> CalendarWriteFailure? {
-        let spanning = draft.multiDayRange()
-        if draft.spansMultipleDays && spanning == nil { return record(.invalidRange) }
+        let spanning = draft.writtenRange()
+        if draft.writesOwnRange && spanning == nil { return record(.invalidRange) }
         return createStandaloneEvent(
             title: draft.title,
             startMin: draft.startMin,
