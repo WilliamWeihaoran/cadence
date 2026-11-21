@@ -5,6 +5,15 @@ import Foundation
 @MainActor
 final class CadenceAppDelegate: NSObject, NSApplicationDelegate {
 
+    /// [[T-18756]]: the app is one window, so AppKit's automatic window tabbing is off before the
+    /// first window exists. Left on, View offered Show Tab Bar / Show All Tabs and the tab strip's
+    /// + answered `newWindowForTab:` with a second main window -- the two-window state [[T-5953]]
+    /// calls a correctness hazard (`.shared` overlays drawn in both, two writers on one store).
+    /// File > New Window keeps its item, with no shortcut, for [[T-3186]]'s zero-window recovery.
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        NSWindow.allowsAutomaticWindowTabbing = false
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         CadenceRemoteNotificationRegistrar.registerIfNeeded()
         CadenceSyncActivityLog.shared.startIfNeeded()

@@ -48,7 +48,8 @@ struct macOSRootMenuCommands: Commands {
         }
 
         // T-7203. The system View menu, not a `CommandMenu("View")`, which would add a second
-        // menu titled View beside the one SwiftUI already draws (Show Tab Bar, Enter Full Screen).
+        // menu titled View beside the one SwiftUI already draws (Enter Full Screen; its tab items are
+        // gone since [[T-18756]] turned automatic window tabbing off at launch).
         CommandGroup(before: .toolbar) {
             ForEach(CadenceViewMenu.items, id: \.command) { item in
                 Button(item.title) {

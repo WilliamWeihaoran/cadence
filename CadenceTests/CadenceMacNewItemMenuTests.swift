@@ -1,5 +1,6 @@
 // macOS only: the File ▸ New group and the window group it reopens are macOS concerns.
 #if os(macOS)
+import AppKit
 import Foundation
 import Testing
 @testable import Cadence
@@ -142,6 +143,22 @@ struct CadenceMacNewItemMenuTests {
         #expect(
             CadenceSourceScan.matchCount(#"WindowGroup \{"#, in: source) == 0,
             "an unidentified WindowGroup has no id for New Window to open"
+        )
+    }
+
+    /// [[T-18756]]: the tab bar's + was a second door to the second window (AppKit's
+    /// `newWindowForTab:`, which the `WindowGroup` answers), and View offered Show Tab Bar /
+    /// Show All Tabs. The app delegate turns automatic tabbing off before the first window. The
+    /// flag is set back to `true` first so the assertion reads what the launch hook wrote, not
+    /// what the test host's own launch already left there.
+    @Test func launchTurnsAutomaticWindowTabbingOff() {
+        NSWindow.allowsAutomaticWindowTabbing = true
+        CadenceAppDelegate().applicationWillFinishLaunching(
+            Notification(name: NSApplication.willFinishLaunchingNotification)
+        )
+        #expect(
+            NSWindow.allowsAutomaticWindowTabbing == false,
+            "the tab bar's + opens a second main window"
         )
     }
 
