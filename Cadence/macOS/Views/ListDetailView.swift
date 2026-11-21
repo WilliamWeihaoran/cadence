@@ -82,12 +82,41 @@ struct MissingListDetailView: View {
 // `ListDetailPage` — the tabs below — lives in `Shared/CadenceListDetailPage.swift`, because iOS
 // draws the same five tabs and had its own drifting copy of this enum.
 
+/// **[[T-19002]] — when the list page's Cmd-Shift-[ / ] may step its tab.**
+///
+/// The chord is this page's own key monitor, not an arm of the root's, so it never passed the
+/// root's modal gates: with Cmd+K, a delete or date confirmation, or the New Task panel up over the
+/// list, in the Edit List sheet, or typing in the global quick-task panel, it flipped the tab
+/// behind -- and `pickTab` remembered it as the list's page. It now runs only where
+/// `RootViewMenuGate` would let a root command run, and not while task creation or a sheet on the
+/// root window is up. The event is handed on untouched when refused, so the field or overlay that
+/// has the keyboard still gets it.
+nonisolated enum ListDetailTabKeyGate {
+    static func steps(
+        hasModal: Bool,
+        isSearchPresented: Bool,
+        isQuickTaskPanelVisible: Bool,
+        isTaskCreationPresented: Bool,
+        isSheetPresented: Bool
+    ) -> Bool {
+        RootViewMenuGate.runs(
+            hasModal: hasModal,
+            isSearchPresented: isSearchPresented,
+            isQuickTaskPanelVisible: isQuickTaskPanelVisible
+        ) && !isTaskCreationPresented && !isSheetPresented
+    }
+}
+
 private struct ListDetailView: View {
     var area: Area?
     var project: Project?
 
     @Environment(ListNavigationManager.self) private var listNavigationManager
     @Environment(\.cadenceRootWindowHandle) private var rootWindow
+    @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
+    @Environment(HoveredTaskDatePickerManager.self) private var hoveredTaskDatePickerManager
+    @Environment(GlobalSearchManager.self) private var globalSearchManager
+    @Environment(TaskCreationManager.self) private var taskCreationManager
     @AppStorage(CadencePreferenceKeys.listDetailDefaultPage) private var defaultPageRawValue = ListDetailPage.tasks.rawValue
     @Environment(\.cadenceRootRetainedPageScope) private var retainedScope
     @State private var tab: ListDetailPage = .tasks
@@ -213,10 +242,24 @@ private struct ListDetailView: View {
 
     private func installKeyMonitorIfNeeded() {
         guard keyMonitor == nil else { return }
+        // The managers are the app's singletons; captured here so the closure reads live state.
+        let deleteConfirmationManager = deleteConfirmationManager
+        let hoveredTaskDatePickerManager = hoveredTaskDatePickerManager
+        let globalSearchManager = globalSearchManager
+        let taskCreationManager = taskCreationManager
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             guard flags.contains(.command), flags.contains(.shift) else { return event }
             guard rootWindow?.isAddressed() ?? true else { return event }
+            // [[T-19002]]: the chord stands down wherever the root's own commands do.
+            guard ListDetailTabKeyGate.steps(
+                hasModal: deleteConfirmationManager.request != nil
+                    || hoveredTaskDatePickerManager.request != nil,
+                isSearchPresented: globalSearchManager.isPresented,
+                isQuickTaskPanelVisible: QuickTaskPanelController.shared.isVisible,
+                isTaskCreationPresented: taskCreationManager.isPresented,
+                isSheetPresented: showEdit || rootWindow?.window?.attachedSheet != nil
+            ) else { return event }
             switch event.keyCode {
             case 33: // [
                 moveTab(by: -1)
