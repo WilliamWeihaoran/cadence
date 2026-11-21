@@ -450,4 +450,86 @@ struct CadenceShellSwapWiringTests {
         #expect(lists.contains(".onAppear { recordList(route) }"))
         #expect(lists.contains("placeCarry?.recordList(route.carried, isRegularWidth: !isCompact)"))
     }
+    /// [[T-18729]] / [[T-18730]]: the root records a sidebar list as it narrows, mirrors a list
+    /// pushed on the Tasks tab, and widens through `CadenceShellListArrival` rather than comparing
+    /// sidebar items against a feature.
+    @Test func theRootCarriesASidebarOrTasksTabListAcrossTheSwap() throws {
+        let root = try Self.code("Cadence/iOS/iOSRootView.swift")
+        let bridge = try cadenceFunctionBody("func bridgeNavigation(to sizeClass: UserInterfaceSizeClass?)", in: root)
+        #expect(bridge.contains("CadenceShellListArrival.resolve("))
+        #expect(bridge.contains("pushedList: compactPushedListRoute"))
+        #expect(bridge.contains("carriedList: placeCarry.listToRestore(isRegularWidth: true)"))
+        #expect(bridge.contains("placeCarry.recordList(selectedList, isRegularWidth: true)"))
+        #expect(root.contains("compactPushedList[tab] = route"))
+        #expect(root.contains("compactPushedList[tab] = nil"), "a feature push no longer clears the list mirror")
+
+        let shell = try Self.code("Cadence/iOS/iOSCompactTabShell.swift")
+        #expect(shell.contains("onListAppear: { onListRouteAppear(.tasks, $0.carried) }"))
+        let tasks = try Self.code("Cadence/iOS/iOSTasksTabView.swift")
+        #expect(tasks.contains(".onAppear { onListAppear(route) }"))
+    }
+}
+
+/// [[T-18729]] / [[T-18730]]: what the iPad sidebar selects as the compact shell widens.
+@MainActor
+struct CadenceShellListArrivalTests {
+    private let listA = CadenceCarriedListRoute.area(UUID())
+    private let listB = CadenceCarriedListRoute.project(UUID())
+
+    /// [[T-18729]]: the second list chosen in the sidebar, narrowed into More > Lists (whose page
+    /// adopts and re-records it) and widened back with nothing touched, stays selected.
+    @Test func aSidebarListSurvivesACompactRoundTrip() {
+        let carry = CadenceShellPlaceCarry()
+        // Narrowing: the root records the sidebar's list; the compact Lists page adopts it.
+        carry.recordList(listB, isRegularWidth: true)
+        let adopted = carry.listToRestore(isRegularWidth: false)
+        #expect(adopted == listB)
+        carry.recordList(listB, isRegularWidth: false)
+
+        #expect(CadenceShellListArrival.resolve(
+            compactShows: .lists,
+            pushedList: nil,
+            selectedList: listB,
+            carriedList: carry.listToRestore(isRegularWidth: true)
+        ) == .keep, "widening replaced the sidebar's list with the Lists page")
+        // Nothing recorded by the compact page at all: still the sidebar's list.
+        #expect(CadenceShellListArrival.resolve(
+            compactShows: .lists, pushedList: nil, selectedList: listB, carriedList: nil
+        ) == .keep)
+    }
+
+    /// The compact Lists page went on to another list: widening shows the Lists page, which then
+    /// selects that list from the carry ([[T-18158]]), rather than the stale sidebar row.
+    @Test func aListChosenInCompactOutranksTheSidebarsOldOne() {
+        #expect(CadenceShellListArrival.resolve(
+            compactShows: .lists, pushedList: nil, selectedList: listA, carriedList: listB
+        ) == .feature(.lists))
+    }
+
+    /// A sidebar list that narrowed and then left Lists for another feature widens into that
+    /// feature; the Lists row (no specific list) still widens into Lists.
+    @Test func leavingListsInCompactStillMovesTheSidebar() {
+        #expect(CadenceShellListArrival.resolve(
+            compactShows: .calendar, pushedList: nil, selectedList: listA, carriedList: listA
+        ) == .feature(.calendar))
+        #expect(CadenceShellListArrival.resolve(
+            compactShows: .lists, pushedList: nil, selectedList: nil, carriedList: listA
+        ) == .feature(.lists))
+        #expect(CadenceShellListArrival.resolve(
+            compactShows: nil, pushedList: nil, selectedList: nil, carriedList: nil
+        ) == .keep, "the More menu invented a destination")
+    }
+
+    /// [[T-18730]]: a list pushed on the Tasks tab's index widens into that list, whatever the
+    /// segment says and whatever feature was pushed and popped on that tab before it.
+    @Test func aListOnTopOfTheTasksStackWidensIntoThatList() {
+        for stale in [CadenceFeatureDestination.today, .inbox, .allTasks] {
+            #expect(CadenceShellListArrival.resolve(
+                compactShows: stale, pushedList: listA, selectedList: nil, carriedList: nil
+            ) == .list(listA), "a list on the Tasks stack widened into \(stale.title)")
+        }
+        #expect(CadenceShellListArrival.resolve(
+            compactShows: .today, pushedList: listA, selectedList: listB, carriedList: listB
+        ) == .list(listA))
+    }
 }

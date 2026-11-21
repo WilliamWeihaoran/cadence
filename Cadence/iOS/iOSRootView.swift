@@ -50,6 +50,10 @@ struct iOSRootView: View {
     /// be replaced and counted but never read back. Only the size-class bridge consults it; see
     /// `iOSCompactRootShell.onFeatureDestinationAppear`.
     @State private var compactPushedFeature: [CadenceCompactTab: CadenceFeatureDestination] = [:]
+    /// [[T-18730]]: the list sitting on top of a tab's stack, mirrored for the same reason. Cleared
+    /// whenever a feature appears on that tab or the tab's stack is replaced, so it only ever names
+    /// the top. See `iOSCompactRootShell.onListRouteAppear`.
+    @State private var compactPushedList: [CadenceCompactTab: CadenceCarriedListRoute] = [:]
     /// [[T-8791]]: Cmd+K asks Search to raise its field; a sidebar or More-list tap does not. Shared
     /// with both shells through the environment, since the compact shell builds its own Search.
     @State private var searchFocusRequest = CadenceSearchFocusRequest()
@@ -80,6 +84,21 @@ struct iOSRootView: View {
         return compactPushedFeature[selectedTab]
     }
 
+    /// [[T-18730]]: the mirrored list push, under the same live-stack rule.
+    private var compactPushedListRoute: CadenceCarriedListRoute? {
+        guard compactPaths[selectedTab].count > 0 else { return nil }
+        return compactPushedList[selectedTab]
+    }
+
+    /// [[T-18729]]: the sidebar's selection when it is a list row.
+    private var selectedList: CadenceCarriedListRoute? {
+        switch selection {
+        case .area(let id): return .area(id)
+        case .project(let id): return .project(id)
+        default: return nil
+        }
+    }
+
     var body: some View {
         Group {
             if horizontalSizeClass == .regular {
@@ -96,6 +115,10 @@ struct iOSRootView: View {
                     paths: $compactPaths,
                     onFeatureDestinationAppear: { tab, destination in
                         compactPushedFeature[tab] = destination
+                        compactPushedList[tab] = nil
+                    },
+                    onListRouteAppear: { tab, route in
+                        compactPushedList[tab] = route
                     }
                 )
             }
@@ -405,6 +428,7 @@ private extension iOSRootView {
         selection = CadenceFocusHandoff.destination.item
         selectedTabRaw = route.tab.rawValue
         compactPushedFeature[route.tab] = route.pushedDestination
+        compactPushedList[route.tab] = nil
         let path = route.pushedDestination.map { NavigationPath([$0]) } ?? NavigationPath()
         if compactPaths[route.tab] != path {
             compactPaths[route.tab] = path
@@ -419,16 +443,33 @@ private extension iOSRootView {
     /// inside.
     func bridgeNavigation(to sizeClass: UserInterfaceSizeClass?) {
         if sizeClass == .regular {
-            guard let destination = CadenceShellNavigationBridge.visibleDestination(
+            let showing = CadenceShellNavigationBridge.visibleDestination(
                 tab: selectedTab,
                 tasksSection: tasksSection,
                 pushedDestination: compactPushedDestination
-            ) else { return }
-            let item = destination.item
+            )
+            // [[T-18729]] / [[T-18730]]: a list is an answer too, not only a feature.
+            let item: iOSSidebarItem
+            switch CadenceShellListArrival.resolve(
+                compactShows: showing,
+                pushedList: compactPushedListRoute,
+                selectedList: selectedList,
+                carriedList: placeCarry.listToRestore(isRegularWidth: true)
+            ) {
+            case .keep: return
+            case .feature(let destination): item = destination.item
+            case .list(.area(let id)): item = .area(id)
+            case .list(.project(let id)): item = .project(id)
+            }
             if selection != item {
                 selection = item
             }
         } else {
+            // [[T-18729]]: a sidebar list narrows into the Lists page, which has no standing
+            // selection of its own -- hand it the list so widening again can tell it was not left.
+            if let selectedList {
+                placeCarry.recordList(selectedList, isRegularWidth: true)
+            }
             guard let destination = (selection ?? .today).featureDestination else { return }
             let showing = CadenceShellNavigationBridge.visibleDestination(
                 tab: selectedTab,
@@ -448,6 +489,7 @@ private extension iOSRootView {
             tasksSectionRaw = section.rawValue
         }
         compactPushedFeature[route.tab] = route.pushedDestination
+        compactPushedList[route.tab] = nil
         compactPaths[route.tab] = route.pushedDestination.map { NavigationPath([$0]) } ?? NavigationPath()
     }
 }

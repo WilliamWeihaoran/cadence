@@ -37,6 +37,8 @@ struct iOSTasksTabView: View {
     /// into a fixed guess (T-334).
     @Binding var section: CadenceTasksSection
     @Binding var path: NavigationPath
+    /// [[T-18730]]: a pushed list reports itself so the root can widen into that list.
+    var onListAppear: (iOSListRoute) -> Void = { _ in }
 
     @Query(sort: \Context.order) private var contexts: [Context]
     // No task `@Query` here (T-3156): the counts beside Today and Tasks are read over every task,
@@ -83,6 +85,7 @@ struct iOSTasksTabView: View {
         // to this path — its `compactTab` is `.more` — so the two cannot meet.
         .navigationDestination(for: iOSListRoute.self) { route in
             listDetail(for: route)
+                .onAppear { onListAppear(route) }
         }
         .cadenceTracksDayChanges($observedDay)
     }

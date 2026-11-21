@@ -57,6 +57,10 @@ struct iOSCompactRootShell: View {
     /// push in every tab passes through the one `navigationDestination` below, so this is one call
     /// site rather than a rule each screen has to remember.
     var onFeatureDestinationAppear: (CadenceCompactTab, CadenceFeatureDestination) -> Void = { _, _ in }
+    /// [[T-18730]]: the same report for a list pushed on the Tasks tab's index, the one stack here
+    /// whose root registers `iOSListRoute`. Without it a list on top of the Tasks stack answered
+    /// nothing and widening fell back to Today, or to a feature already popped off that tab.
+    var onListRouteAppear: (CadenceCompactTab, CadenceCarriedListRoute) -> Void = { _, _ in }
 
     // No `@Query` here on purpose. The shell used to hold
     // `@Query(sort: \AppTask.order) private var allTasks` for the placeholder capture sheet, which
@@ -164,7 +168,11 @@ struct iOSCompactRootShell: View {
     private func root(for tab: CadenceCompactTab) -> some View {
         switch tab {
         case .tasks:
-            iOSTasksTabView(section: $tasksSection, path: pathBinding(for: .tasks))
+            iOSTasksTabView(
+                section: $tasksSection,
+                path: pathBinding(for: .tasks),
+                onListAppear: { onListRouteAppear(.tasks, $0.carried) }
+            )
         case .calendar:
             iOSCalendarView(isCompactTabRoot: true)
         case .notes:

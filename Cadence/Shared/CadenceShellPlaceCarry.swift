@@ -107,3 +107,48 @@ enum CadenceCarriedListRoute: Hashable {
     case area(UUID)
     case project(UUID)
 }
+
+/// [[T-18729]] / [[T-18730]]: what the iPad sidebar selects when the compact shell widens, now that a
+/// specific LIST can be the answer and not only a feature.
+///
+/// `CadenceShellNavigationBridge` reads the compact shell back as a feature, and a list has no
+/// feature of its own: `iOSSidebarItem.featureDestination` folds `.area` / `.project` into `.lists`.
+/// Comparing sidebar ITEMS against that answer lost the list both ways round. A list opened from the
+/// sidebar narrowed into More > Lists and widened back as the bare Lists row (the list replaced by
+/// the Lists page's first list); a list pushed on the compact Tasks tab's index answered nothing at
+/// all, so the bridge fell back to the tab's segment -- Today -- or to a feature pushed and already
+/// popped on that tab.
+///
+/// In `Shared/` for the reason `CadenceShellPlaceCarry` is; pinned by `CadenceShellListArrivalTests`.
+enum CadenceShellListArrival: Equatable {
+    /// Leave the sidebar's selection as it is.
+    case keep
+    /// Select this feature's row (the root writes it only when it differs).
+    case feature(CadenceFeatureDestination)
+    /// Select this list's own sidebar row.
+    case list(CadenceCarriedListRoute)
+
+    /// - Parameters:
+    ///   - compactShows: the bridge's reading of the compact shell, `nil` for the More menu.
+    ///   - pushedList: the list on top of the selected compact tab's stack, when the top is a list.
+    ///   - selectedList: the sidebar's selection while it is a list row.
+    ///   - carriedList: the list the compact Lists page last recorded (`listToRestore(isRegularWidth:
+    ///     true)`), `nil` when it recorded none.
+    static func resolve(
+        compactShows: CadenceFeatureDestination?,
+        pushedList: CadenceCarriedListRoute?,
+        selectedList: CadenceCarriedListRoute?,
+        carriedList: CadenceCarriedListRoute?
+    ) -> CadenceShellListArrival {
+        // A list on top of the stack is what the user is looking at; a feature mirrored for the
+        // same tab is older than it, so it cannot out-vote it ([[T-18730]]).
+        if let pushedList { return .list(pushedList) }
+        guard let compactShows else { return .keep }
+        // The sidebar's list narrowed into Lists and came back from Lists: it is still the list the
+        // user chose, unless the compact Lists page went on to a different one ([[T-18729]]).
+        if compactShows == .lists, let selectedList, carriedList == nil || carriedList == selectedList {
+            return .keep
+        }
+        return .feature(compactShows)
+    }
+}
