@@ -88,7 +88,29 @@ final class TaskNotesEmbedHandlers {
     /// text view, so the host shows this under the editor rather than over the card.
     var embeddedTaskFailureNotice: String?
 
-    @ObservationIgnored var editorTextView: CadenceTextView?
+    /// Installs the task menu ([[T-18882]]) on whichever text view the editor reports.
+    @ObservationIgnored var editorTextView: CadenceTextView? {
+        didSet {
+            editorTextView?.onTaskEmbedContextMenu = { [weak self] id in
+                self?.taskEmbedContextMenu(id: id)
+            }
+        }
+    }
+
+    /// **[[T-18882]].** The embed whose task menu was opened last, and the menu's after-the-click
+    /// state: the repeat-scope question and the refusal alert. `MacTaskRowMenuOutcomeModifier`
+    /// answers both for this task, attached by `taskNotesEmbedPopovers` -- the menu is gone by the
+    /// time either has to show, as on the row.
+    var embedMenuTask: AppTask?
+    var embedMenuPendingRecurrenceRule: TaskRecurrenceRule?
+    var embedMenuFailure: MacTaskRowMenuFailure?
+    /// What the host last handed `callbacks(in:)`: the menu is asked for by the text view, which
+    /// holds no scope of its own, so it reads the freshest one here.
+    @ObservationIgnored private var menuContext: (
+        scope: TaskNotesEmbedScope,
+        hoveredTaskManager: HoveredTaskManager,
+        hoveredEditableManager: HoveredEditableManager
+    )?
 
     /// **[[T-7336]].** Closes whichever of the two popovers is open and says whether one was, so an
     /// Escape the host would spend on closing its sheet closes the popover instead.
@@ -149,7 +171,8 @@ final class TaskNotesEmbedHandlers {
         hoveredTaskManager: HoveredTaskManager,
         hoveredEditableManager: HoveredEditableManager
     ) -> Callbacks {
-        Callbacks(
+        menuContext = (scope, hoveredTaskManager, hoveredEditableManager)
+        return Callbacks(
             openTaskReference: { [weak self] in self?.openTaskReference(id: $0, title: $1, in: scope) },
             createEmbeddedTask: { [weak self] in self?.createUndoableEmbeddedTask(title: $0, in: scope) },
             toggleEmbeddedTask: { [weak self] in self?.toggleEmbeddedTask(id: $0, in: scope) },
@@ -478,6 +501,63 @@ final class TaskNotesEmbedHandlers {
         }
     }
 
+    // MARK: - The task menu ([[T-18882]])
+
+    /// The right-click menu over an embedded task card: `MacTaskRowContextMenu` itself, hosted as
+    /// an `NSMenu`, so the card offers the row's items, in the row's words and order, through the
+    /// row's writers -- not a copy that could drift from it. Edit is the card's own open path (the
+    /// task popover); Focus and Delete Task are `MacTaskContextMenuHost`'s (`FocusManager`, the
+    /// refusable delete overlay). The hover keys go unnamed: the note's text view usually holds
+    /// focus, and the root key monitor stands down for a text view, so naming them could promise
+    /// a key that types instead. `nil` -- the text view keeps its own menu -- when the host has
+    /// handed over no scope yet or the task no longer resolves.
+    @MainActor
+    func taskEmbedContextMenu(
+        id: UUID,
+        deleteConfirmationManager: DeleteConfirmationManager? = nil,
+        focusManager: FocusManager? = nil
+    ) -> NSMenu? {
+        // Resolved here, not as default arguments: a default is evaluated outside the main actor.
+        let deleteConfirmationManager = deleteConfirmationManager ?? .shared
+        let focusManager = focusManager ?? .shared
+        guard let context = menuContext,
+              let task = embeddedTask(id: id, in: context.scope) else { return nil }
+        embedMenuTask = task
+        let scope = context.scope
+        let content = MacTaskRowContextMenu(
+            task: task,
+            openDetail: { [weak self] in self?.openEmbeddedTask(id: id, in: scope) },
+            startFocus: {
+                do {
+                    try focusManager.startFocus(task: task, in: scope.modelContext)
+                } catch {
+                    TaskCompletionAnimationManager.shared.recordSettleFailure()
+                }
+            },
+            requestDelete: { [weak self] in
+                deleteConfirmationManager.presentTaskDelete(task, in: scope.modelContext) {
+                    if context.hoveredTaskManager.hoveredTask?.id == task.id {
+                        context.hoveredTaskManager.hoveredTask = nil
+                    }
+                    if let self {
+                        context.hoveredEditableManager.endHovering(id: self.embeddedTaskHoverID(id))
+                    }
+                }
+            },
+            pendingRecurrenceRule: Binding(
+                get: { [weak self] in self?.embedMenuPendingRecurrenceRule },
+                set: { [weak self] in self?.embedMenuPendingRecurrenceRule = $0 }
+            ),
+            failure: Binding(
+                get: { [weak self] in self?.embedMenuFailure },
+                set: { [weak self] in self?.embedMenuFailure = $0 }
+            ),
+            namesHoverKeys: false
+        )
+        .modelContext(scope.modelContext)
+        return NSHostingMenu(rootView: content)
+    }
+
     /// The live query first, then the creation-latency cache — re-verified against the store, so a
     /// task deleted elsewhere stops being interactive in this note (T-349).
     func embeddedTask(id: UUID, in scope: TaskNotesEmbedScope) -> AppTask? {
@@ -498,6 +578,17 @@ private struct TaskNotesEmbedPopovers: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            // [[T-18882]]: the embed task menu's scope question and refusal alert. On a background
+            // so the editor's own identity never depends on whether a menu has been opened.
+            .background {
+                if let task = handlers.embedMenuTask {
+                    Color.clear.modifier(MacTaskRowMenuOutcomeModifier(
+                        task: task,
+                        pendingRecurrenceRule: $handlers.embedMenuPendingRecurrenceRule,
+                        failure: $handlers.embedMenuFailure
+                    ))
+                }
+            }
             .popover(item: $handlers.linkedTaskForPopover) { linkedTask in
                 TaskDetailPopover(task: linkedTask)
                     .frame(width: 380)

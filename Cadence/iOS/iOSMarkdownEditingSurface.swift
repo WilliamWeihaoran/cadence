@@ -100,6 +100,8 @@ struct iOSMarkdownEditingSurface: View {
     @State private var tagFailureNotice: String?
     @State private var recentEmbeddedTasks: [UUID: AppTask] = [:]
     @State private var selectedEmbeddedTask: AppTask?
+    /// [[T-18882]]: the long-press task menu's after-the-tap state, for the card it opened on.
+    @State private var embedMenuOutcome = iOSTaskEmbedMenuOutcome()
     /// Held rather than computed in `body`. Backlinks run a regex over *every* other note's content,
     /// so recomputing them on each body pass would put that scan behind every keystroke; macOS holds
     /// its equivalent in `NoteEditorPane.derivedState` for the same reason. Refreshed when the
@@ -113,6 +115,7 @@ struct iOSMarkdownEditingSurface: View {
     var body: some View {
         editorSurface
         .background(Theme.surface)
+        .modifier(iOSTaskEmbedMenuOutcomeModifier(outcome: embedMenuOutcome))
         .onAppear(perform: loadDraftIfNeeded)
         .onAppear(perform: refreshReferenceContents)
         .onDisappear {
@@ -320,6 +323,9 @@ struct iOSMarkdownEditingSurface: View {
                     },
                     inlineTaskPanelContent: inlineTaskPanelContent,
                     onInlineTaskPanelPresenceChange: { isInlineTaskPanelOpen = $0 },
+                    onTaskEmbedMenu: { taskID, edit in
+                        taskEmbedMenu(id: taskID, edit: edit)
+                    },
                     onOpenReference: onOpenReference,
                     onCreatePastedImages: createPastedImageAssets,
                     onResizeImage: resizeImageAsset,
@@ -836,6 +842,18 @@ struct iOSMarkdownEditingSurface: View {
             liveTasks: referenceTasks,
             cache: &recentEmbeddedTasks,
             in: modelContext
+        )
+    }
+
+    /// [[T-18882]]: the task row's long-press menu, over the card. `nil` for a task that no longer
+    /// resolves, so the press falls to the text view as it did before.
+    private func taskEmbedMenu(id: UUID, edit: @escaping () -> Void) -> UIMenu? {
+        guard let task = embeddedTask(id: id) else { return nil }
+        return iOSTaskEmbedContextMenu.menu(
+            for: task,
+            modelContext: modelContext,
+            outcome: embedMenuOutcome,
+            openDetail: edit
         )
     }
 

@@ -319,17 +319,35 @@ extension iOSMarkdownEditor.Coordinator {
     ) -> UIContextMenuConfiguration? {
         guard let textView = interaction.view as? UITextView else { return nil }
 
-        if let hit = markdownTableCellHit(at: location, in: textView) {
+        // [[T-18882]]: one order with the Mac's right-click -- table cell, revealed table, task card,
+        // else the text view's own menu.
+        let target = MarkdownEditorContextMenuTarget.classify(
+            tableCell: { markdownTableCellHit(at: location, in: textView) },
+            revealedTableAnchor: { revealedTableAnchor(at: location, in: textView) },
+            taskEmbedID: { taskEmbedMenuID(at: location, in: textView) }
+        )
+        switch target {
+        case .tableCell(let hit):
             return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self, weak textView] _ in
                 guard let self, let textView else { return nil }
                 return self.markdownTableMenu(anchor: hit.anchor, address: hit.address, in: textView)
             }
-        }
-
-        guard let anchor = revealedTableAnchor(at: location, in: textView) else { return nil }
-        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self, weak textView] _ in
-            guard let self, let textView else { return nil }
-            return UIMenu(children: [self.tableSourceAction(anchor: anchor, in: textView)])
+        case .revealedTable(let anchor):
+            return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self, weak textView] _ in
+                guard let self, let textView else { return nil }
+                return UIMenu(children: [self.tableSourceAction(anchor: anchor, in: textView)])
+            }
+        case .taskEmbed(let id):
+            let edit: () -> Void = { [weak self, weak textView] in
+                guard let self, let textView else { return }
+                self.openTaskEmbedCard(id: id, in: textView)
+            }
+            // Built now, not in the provider: a task that no longer resolves must leave the press
+            // to the text view, and only a nil configuration does that.
+            guard let menu = parent.onTaskEmbedMenu?(id, edit) else { return nil }
+            return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ in menu }
+        case .text:
+            return nil
         }
     }
 

@@ -20,6 +20,9 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     var onOpenEmbeddedMarkdownTask: ((UUID) -> Void)?
     var onEditEmbeddedMarkdownTask: ((UUID, MarkdownTaskEmbedField) -> Void)?
     var onHoverEmbeddedMarkdownTask: ((UUID, Bool) -> Void)?
+    /// [[T-18882]]: the task menu for a right-click on an embedded task card, built by the host
+    /// that owns the task (`TaskNotesEmbedHandlers.taskEmbedContextMenu`). `nil` keeps the text menu.
+    var onTaskEmbedContextMenu: (@MainActor (UUID) -> NSMenu?)?
     var onCreateMarkdownImages: (([NSImage], [URL]) -> [MarkdownImageAsset])?
     var onResizeMarkdownImage: ((UUID, CGFloat) -> Void)?
     /// The host's `MarkdownEditor.allowsImageInsertion`, threaded down so the *drag* answer matches
@@ -859,6 +862,12 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         (title as NSString).draw(in: NSRect(x: 16, y: 10, width: max(20, rect.width - 32), height: 20), withAttributes: attrs)
         image.unlockFocus()
         return image
+    }
+
+    /// The embedded task card under `point`, anywhere on it -- body, checkbox, chip or subtask.
+    /// Read by the context menu ([[T-18882]]), which offers the task menu over the whole card.
+    func markdownTaskEmbedID(at point: NSPoint) -> UUID? {
+        taskEmbedHit(at: point)?.id
     }
 
     private func taskEmbedHit(at point: NSPoint) -> (id: UUID, target: MarkdownTaskEmbedHitTarget)? {

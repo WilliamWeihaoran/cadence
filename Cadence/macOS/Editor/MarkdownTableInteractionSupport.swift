@@ -249,15 +249,20 @@ extension CadenceTextView {
     /// hit-testing surface over a canvas that already has one, it competes with the text view's own
     /// cursor rects, and it has to be discovered. A right-click on the thing you want to change is
     /// where every other table on the platform puts these, and it costs no pixels.
+    ///
+    /// [[T-18882]]: a task card embedded in the note answers with the task menu, as the task does
+    /// on every other surface; `MarkdownEditorContextMenuTarget` holds the order.
     override func menu(for event: NSEvent) -> NSMenu? {
         let point = convert(event.locationInWindow, from: nil)
-        if let hit = markdownTableCellHit(at: point) {
+        let target = MarkdownEditorContextMenuTarget.classify(
+            tableCell: { markdownTableCellHit(at: point) },
+            revealedTableAnchor: { revealedTableAnchor(containing: point) },
+            taskEmbedID: { markdownTaskEmbedID(at: point) }
+        )
+        switch target {
+        case .tableCell(let hit):
             return markdownTableMenu(anchor: hit.anchor, address: hit.address)
-        }
-        if let anchor = revealedTableAnchor,
-           let grid = MarkdownTableEditor.grid(containingUTF16Location: anchor, in: string),
-           grid.storageRange.location == anchor,
-           NSLocationInRange(characterIndexForInsertion(at: point), grid.storageRange) {
+        case .revealedTable(let anchor):
             let menu = super.menu(for: event) ?? NSMenu()
             let item = NSMenuItem(
                 title: "Hide Table Source",
@@ -269,8 +274,21 @@ extension CadenceTextView {
             menu.insertItem(NSMenuItem.separator(), at: 0)
             menu.insertItem(item, at: 0)
             return menu
+        case .taskEmbed(let id):
+            // The host builds it: the task, its store and the after-the-click state are the
+            // host's. No host, or a task that no longer resolves, keeps the text menu.
+            return onTaskEmbedContextMenu?(id) ?? super.menu(for: event)
+        case .text:
+            return super.menu(for: event)
         }
-        return super.menu(for: event)
+    }
+
+    private func revealedTableAnchor(containing point: NSPoint) -> Int? {
+        guard let anchor = revealedTableAnchor,
+              let grid = MarkdownTableEditor.grid(containingUTF16Location: anchor, in: string),
+              grid.storageRange.location == anchor,
+              NSLocationInRange(characterIndexForInsertion(at: point), grid.storageRange) else { return nil }
+        return anchor
     }
 
     private func markdownTableMenu(anchor: Int, address: MarkdownTableCellAddress) -> NSMenu {

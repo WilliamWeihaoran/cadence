@@ -30,6 +30,10 @@ struct iOSMarkdownEditor: UIViewRepresentable {
     /// route — the panel's own Cancel/Save, a tap on another card, or the embed leaving the note
     /// ([[T-3249]] item 3). Delivered on the next main-queue turn, never inside a layout pass.
     var onInlineTaskPanelPresenceChange: ((Bool) -> Void)?
+    /// **[[T-18882]].** The task menu for a long-press on an embedded task's card, built by the
+    /// host (`iOSTaskEmbedContextMenu`); the closure it is handed is the card's own open path, for
+    /// the menu's Edit. `nil` -- or a `nil` answer -- leaves the press to the text view.
+    var onTaskEmbedMenu: ((UUID, @escaping () -> Void) -> UIMenu?)?
     var onOpenReference: ((MarkdownReferenceDisplayTarget) -> Void)?
     var onCreatePastedImages: (([UIImage]) -> [MarkdownImageAsset])?
     var onResizeImage: ((UUID, CGFloat) -> Void)?
@@ -56,6 +60,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         onOpenEmbeddedTask: ((UUID) -> Void)? = nil,
         inlineTaskPanelContent: iOSMarkdownInlineTaskPanelContent? = nil,
         onInlineTaskPanelPresenceChange: ((Bool) -> Void)? = nil,
+        onTaskEmbedMenu: ((UUID, @escaping () -> Void) -> UIMenu?)? = nil,
         onOpenReference: ((MarkdownReferenceDisplayTarget) -> Void)? = nil,
         onCreatePastedImages: (([UIImage]) -> [MarkdownImageAsset])? = nil,
         onResizeImage: ((UUID, CGFloat) -> Void)? = nil,
@@ -74,6 +79,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         self.onOpenEmbeddedTask = onOpenEmbeddedTask
         self.inlineTaskPanelContent = inlineTaskPanelContent
         self.onInlineTaskPanelPresenceChange = onInlineTaskPanelPresenceChange
+        self.onTaskEmbedMenu = onTaskEmbedMenu
         self.onOpenReference = onOpenReference
         self.onCreatePastedImages = onCreatePastedImages
         self.onResizeImage = onResizeImage
@@ -157,7 +163,8 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         // escape. Same decision as the Mac's right-click menu and for the same reasons: hover-style
         // chrome would be a second hit-testing surface over a canvas that already has one, it has
         // to be discovered, and on a touch screen there is no hover to reveal it with. The delegate
-        // returns nil anywhere off a grid, so ordinary prose keeps the text view's own menu.
+        // returns nil anywhere off a grid or a task card ([[T-18882]]: a card answers with the task
+        // menu), so ordinary prose keeps the text view's own menu.
         textView.addInteraction(UIContextMenuInteraction(delegate: context.coordinator))
 
         let imageResize = iOSMarkdownImageResizeGestureRecognizer(
@@ -1005,13 +1012,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             case .subtaskCheckbox(let subtaskID):
                 refreshed = parent.onToggleEmbeddedSubtask?(hit.task.id, subtaskID)
             case .card:
-                parent.isFocused = false
-                textView.resignFirstResponder()
-                if let makeContent = parent.inlineTaskPanelContent,
-                   presentInlineTaskPanel(taskID: hit.task.id, in: textView, makeContent: makeContent) {
-                    return
-                }
-                parent.onOpenEmbeddedTask?(hit.task.id)
+                openTaskEmbedCard(id: hit.task.id, in: textView)
                 return
             }
 
@@ -1024,6 +1025,25 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                     trackEmbedCompletion(taskID: refreshed.id, in: textView)
                 }
             }
+        }
+
+        /// What a tap on a card's body does, and what the card's task menu's Edit does
+        /// ([[T-18882]]): the inline task panel, else the host's task sheet.
+        func openTaskEmbedCard(id: UUID, in textView: UITextView) {
+            parent.isFocused = false
+            textView.resignFirstResponder()
+            if let makeContent = parent.inlineTaskPanelContent,
+               presentInlineTaskPanel(taskID: id, in: textView, makeContent: makeContent) {
+                return
+            }
+            parent.onOpenEmbeddedTask?(id)
+        }
+
+        /// The live task card under `point`, anywhere on it, for the context menu ([[T-18882]]).
+        /// A missing task's card offers no task menu, as its tap opens nothing.
+        func taskEmbedMenuID(at point: CGPoint, in textView: UITextView) -> UUID? {
+            guard let hit = taskEmbedHit(at: point, in: textView), !hit.task.isMissing else { return nil }
+            return hit.task.id
         }
 
         /// The card is a canvas image baked at styling time, so the fill is drawn by re-rendering
