@@ -291,6 +291,8 @@ private struct DailyNotesPage: View {
         if let existing = notes.first(where: { $0.dateKey == key }) {
             createFailureNotice = nil
             selectedNoteID = existing.id
+            // [[T-18934]]: a date jump is a "go to", like Cmd+K -- the note may be months down.
+            columnReveal = NotesColumnRevealRequest(noteID: existing.id)
             return
         }
         let note: Note
@@ -449,6 +451,8 @@ private struct WeeklyNotesPage: View {
         if let existing = notes.first(where: { $0.weekKey == key }) {
             createFailureNotice = nil
             selectedNoteID = existing.id
+            // [[T-18934]]: a date jump is a "go to", like Cmd+K -- the note may be months down.
+            columnReveal = NotesColumnRevealRequest(noteID: existing.id)
             return
         }
         let note: Note
@@ -624,20 +628,31 @@ private struct NotepadPage: View {
         }
         createFailureNotice = nil
         selectedNoteID = note.id
+        // [[T-18934]]: the new note files under the current month, which the column may hold folded.
+        columnReveal = NotesColumnRevealRequest(noteID: note.id)
     }
 
     /// [[T-11881]]: committed and refusable, through the manager's one note delete -- see
     /// `DeleteConfirmationManager.presentNoteDelete`.
+    ///
+    /// [[T-18935]]: the open note's replacement is its neighbour in the column, read off the order
+    /// taken here, before the delete, while the deleted row still has an index; [[T-18934]]: and
+    /// that row is brought into view, since it can sit in a folded month.
     private func deleteNote(_ note: Note) {
         let noteID = note.id
+        let columnOrder = notes.map(\.id)
         deleteConfirmationManager.presentNoteDelete(
             note,
             in: modelContext,
             resolve: { notes.first(where: { $0.id == noteID }) },
             didDelete: {
-                if selectedNoteID == noteID {
-                    selectedNoteID = notes.first { $0.id != noteID }?.id
-                }
+                guard selectedNoteID == noteID else { return }
+                selectedNoteID = CadenceNoteDeletionSelection.replacement(
+                    deleting: noteID,
+                    in: columnOrder,
+                    isStillListed: { id in notes.contains { $0.id == id } }
+                ) ?? notes.first { $0.id != noteID }?.id
+                if let selectedNoteID { columnReveal = NotesColumnRevealRequest(noteID: selectedNoteID) }
             }
         )
     }

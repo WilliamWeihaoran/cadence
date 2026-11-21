@@ -313,6 +313,101 @@ struct CadenceNotesListSupportTests {
         #expect(view.components(separatedBy: "@State private var columnReveal: NotesColumnRevealRequest?").count - 1 == 4)
     }
 
+    /// [[T-18935]]: deleting the open note moves to the deleted row's neighbour -- the next row,
+    /// else the previous, else nothing -- not to the column's first (newest) row.
+    @Test func deletingANoteSelectsItsNeighbourNotTheNewest() {
+        let a = UUID(), b = UUID(), c = UUID(), d = UUID()
+        let order = [a, b, c, d]
+        #expect(CadenceNoteDeletionSelection.replacement(deleting: b, in: order) == c)
+        #expect(CadenceNoteDeletionSelection.replacement(deleting: c, in: order) == d)
+        #expect(CadenceNoteDeletionSelection.replacement(deleting: d, in: order) == c)
+        #expect(CadenceNoteDeletionSelection.replacement(deleting: a, in: order) == b)
+        #expect(CadenceNoteDeletionSelection.replacement(deleting: a, in: [a]) == nil)
+        // A row the column no longer draws is never chosen; the walk carries on past it.
+        #expect(CadenceNoteDeletionSelection.replacement(deleting: b, in: order, isStillListed: { $0 != c }) == d)
+        #expect(CadenceNoteDeletionSelection.replacement(deleting: d, in: order, isStillListed: { $0 != c }) == b)
+        // A note the order never held has no neighbour; the caller keeps its own fallback.
+        #expect(CadenceNoteDeletionSelection.replacement(deleting: UUID(), in: order) == nil)
+    }
+
+    /// [[T-18935]]: every one of the four note surfaces reads the shared rule, and none still
+    /// falls back to the newest row ahead of it.
+    @Test func everyNoteSurfaceReplacesADeletedNoteThroughTheNeighbourRule() throws {
+        for path in [
+            "Cadence/macOS/Views/NotesView.swift",
+            "Cadence/macOS/Views/ListNotesView.swift",
+            "Cadence/iOS/iOSNotesView.swift",
+            "Cadence/iOS/iOSListNotesView.swift"
+        ] {
+            let code = try notesStrippingComments(notesSource(path))
+            #expect(
+                code.components(separatedBy: "CadenceNoteDeletionSelection.replacement(").count - 1 == 1,
+                "\(path) does not pick the deleted row's neighbour"
+            )
+        }
+        let ios = try notesStrippingComments(notesSource("Cadence/iOS/iOSNotesView.swift"))
+        #expect(ios.contains("normalizeSelection(previousListedOrder: previousOrder)"))
+        let iosList = try notesStrippingComments(notesSource("Cadence/iOS/iOSListNotesView.swift"))
+        #expect(iosList.contains("normalizeSelection(previousDrawnOrder: previous[1])"))
+        let macList = try notesStrippingComments(notesSource("Cadence/macOS/Views/ListNotesView.swift"))
+        #expect(macList.contains("replacementSelectionAfterDeletingListNote(noteID, columnOrder: columnOrder)"))
+    }
+
+    /// [[T-18934]]: the Notepad `+` files its note under the current month, and a folded month
+    /// draws no rows -- so the new note's reveal plan has to unfold it.
+    @Test func aNotepadNoteCreatedUnderAFoldedMonthIsPlannedToUnfoldIt() throws {
+        let context = try makeContext()
+        let older = Note(kind: .permanent, title: "older", content: "x")
+        older.createdAt = try #require(DateFormatters.date(from: "2026-06-03"))
+        let fresh = Note(kind: .permanent, title: "fresh", content: "")
+        fresh.createdAt = try #require(DateFormatters.date(from: "2026-08-09"))
+        context.insert(older)
+        context.insert(fresh)
+        let notes = NotesListVisibility.notepadNotes([older, fresh])
+        var state = CadenceNotesFoldState()
+        state.setCollapsed(true, month: "2026-08", kind: .permanent)
+
+        let planned = NotesListGrouping.reveal(
+            fresh.id, in: notes, kind: .permanent, foldState: state,
+            dateKey: { DateFormatters.dateKey(from: $0.createdAt) }
+        )
+        let plan = try #require(planned)
+        #expect(plan == NotesColumnRevealPlan(noteID: fresh.id, monthID: "2026-08", unfoldsMonth: true))
+    }
+
+    /// [[T-18934]]: the selections that do not start at a visible row -- the `+`, a date jump onto
+    /// an existing note, the neighbour after a delete -- each ask the column for a reveal, on the
+    /// Mac and on iPad; and the column retries a reveal whose row was not listed yet.
+    @Test func everyOutsideSelectionAsksTheColumnForAReveal() throws {
+        let view = try notesStrippingComments(notesSource("Cadence/macOS/Views/NotesView.swift"))
+        let mac: [(String, String)] = [
+            ("private func createNote()", "columnReveal = NotesColumnRevealRequest(noteID: note.id)"),
+            ("private func openNote(forDateKey key: String)", "columnReveal = NotesColumnRevealRequest(noteID: existing.id)"),
+            ("private func openNote(forWeekKey key: String)", "columnReveal = NotesColumnRevealRequest(noteID: existing.id)"),
+            ("private func deleteNote(_ note: Note)", "columnReveal = NotesColumnRevealRequest(noteID: selectedNoteID)")
+        ]
+        for (declaration, reveal) in mac {
+            let body = try #require(CadenceSourceScan.declarationBody(declaration, in: view), "\(declaration) is gone")
+            #expect(body.contains(reveal), "\(declaration) selects a note without revealing it")
+        }
+
+        let ios = try notesStrippingComments(notesSource("Cadence/iOS/iOSNotesView.swift"))
+        #expect(ios.contains("reveal: columnReveal\n"))
+        for declaration in [
+            "private func createNotepadNote()",
+            "private func openNoteForSelectedDay()",
+            "private func normalizeSelection(previousListedOrder: [UUID] = [])",
+            "private func applyCarried(_ place: CadenceNotesShellPlace)"
+        ] {
+            let body = try #require(CadenceSourceScan.declarationBody(declaration, in: ios), "\(declaration) is gone")
+            #expect(body.contains("columnReveal = NotesColumnRevealRequest(noteID: "), "\(declaration) selects a note without revealing it")
+        }
+
+        let support = try notesStrippingComments(notesSource("Cadence/Shared/CadenceNotesListSupport.swift"))
+        #expect(support.contains("pendingReveal = retriesWhenUnlisted ? request : nil"))
+        #expect(support.contains("applyReveal(pending, retriesWhenUnlisted: false)"))
+    }
+
     /// A heading standing over nothing reads as a loading failure. Folding must not be able to
     /// produce one, and neither must filtering: `sections` cannot invent a group, and a collapsed
     /// section is not this case — it carries `noteCount > 0` and says so.

@@ -134,6 +134,10 @@ struct iOSNotesView: View {
     /// **T-1071:** the one thing the Notepad `+` can fail at, said above the column the note would
     /// have appeared in — the same place `iOSListNotesView` puts its own (T-497).
     @State private var createFailureNotice: String?
+    /// [[T-18934]]: a selection that arrives from outside the two-column index -- the Notepad `+`,
+    /// the date pick, the carried place, the neighbour after a delete -- asks the column to bring
+    /// its row into view, as the Mac pages do. See `NotesColumnRevealRequest`.
+    @State private var columnReveal: NotesColumnRevealRequest?
     /// [[T-9542]]: a refused tag write from the header's `iOSNoteTagControl`, drawn on its own
     /// full-width line under the header so it wraps, rather than inside the header row, where the
     /// control's fixed size drew it unwrapped and pushed the date title aside. The retry is the
@@ -298,8 +302,8 @@ struct iOSNotesView: View {
             isEditorFocused = false
             openNoteForSelectedDay()
         }
-        .onChange(of: listedNotes.map(\.id)) { _, _ in
-            normalizeSelection()
+        .onChange(of: listedNotes.map(\.id)) { previousOrder, _ in
+            normalizeSelection(previousListedOrder: previousOrder)
         }
         // [[T-5804]]: a notice belongs to the note whose commit it describes. [[T-9542]]: so does
         // a refused tag write, which the control clears itself only while it stays on screen.
@@ -501,7 +505,8 @@ struct iOSNotesView: View {
                     notes: listedNotes,
                     kind: activeTab.noteKind,
                     metrics: listMetrics,
-                    dateKey: { listDateKey(for: $0) }
+                    dateKey: { listDateKey(for: $0) },
+                    reveal: columnReveal
                 ) { note in
                     sidebarRow(for: note)
                 }
@@ -864,6 +869,7 @@ struct iOSNotesView: View {
         }
         selectedNoteID = id
         noteWasChosen = place.isOpen
+        columnReveal = NotesColumnRevealRequest(noteID: id)
         guard place.isOpen else { return }
         if !shellIsRegular {
             open(note)
@@ -886,10 +892,25 @@ struct iOSNotesView: View {
         createFailureNotice = state.createFailureNotice(for: coreTab)
         guard let note = state.note(for: coreTab) else { return }
         open(note)
+        columnReveal = NotesColumnRevealRequest(noteID: note.id)
     }
 
-    private func normalizeSelection() {
+    /// [[T-18935]]: a selected note that left the tab (deleted here or elsewhere) is replaced by its
+    /// neighbour in the column as it was drawn before the change, not by the newest row; and
+    /// [[T-18934]] brings that row into view. The first row is only the fallback.
+    private func normalizeSelection(previousListedOrder: [UUID] = []) {
         guard selectedNoteID == nil || !notesForActiveTab.contains(where: { $0.id == selectedNoteID }) else { return }
+        let listedIDs = Set(listedNotes.map(\.id))
+        if let goneID = selectedNoteID,
+           let neighbour = CadenceNoteDeletionSelection.replacement(
+               deleting: goneID,
+               in: previousListedOrder,
+               isStillListed: { listedIDs.contains($0) }
+           ) {
+            selectedNoteID = neighbour
+            columnReveal = NotesColumnRevealRequest(noteID: neighbour)
+            return
+        }
         selectedNoteID = listedNotes.first?.id
     }
 
@@ -910,6 +931,7 @@ struct iOSNotesView: View {
         }
         createFailureNotice = nil
         open(note)
+        columnReveal = NotesColumnRevealRequest(noteID: note.id)
     }
 
     /// The pane's one setter. **[[T-5804]]:** an event note is bound to an Apple Calendar event,

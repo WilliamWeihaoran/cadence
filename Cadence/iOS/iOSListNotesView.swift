@@ -124,6 +124,11 @@ struct iOSListNotesView: View {
         CadenceNoteFolderGrouping.groups(for: filteredListNotes)
     }
 
+    /// The column's rows top to bottom, folder by folder -- the order a neighbour is read in.
+    private var drawnNoteOrder: [UUID] {
+        filteredGroups.flatMap(\.notes).map(\.id)
+    }
+
     private var filteredEventNotes: [Note] {
         filtered(eventNotes)
     }
@@ -201,9 +206,11 @@ struct iOSListNotesView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.surface)
         .cadenceTracksDayChanges($observedDay)
-        .onAppear(perform: normalizeSelection)
-        .onChange(of: listNotes.map(\.id)) { _, _ in
-            normalizeSelection()
+        .onAppear { normalizeSelection() }
+        // [[T-18935]]: the drawn order rides along, so a deleted row's neighbour can be read off
+        // the column as it was before the delete.
+        .onChange(of: [listNotes.map(\.id), drawnNoteOrder]) { previous, _ in
+            normalizeSelection(previousDrawnOrder: previous[1])
         }
         // A tag that no longer appears on anything listed cannot stay a hidden requirement.
         .onChange(of: filterableTags.map(\.id)) { _, _ in
@@ -573,8 +580,20 @@ struct iOSListNotesView: View {
         presentedNote = note
     }
 
-    private func normalizeSelection() {
+    /// [[T-18935]]: a selected note that left the list is replaced by its neighbour in the drawn
+    /// column, through the rule the other three note surfaces share; the first row is the fallback.
+    private func normalizeSelection(previousDrawnOrder: [UUID] = []) {
         guard selectedNoteID == nil || !listNotes.contains(where: { $0.id == selectedNoteID }) else { return }
+        let drawnIDs = Set(drawnNoteOrder)
+        if let goneID = selectedNoteID,
+           let neighbour = CadenceNoteDeletionSelection.replacement(
+               deleting: goneID,
+               in: previousDrawnOrder,
+               isStillListed: { drawnIDs.contains($0) }
+           ) {
+            selectedNoteID = neighbour
+            return
+        }
         selectedNoteID = filteredGroups.first?.notes.first?.id
     }
 

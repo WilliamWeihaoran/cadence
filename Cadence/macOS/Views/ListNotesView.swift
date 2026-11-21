@@ -441,15 +441,19 @@ struct ListNotesView: View {
     /// The shared delete: the note *and* the images it was the last reader of (T-226, see
     /// `CadenceNoteActionSupport`), committed and refusable since [[T-11881]] through
     /// `DeleteConfirmationManager.presentNoteDelete`, which `NotesView`'s Notepad page shares.
+    ///
+    /// [[T-18935]]: the column's order is taken here, before the delete, so the replacement can be
+    /// the deleted row's neighbour -- see `replacementSelectionAfterDeletingListNote`.
     private func deleteNote(_ note: Note) {
         let noteID = note.id
+        let columnOrder = filteredListNoteGroups.flatMap(\.notes).map(\.id)
         deleteConfirmationManager.presentNoteDelete(
             note,
             in: modelContext,
             resolve: { listNotes.first(where: { $0.id == noteID }) },
             didDelete: {
                 if selection == .list(noteID) {
-                    selection = replacementSelectionAfterDeletingListNote(noteID)
+                    selection = replacementSelectionAfterDeletingListNote(noteID, columnOrder: columnOrder)
                 }
             }
         )
@@ -584,7 +588,17 @@ struct ListNotesView: View {
         return nil
     }
 
-    private func replacementSelectionAfterDeletingListNote(_ deletedNoteID: UUID) -> ListNotesSelection? {
+    /// [[T-18935]]: the deleted row's neighbour in the folder-grouped column, through the rule the
+    /// other three note surfaces share; the first other note only when the deleted row was not
+    /// drawn, then the event and task tiers.
+    private func replacementSelectionAfterDeletingListNote(_ deletedNoteID: UUID, columnOrder: [UUID]) -> ListNotesSelection? {
+        if let noteID = CadenceNoteDeletionSelection.replacement(
+            deleting: deletedNoteID,
+            in: columnOrder,
+            isStillListed: { id in filteredListNotes.contains { $0.id == id } }
+        ) {
+            return .list(noteID)
+        }
         if let noteID = filteredListNotes.first(where: { $0.id != deletedNoteID })?.id {
             return .list(noteID)
         }

@@ -279,12 +279,34 @@ struct CadenceNotesListSection: Identifiable {
 }
 
 /// [[T-18739]]: a one-shot ask, from a Notes page to its column, to bring one note's row into view.
-/// Set only when a selection arrives from OUTSIDE the column -- a Cmd+K pick, a `[[note]]` link --
-/// never on a row click, whose row is already on screen. Each ask carries its own `nonce`, so
+/// Set only when a selection arrives from OUTSIDE the column -- a Cmd+K pick, a `[[note]]` link,
+/// and since [[T-18934]] the header `+`, a date jump onto a day's note and the neighbour picked
+/// after a delete -- never on a row click, whose row is already on screen. Each ask carries its own `nonce`, so
 /// asking for the same note twice (Cmd+K to it, scroll away, Cmd+K again) still reveals it.
 struct NotesColumnRevealRequest: Equatable {
     let noteID: UUID
     var nonce = UUID()
+}
+
+/// [[T-18935]]: which note the editor moves to when the open one is deleted -- the deleted row's
+/// neighbour, read off the column's own order as it stood before the delete: the next row, else the
+/// previous, else `nil`. It used to be the column's first (newest) row on all four note surfaces,
+/// so a delete half-way down a column swapped the editor to an unrelated note at the top and lost
+/// the user's place. Owner call recorded on [[T-18935]]: the neighbour.
+enum CadenceNoteDeletionSelection {
+    /// `nil` when `deletedID` was not in `order` (the caller keeps its own fallback) or when no
+    /// other row in `order` is still listed. `isStillListed` lets a caller whose snapshot is older
+    /// than the delete skip a neighbour that has gone too.
+    static func replacement(
+        deleting deletedID: UUID,
+        in order: [UUID],
+        isStillListed: (UUID) -> Bool = { _ in true }
+    ) -> UUID? {
+        guard let index = order.firstIndex(of: deletedID) else { return nil }
+        let candidate: (UUID) -> Bool = { $0 != deletedID && isStillListed($0) }
+        if let next = order[(index + 1)...].first(where: candidate) { return next }
+        return order[..<index].last(where: candidate)
+    }
 }
 
 /// [[T-18739]]: where a revealed note's row sits -- see `NotesListGrouping.reveal`.
@@ -870,13 +892,17 @@ struct NotesFoldableListColumn<Row: View>: View {
     var metrics: CadenceNotesListMetrics = .desktop
     /// The `yyyy-MM-dd` key each note files under. See `NotesListGrouping.monthGroups`.
     let dateKey: @MainActor (Note) -> String
-    /// [[T-18739]]: a note opened from outside the column (Cmd+K, a `[[note]]` link). Its month is
+    /// [[T-18739]]: a note opened from outside the column (Cmd+K, a `[[note]]` link, and since
+    /// [[T-18934]] the header `+`, a date jump, the neighbour after a delete). Its month is
     /// unfolded and its row scrolled into view; a row click never sets it.
     var reveal: NotesColumnRevealRequest? = nil
     @ViewBuilder let row: (Note) -> Row
 
     @AppStorage(CadenceNotesFoldState.storageKey) private var foldStateRaw = ""
     @State private var scrollTarget: NotesColumnScrollTarget?
+    /// [[T-18934]]: a reveal that arrived before its row was listed -- the `+`'s new note can land
+    /// a pass ahead of the query that lists it. Retried once, on the next change to the rows.
+    @State private var pendingReveal: NotesColumnRevealRequest?
 
     private var foldState: CadenceNotesFoldState {
         CadenceNotesFoldState.decoded(foldStateRaw)
@@ -897,18 +923,27 @@ struct NotesFoldableListColumn<Row: View>: View {
         )
         .onChange(of: reveal) { _, request in
             guard let request else { return }
-            applyReveal(request)
+            applyReveal(request, retriesWhenUnlisted: true)
+        }
+        .onChange(of: notes.map(\.id)) { _, _ in
+            guard let pending = pendingReveal else { return }
+            pendingReveal = nil
+            applyReveal(pending, retriesWhenUnlisted: false)
         }
     }
 
-    private func applyReveal(_ request: NotesColumnRevealRequest) {
+    private func applyReveal(_ request: NotesColumnRevealRequest, retriesWhenUnlisted: Bool) {
         guard let plan = NotesListGrouping.reveal(
             request.noteID,
             in: notes,
             kind: kind,
             foldState: foldState,
             dateKey: dateKey
-        ) else { return }
+        ) else {
+            pendingReveal = retriesWhenUnlisted ? request : nil
+            return
+        }
+        pendingReveal = nil
         if plan.unfoldsMonth {
             var state = foldState
             state.setCollapsed(false, month: plan.monthID, kind: kind)
