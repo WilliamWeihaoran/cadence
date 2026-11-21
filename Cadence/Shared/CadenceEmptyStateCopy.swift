@@ -179,7 +179,17 @@ nonisolated enum CadenceEmptyStateCopy {
     /// neither surface searches events (the Mac's `scheduleEventSearch` answers `[]`, iOS's
     /// `showsEvents` guard does the same), so advising an event's name sent the user after a
     /// result that cannot come. `includesEvents` is each surface's `calendarManager.isAuthorized`.
-    static func searchNoResultsAdvice(offersCommands: Bool, includesEvents: Bool) -> String {
+    ///
+    /// **[[T-18831]]: a narrowed scope names only what it searches.** iOS's scope chips (Tasks,
+    /// Lists, Notes, Events, Pages) each search one or two sections, so the All-scope list told a
+    /// reader on Pages to try a task, a note and an event -- kinds that chip never returns.
+    /// `scopeNoun` is the chip's `iOSSearchScope.idleNoun`, the same noun the idle line already
+    /// says ("Start typing to search pages"); `nil` on All and on the Mac palette, which has no
+    /// chips ([[T-8201]]) and keeps the full sentence unchanged.
+    static func searchNoResultsAdvice(offersCommands: Bool, includesEvents: Bool, scopeNoun: String? = nil) -> String {
+        if let scopeNoun {
+            return "Try another word, or switch to All to look beyond \(scopeNoun)."
+        }
         let kinds = includesEvents
             ? "Try a task, note, area, project, event, tag, or section name."
             : "Try a task, note, area, project, tag, or section name."
@@ -191,7 +201,7 @@ nonisolated enum CadenceEmptyStateCopy {
     /// "No matches found" and iOS "No results" over generic advice, which is false: the tasks exist
     /// and the Completed control beside the field shows them. Both surfaces name that control by
     /// its label, so one sentence is true on both. `nil` when nothing is held back, so each surface
-    /// falls back to `searchNoResultsAdvice(offersCommands:includesEvents:)`.
+    /// falls back to `searchNoResultsAdvice(offersCommands:includesEvents:scopeNoun:)`.
     static func searchWithheldCompletedTasks(count: Int) -> String? {
         switch count {
         case ..<1:

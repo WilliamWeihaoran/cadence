@@ -414,7 +414,7 @@ struct iOSSearchView: View {
                     systemImage: "magnifyingglass",
                     title: "No results",
                     subtitle: CadenceEmptyStateCopy.searchWithheldCompletedTasks(count: withheldCompletedTaskCount)
-                        ?? CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: false, includesEvents: calendarManager.isAuthorized)
+                        ?? CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: false, includesEvents: calendarManager.isAuthorized, scopeNoun: scope.idleNoun)
                 )
                 .frame(minHeight: 220)
                 .listRowBackground(Color.clear)

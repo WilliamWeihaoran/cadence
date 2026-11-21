@@ -459,7 +459,43 @@ struct CadenceGlobalSearchCapContinuationTests {
         #expect(!touch.contains("command") && !touch.contains("Command"), "iOS draws no Commands section")
 
         let ios = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchView.swift"))
-        #expect(ios.contains("CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: false, includesEvents: calendarManager.isAuthorized)"))
+        #expect(ios.contains("CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: false, includesEvents: calendarManager.isAuthorized, scopeNoun: scope.idleNoun)"))
+    }
+
+    /// **[[T-18831]].** On a narrowed iOS scope chip the failed-search advice names only what that
+    /// chip searches ([[T-18086]]'s rule: never a kind the search cannot return). Each chip's noun
+    /// is read from `iOSSearchScope.idleNoun`'s own source, because `Cadence/iOS/` does not compile
+    /// into this macOS bundle; All (`nil`) and the Mac palette keep the full sentence unchanged.
+    @Test func failedSearchAdviceOnANarrowedScopeNamesOnlyThatScopesKinds() throws {
+        let everyKind = ["task", "note", "area", "project", "event", "tag", "section", "command", "Command"]
+        // chip case -> (its idle noun, the kind words its `sections` cover)
+        let scopes: [(chip: String, noun: String, kinds: Set<String>)] = [
+            ("tasks", "tasks", ["task"]),
+            ("lists", "areas and projects", ["area", "project"]),
+            ("notes", "notes", ["note"]),
+            ("events", "calendar events", ["event"]),
+            ("progress", "pages", []),
+        ]
+        let support = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchSupportViews.swift"))
+        let idleNoun = try #require(CadenceSourceScan.declarationBody("var idleNoun: String?", in: support))
+        #expect(idleNoun.contains("case .all: return nil"), "All must keep the full sentence")
+        for scope in scopes {
+            #expect(idleNoun.contains("case .\(scope.chip): return \"\(scope.noun)\""),
+                    "the \(scope.chip) chip's noun drifted from this table")
+            for includesEvents in [true, false] {
+                let advice = CadenceEmptyStateCopy.searchNoResultsAdvice(
+                    offersCommands: false, includesEvents: includesEvents, scopeNoun: scope.noun)
+                #expect(advice.contains(scope.noun), "the \(scope.chip) advice does not say what it searched")
+                #expect(advice.contains("All"), "the \(scope.chip) advice does not point at the All chip")
+                for kind in everyKind where !scope.kinds.contains(kind) {
+                    #expect(!advice.contains(kind), "the \(scope.chip) chip's advice names \(kind), which it cannot return: \(advice)")
+                }
+            }
+        }
+        #expect(CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: false, includesEvents: true, scopeNoun: nil)
+            == "Try a task, note, area, project, event, tag, or section name.")
+        #expect(CadenceEmptyStateCopy.searchNoResultsAdvice(offersCommands: true, includesEvents: true)
+            == "Try a task, note, area, project, event, tag, or section name. Commands work too, like New Task.")
     }
 
     /// **[[T-18086]].** With Apple Calendar not connected neither surface can return an event, so
