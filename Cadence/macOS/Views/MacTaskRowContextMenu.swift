@@ -35,7 +35,7 @@ struct MacTaskRowContextMenu: View {
     /// is handed back to the row, which raises `MacTaskRowMenuOutcomeModifier`'s alert.
     @Binding var failure: MacTaskRowMenuFailure?
     /// [[T-16532]]: whether this surface answers the hover keys, so the menu may name them beside
-    /// Edit and Delete Task. `false` on a surface that registers no hover (the Calendar's chips).
+    /// Edit and Delete Task. `false` on a surface that registers no hover.
     var namesHoverKeys: Bool = true
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
@@ -609,7 +609,8 @@ struct MacTaskContextMenuHost: ViewModifier {
     let task: AppTask
     let openDetail: () -> Void
     var willDelete: () -> Void = {}
-    /// [[T-16532]]: `true` only where the host registers the hover keys (the timeline block).
+    /// [[T-16532]]: `true` only where the host registers the hover keys (the timeline block, and
+    /// the Calendar's Month and all-day chips since [[T-18884]]).
     var namesHoverKeys: Bool = false
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager

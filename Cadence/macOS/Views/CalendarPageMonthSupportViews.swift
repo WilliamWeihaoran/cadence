@@ -739,11 +739,114 @@ extension View {
             .accessibilityAction { showInspector.wrappedValue = true }
             // [[T-10205]]: right-click is the task menu ([[T-1479]]), not a second click; it ran
             // the click's own path through a `RightClickActionTrigger` overlay. Edit is the click.
-            .modifier(MacTaskContextMenuHost(task: task, openDetail: { showInspector.wrappedValue = true }))
+            // [[T-18884]]: the chip answers the hover keys the timeline block and the board card
+            // answer, so its menu names them as theirs do ([[T-16532]]).
+            .modifier(MacTaskContextMenuHost(task: task, openDetail: { showInspector.wrappedValue = true }, namesHoverKeys: true))
+            .modifier(CalendarTaskChipHoverKeys(task: task, showInspector: showInspector))
             .popover(isPresented: showInspector, arrowEdge: .bottom) {
                 TaskDetailPopover(task: task)
             }
             .draggable(task.id.uuidString)
+    }
+}
+
+/// **[[T-18884]] — a calendar task chip answers the hover keys.** Cmd+Return, Cmd+T, Cmd+P, Cmd+E
+/// and Cmd+Delete act on whatever `HoveredTaskManager` / `HoveredEditableManager` hold
+/// (`RootCommandEventSupport.handleCommandKeyEvent`). The same task's timeline block and board
+/// card register both; the Month and all-day chips registered nothing, so the keys fell through
+/// over them. The registration is the timeline block's (`TimelineTaskBlockInteractionSupport`),
+/// under its own namespaced editable id, with Edit opening the chip's own inspector.
+enum CalendarTaskChipHoverSupport {
+    /// Namespaced per surface so the same task's timeline block or list row cannot unregister it.
+    static func editableID(for task: AppTask) -> String {
+        "calendar-chip-task-\(task.id.uuidString)"
+    }
+
+    static func beginHover(
+        task: AppTask,
+        hoveredTaskManager: HoveredTaskManager,
+        hoveredEditableManager: HoveredEditableManager,
+        onEdit: @escaping () -> Void,
+        onDelete: @escaping () -> Void
+    ) {
+        // `.timeline`: the chips are the Calendar page's task surfaces, beside the timeline block.
+        hoveredTaskManager.beginHovering(task, source: .timeline)
+        hoveredEditableManager.beginHovering(id: editableID(for: task), onEdit: onEdit, onDelete: onDelete)
+    }
+
+    static func endHover(task: AppTask, hoveredTaskManager: HoveredTaskManager, hoveredEditableManager: HoveredEditableManager) {
+        hoveredTaskManager.endHovering(task)
+        hoveredEditableManager.endHovering(id: editableID(for: task))
+    }
+
+    /// The [[T-18718]] teardown: a chip leaves the grid under a parked pointer (Cmd+T moves the
+    /// task off the day, a month change) and `.onHover(false)` never fires. Guarded on the chip's
+    /// own hover so a chip that was never hovered leaves another surface's hover alone.
+    static func endHoverOnDisappear(
+        isHovered: inout Bool,
+        task: AppTask,
+        hoveredTaskManager: HoveredTaskManager,
+        hoveredEditableManager: HoveredEditableManager
+    ) {
+        guard isHovered else { return }
+        isHovered = false
+        endHover(task: task, hoveredTaskManager: hoveredTaskManager, hoveredEditableManager: hoveredEditableManager)
+    }
+
+    /// What a hover Cmd+Delete clears once the task is gone, as the timeline block's teardown does.
+    static func clearAfterDelete(task: AppTask, hoveredTaskManager: HoveredTaskManager, hoveredEditableManager: HoveredEditableManager) {
+        if hoveredTaskManager.hoveredTask?.id == task.id {
+            hoveredTaskManager.hoveredTask = nil
+        }
+        hoveredEditableManager.endHovering(id: editableID(for: task))
+    }
+}
+
+struct CalendarTaskChipHoverKeys: ViewModifier {
+    let task: AppTask
+    let showInspector: Binding<Bool>
+    @Environment(HoveredTaskManager.self) private var hoveredTaskManager
+    @Environment(HoveredEditableManager.self) private var hoveredEditableManager
+    @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
+    @Environment(\.modelContext) private var modelContext
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                isHovered = hovering
+                if hovering {
+                    CalendarTaskChipHoverSupport.beginHover(
+                        task: task,
+                        hoveredTaskManager: hoveredTaskManager,
+                        hoveredEditableManager: hoveredEditableManager,
+                        onEdit: { showInspector.wrappedValue = true },
+                        onDelete: {
+                            deleteConfirmationManager.presentTaskDelete(task, in: modelContext) {
+                                CalendarTaskChipHoverSupport.clearAfterDelete(
+                                    task: task,
+                                    hoveredTaskManager: hoveredTaskManager,
+                                    hoveredEditableManager: hoveredEditableManager
+                                )
+                            }
+                        }
+                    )
+                } else {
+                    CalendarTaskChipHoverSupport.endHover(
+                        task: task,
+                        hoveredTaskManager: hoveredTaskManager,
+                        hoveredEditableManager: hoveredEditableManager
+                    )
+                }
+            }
+            .onDisappear {
+                CalendarTaskChipHoverSupport.endHoverOnDisappear(
+                    isHovered: &isHovered,
+                    task: task,
+                    hoveredTaskManager: hoveredTaskManager,
+                    hoveredEditableManager: hoveredEditableManager
+                )
+            }
     }
 }
 

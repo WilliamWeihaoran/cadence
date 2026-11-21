@@ -167,7 +167,12 @@ import Testing
             let body = try #require(CadenceSourceScan.declarationBody(control, in: try Self.code(path)), "\(control) moved")
             // Non-vacuity: the control's own hover plate is still there.
             #expect(body.contains(plate), "\(control)'s hover plate moved")
-            #expect(body.contains(".onHover { isHovered = $0 }"), "\(control) no longer tracks the pointer")
+            // [[T-18884]]: the board card's plate rides on the hover-keys registration's own
+            // `.onHover`, which hands the pointer state back through `onHoverChanged`.
+            #expect(
+                body.contains(".onHover { isHovered = $0 }") || body.contains("onHoverChanged: { isHovered = $0 }"),
+                "\(control) no longer tracks the pointer"
+            )
             #expect(CadenceSourceScan.matchCount("\\.buttonStyle\\(", in: body) == 1, "\(control) has more or fewer than one button style")
             #expect(body.contains(".buttonStyle(.plain)"), "\(control) lights a button-style wash over its own plate")
             #expect(!body.contains("cadencePlain"), "\(control) lights .cadencePlain's wash and stroke again")

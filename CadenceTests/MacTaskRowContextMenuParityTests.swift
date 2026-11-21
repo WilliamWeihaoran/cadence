@@ -166,7 +166,7 @@ struct MacTaskRowContextMenuParityTests {
         #expect(CadenceSourceScan.matchCount(#"\.onTapGesture \{ showInspector\.wrappedValue = true \}"#, in: chips) == 1,
                 "the chip's click no longer opens the inspector")
         #expect(CadenceSourceScan.matchCount(
-            #"\.modifier\(MacTaskContextMenuHost\(task: task, openDetail: \{ showInspector\.wrappedValue = true \}\)\)"#,
+            #"\.modifier\(MacTaskContextMenuHost\(task: task, openDetail: \{ showInspector\.wrappedValue = true \}, namesHoverKeys: true\)\)"#,
             in: chips
         ) == 1)
         #expect(CadenceSourceScan.matchCount("RightClickActionTrigger", in: chipFile) == 0,
@@ -214,7 +214,7 @@ struct MacTaskRowContextMenuParityTests {
 
     /// **[[T-16532]] — Edit and Delete Task name the hover keys that run them.** Cmd+E and
     /// Cmd+Delete were named by no menu. The shortcut each item shows must be the key the root
-    /// monitor answers, and a surface that registers no hover (the Calendar's chips) names none.
+    /// monitor answers, and a surface that registers no hover names none.
     @Test func editAndDeleteNameTheHoverKeysOnlyWhereTheSurfaceAnswersThem() throws {
         #expect(MacTaskRowContextMenu.hoverKey(.edit, namedHere: true) == KeyboardShortcut("e", modifiers: .command))
         #expect(MacTaskRowContextMenu.hoverKey(.delete, namedHere: true) == KeyboardShortcut(.delete, modifiers: .command))
@@ -232,7 +232,7 @@ struct MacTaskRowContextMenuParityTests {
         #expect(CadenceSourceScan.matchCount(#"case 51:\s*if context\.hoveredEditableManager\.triggerDelete\(\)"#, in: monitor) == 1)
 
         // The menu wears each hint once, gated on the surface; the host names none by default,
-        // and the Month chips use that default.
+        // and every surface that names them registers the hover (`CadenceCalendarChipHoverKeysTests`).
         let menu = try body("struct MacTaskRowContextMenu: View", in: Self.macMenuPath)
         #expect(CadenceSourceScan.matchCount(#"\.keyboardShortcut\(Self\.hoverKey\(\.edit, namedHere: namesHoverKeys\)\)"#, in: menu) == 1)
         #expect(CadenceSourceScan.matchCount(#"\.keyboardShortcut\(Self\.hoverKey\(\.delete, namedHere: namesHoverKeys\)\)"#, in: menu) == 1)

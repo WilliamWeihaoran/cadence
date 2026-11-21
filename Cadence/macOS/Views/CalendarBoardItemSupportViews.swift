@@ -38,7 +38,14 @@ struct CalendarBoardEventCard: View {
         // blue wash and a blue stroke over that tinted stroke, two colours on one edge.
         .buttonStyle(.plain)
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .onHover { isHovered = $0 }
+        // [[T-18884]]: the hover that lights the plate also registers Cmd+E and Cmd+Delete, as
+        // the timeline event block's does.
+        .modifier(CalendarEventHoverKeys(
+            hoverID: CalendarEventHoverKeysSupport.boardHoverID(eventID: item.id),
+            item: item,
+            onEdit: { showPopover = true },
+            onHoverChanged: { isHovered = $0 }
+        ))
         // T-1843: the card is its own popover's `.rect(.bounds)` anchor, so a test reading where
         // that popover lands needs the card's box and the content inside it. Same `.contain`
         // reasoning, and the same pair of modifiers, as `KanbanCard`.
