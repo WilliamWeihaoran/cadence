@@ -250,6 +250,10 @@ struct ListNotesView: View {
                 filterableTags: filterableTags
             )
         }
+        // [[T-18770]]: the field goes with the list's last note, so its query goes too.
+        .onChange(of: hasAnyNotes) { _, _ in
+            clearFiltersIfListEmptied(hasAnyNotes: hasAnyNotes)
+        }
         .sheet(item: $folderSheetRequest) { request in
             NoteFolderSheet(request: request, existingFolders: listNoteFolderNames) { folderPath in
                 applyFolderRequest(request, folderPath: folderPath)
@@ -391,6 +395,17 @@ struct ListNotesView: View {
         createFailureNotice = nil
         revealInColumn(note)
         select(.list(note.id), clearsRequestedEventNote: false)
+    }
+
+    /// [[T-18770]]: the list's last note gone takes the query and chips with it -- the shared rule
+    /// both tabs read, from `CadenceListRelatedNotes`.
+    private func clearFiltersIfListEmptied(hasAnyNotes: Bool) {
+        let controls = CadenceListRelatedNotes.controls(
+            .init(query: searchText, selectedTagIDs: selectedTagFilterIDs),
+            hasAnyNotes: hasAnyNotes
+        )
+        searchText = controls.query
+        selectedTagFilterIDs = controls.selectedTagIDs
     }
 
     /// [[T-18596]]: a new note the search or chips would hide clears them, so the column lists the

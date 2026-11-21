@@ -107,6 +107,18 @@ enum CadenceListRelatedNotes {
         static let cleared = FilterControls(query: "", selectedTagIDs: [])
     }
 
+    /// The controls to hold once the list's note count changes: unchanged while it has a note,
+    /// cleared once its last note goes.
+    ///
+    /// **[[T-18770]].** [[T-18760]]'s `showsFilterRow` hides the field over an empty list but
+    /// left its query in place, unseen, so the next note to arrive without `addNote` -- an event
+    /// note from the linked calendar, a note filed in from elsewhere, a sync -- came back behind
+    /// a pre-filled query the user typed before the list emptied, and could land as "No matches".
+    /// The chips were already pruned with `filterableTags`; the query was not.
+    static func controls(_ current: FilterControls, hasAnyNotes: Bool) -> FilterControls {
+        hasAnyNotes ? current : .cleared
+    }
+
     /// The controls to hold once `created` -- a note the tab just made and selected -- is on screen:
     /// unchanged when the note already passes `filter`, otherwise cleared, query and chips both.
     ///

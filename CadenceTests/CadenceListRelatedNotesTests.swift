@@ -329,6 +329,35 @@ struct CadenceListRelatedNotesTests {
             """))
     }
 
+    /// [[T-18770]]: the list's last note gone clears the query and chips the hidden field held, so
+    /// a note arriving later without `addNote` is not filtered by a query the user can no longer
+    /// see they left on; a list that still has a note keeps whatever the user set.
+    @Test func theListsLastNoteGoneClearsTheFilters() {
+        let tagID = UUID()
+        let set = CadenceListRelatedNotes.FilterControls(query: "budget", selectedTagIDs: [tagID])
+        #expect(CadenceListRelatedNotes.controls(set, hasAnyNotes: false) == .cleared)
+        #expect(CadenceListRelatedNotes.controls(set, hasAnyNotes: true) == set)
+    }
+
+    /// Both tabs run that rule when the list empties, and write back both controls.
+    @Test func bothTabsClearTheFiltersWhenTheListEmpties() throws {
+        for path in ["Cadence/macOS/Views/ListNotesView.swift", "Cadence/iOS/iOSListNotesView.swift"] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(code.contains("""
+                .onChange(of: hasAnyNotes) { _, _ in
+                            clearFiltersIfListEmptied(hasAnyNotes: hasAnyNotes)
+                """), "\(path)")
+            #expect(code.contains("""
+                let controls = CadenceListRelatedNotes.controls(
+                            .init(query: searchText, selectedTagIDs: selectedTagFilterIDs),
+                            hasAnyNotes: hasAnyNotes
+                        )
+                        searchText = controls.query
+                        selectedTagFilterIDs = controls.selectedTagIDs
+                """), "\(path)")
+        }
+    }
+
     // MARK: - Both tabs read it
 
     /// macOS kept these as private members of `ListNotesView`; the iPad tab had none of them. Both

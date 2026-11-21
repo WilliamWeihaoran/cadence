@@ -212,6 +212,10 @@ struct iOSListNotesView: View {
                 filterableTags: filterableTags
             )
         }
+        // [[T-18770]]: the field goes with the list's last note, so its query goes too.
+        .onChange(of: hasAnyNotes) { _, _ in
+            clearFiltersIfListEmptied(hasAnyNotes: hasAnyNotes)
+        }
         .sheet(item: $selectedEventNote) { note in
             iOSHeldNoteSheet(note: note) { selectedEventNote = nil } content: { note in
                 let event = calendarManager.event(for: note)
@@ -597,6 +601,17 @@ struct iOSListNotesView: View {
         selectedNoteID = note.id
         guard layout == .oneColumn else { return }
         presentedNote = note
+    }
+
+    /// [[T-18770]]: the list's last note gone takes the query and chips with it -- the shared rule
+    /// both tabs read, from `CadenceListRelatedNotes`.
+    private func clearFiltersIfListEmptied(hasAnyNotes: Bool) {
+        let controls = CadenceListRelatedNotes.controls(
+            .init(query: searchText, selectedTagIDs: selectedTagFilterIDs),
+            hasAnyNotes: hasAnyNotes
+        )
+        searchText = controls.query
+        selectedTagFilterIDs = controls.selectedTagIDs
     }
 
     /// [[T-18596]]: a new note the search or chips would hide clears them, so the column lists the
