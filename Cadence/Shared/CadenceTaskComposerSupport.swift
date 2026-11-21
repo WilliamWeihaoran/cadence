@@ -509,6 +509,12 @@ enum CadenceTaskComposerSupport {
     static let missingContainerNotice =
         "That list is no longer available. Add again to create this task in the Inbox."
 
+    /// Said when a composer is asked to create over a title it would refuse: empty, or priority
+    /// marks alone (`!!!`, [[T-14042]]). One sentence for every composer on both platforms --
+    /// the Mac's inline composer and Cmd+N card, and the iPad's `+` composer on Cmd+Return
+    /// ([[T-18797]]), which reaches its sheet without the card's own title gate.
+    static let noNameNotice = "Add a title first."
+
     // MARK: - Container tokens
 
     /// `TaskContainerSelection` as the `"inbox"` / `"area:UUID"` / `"project:UUID"` string the iOS

@@ -414,7 +414,7 @@ struct CadenceTodayTimelineDraftCreationTests {
         // so rather than silently ignored, and only then does the host's write run.
         let commit = try #require(CadenceSourceScan.functionBody(named: "commit", in: panel))
         let readOnly = try #require(commit.range(of: "guard !isReadOnly else { return }"))
-        let title = try #require(commit.range(of: #"actionError = "Add a title first.""#))
+        let title = try #require(commit.range(of: "actionError = CadenceTaskComposerSupport.noNameNotice"))
         let write = try #require(commit.range(of: "actionError = actions.commit()"))
         #expect(readOnly.lowerBound < title.lowerBound)
         #expect(title.lowerBound < write.lowerBound)

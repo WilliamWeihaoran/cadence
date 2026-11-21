@@ -143,7 +143,7 @@ struct CadenceCaptureEditorTests {
         #expect(titleGate.lowerBound < hostGate.lowerBound)
         #expect(commit.contains("guard draft.hasCommittableTitle else"))
         let commitCopy = try #require(CadenceSourceScan.functionBody(named: "commit", in: cardSource))
-        #expect(commitCopy.contains("actionError = \"Add a title first.\""))
+        #expect(commitCopy.contains("actionError = CadenceTaskComposerSupport.noNameNotice"))
         let readOnlyPattern = #"\.disabled\(isReadOnly\)"#
         #expect(CadenceSourceScan.matchCount(readOnlyPattern, in: ".disabled(isReadOnly)") == 1)
         #expect(CadenceSourceScan.matchCount(readOnlyPattern, in: ".disabled(false)") == 0)

@@ -921,7 +921,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
     private func commit() {
         guard !isReadOnly else { return }
         guard draft.hasCommittableTitle else {
-            actionError = "Add a title first."
+            actionError = CadenceTaskComposerSupport.noNameNotice
             return
         }
         actionError = actions.commit()

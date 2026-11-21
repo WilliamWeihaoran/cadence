@@ -122,8 +122,9 @@ enum InlineTaskComposerSupport {
         return noNameNotice
     }
 
-    /// The capture card's sentence for the same refusal, so the two composers agree.
-    static let noNameNotice = "Add a title first."
+    /// The capture card's sentence for the same refusal, so the two composers agree. The sentence
+    /// lives in Shared ([[T-18797]]) so the iPad's `+` composer answers with the same one.
+    static let noNameNotice = CadenceTaskComposerSupport.noNameNotice
 
     /// The draft the composer hands to `TaskCreationService` — the same type, and the same service,
     /// the create sheet uses. Nothing on this path builds an `AppTask` by hand, which is what let

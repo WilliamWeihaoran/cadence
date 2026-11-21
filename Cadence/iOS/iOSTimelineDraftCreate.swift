@@ -331,7 +331,7 @@ enum iOSScheduleDraftCreation {
         } catch {
             return TaskCreationService.saveFailureNotice
         }
-        guard created != nil else { return "Add a title first." }
+        guard created != nil else { return CadenceTaskComposerSupport.noNameNotice }
         HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
         return nil
     }

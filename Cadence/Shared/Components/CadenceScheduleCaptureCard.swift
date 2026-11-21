@@ -910,7 +910,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
     private func commit() {
         guard !isReadOnly else { return }
         guard draft.hasCommittableTitle else {
-            actionError = "Add a title first."
+            actionError = CadenceTaskComposerSupport.noNameNotice
             return
         }
         guard canCommit else { return }

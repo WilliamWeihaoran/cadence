@@ -487,7 +487,7 @@ struct CadenceCreateTaskCommitSurfaceTests {
         // over a blank title, so reaching this means Return was pressed on one, and T-589's rule is
         // that the key reports rather than doing nothing.
         let nothingToCreate = try #require(
-            body.range(of: #"guard created != nil else \{ return "Add a title first\." \}"#, options: .regularExpression),
+            body.range(of: #"guard created != nil else \{ return CadenceTaskComposerSupport\.noNameNotice \}"#, options: .regularExpression),
             "createTask goes quiet over an insert that made nothing"
         )
         #expect(
@@ -570,11 +570,11 @@ struct CadenceCreateTaskCommitSurfaceTests {
         #expect(CadenceSourceScan.matchCount(#"\.bundle\b"#, in: "case .bundle:") == 1)
         #expect(CadenceSourceScan.matchCount(#"\.bundle\b"#, in: "task.bundled") == 0)
         #expect(CadenceSourceScan.matchCount(
-            #"guard created != nil else \{ return "Add a title first\." \}"#,
-            in: "guard created != nil else { return \"Add a title first.\" }"
+            #"guard created != nil else \{ return CadenceTaskComposerSupport\.noNameNotice \}"#,
+            in: "guard created != nil else { return CadenceTaskComposerSupport.noNameNotice }"
         ) == 1)
         #expect(CadenceSourceScan.matchCount(
-            #"guard created != nil else \{ return "Add a title first\." \}"#,
+            #"guard created != nil else \{ return CadenceTaskComposerSupport\.noNameNotice \}"#,
             in: "guard created != nil else { return }"
         ) == 0)
         #expect(CadenceSourceScan.matchCount(
@@ -586,8 +586,8 @@ struct CadenceCreateTaskCommitSurfaceTests {
             in: "} catch {\n    return nil\n}"
         ) == 0)
         #expect(CadenceSourceScan.matchCount(
-            #"guard created != nil else \{ return "Add a title first\." \}"#,
-            in: "guard let task = created else { return \"Add a title first.\" }"
+            #"guard created != nil else \{ return CadenceTaskComposerSupport\.noNameNotice \}"#,
+            in: "guard let task = created else { return CadenceTaskComposerSupport.noNameNotice }"
         ) == 0)
         #expect(CadenceSourceScan.matchCount(#""Couldn.t save this"#, in: "\"Couldn't save this block.\"") == 1)
         #expect(CadenceSourceScan.matchCount(
@@ -649,7 +649,7 @@ struct CadenceScheduleComposerNoticeTests {
         let source = try panelSource()
 
         #expect(
-            source.contains("\"Add a title first.\""),
+            source.contains("CadenceTaskComposerSupport.noNameNotice"),
             "the notice this is about is no longer spelled here — re-point the test or delete it"
         )
         #expect(
@@ -670,7 +670,7 @@ struct CadenceScheduleComposerNoticeTests {
             CadenceSourceScan.functionBody(named: "commit", in: source),
             "could not find commit()"
         )
-        #expect(body.contains("actionError = \"Add a title first.\""))
+        #expect(body.contains("actionError = CadenceTaskComposerSupport.noNameNotice"))
         // The guard must *report* and return, not refuse silently. A `canCommit`-style early exit
         // here would make Return do nothing at all, which is the inert control this test exists for.
         #expect(

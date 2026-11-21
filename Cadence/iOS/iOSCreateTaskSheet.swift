@@ -219,7 +219,15 @@ struct iOSCreateTaskSheet: View {
         return nil
     }
 
+    /// The card's Add, its title's Return, and Cmd+Return ([[T-18083]]). `nil` when the draft left
+    /// the sheet, the sentence to draw when it did not.
+    ///
+    /// [[T-18797]]: Cmd+Return reaches this without the card's `commit()`, so the card's title gate
+    /// is asked here too, as the Mac's `CreateTaskSheet.commit()` asks it ([[T-17746]]). An empty
+    /// title failed `canCreate` silently, and a title of marks alone (`!!!`) passed it, the service
+    /// made nothing, and the chord did nothing with no word said.
     private func create() -> String? {
+        guard draft.hasCommittableTitle else { return CadenceTaskComposerSupport.noNameNotice }
         guard canCreate else { return nil }
         if draft.kind == .event { return createEvent() }
         guard reconcileContainer() else { return actionError }
@@ -239,7 +247,7 @@ struct iOSCreateTaskSheet: View {
             actionError = TaskCreationService.saveFailureNotice
             return actionError
         }
-        guard let task = created else { return nil }
+        guard let task = created else { return CadenceTaskComposerSupport.noNameNotice }
         actionError = nil
         HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
         onCreated?(task)

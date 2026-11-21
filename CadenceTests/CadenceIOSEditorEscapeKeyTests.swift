@@ -104,6 +104,38 @@ struct CadenceIOSEditorEscapeKeyTests {
         #expect(cancel == "ifopenField!=nil{openField=nil}else{dismiss()}")
     }
 
+    /// **[[T-18797]]: Cmd+Return on an empty or marks-only title says why, as the Mac's does.** The
+    /// chord calls the sheet's `create()` without the card's `commit()`, which is where the title
+    /// gate lived, so `""` failed `canCreate` silently and `!!` reached the service, which made
+    /// nothing, and the chord said nothing. The gate's place is read from source -- first in
+    /// `create()`, ahead of the silent `canCreate` guard, answering with the shared sentence the
+    /// Mac's `CreateTaskSheet.commit()` returns ([[T-17746]]) -- and its verdict on both titles is
+    /// asked of the draft itself.
+    @MainActor
+    @Test func commandReturnOnAnEmptyOrMarksOnlyTitleSaysAddATitleFirst() throws {
+        let create = try Self.compactBody("private func create() -> String?", in: Self.createTaskPath)
+        let gate = try #require(
+            create.range(of: "guarddraft.hasCommittableTitleelse{returnCadenceTaskComposerSupport.noNameNotice}"),
+            "create() does not refuse a title the card would refuse"
+        )
+        let canCreate = try #require(create.range(of: "guardcanCreateelse"))
+        #expect(gate.lowerBound < canCreate.lowerBound, "the title gate must run before the silent canCreate guard")
+        #expect(
+            create.contains("guardlettask=createdelse{returnCadenceTaskComposerSupport.noNameNotice}"),
+            "an insert that made nothing must be answered, not swallowed"
+        )
+
+        for title in ["", "!!", "!!!"] {
+            var draft = CadenceTaskComposerSupport.captureDraft(seed: CadenceTaskComposerSeed())
+            draft.title = title
+            #expect(!draft.hasCommittableTitle, "non-vacuity: the gate refuses \(title.debugDescription)")
+        }
+        var named = CadenceTaskComposerSupport.captureDraft(seed: CadenceTaskComposerSeed())
+        named.title = "!! Call Sam"
+        #expect(named.hasCommittableTitle, "a title after its marks still passes")
+        #expect(CadenceTaskComposerSupport.noNameNotice == "Add a title first.")
+    }
+
     /// [[T-8201]]: the keys live in the iOS hosts. The shared card stays keyless, so the Mac, which
     /// binds its own in `CreateTaskSheet`, gets no second Escape or Cmd+Return through it.
     @Test func theSharedCardCarriesNoKeyOfItsOwn() throws {
