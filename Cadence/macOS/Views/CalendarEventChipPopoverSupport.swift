@@ -146,6 +146,62 @@ enum CalendarEventHoverKeysSupport {
     }
 }
 
+/// **[[T-18883]] — a right-click on a Mac Calendar event opens its menu.** The task chip, block
+/// and card beside an event answered a right-click with `MacTaskRowContextMenu` while every event
+/// surface -- Month chip, Week/Day all-day chip, timeline block, Calendar Board card -- answered
+/// nothing. Each now hosts this one menu: **Edit** runs the surface's click (its own popover) and
+/// **Delete Event** runs the surface's existing delete, which asks the recurrence scope for a
+/// series member and then goes through the refusable confirmation. A view-only event (read-only
+/// calendar or organizer-cancelled) gets no Delete, as its popover offers none ([[T-18175]]).
+/// Every event surface registers Cmd+E and the gated Cmd+Delete ([[T-18884]]), so the items name
+/// those keys the way the task menu does ([[T-16532]]).
+struct MacEventContextMenu: View {
+    enum Item: Equatable {
+        case edit
+        case delete
+    }
+
+    let allowsDelete: Bool
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    /// The menu's items, in order. A view-only event's menu is Edit alone.
+    static func items(allowsDelete: Bool) -> [Item] {
+        allowsDelete ? [.edit, .delete] : [.edit]
+    }
+
+    var body: some View {
+        let items = Self.items(allowsDelete: allowsDelete)
+        if items.contains(.edit) {
+            Button(action: onEdit) {
+                Label("Edit", systemImage: "square.and.pencil")
+            }
+            .keyboardShortcut(MacTaskRowContextMenu.hoverKey(.edit, namedHere: true))
+        }
+        if items.contains(.delete) {
+            Button(role: .destructive, action: onDelete) {
+                Label("Delete Event", systemImage: "trash")
+            }
+            .cadenceDestructiveMenuRow()
+            .keyboardShortcut(MacTaskRowContextMenu.hoverKey(.delete, namedHere: true))
+        }
+    }
+}
+
+/// Hosts `MacEventContextMenu` on an event surface: `CalendarEventHoverKeys` (the Month chip, the
+/// all-day chip and the Board card) and `TimelineEventBlock`.
+struct MacEventContextMenuHost: ViewModifier {
+    let allowsDelete: Bool
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    func body(content: Content) -> some View {
+        content.contextMenu {
+            MacEventContextMenu(allowsDelete: allowsDelete, onEdit: onEdit, onDelete: onDelete)
+        }
+    }
+}
+
 /// What an event surface needs from its item to register the hover keys.
 struct CalendarEventHoverItem {
     let title: String
@@ -213,6 +269,13 @@ struct CalendarEventHoverKeys: ViewModifier {
                     hoveredEditableManager.endHovering(id: hoverID)
                 }
             }
+            // [[T-18883]]: the right-click offers what the hover keys do, through the same two
+            // closures, so the menu's Delete asks the same scope and the same confirmation.
+            .modifier(MacEventContextMenuHost(
+                allowsDelete: CalendarEventHoverKeysSupport.allowsDelete(item.ekEvent),
+                onEdit: onEdit,
+                onDelete: requestDelete
+            ))
             .onDisappear {
                 CalendarEventHoverKeysSupport.endHoverOnDisappear(
                     isHovered: &isHovered,

@@ -100,6 +100,17 @@ struct TimelineEventBlock: View {
                 selectedTaskID = nil
                 selectedEventID = item.id
             }
+            // [[T-18883]]: the right-click menu every Mac event surface hosts -- Edit opens this
+            // block's popover as the click does, Delete Event is `requestEventMutation(.delete)`,
+            // the one scope-then-confirm path, and is absent on a view-only event ([[T-18175]]).
+            .modifier(MacEventContextMenuHost(
+                allowsDelete: TimelineEventBlockEditGate.allowsDelete(isEditable: isEditable, isCancelled: isCancelled),
+                onEdit: {
+                    selectedTaskID = nil
+                    selectedEventID = item.id
+                },
+                onDelete: { requestEventMutation(.delete) }
+            ))
             // [[T-8721]]: the block was pointer-only -- VoiceOver got its loose time, title and
             // calendar texts and nothing to press. iOS's `iOSCalendarEventBlock` shape ([[T-5356]]):
             // one element, the shared "title, time range" words, a button, and the click's own
