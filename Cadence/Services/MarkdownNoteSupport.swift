@@ -168,6 +168,17 @@ nonisolated enum NoteTemplateLibrary {
     /// Mac said "Reset" beside its "Customized" badge and iOS "Reset Template"; one action, one name.
     static let resetTemplateTitle = "Reset Template"
 
+    /// **[[T-18891]].** Both Reset Template buttons dropped the override on one click, and the
+    /// reset reaches every device: `CadenceNoteTemplatePreferenceSync` reads a missing id as a
+    /// deliberate reset and never re-adds it. Each button now only raises this confirmation, and
+    /// `resetSelectedTemplate` runs from its destructive button alone, as Delete API Key does.
+    /// The title names the template as the user sees it, customised title included.
+    static func resetTemplateConfirmationTitle(for templateTitle: String) -> String {
+        "Reset \(templateTitle)?"
+    }
+
+    static let resetTemplateConfirmationMessage = "Your edited title, description and body are replaced by the built-in template on all your devices. This cannot be undone."
+
     static func isCustomized(_ template: NoteTemplate, overridesRaw: String) -> Bool {
         overrides(from: overridesRaw)[template.id] != nil
     }

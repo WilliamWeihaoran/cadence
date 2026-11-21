@@ -19,6 +19,8 @@ struct iOSTemplatesSettingsSection: View {
     // "Daily PlanN". These hold what the user is typing; storage is written from them.
     @State private var titleDraft = ""
     @State private var subtitleDraft = ""
+    /// [[T-18891]]: Reset Template asks first; see `NoteTemplateLibrary.resetTemplateConfirmationTitle`.
+    @State private var isConfirmingTemplateReset = false
 
     private var templates: [NoteTemplate] {
         NoteTemplateLibrary.editableTemplates(overridesRaw: templateOverridesRaw)
@@ -74,6 +76,16 @@ struct iOSTemplatesSettingsSection: View {
         }
         .onAppear(perform: loadDrafts)
         .onChange(of: selectedTemplateID) { _, _ in loadDrafts() }
+        .confirmationDialog(
+            NoteTemplateLibrary.resetTemplateConfirmationTitle(for: selectedTemplate?.title ?? ""),
+            isPresented: $isConfirmingTemplateReset,
+            titleVisibility: .visible
+        ) {
+            Button(NoteTemplateLibrary.resetTemplateTitle, role: .destructive, action: resetSelectedTemplate)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(NoteTemplateLibrary.resetTemplateConfirmationMessage)
+        }
     }
 
     @ViewBuilder
@@ -205,7 +217,7 @@ struct iOSTemplatesSettingsSection: View {
                         role: .ghost,
                         size: .compact,
                         isDisabled: !NoteTemplateLibrary.isCustomized(selectedTemplate, overridesRaw: templateOverridesRaw),
-                        action: resetSelectedTemplate
+                        action: { isConfirmingTemplateReset = true }
                     )
                 }
             }

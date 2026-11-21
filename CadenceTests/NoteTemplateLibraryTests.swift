@@ -328,4 +328,47 @@ struct NoteTemplateLibraryTests {
             }
         }
     }
+
+    /// **[[T-18891]]: Reset Template asks first, on both platforms.** The reset drops the override
+    /// and syncs as a deliberate reset to every device, so the copy must say both.
+    @Test func theTemplateResetConfirmationNamesTheTemplateWhatGoesAndWhere() {
+        #expect(NoteTemplateLibrary.resetTemplateConfirmationTitle(for: "Daily Plan") == "Reset Daily Plan?")
+        let message = NoteTemplateLibrary.resetTemplateConfirmationMessage
+        for phrase in ["title", "description", "body", "built-in template", "all your devices", "cannot be undone"] {
+            #expect(message.contains(phrase), "the reset confirmation no longer says \(phrase)")
+        }
+    }
+
+    /// **[[T-18891]].** Both Reset Template buttons called `resetSelectedTemplate` on one click.
+    /// Each now only raises a confirmation, and the reset is reached from that dialog's destructive
+    /// button alone: the declaration plus the one dialog call are the only two mentions.
+    @Test func bothTemplateResetButtonsAskBeforeResetting() throws {
+        let surfaces = [
+            ("Cadence/macOS/Views/SettingsTemplatesSection.swift", "struct SettingsTemplatesSection: View", "Label(NoteTemplateLibrary.resetTemplateTitle"),
+            ("Cadence/iOS/iOSSettingsTemplateAndListSections.swift", "struct iOSTemplatesSettingsSection: View", "title: NoteTemplateLibrary.resetTemplateTitle"),
+        ]
+        for (path, declaration, buttonAnchor) in surfaces {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            let body = try #require(CadenceSourceScan.declarationBody(declaration, in: code), "\(path): `\(declaration)` is gone")
+            #expect(CadenceSourceScan.matchCount(#"\bresetSelectedTemplate\b"#, in: body) == 2, "\(path): resetSelectedTemplate is reached from somewhere besides the dialog")
+            #expect(body.contains("private func resetSelectedTemplate()"), "non-vacuity: \(path)")
+            let button = try #require(body.range(of: buttonAnchor), "\(path): the Reset Template button is gone")
+            let dialog = try #require(body.range(of: ".confirmationDialog("), "\(path): the reset confirmation is gone")
+            // The Mac button hands its action before its label and iOS after its title, so the
+            // raise is pinned to within a few lines of the title rather than to one side of it. The
+            // dialog hangs off `body`, which is declared above the editor, so no order is asserted.
+            #expect(CadenceSourceScan.matchCount(#"isConfirmingTemplateReset = true"#, in: body) == 1, "\(path): the confirmation is raised from more or fewer places")
+            let raise = try #require(body.range(of: "isConfirmingTemplateReset = true"), "\(path): the button no longer raises the confirmation")
+            let span = raise.lowerBound < button.lowerBound ? body[raise.lowerBound..<button.lowerBound] : body[button.lowerBound..<raise.lowerBound]
+            #expect(span.count < 400, "\(path): the confirmation is raised away from the Reset Template button")
+            let dialogTail = String(body[dialog.lowerBound...])
+            let message = try #require(dialogTail.range(of: "} message: {"), "\(path): the dialog has no message")
+            let actions = String(dialogTail[..<message.lowerBound])
+            #expect(actions.contains("NoteTemplateLibrary.resetTemplateConfirmationTitle(for: selectedTemplate?.title"))
+            #expect(actions.contains("isPresented: $isConfirmingTemplateReset"))
+            #expect(actions.contains("Button(NoteTemplateLibrary.resetTemplateTitle, role: .destructive, action: resetSelectedTemplate)"), "\(path): confirming no longer resets")
+            #expect(actions.contains("role: .cancel"), "\(path): the dialog has no Cancel")
+            #expect(dialogTail[message.upperBound...].contains("Text(NoteTemplateLibrary.resetTemplateConfirmationMessage)"))
+        }
+    }
 }

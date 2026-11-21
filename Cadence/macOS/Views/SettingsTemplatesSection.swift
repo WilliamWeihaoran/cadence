@@ -16,6 +16,8 @@ struct SettingsTemplatesSection: View {
     // "Daily PlanN". These hold what the user is typing; storage is written from them.
     @State private var titleDraft = ""
     @State private var subtitleDraft = ""
+    /// [[T-18891]]: Reset Template asks first; see `NoteTemplateLibrary.resetTemplateConfirmationTitle`.
+    @State private var isConfirmingTemplateReset = false
 
     private var templates: [NoteTemplate] {
         NoteTemplateLibrary.editableTemplates(overridesRaw: templateOverridesRaw)
@@ -67,6 +69,16 @@ struct SettingsTemplatesSection: View {
         }
         .onAppear(perform: loadDrafts)
         .onChange(of: selectedTemplateID) { _, _ in loadDrafts() }
+        .confirmationDialog(
+            NoteTemplateLibrary.resetTemplateConfirmationTitle(for: selectedTemplate?.title ?? ""),
+            isPresented: $isConfirmingTemplateReset,
+            titleVisibility: .visible
+        ) {
+            Button(NoteTemplateLibrary.resetTemplateTitle, role: .destructive, action: resetSelectedTemplate)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(NoteTemplateLibrary.resetTemplateConfirmationMessage)
+        }
     }
 
     /// **The one-column form macOS did not have.** iOS could be gated to a fallback that already
@@ -152,7 +164,7 @@ struct SettingsTemplatesSection: View {
 
                     Spacer(minLength: 0)
 
-                    SettingsActionButton(tone: .tinted(Theme.dim), action: resetSelectedTemplate) {
+                    SettingsActionButton(tone: .tinted(Theme.dim), action: { isConfirmingTemplateReset = true }) {
                         Label(NoteTemplateLibrary.resetTemplateTitle, systemImage: "arrow.counterclockwise")
                     }
                     .disabled(!NoteTemplateLibrary.isCustomized(selectedTemplate, overridesRaw: templateOverridesRaw))
