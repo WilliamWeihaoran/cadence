@@ -233,7 +233,8 @@ struct CadenceCalendarEventChipEditingTests {
         // [[T-10205]]: right-click is the task menu ([[T-1479]]), its Edit the click's inspector;
         // `MacTaskRowContextMenuParityTests` pins the menu itself.
         #expect(
-            CadenceSourceScan.matchCount(#"\.modifier\(MacTaskContextMenuHost\(task: task, openDetail: \{ showInspector\.wrappedValue = true \}\)\)"#, in: shared) == 1,
+            // [[T-18884]]: the chip now answers the hover keys, so its menu names them too.
+            CadenceSourceScan.matchCount(#"\.modifier\(MacTaskContextMenuHost\(task: task, openDetail: \{ showInspector\.wrappedValue = true \}, namesHoverKeys: true\)\)"#, in: shared) == 1,
             "a right-click opens no task menu"
         )
         #expect(
@@ -250,8 +251,14 @@ struct CadenceCalendarEventChipEditingTests {
         #expect(CadenceSourceScan.matchCount(#"calendarManager\.report\("#, in: code) == 2, "a Save outcome is discarded")
         #expect(code.contains("CadenceCalendarEventEditingSupport.saveOutcome(for: failure)"))
         #expect(CadenceSourceScan.matchCount(#"\) \{ isPresented = false \}"#, in: code) == 1, "Save closes outside a committed outcome")
-        #expect(CadenceSourceScan.matchCount(#"deleteConfirmationManager\.presentRefusable\("#, in: code) == 1)
-        #expect(CadenceSourceScan.matchCount(#"deleteEvent\(item\.ekEvent, scope: scope\)"#, in: code) == 1)
+        // Two deletes, both behind the one confirmation: the popover's Delete and, since
+        // [[T-18884]], the hover Delete key (`confirmDelete(scope:)`).
+        #expect(CadenceSourceScan.matchCount(#"deleteConfirmationManager\.presentRefusable\("#, in: code) == 2)
+        #expect(CadenceSourceScan.matchCount(#"deleteEvent\(item\.ekEvent, scope: scope\)"#, in: code) == 2)
+        #expect(
+            CadenceSourceScan.matchCount(#"presentRefusable\(\s*title: CadenceCalendarEventEditingSupport\.deleteConfirmationTitle,"#, in: code) == 2,
+            "an event delete skips the shared confirmation"
+        )
         #expect(code.contains("if outcome == .deleted { isPresented = false }"))
         #expect(code.contains("actionFailureNotice: $actionFailureNotice"))
         #expect(
