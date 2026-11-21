@@ -190,7 +190,23 @@ struct CadenceTaskEmbedTouchChipsTests {
         #expect(chips.first { $0.field == .section }?.title == "Backlog")
         #expect(chips.first { $0.field == .recurrence }?.title == TaskRecurrenceRule.weekly.label)
         // A timed Do reads as the Mac card says it, without the "Do " prefix.
-        #expect(chips.first { $0.field == .scheduledDate }?.title == "Tomorrow \(TimeFormatters.timeString(from: 9 * 60))")
+        #expect(chips.first { $0.field == .scheduledDate }?.title == "Tomorrow at \(TimeFormatters.timeString(from: 9 * 60))")
+    }
+
+    /// [[T-18843]]: every arm of the timed Do chip joins the day and the clock with " at ", as the
+    /// drop caption and `scheduledDateLabel` do -- a bare space read "in 3 days 9 AM",
+    /// "2 days ago 9 AM" and "Nov 28 9 AM". An untimed Do keeps its "Do " prefix.
+    @Test func aTimedDoChipJoinsTheDayAndTheTimeWithAt() {
+        let time = TimeFormatters.timeString(from: 9 * 60)
+        func doTitle(_ key: String, start: Int = 9 * 60) -> String? {
+            CadenceTaskEmbedChipRow.slots(for: task(scheduledDate: key, scheduledStartMin: start), relativeTo: reference)
+                .first { $0.field == .scheduledDate }?.title
+        }
+        #expect(doTitle("2026-11-08") == "Today at \(time)")
+        #expect(doTitle("2026-11-11") == "in 3 days at \(time)")
+        #expect(doTitle("2026-11-06") == "2 days ago at \(time)")
+        #expect(doTitle("2026-11-28") == "Nov 28 at \(time)")
+        #expect(doTitle("2026-11-11", start: -1) == "Do in 3 days")
     }
 
     /// The default section draws no chip, on either card.

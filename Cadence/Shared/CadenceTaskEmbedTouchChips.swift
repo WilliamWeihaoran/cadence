@@ -146,13 +146,15 @@ nonisolated enum CadenceTaskEmbedChipRow {
         return slots
     }
 
-    /// A timed Do chip reads "Tomorrow 9 AM": the time already says it is a plan, and the "Do "
-    /// it drops is width the row spends on another chip.
+    /// A timed Do chip reads "Tomorrow at 9 AM": the time already says it is a plan, and the "Do "
+    /// it drops is width the row spends on another chip. The day and the time are joined by " at ",
+    /// as the drop caption and `CadenceTaskPresentationSupport.scheduledDateLabel` join them; a bare
+    /// space ran "in 3 days 9 AM" and "Nov 28 9 AM" together ([[T-18843]]).
     private static func doTitle(for task: MarkdownTaskEmbedRenderInfo, relativeTo referenceDate: Date) -> String? {
         guard !task.scheduledDate.isEmpty else { return nil }
         let date = DateFormatters.relativeDate(from: task.scheduledDate, relativeTo: referenceDate)
         guard task.scheduledStartMin >= 0 else { return "Do \(date)" }
-        return "\(date) \(TimeFormatters.timeString(from: task.scheduledStartMin))"
+        return "\(date) at \(TimeFormatters.timeString(from: task.scheduledStartMin))"
     }
 
     /// Stable importance ranking; equal importance keeps display order.
