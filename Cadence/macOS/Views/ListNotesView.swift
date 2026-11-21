@@ -263,8 +263,11 @@ struct ListNotesView: View {
                 onNewNote: { addNote() },
                 onNewNoteInFolder: { folderSheetRequest = NoteFolderSheetRequest(mode: .newNote) }
             )
-            ListNotesSearchField(searchText: $searchText, hasTagFilters: !filterableTags.isEmpty)
-            TagFilterBar(tags: filterableTags, selectedTagIDs: $selectedTagFilterIDs)
+            // [[T-18760]]: no field over a list with nothing in it -- the iPad tab's rule.
+            if CadenceListRelatedNotes.showsFilterRow(hasAnyNotes: hasAnyNotes) {
+                ListNotesSearchField(searchText: $searchText, hasTagFilters: !filterableTags.isEmpty)
+                TagFilterBar(tags: filterableTags, selectedTagIDs: $selectedTagFilterIDs)
+            }
 
             if let createFailureNotice {
                 CadenceInlineFailureNotice(text: createFailureNotice)
@@ -280,9 +283,22 @@ struct ListNotesView: View {
 
             Divider().background(Theme.borderSubtle)
 
-            notesScroll
-            notesListEmptyState
+            // [[T-18760]]: the list or the panel, never both -- an empty scroll view above the
+            // panel took a share of the column's height and pushed the panel off centre.
+            if hasAnyFilteredMatches {
+                notesScroll
+            } else {
+                notesListEmptyState
+            }
         }
+    }
+
+    private var hasAnyNotes: Bool {
+        !(listNotes.isEmpty && eventNotes.isEmpty && taskNotes.isEmpty)
+    }
+
+    private var hasAnyFilteredMatches: Bool {
+        !(filteredListNotes.isEmpty && filteredEventNotes.isEmpty && filteredTaskNotes.isEmpty)
     }
 
     private var notesScroll: some View {
@@ -347,8 +363,8 @@ struct ListNotesView: View {
 
     private var notesListEmptyState: some View {
         ListNotesEmptyState(
-            hasAnyNotes: !(listNotes.isEmpty && eventNotes.isEmpty && taskNotes.isEmpty),
-            hasAnyFilteredMatches: !(filteredListNotes.isEmpty && filteredEventNotes.isEmpty && filteredTaskNotes.isEmpty)
+            hasAnyNotes: hasAnyNotes,
+            hasAnyFilteredMatches: hasAnyFilteredMatches
         )
     }
 

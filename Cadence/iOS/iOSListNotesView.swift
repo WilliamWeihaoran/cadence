@@ -332,7 +332,7 @@ struct iOSListNotesView: View {
                     .padding(.vertical, metrics.columnVerticalPadding)
             }
 
-            if hasAnyNotes {
+            if CadenceListRelatedNotes.showsFilterRow(hasAnyNotes: hasAnyNotes) {
                 filterRow
             }
 

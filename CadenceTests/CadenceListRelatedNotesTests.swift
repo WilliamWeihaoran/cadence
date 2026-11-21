@@ -298,6 +298,37 @@ struct CadenceListRelatedNotesTests {
         #expect(ios.contains("if let created { revealInColumn(created) }"))
     }
 
+    /// [[T-18760]]: a list Notes tab with nothing in it draws no search field -- it would narrow
+    /// nothing -- while a list whose notes the query hides keeps the field, so the query can be
+    /// cleared. The iPad tab's rule; the Mac tab drew the field whatever the list held.
+    @Test func theFilterRowWaitsForTheListsFirstNote() {
+        #expect(CadenceListRelatedNotes.showsFilterRow(hasAnyNotes: false) == false)
+        #expect(CadenceListRelatedNotes.showsFilterRow(hasAnyNotes: true))
+    }
+
+    /// Both tabs read that rule, and the Mac draws the list OR the empty panel, never both: an
+    /// empty scroll view beside the panel took a share of the column and pushed it off centre.
+    @Test func bothTabsGateTheFilterRowAndTheMacDrawsTheListOrThePanel() throws {
+        let mac = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListNotesView.swift"))
+        #expect(mac.contains("""
+            if CadenceListRelatedNotes.showsFilterRow(hasAnyNotes: hasAnyNotes) {
+                            ListNotesSearchField(
+            """))
+        #expect(mac.components(separatedBy: "ListNotesSearchField(").count - 1 == 1)
+        #expect(mac.contains("""
+            if hasAnyFilteredMatches {
+                            notesScroll
+                        } else {
+                            notesListEmptyState
+                        }
+            """))
+        let ios = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListNotesView.swift"))
+        #expect(ios.contains("""
+            if CadenceListRelatedNotes.showsFilterRow(hasAnyNotes: hasAnyNotes) {
+                            filterRow
+            """))
+    }
+
     // MARK: - Both tabs read it
 
     /// macOS kept these as private members of `ListNotesView`; the iPad tab had none of them. Both

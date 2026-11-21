@@ -91,6 +91,14 @@ enum CadenceListRelatedNotes {
         selectedTagIDs.intersection(filterableTags.map(\.id))
     }
 
+    /// [[T-18760]]: a list Notes tab draws its search field and tag chips only once the list has a
+    /// note -- a field over an empty list narrows nothing. A list whose notes the query hides
+    /// still shows the row, so the query can be cleared. The iPad tab's [[T-7031]] rule, which
+    /// the Mac tab now reads too.
+    static func showsFilterRow(hasAnyNotes: Bool) -> Bool {
+        hasAnyNotes
+    }
+
     /// The search text and chip selection a Notes tab holds -- the two controls `filter` reads.
     struct FilterControls: Equatable {
         var query: String
