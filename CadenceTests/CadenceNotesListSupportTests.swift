@@ -266,6 +266,53 @@ struct CadenceNotesListSupportTests {
         #expect(sections[1].notes.map(\.id) == [notes[2].id])
     }
 
+    // MARK: - Reveal: a note opened from outside the column ([[T-18739]])
+
+    /// Cmd+K or a `[[note]]` link opens a note the column may be hiding -- folded into a collapsed
+    /// month, or far below the first screenful. The plan names the month its row is drawn under and
+    /// whether that month must be unfolded first; a note the column does not list has no plan.
+    @Test func aRevealedNoteUnfoldsOnlyItsOwnCollapsedMonth() throws {
+        let context = try makeContext()
+        let notes = [
+            daily("2026-08-09", "a", in: context),
+            daily("2026-07-20", "b", in: context),
+            daily("2026-06-03", "c", in: context)
+        ]
+        var state = CadenceNotesFoldState()
+        state.setCollapsed(true, month: "2026-07", kind: .daily)
+        state.setCollapsed(true, month: "2026-08", kind: .weekly)
+
+        let foldedPlan = NotesListGrouping.reveal(notes[1].id, in: notes, kind: .daily, foldState: state, dateKey: { $0.dateKey })
+        let folded = try #require(foldedPlan)
+        #expect(folded == NotesColumnRevealPlan(noteID: notes[1].id, monthID: "2026-07", unfoldsMonth: true))
+
+        // August is folded only in the WEEKLY list, so the daily row is drawn already.
+        let openPlan = NotesListGrouping.reveal(notes[0].id, in: notes, kind: .daily, foldState: state, dateKey: { $0.dateKey })
+        let open = try #require(openPlan)
+        #expect(open == NotesColumnRevealPlan(noteID: notes[0].id, monthID: "2026-08", unfoldsMonth: false))
+
+        // Unfolding the planned month is what makes the row a drawn row.
+        state.setCollapsed(false, month: folded.monthID, kind: .daily)
+        let sections = NotesListGrouping.sections(for: notes, kind: .daily, foldState: state, dateKey: { $0.dateKey })
+        #expect(sections.flatMap(\.notes).contains { $0.id == notes[1].id })
+
+        let unlisted = NotesListGrouping.reveal(UUID(), in: notes, kind: .daily, foldState: state, dateKey: { $0.dateKey })
+        #expect(unlisted == nil)
+    }
+
+    /// The column acts on a reveal: it unfolds the month and scrolls inside a reader, and every
+    /// macOS Notes page hands its column the request.
+    @Test func everyMacNotesPageHandsItsColumnTheReveal() throws {
+        let support = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceNotesListSupport.swift"))
+        #expect(support.contains("state.setCollapsed(false, month: plan.monthID, kind: kind)"))
+        #expect(support.contains("ScrollViewReader { proxy in"))
+        #expect(support.contains("proxy.scrollTo(target.noteID, anchor: nil)"))
+        #expect(support.contains("scrollTarget: scrollTarget,"))
+        let view = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/NotesView.swift"))
+        #expect(view.components(separatedBy: "reveal: columnReveal\n").count - 1 == 4)
+        #expect(view.components(separatedBy: "@State private var columnReveal: NotesColumnRevealRequest?").count - 1 == 4)
+    }
+
     /// A heading standing over nothing reads as a loading failure. Folding must not be able to
     /// produce one, and neither must filtering: `sections` cannot invent a group, and a collapsed
     /// section is not this case — it carries `noteCount > 0` and says so.

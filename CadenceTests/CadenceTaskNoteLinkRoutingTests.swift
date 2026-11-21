@@ -178,6 +178,33 @@ struct CadenceTaskNoteLinkRoutingTests {
         #expect(lists.request == nil)
     }
 
+    /// [[T-18739]]: a requested selection (Cmd+K) and an in-tab link both ask the column to reveal the note; a
+    /// request that does not resolve, and a link that leaves the tab, ask nothing. A row click
+    /// writes `selectedNoteID` directly and goes through neither.
+    @Test func onlyASelectionFromOutsideTheColumnAsksItToReveal() {
+        let monday = Note(kind: .daily, dateKey: "2026-10-26")
+        let tuesday = Note(kind: .daily, dateKey: "2026-10-27")
+        var requested: UUID? = tuesday.id
+        var selection: UUID? = monday.id
+        var reveal: NotesColumnRevealRequest?
+
+        #expect(!NotesView.RequestedSelection.apply(&requested, selection: &selection, reveal: &reveal, notes: [monday]))
+        #expect(reveal == nil)
+        #expect(NotesView.RequestedSelection.apply(&requested, selection: &selection, reveal: &reveal, notes: [monday, tuesday]))
+        #expect(reveal?.noteID == tuesday.id)
+
+        // A second ask for the same note is a NEW value, so the column reveals it again.
+        let first = reveal
+        requested = tuesday.id
+        #expect(NotesView.RequestedSelection.apply(&requested, selection: &selection, reveal: &reveal, notes: [monday, tuesday]))
+        #expect(reveal != first)
+
+        reveal = nil
+        NotesView.EditorLinkRouting.open(monday, tabNotes: [monday, tuesday], selection: &selection, reveal: &reveal)
+        #expect(selection == monday.id)
+        #expect(reveal?.noteID == monday.id)
+    }
+
     /// The defect: on the Notepad tab a link to a daily note set `selectedNoteID` to an id the tab
     /// does not list, so the editor fell to "Select a note". Now the selection is left alone and
     /// the request names the target's own tab, whose `RequestedSelection.apply` then selects it.
@@ -262,7 +289,7 @@ struct CadenceTaskNoteLinkRoutingTests {
             let pane = try Self.arguments(ofFirst: "NoteEditorPane(", in: body)
             #expect(pane.contains("relatedNotes: allNotes"), "\(page)")
             #expect(
-                pane.contains("onOpenNote: { NotesView.EditorLinkRouting.open($0, tabNotes: notes, selection: &selectedNoteID) }"),
+                pane.contains("onOpenNote: { NotesView.EditorLinkRouting.open($0, tabNotes: notes, selection: &selectedNoteID, reveal: &columnReveal) }"),
                 "\(page)"
             )
             checked += 1

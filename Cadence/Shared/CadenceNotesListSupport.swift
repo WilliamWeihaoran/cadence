@@ -278,6 +278,24 @@ struct CadenceNotesListSection: Identifiable {
     let notes: [Note]
 }
 
+/// [[T-18739]]: a one-shot ask, from a Notes page to its column, to bring one note's row into view.
+/// Set only when a selection arrives from OUTSIDE the column -- a Cmd+K pick, a `[[note]]` link --
+/// never on a row click, whose row is already on screen. Each ask carries its own `nonce`, so
+/// asking for the same note twice (Cmd+K to it, scroll away, Cmd+K again) still reveals it.
+struct NotesColumnRevealRequest: Equatable {
+    let noteID: UUID
+    var nonce = UUID()
+}
+
+/// [[T-18739]]: where a revealed note's row sits -- see `NotesListGrouping.reveal`.
+struct NotesColumnRevealPlan: Equatable {
+    let noteID: UUID
+    /// The `yyyy-MM` section the row is drawn under.
+    let monthID: String
+    /// The month is folded shut, so it draws no rows until it is unfolded.
+    let unfoldsMonth: Bool
+}
+
 enum NotesListGrouping {
     /// Groups an already-sorted note list into consecutive month runs, preserving the incoming
     /// order both between and inside groups.
@@ -339,6 +357,26 @@ enum NotesListGrouping {
                 notes: collapsed ? [] : group.notes
             )
         }
+    }
+
+    /// [[T-18739]]: what the column must do to show a note opened from elsewhere (Cmd+K, a
+    /// `[[note]]` link) -- the month its row files under, and whether that month is folded shut.
+    /// `nil` when the column does not list the note at all (a daily note the hide-empty rule
+    /// drops, say): there is no row to bring into view, so nothing is unfolded either.
+    static func reveal(
+        _ noteID: UUID,
+        in notes: [Note],
+        kind: NoteKind,
+        foldState: CadenceNotesFoldState,
+        dateKey: @MainActor (Note) -> String
+    ) -> NotesColumnRevealPlan? {
+        guard let group = monthGroups(for: notes, dateKey: dateKey)
+            .first(where: { group in group.notes.contains { $0.id == noteID } }) else { return nil }
+        return NotesColumnRevealPlan(
+            noteID: noteID,
+            monthID: group.id,
+            unfoldsMonth: foldState.isCollapsed(month: group.id, kind: kind)
+        )
     }
 
     private static func resolvedKey(_ key: String, fallback: Date) -> String {
@@ -746,31 +784,75 @@ struct NotesMonthHeader: View {
 struct NotesGroupedListColumn<Row: View>: View {
     let sections: [CadenceNotesListSection]
     var metrics: CadenceNotesListMetrics = .desktop
+    /// [[T-18739]]: the row to bring into view, once per new value. `nil` scrolls nothing.
+    var scrollTarget: NotesColumnScrollTarget? = nil
     let toggle: (String) -> Void
     @ViewBuilder let row: (Note) -> Row
 
+    /// Rows the lazy stack has built. A reference, so a row arriving or leaving on a scroll does
+    /// not invalidate this body -- it is only read when a reveal lands.
+    @State private var realizedRows = NotesColumnRealizedRows()
+
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: metrics.groupSpacing) {
-                ForEach(sections) { section in
-                    VStack(alignment: .leading, spacing: metrics.rowSpacing) {
-                        NotesMonthHeader(
-                            title: section.title,
-                            noteCount: section.noteCount,
-                            isCollapsed: section.isCollapsed,
-                            metrics: metrics,
-                            toggle: { toggle(section.id) }
-                        )
-                        ForEach(section.notes) { note in
-                            row(note)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: metrics.groupSpacing) {
+                    ForEach(sections) { section in
+                        VStack(alignment: .leading, spacing: metrics.rowSpacing) {
+                            NotesMonthHeader(
+                                title: section.title,
+                                noteCount: section.noteCount,
+                                isCollapsed: section.isCollapsed,
+                                metrics: metrics,
+                                toggle: { toggle(section.id) }
+                            )
+                            ForEach(section.notes) { note in
+                                row(note)
+                                    .id(note.id)
+                                    .onAppear { realizedRows.ids.insert(note.id) }
+                                    .onDisappear { realizedRows.ids.remove(note.id) }
+                            }
                         }
+                        .id(section.id)
                     }
                 }
+                .padding(.horizontal, metrics.columnHorizontalPadding)
+                .padding(.vertical, metrics.columnVerticalPadding)
             }
-            .padding(.horizontal, metrics.columnHorizontalPadding)
-            .padding(.vertical, metrics.columnVerticalPadding)
+            .onChange(of: scrollTarget) { _, target in
+                guard let target else { return }
+                // After the pass that unfolded the month has laid its rows out.
+                DispatchQueue.main.async {
+                    Self.scroll(proxy, to: target, realized: realizedRows.ids.contains(target.noteID))
+                }
+            }
         }
     }
+
+    /// A row the stack has built is on screen or next to it: `anchor: nil` moves it the least
+    /// distance into view, and not at all when it is already wholly visible. A row it has not built
+    /// cannot be scrolled to by its own id, so its month is brought up first, then the row centred.
+    private static func scroll(_ proxy: ScrollViewProxy, to target: NotesColumnScrollTarget, realized: Bool) {
+        if realized {
+            proxy.scrollTo(target.noteID, anchor: nil)
+            return
+        }
+        proxy.scrollTo(target.monthID, anchor: .top)
+        DispatchQueue.main.async {
+            proxy.scrollTo(target.noteID, anchor: .center)
+        }
+    }
+}
+
+/// [[T-18739]]: what `NotesGroupedListColumn` scrolls to -- a plan, re-issued with a fresh nonce.
+struct NotesColumnScrollTarget: Equatable {
+    let noteID: UUID
+    let monthID: String
+    let nonce: UUID
+}
+
+final class NotesColumnRealizedRows {
+    var ids: Set<UUID> = []
 }
 
 /// The grouped note column **plus** the persisted fold state that drives it.
@@ -788,9 +870,13 @@ struct NotesFoldableListColumn<Row: View>: View {
     var metrics: CadenceNotesListMetrics = .desktop
     /// The `yyyy-MM-dd` key each note files under. See `NotesListGrouping.monthGroups`.
     let dateKey: @MainActor (Note) -> String
+    /// [[T-18739]]: a note opened from outside the column (Cmd+K, a `[[note]]` link). Its month is
+    /// unfolded and its row scrolled into view; a row click never sets it.
+    var reveal: NotesColumnRevealRequest? = nil
     @ViewBuilder let row: (Note) -> Row
 
     @AppStorage(CadenceNotesFoldState.storageKey) private var foldStateRaw = ""
+    @State private var scrollTarget: NotesColumnScrollTarget?
 
     private var foldState: CadenceNotesFoldState {
         CadenceNotesFoldState.decoded(foldStateRaw)
@@ -805,9 +891,30 @@ struct NotesFoldableListColumn<Row: View>: View {
                 dateKey: dateKey
             ),
             metrics: metrics,
+            scrollTarget: scrollTarget,
             toggle: toggle,
             row: row
         )
+        .onChange(of: reveal) { _, request in
+            guard let request else { return }
+            applyReveal(request)
+        }
+    }
+
+    private func applyReveal(_ request: NotesColumnRevealRequest) {
+        guard let plan = NotesListGrouping.reveal(
+            request.noteID,
+            in: notes,
+            kind: kind,
+            foldState: foldState,
+            dateKey: dateKey
+        ) else { return }
+        if plan.unfoldsMonth {
+            var state = foldState
+            state.setCollapsed(false, month: plan.monthID, kind: kind)
+            foldStateRaw = state.encoded()
+        }
+        scrollTarget = NotesColumnScrollTarget(noteID: plan.noteID, monthID: plan.monthID, nonce: request.nonce)
     }
 
     private func toggle(_ monthID: String) {

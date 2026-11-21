@@ -284,7 +284,8 @@ struct CadenceCodexFunctionalParityTests {
         #expect(view.contains("if !applyRequestedSelection(), selectedNote == nil { openNote(forDateKey: observedDay.todayKey) }"))
         #expect(view.contains("if !applyRequestedSelection(), selectedNote == nil { openNote(forWeekKey: currentWeekKey) }"))
         #expect(view.contains("if !applyRequestedSelection(), selectedNote == nil { selectNewestNotepadNote() }"))
-        #expect(view.components(separatedBy: "NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, notes: notes)").count - 1 == 3)
+        // [[T-18739]]: all four pages, the Events tab included, apply it with the column reveal.
+        #expect(view.components(separatedBy: "NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, reveal: &columnReveal, notes: notes)").count - 1 == 4)
     }
 
     /// [[T-3221]] / [[T-1467]] (parity PA-02): a parent with children lists the SAME subtasks on

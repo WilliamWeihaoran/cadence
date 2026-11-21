@@ -51,6 +51,21 @@ struct NotesView: View {
             requestedID = nil
             return true
         }
+
+        /// [[T-18739]]: the same, and an applied request also asks the column to bring the row
+        /// into view -- its month unfolded, its row scrolled to. A pick from Cmd+K is usually a
+        /// note older than the first screenful.
+        @discardableResult
+        static func apply(
+            _ requestedID: inout UUID?,
+            selection: inout UUID?,
+            reveal: inout NotesColumnRevealRequest?,
+            notes: [Note]
+        ) -> Bool {
+            guard apply(&requestedID, selection: &selection, notes: notes), let selection else { return false }
+            reveal = NotesColumnRevealRequest(noteID: selection)
+            return true
+        }
     }
 
     /// [[T-8041]]: where a `[[note]]` link opened from one of this page's four editors goes. Every
@@ -73,6 +88,20 @@ struct NotesView: View {
                 return
             }
             TaskNoteLinkRouting.open(note, notesNavigation: notesNavigation, listNavigation: listNavigation)
+        }
+
+        /// [[T-18739]]: a link to a note this tab lists also asks the column to show its row; a
+        /// link that leaves the tab is revealed by the target tab's `RequestedSelection`.
+        static func open(
+            _ note: Note,
+            tabNotes: [Note],
+            selection: inout UUID?,
+            reveal: inout NotesColumnRevealRequest?,
+            notesNavigation: NotesNavigationManager = .shared,
+            listNavigation: ListNavigationManager = .shared
+        ) {
+            open(note, tabNotes: tabNotes, selection: &selection, notesNavigation: notesNavigation, listNavigation: listNavigation)
+            if selection == note.id { reveal = NotesColumnRevealRequest(noteID: note.id) }
         }
     }
 
@@ -142,6 +171,8 @@ private struct DailyNotesPage: View {
     @Environment(\.modelContext) private var modelContext
     /// [[T-18162]]: survives the root's data-refresh rebuild; see `NotesView.retainedSelectionPrefix`.
     @RootRetained(NotesView.retainedSelectionPrefix + "daily") private var selectedNoteID: UUID? = nil
+    /// [[T-18739]]: set when a selection arrives from outside the column; see `NotesColumnRevealRequest`.
+    @State private var columnReveal: NotesColumnRevealRequest?
     /// The day the list pins as today ([[T-5012]]). `NotesListVisibility.dailyNotes` keeps the
     /// current day listed even when blank; it was handed the clock in a body whose inputs do not
     /// change at midnight, so the morning after, yesterday stayed pinned and today had no row.
@@ -191,7 +222,8 @@ private struct DailyNotesPage: View {
                     NotesFoldableListColumn(
                         notes: listedNotes,
                         kind: NotesView.NotesPage.daily.noteKind,
-                        dateKey: { $0.dateKey }
+                        dateKey: { $0.dateKey },
+                        reveal: columnReveal
                     ) { note in
                         NoteListRowButton(action: { selectedNoteID = note.id }) {
                             DailyNoteListRow(note: note, isSelected: selectedNoteID == note.id, todayKey: observedDay.todayKey)
@@ -209,7 +241,7 @@ private struct DailyNotesPage: View {
                     note: note,
                     relatedNotes: allNotes,
                     relatedTasks: allTasks,
-                    onOpenNote: { NotesView.EditorLinkRouting.open($0, tabNotes: notes, selection: &selectedNoteID) }
+                    onOpenNote: { NotesView.EditorLinkRouting.open($0, tabNotes: notes, selection: &selectedNoteID, reveal: &columnReveal) }
                 )
                 // Per-note editor, matching the Notepad tab. Without it the pane is reused
                 // across a note switch: `.onChange(of: note.id)` then cancels the pending
@@ -248,7 +280,7 @@ private struct DailyNotesPage: View {
 
     @discardableResult
     private func applyRequestedSelection() -> Bool {
-        NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, notes: notes)
+        NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, reveal: &columnReveal, notes: notes)
     }
 
     private func openNote(forDate date: Date) {
@@ -295,6 +327,8 @@ private struct WeeklyNotesPage: View {
     @Environment(\.modelContext) private var modelContext
     /// [[T-18162]]: survives the root's data-refresh rebuild; see `NotesView.retainedSelectionPrefix`.
     @RootRetained(NotesView.retainedSelectionPrefix + "weekly") private var selectedNoteID: UUID? = nil
+    /// [[T-18739]]: set when a selection arrives from outside the column; see `NotesColumnRevealRequest`.
+    @State private var columnReveal: NotesColumnRevealRequest?
     /// The day the current week is derived from — `DailyNotesPage.observedDay`'s reason, for the
     /// pinned current week ([[T-5012]]). A week turns over at a day change, so the day observer
     /// is the week observer too.
@@ -349,7 +383,8 @@ private struct WeeklyNotesPage: View {
                     NotesFoldableListColumn(
                         notes: listedNotes,
                         kind: NotesView.NotesPage.weekly.noteKind,
-                        dateKey: { NotesListGrouping.weekStartDateKey(forWeekKey: $0.weekKey) }
+                        dateKey: { NotesListGrouping.weekStartDateKey(forWeekKey: $0.weekKey) },
+                        reveal: columnReveal
                     ) { note in
                         NoteListRowButton(action: { selectedNoteID = note.id }) {
                             WeeklyNoteListRow(note: note, isSelected: selectedNoteID == note.id, todayKey: observedDay.todayKey)
@@ -367,7 +402,7 @@ private struct WeeklyNotesPage: View {
                     note: note,
                     relatedNotes: allNotes,
                     relatedTasks: allTasks,
-                    onOpenNote: { NotesView.EditorLinkRouting.open($0, tabNotes: notes, selection: &selectedNoteID) }
+                    onOpenNote: { NotesView.EditorLinkRouting.open($0, tabNotes: notes, selection: &selectedNoteID, reveal: &columnReveal) }
                 )
                 // Per-note editor, matching the Notepad tab. Without it the pane is reused
                 // across a note switch: `.onChange(of: note.id)` then cancels the pending
@@ -403,7 +438,7 @@ private struct WeeklyNotesPage: View {
 
     @discardableResult
     private func applyRequestedSelection() -> Bool {
-        NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, notes: notes)
+        NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, reveal: &columnReveal, notes: notes)
     }
 
     private func openNote(forDate date: Date) {
@@ -461,6 +496,8 @@ private struct NotepadPage: View {
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     /// [[T-18162]]: survives the root's data-refresh rebuild; see `NotesView.retainedSelectionPrefix`.
     @RootRetained(NotesView.retainedSelectionPrefix + "notepad") private var selectedNoteID: UUID? = nil
+    /// [[T-18739]]: set when a selection arrives from outside the column; see `NotesColumnRevealRequest`.
+    @State private var columnReveal: NotesColumnRevealRequest?
     /// A refused note ([[T-5301]]), named above the list column.
     @State private var createFailureNotice: String?
 
@@ -497,7 +534,8 @@ private struct NotepadPage: View {
                     NotesFoldableListColumn(
                         notes: notes,
                         kind: NotesView.NotesPage.notepad.noteKind,
-                        dateKey: { DateFormatters.dateKey(from: $0.createdAt) }
+                        dateKey: { DateFormatters.dateKey(from: $0.createdAt) },
+                        reveal: columnReveal
                     ) { note in
                         NoteListRowButton(action: { selectedNoteID = note.id }) {
                             NotepadNoteListRow(note: note, isSelected: selectedNoteID == note.id)
@@ -533,7 +571,7 @@ private struct NotepadPage: View {
                     note: note,
                     relatedNotes: allNotes,
                     relatedTasks: allTasks,
-                    onOpenNote: { NotesView.EditorLinkRouting.open($0, tabNotes: notes, selection: &selectedNoteID) },
+                    onOpenNote: { NotesView.EditorLinkRouting.open($0, tabNotes: notes, selection: &selectedNoteID, reveal: &columnReveal) },
                     onDelete: { deleteNote(note) }
                 )
                 // Per-note text view, so undo history does not leak between notes.
@@ -556,7 +594,7 @@ private struct NotepadPage: View {
 
     @discardableResult
     private func applyRequestedSelection() -> Bool {
-        NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, notes: notes)
+        NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, reveal: &columnReveal, notes: notes)
     }
 
     /// Opens the newest note, or nothing when there is none. [[T-17970]]: this used to create the
@@ -619,6 +657,8 @@ private struct MeetingNotesPage: View {
     @Environment(CalendarManager.self) private var calendarManager
     /// [[T-18162]]: survives the root's data-refresh rebuild; see `NotesView.retainedSelectionPrefix`.
     @RootRetained(NotesView.retainedSelectionPrefix + "meeting") private var selectedNoteID: UUID? = nil
+    /// [[T-18739]]: set when a selection arrives from outside the column; see `NotesColumnRevealRequest`.
+    @State private var columnReveal: NotesColumnRevealRequest?
     @State private var commitNotice: String?
 
     /// Filter *and* order both live in `NotesListVisibility` now, beside the other three tabs'
@@ -656,7 +696,8 @@ private struct MeetingNotesPage: View {
                     NotesFoldableListColumn(
                         notes: notes,
                         kind: NotesView.NotesPage.meeting.noteKind,
-                        dateKey: { NotesListVisibility.meetingDayKey(for: $0) }
+                        dateKey: { NotesListVisibility.meetingDayKey(for: $0) },
+                        reveal: columnReveal
                     ) { note in
                         NoteListRowButton(action: {
                             selectedNoteID = note.id
@@ -678,7 +719,7 @@ private struct MeetingNotesPage: View {
                         note: note,
                         relatedNotes: allNotes,
                         relatedTasks: allTasks,
-                        onOpenNote: { NotesView.EditorLinkRouting.open($0, tabNotes: notes, selection: &selectedNoteID) },
+                        onOpenNote: { NotesView.EditorLinkRouting.open($0, tabNotes: notes, selection: &selectedNoteID, reveal: &columnReveal) },
                         onPersistContent: commitEventNote
                     )
                     // Per-note editor, matching the Notepad tab. Without it the pane is reused
@@ -717,10 +758,7 @@ private struct MeetingNotesPage: View {
     }
 
     private func applyRequestedSelection() {
-        guard let requestedNoteID else { return }
-        guard notes.contains(where: { $0.id == requestedNoteID }) else { return }
-        selectedNoteID = requestedNoteID
-        self.requestedNoteID = nil
+        NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, reveal: &columnReveal, notes: notes)
     }
 
     private func normalizeSelection() {
