@@ -225,8 +225,12 @@ struct CadenceTaskComposerMarkerSuggestions: View {
             .iOSExpandedHitArea(5)
             #endif
         }
-        // The untruncated name, for a pointer that hovers a capped chip.
+        // The untruncated name, for a pointer that hovers a capped chip ([[T-18817]]), paired with
+        // the same string as the accessible name ([[T-18830]]): `title` is the chip's whole drawn
+        // text, a "Create “…”" chip's verb included, so VoiceOver reads what it read before the
+        // tooltip arrived, and the census of [[T-594]] holds.
         .help(title)
+        .accessibilityLabel(title)
         #if os(iOS)
         .buttonStyle(.iosPressable)
         #endif
