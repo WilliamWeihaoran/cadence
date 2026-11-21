@@ -91,7 +91,51 @@ struct macOSRootView: View {
         activeModelContext ?? modelContext
     }
 
+    // [[T-18722]]: one modifier chain, staged across `rootStack` and three observer groups and
+    // applied in exactly the order the single chain had them. As one expression it no longer
+    // type-checked in reasonable time on CI's Xcode 26 runner once [[T-18603]] added to it.
     var body: some View {
+        let chrome = rootStack
+            .environment(
+                \.cadenceRootRetainedPageScope,
+                macOSRootRetainedPageScope(
+                    store: retainedPageState,
+                    scope: macOSRootRetainedPageState.scope(for: selection)
+                )
+            )
+            // Shared with both iOS shells since T-153. The banner used to be a `private` view in this
+            // file, so the identical silent failure was visible here and invisible on iPhone and iPad.
+            .cadenceStartupIssueBanner(PersistenceController.startupIssue)
+            // T-628. The completion control is reached from four surfaces and owned by none of them,
+            // so the refusal is named once here rather than four times badly.
+            .alert(
+                CadenceTaskMutationSupport.settleFailureAlertTitle,
+                isPresented: Binding(
+                    get: { taskCompletionAnimationManager.settleFailed },
+                    set: { if !$0 { taskCompletionAnimationManager.clearSettleFailure() } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(CadencePendingChangePersistence.editFailureNotice)
+            }
+            .modelContext(currentModelContext)
+            // [[T-15461]]: handed `currentModelContext`, the context this window actually reads and
+            // writes. It used to resolve a `@Query` against the inherited original context, which
+            // `refreshAppData()` exists to replace, so leaving active re-armed a reminder an MCP write
+            // had withdrawn.
+            .background { NotificationReconcileObserver(sceneContext: currentModelContext) }
+            // T-345, attached here for the same reason and after the same `.modelContext(...)`: the
+            // root selection can name an area or project that has since been deleted, and nothing else
+            // in this view watches for that.
+            .background { SidebarSelectionNormalizer(selection: $selection) }
+            .background { RootWindowReader(handle: rootWindow) }
+            .environment(\.cadenceRootWindowHandle, rootWindow)
+            .ignoresSafeArea(.container, edges: .top)
+        return rootNavigationObservers(rootCommandObservers(rootLifecycleObservers(chrome)))
+    }
+
+    private var rootStack: some View {
         ZStack {
             macOSRootMainShell(
                 columnVisibility: columnVisibility,
@@ -115,42 +159,10 @@ struct macOSRootView: View {
             macOSRootOverlayStack(handleSearchSelection: handleSearchSelection)
                 .id(dataRefreshID)
         }
-        .environment(
-            \.cadenceRootRetainedPageScope,
-            macOSRootRetainedPageScope(
-                store: retainedPageState,
-                scope: macOSRootRetainedPageState.scope(for: selection)
-            )
-        )
-        // Shared with both iOS shells since T-153. The banner used to be a `private` view in this
-        // file, so the identical silent failure was visible here and invisible on iPhone and iPad.
-        .cadenceStartupIssueBanner(PersistenceController.startupIssue)
-        // T-628. The completion control is reached from four surfaces and owned by none of them,
-        // so the refusal is named once here rather than four times badly.
-        .alert(
-            CadenceTaskMutationSupport.settleFailureAlertTitle,
-            isPresented: Binding(
-                get: { taskCompletionAnimationManager.settleFailed },
-                set: { if !$0 { taskCompletionAnimationManager.clearSettleFailure() } }
-            )
-        ) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(CadencePendingChangePersistence.editFailureNotice)
-        }
-        .modelContext(currentModelContext)
-        // [[T-15461]]: handed `currentModelContext`, the context this window actually reads and
-        // writes. It used to resolve a `@Query` against the inherited original context, which
-        // `refreshAppData()` exists to replace, so leaving active re-armed a reminder an MCP write
-        // had withdrawn.
-        .background { NotificationReconcileObserver(sceneContext: currentModelContext) }
-        // T-345, attached here for the same reason and after the same `.modelContext(...)`: the
-        // root selection can name an area or project that has since been deleted, and nothing else
-        // in this view watches for that.
-        .background { SidebarSelectionNormalizer(selection: $selection) }
-        .background { RootWindowReader(handle: rootWindow) }
-        .environment(\.cadenceRootWindowHandle, rootWindow)
-        .ignoresSafeArea(.container, edges: .top)
+    }
+
+    private func rootLifecycleObservers(_ content: some View) -> some View {
+        content
         .onOpenURL { url in
             CadenceDeepLinkManager.shared.handle(url)
         }
@@ -199,6 +211,10 @@ struct macOSRootView: View {
         .onChange(of: deepLinkManager.route?.token) { _, _ in
             handleDeepLinkRoute()
         }
+    }
+
+    private func rootCommandObservers(_ content: some View) -> some View {
+        content
         // T-7232. Cadence ▸ Settings… (Cmd+,) and, since [[T-17170]], File ▸ New Task (Cmd+N) — a
         // menu item has no handle on `selection`. Neither runs behind a modal (T-17170).
         .onChange(of: menuCommandRoute.request?.token) { _, _ in
@@ -214,6 +230,10 @@ struct macOSRootView: View {
             guard let request = viewMenuRoute.request, rootWindow.isAddressed() else { return }
             RootCommandHandler.handleViewMenuCommand(request.command, context: makeCommandContext())
         }
+    }
+
+    private func rootNavigationObservers(_ content: some View) -> some View {
+        content
         .onChange(of: selection) { oldValue, newValue in
             // [[T-18162]]: only a rebuild in place keeps a page's values; leaving the page drops
             // them, so coming back opens it on its defaults as it always did.
