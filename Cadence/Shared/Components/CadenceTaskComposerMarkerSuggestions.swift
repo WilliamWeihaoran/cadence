@@ -199,7 +199,19 @@ struct CadenceTaskComposerMarkerSuggestions: View {
                     .cadenceFont(.controlLabel)
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
+                    .truncationMode(.tail)
+                    // [[T-18817]]: the strip scrolls, so it proposes no width and an uncapped name
+                    // draws its whole string. Capped here, then pinned by the `fixedSize` below,
+                    // which is `CadenceTagChip`'s construction: a bare `maxWidth` is flexible upward.
+                    .frame(
+                        maxWidth: CadenceTaskComposerLayout.suggestionTitleMaximumWidth(
+                            at: dynamicTypeSize,
+                            scaling: scaling
+                        ),
+                        alignment: .leading
+                    )
             }
+            .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 11)
             .frame(minHeight: CadenceTaskComposerLayout.suggestionHeight(at: dynamicTypeSize, scaling: scaling))
             .background(tint.opacity(0.13))
@@ -213,6 +225,8 @@ struct CadenceTaskComposerMarkerSuggestions: View {
             .iOSExpandedHitArea(5)
             #endif
         }
+        // The untruncated name, for a pointer that hovers a capped chip.
+        .help(title)
         #if os(iOS)
         .buttonStyle(.iosPressable)
         #endif

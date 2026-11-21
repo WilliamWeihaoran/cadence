@@ -249,3 +249,57 @@ struct CadenceTaskComposerLargeTextLayoutTests {
             - CadenceTaskComposerLayout.titleHeight(at: .accessibility5, scaling: .enabled) > 200)
     }
 }
+
+/// [[T-18817]]: the `~`/`#` suggestion strip caps each chip's name and tail-truncates it.
+///
+/// The strip is a horizontal `ScrollView`, which proposes no width, so an uncapped one-line name
+/// took its whole string -- one ~425pt chip on the owner's 393pt iPhone, clipped by the screen edge,
+/// every other match pushed off it. Everything here is a relation: the cap against the tag chip it
+/// borrows from, and a capped chip against the phone it has to fit on.
+struct CadenceTaskComposerSuggestionCapTests {
+    /// The owner's handset, an iPhone 15 (393x852pt).
+    private static let phoneWidth: CGFloat = 393
+
+    /// A whole chip at its cap: the capped name, the glyph beside it at the label's size, the 6pt
+    /// gap between them and 11pt of padding on each side -- what `suggestion(...)` draws.
+    private static func cappedChipWidth(at size: DynamicTypeSize) -> CGFloat {
+        CadenceTaskComposerLayout.suggestionTitleMaximumWidth(at: size, scaling: .enabled)
+            + CadenceTypeScale.size(.controlLabel, base: 11, at: size, scaling: .enabled)
+            + 6
+            + 2 * 11
+    }
+
+    @Test("The strip's name cap is the tag chip's regular label cap, not a figure of its own")
+    func capIsTheTagChipCap() {
+        #expect(CadenceTaskComposerLayout.suggestionTitleMaximumWidth
+            == CadenceTagChipStyle(size: .regular, isArchived: false).baseMaximumLabelWidth)
+        for size in DynamicTypeSize.allCases {
+            #expect(CadenceTaskComposerLayout.suggestionTitleMaximumWidth(at: size, scaling: .fixed)
+                == CadenceTaskComposerLayout.suggestionTitleMaximumWidth)
+        }
+        #expect(CadenceTaskComposerLayout.suggestionTitleMaximumWidth(at: .accessibility5, scaling: .enabled)
+            > CadenceTaskComposerLayout.suggestionTitleMaximumWidth)
+    }
+
+    @Test("A capped chip fits the phone at every text size, and two fit side by side at the default")
+    func cappedChipFitsThePhone() {
+        for size in DynamicTypeSize.allCases {
+            #expect(Self.cappedChipWidth(at: size) < Self.phoneWidth, "a capped chip overruns the phone at \(size)")
+        }
+        #expect(2 * Self.cappedChipWidth(at: .large) + 6 < Self.phoneWidth)
+    }
+
+    /// The cap is only a cap if the view applies it and then pins it with `fixedSize`: a bare
+    /// `frame(maxWidth:)` is flexible upward. Source shape, because the chip is a view.
+    @Test("suggestion(...) frames its name at the cap and fixes the chip's width")
+    func suggestionAppliesTheCap() throws {
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceTaskComposerMarkerSuggestions.swift")
+        )
+        let body = try #require(CadenceSourceScan.declarationBody("private func suggestion(", in: source))
+        let flat = body.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        #expect(flat.contains(".frame( maxWidth: CadenceTaskComposerLayout.suggestionTitleMaximumWidth( at: dynamicTypeSize, scaling: scaling ), alignment: .leading )"))
+        #expect(flat.contains(".truncationMode(.tail)"))
+        #expect(flat.contains(".fixedSize(horizontal: true, vertical: false)"))
+    }
+}

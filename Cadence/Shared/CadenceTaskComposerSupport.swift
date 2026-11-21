@@ -748,6 +748,31 @@ nonisolated enum CadenceTaskComposerLayout {
         CadenceTypeScale.height(Self.suggestionHeight, holding: .controlLabel, at: dynamicTypeSize, scaling: scaling)
     }
 
+    /// [[T-18817]]: the widest a suggestion chip's **name** may draw before it tail-truncates.
+    ///
+    /// The strip is a horizontal `ScrollView`, which proposes no width, so an uncapped one-line
+    /// `Text` takes its whole string: a 70-character list name drew one chip ~425pt wide on a 393pt
+    /// phone, clipped by the screen edge rather than ellipsized, with every other match pushed out
+    /// of view. The figure is `CadenceTagChip`'s regular label cap rather than a number of its own
+    /// -- a list or tag name in this strip is the same free text that chip already truncates.
+    static var suggestionTitleMaximumWidth: CGFloat {
+        CadenceTagChipStyle(size: .regular, isArchived: false).baseMaximumLabelWidth
+    }
+
+    /// The cap at the reader's text size. It grows **additively**, as `CadenceTagChipStyle`'s does
+    /// and for its reason: a cap multiplied by the type scale outgrows the phone it has to fit on.
+    static func suggestionTitleMaximumWidth(
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        CadenceTypeScale.height(
+            suggestionTitleMaximumWidth,
+            holding: .controlLabel,
+            at: dynamicTypeSize,
+            scaling: scaling
+        )
+    }
+
     /// Whether the **focused** field — the one the sheet opens on, with the keyboard already up —
     /// is visible above the keyboard. This is the invariant that has to hold at every size, and the
     /// one a "it scrolls" answer would otherwise quietly drop.
