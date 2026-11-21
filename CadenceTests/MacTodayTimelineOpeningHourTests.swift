@@ -5,7 +5,7 @@ import Testing
 
 /// **[[T-18863]] — the Mac Today timeline opened at the last session's scroll hour.**
 ///
-/// `SchedulePanelStateSupport.restoreScrollHour` returned `scheduleRememberedScrollHour` whenever
+/// `SchedulePanelStateSupport.restoreScrollHour` returned the remembered scroll hour whenever
 /// it was at or past the canvas's first hour (0), so a scroll to 9 PM one evening opened the next
 /// morning at 9 PM, with the 9 AM meeting and the now-line out of view above. The iPad's Today
 /// timeline opens one hour above the day's first timed item, else at the current hour less one,
@@ -52,6 +52,11 @@ struct MacTodayTimelineOpeningHourTests {
         #expect(data.contains("restoreScrollHour(\n            firstTimedMinute: firstTimedMinute"))
         #expect(state.contains("CadenceScheduleSupport.initialTimelineHour("))
         #expect(state.contains("rememberedScrollHour") == false)
+        // [[T-18869]]: nor is it still written. The key, its scroll observer and the T-1498
+        // rationing that threaded the write are gone, so the panel names none of them.
+        #expect(panel.contains("rememberedScrollHour") == false)
+        #expect(panel.contains("onScrollGeometryChange") == false)
+        #expect(panel.contains("SchedulePanelDataSupport.restoreScroll("))
     }
 }
 #endif

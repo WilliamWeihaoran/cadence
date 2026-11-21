@@ -2,23 +2,17 @@
 import SwiftUI
 
 enum SchedulePanelStateSupport {
-    static func clampedRememberedHour(offsetY: CGFloat, geoHeight: CGFloat, zoomLevel: Int) -> Int {
-        let hourHeight = TimelineZoom.hourHeight(viewportHeight: geoHeight, level: zoomLevel)
-        let rawHour = schedStartHour + Int(offsetY / max(hourHeight, 1))
-        return min(max(rawHour, schedStartHour), schedEndHour - 1)
-    }
-
     /// The hour Today's timeline opens at: **the iPad's rule, through the iPad's function**
     /// ([[T-18863]]). `iOSTodaySchedulePanel` draws today in `iOSCalendarTimelineGrid`, which asks
     /// `CadenceScheduleSupport.initialTimelineHour` on every appearance -- one hour above the day's
     /// first timed item, else the current hour less one -- and writes nothing. This pane shows
     /// only today, so `showsToday` is always true and the work-hours rung is unreachable here.
     ///
-    /// It used to return `@AppStorage("scheduleRememberedScrollHour")` whenever that was at or
+    /// It used to return the remembered-scroll-hour key (scheduleRememberedScrollHour) whenever it was at or
     /// past `schedStartHour`, which is 0 -- so after the first scroll ever, every launch on every
     /// later day opened wherever the last scroll had stopped, above or below the day's items. That
     /// key arrived with the March UI rework (`7dddba83`) with no reason recorded; [[T-1498]] only
-    /// made its writes cheaper. Nothing reads it now ([[T-18869]]).
+    /// made its writes cheaper. [[T-18869]] removed the key and the scroll write that kept it.
     static func restoreScrollHour(firstTimedMinute: Int?) -> Int {
         openingHour(firstTimedMinute: firstTimedMinute, now: DateFormatters.now())
     }

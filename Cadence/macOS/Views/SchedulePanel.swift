@@ -82,17 +82,6 @@ struct SchedulePanel: View {
     /// ladder it scales cannot read two settings. The panel steps 1…3 and reads the nearest step.
     @AppStorage(CadenceCalendarZoom.storageKey) private var sharedZoom = CadenceCalendarZoom.defaultZoom
     private var zoomLevel: Int { CadenceCalendarZoom.timelineLevel(for: sharedZoom) }
-    /// Written from each settled scroll and **read by nothing** since [[T-18863]]: the pane opens
-    /// on `SchedulePanelStateSupport.restoreScrollHour`, the iPad's rule. [[T-18869]] is the
-    /// removal of this write and the [[T-1498]] apparatus that rations it.
-    @AppStorage("scheduleRememberedScrollHour") private var rememberedScrollHour: Int = -1
-    @State private var isRestoringScroll = true
-    @State private var didRestoreScroll = false
-    /// The hour the last adopted scroll report named, and the debounced write it scheduled
-    /// (T-1498). A reference box rather than two `@State` values, for the reason
-    /// `SchedulePanelScrollPersistence` states: a `@State` write from a scroll report is the very
-    /// per-frame render this is here to stop.
-    @State private var scrollPersistence = SchedulePanelScrollPersistence()
     /// Today's events, memoised for the panel's lifetime (T-1499). The same type, held the same
     /// way, as `CalendarPageView.calendarEventDayCache` — one day's key rather than a window's,
     /// because this panel draws exactly one day.
@@ -237,42 +226,13 @@ struct SchedulePanel: View {
                             }
                         )
                     }
-                    // **T-1498.** The action below runs on every frame of a live scroll, because a
-                    // raw `contentOffset.y` changes on every frame, and it used to write
-                    // `rememberedScrollHour` from every one of them — 60 `UserDefaults` writes per
-                    // fling, where a settled gesture now lands exactly one.
-                    //
-                    // It was **not** 60 renders: a `UserDefaults` key does not notify when written
-                    // the value it already holds, measured at 1 notification for 60 identical
-                    // writes against 60 for 60 distinct ones, so the invalidations were already one
-                    // per hour crossed. Those are the expensive ones — each re-runs a body that
-                    // passes over every task in the store and fetches the day's events from
-                    // `EKEventStore` uncached — which is why the debounce matters more than the
-                    // guard and why both are here. The calendar page's host of the same
-                    // `TimelineDayCanvas` has had both since before this ticket.
-                    //
-                    // Keyed off a reference box, so the guard itself costs no render.
-                    .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, y in
-                        SchedulePanelInteractionSupport.persistRememberedHour(
-                            yOffset: y,
-                            geoHeight: geo.size.height,
-                            zoomLevel: zoomLevel,
-                            didRestoreScroll: didRestoreScroll,
-                            isRestoringScroll: isRestoringScroll,
-                            state: scrollPersistence
-                        ) {
-                            rememberedScrollHour = $0
-                        }
-                    }
                     .onAppear {
                         SchedulePanelDataSupport.restoreScroll(
                             proxy: proxy,
                             firstTimedMinute: SchedulePanelStateSupport.firstTimedMinute(
                                 taskStartMinutes: scheduledTasks.map(\.scheduledStartMin),
                                 eventStartMinutes: externalEventItems.map(\.startMin)
-                            ),
-                            setRestoring: { isRestoringScroll = $0 },
-                            setDidRestore: { didRestoreScroll = $0 }
+                            )
                         )
                     }
                     .onChange(of: todayTimelineFocusManager.focusRequestID) { _, _ in

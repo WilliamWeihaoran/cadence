@@ -167,20 +167,13 @@ enum SchedulePanelDataSupport {
 
     static func restoreScroll(
         proxy: ScrollViewProxy,
-        firstTimedMinute: Int?,
-        setRestoring: @escaping (Bool) -> Void,
-        setDidRestore: @escaping (Bool) -> Void
+        firstTimedMinute: Int?
     ) {
         let scrollHour = SchedulePanelStateSupport.restoreScrollHour(
             firstTimedMinute: firstTimedMinute
         )
-        setRestoring(true)
         DispatchQueue.main.async {
             proxy.scrollTo(scrollHour, anchor: .top)
-            DispatchQueue.main.async {
-                setDidRestore(true)
-                setRestoring(false)
-            }
         }
     }
 }

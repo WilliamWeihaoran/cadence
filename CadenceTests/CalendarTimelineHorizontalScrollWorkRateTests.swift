@@ -7,9 +7,9 @@ import Testing
 
 /// Records a real `NSScrollView`'s live-scroll cycle on the **horizontal** axis.
 ///
-/// Selector-based and reading the clip view *inside* the notification, for the same reason
-/// `SchedulePanelScrollWorkRateTests` does it that way: the offsets counted below have to be
-/// AppKit's report of a live scroll rather than this test's own loop counting itself.
+/// Selector-based and reading the clip view *inside* the notification, as the Today timeline's
+/// vertical recorder did before [[T-18869]] removed that write: the offsets counted below have to
+/// be AppKit's report of a live scroll rather than this test's own loop counting itself.
 @MainActor
 private final class HorizontalLiveScrollRecorder: NSObject {
     /// `contentView.bounds.origin.x`, once per `didLiveScroll`.
