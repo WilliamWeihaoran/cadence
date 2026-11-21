@@ -166,8 +166,17 @@ nonisolated enum CadenceCalendarWidgetSupport {
             guard let date = calendar.date(byAdding: .day, value: offset, to: today) else { return nil }
             let dateKey = CadenceWidgetDateSupport.dateKey(from: date, calendar: calendar)
             let due = openTasks.filter { $0.dueDate == dateKey }
-            let scheduledOnly = openTasks.filter {
-                $0.scheduledDate == dateKey && $0.dueDate != dateKey
+            // **One task, one of overdue / due / planned** ([[T-18852]], [[T-18853]]), by the
+            // standing the Today tile tallies with. Today's cell plans every `.pastDo` and
+            // `.doToday` task, so leftover work (do date past, no deadline) is counted where
+            // "Next up" already named it instead of in no figure. A later cell plans a task on its
+            // day unless that task is `.pastDue`: `overdueCount` owns it, and the Planned card and
+            // "upcoming" badge used to call the same late task upcoming as well.
+            let scheduledOnly = openTasks.filter { task in
+                guard task.dueDate != dateKey else { return false }
+                let standing = task.todayStanding(todayKey: todayKey)
+                if offset == 0 { return standing == .pastDo || standing == .doToday }
+                return task.scheduledDate == dateKey && standing != .pastDue
             }
             let dueCount = due.count
             let scheduledOnlyCount = scheduledOnly.count
@@ -199,7 +208,8 @@ nonisolated enum CadenceCalendarWidgetSupport {
         // missing rule as T-353, a third time, and fixing the picker alone left this widget still
         // saying nothing was urgent while the app's Today page had work on it. Asking the picker
         // whether it found anything reuses `AppTask.isTodayWork` instead of adding a fourth date
-        // comparison here.
+        // comparison here. Since [[T-18852]] today's cell counts that past-do task too, so this
+        // term is no longer the only one that sees it; it stays as the membership rule's guard.
         let totalVisibleCount = days.reduce(0) { $0 + $1.totalCount }
         let isEmpty = totalVisibleCount == 0 && overdueCount == 0 && upcomingTask == nil
 

@@ -871,6 +871,59 @@ struct WidgetSupportTests {
         #expect(sample.taskCount == 2)
     }
 
+    /// [[T-18852]]: leftover work -- do date already past, no due date -- is what makes the
+    /// snapshot `.ready` and what "Next up" names, so it must also land in a figure. It is planned
+    /// work in today's cell, as the Today tile's tally files it, not a zero header over Next up.
+    @Test func calendarWidgetCountsLeftoverWorkAsPlannedToday() throws {
+        let today = try #require(DateFormatters.date(from: "2026-11-21"))
+        let leftover = AppTask(title: "Leftover")
+        leftover.scheduledDate = "2026-11-20"
+        let snapshot = CadenceCalendarWidgetSupport.snapshot(from: [leftover], today: today, dayCount: 14)
+
+        // Non-vacuity: the task is what makes the tile ready and what Next up names.
+        #expect(snapshot.state == .ready)
+        #expect(snapshot.upcomingTitle == "Leftover")
+
+        for layout in [CadenceWidgetFamilyLayout.small, .medium, .large] {
+            let span = CadenceCalendarWidgetVisibleSpan(days: Array(snapshot.days.prefix(layout.calendarDayLimit)))
+            #expect(span.scheduledCount == 1)
+            #expect(span.dueCount == 0)
+            #expect(span.taskCount == 1)
+            #expect(snapshot.headerCountLabel(for: span) == "1")
+        }
+        #expect(snapshot.days.first?.scheduledCount == 1)
+        #expect(snapshot.overdueCount == 0)
+
+        // The Today tile files the same task under the same figure.
+        let todayTile = CadenceTodayWidgetSupport.snapshot(from: [leftover], todayKey: "2026-11-21", limit: 8)
+        #expect(todayTile.scheduledTodayCount == snapshot.days.first?.scheduledCount)
+    }
+
+    /// [[T-18853]]: a task due yesterday and planned inside the strip is overdue, and only overdue
+    /// -- the Today tile's standing -- not also planned/"upcoming". One task, one figure.
+    @Test func calendarWidgetCountsAnOverdueTaskPlannedInTheStripOnce() throws {
+        let today = try #require(DateFormatters.date(from: "2026-11-21"))
+        let plannedToday = AppTask(title: "Late, planned today")
+        plannedToday.dueDate = "2026-11-20"
+        plannedToday.scheduledDate = "2026-11-21"
+        let plannedLater = AppTask(title: "Late, planned Tuesday")
+        plannedLater.dueDate = "2026-11-19"
+        plannedLater.scheduledDate = "2026-11-24"
+
+        for task in [plannedToday, plannedLater] {
+            let snapshot = CadenceCalendarWidgetSupport.snapshot(from: [task], today: today, dayCount: 14)
+            let span = CadenceCalendarWidgetVisibleSpan(days: Array(snapshot.days.prefix(CadenceWidgetFamilyLayout.large.calendarDayLimit)))
+            #expect(snapshot.overdueCount == 1)
+            #expect(snapshot.overdueCount + span.dueCount + span.scheduledCount == 1)
+            #expect(span.taskCount == 0)
+            #expect(snapshot.state == .ready)
+        }
+
+        let todayTile = CadenceTodayWidgetSupport.snapshot(from: [plannedToday], todayKey: "2026-11-21", limit: 8)
+        #expect(todayTile.overdueCount == 1)
+        #expect(todayTile.scheduledTodayCount == 0)
+    }
+
     @Test func calendarWidgetNextUpNeverDrawsABlankTitle() throws {
         let today = DateFormatters.date(from: "2026-05-11")!
         let untitled = AppTask(title: "")
