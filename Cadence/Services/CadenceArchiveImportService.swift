@@ -102,7 +102,7 @@ nonisolated enum CadenceArchiveImportService {
         mode: CadenceArchiveImportMode = .mergeKeepingExistingRows,
         into container: ModelContainer
     ) throws -> CadenceArchiveImportOutcome {
-        let archive = try CadenceDataExportService.decode(data)
+        let archive = try decodeArchive(data)
         return try apply(archive, mode: mode, in: ModelContext(container))
     }
 
@@ -130,7 +130,24 @@ nonisolated enum CadenceArchiveImportService {
         mode: CadenceArchiveImportMode = .mergeKeepingExistingRows,
         in modelContext: ModelContext
     ) throws -> CadenceArchiveImportPlan {
-        try plan(CadenceDataExportService.decode(data), mode: mode, in: modelContext)
+        try plan(decodeArchive(data), mode: mode, in: modelContext)
+    }
+
+    /// The bytes a user picked, read as an archive -- or a sentence saying they are not one
+    /// ([[T-18924]]).
+    ///
+    /// A wrong-file pick (another app's JSON, a truncated or hand-edited archive) fails here and
+    /// nowhere else, and Foundation's `DecodingError` text ("The data couldn't be read because it
+    /// is missing.") never says the file is not a Cadence archive. Only `DecodingError` is
+    /// translated: anything else this throws already has its own sentence. Kept out of
+    /// `CadenceDataExportService.decode` because the export's own read-back check calls that too,
+    /// and "not a Cadence archive" is an import sentence.
+    nonisolated static func decodeArchive(_ data: Data) throws -> CadenceArchive {
+        do {
+            return try CadenceDataExportService.decode(data)
+        } catch is DecodingError {
+            throw CadenceArchiveImportFailure.notACadenceArchive
+        }
     }
 
     /// The stored URL for an archived saved link: `CadenceSavedLinkURL.normalized`'s rule, so an
@@ -1996,6 +2013,9 @@ nonisolated enum CadenceArchiveImportFailure: LocalizedError, Equatable, Sendabl
     /// it resolves, so the checks above pass; what it produces is a component with no root, which
     /// the Goals page has no way to draw. `cycle` starts at `record` and is in parent order.
     case parentCycle(table: String, record: UUID, field: String, cycle: [UUID])
+    /// The file does not decode as an archive at all: not a Cadence export, or a damaged one
+    /// ([[T-18924]]). Thrown before anything is planned, so nothing was changed.
+    case notACadenceArchive
 
     var errorDescription: String? { message }
 
@@ -2018,6 +2038,11 @@ nonisolated enum CadenceArchiveImportFailure: LocalizedError, Equatable, Sendabl
             return """
                 \(table) \(record.uuidString) would end up as its own ancestor through \(field) \
                 (\(chain)), so nothing in that chain could ever be shown. Nothing was imported.
+                """
+        case .notACadenceArchive:
+            return """
+                This file isn't a Cadence archive, or it is damaged, so it cannot be imported. \
+                Nothing was changed.
                 """
         }
     }

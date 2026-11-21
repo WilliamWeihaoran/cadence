@@ -4,6 +4,22 @@ import EventKit
 import SwiftData
 
 enum SchedulePanelDataSupport {
+    /// What the timeline export's save panel says once it closes ([[T-18925]]): nothing for a
+    /// written file, and the note export's own sentence for a write the destination refused --
+    /// the same Markdown file type, so the same copy. The completion used to be `{ _ in }`, so a
+    /// refused write closed the panel and said nothing.
+    static func exportFailureMessage(for result: Result<URL, Error>) -> String? {
+        switch result {
+        case .success:
+            return nil
+        case .failure(let error as CocoaError) where error.code == .userCancelled:
+            // Closing the panel is a choice, not a failure.
+            return nil
+        case .failure(let error):
+            return NoteExportSupport.writeFailureMessage(error.localizedDescription)
+        }
+    }
+
     /// Whether today's ladder has nothing timed on it, which is when `SchedulePanel` draws
     /// `CadenceTodayPresentationSupport.emptyTimelineHint(_:)` above the hours ([[T-17788]]).
     ///

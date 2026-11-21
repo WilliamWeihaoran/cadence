@@ -93,6 +93,8 @@ struct SchedulePanel: View {
     @State private var taskCreateFailed = false
     @State private var exportDocument: MarkdownExportDocument?
     @State private var isExportingTimeline = false
+    /// A refused timeline export's sentence; non-nil puts up the alert ([[T-18925]]).
+    @State private var exportFailureMessage: String?
 
     /// The invalidation token for the day this timeline draws (T-3120, after [[T-3104]]). Every
     /// host builds this panel with constant arguments, so a host's own body pass at midnight does
@@ -247,8 +249,20 @@ struct SchedulePanel: View {
             document: exportDocument,
             contentType: NoteExportSupport.markdownContentType,
             defaultFilename: SchedulePanelDataSupport.exportFilename(todayKey: todayKey)
-        ) { _ in
+        ) { result in
             exportDocument = nil
+            exportFailureMessage = SchedulePanelDataSupport.exportFailureMessage(for: result)
+        }
+        .alert(
+            NoteExportSupport.failureAlertTitle,
+            isPresented: Binding(
+                get: { exportFailureMessage != nil },
+                set: { if !$0 { exportFailureMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(exportFailureMessage ?? "")
         }
         .onChange(of: exportRequest) { _, _ in exportTodayPlan() }
         .overlay {
