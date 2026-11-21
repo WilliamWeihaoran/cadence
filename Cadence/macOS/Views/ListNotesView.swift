@@ -390,12 +390,17 @@ struct ListNotesView: View {
         selectedTagFilterIDs = controls.selectedTagIDs
     }
 
+    /// [[T-18740]]: a row click, and a `[[note]]` link to a sibling, both land here. A row is
+    /// already listed, so the reveal leaves the controls alone; a link target the search or chips
+    /// hide clears them, the way a new note does.
     private func openListNote(_ note: Note) {
+        revealInColumn(note)
         select(.list(note.id))
     }
 
     private func openNote(_ note: Note) {
         if note.kind == .meeting {
+            revealInColumn(note)
             select(.event(note.id))
         } else {
             openListNote(note)
@@ -458,18 +463,21 @@ struct ListNotesView: View {
 
     private func applyRequestedEventNoteSelection() {
         guard let requestedEventNoteID else { return }
-        guard eventNotes.contains(where: { $0.id == requestedEventNoteID }) else { return }
-        select(.event(requestedEventNoteID))
+        guard let note = eventNotes.first(where: { $0.id == requestedEventNoteID }) else { return }
+        revealInColumn(note)
+        select(.event(note.id))
     }
 
     /// The list-document half of the same one-shot ([[T-3084]]). It clears its own request rather
     /// than `select`'s event one, so a pending event-note request is not swallowed by a list-note
-    /// arrival that resolved first.
+    /// arrival that resolved first. [[T-18740]]: it resolves against the unfiltered notes, so a
+    /// Cmd+K pick the column's search or chips hide clears them, as a new note does.
     private func applyRequestedListNoteSelection() {
         guard let noteID = RequestedListNote.resolve(
             requestedID: requestedListNoteID,
             notes: listNotes
-        ) else { return }
+        ), let note = listNotes.first(where: { $0.id == noteID }) else { return }
+        revealInColumn(note)
         select(.list(noteID), clearsRequestedEventNote: false)
         requestedListNoteID = nil
     }

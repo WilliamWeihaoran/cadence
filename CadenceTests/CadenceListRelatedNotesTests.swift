@@ -287,6 +287,12 @@ struct CadenceListRelatedNotesTests {
         }
         let mac = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListNotesView.swift"))
         #expect(mac.contains("revealInColumn(note)\n        select(.list(note.id), clearsRequestedEventNote: false)"))
+        // [[T-18740]]: opening an EXISTING note -- a Cmd+K pick (list or event) or a `[[note]]`
+        // link -- reveals it too, or the column keeps a filter that hides the open note.
+        #expect(mac.contains("revealInColumn(note)\n        select(.list(noteID), clearsRequestedEventNote: false)"))
+        #expect(mac.contains("revealInColumn(note)\n        select(.event(note.id))"))
+        #expect(mac.contains("revealInColumn(note)\n        select(.list(note.id))\n"))
+        #expect(mac.contains("revealInColumn(note)\n            select(.event(note.id))"))
         let ios = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListNotesView.swift"))
         #expect(ios.contains("revealInColumn(note)\n        selectedNoteID = note.id"))
         #expect(ios.contains("if let created { revealInColumn(created) }"))
