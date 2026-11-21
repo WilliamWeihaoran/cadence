@@ -574,7 +574,9 @@ enum CadenceTaskQuerySupport {
         estimatedMinutes: Int = 30
     ) -> AppTask? {
         var priority: TaskPriority = .none
-        let trimmed = TaskTitleSupport.titleApplyingPriorityShortcut(title, priority: &priority)
+        // One line, as `TaskCreationService` writes it ([[T-18536]]): the iOS slot sheet and the
+        // iPad timeline create through here, not through `TaskCreationDraft`.
+        let trimmed = TaskTitleShortcutParsing.capturedTitle(title, priority: &priority)
         guard !trimmed.isEmpty else { return nil }
 
         let task = AppTask(title: trimmed)

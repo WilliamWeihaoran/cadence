@@ -256,6 +256,21 @@ nonisolated enum TaskTitleShortcutParsing {
         return shortcut.title
     }
 
+    /// **[[T-18536]]: the title a capture writes** -- the priority marks read off, then every line
+    /// break, with the spaces around it, read as one space and blank lines dropped ([[T-17745]]).
+    /// Every capture field submits on Return, so a break can only arrive pasted (or from a
+    /// multi-line Shortcuts input), and the rows that draw a title on one line showed its first
+    /// line alone. It lives here, not in `TaskCreationDraft`, so the doors that do not go through
+    /// `TaskCreationService` -- the iOS slot sheet and iPad timeline (`makeTask`) and Siri /
+    /// Shortcuts' Capture Task (`CaptureTaskIntent`, in the widget target) -- call the same rule.
+    static func capturedTitle(_ title: String, priority: inout TaskPriority) -> String {
+        titleApplyingPriorityShortcut(title, priority: &priority)
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
     static func leadingBangCount(in title: String) -> Int? {
         let count = title.prefix { $0 == "!" }.count
         return count > 0 ? count : nil

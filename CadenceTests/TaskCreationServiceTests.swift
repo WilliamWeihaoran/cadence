@@ -201,4 +201,37 @@ struct TaskCreationServiceTests {
 
         #expect(service.insertion(from: draft(" \n \n", into: .inbox), into: modelContext) == nil)
     }
+
+    /// **[[T-18536]]: the iOS slot sheet and the iPad timeline fold it too.** They create through
+    /// `iOSScheduleDraftCreation.createTask` -> `insertScheduledTask` -> `makeTask`, not through
+    /// `TaskCreationDraft`, and kept the break. Read back from a second context, so a title that
+    /// only the writing context holds does not count.
+    @Test func aPastedLineBreakIsWrittenAsOneSpaceByTheScheduledInsert() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        _ = try #require(try CadenceTaskMutationSupport.insertScheduledTask(
+            title: "Reply to Sam  \n\n  about the venue\r\nand dates !!", allTasks: [],
+            modelContext: ModelContext(container), scheduledDate: "2026-11-21",
+            scheduledStartMin: 600, estimatedMinutes: 30, refusing: false
+        ))
+        let stored = try #require(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(stored.title == "Reply to Sam about the venue and dates")
+        #expect(stored.priority == .medium, "a trailing mark is still read")
+        #expect(CadenceTaskQuerySupport.makeTask(title: "  Plain  title  ", allTasks: [])?.title == "Plain  title")
+        #expect(CadenceTaskQuerySupport.makeTask(title: " \n \n", allTasks: []) == nil)
+    }
+
+    #if os(iOS)
+    /// The iOS door itself, which the Mac does not compile.
+    @Test func theIOSCalendarCreateWriteFoldsAPastedLineBreak() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        var draft = CadenceScheduleDraft(dateKey: "2026-11-21", startMin: 600)
+        draft.title = "Call Sam\nre: invoice"
+        let failure = iOSScheduleDraftCreation.createTask(
+            from: draft, allTasks: [], areas: [], projects: [], modelContext: ModelContext(container)
+        )
+        #expect(failure == nil)
+        let stored = try #require(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(stored.title == "Call Sam re: invoice")
+    }
+    #endif
 }

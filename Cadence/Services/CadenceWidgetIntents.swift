@@ -171,7 +171,8 @@ struct CaptureTaskIntent: AppIntent {
     /// same "nothing to create" answer `TaskCreationService.insertion(from:into:)` gives.
     static func resolvedCapture(from typed: String) -> (title: String, priority: TaskPriority)? {
         var priority = TaskPriority.none
-        let title = TaskTitleShortcutParsing.titleApplyingPriorityShortcut(typed, priority: &priority)
+        // [[T-18536]]: one line too -- a Shortcuts run can feed this the clipboard or a multi-line Text.
+        let title = TaskTitleShortcutParsing.capturedTitle(typed, priority: &priority)
         guard !title.isEmpty else { return nil }
         return (title, priority)
     }

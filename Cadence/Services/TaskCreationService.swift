@@ -35,17 +35,12 @@ struct TaskCreationDraft {
     /// card on either platform. It was stored as typed (this trimmed only the ends), and the rows
     /// that draw a title on one line showed the first line and hid the rest. Each break, with the
     /// spaces around it, now reads as one space; blank lines go.
+    ///
+    /// The rule is `TaskTitleShortcutParsing.capturedTitle`, shared with the doors that do not
+    /// come through here ([[T-18536]]); `resolvedPriority` reads the marks for the priority.
     var trimmedTitle: String {
-        let name = TaskTitleSupport.priorityShortcut(in: title)?.title ?? TaskTitleSupport.normalized(title)
-        return Self.joiningLines(name)
-    }
-
-    static func joiningLines(_ title: String) -> String {
-        title
-            .split(whereSeparator: \.isNewline)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
+        var unused = priority
+        return TaskTitleShortcutParsing.capturedTitle(title, priority: &unused)
     }
 
     var trimmedNotes: String {

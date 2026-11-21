@@ -993,6 +993,16 @@ struct WidgetSupportTests {
         #expect(tasks.first?.priority == .medium)
     }
 
+    /// [[T-18536]]: Siri / Shortcuts' Capture Task writes a multi-line input (the clipboard, a
+    /// multi-line Text) as one line, as the app's capture card does ([[T-17745]]).
+    @Test func widgetCaptureFoldsAMultiLineTitleOntoOneLine() throws {
+        let capture = try #require(CaptureTaskIntent.resolvedCapture(from: "Call Sam  \n\n re: invoice\r\nfriday !!"))
+        #expect(capture.title == "Call Sam re: invoice friday")
+        #expect(capture.priority == .medium)
+        #expect(CaptureTaskIntent.resolvedCapture(from: "  Plain  title ")?.title == "Plain  title")
+        #expect(CaptureTaskIntent.resolvedCapture(from: " \n\n ") == nil)
+    }
+
     /// [[T-18098]]: a blank or marks-only title has to make the system ask for the title again
     /// (`$title.needsValueError`), not end the run with "Add a task title." -- which is what a
     /// voice "Add a task in Cadence" met, with no way to answer. A real title still resolves.
