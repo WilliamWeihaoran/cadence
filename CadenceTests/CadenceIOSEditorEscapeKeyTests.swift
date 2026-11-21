@@ -65,6 +65,35 @@ struct CadenceIOSEditorEscapeKeyTests {
         #expect(cancel.contains("isEditing=false"), "Cancel closes the editor, discarding the draft")
     }
 
+    // MARK: - [[T-18911]]: every iOS toolbar Cancel takes Escape
+
+    /// **[[T-18911]]: a census of every iOS `ToolbarItem(placement: .cancellationAction)`.** Nine
+    /// sheets carried the placement without the key, so Escape on an iPad hardware keyboard did
+    /// nothing while every Mac counterpart cancels; [[T-10046]] had keyed only the two editors above.
+    /// The repo does not trust the placement alone to bind Escape, so each item's own body must
+    /// carry `.keyboardShortcut(.cancelAction)`. The denominator is read off `Cadence/iOS`, so a new
+    /// sheet joins the census by existing; the floor is the eleven present when it was written.
+    @Test func everyIOSCancellationActionToolbarItemTakesEscape() throws {
+        let marker = "ToolbarItem(placement:.cancellationAction)"
+        var sites = 0
+        var unkeyed: [String] = []
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence/iOS") {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+                .filter { !$0.isWhitespace }
+            var cursor = source.startIndex
+            while let found = source.range(of: marker, range: cursor..<source.endIndex) {
+                sites += 1
+                let item = CadenceSourceScan.matchedBody(after: found.upperBound, in: source, open: "{", close: "}")
+                if !(item ?? "").contains(".keyboardShortcut(.cancelAction)") {
+                    unkeyed.append("\(path): \(String((item ?? "<unbalanced>").prefix(60)))")
+                }
+                cursor = found.upperBound
+            }
+        }
+        #expect(sites >= 11, "non-vacuous: the census found \(sites) iOS cancellation items")
+        #expect(unkeyed.isEmpty, "a toolbar Cancel Escape cannot reach: \(unkeyed)")
+    }
+
     // MARK: - [[T-18083]]: the capture composer, the one sheet a keyboard user opens by keyboard
 
     private static let createTaskPath = "Cadence/iOS/iOSCreateTaskSheet.swift"

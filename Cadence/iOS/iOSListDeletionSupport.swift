@@ -309,9 +309,11 @@ struct iOSListDeleteConfirmationSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
+                    // [[T-18911]]: Escape on an iPad keyboard cancels, as the Mac's confirmation does.
                     Button("Cancel") {
                         dismiss()
                     }
+                    .keyboardShortcut(.cancelAction)
                     .tint(Theme.blue)
                 }
             }

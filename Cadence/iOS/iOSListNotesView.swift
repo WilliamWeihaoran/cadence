@@ -916,7 +916,9 @@ struct iOSNoteFolderSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
+                    // [[T-18911]]: Escape on an iPad keyboard cancels, as the Mac's folder sheet does.
                     Button("Cancel") { dismiss() }
+                        .keyboardShortcut(.cancelAction)
                 }
                 // [[T-9992]]: the commit sits in the confirmation slot, as Save does on the
                 // list and context editors; `.primaryAction` drew it as an ordinary bar button.

@@ -187,9 +187,12 @@ struct iOSMarkdownReferencePickerSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
+                    // [[T-18911]]: Escape on an iPad keyboard closes the picker, as the Mac's
+                    // reference menu closes.
                     Button("Cancel") {
                         dismiss()
                     }
+                    .keyboardShortcut(.cancelAction)
                 }
             }
         }

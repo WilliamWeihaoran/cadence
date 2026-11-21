@@ -198,7 +198,9 @@ struct iOSAISummaryReviewSheet: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
+                    // [[T-18911]]: Escape on an iPad keyboard closes, as the Mac's review sheet does.
                     Button(CadenceAIReviewCopy.summaryCloseTitle) { dismiss() }
+                        .keyboardShortcut(.cancelAction)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(CadenceAIReviewCopy.summaryAppendTitle) { append() }
@@ -291,7 +293,9 @@ struct iOSAITaskDraftReviewSheet: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
+                    // [[T-18911]]: Escape on an iPad keyboard cancels, as the Mac's review sheet does.
                     Button(CadenceAIReviewCopy.draftsCancelTitle) { dismiss() }
+                        .keyboardShortcut(.cancelAction)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(CadenceAIReviewCopy.draftsCreateTitle) { createApproved() }

@@ -282,7 +282,9 @@ private struct iOSArchiveImportPreviewSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
+                    // [[T-18911]]: Escape on an iPad keyboard cancels, as the Mac's import card does.
                     Button(CadenceArchiveImportPresentation.cancelButtonTitle, action: onCancel)
+                        .keyboardShortcut(.cancelAction)
                         .tint(Theme.blue)
                 }
             }
