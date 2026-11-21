@@ -82,6 +82,9 @@ struct SchedulePanel: View {
     /// ladder it scales cannot read two settings. The panel steps 1…3 and reads the nearest step.
     @AppStorage(CadenceCalendarZoom.storageKey) private var sharedZoom = CadenceCalendarZoom.defaultZoom
     private var zoomLevel: Int { CadenceCalendarZoom.timelineLevel(for: sharedZoom) }
+    /// Written from each settled scroll and **read by nothing** since [[T-18863]]: the pane opens
+    /// on `SchedulePanelStateSupport.restoreScrollHour`, the iPad's rule. [[T-18869]] is the
+    /// removal of this write and the [[T-1498]] apparatus that rations it.
     @AppStorage("scheduleRememberedScrollHour") private var rememberedScrollHour: Int = -1
     @State private var isRestoringScroll = true
     @State private var didRestoreScroll = false
@@ -264,7 +267,10 @@ struct SchedulePanel: View {
                     .onAppear {
                         SchedulePanelDataSupport.restoreScroll(
                             proxy: proxy,
-                            rememberedScrollHour: rememberedScrollHour,
+                            firstTimedMinute: SchedulePanelStateSupport.firstTimedMinute(
+                                taskStartMinutes: scheduledTasks.map(\.scheduledStartMin),
+                                eventStartMinutes: externalEventItems.map(\.startMin)
+                            ),
                             setRestoring: { isRestoringScroll = $0 },
                             setDidRestore: { didRestoreScroll = $0 }
                         )

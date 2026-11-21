@@ -243,10 +243,11 @@ struct CadenceTodayOverrideTests {
             #"TimelineDayCanvas\(\s*date: DateFormatters\.now\(\),\s*dateKey: todayKey,"#, in: shell
         ) == 1, "the canvas date and its todayKey come from one clock")
         let state = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SchedulePanelStateSupport.swift"))
-        for name in ["restoreScrollHour", "focusTargetHour"] {
-            let body = try #require(CadenceSourceScan.functionBody(named: name, in: state))
-            #expect(body.contains("Calendar.current.component(.hour, from: DateFormatters.now())"), "\(name) reads the real hour")
-        }
+        let focusBody = try #require(CadenceSourceScan.functionBody(named: "focusTargetHour", in: state))
+        #expect(focusBody.contains("Calendar.current.component(.hour, from: DateFormatters.now())"), "focusTargetHour reads the real hour")
+        // [[T-18863]]: the opening hour hands the overridable clock to the iPad's rule.
+        let restoreBody = try #require(CadenceSourceScan.functionBody(named: "restoreScrollHour", in: state))
+        #expect(restoreBody.contains("now: DateFormatters.now()"), "restoreScrollHour reads the real hour")
     }
 
     // MARK: - The shipping fence
