@@ -431,7 +431,16 @@ extension iOSMarkdownEditor.Coordinator {
         in textView: UITextView,
         _ build: (MarkdownTableGrid, MarkdownTableCellAddress) -> MarkdownTableEdit?
     ) {
+        // [[T-18766]]: the commit can move this table when the open cell is in an earlier one.
+        let lengthBefore = textView.textStorage.length
+        let editingAnchor = tableCellEditAnchor
         endTableCellEdit(commit: true, in: textView)
+        let anchor = MarkdownTableEditor.menuAnchor(
+            anchor,
+            afterCommittingCellAt: editingAnchor,
+            lengthBefore: lengthBefore,
+            lengthAfter: textView.textStorage.length
+        )
         guard let grid = MarkdownTableEditor.grid(containingUTF16Location: anchor, in: textView.text ?? ""),
               grid.storageRange.location == anchor,
               let edit = build(grid, address) else { return }

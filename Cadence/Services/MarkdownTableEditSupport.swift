@@ -238,6 +238,22 @@ nonisolated enum MarkdownTableEditor {
         return settingCell(address, to: normalized, in: grid)
     }
 
+    /// Where a table that a row or column menu captured at `anchor` starts once the open cell has
+    /// been committed ([[T-18755]], [[T-18766]]). Both platforms commit the open field before they
+    /// read the grid, and that commit can change the note's length: when the open cell sits in an
+    /// EARLIER table, this table moved by the same amount, and looking it up at the stale anchor
+    /// finds nothing, so the item silently does nothing. An open cell in this table or a later one
+    /// leaves the anchor where it was.
+    static func menuAnchor(
+        _ anchor: Int,
+        afterCommittingCellAt editingAnchor: Int?,
+        lengthBefore: Int,
+        lengthAfter: Int
+    ) -> Int {
+        guard let editingAnchor, editingAnchor < anchor else { return anchor }
+        return anchor + lengthAfter - lengthBefore
+    }
+
     /// Adds an empty row directly below `row` — what Return does.
     ///
     /// A header row's "below" is the first body row, which is the line *after* the delimiter, so

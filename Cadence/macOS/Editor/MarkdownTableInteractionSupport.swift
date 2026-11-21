@@ -313,10 +313,12 @@ extension CadenceTextView {
         let lengthBefore = (string as NSString).length
         let editingAnchor = tableCellEditAnchor
         endTableCellEdit(commit: true)
-        var anchor = context.anchor
-        if let editingAnchor, editingAnchor < context.anchor {
-            anchor += (string as NSString).length - lengthBefore
-        }
+        let anchor = MarkdownTableEditor.menuAnchor(
+            context.anchor,
+            afterCommittingCellAt: editingAnchor,
+            lengthBefore: lengthBefore,
+            lengthAfter: (string as NSString).length
+        )
         guard let grid = MarkdownTableEditor.grid(containingUTF16Location: anchor, in: string),
               grid.storageRange.location == anchor,
               let edit = build(grid, context.address) else { return }

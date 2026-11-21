@@ -330,6 +330,78 @@ struct MarkdownTableMobileEditingTests {
         }
     }
 
+    // MARK: - A row or column menu on a second table ([[T-18766]])
+
+    private let twoTables = """
+    | A | B |
+    | --- | --- |
+    | 1 | 2 |
+
+    Between.
+
+    | C | D |
+    | --- | --- |
+    | 3 | 4 |
+    """
+
+    /// **Behavioural, on values.** A cell of the first table committed to a longer value moves the
+    /// second table; the menu's anchor, shifted by the shared rule, still names that table's start,
+    /// and the stale one does not. This is the lookup `applyTableMenuEdit` makes on both platforms.
+    @Test("A commit in an earlier table moves a later table's menu anchor with it")
+    func anEarlierCommitShiftsALaterMenuAnchor() throws {
+        let grids = MarkdownTableEditor.grids(in: twoTables)
+        try #require(grids.count == 2)
+        let first = grids[0]
+        let staleAnchor = grids[1].storageRange.location
+        let commit = try #require(
+            MarkdownTableEditor.commit("a much longer value", at: MarkdownTableCellAddress(row: 1, column: 0), in: first)
+        )
+        let after = (twoTables as NSString).replacingCharacters(in: commit.replacementRange, with: commit.replacement)
+
+        let anchor = MarkdownTableEditor.menuAnchor(
+            staleAnchor,
+            afterCommittingCellAt: first.storageRange.location,
+            lengthBefore: (twoTables as NSString).length,
+            lengthAfter: (after as NSString).length
+        )
+        #expect(anchor != staleAnchor)
+        let grid = try #require(MarkdownTableEditor.grid(containingUTF16Location: anchor, in: after))
+        #expect(grid.storageRange.location == anchor, "the shifted anchor does not start the second table")
+        #expect(grid.cell(at: MarkdownTableCellAddress(row: 0, column: 0)) == "C")
+        #expect(MarkdownTableEditor.grid(containingUTF16Location: staleAnchor, in: after)?.storageRange.location != staleAnchor)
+    }
+
+    /// **Behavioural, on values.** An open cell in the same table, a later one, or none at all
+    /// leaves the anchor alone: the commit happened below the table's start.
+    @Test("A commit in the same or a later table, or no open cell, leaves the menu anchor alone")
+    func aLaterOrSameCommitLeavesTheAnchor() {
+        #expect(MarkdownTableEditor.menuAnchor(40, afterCommittingCellAt: 40, lengthBefore: 100, lengthAfter: 120) == 40)
+        #expect(MarkdownTableEditor.menuAnchor(40, afterCommittingCellAt: 70, lengthBefore: 100, lengthAfter: 120) == 40)
+        #expect(MarkdownTableEditor.menuAnchor(40, afterCommittingCellAt: nil, lengthBefore: 100, lengthAfter: 120) == 40)
+        #expect(MarkdownTableEditor.menuAnchor(40, afterCommittingCellAt: 0, lengthBefore: 100, lengthAfter: 95) == 35)
+    }
+
+    /// **A source scan, not a measurement** -- `Cadence/iOS/` is `#if os(iOS)` and this target
+    /// builds for macOS, so there is no `Coordinator` to drive. It pins the iOS wiring the value
+    /// tests above cannot see: the open cell's anchor and the length are read BEFORE the commit,
+    /// and the grid is looked up at the shifted anchor after it. Read after the commit, the
+    /// editing anchor is already nil and the shift never happens.
+    @Test("The iOS menu edit captures the open cell before committing it and shifts the anchor")
+    func theIOSMenuEditShiftsTheAnchor() throws {
+        let source = try strippingComments(sourceFile("Cadence/iOS/iOSMarkdownTableEditing.swift"))
+        let body = try cadenceFunctionBody("private func applyTableMenuEdit(", in: source)
+        let capture = try #require(body.range(of: "let editingAnchor = tableCellEditAnchor"))
+        let length = try #require(body.range(of: "let lengthBefore = textView.textStorage.length"))
+        let commit = try #require(body.range(of: "endTableCellEdit(commit: true, in: textView)"))
+        let shift = try #require(body.range(of: "MarkdownTableEditor.menuAnchor("))
+        let lookup = try #require(body.range(of: "MarkdownTableEditor.grid(containingUTF16Location: anchor"))
+        #expect(capture.lowerBound < commit.lowerBound)
+        #expect(length.lowerBound < commit.lowerBound)
+        #expect(commit.lowerBound < shift.lowerBound)
+        #expect(shift.lowerBound < lookup.lowerBound)
+        #expect(body.contains("afterCommittingCellAt: editingAnchor"))
+    }
+
     // MARK: - The smart-punctuation defect
 
     /// **The defect this section exists for, stated as the thing that breaks.**
