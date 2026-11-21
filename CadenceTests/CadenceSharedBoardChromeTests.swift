@@ -5,6 +5,7 @@
 #if os(macOS)
 import AppKit
 import Foundation
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -1186,8 +1187,11 @@ struct CadenceCalendarWeekdayHeaderConvergenceTests {
     /// figures back to a literal fails rather than riding on the four it kept.
     @Test func theWeekdayHeaderSitesNameTheSharedMetric() throws {
         let expected = [
-            "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift": 6,
-            "Cadence/iOS/iOSCalendarTimelineViews.swift": 1,
+            // Eight since T-18808: the header and its all-day band each paint `headerFill`.
+            "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift": 8,
+            // Three since T-18808: the week header's `headerFill` and the single-day strip's
+            // `headerPlate`, beside the kerning it already read.
+            "Cadence/iOS/iOSCalendarTimelineViews.swift": 3,
             "Cadence/iOS/iOSCalendarMetrics.swift": 4,
             // Three: the label's size, the height of the band it sits in (T-595), and — since
             // T-1364 — the line gain that band height adds for the label's own size.
@@ -1202,6 +1206,52 @@ struct CadenceCalendarWeekdayHeaderConvergenceTests {
             let code = try strippingComments(sourceFile(path))
             let actual = code.components(separatedBy: "CadenceCalendarWeekdayHeaderMetrics.").count - 1
             #expect(actual == count, "\(path) names the shared metric \(actual) times, expected \(count)")
+        }
+    }
+
+    /// T-18808: today's header is the one LIGHTER than its neighbours, in every accent palette.
+    ///
+    /// iOS painted today a bare 3.5% wash that fell through to the grid's `Theme.bg` while every
+    /// other day sat on an opaque `Theme.surface`, so the highlight read darker. The relation is
+    /// asserted, not a figure: the fill is opaque (so nothing behind it can change it) and brighter
+    /// than the plate, for each palette's own accent rather than whichever one is selected.
+    @Test func todaysHeaderIsLighterThanItsNeighboursInEveryPalette() {
+        let plate = CadenceCalendarWeekdayHeaderMetrics.headerFill(isToday: false)
+        #expect(plate == CadenceCalendarWeekdayHeaderMetrics.headerPlate)
+        #expect(CadenceAccentPalette.all.count >= 3)
+        for palette in CadenceAccentPalette.all {
+            let today = CadenceCalendarWeekdayHeaderMetrics.headerFill(
+                isToday: true,
+                accent: Color(hex: palette.blueHex)
+            )
+            #expect(
+                today.resolve(in: EnvironmentValues()).opacity == 1,
+                "\(palette.id): today's header fill is translucent, so it reads whatever lies behind it"
+            )
+            #expect(
+                Theme.relativeLuminance(of: today) > Theme.relativeLuminance(of: plate),
+                "\(palette.id): today's header is not lighter than the other days'"
+            )
+        }
+    }
+
+    /// The call-site half: both platforms' headers paint the shared fill, and neither writes its
+    /// own today wash on a header background again.
+    @Test func bothDayHeadersPaintTheSharedFill() throws {
+        let sites = [
+            ("Cadence/iOS/iOSCalendarTimelineViews.swift", 1),
+            ("Cadence/macOS/Views/CalendarPageMonthSupportViews.swift", 2)
+        ]
+        for (path, expected) in sites {
+            let code = try strippingComments(sourceFile(path))
+            let fills = code.components(
+                separatedBy: ".background(CadenceCalendarWeekdayHeaderMetrics.headerFill(isToday: isToday))"
+            ).count - 1
+            #expect(fills == expected, "\(path) paints the shared header fill \(fills) times, expected \(expected)")
+            #expect(
+                !code.contains(".background(isToday ? Theme.blue.opacity("),
+                "\(path) paints its own today wash on a header background"
+            )
         }
     }
 

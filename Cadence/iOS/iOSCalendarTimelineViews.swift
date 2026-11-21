@@ -618,8 +618,8 @@ struct iOSCalendarTimelineGrid: View {
                 // No background on this row and none on the canvas below: the frame is
                 // `contentWidth` wide — 47,000pt at a week's column width — and a filled view that
                 // wide is one CALayer past every sane texture bound. Each day header paints its
-                // own `Theme.surface`, and the window always covers the viewport with margin to
-                // spare, so nothing unpainted is ever on screen.
+                // own opaque `CadenceCalendarWeekdayHeaderMetrics.headerFill`, and the window always
+                // covers the viewport with margin to spare, so nothing unpainted is ever on screen.
                 .frame(width: contentWidth, height: dayHeaderHeight, alignment: .topLeading)
 
                 ScrollView(.vertical) {
@@ -1120,7 +1120,7 @@ private struct iOSCalendarTimelineDayHeader: View {
                     .padding(.bottom, iOSCalendarTimelineMetrics.previewInset)
             }
             .frame(height: bandHeight, alignment: .top)
-            .background(isToday ? Theme.blue.opacity(0.035) : Theme.surface)
+            .background(CadenceCalendarWeekdayHeaderMetrics.headerFill(isToday: isToday))
             .overlay(alignment: .trailing) {
                 Rectangle()
                     .fill(Theme.borderSubtle.opacity(iOSCalendarHairlineMetrics.pinnedEdgeOpacity))
@@ -1392,7 +1392,8 @@ private struct iOSCalendarTimelineAllDayStrip: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(iOSCalendarTimelineMetrics.previewInset)
         .frame(height: height, alignment: .top)
-        .background(Theme.surface)
+        // The week header's plate, so a single day and a week head their columns alike (T-18808).
+        .background(CadenceCalendarWeekdayHeaderMetrics.headerPlate)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(Theme.borderSubtle.opacity(iOSCalendarHairlineMetrics.pinnedEdgeOpacity))

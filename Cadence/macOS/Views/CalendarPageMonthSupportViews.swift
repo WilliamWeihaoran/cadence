@@ -602,12 +602,12 @@ struct CalDayHeaderView: View {
             }
             .frame(height: calDayHeaderHeight)
             .frame(maxWidth: .infinity)
-            .background(isToday ? Theme.blue.opacity(0.05) : Theme.bg)
+            .background(CadenceCalendarWeekdayHeaderMetrics.headerFill(isToday: isToday))
 
             allDayBannerContent
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .frame(height: calAllDayBannerHeight, alignment: .top)
-                .background(isToday ? Theme.blue.opacity(0.03) : Theme.bg)
+                .background(CadenceCalendarWeekdayHeaderMetrics.headerFill(isToday: isToday))
         }
         .frame(maxWidth: .infinity)
         .overlay(alignment: .trailing) {

@@ -1,4 +1,5 @@
 import CoreGraphics
+import SwiftUI
 
 /// Every measurement a calendar column heads itself with: the weekday label, and — on the timed
 /// surfaces — the day number and today-circle under it.
@@ -93,4 +94,35 @@ nonisolated struct CadenceCalendarWeekdayHeaderMetrics: Sendable {
     /// is what stops them drifting the way the label above them did.
     static let dayNumberSize: CGFloat = 18
     static let dayCircleSize: CGFloat = 32
+
+    /// The plate every day column's header paints — weekday, day disc and all-day band alike.
+    ///
+    /// **`Theme.bg`, the Mac's, and not iOS's `Theme.surface` (T-18808).** The header row sits on
+    /// `Theme.bg` on both platforms already: the Mac's header strip and the iOS grid both paint it
+    /// behind the row, and so do both time rails' corner above the hour labels. A `Theme.surface`
+    /// header was therefore a lighter band with a seam at the rail corner on iOS, and on the Mac it
+    /// would have merged the row into the `Theme.surface` toolbar directly above it. The hairlines
+    /// under and between the headers are what separate the pinned row, not a plate colour.
+    static var headerPlate: Color { Theme.bg }
+
+    /// Today's accent wash over `headerPlate`. The Mac's 0.05: it is the platform whose today
+    /// header already read as a highlight. One figure for the whole column — the Mac's all-day band
+    /// had its own 0.03 and iOS's one fill covered its band at 0.035, which is two answers to the
+    /// same question.
+    static let todayWashOpacity: Double = 0.05
+
+    /// The one fill both platforms' day headers paint (T-18808).
+    ///
+    /// **Today's wash is composited over the plate, never painted bare.** iOS painted a bare
+    /// `Theme.blue.opacity(0.035)` on today and an opaque `Theme.surface` on every other day, and
+    /// the pinned row has no background of its own — so today's 3.5% fell through to the grid's
+    /// darker `Theme.bg` and the highlight read *darker* than its neighbours. Returned opaque, the
+    /// fill cannot depend on whatever happens to be painted underneath it.
+    ///
+    /// `accent` exists so a test can walk `CadenceAccentPalette.all` without switching the app's
+    /// shared selection; every call site takes the default.
+    static func headerFill(isToday: Bool, accent: Color = Theme.blue) -> Color {
+        guard isToday else { return headerPlate }
+        return accent.opacity(todayWashOpacity).composited(over: headerPlate)
+    }
 }
