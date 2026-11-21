@@ -114,6 +114,24 @@ struct TasksListView: View {
             .taskSorted(by: sortField, direction: sortDirection)
     }
 
+    /// **The hover freeze, read per scope ([[T-18734]]).** All Tasks reads the shared freeze: a row
+    /// filed into another list is still an All Tasks row, and one that stops matching under the
+    /// pointer stays put (T-342). The Inbox's universe is a container -- open tasks with no list --
+    /// like a list's own Tasks tab, so a row moved to a list has left it and must not be put back
+    /// while the pointer stays on the page; it reads [[T-16551]]'s list freeze instead. The header
+    /// count reads the live store, so the shared freeze drew one row more than the count.
+    static func frozenRows(
+        _ naturalTasks: [AppTask],
+        frozen frozenTaskOrder: [AppTask]?,
+        scope: CadenceTasksPageScope,
+        allTasks: [AppTask]
+    ) -> [AppTask] {
+        switch scope {
+        case .all: return applyFrozenTaskOrder(naturalTasks, frozen: frozenTaskOrder, storeTasks: allTasks)
+        case .inbox: return applyFrozenListOrder(naturalTasks, frozen: frozenTaskOrder)
+        }
+    }
+
     /// The logbook, through `CadenceTaskSurfaceOptions` on the **desktop** tier, which is uncapped.
     /// The value's own doc carries the argument; the short of it is that this section is the only
     /// place a Mac lists finished work, `completedTaskCount` beside it states the true total, and
@@ -279,7 +297,7 @@ struct TasksListView: View {
         // what had been blocking it was a real defect in the drop path rather than the census.
         let universe = visibleTaskUniverse
         let naturalTasks = naturalActiveTasks(in: universe)
-        let visibleTasks = applyFrozenTaskOrder(naturalTasks, frozen: frozenTaskOrder, storeTasks: allTasks)
+        let visibleTasks = Self.frozenRows(naturalTasks, frozen: frozenTaskOrder, scope: scope, allTasks: allTasks)
         let completedCount = completedTaskCount(in: universe)
         let visibleCompletedTasks = isCompletedCollapsed ? [] : completedTasks(in: universe)
         let coordinator = dropCoordinator(in: universe)

@@ -279,6 +279,51 @@ struct TaskSurfaceFreezeSupportTests {
         #expect(!rows.contains("applyFrozenTaskOrder("))
     }
 
+    // MARK: - The Tasks page's freeze, per scope ([[T-18734]])
+
+    /// **The defect, on real models.** The Mac Inbox froze its rows when the pointer arrived; a row
+    /// was then moved to a list from its context menu with the pointer still over the page. The
+    /// Inbox's live rows no longer hold it -- and the page kept drawing it under its old heading,
+    /// one row more than the header count, because it read the shared freeze with the unfiltered
+    /// store. All Tasks, reading the same rows, keeps the moved row: it is still one of its rows.
+    @Test func theInboxFreezeDoesNotKeepDrawingARowMovedToAList() throws {
+        let context = container.mainContext
+        let list = Project(name: "List")
+        context.insert(list)
+        let stays = task(title: "stays", order: 0)
+        let moved = task(title: "moved", order: 1)
+        try context.save()
+
+        func inboxRows() -> [AppTask] {
+            CadenceTaskQuerySupport.openTasks(from: CadenceTaskQuerySupport.inboxTasks(from: stored()))
+                .sorted { $0.order < $1.order }
+        }
+        let frozen = inboxRows()
+        #expect(frozen.map(\.title) == ["stays", "moved"])
+
+        moved.project = list
+        try context.save()
+        #expect(inboxRows().map(\.title) == ["stays"], "self-check: the Inbox no longer holds it")
+
+        let inbox = TasksListView.frozenRows(inboxRows(), frozen: frozen, scope: .inbox, allTasks: stored())
+        #expect(inbox.map(\.title) == ["stays"])
+        #expect(inbox.count == CadenceTaskQuerySupport.openInboxTaskCount(from: stored()), "rows agree with the count")
+
+        // All Tasks keeps the shared freeze: the filed row is still an All Tasks row, and a row
+        // that left its live array under the pointer stays put (T-342).
+        let all = TasksListView.frozenRows([stays], frozen: frozen, scope: .all, allTasks: stored())
+        #expect(all.map(\.title) == ["stays", "moved"])
+    }
+
+    /// The call site: the page's rows go through the scope branch, and nothing else reads a freeze.
+    @Test func theTasksPageReadsItsFreezeThroughTheScopeBranch() throws {
+        let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksListView.swift"))
+        #expect(code.contains("let visibleTasks = Self.frozenRows(naturalTasks, frozen: frozenTaskOrder, scope: scope, allTasks: allTasks)"))
+        let branch = try #require(CadenceSourceScan.declarationBody("static func frozenRows(", in: code))
+        #expect(branch.contains("case .inbox: return applyFrozenListOrder(naturalTasks, frozen: frozenTaskOrder)"))
+        #expect(code.components(separatedBy: "applyFrozenListOrder(").count - 1 == 1)
+    }
+
     // MARK: - resolveFrozenTaskGroups (list-group snapshot path)
 
     @Test func resolveFrozenTaskGroupsReturnsNilWhenNoSnapshotIsFrozen() {
