@@ -666,31 +666,50 @@ struct CadenceTaskDropSupportTests {
     /// a field an event does not have. The two assertions are kept together because the title and
     /// the caption are two halves of one sentence, and the whole reason both are derived from the
     /// key is that they cannot be allowed to come apart.
+    ///
+    /// **[[T-18850]]: the hour in the event card's words.** The card the release opens reads its
+    /// Do chip as `CadenceScheduleDraft.scheduleLabel` -- "Nov 21 · 2:15 – 2:45 PM" -- and the
+    /// ghost read "Today at 2:15 PM" over it. Today's key, so the date carries no year whenever
+    /// the suite runs.
     @Test func theTimelineGhostSaysNewEventAndNamesTheHourWithoutATasksVocabulary() {
+        let todayKey = DateFormatters.todayKey()
+        let start = 14 * 60 + 15
         let key = CadenceTaskDropSupport.key(
-            CadenceTaskDropSupport.dropKey(forGroup: .timelineDay(dateKey: "2026-09-18")) ?? "",
-            appendingSlotMinute: 14 * 60 + 15
+            CadenceTaskDropSupport.dropKey(forGroup: .timelineDay(dateKey: todayKey)) ?? "",
+            appendingSlotMinute: start
         )
         #expect(CadenceTaskDropSupport.ghostTitle(forDropKey: key) == "New event")
 
         let caption = CadenceTaskDropSupport.placementCaption(
             forDropKey: key,
-            todayKey: "2026-09-18",
+            todayKey: todayKey,
             listName: ""
         )
-        #expect(caption == "Today at \(TimeFormatters.timeString(from: 14 * 60 + 15))")
+        let length = CadenceScheduleDraft.quickCreateLengthMinutes
+        #expect(caption == "\(DateFormatters.shortDateString(from: todayKey)) · "
+            + TimeFormatters.timeRange(startMin: start, endMin: start + length))
+        #expect(!caption.contains("Today"))
         #expect(!caption.contains("Do "))
         // A timeline names no list, and the caption must not invent the composer's default.
         #expect(!caption.contains("Inbox"))
+
+        // The relation, not just the literal: the caption IS the Do chip of the card the composer
+        // opens, built here the way the iOS sheet builds it.
+        let card = CadenceTaskComposerSupport.captureDraft(
+            seed: CadenceTaskComposerSeed(doDateKey: todayKey, scheduledStartMin: start),
+            initialKind: .event
+        )
+        #expect(caption == card.scheduleLabel)
     }
 
-    /// A column with no resolved minute captions the day alone rather than printing an hour it
-    /// does not have.
-    @Test func aTimelineGhostWithNoMinuteCaptionsTheDayAlone() {
-        let key = CadenceTaskDropSupport.dropKey(forGroup: .timelineDay(dateKey: "2026-09-18")) ?? ""
-        #expect(
-            CadenceTaskDropSupport.placementCaption(forDropKey: key, todayKey: "2026-09-18", listName: "")
-                == "Today"
-        )
+    /// A column with no resolved minute captions the card's default hour rather than a bare day:
+    /// the composer opens timed either way, so "Today" alone named less than the card states.
+    @Test func aTimelineGhostWithNoMinuteCaptionsTheCardsDefaultHour() {
+        let todayKey = DateFormatters.todayKey()
+        let key = CadenceTaskDropSupport.dropKey(forGroup: .timelineDay(dateKey: todayKey)) ?? ""
+        let caption = CadenceTaskDropSupport.placementCaption(forDropKey: key, todayKey: todayKey, listName: "")
+        #expect(caption.hasPrefix("\(DateFormatters.shortDateString(from: todayKey)) · "))
+        #expect(caption.contains("–"), "a timed event reads as a range, as its card does")
+        #expect(caption != "Today")
     }
 }

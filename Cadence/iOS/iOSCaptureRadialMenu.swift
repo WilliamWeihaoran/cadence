@@ -697,7 +697,9 @@ private struct iOSCapturePresentationHostModifier: ViewModifier {
                     iOSCreateTaskSheet(seed: seed, onCreated: composerOnCreated)
                 case .event(let dateKey, let startMinute):
                     iOSCreateTaskSheet(
-                        seed: CadenceTaskComposerSeed(doDateKey: dateKey, scheduledStartMin: startMinute ?? -1),
+                        // [[T-18850]]: the seed the drop ghost's caption was read from.
+                        seed: CadenceTaskDropSupport.NewEventDrop(dateKey: dateKey, startMinute: startMinute)
+                            .composerSeed,
                         initialKind: .event
                     )
                 case .list(let contextID):

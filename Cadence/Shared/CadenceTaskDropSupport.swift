@@ -284,6 +284,18 @@ enum CadenceTaskDropSupport {
     struct NewEventDrop: Equatable {
         var dateKey: String
         var startMinute: Int?
+
+        /// The seed the event composer opens on: the day, and the minute or `-1` for none.
+        var composerSeed: CadenceTaskComposerSeed {
+            CadenceTaskComposerSeed(doDateKey: dateKey, scheduledStartMin: startMinute ?? -1)
+        }
+
+        /// **[[T-18850]]: the draft the event capture card opens with** -- one construction, read
+        /// by the composer the release presents and by the ghost's caption, so the two cannot
+        /// spell the day or the hour differently.
+        func eventDraft(now: Date = DateFormatters.now()) -> CadenceScheduleDraft {
+            CadenceTaskComposerSupport.captureDraft(seed: composerSeed, initialKind: .event, now: now)
+        }
     }
 
     /// The event-creation a key asks for, or `nil` when the key asks for a task like every other.
@@ -521,12 +533,13 @@ enum CadenceTaskDropSupport {
         // task, and an event has no do date, so the caption would name a field the thing being
         // created does not have. The day and the hour are the whole claim, and they are read back
         // through `newEventDrop`, which is the same resolution the release will commit to.
+        //
+        // **[[T-18850]]: in the event card's own words.** The caption is the `scheduleLabel` of
+        // the very draft the release opens -- `eventDraft` is the one construction both read -- so
+        // the ghost reads "Nov 21 · 2:15 – 2:45 PM" over a card whose Do chip reads the same. It
+        // used to print "Today at 2:15 PM" (or the bare date) through a day label of its own.
         if let newEvent = newEventDrop(forDropKey: key, todayKey: todayKey) {
-            var text = dayLabel(newEvent.dateKey, todayKey: todayKey)
-            if let minute = newEvent.startMinute {
-                text += " at \(TimeFormatters.timeString(from: minute))"
-            }
-            return text
+            return newEvent.eventDraft().scheduleLabel
         }
 
         let seed = seed(forDropKey: key, todayKey: todayKey)
@@ -625,16 +638,6 @@ enum CadenceTaskDropSupport {
 
     private static func reference(forTodayKey todayKey: String) -> Date {
         DateFormatters.date(from: todayKey, in: .current) ?? Date()
-    }
-
-    /// The event branch's day: "Today", else the date. Not yet the card's words -- see [[T-18850]].
-    private static func dayLabel(_ key: String, todayKey: String) -> String {
-        key == todayKey
-            ? "Today"
-            : DateFormatters.shortDateString(
-                from: key,
-                relativeTo: reference(forTodayKey: todayKey)
-            )
     }
 
     /// `today`, or a `yyyy-MM-dd` day that has not already gone by.
