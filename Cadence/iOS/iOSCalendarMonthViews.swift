@@ -48,7 +48,12 @@ struct iOSCalendarMonthGrid: View {
                     displayMonth: displayMonth,
                     isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
                     tasks: CadenceScheduleSupport.items(on: key, in: monthTasksByDate),
-                    events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
+                    // [[T-18823]]: the fetch sorts both kinds by start, which puts an overnight
+                    // carry-in or a 12:00 AM event above the all-day chips; the Mac lists all-day first.
+                    events: CadenceCalendarMonthCellEventOrder.allDayFirst(
+                        CadenceScheduleSupport.items(on: key, in: eventsByDate),
+                        isAllDay: \.isAllDay
+                    ),
                     todayKey: todayKey,
                     minHeight: rowHeight,
                     onOpenEvent: { pageEditor(.event(iOSCalendarEventSelection(event: $0))) }

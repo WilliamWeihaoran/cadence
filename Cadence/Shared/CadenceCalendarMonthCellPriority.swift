@@ -71,6 +71,28 @@ nonisolated enum CadenceCalendarMonthCellPriority {
     }
 }
 
+/// The order a month-grid day cell lists its **events** in, on both platforms ([[T-18823]], under
+/// [[T-8201]]): the day's **all-day** events first, then its timed ones -- [[T-3163]]'s rule, "as
+/// they do in Apple Calendar's month cell".
+///
+/// **Why this is a partition and not a sort key.** iOS fetches both kinds as one list sorted by
+/// `CadenceCalendarEventSearchSupport.precedes` (start, title, identity), and an all-day event
+/// starts at its day's midnight. That agrees with all-day-first on an ordinary day and parts on
+/// exactly two inputs: a timed event carried in from the previous evening (it starts before
+/// midnight, so it sorted above every all-day chip) and a timed event at 12:00 AM (it ties the
+/// all-day start and then won on title). The Mac cell built `allDay + timed` and so drew the other
+/// order -- and on a crowded day, because `CadenceCalendarMonthCellPriority.split` takes a prefix,
+/// the two platforms hid different events behind "+N more".
+///
+/// **Stable within each half.** Each caller's existing order of its all-day events and of its timed
+/// events is kept exactly; only the halves are put in order. Runs before the split, so the split's
+/// prefix keeps the all-day events.
+nonisolated enum CadenceCalendarMonthCellEventOrder {
+    static func allDayFirst<Event>(_ events: [Event], isAllDay: (Event) -> Bool) -> [Event] {
+        events.filter(isAllDay) + events.filter { !isAllDay($0) }
+    }
+}
+
 /// Who gets the all-day strip's rows over a timeline day column: the day's **all-day events** and
 /// its **unscheduled** tasks. **T-1474**, which replaced T-3163's flat two-row budget.
 ///

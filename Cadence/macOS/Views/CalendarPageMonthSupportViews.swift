@@ -268,7 +268,9 @@ enum CalendarMonthCellEventSupport {
             for: date,
             calendar: calendar
         )
-        return allDay + timed
+        // [[T-18823]]: the halves already arrive in order; the shared partition is what the iOS
+        // cell also runs, so the two cells cannot state the rule twice.
+        return CadenceCalendarMonthCellEventOrder.allDayFirst(allDay + timed, isAllDay: \.ekEvent.isAllDay)
     }
 }
 

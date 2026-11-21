@@ -143,4 +143,91 @@ import Testing
         let tasks = try #require(body.range(of: "ForEach(taskChips)"))
         #expect(events.lowerBound < tasks.lowerBound, "macOS draws its task chips above its event chips")
     }
+
+    // MARK: - [[T-18823]]: all-day events lead the month cell on both platforms
+
+    /// A fetched event as far as the month cell's ordering reads it. No `EKEvent`, so no
+    /// `EKEventStore` -- the fixture never reaches EventKit or the owner's calendars.
+    private struct MonthEvent: Equatable {
+        let title: String
+        let start: Date
+        let isAllDay: Bool
+    }
+
+    /// The ticket's repro day, run through the iOS fetch's own comparator
+    /// (`CadenceCalendarEventSearchSupport.precedes`, start then title then identity) -- the one
+    /// list `iOSCalendarManager.fetchEvents(for:)` hands the iPad month grid.
+    private func reproDayAsTheIOSFetchSortsIt() -> [MonthEvent] {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        let day = calendar.date(from: DateComponents(year: 2026, month: 11, day: 20))!
+        let midnight = calendar.startOfDay(for: day)
+        let events = [
+            MonthEvent(title: "Holiday", start: midnight, isAllDay: true),
+            // 10 PM the previous evening to 6 AM: carried in, so it starts before the Holiday.
+            MonthEvent(title: "Red-eye", start: midnight.addingTimeInterval(-2 * 3600), isAllDay: false),
+            // 12:00 AM-1:00 AM: ties the Holiday on start and wins on title.
+            MonthEvent(title: "Alpha", start: midnight, isAllDay: false),
+        ]
+        return events.sorted {
+            CadenceCalendarEventSearchSupport.isOrderedBefore(
+                lhsStart: $0.start, lhsTitle: $0.title, lhsIdentity: $0.title,
+                rhsStart: $1.start, rhsTitle: $1.title, rhsIdentity: $1.title
+            )
+        }
+    }
+
+    /// The fetch order puts the all-day chip LAST; the month cell's order puts it first and keeps
+    /// the timed half in the order it arrived (Red-eye's earlier start ahead of Alpha).
+    @Test func anOvernightCarryInAndAMidnightEventFollowTheDaysAllDayChip() {
+        let fetched = reproDayAsTheIOSFetchSortsIt()
+        // Non-vacuity: the input really is the drifted order the ticket describes.
+        #expect(fetched.map(\.title) == ["Red-eye", "Alpha", "Holiday"])
+
+        let ordered = CadenceCalendarMonthCellEventOrder.allDayFirst(fetched, isAllDay: \.isAllDay)
+        #expect(ordered.map(\.title) == ["Holiday", "Red-eye", "Alpha"])
+    }
+
+    /// On a crowded day the split's prefix now keeps the all-day Holiday, which the fetch order hid.
+    @Test func aCrowdedDayKeepsTheAllDayChipAboveTheOverflowLine() {
+        let ordered = CadenceCalendarMonthCellEventOrder.allDayFirst(reproDayAsTheIOSFetchSortsIt(), isAllDay: \.isAllDay)
+        let split = CadenceCalendarMonthCellPriority.split(events: ordered.count, tasks: 4, capacity: 2)
+        #expect(split.events == 2)
+        #expect(ordered.prefix(split.events).map(\.title) == ["Holiday", "Red-eye"])
+    }
+
+    /// Each half keeps its incoming order exactly -- the partition never re-sorts either side.
+    @Test func theAllDayPartitionIsStableWithinEachHalf() {
+        let input = [
+            MonthEvent(title: "t3", start: .distantPast, isAllDay: false),
+            MonthEvent(title: "a2", start: .distantFuture, isAllDay: true),
+            MonthEvent(title: "t1", start: .distantFuture, isAllDay: false),
+            MonthEvent(title: "a1", start: .distantPast, isAllDay: true),
+        ]
+        let ordered = CadenceCalendarMonthCellEventOrder.allDayFirst(input, isAllDay: \.isAllDay)
+        #expect(ordered.map(\.title) == ["a2", "a1", "t3", "t1"])
+        #expect(CadenceCalendarMonthCellEventOrder.allDayFirst([MonthEvent](), isAllDay: \.isAllDay).isEmpty)
+    }
+
+    /// Both month cells' event lists pass through the one partition before the split. iOS is
+    /// behind `#if os(iOS)`, so both are read as text, the same way the split pin above reads them.
+    @Test func bothMonthCellsOrderTheirEventsThroughTheSharedPartition() throws {
+        let sites = [
+            ("Cadence/macOS/Views/CalendarPageMonthSupportViews.swift", "enum CalendarMonthCellEventSupport"),
+            ("Cadence/iOS/iOSCalendarMonthViews.swift", "struct iOSCalendarMonthGrid")
+        ]
+        for (path, declaration) in sites {
+            let raw = try CadenceSourceScan.sourceFile(path)
+            let code = CadenceSourceScan.codeOnly(raw)
+            #expect(code != raw, "\(path): nothing was stripped, so the scan read raw text")
+            let body = try #require(
+                CadenceSourceScan.declarationBody(declaration, in: code),
+                "\(path): could not read the body of \(declaration)"
+            )
+            #expect(
+                body.contains("CadenceCalendarMonthCellEventOrder.allDayFirst("),
+                "\(path) does not order its month events all-day first through the shared partition"
+            )
+        }
+    }
 }
