@@ -614,10 +614,7 @@ struct MarkdownEditorView: NSViewRepresentable {
         if textView.markdownTaskEmbeds != taskEmbedInfos {
             textView.markdownTaskEmbedRects.removeAll()
             textView.markdownTaskEmbeds = taskEmbedInfos
-            if let hoveredMarkdownTaskEmbed = textView.hoveredMarkdownTaskEmbed,
-               taskEmbedInfos[hoveredMarkdownTaskEmbed.id] == nil {
-                textView.hoveredMarkdownTaskEmbed = nil
-            }
+            textView.dropHoveredTaskEmbedIfRemoved()
             didUpdateRenderedContent = true
         }
         textView.tagSuggestions = tagSuggestions

@@ -807,6 +807,19 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         needsDisplay = true
     }
 
+    /// [[T-18720]]: the hovered card left the note's text (deleted, undone, cut) while the pointer
+    /// rested on it. Ends the task hover through the callback, as every pointer exit does, so the
+    /// host's hovered-task state does not keep a card that no longer exists; clearing the property
+    /// alone left it set, and made every later exit a no-op because `nil == nil`. The cursor is
+    /// left alone: the pointer has not moved.
+    func dropHoveredTaskEmbedIfRemoved() {
+        guard let hoveredMarkdownTaskEmbed,
+              markdownTaskEmbeds[hoveredMarkdownTaskEmbed.id] == nil else { return }
+        onHoverEmbeddedMarkdownTask?(hoveredMarkdownTaskEmbed.id, false)
+        self.hoveredMarkdownTaskEmbed = nil
+        needsDisplay = true
+    }
+
     private func clearHoveredTaskEmbed() {
         guard let hoveredMarkdownTaskEmbed else { return }
         onHoverEmbeddedMarkdownTask?(hoveredMarkdownTaskEmbed.id, false)

@@ -284,6 +284,34 @@ struct MarkdownInlineTaskPanelTests {
         #expect(NSCursor.current !== NSCursor.iBeam)
     }
 
+    /// [[T-18720]]: the hovered card leaves the note's text (deleted by keyboard, undone) while
+    /// the pointer rests on it. The hover ends through the callback, so the host's hovered task
+    /// does not stay pinned to a card that no longer exists; a card still in the note keeps it.
+    @Test func removingTheHoveredCardFromTheNoteEndsItsTaskHover() throws {
+        let textView = makeTextView()
+        var unhovered: [UUID] = []
+        textView.onHoverEmbeddedMarkdownTask = { id, isHovered in
+            if !isHovered { unhovered.append(id) }
+        }
+        textView.hoveredMarkdownTaskEmbed = MarkdownTaskEmbedHover(id: Self.embedID, target: .card)
+
+        textView.markdownTaskEmbeds.removeValue(forKey: Self.otherID)
+        textView.dropHoveredTaskEmbedIfRemoved()
+        #expect(textView.hoveredMarkdownTaskEmbed?.id == Self.embedID)
+        #expect(unhovered.isEmpty)
+
+        textView.markdownTaskEmbeds.removeValue(forKey: Self.embedID)
+        textView.dropHoveredTaskEmbedIfRemoved()
+        #expect(textView.hoveredMarkdownTaskEmbed == nil)
+        #expect(unhovered == [Self.embedID])
+
+        // The editor's update pass is where the removal is noticed; it must route through the
+        // callback rather than clear the property itself.
+        let editor = try CadenceSourceScan.sourceFile("Cadence/macOS/Editor/MarkdownEditorView.swift")
+        #expect(editor.contains("textView.dropHoveredTaskEmbedIfRemoved()"))
+        #expect(!editor.contains("textView.hoveredMarkdownTaskEmbed = nil"))
+    }
+
     // MARK: - Routing
 
     @Test func everyFieldChipButStatusOpensThePanel() {
