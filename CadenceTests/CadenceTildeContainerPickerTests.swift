@@ -190,6 +190,34 @@ struct CadenceTildeContainerPickerTests {
         #expect(names(query: "zzz", fixture).isEmpty)
     }
 
+    /// [[T-18994]]: the query is trimmed before it is matched, as the List badge and the section
+    /// picker trim it. A stray space typed or pasted into "Search lists" hid every list, Inbox
+    /// included, while the badge one chip over still found the list.
+    @Test func theTildeQueryIgnoresSurroundingSpace() throws {
+        let fixture = try makeListFixture()
+
+        #expect(names(query: " admin ", fixture) == ["Admin"])
+        #expect(names(query: "admin ", fixture) == ["Admin"])
+        #expect(names(query: " inbox", fixture) == ["Inbox"])
+        // A blank query is no filter at all, exactly like the empty one.
+        #expect(names(query: "   ", fixture) == names(query: "", fixture))
+        #expect(names(query: "   ", fixture).contains("Inbox"))
+    }
+
+    /// The `~` panel and the List badge answer one query by one rule: every row the panel offers
+    /// for a query is one `ContainerPickerFilterSupport.matches` accepts, and every list it holds
+    /// that the rule accepts is offered — over the query set the section picker's agreement test
+    /// uses plus the stray-space cases.
+    @Test func theTildeQueryAgreesWithTheListBadgesRule() throws {
+        let fixture = try makeListFixture()
+        let everyRow = names(query: "", fixture)
+
+        for query in ["review", "co", " de", "lock", "B", "x", " admin ", "in ", "  ", "LO"] {
+            let expected = everyRow.filter { ContainerPickerFilterSupport.matches($0, query: query) }
+            #expect(names(query: query, fixture) == expected, "\(query)")
+        }
+    }
+
     // MARK: - T-684: the list the draft is already in
 
     /// **T-534's first defect, on the last list-offering surface that had not learned it.**

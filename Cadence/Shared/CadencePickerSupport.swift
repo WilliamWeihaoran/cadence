@@ -118,13 +118,15 @@ enum CadencePickerSupport<Element: CadencePickable> {
         elements.filter { $0.isOfferableInPicker || $0.id == selectedID }
     }
 
-    /// Case-insensitive substring match on the name. An empty or whitespace-only query matches
-    /// everything. Only macOS's context picker has a search field; the iOS popovers pass no query.
+    /// Case-insensitive substring match on the title the row draws (`title(for:)`), so a blank-named
+    /// element drawn "Untitled Context" is found by `untitled` ([[T-18995]]). An empty or
+    /// whitespace-only query matches everything. Only macOS's context picker has a search field;
+    /// the iOS popovers pass no query.
     static func matching(_ elements: [Element], query: String) -> [Element] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return elements }
         let needle = trimmed.localizedLowercase
-        return elements.filter { $0.name.localizedLowercase.contains(needle) }
+        return elements.filter { title(for: $0).localizedLowercase.contains(needle) }
     }
 
     /// The element's display name, or `untitledName`.

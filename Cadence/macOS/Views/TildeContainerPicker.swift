@@ -68,9 +68,11 @@ enum TildeContainerPickerSupport {
         projects: [Project],
         selection: TaskContainerSelection?
     ) -> [TildeContainerItem] {
-        let needle = query.lowercased()
+        // The shared rule ([[T-18994]]): it trims the query before matching, so a stray space
+        // typed or pasted into "Search lists" no longer hides every list. The List badge and the
+        // section picker already read it; a hand-rolled `lowercased()` here was the one that did not.
         func matches(_ name: String) -> Bool {
-            needle.isEmpty || name.lowercased().hasPrefix(needle)
+            ContainerPickerFilterSupport.matches(name, query: query)
         }
         func areaItem(_ area: Area) -> TildeContainerItem {
             TildeContainerItem(

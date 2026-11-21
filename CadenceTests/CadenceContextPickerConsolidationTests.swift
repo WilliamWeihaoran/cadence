@@ -194,6 +194,31 @@ struct CadenceContextPickerConsolidationTests {
         #expect(titles("nothing here").isEmpty)
     }
 
+    /// [[T-18995]]: the search matches the title the row draws, not the raw name. The fixture's
+    /// three-space context is drawn "Untitled Context", so `untitled` must find that row — before,
+    /// the filter read `name` and answered "No matching contexts" over a row the unfiltered list showed.
+    @Test func theSearchQueryFindsAnUnnamedContextByTheTitleItsRowDraws() throws {
+        let fixture = try makeFixture()
+
+        let found = CadenceContextPickerSupport.items(
+            from: [fixture.unnamed],
+            selectedID: nil,
+            query: "untitled",
+            noneTitle: nil
+        )
+        #expect(found.map(\.id) == [fixture.unnamed.id])
+        #expect(found.first?.title == CadenceContextPickerSupport.untitledName)
+
+        // And among the rest, only the unnamed row answers to it.
+        let amongAll = CadenceContextPickerSupport.items(
+            from: fixture.contexts,
+            selectedID: nil,
+            query: "UNTITLED",
+            noneTitle: nil
+        )
+        #expect(amongAll.map(\.id) == [fixture.unnamed.id])
+    }
+
     // MARK: - The call sites
 
     /// Every file that presents a context picker, plus the two that hold the list it reads.
