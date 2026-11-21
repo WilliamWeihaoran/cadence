@@ -397,7 +397,8 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                     // [[T-18594]]: the sheet's or inline panel's rename caught up in the hidden
                     // reference title -- a sync, which rides on the undo step before it rather
                     // than being one, so the next undo never lands on text nobody can see.
-                    MarkdownReferenceTitleSyncUndo.attached(to: manager).perform(write)
+                    MarkdownReferenceTitleSyncUndo.attached(to: manager)
+                        .perform(syncing: parent.taskEmbeds.mapValues(\.title), in: current, write)
                 } else {
                     _ = write()
                 }

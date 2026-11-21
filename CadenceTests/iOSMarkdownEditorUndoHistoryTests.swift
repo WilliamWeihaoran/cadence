@@ -383,6 +383,36 @@ struct iOSMarkdownEditorUndoHistoryTests {
         Self.undo(hosted)
         #expect(hosted.view.text == "Buy [[task:\(id)|Milk]] today now")
     }
+
+    // MARK: - [[T-18963]]: an outside rename after the Return that made the card
+
+    /// The defect, on iOS: Return on `( ) Milk`, rename the task in its sheet, dismiss, undo. The
+    /// sync rode on the creation, whose withdrawal refused over the new title -- the line came back
+    /// beside an orphaned "Oat milk". Now one undo takes the task out with the card, and redo puts
+    /// the same task back renamed.
+    @Test func iOSUndoAfterASheetRenameOfAJustMadeCardTakesTheTaskBackOut() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let hosted = try Self.hostWithStore("( ) Milk", modelContext: modelContext)
+        Self.pressReturn(hosted)
+        let task = try #require(try Self.tasks(titled: "Milk", in: modelContext).first)
+        let id = task.id
+
+        Self.syncReference(of: task, to: "Oat milk", in: hosted)
+        #expect(hosted.view.text.contains("[[task:\(id.uuidString)|Oat milk]]"))
+
+        Self.undo(hosted)
+        #expect(hosted.view.text == "( ) Milk")
+        #expect(try Self.tasks(titled: "Oat milk", in: modelContext).isEmpty, "undo left the renamed task orphaned")
+
+        Self.redo(hosted)
+        #expect(hosted.view.text.contains("[[task:\(id.uuidString)|Oat milk]]"))
+        #expect(
+            try Self.tasks(titled: "Oat milk", in: modelContext).map(\.id) == [id],
+            "redo did not restore the same task, renamed"
+        )
+        _ = container
+    }
 }
 #endif
 

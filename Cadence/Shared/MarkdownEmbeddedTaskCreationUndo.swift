@@ -38,11 +38,12 @@ struct MarkdownEmbeddedTaskCreation<Reference> {
 }
 
 @MainActor
-final class MarkdownEmbeddedTaskCreationUndo {
+final class MarkdownEmbeddedTaskCreationUndo: MarkdownReferenceTitleSyncBaseline {
     /// What a user can change on a task, read when it was minted. A withdrawal goes ahead only
     /// while the live task still reads the same.
     struct Fingerprint: Equatable {
-        let title: String
+        /// Moved by `adoptOutsideRename()` when an outside rename has caught up in the note.
+        var title: String
         let notes: String
         let statusRaw: String
         let priorityRaw: String
@@ -101,6 +102,10 @@ final class MarkdownEmbeddedTaskCreationUndo {
     /// Whether the last undo actually removed the task, so a redo re-creates only what it took.
     private(set) var isWithdrawn = false
 
+    /// [[T-18963]]: the title an outside rename gave the task after it was minted, which a redo
+    /// re-creates it under instead of the draft's -- the redone text names it so.
+    private var adoptedTitle: String?
+
     /// - Parameters:
     ///   - task: The task this edit just committed, from `draft`.
     ///   - draft, areas, projects: What it was created from, so a redo files it the same way.
@@ -136,6 +141,16 @@ final class MarkdownEmbeddedTaskCreationUndo {
     /// replacement, so the two are one step.
     func register(on manager: UndoManager) {
         registerWithdrawal(on: manager)
+        MarkdownReferenceTitleSyncUndo.attached(to: manager).track(self)
+    }
+
+    /// [[T-18963]]: the task was renamed outside the note and the reference caught up, on a step
+    /// at or above this one. The rename is the note's now, so a withdrawal no longer refuses over
+    /// it; any other change since still does.
+    func adoptOutsideRename() {
+        guard !isWithdrawn, let rows = rowsWithID(), rows.count == 1, let task = rows.first else { return }
+        fingerprint.title = task.title
+        adoptedTitle = task.title
     }
 
     /// The handler holds `self` strongly on purpose: `UndoManager` does NOT retain the target it
@@ -185,6 +200,7 @@ final class MarkdownEmbeddedTaskCreationUndo {
               let insertion = TaskCreationService(areas: areas, projects: projects)
                 .insertion(from: draft, into: modelContext) else { return false }
         insertion.task.id = taskID
+        if let adoptedTitle { insertion.task.title = adoptedTitle }
         do {
             try CadencePendingChangePersistence.commitInsert(
                 of: insertion.inserted,

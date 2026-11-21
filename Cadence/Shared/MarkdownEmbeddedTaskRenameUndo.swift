@@ -18,7 +18,7 @@ import SwiftData
 /// The write goes through `CadencePendingChangePersistence.commitEdit`, so a refused commit puts
 /// the fields back rather than leaving a half-undone rename.
 @MainActor
-final class MarkdownEmbeddedTaskRenameUndo {
+final class MarkdownEmbeddedTaskRenameUndo: MarkdownReferenceTitleSyncBaseline {
     /// The two fields an inline rename writes: the `!` priority shortcut moves the priority as a
     /// side effect of the title, so the two are reverted together.
     struct Title: Equatable {
@@ -29,11 +29,19 @@ final class MarkdownEmbeddedTaskRenameUndo {
             title = task.title
             priorityRaw = task.priorityRaw
         }
+
+        init(title: String, priorityRaw: String) {
+            self.title = title
+            self.priorityRaw = priorityRaw
+        }
     }
 
     let taskID: UUID
-    private let before: Title
-    private let after: Title
+    private var before: Title
+    private var after: Title
+    /// Whether the step on the stack is the redo: the last press undid this rename. Read when the
+    /// step runs, so an adopted title ([[T-18963]]) is what it expects.
+    private var isUndone = false
     private let modelContext: ModelContext
     private let commit: (ModelContext) throws -> Void
     private let didApply: (AppTask) -> Void
@@ -65,15 +73,33 @@ final class MarkdownEmbeddedTaskRenameUndo {
     /// Registers the inverse on `manager`. Call it inside the undo group that holds the reference
     /// rewrite, so the two are one step.
     func register(on manager: UndoManager) {
-        registerStep(from: after, to: before, on: manager)
+        registerStep(on: manager)
+        MarkdownReferenceTitleSyncUndo.attached(to: manager).track(self)
+    }
+
+    /// [[T-18963]]: the task was renamed outside the note after this rename and the reference
+    /// caught up, on a step at or above this one. That title is the one the next step expects, so
+    /// undo still renames the task back instead of refusing; the priority is not the note's, and a
+    /// change to it still refuses.
+    func adoptOutsideRename() {
+        let id = taskID
+        guard let rows = try? modelContext.fetch(FetchDescriptor<AppTask>(predicate: #Predicate { $0.id == id })),
+              rows.count == 1, let task = rows.first else { return }
+        if isUndone {
+            before = Title(title: task.title, priorityRaw: before.priorityRaw)
+        } else {
+            after = Title(title: task.title, priorityRaw: after.priorityRaw)
+        }
     }
 
     /// The handler holds `self` strongly on purpose: `UndoManager` does not retain its target (see
     /// `MarkdownEmbeddedTaskCreationUndo.registerWithdrawal`). The manager is held weakly.
-    private func registerStep(from expected: Title, to target: Title, on manager: UndoManager) {
+    private func registerStep(on manager: UndoManager) {
         manager.registerUndo(withTarget: self) { [weak manager] _ in
+            let (expected, target) = self.isUndone ? (self.before, self.after) : (self.after, self.before)
+            self.isUndone.toggle()
             self.apply(expecting: expected, writing: target)
-            if let manager { self.registerStep(from: target, to: expected, on: manager) }
+            if let manager { self.registerStep(on: manager) }
         }
     }
 

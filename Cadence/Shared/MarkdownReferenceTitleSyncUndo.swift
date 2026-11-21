@@ -33,6 +33,17 @@ import ObjectiveC
 /// - **Inside a group someone else opened**: written as part of that group, unmarked. It is already
 ///   not a standalone step, and a marker there would carry the press one step too far.
 /// - **While undoing or redoing**: not written; the replay owns the text.
+/// - **[[T-18963]]: the outside rename becomes the baseline of the task's own store-backed steps.**
+///   A step whose undo writes the store -- the card's creation ([[T-18174]]) or an inline rename --
+///   goes ahead only while the task still reads as that step left it, and the outside rename is
+///   exactly what changed it. Without this, the press that takes a riding sync back went on to that
+///   step and reverted only its text: a just-made card turned back into a `( ) Milk` line beside
+///   the renamed task (and Return on it minted a duplicate), an inline rename visibly did nothing.
+///   So a riding sync that rewrites task X's reference tells X's live steps registered on this
+///   manager (`track(_:)`) to take the task's title as theirs (`adoptOutsideRename()`). Only the
+///   title: it is the one field the note's text carries, and any other outside edit still refuses.
+///   Not inside a group someone else opened -- that is the inline rename's own sync, whose step is
+///   registered with the new title already.
 ///
 /// One instance per undo manager, attached to it (`attached(to:)`); it observes only that manager.
 @MainActor
@@ -45,6 +56,14 @@ final class MarkdownReferenceTitleSyncUndo: NSObject {
     /// One entry per redoable press, newest last: how many groups that press undid. Mirrors the
     /// manager's redo stack, which a new registration empties.
     private var redoPressSpans: [Int] = []
+
+    /// The store-backed steps registered on this manager, held weakly: the manager's own records
+    /// keep a live step alive, and one dropped from the stack drops out of here with it.
+    private var baselines: [WeakBaseline] = []
+
+    private struct WeakBaseline {
+        weak var object: (any MarkdownReferenceTitleSyncBaseline)?
+    }
 
     nonisolated(unsafe) private static var associationKey: UInt8 = 0
 
@@ -67,11 +86,35 @@ final class MarkdownReferenceTitleSyncUndo: NSObject {
         center.addObserver(self, selector: #selector(managerDidCloseGroup), name: .NSUndoManagerDidCloseUndoGroup, object: manager)
     }
 
+    /// Records `baseline`, a store-backed step just registered on this manager, so a riding sync
+    /// for its task can hand it the outside rename ([[T-18963]]).
+    func track(_ baseline: any MarkdownReferenceTitleSyncBaseline) {
+        baselines.removeAll { $0.object == nil }
+        guard !baselines.contains(where: { $0.object === baseline }) else { return }
+        baselines.append(WeakBaseline(object: baseline))
+    }
+
+    /// The live steps whose task's reference `text` titles differently from `titles` -- the tasks
+    /// this sync renames in the note.
+    private func baselines(renamedBy titles: [UUID: String], in text: String) -> [any MarkdownReferenceTitleSyncBaseline] {
+        baselines.removeAll { $0.object == nil }
+        return baselines.compactMap(\.object).filter { baseline in
+            guard let title = titles[baseline.taskID] else { return false }
+            return MarkdownTaskEmbedParser.replacingReferenceTitles(
+                of: baseline.taskID,
+                in: text,
+                with: title,
+                fallback: MarkdownTaskEmbedRenderInfo.untitledTaskTitle
+            ) != nil
+        }
+    }
+
     /// Runs `edit`, the text write of a reference-title sync, under the rules above. Call it only
     /// when the write would change the text. `edit` returns whether it did; this returns the same,
-    /// or `false` when a replay kept it from running.
+    /// or `false` when a replay kept it from running. `titles` are the task titles the write brings
+    /// the references in `text` (the text before it) in line with.
     @discardableResult
-    func perform(_ edit: () -> Bool) -> Bool {
+    func perform(syncing titles: [UUID: String], in text: String, _ edit: () -> Bool) -> Bool {
         guard let manager else { return edit() }
         if manager.isUndoing || manager.isRedoing { return false }
         if manager.groupingLevel > 0 { return edit() }
@@ -83,9 +126,11 @@ final class MarkdownReferenceTitleSyncUndo: NSObject {
             return changed
         }
         let ridesOn = manager.undoActionName
+        let renamed = baselines(renamedBy: titles, in: text)
         manager.beginUndoGrouping()
         registerMarker(on: manager)
         let changed = edit()
+        if changed { renamed.forEach { $0.adoptOutsideRename() } }
         if !ridesOn.isEmpty { manager.setActionName(ridesOn) }
         // A refused write leaves a group holding only the marker. That is harmless: a press on it
         // goes straight on to the step beneath, so it still never lands on nothing.
@@ -132,4 +177,14 @@ final class MarkdownReferenceTitleSyncUndo: NSObject {
         guard let manager, !manager.isUndoing, !manager.isRedoing else { return }
         redoPressSpans.removeAll()
     }
+}
+
+/// [[T-18963]]: a store-backed undo step for one task embedded in a note -- the card's creation,
+/// an inline rename -- whose undo refuses once the task no longer reads as the step left it.
+@MainActor
+protocol MarkdownReferenceTitleSyncBaseline: AnyObject {
+    var taskID: UUID { get }
+    /// The task was renamed outside the note and the note's reference has caught up: take the
+    /// task's current title as the one this step left it with.
+    func adoptOutsideRename()
 }

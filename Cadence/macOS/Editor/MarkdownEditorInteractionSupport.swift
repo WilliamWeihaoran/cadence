@@ -474,7 +474,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         if waitWhileRedoable, manager.canRedo { return }
         breakUndoCoalescing()
         let before = string
-        MarkdownReferenceTitleSyncUndo.attached(to: manager).perform {
+        MarkdownReferenceTitleSyncUndo.attached(to: manager).perform(syncing: [id: title], in: before) {
             replaceEmbeddedTaskReferenceTitle(id: id, title: title)
             return string != before
         }
@@ -527,7 +527,7 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
             return
         }
         breakUndoCoalescing()
-        MarkdownReferenceTitleSyncUndo.attached(to: manager).perform(write)
+        MarkdownReferenceTitleSyncUndo.attached(to: manager).perform(syncing: titles, in: current as String, write)
     }
 
     /// [[T-17181]]: a body rewritten from outside the text view — linking an unlinked mention,

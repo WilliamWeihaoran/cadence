@@ -404,5 +404,99 @@ struct MarkdownEditorUndoHistoryTests {
         #expect(harness.view.string == "Buy [[task:\(task.id.uuidString)|Oat milk]] today")
         #expect(harness.manager.canUndo == false)
     }
+
+    // MARK: - [[T-18963]]: an outside rename after the step that owns the card
+
+    /// The defect: Return on `( ) Milk`, rename the card's task in its popover, Cmd+Z. The sync
+    /// rode on the creation, whose withdrawal refused because the task no longer read "Milk" -- so
+    /// the line came back beside an orphaned "Oat milk", and Return on it minted a second task.
+    /// Now the one press takes the task out with the card, and redo puts the same task back renamed.
+    @Test func undoAfterAnOutsideRenameOfAJustMadeCardTakesTheTaskBackOut() throws {
+        let harness = try Self.embedHarness("( ) Milk")
+        harness.handlers.editorTextView = harness.view
+        harness.pressReturn()
+        let task = try #require(try harness.tasks(titled: "Milk").first)
+        let id = task.id
+
+        try Self.renameOutsideTheNote(task, to: "Oat milk", in: harness)
+        harness.handlers.refreshEmbeddedTask(task)
+        #expect(harness.view.string.contains("[[task:\(id.uuidString)|Oat milk]]"))
+
+        harness.manager.undo()
+        #expect(harness.view.string == "( ) Milk")
+        #expect(try harness.tasks(titled: "Oat milk").isEmpty, "undo left the renamed task orphaned in the store")
+        #expect(try harness.tasks(titled: "Milk").isEmpty)
+
+        harness.manager.redo()
+        #expect(harness.view.string.contains("[[task:\(id.uuidString)|Oat milk]]"))
+        #expect(try harness.tasks(titled: "Oat milk").map(\.id) == [id], "redo did not restore the same task, renamed")
+        #expect(try harness.tasks(titled: "Milk").isEmpty)
+
+        harness.manager.undo()
+        #expect(harness.view.string == "( ) Milk")
+        #expect(try harness.tasks(titled: "Oat milk").isEmpty, "a second undo after redo left the task")
+    }
+
+    /// Only the title is adopted: a just-made card whose task was also re-prioritised outside the
+    /// note is still a task the user edited, and undo leaves it.
+    @Test func undoAfterAnOutsideRenameStillLeavesATaskEditedOtherwise() throws {
+        let harness = try Self.embedHarness("( ) Milk")
+        harness.handlers.editorTextView = harness.view
+        harness.pressReturn()
+        let task = try #require(try harness.tasks(titled: "Milk").first)
+        task.priority = .high
+        try Self.renameOutsideTheNote(task, to: "Oat milk", in: harness)
+        harness.handlers.refreshEmbeddedTask(task)
+
+        harness.manager.undo()
+        #expect(harness.view.string == "( ) Milk")
+        #expect(try harness.tasks(titled: "Oat milk").count == 1, "undo deleted a task the user had edited")
+    }
+
+    /// The inline rename's own sync is not an outside rename: a card renamed inline straight after
+    /// its Return still undoes as two steps -- the rename back to "Milk", then the task out.
+    @Test func anInlineRenameAfterTheReturnStillUndoesBothSteps() throws {
+        let harness = try Self.embedHarness("( ) Milk")
+        let scope = TaskNotesEmbedScope(referenceTasks: [], embedTarget: .coreNotes, modelContext: harness.modelContext)
+        harness.handlers.editorTextView = harness.view
+        harness.view.onRenameEmbeddedMarkdownTask = { harness.handlers.renameEmbeddedTask(id: $0, title: $1, in: scope) }
+        harness.pressReturn()
+        let task = try #require(try harness.tasks(titled: "Milk").first)
+
+        harness.manager.beginUndoGrouping()
+        harness.view.commitInlineTaskRename(id: task.id, typed: "Eggs")
+        harness.manager.endUndoGrouping()
+        #expect(task.title == "Eggs")
+
+        harness.manager.undo()
+        #expect(task.title == "Milk")
+        harness.manager.undo()
+        #expect(harness.view.string == "( ) Milk")
+        #expect(try harness.tasks(titled: "Milk").isEmpty, "the inline rename's own sync moved the creation's baseline")
+    }
+
+    /// The same shape after the card's inline rename: "Milk" -> "Eggs" inline, then "Oat milk" in
+    /// the popover. The press used to refuse the rename back (the task no longer read "Eggs") and
+    /// move only the hidden title. Now it renames the task back to "Milk", and redo forward again.
+    @Test func undoAfterAnOutsideRenameOfAnInlineRenamedCardRenamesTheTaskBack() throws {
+        let (harness, task) = try Self.renameHarness()
+        let id = task.id.uuidString
+
+        harness.manager.beginUndoGrouping()
+        harness.view.commitInlineTaskRename(id: task.id, typed: "Eggs")
+        harness.manager.endUndoGrouping()
+        try Self.renameOutsideTheNote(task, to: "Oat milk", in: harness)
+        harness.handlers.refreshEmbeddedTask(task)
+        #expect(harness.view.string == "Buy [[task:\(id)|Oat milk]] today")
+
+        harness.manager.undo()
+        #expect(task.title == "Milk", "undo refused the rename back")
+        #expect(harness.view.string == "Buy [[task:\(id)|Milk]] today")
+        #expect(harness.manager.canUndo == false)
+
+        harness.manager.redo()
+        #expect(task.title == "Oat milk", "redo did not rename the task forward to its latest title")
+        #expect(harness.view.string == "Buy [[task:\(id)|Oat milk]] today")
+    }
 }
 #endif
