@@ -496,12 +496,18 @@ final class CalendarManager {
     /// `event.isAllDay` is cleared only once both endpoints exist, so a range this cannot form
     /// leaves the event exactly as it found it rather than half-converted.
     ///
+    /// **[[T-18946]].** `scope` is how far a repeating event's conversion reaches, asked by the
+    /// drop's scope dialog as a timed block's move asks it; a non-repeating event is written
+    /// `.thisOccurrence`. It used to save a hard-coded `.thisEvent`, so a repeating chip converted
+    /// one occurrence without asking.
+    ///
     /// - Parameter calendar: see `CadenceCalendarEventTiming.startDate`. `.current` in production.
     @discardableResult
     func convertAllDayEventToTimed(
         _ event: EKEvent,
         startMin: Int,
         dateKey: String,
+        scope: CalendarRecurrenceEditScope = .thisOccurrence,
         calendar: Calendar = .current
     ) -> CalendarWriteFailure? {
         guard isAuthorized else { return record(.notAuthorized) }
@@ -523,7 +529,7 @@ final class CalendarManager {
         event.isAllDay = false
         event.startDate = startDate
         event.endDate = endDate
-        return save(event, span: .thisEvent, describing: "convert all-day event")
+        return save(event, span: scope.eventSpan, describing: "convert all-day event")
     }
 
     /// Every event in the window, all-day included. The window and the filter are the *same* on

@@ -440,7 +440,27 @@ enum CalendarAllDayEventDropSupport {
         return event
     }
 
-    /// Resolves the payload and converts it to a timed event at `startMin` on `dateKey`.
+    /// **[[T-18946]].** What a chip released on a timeline does first.
+    ///
+    /// A repeating event is asked *how far* before it is written, as a move or resize of a timed
+    /// repeating block is (`TimelineEventBlock.requestEventMutation`): the conversion used to save
+    /// one occurrence with a hard-coded `.thisEvent`, so a daily all-day "Gym" dropped on 9 AM
+    /// became a 9 AM block today and was all-day again tomorrow, with nothing asked. A
+    /// non-repeating event has no scope to ask and converts at once. The shape is
+    /// `CadenceEventDeleteStep.first(isRecurringSeriesMember:)`'s.
+    nonisolated enum ConversionStep: Equatable {
+        case askScope
+        case convert(CalendarRecurrenceEditScope)
+
+        static func first(isRecurringSeriesMember: Bool) -> ConversionStep {
+            isRecurringSeriesMember ? .askScope : .convert(.thisOccurrence)
+        }
+    }
+
+    /// Resolves the payload and converts it to a timed event at `startMin` on `dateKey`, or — for
+    /// a repeating event ([[T-18946]]) — returns the conversion for the host to park behind the
+    /// scope dialog (`calendarAllDayConversionScopeDialog`). Not discardable: a host that drops
+    /// the answer drops the drop.
     static func convert(
         _ payload: CalendarAllDayEventDropPayload,
         startMin: Int,
@@ -448,14 +468,82 @@ enum CalendarAllDayEventDropSupport {
         fallbackDate: Date,
         eventCache: CalendarEventDayCache,
         calendarManager: CalendarManager
-    ) {
+    ) -> CalendarAllDayEventPendingConversion? {
         guard let event = resolveEditableEvent(
             payload,
             fallbackDate: fallbackDate,
             allDayEvents: { eventCache.allDayEvents(for: $0, calendarManager: calendarManager) },
             lookup: { calendarManager.event(withIdentifier: $0) }
-        ) else { return }
-        calendarManager.convertAllDayEventToTimed(event, startMin: startMin, dateKey: dateKey)
+        ) else { return nil }
+        let conversion = CalendarAllDayEventPendingConversion(event: event, startMin: startMin, dateKey: dateKey)
+        switch ConversionStep.first(isRecurringSeriesMember: CalendarEventIdentity.isRecurringSeriesMember(event)) {
+        case .askScope:
+            return conversion
+        case .convert(let scope):
+            apply(conversion, scope: scope, calendarManager: calendarManager)
+            return nil
+        }
+    }
+
+    /// Writes a conversion at the scope the user chose (or `.thisOccurrence` for a single event).
+    static func apply(
+        _ conversion: CalendarAllDayEventPendingConversion,
+        scope: CalendarRecurrenceEditScope,
+        calendarManager: CalendarManager
+    ) {
+        calendarManager.convertAllDayEventToTimed(
+            conversion.event,
+            startMin: conversion.startMin,
+            dateKey: conversion.dateKey,
+            scope: scope
+        )
+    }
+}
+
+/// A repeating all-day chip's drop, held while the scope dialog asks how far it reaches
+/// ([[T-18946]]).
+struct CalendarAllDayEventPendingConversion {
+    let event: EKEvent
+    let startMin: Int
+    let dateKey: String
+}
+
+/// The "Only This Event / This And Future Events" question for a parked all-day drop
+/// ([[T-18946]]), worded as a timed block's move asks it. Cancel leaves the event all-day.
+private struct CalendarAllDayConversionScopeDialog: ViewModifier {
+    @Binding var pending: CalendarAllDayEventPendingConversion?
+    let calendarManager: CalendarManager
+
+    func body(content: Content) -> some View {
+        content.confirmationDialog(
+            CadenceRecurrenceScopeCopy.eventScopeTitle,
+            isPresented: Binding(
+                get: { pending != nil },
+                set: { if !$0 { pending = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pending
+        ) { conversion in
+            ForEach(CalendarRecurrenceEditScope.allCases, id: \.self) { scope in
+                Button(scope.label) {
+                    CalendarAllDayEventDropSupport.apply(conversion, scope: scope, calendarManager: calendarManager)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text(CadenceRecurrenceScopeCopy.eventScopeMessage)
+        }
+    }
+}
+
+extension View {
+    /// Asks the scope of a repeating all-day chip's drop that `CalendarAllDayEventDropSupport.convert`
+    /// parked in `pending` ([[T-18946]]).
+    func calendarAllDayConversionScopeDialog(
+        pending: Binding<CalendarAllDayEventPendingConversion?>,
+        calendarManager: CalendarManager
+    ) -> some View {
+        modifier(CalendarAllDayConversionScopeDialog(pending: pending, calendarManager: calendarManager))
     }
 }
 

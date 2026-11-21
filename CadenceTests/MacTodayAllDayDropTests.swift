@@ -98,7 +98,7 @@ struct MacTodayAllDayDropTests {
             try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SchedulePanel.swift")
         )
         #expect(CadenceSourceScan.matchCount(
-            #"onDropAllDayEventAtMinute:\s*\{\s*payload,\s*startMin\s+in\s*CalendarAllDayEventDropSupport\.convert\("#,
+            #"onDropAllDayEventAtMinute:\s*\{\s*payload,\s*startMin\s+in\s*pendingAllDayConversion\s*=\s*CalendarAllDayEventDropSupport\.convert\("#,
             in: panel
         ) == 1)
         #expect(CadenceSourceScan.matchCount(#"dateKey:\s*todayKey,\s*fallbackDate:"#, in: panel) == 1)
@@ -174,6 +174,58 @@ struct MacTodayAllDayDropTests {
         let convert = try #require(CadenceSourceScan.functionBody(named: "convertAllDayEventToTimed", in: manager))
         #expect(CadenceSourceScan.matchCount(#"CalendarAllDayEventDropSupport\.convertedDurationMinutes"#, in: convert) == 1)
         #expect(CadenceSourceScan.matchCount(#"value: 60\b"#, in: convert) == 0)
+    }
+
+    // MARK: - [[T-18946]] a repeating chip asks how far before it converts
+
+    @Test("A repeating chip's drop asks the scope first; a single event converts one occurrence at once")
+    func aRepeatingChipAsksBeforeConverting() {
+        #expect(CalendarAllDayEventDropSupport.ConversionStep.first(isRecurringSeriesMember: true) == .askScope)
+        #expect(
+            CalendarAllDayEventDropSupport.ConversionStep.first(isRecurringSeriesMember: false)
+                == .convert(.thisOccurrence)
+        )
+        // The answer reaches EventKit as the span its button names.
+        #expect(CalendarRecurrenceEditScope.thisOccurrence.eventSpan == .thisEvent)
+        #expect(CalendarRecurrenceEditScope.futureOccurrences.eventSpan == .futureEvents)
+    }
+
+    @Test("The conversion writes the chosen scope, and both hosts park a repeating drop for the dialog")
+    func theConversionWritesTheChosenScope() throws {
+        let manager = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Services/CalendarManager.swift")
+        )
+        let write = try #require(CadenceSourceScan.functionBody(named: "convertAllDayEventToTimed", in: manager))
+        #expect(CadenceSourceScan.matchCount(#"\.thisEvent\b"#, in: write) == 0)
+        #expect(CadenceSourceScan.matchCount(#"span:\s*scope\.eventSpan"#, in: write) == 1)
+
+        let support = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/CalendarEventPresentationSupport.swift")
+        )
+        let convert = try #require(CadenceSourceScan.functionBody(named: "convert", in: support))
+        #expect(CadenceSourceScan.matchCount(
+            #"ConversionStep\.first\(isRecurringSeriesMember:\s*CalendarEventIdentity\.isRecurringSeriesMember\(event\)\)"#,
+            in: convert
+        ) == 1)
+        #expect(CadenceSourceScan.matchCount(#"convertAllDayEventToTimed\("#, in: convert) == 0)
+        let apply = try #require(CadenceSourceScan.functionBody(named: "apply", in: support))
+        #expect(CadenceSourceScan.matchCount(#"scope:\s*scope\b"#, in: apply) == 1)
+        #expect(CadenceSourceScan.matchCount(
+            #"ForEach\(CalendarRecurrenceEditScope\.allCases"#, in: support
+        ) == 1)
+
+        for path in [
+            "Cadence/macOS/Views/SchedulePanel.swift",
+            "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift",
+        ] {
+            let host = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            #expect(CadenceSourceScan.matchCount(
+                #"pendingAllDayConversion\s*=\s*CalendarAllDayEventDropSupport\.convert\("#, in: host
+            ) == 1, "\(path) drops the parked conversion")
+            #expect(CadenceSourceScan.matchCount(
+                #"\.calendarAllDayConversionScopeDialog\(\s*pending:\s*\$pendingAllDayConversion"#, in: host
+            ) == 1, "\(path) never asks the scope")
+        }
     }
 }
 #endif

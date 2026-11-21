@@ -91,6 +91,7 @@ struct SchedulePanel: View {
     /// ([[T-655]], [[T-3171]]). Its sibling on the Calendar page's `CalDayColumn` is the same flag
     /// drawn the same way, for the reason stated beside that alert.
     @State private var taskCreateFailed = false
+    @State private var pendingAllDayConversion: CalendarAllDayEventPendingConversion?
     @State private var exportDocument: MarkdownExportDocument?
     @State private var isExportingTimeline = false
     /// A refused timeline export's sentence; non-nil puts up the alert ([[T-18925]]).
@@ -211,8 +212,9 @@ struct SchedulePanel: View {
                             },
                             // A chip from the all-day band above converts on today's ladder
                             // ([[T-8091]]), through the Calendar page's own rule.
+                            // A repeating chip is parked for the scope dialog ([[T-18946]]).
                             onDropAllDayEventAtMinute: { payload, startMin in
-                                CalendarAllDayEventDropSupport.convert(
+                                pendingAllDayConversion = CalendarAllDayEventDropSupport.convert(
                                     payload,
                                     startMin: startMin,
                                     dateKey: todayKey,
@@ -226,6 +228,10 @@ struct SchedulePanel: View {
                             onCreateEvent: { draft in
                                 calendarManager.createStandaloneEvent(draft, hostDay: DateFormatters.now())
                             }
+                        )
+                        .calendarAllDayConversionScopeDialog(
+                            pending: $pendingAllDayConversion,
+                            calendarManager: calendarManager
                         )
                     }
                     .onAppear {

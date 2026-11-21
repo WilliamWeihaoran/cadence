@@ -926,6 +926,7 @@ struct CalDayColumn: View {
     @Environment(CalendarManager.self) private var calendarManager
     /// The refusal this column can produce: a drag-created task the store would not take
     /// ([[T-655]]). Its block sibling went with the Block feature's creation paths ([[T-3170]]).
+    @State private var pendingAllDayConversion: CalendarAllDayEventPendingConversion?
     @State private var taskCreateFailed = false
 
     private var dateKey: String {
@@ -966,8 +967,9 @@ struct CalDayColumn: View {
             prefersCalendarEventCreation: true,
             // The resolution and the read-only refusal ([[T-5241]]) are shared with Mac Today's
             // ladder ([[T-8091]]); see `CalendarAllDayEventDropSupport`.
+            // A repeating chip is parked for the scope dialog ([[T-18946]]).
             onDropAllDayEventAtMinute: { payload, startMin in
-                CalendarAllDayEventDropSupport.convert(
+                pendingAllDayConversion = CalendarAllDayEventDropSupport.convert(
                     payload,
                     startMin: startMin,
                     dateKey: dateKey,
@@ -990,6 +992,10 @@ struct CalDayColumn: View {
         } message: {
             Text(TaskCreationService.saveFailureNotice)
         }
+        .calendarAllDayConversionScopeDialog(
+            pending: $pendingAllDayConversion,
+            calendarManager: calendarManager
+        )
     }
 
     /// **The drag-created task is committed here, and a refusal is named here ([[T-655]]).**
