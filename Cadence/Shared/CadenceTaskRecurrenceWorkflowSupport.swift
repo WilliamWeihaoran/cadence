@@ -142,6 +142,62 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         spawnNextOccurrenceIfNeeded(from: task, in: context, now: now)
     }
 
+    /// Advances the series past an occurrence that Today's leftover banner is about to roll onto
+    /// `todayKey` **off the series' own schedule** ([[T-18945]]), and answers the successor it
+    /// minted, or `nil`.
+    ///
+    /// The model stores no series weekday or day of the month: the live occurrence's own do date
+    /// *is* the schedule, and its successor is stepped from it on completion. So rolling a weekly
+    /// "Sunday" occurrence onto a Tuesday made every later occurrence a Tuesday one, while ticking
+    /// the same occurrence late *without* rolling it keeps Sunday ([[T-14821]]: a late completion
+    /// does not move the series). The roll is that late completion's first half — "I will do last
+    /// Sunday's one today" — so it now gives the series the answer the late tick gives: the
+    /// successor is minted here, from the occurrence's planned dates and before the roll moves
+    /// them, exactly as "Delete This Occurrence" mints it before the row leaves ([[T-6115]]). The
+    /// rolled row then moves alone, and completing it later spawns nothing, because its
+    /// `recurrenceSpawnedTaskID` is set.
+    ///
+    /// **Nothing is minted when today is a day the series reaches anyway** — any day for a daily
+    /// series, the same weekday for a weekly one. There moving the occurrence moves no cadence, the
+    /// successor stepped from today on completion lands where it would have, and spawning early
+    /// would only pile one extra open copy of a daily task onto every day it is rolled unfinished.
+    ///
+    /// The same door as the settle and delete paths (`spawnNextOccurrenceIfNeeded`), so an ended
+    /// series, a successor already minted, and the end condition all answer as they do there.
+    @discardableResult
+    static func spawnSuccessorBeforeRollingOver(
+        _ task: AppTask,
+        todayKey: String,
+        in context: ModelContext
+    ) -> AppTask? {
+        guard task.isRecurring,
+              task.recurrenceSpawnedTaskID == nil,
+              !task.scheduledDate.isEmpty,
+              task.scheduledDate < todayKey,
+              let now = DateFormatters.date(from: todayKey)
+        else { return nil }
+        let anchor = recurrenceAnchorDay(of: task, field: \.scheduledDate, in: context)
+        guard !isOnSchedule(todayKey, from: task.scheduledDate, recurrence: task.recurrenceRule, anchorDay: anchor)
+        else { return nil }
+        return spawnNextOccurrenceIfNeeded(from: task, in: context, now: now)
+    }
+
+    /// Whether `dayKey` is a whole number of periods (at least one) after `key` on the series' own
+    /// schedule. `periodsPastToday` answers the fewest periods landing *after* `dayKey`, so the one
+    /// before it is the last landing on or before it.
+    private static func isOnSchedule(
+        _ dayKey: String,
+        from key: String,
+        recurrence: TaskRecurrenceRule,
+        anchorDay: Int?
+    ) -> Bool {
+        guard key < dayKey,
+              let periods = periodsPastToday(from: key, todayKey: dayKey, recurrence: recurrence, anchorDay: anchorDay),
+              periods > 1
+        else { return false }
+        return shiftedDateKey(key, recurrence: recurrence, anchorDay: anchorDay, periods: periods - 1) == dayKey
+    }
+
     /// Whether deleting `task` has a live series to ask the user about ([[T-6115]]).
     ///
     /// The one answer both platforms' delete confirmations ask before growing a second button, so

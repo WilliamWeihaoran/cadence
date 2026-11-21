@@ -927,6 +927,132 @@ struct CadenceTodayRolloverSurfaceTests {
                 == Set(derived.todayEligibleTasks.map(\.id)))
     }
 
+    // MARK: - T-18945: a repeating task rolls one occurrence, not its series
+
+    /// A repeating task whose live occurrence planned `doDate` at `startMin`, inserted and saved.
+    private func repeatingTask(
+        _ title: String,
+        rule: TaskRecurrenceRule,
+        doDate: String,
+        startMin: Int,
+        in context: ModelContext
+    ) throws -> AppTask {
+        let task = AppTask(title: title)
+        task.recurrenceRule = rule
+        task.scheduledDate = doDate
+        task.scheduledStartMin = startMin
+        context.insert(task)
+        try context.save()
+        return task
+    }
+
+    private func noon(of key: String) throws -> Date {
+        try #require(DateFormatters.date(from: key)).addingTimeInterval(12 * 3600)
+    }
+
+    /// The ticket's daily scenario: "Workout" at 7:00, missed yesterday, rolled this morning and
+    /// ticked. Today is on a daily series' schedule, so nothing is minted early -- and the time of
+    /// day survives onto the rolled row and from it onto every later occurrence.
+    @Test func rollingADailyRepeatKeepsItsTimeForTheWholeSeries() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let workout = try repeatingTask("Workout", rule: .daily, doDate: "2026-08-19", startMin: 420, in: context)
+
+        try CadenceTodayRolloverSupport.rollOver([workout], todayKey: "2026-08-20", modelContext: context)
+
+        #expect(workout.scheduledDate == "2026-08-20")
+        #expect(workout.scheduledStartMin == 420, "the roll stripped the series' time of day")
+        #expect(try context.fetch(FetchDescriptor<AppTask>()).count == 1, "an on-schedule roll minted a successor early")
+
+        let successor = try #require(
+            CadenceTaskRecurrenceWorkflowSupport.markDone(workout, in: context, now: noon(of: "2026-08-20"))
+        )
+        #expect(successor.scheduledDate == "2026-08-21")
+        #expect(successor.scheduledStartMin == 420)
+    }
+
+    /// The ticket's weekly scenario: "Weekly review" planned Sunday 2026-08-16, rolled on Tuesday
+    /// the 18th. The series stays on Sundays -- the answer a late tick without the roll gives
+    /// ([[T-14821]]) -- because the roll mints the successor from the planned date before moving
+    /// the row; completing the rolled row afterwards mints nothing more.
+    @Test func rollingAWeeklyRepeatOffItsWeekdayLeavesTheSeriesOnItsWeekday() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let review = try repeatingTask("Weekly review", rule: .weekly, doDate: "2026-08-16", startMin: 540, in: context)
+
+        try CadenceTodayRolloverSupport.rollOver([review], todayKey: "2026-08-18", modelContext: context)
+
+        let others = try context.fetch(FetchDescriptor<AppTask>()).filter { $0.id != review.id }
+        let successor = try #require(others.first, "a roll off the weekday left the series to step from Tuesday")
+        #expect(others.count == 1)
+        #expect(successor.scheduledDate == "2026-08-23", "the series moved off Sunday")
+        #expect(successor.scheduledStartMin == 540)
+        #expect(successor.isRecurring && successor.recurrenceSourceTaskID == review.id)
+        #expect(review.recurrenceSpawnedTaskID == successor.id)
+        #expect(review.scheduledDate == "2026-08-18")
+        #expect(review.scheduledStartMin == 540)
+
+        #expect(
+            CadenceTaskRecurrenceWorkflowSupport.markDone(review, in: context, now: try noon(of: "2026-08-18")) == nil,
+            "ticking the rolled occurrence minted a second successor"
+        )
+        #expect(try context.fetch(FetchDescriptor<AppTask>()).count == 2)
+    }
+
+    /// Rolled exactly a week late, today IS the series' weekday: nothing is minted early, and the
+    /// rolled row is simply that week's occurrence.
+    @Test func rollingAWeeklyRepeatOntoItsOwnWeekdayMintsNothingEarly() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let review = try repeatingTask("Weekly review", rule: .weekly, doDate: "2026-08-16", startMin: 540, in: context)
+
+        try CadenceTodayRolloverSupport.rollOver([review], todayKey: "2026-08-23", modelContext: context)
+
+        #expect(try context.fetch(FetchDescriptor<AppTask>()).count == 1)
+        #expect(review.recurrenceSpawnedTaskID == nil)
+        #expect(review.scheduledDate == "2026-08-23")
+    }
+
+    /// A non-repeating leftover still gives its slot up: the kept minute is a series' time of day,
+    /// not every task's.
+    @Test func rollingAPlainTaskStillClearsItsTimeBesideARepeatingOne() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let plain = AppTask(title: "Plain")
+        plain.scheduledDate = "2026-08-19"
+        plain.scheduledStartMin = 600
+        context.insert(plain)
+        let workout = try repeatingTask("Workout", rule: .daily, doDate: "2026-08-19", startMin: 420, in: context)
+
+        try CadenceTodayRolloverSupport.rollOver([plain, workout], todayKey: "2026-08-20", modelContext: context)
+
+        #expect(plain.scheduledStartMin == -1)
+        #expect(workout.scheduledStartMin == 420)
+    }
+
+    /// A refused roll that minted a successor takes it back, and the rolled row's series links
+    /// with it: `commitDelete`'s rollback discards the insert, and the survivor snapshot puts the
+    /// pointer and the series id back.
+    @Test func aRefusedRollOfARepeatingTaskLeavesNoSuccessorAndNoLinks() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let review = try repeatingTask("Weekly review", rule: .weekly, doDate: "2026-08-16", startMin: 540, in: context)
+
+        #expect(throws: (any Error).self) {
+            try CadenceTodayRolloverSupport.rollOver(
+                [review],
+                todayKey: "2026-08-18",
+                modelContext: context
+            ) { _ in throw CommitRefused() }
+        }
+
+        #expect(try context.fetch(FetchDescriptor<AppTask>()).map(\.id) == [review.id])
+        #expect(review.recurrenceSpawnedTaskIDRaw.isEmpty)
+        #expect(review.recurrenceSeriesIDRaw.isEmpty)
+        #expect(review.scheduledDate == "2026-08-16")
+        #expect(!context.hasChanges)
+    }
+
     // MARK: - T-635: the roll commits, and the dismissal follows the commit
 
     /// A commit that always refuses, the way every other save-commit suite here spells it.

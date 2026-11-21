@@ -1441,7 +1441,9 @@ extension CadenceTaskMutationSupport {
     // pins. [[T-11861]] deleted it with the test that was its only caller.
 
     /// Moves an unfinished task from a day that has gone by onto today, clearing the slot it used
-    /// to hold — the timeline start minute, the block it sat in, and any legacy calendar link.
+    /// to hold — the timeline start minute, the block it sat in, and any legacy calendar link. A
+    /// repeating task keeps its start minute, and a roll off its series' schedule mints the
+    /// successor first ([[T-18945]], in the body).
     ///
     /// **Lifted out of `SchedulingActions.rollOverTaskToToday`** (T-195), which sat in
     /// `macOS/Services/` while importing nothing platform-specific, and was therefore why Today's
@@ -1463,8 +1465,19 @@ extension CadenceTaskMutationSupport {
             normalizeBundleOrder(bundle)
             deleteBundleIfFullySettled(bundle, modelContext: modelContext)
         }
+        // **[[T-18945]]: a repeating task rolls one occurrence, not its series.** The live
+        // occurrence's fields are the series' schedule -- its successor copies the start minute
+        // and steps from the do date -- so the roll used to strip the time from every later
+        // occurrence and, off the series' weekday, move the whole series onto the roll day.
+        // Before the date moves, a roll off the schedule mints the successor from the planned
+        // dates (see `spawnSuccessorBeforeRollingOver`); and a repeating task keeps its minute,
+        // as the "Today" shortcut and a day drag already keep it, because that minute is the
+        // series' time of day rather than a slot on the day being left.
+        CadenceTaskRecurrenceWorkflowSupport.spawnSuccessorBeforeRollingOver(task, todayKey: todayKey, in: modelContext)
         task.scheduledDate = todayKey
-        task.scheduledStartMin = -1
+        if !task.isRecurring {
+            task.scheduledStartMin = -1
+        }
         // Unconditional, not `if scheduledStartMin >= 0`. Nothing writes this field a non-empty
         // value any more (see "Calendar / Events" in `docs/CLAUDE_REFERENCE.md`) and every write
         // site clears it, so a stale identifier from an earlier build must not survive onto the
@@ -1706,6 +1719,15 @@ nonisolated struct CadenceDeleteSurvivorSnapshot {
         let raw = task.recurrenceSpawnedTaskIDRaw
         restorations.append {
             if task.recurrenceSpawnedTaskIDRaw != raw { task.recurrenceSpawnedTaskIDRaw = raw }
+        }
+    }
+
+    /// The series id `ensureRecurrenceSeriesMetadata` stamps on a series origin the first time it
+    /// spawns -- which the roll of a repeating task can now do ([[T-18945]]).
+    mutating func captureSeriesID(of task: AppTask) {
+        let raw = task.recurrenceSeriesIDRaw
+        restorations.append {
+            if task.recurrenceSeriesIDRaw != raw { task.recurrenceSeriesIDRaw = raw }
         }
     }
 

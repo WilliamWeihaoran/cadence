@@ -61,7 +61,8 @@ enum CadenceTodayRolloverSupport {
     /// photographed: a sun reading `22 days ago` beside a flag reading `51 days ago`.
     ///
     /// **The roll still does not move a due date** — `CadenceTaskMutationSupport.rollOverTaskToToday`
-    /// writes `scheduledDate`, `scheduledStartMin` and `calendarEventID` and nothing else — so an
+    /// writes `scheduledDate`, `scheduledStartMin` and `calendarEventID` on the rolled row (and, for
+    /// a repeating one rolled off its schedule, mints the successor [[T-18945]]) — so an
     /// overdue task offered here is still overdue afterwards, still red, and still on Today. That
     /// is the invariant this widening rests on; `CadenceTodayRolloverSurfaceTests` asserts it
     /// directly rather than reading it off this comment.
@@ -217,6 +218,10 @@ enum CadenceTodayRolloverSupport {
         var survivors = CadenceDeleteSurvivorSnapshot()
         for task in tasks {
             survivors.captureSlot(of: task)
+            // A repeating task's roll may mint its successor ([[T-18945]]) and point this row at
+            // it; the refusal's rollback discards the insert, and this puts the pointer back.
+            survivors.captureRecurrencePointer(of: task)
+            survivors.captureSeriesID(of: task)
             guard let bundle = task.bundle else { continue }
             survivors.captureMembership(of: bundle)
             for member in bundle.tasks ?? [] {
