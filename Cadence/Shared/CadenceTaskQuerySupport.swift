@@ -202,11 +202,15 @@ enum CadenceTaskQuerySupport {
     /// projects interleave. So a reorder made in the sidebar never reached Today's groups or All
     /// Tasks' by-list groups — a project dragged above an area stayed below it on both pages.
     ///
+    /// **Contexts come in `CadenceDisplayOrder`'s total order ([[T-18950]])**, the one both sidebars
+    /// draw their sections in. A bare `order` sort left two contexts sharing a number in whatever
+    /// order the caller's array held them.
+    ///
     /// An archived context is skipped, as both sidebars skip it: its lists move to the sidebar's
     /// trailing "Other" section, and here they fall through to `todayListGroups`' leftovers tail.
     static func listGroupOrder(contexts: [Context]) -> [String] {
         var order: [String] = [CadenceTaskDropSupport.containerKey(for: .inbox)]
-        for context in contexts.sorted(by: { $0.order < $1.order }) where !context.isArchived {
+        for context in CadenceDisplayOrder.contexts(contexts) where !context.isArchived {
             let items = (context.areas ?? []).map { CadenceSidebarLists.Item.orderingOnly($0) }
                 + (context.projects ?? []).map { CadenceSidebarLists.Item.orderingOnly($0) }
             order.append(contentsOf: CadenceSidebarLists.sorted(items).map { item in

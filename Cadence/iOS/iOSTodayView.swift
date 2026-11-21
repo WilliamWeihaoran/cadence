@@ -17,7 +17,10 @@ struct iOSTodayView: View {
     // tasks and contexts only.
     /// For the *order* of Today's list groups only — `CadenceTaskQuerySupport.listGroupOrder`
     /// presents them in sidebar order, which is a context-by-context walk (T-305).
-    @Query(sort: \Context.order) private var contexts: [Context]
+    @Query(sort: \Context.order) private var storedContexts: [Context]
+    /// [[T-18950]]: the store sorts on `order` alone, which leaves ties to SwiftData;
+    /// `CadenceDisplayOrder` is the total order every surface draws contexts in.
+    private var contexts: [Context] { CadenceDisplayOrder.contexts(storedContexts) }
     @AppStorage(CadencePreferenceKeys.iosTodaySortMode) private var sortModeRaw = CadenceTaskSortMode.priority.rawValue
     @AppStorage(CadencePreferenceKeys.iosTodayShowCompleted) private var showCompleted = false
     @AppStorage("ios.today.sidePanel") private var sidePanelRaw = iOSTodaySidePanel.notes.rawValue

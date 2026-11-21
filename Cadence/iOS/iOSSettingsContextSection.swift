@@ -21,7 +21,10 @@ struct iOSContextEditorSheet: View {
     let mode: iOSContextEditorMode
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Context.order) private var contexts: [Context]
+    @Query(sort: \Context.order) private var storedContexts: [Context]
+    /// [[T-18950]]: the store sorts on `order` alone, which leaves ties to SwiftData;
+    /// `CadenceDisplayOrder` is the total order every surface draws contexts in.
+    private var contexts: [Context] { CadenceDisplayOrder.contexts(storedContexts) }
     @State private var name = ""
     @State private var icon = Self.defaultIcon
     @State private var colorHex = Theme.blueHex

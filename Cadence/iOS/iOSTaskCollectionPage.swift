@@ -55,7 +55,10 @@ struct iOSTaskCollectionPage: View {
     @Environment(RemindersManager.self) private var remindersManager
     /// Read for `TaskGroupingMode.byList`, whose group order is the sidebar's
     /// (`CadenceTaskQuerySupport.listGroupOrder`), exactly as macOS's `TasksListView` reads it.
-    @Query(sort: \Context.order) private var contexts: [Context]
+    @Query(sort: \Context.order) private var storedContexts: [Context]
+    /// [[T-18950]]: the store sorts on `order` alone, which leaves ties to SwiftData;
+    /// `CadenceDisplayOrder` is the total order every surface draws contexts in.
+    private var contexts: [Context] { CadenceDisplayOrder.contexts(storedContexts) }
     /// `TaskGroupingMode.byDate`'s buckets are measured against today, so this page depends on the
     /// day and is re-run at midnight by `.cadenceTracksDayChanges` rather than whenever something
     /// else happens to — the pattern macOS's `TasksPanel` and iOS's Calendar page both use.

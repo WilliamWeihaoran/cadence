@@ -40,7 +40,10 @@ struct iOSTasksTabView: View {
     /// [[T-18730]]: a pushed list reports itself so the root can widen into that list.
     var onListAppear: (iOSListRoute) -> Void = { _ in }
 
-    @Query(sort: \Context.order) private var contexts: [Context]
+    @Query(sort: \Context.order) private var storedContexts: [Context]
+    /// [[T-18950]]: the store sorts on `order` alone, which leaves ties to SwiftData;
+    /// `CadenceDisplayOrder` is the total order every surface draws contexts in.
+    private var contexts: [Context] { CadenceDisplayOrder.contexts(storedContexts) }
     // No task `@Query` here (T-3156): the counts beside Today and Tasks are read over every task,
     // and this body re-runs whenever the shell hands it fresh `section` / `path` bindings — once
     // each way per New task sheet. `iOSTasksIndexDestinationRows` owns that fetch and its counting.

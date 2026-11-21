@@ -23,7 +23,10 @@ struct InlineTaskComposer: View {
     let onDismiss: () -> Void
 
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Context.order) private var contexts: [Context]
+    @Query(sort: \Context.order) private var storedContexts: [Context]
+    /// [[T-18950]]: the store sorts on `order` alone, which leaves ties to SwiftData;
+    /// `CadenceDisplayOrder` is the total order every surface draws contexts in.
+    private var contexts: [Context] { CadenceDisplayOrder.contexts(storedContexts) }
     @Query(sort: \Area.order)    private var areas:    [Area]
     @Query(sort: \Project.order) private var projects: [Project]
     @Query(sort: \Tag.order)     private var tags:     [Tag]

@@ -18,7 +18,10 @@ import SwiftData
 /// macOS rendering of it, and the iPad sidebar is being brought to the same layout.
 struct SidebarView: View {
     @Binding var selection: SidebarItem?
-    @Query(sort: \Context.order) private var contexts: [Context]
+    @Query(sort: \Context.order) private var storedContexts: [Context]
+    /// [[T-18950]]: the store sorts on `order` alone, which leaves ties to SwiftData;
+    /// `CadenceDisplayOrder` is the total order every surface draws contexts in.
+    private var contexts: [Context] { CadenceDisplayOrder.contexts(storedContexts) }
     // Queried flat, not read off `context.areas` / `context.projects`. Iterating the relationship
     // is what made a context-less list invisible on this column — see `listSections` (T-538).
     // Unsorted on purpose: the one ordering is `CadenceSidebarLists`'.

@@ -92,18 +92,19 @@ enum CadencePickerSupport<Element: CadencePickable> {
     /// "Untitled Area", so the trigger and the row it opened disagreed about the same area.
     static var untitledName: String { Element.untitledPickerName }
 
-    /// `order`, then name case-insensitively.
+    /// `order`, then name case-insensitively, then `id` -- `CadenceDisplayOrder`'s rule, so a
+    /// context picker lists contexts in the order the sidebars draw them ([[T-18950]]).
     ///
     /// The tie-break is the load-bearing half. `@Query(sort: \Area.order)` is a sort on `order`
     /// alone, and among equal keys SwiftData promises nothing; `order` defaults to `0`, so every
-    /// element created outside the reorder UI ties.
+    /// element created outside the reorder UI ties. The `id` leg ends a tie on the name too, which
+    /// stopped one short of a total order before T-18950.
     static func sorted(_ elements: [Element]) -> [Element] {
-        elements.sorted {
-            if $0.order == $1.order {
-                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-            }
-            return $0.order < $1.order
-        }
+        elements.sorted { CadenceDisplayOrder.precedes(key($0), key($1)) }
+    }
+
+    private static func key(_ element: Element) -> CadenceDisplayOrder.Key {
+        CadenceDisplayOrder.Key(order: element.order, name: element.name, id: element.id)
     }
 
     /// Every offerable element, **plus the one currently assigned even when it is not offerable**.

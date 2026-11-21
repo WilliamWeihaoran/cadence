@@ -15,7 +15,10 @@ struct SettingsView: View {
     /// for. Colour is a separate preference and stayed where it was.
     @AppStorage(CadencePreferenceKeys.sidebarTabColors) private var sidebarTabColorsRaw = ""
     @AppStorage(NoteTemplateLibrary.storageKey) private var noteTemplateOverridesRaw = ""
-    @Query(sort: \Context.order) private var contexts: [Context]
+    @Query(sort: \Context.order) private var storedContexts: [Context]
+    /// [[T-18950]]: the store sorts on `order` alone, which leaves ties to SwiftData;
+    /// `CadenceDisplayOrder` is the total order every surface draws contexts in.
+    private var contexts: [Context] { CadenceDisplayOrder.contexts(storedContexts) }
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
     @Query(sort: \Tag.order) private var tags: [Tag]
