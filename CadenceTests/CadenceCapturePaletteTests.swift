@@ -1290,8 +1290,11 @@ struct CadenceCapturePaletteTests {
     /// carries the drop's day/minute seed and starts in Event mode rather than re-reading today.
     @Test func theEventComposerOpensOnTheDayAndMinuteTheDropResolved() throws {
         let host = try strippingComments(sourceFile("Cadence/iOS/iOSCaptureRadialMenu.swift"))
-        let seed = "CadenceTaskComposerSeed(doDateKey: dateKey, scheduledStartMin: startMinute ?? -1)"
-        let eventCard = #"iOSCreateTaskSheet\(\s*seed: CadenceTaskComposerSeed\(doDateKey: dateKey, scheduledStartMin: startMinute \?\? -1\),\s*initialKind: \.event\s*\)"#
+        // Since [[T-18850]] the sheet reads the seed from `NewEventDrop.composerSeed`, the one
+        // construction the drop ghost's caption reads too ([[T-18868]]); the day/minute rule
+        // itself is pinned on that property below.
+        let seed = "CadenceTaskDropSupport.NewEventDrop(dateKey: dateKey, startMinute: startMinute).composerSeed"
+        let eventCard = #"iOSCreateTaskSheet\(\s*seed: CadenceTaskDropSupport\.NewEventDrop\(dateKey: dateKey, startMinute: startMinute\)\s*\.composerSeed,\s*initialKind: \.event\s*\)"#
         func carriesResolvedPlacement(_ source: String) -> Bool {
             source.range(of: eventCard, options: .regularExpression) != nil
         }
@@ -1299,6 +1302,14 @@ struct CadenceCapturePaletteTests {
         #expect(!carriesResolvedPlacement("iOSCreateTaskSheet(seed: \(seed), initialKind: .task)"))
         #expect(!carriesResolvedPlacement("iOSCreateTaskSheet(seed: CadenceTaskComposerSeed(), initialKind: .event)"))
         #expect(carriesResolvedPlacement(host))
+        #expect(
+            CadenceTaskDropSupport.NewEventDrop(dateKey: "2026-11-21", startMinute: 855).composerSeed
+                == CadenceTaskComposerSeed(doDateKey: "2026-11-21", scheduledStartMin: 855)
+        )
+        #expect(
+            CadenceTaskDropSupport.NewEventDrop(dateKey: "2026-11-21", startMinute: nil).composerSeed
+                == CadenceTaskComposerSeed(doDateKey: "2026-11-21", scheduledStartMin: -1)
+        )
         // The segment's own arm is the one place `today` may still be named, and it passes no
         // minute: a segment is a choice about *what*, never about *when*.
         let button = try cadenceFunctionBody("struct iOSCaptureRadialMenuButton: View", in: host)
