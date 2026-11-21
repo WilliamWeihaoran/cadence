@@ -456,7 +456,7 @@ private struct iOSMarkdownSuggestionPill<Leading: View>: View {
                         .lineLimit(1)
                 }
             }
-            .frame(maxWidth: 220, alignment: .leading)
+            .frame(maxWidth: NoteReferenceChipMetrics.maximumContentWidth, alignment: .leading)
             .modifier(iOSMarkdownChromePlate(
                 height: iOSMarkdownChromeMetrics.pillHeight,
                 horizontalPadding: 10

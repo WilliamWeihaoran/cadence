@@ -1,5 +1,15 @@
 import Foundation
 
+/// **T-18816.** The widest a reference chip's content may draw, on both platforms: the Mac note
+/// reference strip's `ReferenceChip` and iOS's `iOSMarkdownSuggestionPill` (the reference panel and
+/// the suggestion strips) read this one figure. Both strips are horizontal `ScrollView`s, which
+/// propose no width, so without a cap a long title takes its whole one-line width and pushes its
+/// deadline and every later chip past the pane edge. One figure, because a strip of reference chips
+/// is the same control on both platforms ([[T-8201]]).
+enum NoteReferenceChipMetrics {
+    static let maximumContentWidth: CGFloat = 220
+}
+
 /// **What a `[[…]]` reference names, and therefore how it is allowed to resolve.**
 ///
 /// T-348: the parsed types carried a bare `UUID?`, so a *stale* id and *no* id were the same value

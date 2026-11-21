@@ -142,6 +142,13 @@ private struct ReferenceChip: View {
                     .layoutPriority(1)
             }
         }
+        // [[T-18816]]: capped at the figure iOS's reference pill reads. The strip is a horizontal
+        // `ScrollView`, which proposes no width, so the title's `lineLimit` had nothing to truncate
+        // against and a long title ran the chip -- and its deadline, and every chip after it --
+        // past the pane edge. `fixedSize` keeps the cap a cap: a bare `maxWidth` is flexible upward
+        // (`CadenceTagChip`'s note on the same pattern).
+        .frame(maxWidth: NoteReferenceChipMetrics.maximumContentWidth, alignment: .leading)
+        .fixedSize(horizontal: true, vertical: false)
         .foregroundStyle(tint)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
