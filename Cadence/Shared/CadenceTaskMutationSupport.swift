@@ -894,14 +894,16 @@ extension CadenceTaskMutationSupport {
         modelContext: ModelContext,
         recurrenceScope: CadenceTaskRecurrenceDeleteScope = .wholeSeries,
         commit: (ModelContext) throws -> Void = { try $0.save() },
-        focusSession: CadenceFocusSessionOwner? = nil
+        focusSession: CadenceFocusSessionOwner? = nil,
+        reconciler: CadenceWindDownReconciler? = nil
     ) -> Bool {
         deleteTasks(
             withIDs: [task.id],
             modelContext: modelContext,
             recurrenceScope: recurrenceScope,
             commit: commit,
-            focusSession: focusSession
+            focusSession: focusSession,
+            reconciler: reconciler
         )
     }
 
@@ -1009,6 +1011,10 @@ extension CadenceTaskMutationSupport {
     ///   ([[T-18514]]); `nil` means `CadenceFocusSessionOwner.shared`. A parameter so a test can
     ///   hand in an owner on its own defaults suite. On macOS the owner never holds a subject, so
     ///   this is inert there and the Mac's own `FocusManager` teardown stays in its wrapper.
+    ///
+    /// - Parameter reconciler: Run once after a committed delete that minted a successor
+    ///   ([[T-18526]]); `nil` means `CadenceWindDownReconciler.default` -- live in the app, inert in
+    ///   a test host, so no test schedules a real notification. A parameter so a test can watch it.
     @discardableResult
     static func deleteTasks(
         withIDs taskIDs: Set<UUID>,
@@ -1018,7 +1024,8 @@ extension CadenceTaskMutationSupport {
         commit: (ModelContext) throws -> Void = { try $0.save() },
         willDelete: (Set<UUID>) -> Void = { _ in },
         didDeleteBundles: (Set<UUID>) -> Void = { _ in },
-        focusSession: CadenceFocusSessionOwner? = nil
+        focusSession: CadenceFocusSessionOwner? = nil,
+        reconciler: CadenceWindDownReconciler? = nil
     ) -> Bool {
         guard !taskIDs.isEmpty else { return true }
 
@@ -1091,9 +1098,12 @@ extension CadenceTaskMutationSupport {
         // SwiftData mirrors onto `task.subtasks` at once -- so a spawn placed after it copied an
         // empty checklist, and every later occurrence of the series came back with no subtasks.
         // `allSubtasks` was fetched before this, so the successor's fresh copies are not swept.
+        var spawnedSuccessor = false
         if recurrenceScope == .thisOccurrence {
             for task in tasks {
-                CadenceTaskRecurrenceWorkflowSupport.spawnSuccessorBeforeDeletingOccurrence(task, in: modelContext)
+                if CadenceTaskRecurrenceWorkflowSupport.spawnSuccessorBeforeDeletingOccurrence(task, in: modelContext) != nil {
+                    spawnedSuccessor = true
+                }
             }
         }
 
@@ -1180,6 +1190,19 @@ extension CadenceTaskMutationSupport {
             } else {
                 focusSession.endSessionForDeletedSubject()
             }
+        }
+
+        // **[[T-18526]]: a successor minted by "Delete This Occurrence" gets its reminders now.**
+        // The cancel above only knows the doomed ids; the successor carries the series' do date,
+        // start minute and due date forward, and without this its "Starting now" / "Due today"
+        // waited for the next scene-phase reconcile -- which on the Mac never comes while the
+        // window stays active. The same fast path `markDone` / `markCancelled` run after their
+        // spawn, here in the core so the Mac wrapper and the three iOS delete sites all take it.
+        // Below the commit, so a refused delete (which rolled the successor back) runs none. The
+        // deferred half needs no arm: only the two single-task confirmations pass `.thisOccurrence`
+        // and both commit immediately; a cascade is `.wholeSeries` and mints nothing.
+        if spawnedSuccessor, commitsImmediately {
+            (reconciler ?? .default).run(in: modelContext)
         }
         return true
     }

@@ -230,6 +230,68 @@ struct CadenceRecurringDeleteScopeTests {
         #expect(try reader.fetch(FetchDescriptor<AppTask>()).count == 1)
     }
 
+    // MARK: - The successor's reminders ([[T-18526]])
+
+    /// A reconciler that only counts its runs, so no test schedules a real notification.
+    @MainActor private final class ReconcileCounter {
+        var runs = 0
+        var reconciler: CadenceWindDownReconciler {
+            CadenceWindDownReconciler(isLive: false) { [self] _ in runs += 1 }
+        }
+    }
+
+    /// The successor carries the series' dates forward, so its reminders must be planned as soon
+    /// as the delete lands -- once, after the commit, the way `markDone` reconciles after its spawn.
+    @Test func anOccurrenceDeleteThatMintsASuccessorReconcilesOnceAfterTheCommit() throws {
+        let modelContext = try makeContext()
+        let task = makeDailyOccurrence(in: modelContext)
+        let counter = ReconcileCounter()
+
+        #expect(CadenceTaskMutationSupport.delete(
+            task,
+            modelContext: modelContext,
+            recurrenceScope: .thisOccurrence,
+            reconciler: counter.reconciler
+        ))
+
+        #expect(try openTasks(in: modelContext).count == 1)
+        #expect(counter.runs == 1)
+    }
+
+    /// A refused commit rolled the successor back, so there is nothing new to plan for.
+    @Test func arefusedOccurrenceDeleteRunsNoReconcile() throws {
+        let modelContext = try makeContext()
+        let task = makeDailyOccurrence(in: modelContext)
+        try modelContext.save()
+        let counter = ReconcileCounter()
+
+        #expect(!CadenceTaskMutationSupport.delete(
+            task,
+            modelContext: modelContext,
+            recurrenceScope: .thisOccurrence,
+            commit: refuseTheCommit,
+            reconciler: counter.reconciler
+        ))
+
+        #expect(counter.runs == 0)
+    }
+
+    /// The series arm mints nothing, so the cancel of the doomed ids is all it needs.
+    @Test func aWholeSeriesDeleteRunsNoReconcile() throws {
+        let modelContext = try makeContext()
+        let task = makeDailyOccurrence(in: modelContext)
+        let counter = ReconcileCounter()
+
+        #expect(CadenceTaskMutationSupport.delete(
+            task,
+            modelContext: modelContext,
+            recurrenceScope: .wholeSeries,
+            reconciler: counter.reconciler
+        ))
+
+        #expect(counter.runs == 0)
+    }
+
     // MARK: - Which tasks are asked at all
 
     /// A non-repeating task must not grow a second button, and this is the one answer both
