@@ -269,11 +269,24 @@ struct MacTaskRowContextMenuParityTests {
 
     /// The submenu label carries the set date the way "Priority: High" carries the level, and is
     /// the bare title when nothing (or no parseable date) is set.
-    @Test func theDateSubmenuTitleCarriesTheSetDate() {
-        #expect(CadenceTaskDateMenuLabel.title("Due Date", dateKey: "2025-10-31") == "Due Date: Fri, Oct 31")
-        #expect(CadenceTaskDateMenuLabel.title("Do Date", dateKey: "2026-11-02") == "Do Date: Mon, Nov 2")
-        #expect(CadenceTaskDateMenuLabel.title("Due Date", dateKey: "") == "Due Date")
-        #expect(CadenceTaskDateMenuLabel.title("Do Date", dateKey: "not a date") == "Do Date")
+    @Test func theDateSubmenuTitleCarriesTheSetDate() throws {
+        let reference = try #require(DateFormatters.ymd.date(from: "2026-11-21")).addingTimeInterval(12 * 60 * 60)
+        #expect(CadenceTaskDateMenuLabel.title("Do Date", dateKey: "2026-11-02", relativeTo: reference) == "Do Date: Mon, Nov 2")
+        #expect(CadenceTaskDateMenuLabel.title("Due Date", dateKey: "", relativeTo: reference) == "Due Date")
+        #expect(CadenceTaskDateMenuLabel.title("Do Date", dateKey: "not a date", relativeTo: reference) == "Do Date")
+    }
+
+    /// [[T-18842]]: outside the reference year the submenu title carries the year, by the rule the
+    /// row's own chip follows (`DateFormatters.absoluteDay`) -- "Due Date: Fri, Jan 8" beside a
+    /// chip saying "Jan 8, 2027" was two different dates. Same-year titles are unchanged.
+    @Test func theDateSubmenuTitleCarriesTheYearOutsideTheReferenceYear() throws {
+        let reference = try #require(DateFormatters.ymd.date(from: "2026-11-21")).addingTimeInterval(12 * 60 * 60)
+        #expect(CadenceTaskDateMenuLabel.title("Due Date", dateKey: "2027-01-08", relativeTo: reference) == "Due Date: Fri, Jan 8, 2027")
+        #expect(CadenceTaskDateMenuLabel.title("Do Date", dateKey: "2025-10-31", relativeTo: reference) == "Do Date: Fri, Oct 31, 2025")
+        #expect(CadenceTaskDateMenuLabel.title("Due Date", dateKey: "2026-12-31", relativeTo: reference) == "Due Date: Thu, Dec 31")
+        // The same key, measured from inside its own year, drops the year again.
+        let nextYear = try #require(DateFormatters.ymd.date(from: "2027-01-02")).addingTimeInterval(12 * 60 * 60)
+        #expect(CadenceTaskDateMenuLabel.title("Due Date", dateKey: "2027-01-08", relativeTo: nextYear) == "Due Date: Fri, Jan 8")
     }
 
     /// The quick row that would write the set date is the checked one; an arbitrary date checks

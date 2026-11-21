@@ -129,6 +129,16 @@ nonisolated enum DateFormatters {
         return f
     }()
 
+    /// `EEE, MMM d, yyyy` — "Fri, Jan 8, 2027". `compactLongDate` with the year, for a day outside
+    /// the reference year only; reach it through `absoluteCompactLongDay`, as `longDateWithYear`
+    /// is reached through `absoluteLongDay` ([[T-18842]]).
+    static let compactLongDateWithYear: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "EEE, MMM d, yyyy"
+        return f
+    }()
+
     /// `MMMM yyyy` — "March 2026"
     ///
     /// Locale-pinned like `ymd`, and for the same reason this repo pins every fixed-format
@@ -515,6 +525,18 @@ nonisolated enum DateFormatters {
             return longDate.string(from: date)
         }
         return longDateWithYear.string(from: date)
+    }
+
+    /// `absoluteLongDay`'s abbreviated spelling: `compactLongDate` ("Fri, Jan 8") inside the
+    /// reference date's year, `compactLongDateWithYear` ("Fri, Jan 8, 2027") outside it -- the same
+    /// year rule, compared in `Calendar.current`. The task row menu's Do Date / Due Date submenu
+    /// titles are the caller ([[T-18842]]); same-year output is unchanged.
+    static func absoluteCompactLongDay(_ date: Date, relativeTo referenceDate: Date) -> String {
+        let cal = Calendar.current
+        guard cal.component(.year, from: date) != cal.component(.year, from: referenceDate) else {
+            return compactLongDate.string(from: date)
+        }
+        return compactLongDateWithYear.string(from: date)
     }
 
     /// The words themselves, for a day offset a caller has already decided is inside its window.

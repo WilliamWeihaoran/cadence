@@ -398,10 +398,12 @@ nonisolated enum CadenceTaskDateMenuLabel {
     }
 
     /// `title` alone when nothing is set, or when the stored key is not a date; otherwise
-    /// `"<title>: EEE, MMM d"`.
-    static func title(_ title: String, dateKey: String) -> String {
+    /// `"<title>: EEE, MMM d"`, with `, yyyy` outside the reference year -- the app's one year rule
+    /// (`DateFormatters.absoluteCompactLongDay`), so the menu cannot read "Fri, Jan 8" beside a row
+    /// chip saying "Jan 8, 2027" ([[T-18842]]).
+    static func title(_ title: String, dateKey: String, relativeTo referenceDate: Date = DateFormatters.now()) -> String {
         guard let date = DateFormatters.date(from: dateKey) else { return title }
-        return "\(title): \(DateFormatters.compactLongDate.string(from: date))"
+        return "\(title): \(DateFormatters.absoluteCompactLongDay(date, relativeTo: referenceDate))"
     }
 
     /// The quick row whose button would write `dateKey` today, or `nil` when the set date is
