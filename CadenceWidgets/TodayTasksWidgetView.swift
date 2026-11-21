@@ -154,7 +154,7 @@ struct TodayTasksWidgetView: View {
                 if !queueTasks.isEmpty {
                     taskStackCard(
                         title: CadenceTodayWidgetCopy.upNextTitle,
-                        subtitle: queueSubtitle,
+                        subtitle: CadenceTodayWidgetCopy.queueSubtitle(for: queueTasks, todayKey: entry.snapshot.dateKey),
                         tasks: queueTasks
                     )
                 }
@@ -185,15 +185,19 @@ struct TodayTasksWidgetView: View {
 
                     HStack(alignment: .top, spacing: scale.sectionSpacing) {
                         // [[T-18046]]: the same `dropFirst()` queue the large tile heads `Up next`;
-                        // it read "On deck" / "Then" here.
+                        // it read "On deck" / "Then" here. [[T-18874]]: "Later" only when the
+                        // queue splits, so a one-task day says "Nothing else here." once.
+                        let columns = CadenceTodayWidgetCopy.queueColumns(extraLargeQueueTasks)
                         taskColumnCard(
                             title: CadenceTodayWidgetCopy.upNextTitle,
-                            tasks: leadingColumnTasks
+                            tasks: columns[0]
                         )
-                        taskColumnCard(
-                            title: CadenceTodayWidgetCopy.laterTitle,
-                            tasks: trailingColumnTasks
-                        )
+                        if columns.count > 1 {
+                            taskColumnCard(
+                                title: CadenceTodayWidgetCopy.laterTitle,
+                                tasks: columns[1]
+                            )
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -613,13 +617,6 @@ struct TodayTasksWidgetView: View {
             .clipShape(Capsule())
     }
 
-    private var queueSubtitle: String {
-        CadenceTodayWidgetCopy.queueSubtitle(
-            overdueCount: entry.snapshot.overdueCount,
-            dueTodayCount: entry.snapshot.dueTodayCount
-        )
-    }
-
     private var topStatus: CadenceTodayTaskStatusPresentation {
         guard let task = entry.snapshot.tasks.first else {
             return CadenceTodayTaskStatusPresentation(
@@ -640,46 +637,31 @@ struct TodayTasksWidgetView: View {
             ]
         }
 
-        let dueTint = Theme.amber
-        let scheduledTint = Theme.blueLight
-        // [[T-18040]]: no `0 overdue` at any family -- the small tile's rule, now everyone's.
-        let overdueBadges = CadenceWidgetCountWords.overdueBadge(entry.snapshot.overdueCount)
-            .map { [WidgetHeaderBadge(text: $0, tint: Theme.red)] } ?? []
-
+        // [[T-18871]]: no zero badge at any family -- [[T-18040]]'s overdue rule, now every
+        // count's -- and as many as the family has room for.
+        let limit: Int
         switch widgetFamily {
-        case .systemSmall:
-            if !overdueBadges.isEmpty {
-                return overdueBadges
-            }
-            if entry.snapshot.dueTodayCount > 0 {
-                return [WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(entry.snapshot.dueTodayCount, CadenceWidgetCountWords.due), tint: dueTint)]
-            }
-            return [WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(entry.snapshot.scheduledTodayCount, CadenceWidgetCountWords.planned), tint: scheduledTint)]
-        case .systemMedium:
-            return overdueBadges + [
-                WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(entry.snapshot.dueTodayCount, CadenceWidgetCountWords.due), tint: dueTint),
-            ]
-        default:
-            return overdueBadges + [
-                WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(entry.snapshot.dueTodayCount, CadenceWidgetCountWords.due), tint: dueTint),
-                WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(entry.snapshot.scheduledTodayCount, CadenceWidgetCountWords.planned), tint: scheduledTint),
-            ]
+        case .systemSmall: limit = 1
+        case .systemMedium: limit = 2
+        default: limit = 3
+        }
+        return CadenceWidgetCountBadge.today(
+            overdue: entry.snapshot.overdueCount,
+            due: entry.snapshot.dueTodayCount,
+            planned: entry.snapshot.scheduledTodayCount,
+            limit: limit
+        ).map { WidgetHeaderBadge(text: $0.text, tint: Self.tint(for: $0.kind)) }
+    }
+
+    private static func tint(for kind: CadenceWidgetCountBadge.Kind) -> Color {
+        switch kind {
+        case .overdue: Theme.red
+        case .due: Theme.amber
+        case .planned, .upcoming: Theme.blueLight
         }
     }
 
     private var extraLargeQueueTasks: [CadenceTodayWidgetTask] {
         Array(entry.snapshot.tasks.prefix(widgetFamily.cadenceLayout.todayTaskLimit).dropFirst())
-    }
-
-    private var leadingColumnTasks: [CadenceTodayWidgetTask] {
-        let queue = extraLargeQueueTasks
-        let midpoint = (queue.count + 1) / 2
-        return Array(queue.prefix(midpoint))
-    }
-
-    private var trailingColumnTasks: [CadenceTodayWidgetTask] {
-        let queue = extraLargeQueueTasks
-        let midpoint = (queue.count + 1) / 2
-        return Array(queue.dropFirst(midpoint))
     }
 }

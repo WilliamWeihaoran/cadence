@@ -573,23 +573,29 @@ struct CalendarSnapshotWidgetView: View {
             return [WidgetHeaderBadge(text: "unavailable", tint: Theme.amber)]
         }
 
-        // [[T-18040]]: no red `0 overdue` when nothing is late, at either family that draws badges.
-        let overdueBadges = CadenceWidgetCountWords.overdueBadge(entry.snapshot.overdueCount)
-            .map { [WidgetHeaderBadge(text: $0, tint: Theme.red)] } ?? []
-
+        // [[T-18040]]: no red `0 overdue` when nothing is late; [[T-18871]]: no `0 due`, `0 planned`
+        // or `0 upcoming` either -- an empty span draws no badge line over "Schedule is clear".
+        let overdue = CadenceWidgetCountBadge(kind: .overdue, count: entry.snapshot.overdueCount)
+        let candidates: [CadenceWidgetCountBadge]
         if widgetFamily == .systemMedium {
             // The three numbers the metric-card row used to carry at this family, in the one line
             // the tile can actually afford. `mediumLayout` says why the cards went (T-7122); the
             // total they sat under is still the count in the header's trailing corner.
-            return overdueBadges + [
-                WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(dueCount, CadenceWidgetCountWords.due), tint: Theme.amber),
-                WidgetHeaderBadge(text: CadenceWidgetCountWords.badge(scheduledCount, CadenceWidgetCountWords.planned), tint: upcomingTint),
+            candidates = [
+                overdue,
+                CadenceWidgetCountBadge(kind: .due, count: dueCount),
+                CadenceWidgetCountBadge(kind: .planned, count: scheduledCount),
             ]
+        } else {
+            candidates = [overdue, CadenceWidgetCountBadge(kind: .upcoming, count: upcomingCount)]
         }
-
-        return overdueBadges + [
-            WidgetHeaderBadge(text: "\(upcomingCount) upcoming", tint: upcomingTint),
-        ]
+        return CadenceWidgetCountBadge.nonZero(candidates).map { badge in
+            switch badge.kind {
+            case .overdue: WidgetHeaderBadge(text: badge.text, tint: Theme.red)
+            case .due: WidgetHeaderBadge(text: badge.text, tint: Theme.amber)
+            case .planned, .upcoming: WidgetHeaderBadge(text: badge.text, tint: upcomingTint)
+            }
+        }
     }
 
     /// `d` and `p`, at every family rather than only the two narrow ones. `2 planned` needs ~49pt

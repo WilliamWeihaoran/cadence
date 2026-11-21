@@ -403,10 +403,12 @@ struct CadenceCodexWidgetFollowupTests {
         // extra-large focus strip. The Calendar widget has one card.
         for (path, code, overdueTiles) in [("TodayTasksWidgetView", today, 2), ("CalendarSnapshotWidget", calendar, 1)] {
             let badges = try #require(CadenceSourceScan.declarationBody("private var headerBadges", in: code))
-            // Every family's overdue badge comes from the one optional, never a hand-typed count.
-            #expect(CadenceSourceScan.matchCount(#"CadenceWidgetCountWords\.overdueBadge\(\s*entry\.snapshot\.overdueCount\s*\)"#, in: badges) == 1, "\(path) badge rule")
+            // Every family's badges come from the one zero-dropping rule ([[T-18871]] widened
+            // T-18040's overdue-only optional to every count), never a hand-typed count.
+            #expect(CadenceSourceScan.matchCount(#"CadenceWidgetCountBadge\.(today|nonZero)\("#, in: badges) == 1, "\(path) badge rule")
+            #expect(CadenceSourceScan.matchCount(#"CadenceWidgetCountWords\.badge\("#, in: badges) == 0, "\(path) types a count badge outside the rule")
             #expect(CadenceSourceScan.matchCount(#"overdue\"\s*,\s*tint:"#, in: code) == 0, "\(path) types an unconditional overdue badge again")
-            #expect(CadenceSourceScan.matchCount(#"overdueCount\s*>\s*0"#, in: badges) == 0, "\(path) guards zero by hand instead of the shared rule")
+            #expect(CadenceSourceScan.matchCount(#"Count\s*>\s*0"#, in: badges) == 0, "\(path) guards zero by hand instead of the shared rule")
             // Each overdue card/tile reads the shared tint, not a bare `Theme.red`.
             #expect(CadenceSourceScan.matchCount(#"CadenceWidgetOverdueTint\.value\(for:\s*entry\.snapshot\.overdueCount\)"#, in: code) == overdueTiles, "\(path) metric tint")
         }
@@ -426,6 +428,10 @@ struct CadenceCodexWidgetFollowupTests {
         #expect(CadenceWidgetCountWords.plannedTitle == "Planned")
         #expect(CadenceWidgetCountWords.badge(3, CadenceWidgetCountWords.due) == "3 due")
         #expect(CadenceWidgetCountWords.badge(1, CadenceWidgetCountWords.planned) == "1 planned")
+        #expect(CadenceWidgetCountBadge(kind: .due, count: 3).text == "3 due")
+        #expect(CadenceWidgetCountBadge(kind: .planned, count: 1).text == "1 planned")
+        #expect(CadenceWidgetCountBadge(kind: .overdue, count: 2).text == "2 overdue")
+        #expect(CadenceWidgetCountBadge(kind: .upcoming, count: 4).text == "4 upcoming")
 
         let read = CadenceSourceScan.strippedSourceReader()
         // Not `codeOnly`: the retired words live in string literals.
@@ -433,8 +439,10 @@ struct CadenceCodexWidgetFollowupTests {
         let calendar = try read("CadenceWidgets/CalendarSnapshotWidget.swift")
         for (path, code, badges, titles) in [
             // Six titles: the summary panel's two and, since [[T-18046]], the focus strip's two.
-            ("TodayTasksWidgetView", today, 5, 6),
-            ("CalendarSnapshotWidget", calendar, 2, 2),
+            // No badge sites: since [[T-18871]] both header lines spell their counts through
+            // `CadenceWidgetCountBadge.text`, which reads these words (pinned below).
+            ("TodayTasksWidgetView", today, 0, 6),
+            ("CalendarSnapshotWidget", calendar, 0, 2),
         ] {
             #expect(CadenceSourceScan.matchCount("CadenceWidgetCountWords\\.badge\\(", in: code) == badges, "\(path) badge sites")
             #expect(CadenceSourceScan.matchCount("CadenceWidgetCountWords\\.(due|planned)Title", in: code) == titles, "\(path) title sites")
@@ -453,7 +461,10 @@ struct CadenceCodexWidgetFollowupTests {
         #expect(CadenceTodayWidgetCopy.emptyMessage == "Your day is clear right now.")
         #expect(CadenceTodayWidgetCopy.queueSubtitle(overdueCount: 2, dueTodayCount: 1)
             == "Start with the overdue work, then clear what is due today.")
+        // [[T-18872]]: one due task is spoken of in the singular.
         #expect(CadenceTodayWidgetCopy.queueSubtitle(overdueCount: 0, dueTodayCount: 1)
+            == "A task is due today. Clear it first.")
+        #expect(CadenceTodayWidgetCopy.queueSubtitle(overdueCount: 0, dueTodayCount: 2)
             == "Tasks are due today. Clear those first.")
         #expect(CadenceTodayWidgetCopy.queueSubtitle(overdueCount: 0, dueTodayCount: 0)
             == "Planned work is lined up. Finish the top item, then keep momentum.")
@@ -569,6 +580,94 @@ struct CadenceCodexWidgetFollowupTests {
         )
         let paths = ["Cadence/Services/CadenceHabitWidgetSupport.swift"]
         #expect(try rule.sweep(paths, atLeast: 1, including: paths[0], read: CadenceSourceScan.strippedSourceReader()) == paths)
+    }
+
+    /// **[[T-18872]]: the large tile's "Up next" subtitle describes the rows under it.** It was
+    /// computed from the day's totals, which include the top task already drawn in "Priority now"
+    /// above, so a task due today over a planned one read "Tasks are due today." over the planned
+    /// row, and one overdue task over planned work read the overdue sentence over neither.
+    @Test func theUpNextSubtitleDescribesTheQueueNotTheDay() throws {
+        let todayKey = "2026-05-11"
+        func row(_ title: String, due: String, scheduled: String) -> CadenceTodayWidgetTask {
+            CadenceTodayWidgetTask(id: UUID(), title: title, priorityRaw: TaskPriority.none.rawValue,
+                                   dueDate: due, scheduledDate: scheduled, containerName: "")
+        }
+        func queueSubtitle(_ rows: [CadenceTodayWidgetTask]) -> String {
+            let snapshot = CadenceTodayWidgetSupport.sampleSnapshot(rows: rows, todayKey: todayKey, limit: 8)
+            // The large tile: the first row is the "Priority now" card, the rest the queue.
+            return CadenceTodayWidgetCopy.queueSubtitle(for: Array(snapshot.tasks.dropFirst()), todayKey: todayKey)
+        }
+        let planned = "Planned work is lined up. Finish the top item, then keep momentum."
+        // A due-today task heads the tile; only the planned one is under "Up next".
+        #expect(queueSubtitle([row("due", due: todayKey, scheduled: ""), row("plan", due: "", scheduled: todayKey)]) == planned)
+        // One overdue task heads the tile over two planned ones.
+        #expect(queueSubtitle([
+            row("late", due: "2026-05-09", scheduled: ""),
+            row("plan 1", due: "", scheduled: todayKey),
+            row("plan 2", due: "", scheduled: todayKey),
+        ]) == planned)
+        // Overdue work still under the top task keeps the overdue sentence, naming due work only
+        // when the queue holds some.
+        #expect(queueSubtitle([row("late 1", due: "2026-05-09", scheduled: ""), row("late 2", due: "2026-05-10", scheduled: "")])
+            == "Start with the overdue work.")
+        #expect(queueSubtitle([
+            row("late 1", due: "2026-05-09", scheduled: ""),
+            row("late 2", due: "2026-05-10", scheduled: ""),
+            row("due", due: todayKey, scheduled: ""),
+        ]) == "Start with the overdue work, then clear what is due today.")
+        #expect(queueSubtitle([row("due 1", due: todayKey, scheduled: ""), row("due 2", due: todayKey, scheduled: "")])
+            == "A task is due today. Clear it first.")
+
+        // The view hands the helper the rows the card draws, not the day.
+        let today = CadenceSourceScan.codeOnly(try CadenceSourceScan.strippedSourceReader()("CadenceWidgets/TodayTasksWidgetView.swift"))
+        let large = try #require(CadenceSourceScan.declarationBody("private var largeLayout: some View", in: today))
+        #expect(CadenceSourceScan.matchCount(#"subtitle:\s*CadenceTodayWidgetCopy\.queueSubtitle\(\s*for:\s*queueTasks,\s*todayKey:\s*entry\.snapshot\.dateKey\s*\)"#, in: large) == 1)
+    }
+
+    /// **[[T-18874]]: an empty extra-large queue says so once.** The tile always drew "Up next" and
+    /// "Later", so a one-task day drew "Nothing else here." twice side by side. One column until
+    /// the queue holds two rows; then two, the first taking the odd row.
+    @Test func theExtraLargeQueueDrawsLaterOnlyWhenItSplits() throws {
+        #expect(CadenceTodayWidgetCopy.queueColumns([Int]()) == [[]])
+        #expect(CadenceTodayWidgetCopy.queueColumns([1]) == [[1]])
+        #expect(CadenceTodayWidgetCopy.queueColumns([1, 2]) == [[1], [2]])
+        #expect(CadenceTodayWidgetCopy.queueColumns([1, 2, 3]) == [[1, 2], [3]])
+        #expect(CadenceTodayWidgetCopy.queueColumns(Array(1...7)) == [[1, 2, 3, 4], [5, 6, 7]])
+
+        // The view draws "Later" behind the split's own count, not unconditionally.
+        let today = CadenceSourceScan.codeOnly(try CadenceSourceScan.strippedSourceReader()("CadenceWidgets/TodayTasksWidgetView.swift"))
+        let xl = try #require(CadenceSourceScan.declarationBody("private var extraLargeLayout: some View", in: today))
+        #expect(CadenceSourceScan.matchCount(#"CadenceTodayWidgetCopy\.queueColumns\(\s*extraLargeQueueTasks\s*\)"#, in: xl) == 1)
+        #expect(CadenceSourceScan.matchCount(#"if\s+columns\.count\s*>\s*1\s*\{\s*taskColumnCard\(\s*title:\s*CadenceTodayWidgetCopy\.laterTitle"#, in: xl) == 1)
+    }
+
+    /// **[[T-18871]]: a zero is chrome on the widgets too.** Both tiles printed `0 due`, `0 planned`
+    /// and `0 upcoming` over their empty states, and the medium Today tile's one badge was a fixed
+    /// `N due`, so a planned-only day read `0 due`.
+    @Test func neitherWidgetPrintsAZeroBadge() {
+        func texts(_ badges: [CadenceWidgetCountBadge]) -> [String] { badges.map(\.text) }
+        // An empty Today tile draws no badge at any family.
+        for limit in [1, 2, 3] {
+            #expect(CadenceWidgetCountBadge.today(overdue: 0, due: 0, planned: 0, limit: limit).isEmpty, "limit \(limit)")
+        }
+        // A planned-only day: the medium tile names the planned work, not `0 due`.
+        #expect(texts(CadenceWidgetCountBadge.today(overdue: 0, due: 0, planned: 3, limit: 2)) == ["3 planned"])
+        #expect(texts(CadenceWidgetCountBadge.today(overdue: 0, due: 0, planned: 3, limit: 1)) == ["3 planned"])
+        // Small keeps its fall-through; medium its two; large all three, zeros left out.
+        #expect(texts(CadenceWidgetCountBadge.today(overdue: 1, due: 2, planned: 3, limit: 1)) == ["1 overdue"])
+        #expect(texts(CadenceWidgetCountBadge.today(overdue: 1, due: 2, planned: 3, limit: 2)) == ["1 overdue", "2 due"])
+        #expect(texts(CadenceWidgetCountBadge.today(overdue: 0, due: 2, planned: 3, limit: 2)) == ["2 due", "3 planned"])
+        #expect(texts(CadenceWidgetCountBadge.today(overdue: 1, due: 0, planned: 3, limit: 3)) == ["1 overdue", "3 planned"])
+        // The Calendar tile's candidates go through the same rule.
+        #expect(CadenceWidgetCountBadge.nonZero([
+            CadenceWidgetCountBadge(kind: .overdue, count: 0),
+            CadenceWidgetCountBadge(kind: .due, count: 0),
+            CadenceWidgetCountBadge(kind: .planned, count: 0),
+        ]).isEmpty)
+        #expect(texts(CadenceWidgetCountBadge.nonZero([
+            CadenceWidgetCountBadge(kind: .overdue, count: 0),
+            CadenceWidgetCountBadge(kind: .upcoming, count: 4),
+        ])) == ["4 upcoming"])
     }
 
 }

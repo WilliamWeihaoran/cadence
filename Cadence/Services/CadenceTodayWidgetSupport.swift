@@ -239,15 +239,96 @@ nonisolated enum CadenceTodayWidgetCopy {
     /// An empty column on the extra-large tile ([[T-17790]]: it read "No more tasks in this lane.").
     static let emptyColumnMessage = "Nothing else here."
 
-    /// The subtitle of the large tile's queue card, by the most urgent state the snapshot holds.
+    /// The subtitle of the large tile's queue card, by the most urgent state the rows under it hold.
+    ///
+    /// **[[T-18872]]:** the counts are the QUEUE's, not the snapshot's. The view passed the
+    /// day's totals, which include the top task already drawn in the "Priority now" card above,
+    /// so one overdue task over planned work read "Start with the overdue work, then clear what is
+    /// due today." above a card holding neither, and one due task over a planned one read "Tasks
+    /// are due today." above the planned one. The overdue sentence names due work only when the
+    /// queue holds some, and one due task is spoken of in the singular.
     static func queueSubtitle(overdueCount: Int, dueTodayCount: Int) -> String {
         if overdueCount > 0 {
-            return "Start with the overdue work, then clear what is due today."
+            return dueTodayCount > 0
+                ? "Start with the overdue work, then clear what is due today."
+                : "Start with the overdue work."
         }
-        if dueTodayCount > 0 {
+        if dueTodayCount == 1 {
+            return "A task is due today. Clear it first."
+        }
+        if dueTodayCount > 1 {
             return "Tasks are due today. Clear those first."
         }
         return "Planned work is lined up. Finish the top item, then keep momentum."
+    }
+
+    /// The queue card's subtitle tallied from the rows the card draws ([[T-18872]]).
+    static func queueSubtitle(for queue: [CadenceTodayWidgetTask], todayKey: String) -> String {
+        var counts = CadenceTodayWidgetStandingCounts()
+        for task in queue {
+            counts.add(task.todayStanding(todayKey: todayKey))
+        }
+        return queueSubtitle(overdueCount: counts.overdue, dueTodayCount: counts.dueToday)
+    }
+
+    /// **The extra-large tile's queue columns ([[T-18874]]).** The tile always drew two cards,
+    /// "Up next" and "Later", each saying `emptyColumnMessage` when it had no rows -- so a day of
+    /// one task drew the same sentence twice side by side, and a day of two drew "Later / Nothing
+    /// else here." beside one populated column. A queue of at most one row is one column (empty
+    /// or not); a longer one splits in two, the first column taking the odd row.
+    static func queueColumns<Row>(_ queue: [Row]) -> [[Row]] {
+        guard queue.count > 1 else { return [queue] }
+        let midpoint = (queue.count + 1) / 2
+        return [Array(queue.prefix(midpoint)), Array(queue.dropFirst(midpoint))]
+    }
+}
+
+/// **A header badge before the view tints it ([[T-18871]]).** Both widgets printed `0 due`,
+/// `0 planned` and `0 upcoming` on an empty tile, and the medium Today tile's only badge was a
+/// fixed `N due` even on a day of planned work, so it read `0 due` over three planned rows. The
+/// app's page headers already treat a zero as chrome (`CadencePageHeaderMetrics.drawsCountBadge`):
+/// the absence of a badge is the zero state. [[T-18040]] applied that to the overdue badge
+/// only; this applies it to every count badge of both widgets, in a type the test target compiles.
+nonisolated struct CadenceWidgetCountBadge: Hashable {
+    enum Kind: Hashable {
+        case overdue, due, planned, upcoming
+
+        var word: String {
+            switch self {
+            case .overdue: CadenceWidgetCountWords.overdue
+            case .due: CadenceWidgetCountWords.due
+            case .planned: CadenceWidgetCountWords.planned
+            case .upcoming: "upcoming"
+            }
+        }
+    }
+
+    let kind: Kind
+    let count: Int
+
+    var text: String {
+        CadenceWidgetCountWords.badge(count, kind.word)
+    }
+
+    /// The candidates that are not zero, in the order given, at most `limit` of them.
+    static func nonZero(_ candidates: [CadenceWidgetCountBadge], limit: Int = .max) -> [CadenceWidgetCountBadge] {
+        Array(candidates.filter { $0.count > 0 }.prefix(limit))
+    }
+
+    /// The Today tile's badge line: overdue, due, planned, each only when it is not zero, as many
+    /// as the family has room for -- one at `systemSmall` (its rule since before [[T-18040]]),
+    /// two at `systemMedium` (the two it always drew, so the inline line is no wider), all three
+    /// above. So a planned-only day reads `3 planned` at medium, not `0 due`, and an empty tile
+    /// draws no badge at all.
+    static func today(overdue: Int, due: Int, planned: Int, limit: Int) -> [CadenceWidgetCountBadge] {
+        nonZero(
+            [
+                CadenceWidgetCountBadge(kind: .overdue, count: overdue),
+                CadenceWidgetCountBadge(kind: .due, count: due),
+                CadenceWidgetCountBadge(kind: .planned, count: planned),
+            ],
+            limit: limit
+        )
     }
 }
 
