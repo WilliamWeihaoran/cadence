@@ -376,5 +376,88 @@ struct MarkdownTableHostedEditingTests {
         let canvas = try #require(renderedGridAttribute(in: textView))
         #expect(canvas.storageRange == grids[1].storageRange)
     }
+
+    // MARK: - [[T-18755]]: the context menu commits the open cell first
+
+    /// Right-clicks `address` in the table anchored at `anchor` through the real `menu(for:)` and
+    /// fires the item titled `title`, as AppKit would on a choice. No window: an offscreen
+    /// borderless one cannot become key, so the hosted field ends its own edit the moment it is
+    /// made first responder and the open-cell state this exists to test never forms. The event's
+    /// location goes through `convert(_:to: nil)`, the inverse of the one `menu(for:)` applies.
+    private func chooseTableMenuItem(
+        _ title: String,
+        anchor: Int,
+        address: MarkdownTableCellAddress,
+        in textView: CadenceTextView
+    ) throws {
+        let hit = try #require(textView.markdownTableHit(anchor: anchor))
+        let cell = try #require(hit.layout.cellRect(row: address.row, column: address.column, in: hit.gridRect))
+        let event = try #require(NSEvent.mouseEvent(
+            with: .rightMouseDown,
+            location: textView.convert(NSPoint(x: cell.midX, y: cell.midY), to: nil),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ))
+        let menu = try #require(textView.menu(for: event))
+        let item = try #require(menu.items.first { $0.title == title })
+        let action = try #require(item.action)
+        _ = (item.target as? NSObject)?.perform(action, with: item)
+    }
+
+    /// The bug: "Bolt" retyped as "Screw" with the field still open, then Insert Row Below on a
+    /// different cell. The row lands and the typed text is kept, as the field's own Return does.
+    @Test func aRowInsertedFromTheMenuKeepsTheTextTypedIntoTheOpenCell() throws {
+        let textView = makeTextView()
+        render(textView)
+        let anchor = try parseGrid(in: textView).storageRange.location
+
+        textView.beginTableCellEdit(anchor: anchor, address: .init(row: 1, column: 0), retryIfNeeded: false)
+        let field = try #require(textView.tableCellEditor)
+        field.stringValue = "Screw"
+
+        try chooseTableMenuItem("Insert Row Below", anchor: anchor, address: .init(row: 2, column: 1), in: textView)
+
+        #expect(textView.tableCellEditor == nil)
+        let grid = try parseGrid(in: textView)
+        #expect(grid.rowCount == 4)
+        #expect(grid.cells(inRow: 1) == ["Screw", "4", "spare"])
+        #expect(grid.cells(inRow: 2) == ["Nut", "12", "loose"])
+    }
+
+    /// An open cell in an EARLIER table moves the menu's table down the note when it commits; the
+    /// item still reaches its own table rather than refusing on a stale anchor.
+    @Test func aColumnInsertedInALaterTableKeepsTheEarlierTablesOpenCell() throws {
+        let textView = makeTextView("""
+        | a | b |
+        | - | - |
+        | 1 | 2 |
+
+        between
+
+        | c | d |
+        | - | - |
+        | 3 | 4 |
+        """)
+        render(textView)
+        let grids = MarkdownTableEditor.grids(in: textView.string)
+        try #require(grids.count == 2)
+        let first = grids[0].storageRange.location
+        let second = grids[1].storageRange.location
+
+        textView.beginTableCellEdit(anchor: first, address: .init(row: 1, column: 0), retryIfNeeded: false)
+        try #require(textView.tableCellEditor).stringValue = "longer"
+
+        try chooseTableMenuItem("Insert Column After", anchor: second, address: .init(row: 1, column: 1), in: textView)
+
+        let after = MarkdownTableEditor.grids(in: textView.string)
+        try #require(after.count == 2)
+        #expect(after[0].cells(inRow: 1) == ["longer", "2"])
+        #expect(after[1].columnCount == 3)
+    }
 }
 #endif

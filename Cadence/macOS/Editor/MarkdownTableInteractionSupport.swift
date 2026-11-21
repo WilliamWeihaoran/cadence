@@ -303,12 +303,23 @@ extension CadenceTextView {
         return menu
     }
 
+    /// [[T-18755]]: a right-click never reaches `mouseDown`, so a cell still open when a row or
+    /// column item is chosen is committed here, FIRST, and the grid is read after it -- iOS's
+    /// order. Building the edit from the grid as it stood and then closing the field without a
+    /// write threw the typed text away. An open cell in an earlier table moves this table's
+    /// anchor by however much its commit changed the note's length.
     private func applyTableMenuEdit(_ sender: NSMenuItem, _ build: (MarkdownTableGrid, MarkdownTableCellAddress) -> MarkdownTableEdit?) {
-        guard let context = sender.representedObject as? MarkdownTableMenuContext,
-              let grid = MarkdownTableEditor.grid(containingUTF16Location: context.anchor, in: string),
-              grid.storageRange.location == context.anchor,
+        guard let context = sender.representedObject as? MarkdownTableMenuContext else { return }
+        let lengthBefore = (string as NSString).length
+        let editingAnchor = tableCellEditAnchor
+        endTableCellEdit(commit: true)
+        var anchor = context.anchor
+        if let editingAnchor, editingAnchor < context.anchor {
+            anchor += (string as NSString).length - lengthBefore
+        }
+        guard let grid = MarkdownTableEditor.grid(containingUTF16Location: anchor, in: string),
+              grid.storageRange.location == anchor,
               let edit = build(grid, context.address) else { return }
-        endTableCellEdit(commit: false)
         _ = applyMarkdownTableEdit(edit)
     }
 
