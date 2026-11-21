@@ -84,6 +84,18 @@ enum CadenceCalendarMonthAgendaSupport {
         "\(DateFormatters.dayOfWeek.string(from: date)) · \(DateFormatters.shortDate.string(from: date))"
     }
 
+    /// The count a day section's header states: the day's events plus its **unfinished** tasks.
+    ///
+    /// [[T-18873]]: this used to be every row in the section, finished ones included, so one open
+    /// task beside two done ones read `3` here and `1` over the Calendar Board's column for the same
+    /// day, under the same `CadenceBoardColumnHeader`. The Board's rule wins ([[T-571]]): a header
+    /// counts what is left, so a day fully cleared does not read as busy as one untouched. The done
+    /// rows are still listed in place, struck — the header just does not total them. Finished is
+    /// `isFinishedTask`, the Board's own split (T-203), so a cancelled task is not "left" either.
+    static func dayHeaderCount(eventCount: Int, tasks: [AppTask]) -> Int {
+        eventCount + tasks.filter { !CadenceTaskQuerySupport.isFinishedTask($0) }.count
+    }
+
     // MARK: - Two-way selection sync
 
     /// The section the agenda **opens** on.

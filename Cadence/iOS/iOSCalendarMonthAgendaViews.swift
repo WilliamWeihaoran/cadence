@@ -275,6 +275,11 @@ struct iOSCalendarMonthAgendaList: View {
         let isToday = section.key == todayKey
         let isSelected = calendar.isDate(section.date, inSameDayAs: selectedDate)
 
+        let tasks = section.items.compactMap { item -> AppTask? in
+            if case .task(let task) = item { return task }
+            return nil
+        }
+
         return VStack(alignment: .leading, spacing: 10) {
             // The same header every board column gets — and now only over days that have something
             // under it. This used to draw for every day of the month, on the argument that a bare
@@ -285,7 +290,11 @@ struct iOSCalendarMonthAgendaList: View {
             CadenceBoardColumnHeader(
                 dotColor: isToday ? Theme.amber : isSelected ? Theme.blue : Theme.dim,
                 title: CadenceCalendarMonthAgendaSupport.dayHeaderLabel(for: section.date),
-                count: section.items.count,
+                // [[T-18873]]: open items only, the Board's rule — not every row listed below.
+                count: CadenceCalendarMonthAgendaSupport.dayHeaderCount(
+                    eventCount: section.items.count - tasks.count,
+                    tasks: tasks
+                ),
                 accentRule: isToday ? Theme.amber : nil
             )
 

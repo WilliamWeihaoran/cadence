@@ -78,6 +78,23 @@ struct CalendarMonthAgendaTests {
         #expect(CadenceCalendarMonthAgendaSupport.dayHeaderLabel(for: august15) == "Sat · Aug 15")
     }
 
+    /// [[T-18873]]: the agenda header counts what is left, as the Board's day header does (T-571) —
+    /// one open task beside two done ones reads 1, a day of only finished work reads 0, and a
+    /// cancelled task counts as finished, as the Board's `isFinishedTask` split has it.
+    @Test func agendaDayHeaderCountsOpenItemsOnly() {
+        let open = AppTask(title: "Open")
+        let doneA = AppTask(title: "Done A")
+        doneA.status = .done
+        let doneB = AppTask(title: "Done B")
+        doneB.status = .done
+        let cancelled = AppTask(title: "Cancelled")
+        cancelled.status = .cancelled
+
+        #expect(CadenceCalendarMonthAgendaSupport.dayHeaderCount(eventCount: 0, tasks: [open, doneA, doneB]) == 1)
+        #expect(CadenceCalendarMonthAgendaSupport.dayHeaderCount(eventCount: 0, tasks: [doneA, doneB]) == 0)
+        #expect(CadenceCalendarMonthAgendaSupport.dayHeaderCount(eventCount: 2, tasks: [open, cancelled]) == 3)
+    }
+
     // MARK: - Two-way selection sync
 
     @Test func tappingAGridDayScrollsTheAgendaToIt() {
