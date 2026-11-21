@@ -236,11 +236,9 @@ private struct ListDetailView: View {
         self.keyMonitor = nil
     }
 
+    /// [[T-18913]]: the step is `ListDetailPage.stepped(by:)`, the rule the iPad's keys share.
     private func moveTab(by delta: Int) {
-        let tabs = ListDetailPage.allCases
-        guard let currentIndex = tabs.firstIndex(of: tab), !tabs.isEmpty else { return }
-        let nextIndex = (currentIndex + delta + tabs.count) % tabs.count
-        pickTab(tabs[nextIndex])
+        pickTab(tab.stepped(by: delta))
     }
 }
 

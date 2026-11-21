@@ -79,6 +79,16 @@ enum ListDetailPage: String, CaseIterable, Identifiable, Hashable {
         return rememberedPage(storedRawValue: storedRawValue, defaultPageRawValue: defaultPageRawValue)
     }
 
+    /// **The tab `delta` steps along the strip, wrapping at both ends** -- Cmd-Shift-] is `+1`,
+    /// Cmd-Shift-[ is `-1`. One rule for both platforms ([[T-18913]]): the Mac's `moveTab(by:)` and
+    /// the iPad list page's two keys both step through here, so the strips cannot walk differently.
+    func stepped(by delta: Int) -> ListDetailPage {
+        let pages = Self.allCases
+        guard let index = pages.firstIndex(of: self) else { return self }
+        let count = pages.count
+        return pages[((index + delta) % count + count) % count]
+    }
+
     /// What VoiceOver reads for a tab in the iOS strip: the name, and the count drawn beside it
     /// when one is drawn. `.accessibilityLabel` replaces the label, so passing the bare name used
     /// to drop the count (T-7032).

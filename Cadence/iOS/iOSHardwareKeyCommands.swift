@@ -16,6 +16,10 @@ import SwiftUI
 ///   iPad has no timeline overlay over other pages, so the key is bound nowhere else. The iPadOS
 ///   menu bar does not list these keys -- no `Commands` value is attached to the iPad scene
 ///   ([[T-18278]]).
+/// - Cmd+Shift+[ / Cmd+Shift+] (the Mac list page's tab step, [[T-18913]]) by `iOSListDetailView`,
+///   which owns the page's tab: they walk the same `ListDetailPage.allCases` strip, wrapping,
+///   through `ListDetailPage.stepped(by:)`, the rule the Mac's `moveTab(by:)` calls. The Mac binds
+///   them in a key monitor rather than a menu, so the titles are the overlay's own words.
 ///
 /// The titles are the Mac items' own, so the Cmd-hold overlay lists what the Mac's menu does.
 /// Each key rides on the same zero-size, transparent button Cmd+K and Cmd+N use rather than
@@ -30,14 +34,26 @@ enum iOSHardwareKeyCommand {
     static let toggleSidebarKey: Character = "o"
     static let toggleTimelineTitle = "Toggle Timeline"
     static let toggleTimelineKey: Character = "\\"
+    static let previousListTabTitle = "Previous Tab"
+    static let previousListTabKey: Character = "["
+    static let nextListTabTitle = "Next Tab"
+    static let nextListTabKey: Character = "]"
+    /// The two list-tab keys carry Shift, as the Mac's do.
+    static let listTabModifiers: EventModifiers = [.command, .shift]
 }
 
 extension View {
-    /// Binds Cmd+`key` to `action` through a zero-size, transparent button titled `title`.
-    func iOSCommandKey(_ title: String, key: Character, action: @escaping () -> Void) -> some View {
+    /// Binds Cmd+`key` (or `modifiers`+`key`) to `action` through a zero-size, transparent button
+    /// titled `title`.
+    func iOSCommandKey(
+        _ title: String,
+        key: Character,
+        modifiers: EventModifiers = .command,
+        action: @escaping () -> Void
+    ) -> some View {
         background {
             Button(title, action: action)
-                .keyboardShortcut(KeyEquivalent(key), modifiers: .command)
+                .keyboardShortcut(KeyEquivalent(key), modifiers: modifiers)
                 .opacity(0)
                 .frame(width: 0, height: 0)
                 .accessibilityHidden(true)

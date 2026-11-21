@@ -13,6 +13,28 @@ struct ListDetailPageTests {
         #expect(ListDetailPage.resolved("planning") == .tasks)
     }
 
+    /// [[T-18913]]: Cmd-Shift-] / [ step along the strip and wrap at both ends -- the one rule the
+    /// Mac's `moveTab(by:)` and the iPad list page's keys both call.
+    @Test("Stepping walks the tab strip in order and wraps both ways")
+    func steppingWrapsTheStrip() {
+        let pages = ListDetailPage.allCases
+        #expect(pages == [.tasks, .kanban, .documents, .links, .completed])
+        var forward: [ListDetailPage] = []
+        var page = ListDetailPage.tasks
+        for _ in pages {
+            page = page.stepped(by: 1)
+            forward.append(page)
+        }
+        #expect(forward == [.kanban, .documents, .links, .completed, .tasks])
+        #expect(ListDetailPage.tasks.stepped(by: -1) == .completed)
+        #expect(ListDetailPage.kanban.stepped(by: -1) == .tasks)
+        #expect(ListDetailPage.completed.stepped(by: 1) == .tasks)
+        #expect(ListDetailPage.links.stepped(by: 0) == .links)
+        for item in pages {
+            #expect(item.stepped(by: 1).stepped(by: -1) == item)
+        }
+    }
+
     @Test("Planning is not a page")
     func planningIsNotACase() {
         #expect(ListDetailPage(rawValue: "Planning") == nil)

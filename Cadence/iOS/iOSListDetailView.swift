@@ -133,6 +133,12 @@ struct iOSListDetailView: View {
         })
     }
 
+    /// [[T-18913]]: a key step is a pick, written through the tab strip's own `pageBinding`, along
+    /// the wrap the Mac's `moveTab(by:)` takes.
+    private func stepPage(by delta: Int) {
+        pageBinding.wrappedValue = page.stepped(by: delta)
+    }
+
     private var showArchivedKanbanColumns: Bool {
         showArchivedKanbanColumnsListKey == rememberedPageKey
     }
@@ -354,6 +360,21 @@ struct iOSListDetailView: View {
         }
         .cadenceScaledTypography()
         .background(Theme.bg.ignoresSafeArea())
+        // [[T-18913]]: Cmd+Shift+[ / ] step the tab strip, as on the Mac's list page.
+        .iOSCommandKey(
+            iOSHardwareKeyCommand.previousListTabTitle,
+            key: iOSHardwareKeyCommand.previousListTabKey,
+            modifiers: iOSHardwareKeyCommand.listTabModifiers
+        ) {
+            stepPage(by: -1)
+        }
+        .iOSCommandKey(
+            iOSHardwareKeyCommand.nextListTabTitle,
+            key: iOSHardwareKeyCommand.nextListTabKey,
+            modifiers: iOSHardwareKeyCommand.listTabModifiers
+        ) {
+            stepPage(by: 1)
+        }
         // The By Date groups' day ([[T-13561]]), observed once for the page as the Mac's
         // `ListTasksView` does.
         .cadenceTracksDayChanges($observedDay)

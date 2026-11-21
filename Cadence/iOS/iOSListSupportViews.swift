@@ -1034,6 +1034,14 @@ struct iOSListLinksPanel: View {
         CadenceSavedLinkList.links(area: area, project: project, among: allLinks)
     }
 
+    /// The header button's tap, and Escape in the open form ([[T-18912]]). [[T-17127]]: the Mac's
+    /// rule -- opening keeps a failure notice, closing clears it, as the form's own Cancel does.
+    private func toggleAddForm() {
+        withAnimation(.easeInOut(duration: 0.18)) {
+            if addForm.toggle() { actionError = nil }
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -1043,11 +1051,7 @@ struct iOSListLinksPanel: View {
                     role: addForm.isOpen ? .ghost : .secondary,
                     size: .compact
                 ) {
-                    // [[T-17127]]: the Mac's rule -- opening keeps a failure notice, closing
-                    // clears it, as the form's own Cancel does.
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        if addForm.toggle() { actionError = nil }
-                    }
+                    toggleAddForm()
                 }
 
                 Spacer()
@@ -1059,7 +1063,8 @@ struct iOSListLinksPanel: View {
                 iOSAddLinkForm(
                     title: $addForm.title,
                     url: $addForm.url,
-                    save: saveForm
+                    save: saveForm,
+                    cancel: toggleAddForm
                 )
                 .padding(.horizontal, 16)
                 .padding(.bottom, 14)
@@ -1248,6 +1253,8 @@ private struct iOSAddLinkForm: View {
     @Binding var title: String
     @Binding var url: String
     let save: () -> Void
+    /// The header's close path, which the open form's header button reads as Cancel.
+    let cancel: () -> Void
 
     private var isSaveDisabled: Bool {
         url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1274,6 +1281,14 @@ private struct iOSAddLinkForm: View {
                 isDisabled: isSaveDisabled,
                 action: save
             )
+        }
+        // [[T-18912]]: Escape in either field closes the form and drops the draft, through the
+        // header's own close path, as the Mac's `AddLinkBar` does ([[T-10016]]). Focus-scoped, as
+        // the iOS tag card's is ([[T-10046]]), never a `.cancelAction` key equivalent, which would
+        // answer Escape anywhere on the page while the form is open.
+        .onKeyPress(.escape) {
+            cancel()
+            return .handled
         }
     }
 }

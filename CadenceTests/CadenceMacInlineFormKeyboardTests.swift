@@ -71,6 +71,31 @@ struct CadenceMacInlineFormKeyboardTests {
         )
     }
 
+    /// [[T-18912]]: the iOS Links tab's add / edit form, the Mac `AddLinkBar`'s twin, ignored Escape
+    /// on an iPad keyboard. It now closes through the header's own close path, the one function the
+    /// header button calls, so Escape drops the draft and clears the failure notice ([[T-17127]])
+    /// exactly as the header's Cancel does. Focus-scoped, never a page-wide `.cancelAction`.
+    @Test func iOSAddLinkFormCancelsOnEscapeThroughTheHeadersClosePath() throws {
+        let path = "Cadence/iOS/iOSListSupportViews.swift"
+        let form = try Self.compactBody("private struct iOSAddLinkForm: View", in: path)
+        #expect(form.contains(".onSubmit(save)"), "the slice is not the add-link form")
+        #expect(
+            form.contains(".onKeyPress(.escape){cancel()return.handled}"),
+            "Escape in a focused add-link field must close the form through cancel"
+        )
+        #expect(
+            Self.count(".keyboardShortcut(", in: form) + Self.count("shortcut:.", in: form) == 0,
+            "a key equivalent would answer Escape anywhere on the page"
+        )
+
+        let panel = try Self.compactBody("struct iOSListLinksPanel: View", in: path)
+        #expect(panel.contains("save:saveForm,cancel:toggleAddForm)"), "Escape does not reach the header's close path")
+        let close = try Self.compactBody("private func toggleAddForm()", in: path)
+        #expect(close.contains("ifaddForm.toggle(){actionError=nil}"), "the close path lost its notice clear. got: \(close)")
+        let header = try #require(Self.slice(panel, from: "title:addForm.headerTitle,", to: "Spacer()"))
+        #expect(Self.count("toggleAddForm()", in: header) == 1, "the header button closes some other way. got: \(header)")
+    }
+
     @Test func logSessionFieldsLogOnReturnAndDiscardTakesNoKey() throws {
         let popover = try Self.compactBody(
             "struct LogSessionPopover: View",

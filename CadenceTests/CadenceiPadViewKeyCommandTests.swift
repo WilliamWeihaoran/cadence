@@ -45,7 +45,9 @@ struct CadenceiPadViewKeyCommandTests {
     @Test func theHelperBindsThePlainCommandKeyOnATransparentButton() throws {
         let keys = try Self.code("Cadence/iOS/iOSHardwareKeyCommands.swift")
         let helper = try #require(CadenceSourceScan.functionBody(named: "iOSCommandKey", in: keys))
-        #expect(helper.contains("Button(title, action: action)\n                .keyboardShortcut(KeyEquivalent(key), modifiers: .command)"))
+        #expect(helper.contains("Button(title, action: action)\n                .keyboardShortcut(KeyEquivalent(key), modifiers: modifiers)"))
+        // [[T-18913]]: Shift is opt-in; a call that names no modifiers is the plain Cmd-key.
+        #expect(keys.contains("modifiers: EventModifiers = .command,"))
         #expect(helper.contains(".opacity(0)"))
         #expect(helper.contains(".frame(width: 0, height: 0)"))
         #expect(!helper.contains(".hidden()"))
@@ -109,6 +111,42 @@ struct CadenceiPadViewKeyCommandTests {
         let keys = try Self.code("Cadence/iOS/iOSHardwareKeyCommands.swift")
         let toggle = try #require(CadenceSourceScan.declarationBody("var togglingTimeline: iOSTodaySidePanel", in: keys))
         #expect(toggle.contains("self == .timeline ? .notes : .timeline"))
+    }
+
+    /// [[T-18913]]. **Cmd+Shift+[ / ] step the iPad list page's tabs, as on the Mac's list page.**
+    /// Bound once, by `iOSListDetailView`, on the helper's transparent button (so the Cmd-hold
+    /// overlay lists them under their titles, as it lists Cmd+K and Cmd+O), and stepped through the
+    /// strip's own `pageBinding` along `ListDetailPage.stepped(by:)`, the wrap the Mac's
+    /// `moveTab(by:)` calls. The wrap's behaviour is pinned in `ListDetailPageTests`.
+    @Test func commandShiftBracketsStepTheIPadListTabsThroughTheSharedWrap() throws {
+        let keys = try Self.code("Cadence/iOS/iOSHardwareKeyCommands.swift")
+        #expect(keys.contains("static let previousListTabKey: Character = \"[\""))
+        #expect(keys.contains("static let nextListTabKey: Character = \"]\""))
+        #expect(keys.contains("static let listTabModifiers: EventModifiers = [.command, .shift]"))
+
+        let code = try Self.iOSCode()
+        let calls: [(String, String)] = [
+            ("iOSHardwareKeyCommand.previousListTabTitle,key: iOSHardwareKeyCommand.previousListTabKey,modifiers: iOSHardwareKeyCommand.listTabModifiers", "stepPage(by: -1)"),
+            ("iOSHardwareKeyCommand.nextListTabTitle,key: iOSHardwareKeyCommand.nextListTabKey,modifiers: iOSHardwareKeyCommand.listTabModifiers", "stepPage(by: 1)")
+        ]
+        // Whitespace-free on both sides, so a reflowed argument list still matches.
+        let compact = code.mapValues { $0.filter { !$0.isWhitespace } }
+        for (call, step) in calls {
+            let needle = (".iOSCommandKey(" + call + ") {" + step + "}").filter { !$0.isWhitespace }
+            let perFile = compact.compactMapValues { text -> Int? in
+                let count = text.components(separatedBy: needle).count - 1
+                return count > 0 ? count : nil
+            }
+            #expect(perFile == ["iOSListDetailView.swift": 1], "\(needle)")
+        }
+
+        let detail = try Self.code("Cadence/iOS/iOSListDetailView.swift")
+        let step = try #require(CadenceSourceScan.functionBody(named: "stepPage", in: detail))
+        #expect(step.contains("pageBinding.wrappedValue = page.stepped(by: delta)"), "got: \(step)")
+
+        let mac = try Self.code("Cadence/macOS/Views/ListDetailView.swift")
+        let move = try #require(CadenceSourceScan.functionBody(named: "moveTab", in: mac))
+        #expect(move.contains("pickTab(tab.stepped(by: delta))"), "the Mac steps by its own rule again. got: \(move)")
     }
 
     /// The note editor's text view is the one iOS responder with its own key table; it must leave

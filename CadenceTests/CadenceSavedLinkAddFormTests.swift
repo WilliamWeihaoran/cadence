@@ -35,10 +35,16 @@ struct CadenceSavedLinkAddFormTests {
         let view = try #require(CadenceSourceScan.declarationBody("struct LinksView: View", in: mac))
         let panel = try #require(CadenceSourceScan.declarationBody("struct iOSListLinksPanel: View", in: ios))
         for (name, body, button) in [("LinksView", view, "CadenceActionButton"), ("iOSListLinksPanel", panel, "iOSActionButton")] {
-            let header = try #require(
+            var header = try #require(
                 CadenceSourceScan.captures(button + #"\(\s*title:\s*addForm\.headerTitle[\s\S]*?Spacer\(\)"#, in: body, group: 0).first?.text,
                 "\(name) has no header button"
             )
+            // [[T-18912]]: iOS's header calls `toggleAddForm()`, the close path Escape shares; read
+            // the tap through it.
+            if name == "iOSListLinksPanel" {
+                #expect(CadenceSourceScan.matchCount(#"toggleAddForm\(\)"#, in: header) == 1, "\(name)'s header closes some other way")
+                header = try #require(CadenceSourceScan.functionBody(named: "toggleAddForm", in: body), "toggleAddForm() is gone")
+            }
             #expect(CadenceSourceScan.matchCount(#"if addForm\.toggle\(\) \{ actionError = nil \}"#, in: header) == 1,
                     "\(name)'s header does not clear the notice on close alone")
             #expect(CadenceSourceScan.matchCount(#"actionError = nil"#, in: header) == 1,
