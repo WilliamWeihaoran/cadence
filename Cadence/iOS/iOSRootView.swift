@@ -238,6 +238,9 @@ struct iOSRootView: View {
         // would leave an iPad launch unseeded, which is the same defect one level down.
         .onAppear {
             CadenceUITestSupport.prepareAppState(modelContext: modelContext)
+            // [[T-18715]]: a launch that is already `.active` here gets no `.onChange` edge below.
+            // Before the route, as the Focus screen restores before it accepts a handoff.
+            if scenePhase == .active { focusSession.adoptPersistedSession(in: modelContext) }
             // T-3049: the `.onChange` below never sees a route that was already standing when this
             // view first rendered, which is the shape of a widget or reminder tap that cold-launches
             // the app. After the seeding, so a seeded launch routes against the seeded state.
@@ -287,6 +290,9 @@ struct iOSRootView: View {
                 CadenceWidgetRefreshCenter.reloadAllWidgets(force: true)
             }
             // [[T-15548]]: the Focus session notes the gap here, so it is noted with Focus gone too.
+            // [[T-18715]]: a session an eviction left on disk is adopted first, so the gap is
+            // measured to now rather than to whenever Focus is next opened.
+            if case .active = phase { focusSession.adoptPersistedSession(in: modelContext) }
             switch phase {
             case .background: focusSession.leaveForeground()
             case .active: focusSession.returnToForeground()

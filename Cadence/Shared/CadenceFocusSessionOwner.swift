@@ -205,6 +205,47 @@ final class CadenceFocusSessionOwner {
         persistLiveSession()
     }
 
+    // MARK: - [[T-18715]]: adopting the record when the app comes to the front
+
+    /// **Puts the session an eviction left on disk back in memory as the app comes to the front**,
+    /// not when Focus is next opened. Called by the root view on its first appearance and on each
+    /// return to `.active`, ahead of `returnToForeground`.
+    ///
+    /// Until this ran at the front, the record was read only by the Focus screen's
+    /// `restorePersistedSession`, so the time spent in the app before opening Focus was never
+    /// noted as seen: the absence rule measured from the backgrounding *before* the eviction to
+    /// the moment Focus opened, and froze a session the warm path keeps running -- 9:10 evicted,
+    /// 10:30 reopened, Focus at 11:30 read "paused at 0:10" instead of a running 2:30:00. Adopting
+    /// here applies the rule to the real gap (9:10..10:30), clears `lastSeenAt` because the app is
+    /// in front now, and rewrites the record with it cleared, exactly as `returnToForeground` does
+    /// for a suspended-not-evicted app. The subject also becomes visible to everything that asks
+    /// the owner -- the delete core's `isSubject(amongDeleted:)` and the settle watch, armed
+    /// here because no screen has appeared to arm it.
+    ///
+    /// **The cold route only**, as on the screen: a clock already in memory is the live session.
+    /// The record is read before anything is fetched, so a launch with no session costs a
+    /// defaults read. A record whose task is gone, done or cancelled is cleared without banking --
+    /// `CadenceFocusSessionPersistence.resumed`'s rule (T-276), unchanged.
+    func adoptPersistedSession(in modelContext: ModelContext) {
+        guard !hasLiveSession,
+              let record = CadenceFocusSessionPersistence.read(from: defaults) else { return }
+        let taskID = record.taskID
+        let tasks = (try? modelContext.fetch(
+            FetchDescriptor<AppTask>(predicate: #Predicate { $0.id == taskID })
+        )) ?? []
+        guard let resumed = CadenceFocusSessionPersistence.resumed(from: record, tasks: tasks, now: clock()) else {
+            CadenceFocusSessionPersistence.clear(in: defaults)
+            return
+        }
+        selectedTarget = resumed.target
+        timerState = resumed.state
+        lastSeenAt = nil
+        persistLiveSession()
+        if let task = tasks.first {
+            watchForSettle(.task(task))
+        }
+    }
+
     /// The screen's `.onChange(of: sessionRecord)` is the writer while it stands; with it gone the
     /// sighting has to reach the record from here or an eviction would forget it. **Never clears**:
     /// an empty clock in memory may simply be a cold launch that has not visited Focus yet, whose

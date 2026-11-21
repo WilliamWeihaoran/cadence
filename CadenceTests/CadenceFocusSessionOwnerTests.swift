@@ -488,4 +488,135 @@ struct CadenceFocusSessionOwnerTests {
             #expect(CadenceFocusSessionPersistence.read(from: defaults)?.taskID == task.id)
         }
     }
+
+    // MARK: - [[T-18715]]: an evicted session is adopted when the app comes to the front
+
+    /// The ticket's steps: start at 9:00, background at 9:10, iOS evicts; reopen at 10:30 (an
+    /// 80-minute gap, which a resume credits) and stay in the app until 11:30, then open Focus.
+    /// The launch adopts the record, so the in-app hour counts as seen and the clock reads a
+    /// running 2:30:00 -- the warm path's answer. Before the fix the record was read only when
+    /// Focus opened, measured 9:10..11:30 against the 2-hour rule, and froze the clock at 0:10.
+    @Test func anEvictedSessionAdoptedAtLaunchCountsTheTimeInTheAppAsSeen() async throws {
+        try await withSuite { defaults in
+            let (task, _, context) = try makeTask("Write the brief")
+            let clock = Clock(epoch)
+            let evicted = CadenceFocusSessionOwner(defaults: defaults, clock: { clock.now })
+            startSession(on: task, owner: evicted, clock: clock, defaults: defaults)
+            evicted.screenDidDisappear(leaving: .task(task))
+            clock.now = epoch.addingTimeInterval(10 * 60)
+            evicted.leaveForeground()
+
+            // A fresh process: nothing in memory, the record on disk.
+            let relaunched = CadenceFocusSessionOwner(defaults: defaults, clock: { clock.now })
+            clock.now = epoch.addingTimeInterval(90 * 60)
+            relaunched.adoptPersistedSession(in: context)
+            // The launch path adopts with no `returnToForeground` after it, so the adoption itself
+            // has to rewrite the record: a foreground crash would otherwise resume from 9:10 again.
+            #expect(CadenceFocusSessionPersistence.read(from: defaults)?.lastSeenAt == nil,
+                    "the record still carries the pre-eviction sighting")
+            relaunched.returnToForeground()
+
+            #expect(relaunched.selectedTarget == .task(task.id))
+            #expect(relaunched.timerState.isRunning)
+            #expect(relaunched.lastSeenAt == nil)
+
+            // An hour in Today, then Focus opens. The screen's `restorePersistedSession` reads the
+            // record only over an empty clock; here it finds the live one and keeps it.
+            clock.now = epoch.addingTimeInterval(150 * 60)
+            relaunched.screenDidAppear()
+            if !relaunched.hasLiveSession,
+               let resumed = CadenceFocusSessionPersistence.resumed(
+                   from: CadenceFocusSessionPersistence.read(from: defaults), tasks: [task], now: clock.now
+               ) {
+                relaunched.selectedTarget = resumed.target
+                relaunched.timerState = resumed.state
+            }
+            #expect(relaunched.timerState.isRunning, "the session froze at the pre-eviction sighting")
+            #expect(relaunched.timerState.elapsedSeconds(now: clock.now) == 150 * 60)
+        }
+    }
+
+    /// The absence rule still applies to the real gap: an eviction overnight comes back paused at
+    /// the sighting when the app is next brought to the front, as a cold resume always did.
+    @Test func aLaunchAfterALongAbsenceStillComesBackPausedAtTheSighting() async throws {
+        try await withSuite { defaults in
+            let (task, _, context) = try makeTask("Late session")
+            let clock = Clock(epoch)
+            let evicted = CadenceFocusSessionOwner(defaults: defaults, clock: { clock.now })
+            startSession(on: task, owner: evicted, clock: clock, defaults: defaults)
+            clock.now = epoch.addingTimeInterval(30 * 60)
+            evicted.leaveForeground()
+
+            let relaunched = CadenceFocusSessionOwner(defaults: defaults, clock: { clock.now })
+            clock.now = epoch.addingTimeInterval(11 * 60 * 60)
+            relaunched.adoptPersistedSession(in: context)
+
+            #expect(relaunched.selectedTarget == .task(task.id))
+            #expect(!relaunched.timerState.isRunning)
+            #expect(relaunched.timerState.accumulatedSeconds == 30 * 60)
+        }
+    }
+
+    /// Adopted at launch, the subject is watched before any Focus screen has appeared: finishing
+    /// it in Today banks its minutes and ends the session, as the warm path does.
+    @Test func aSubjectFinishedAfterALaunchAdoptionIsBankedAsOnTheWarmPath() async throws {
+        try await withSuite { defaults in
+            let (task, project, context) = try makeTask("Reconcile invoices")
+            let clock = Clock(epoch)
+            let evicted = CadenceFocusSessionOwner(defaults: defaults, clock: { clock.now })
+            startSession(on: task, owner: evicted, clock: clock, defaults: defaults)
+            clock.now = epoch.addingTimeInterval(5 * 60)
+            evicted.leaveForeground()
+
+            let relaunched = CadenceFocusSessionOwner(defaults: defaults, clock: { clock.now })
+            clock.now = epoch.addingTimeInterval(20 * 60)
+            relaunched.adoptPersistedSession(in: context)
+            #expect(relaunched.isSubject(amongDeleted: [task.id]))
+
+            clock.now = epoch.addingTimeInterval(40 * 60)
+            task.status = .done
+            let deadline = Date().addingTimeInterval(10)
+            while relaunched.timerState.isRunning, Date() < deadline {
+                try await Task.sleep(nanoseconds: 20_000_000)
+            }
+            #expect(!relaunched.timerState.isRunning, "the finished task is still under a running clock")
+            #expect(task.actualMinutes == 40)
+            #expect(project.loggedMinutes == 40)
+            #expect(CadenceFocusSessionPersistence.read(from: defaults) == nil)
+        }
+    }
+
+    /// A record whose task is gone is cleared at launch without banking (T-276's rule, unchanged),
+    /// and a launch with no record leaves an empty owner empty.
+    @Test func aLaunchClearsARecordWhoseTaskIsGone() async throws {
+        try await withSuite { defaults in
+            let (_, _, context) = try makeTask("Unrelated")
+            let owner = CadenceFocusSessionOwner(defaults: defaults, clock: { self.epoch })
+            owner.adoptPersistedSession(in: context)
+            #expect(!owner.hasLiveSession)
+
+            CadenceFocusSessionPersistence.write(
+                CadenceFocusSessionRecord(taskID: UUID(), isRunning: true, startedAt: epoch, accumulatedSeconds: 0),
+                to: defaults
+            )
+            owner.adoptPersistedSession(in: context)
+            #expect(!owner.hasLiveSession)
+            #expect(owner.selectedTarget == nil)
+            #expect(CadenceFocusSessionPersistence.read(from: defaults) == nil)
+        }
+    }
+
+    /// The wiring: the root adopts on its first appearance and on every return to `.active`,
+    /// ahead of `returnToForeground`, so it runs with no Focus screen ever having been built.
+    @Test func theRootAdoptsTheRecordAtLaunchAndOnEachReturnToTheFront() throws {
+        let root = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootView.swift"))
+        #expect(CadenceSourceScan.matchCount(
+            #"focusSession\.adoptPersistedSession\(in: modelContext\)"#, in: root
+        ) == 2)
+        #expect(root.contains("if case .active = phase { focusSession.adoptPersistedSession(in: modelContext) }"))
+        #expect(root.contains("if scenePhase == .active { focusSession.adoptPersistedSession(in: modelContext) }"))
+        let adopt = try #require(root.range(of: "if case .active = phase { focusSession.adoptPersistedSession"))
+        let back = try #require(root.range(of: "case .active: focusSession.returnToForeground()"))
+        #expect(adopt.lowerBound < back.lowerBound, "the gap is measured before the record is adopted")
+    }
 }
