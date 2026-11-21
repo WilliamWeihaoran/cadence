@@ -254,7 +254,8 @@ struct macOSRootView: View {
         }
         .onChange(of: focusManager.wantsNavToFocus) {
             macOSRootLifecycleSupport.handleFocusNavigationRequest(
-                focusManager: focusManager,
+                wantsNavToFocus: &focusManager.wantsNavToFocus,
+                isAddressed: rootWindow.isAddressedForFocusNavigation(),
                 selection: &selection,
                 columnVisibility: &columnVisibility,
                 focusHidSidebar: &focusHidSidebar

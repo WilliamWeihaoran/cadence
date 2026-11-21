@@ -82,6 +82,18 @@ final class RootWindowHandle {
     func isAddressed(mainWindow: NSWindow?) -> Bool {
         RootWindowAddressing.claims(ownWindow: window, mainWindow: mainWindow)
     }
+
+    /// [[T-18714]]: the gate for `FocusManager.wantsNavToFocus`. Unlike a routed request, that is a
+    /// flag only the claiming root resets, so a main window that is no root's must not leave it
+    /// raised for good: a panel (the inspector's notes panel can become main) counts as no main
+    /// window, and every root claims, as before the gate.
+    func isAddressedForFocusNavigation() -> Bool {
+        isAddressedForFocusNavigation(mainWindow: NSApp.mainWindow)
+    }
+
+    func isAddressedForFocusNavigation(mainWindow: NSWindow?) -> Bool {
+        isAddressed(mainWindow: mainWindow is NSPanel ? nil : mainWindow)
+    }
 }
 
 extension EnvironmentValues {

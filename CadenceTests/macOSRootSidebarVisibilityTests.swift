@@ -145,6 +145,40 @@ struct macOSRootSidebarVisibilityTests {
         }
     }
 
+    /// [[T-18714]]: two roots see one raised `wantsNavToFocus`; only the addressed one moves to
+    /// Focus and spends the flag, in whichever order they observe it. The back root seen FIRST is
+    /// the case the old handler got wrong: it took the request and the front root saw nothing.
+    @Test func onlyTheAddressedRootTakesAFocusNavigationRequest() {
+        for backFirst in [true, false] {
+            var wants = true
+            var front: SidebarItem? = .today
+            var back: SidebarItem? = .inbox
+            var frontVisibility: NavigationSplitViewVisibility = .all
+            var backVisibility: NavigationSplitViewVisibility = .all
+            var frontHid = false
+            var backHid = false
+            let observeBack = {
+                macOSRootLifecycleSupport.handleFocusNavigationRequest(
+                    wantsNavToFocus: &wants, isAddressed: false, selection: &back,
+                    columnVisibility: &backVisibility, focusHidSidebar: &backHid
+                )
+            }
+            let observeFront = {
+                macOSRootLifecycleSupport.handleFocusNavigationRequest(
+                    wantsNavToFocus: &wants, isAddressed: true, selection: &front,
+                    columnVisibility: &frontVisibility, focusHidSidebar: &frontHid
+                )
+            }
+            if backFirst { observeBack(); observeFront() } else { observeFront(); observeBack() }
+
+            #expect(front == .focus, "the front window stayed put (backFirst: \(backFirst))")
+            #expect(frontVisibility == .detailOnly)
+            #expect(back == .inbox, "the back window jumped to Focus (backFirst: \(backFirst))")
+            #expect(backVisibility == .all, "the back window's sidebar folded")
+            #expect(!wants, "the request was never spent")
+        }
+    }
+
     /// The root view is what binds both values to storage, and a view cannot be driven headless, so
     /// this reads it: the toggle must be handed the stored bool, the column state must be seeded
     /// from it, and the timeline panel must be the `@AppStorage` value itself.

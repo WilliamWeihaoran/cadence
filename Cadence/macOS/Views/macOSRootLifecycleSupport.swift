@@ -85,17 +85,21 @@ enum macOSRootLifecycleSupport {
         }
     }
 
+    /// [[T-18714]]: `wantsNavToFocus` is one app-wide flag every root observes, and the first root
+    /// to see it spent it -- with two windows, not necessarily the front one the user clicked in.
+    /// Only the addressed root ([[T-18603]]'s gate) moves to Focus and spends the flag; the others
+    /// leave it raised for that root, and see only its reset afterwards.
     static func handleFocusNavigationRequest(
-        focusManager: FocusManager,
+        wantsNavToFocus: inout Bool,
+        isAddressed: Bool,
         selection: inout SidebarItem?,
         columnVisibility: inout NavigationSplitViewVisibility,
         focusHidSidebar: inout Bool
     ) {
-        if focusManager.wantsNavToFocus {
-            selection = .focus
-            hideSidebarForFocus(columnVisibility: &columnVisibility, focusHidSidebar: &focusHidSidebar)
-            focusManager.wantsNavToFocus = false
-        }
+        guard wantsNavToFocus, isAddressed else { return }
+        selection = .focus
+        hideSidebarForFocus(columnVisibility: &columnVisibility, focusHidSidebar: &focusHidSidebar)
+        wantsNavToFocus = false
     }
 
     /// The user's Cmd+O / corner toggle. Whatever was hidden, the user owns the sidebar now, so a

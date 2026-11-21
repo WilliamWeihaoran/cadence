@@ -187,6 +187,27 @@ struct CadenceMacViewMenuTests {
         }
     }
 
+    /// [[T-18714]]: a Focus request belongs to the main window's root like a command, but a panel
+    /// that is main (the inspector's notes panel) is no root's window, so every root claims rather
+    /// than leaving the one-shot flag raised with nobody to spend it.
+    @Test func aFocusRequestBelongsToTheMainRootAndAPanelClaimsNoWindow() {
+        let own = makeWindow()
+        let other = makeWindow()
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 50, height: 50), styleMask: [.titled], backing: .buffered, defer: true)
+        panel.isReleasedWhenClosed = false
+        defer { own.close(); other.close(); panel.close() }
+        let front = RootWindowHandle()
+        let back = RootWindowHandle()
+        front.window = own
+        back.window = other
+
+        #expect(front.isAddressedForFocusNavigation(mainWindow: own))
+        #expect(!back.isAddressedForFocusNavigation(mainWindow: own), "the back window took the Focus request")
+        #expect(front.isAddressedForFocusNavigation(mainWindow: panel))
+        #expect(back.isAddressedForFocusNavigation(mainWindow: panel))
+        #expect(back.isAddressedForFocusNavigation(mainWindow: nil))
+    }
+
     /// Every way a command reaches a root consults the gate: the key monitor before any arm runs,
     /// and the four `.shared` routes before adopting a request. A page that takes a navigation
     /// request itself, or keeps a key monitor of its own, consults it too.
@@ -204,6 +225,10 @@ struct CadenceMacViewMenuTests {
             let arm = try #require(CadenceSourceScan.declarationBody(".onChange(of: \(route).request?.token)", in: root))
             #expect(arm.contains("rootWindow.isAddressed()"), "\(route) is adopted by every window")
         }
+
+        // [[T-18714]]: the focus-navigation flag goes through the panel-aware variant of the gate.
+        let focusArm = try #require(CadenceSourceScan.declarationBody(".onChange(of: focusManager.wantsNavToFocus)", in: root))
+        #expect(focusArm.contains("isAddressed: rootWindow.isAddressedForFocusNavigation()"), "every window takes a Focus request")
 
         for page in ["Cadence/macOS/Views/ListDetailView.swift", "Cadence/macOS/Views/NotesView.swift"] {
             let source = try read(page)
