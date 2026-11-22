@@ -1735,6 +1735,8 @@ struct CadenceTestTargetHygieneTests {
         "CadenceTests/iOSMarkdownBackspaceListPrefixTests.swift",
         "CadenceTests/iOSMarkdownEditorFlushTests.swift",
         "CadenceTests/iOSMarkdownInlineTaskPanelEffectTests.swift",
+        // [[T-19606]]: the editor's own `[[link]]` tap, driven through a real coordinator.
+        "CadenceTests/iOSMarkdownReferenceTapRoutingTests.swift",
         "CadenceTests/iOSMarkdownTaskEmbedSubtaskOverflowTests.swift",
         "CadenceTests/iOSTaskRecurrenceSelectionEffectTests.swift",
         // [[T-11614]] group (1): the list and column wind-downs are `extension ModelContext` under
