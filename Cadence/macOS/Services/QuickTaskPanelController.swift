@@ -62,6 +62,8 @@ final class QuickTaskPanelController: NSObject {
         // the calendar manager. The main window's root installs it; this panel is its own root.
         .environment(CalendarManager.shared)
         .preferredColorScheme(.dark)
+        // [[T-18807]]: its own root, so it declares the main window's palette tint itself.
+        .tint(Theme.blue)
 
         // [[T-5302]]. **The half-typed task survives a click into another app.** The panel still
         // closes on resign-key — the owner declined the alternative, because a panel that will not
@@ -180,6 +182,7 @@ final class QuickTaskPanelController: NSObject {
         let content = QuickTaskCaptureSuccessView(kind: kind)
             .padding(Self.shadowPadding)
             .preferredColorScheme(.dark)
+            .tint(Theme.blue)
         let hc = NSHostingController(rootView: AnyView(content))
         installHostingController(hc, in: panel)
         hostingController = hc

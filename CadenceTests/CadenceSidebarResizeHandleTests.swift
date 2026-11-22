@@ -85,7 +85,7 @@ struct CadenceSidebarResizeHandleAppearanceTests {
     /// `acceptsFirstResponder = true` since well before T-1037, so AppKit was already free to make
     /// the handle a freshly launched window's first responder — measured on a real running build at
     /// `eab61a0`: `AXFocusedUIElement` was the "Sidebar width" slider at launch, and the divider
-    /// painted a 10pt `#171F31` band (`controlAccentColor` at 0.12 over `#131316`) before the user
+    /// painted a 10pt `#171F31` band (the system accent at 0.12 over `#131316`; the palette's blue since [[T-18807]]) before the user
     /// touched anything. That is the user's own bug report — "it always starts to be blue like this
     /// as if it was selected" — reproduced by the commit meant to address it.
     @Test func focusPaintsNothingWhenFullKeyboardAccessIsOff() {

@@ -684,8 +684,9 @@ struct SettingsSevenPaneVocabularyTests {
         #expect(!sheet.contains("Set this tab"), "the header describes the sheet again")
     }
 
-    /// **[[T-9625]].** Every Mac Settings switch is drawn one way: regular size, system accent. The
-    /// sidebar tab editor's alone was `.controlSize(.small)` in `Theme.blue`.
+    /// **[[T-9625]].** Every Mac Settings switch is drawn one way: regular size, no per-switch tint.
+    /// The sidebar tab editor's alone was `.controlSize(.small)` in `Theme.blue`. The colour they
+    /// all inherit is the palette's, declared once at the Mac root ([[T-18807]], pinned below).
     @Test func everyMacSettingsSwitchIsDrawnOneWay() throws {
         let files = [
             "Cadence/macOS/Views/SettingsSupportViews.swift",
@@ -707,6 +708,38 @@ struct SettingsSevenPaneVocabularyTests {
         }
         // Non-vacuity: the tab editor's, the reminders' and each calendar's switch.
         #expect(switches == 3, "expected 3 Mac Settings switches, found \(switches)")
+    }
+
+    /// **[[T-18807]].** Every stock Mac control inherits the palette's blue, as its iOS twin does:
+    /// the Mac root declares the same `.tint(Theme.blue)` `iOSRootView` does, so does each floating
+    /// panel that is its own SwiftUI root, the sidebar resize glow reads the palette, and the note
+    /// editor's selection is set from it beside the caret. Without these a Mac whose system accent
+    /// is pink drew pink Settings switches beside a palette-blue schedule switch.
+    @Test func everyMacStockControlTakesThePaletteAccent() throws {
+        try t20ExpectOccurrences(of: ".tint(Theme.blue)", at: [
+            "Cadence/iOS/iOSRootView.swift": 1,
+            "Cadence/macOS/Views/macOSRootShellViews.swift": 1,
+            "Cadence/macOS/Services/QuickTaskPanelController.swift": 2,
+            "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift": 1,
+        ])
+        // Each panel root that sets its own scheme also sets the tint: one per scheme.
+        try t20ExpectOccurrences(of: ".preferredColorScheme(", at: [
+            "Cadence/macOS/Services/QuickTaskPanelController.swift": 2,
+            "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift": 1,
+        ])
+        try t20ExpectOccurrences(of: "selectedTextAttributes = Self.paletteSelectionAttributes()", at: [
+            "Cadence/macOS/Editor/MarkdownEditorView.swift": 2,
+        ])
+        try t20ExpectOccurrences(of: "Theme.nsBlue.withAlphaComponent(appearance.accentAlpha)", at: [
+            "Cadence/macOS/Views/macOSRootShellViews.swift": 1,
+        ])
+        var scanned = 0
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence") {
+            scanned += 1
+            let code = try t20StrippingComments(t20SourceFile(path))
+            #expect(!code.contains("controlAccentColor"), "\(path) draws in the system accent")
+        }
+        #expect(scanned > 100, "non-vacuity: scanned only \(scanned) files under Cadence/")
     }
 
     /// The glyph is **absent** on a row that reports no verdict, not blank.

@@ -356,6 +356,8 @@ final class TaskNotesPanelController: NSObject, NSWindowDelegate {
         .environment(CalendarNavigationManager.shared)
         .environment(TaskSubtaskEntryManager.shared)
         .preferredColorScheme(.dark)
+        // [[T-18807]]: its own root, so it declares the main window's palette tint itself.
+        .tint(Theme.blue)
 
         let hostingView = TaskNotesHostingView(rootView: AnyView(content))
         panel.contentView = hostingView

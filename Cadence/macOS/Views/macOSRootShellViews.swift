@@ -67,6 +67,9 @@ struct macOSRootMainShell<Content: View>: View {
             .zIndex(0)
         }
         .preferredColorScheme(Theme.preferredColorScheme)
+        // [[T-18807]]: the palette's blue is the accent every stock control inherits, as at
+        // `iOSRootView`'s root; without it each Mac switch and checkbox took the system accent.
+        .tint(Theme.blue)
         .overlay(alignment: .top) {
             WindowTopDragRegion()
                 .frame(height: 10)
@@ -200,7 +203,7 @@ nonisolated enum SidebarResizeHandleAppearance: Equatable {
     case hovered
     case dragging
 
-    /// Alpha applied to `NSColor.controlAccentColor` over `Theme.surface`.
+    /// Alpha applied to `Theme.nsBlue` (the palette accent, [[T-18807]]) over `Theme.surface`.
     var accentAlpha: Double {
         switch self {
         case .rest: return 0
@@ -422,7 +425,7 @@ private final class SidebarResizeHandleView: NSView {
             isFocused: isFocused,
             isFullKeyboardAccessEnabled: NSApp.isFullKeyboardAccessEnabled
         )
-        layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(appearance.accentAlpha).cgColor
+        layer?.backgroundColor = Theme.nsBlue.withAlphaComponent(appearance.accentAlpha).cgColor
     }
 }
 

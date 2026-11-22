@@ -551,6 +551,7 @@ struct MarkdownEditorView: NSViewRepresentable {
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.backgroundColor = Theme.nsBg
         textView.insertionPointColor = Theme.nsBlue
+        textView.selectedTextAttributes = Self.paletteSelectionAttributes()
         textView.textContainerInset = NSSize(
             width: MarkdownEditorMetrics.textInset,
             height: MarkdownEditorMetrics.textInset
@@ -595,6 +596,14 @@ struct MarkdownEditorView: NSViewRepresentable {
         MarkdownEditorCoordinator(parent: self)
     }
 
+    /// [[T-18807]]: the selection highlight is the palette's blue, as iOS's `tintColor` draws it,
+    /// rather than the system highlight colour beside a palette caret.
+    static let paletteSelectionAlpha: CGFloat = 0.3
+
+    static func paletteSelectionAttributes() -> [NSAttributedString.Key: Any] {
+        [.backgroundColor: Theme.nsBlue.withAlphaComponent(paletteSelectionAlpha)]
+    }
+
     @discardableResult
     private func configure(_ textView: CadenceTextView, context: NSViewRepresentableContext<MarkdownEditorView>) -> Bool {
         let referencedImageIDs = MarkdownImageAssetService.standaloneReferencedIDs(in: text)
@@ -603,9 +612,11 @@ struct MarkdownEditorView: NSViewRepresentable {
         var didUpdateRenderedContent = false
 
         // [[T-18203]]: a palette change reaches this pass through the read below and restyles the
-        // links, tags and task cards; the caret is the one accent set outside the stylist.
+        // links, tags and task cards; the caret and the selection are the accents set outside the
+        // stylist.
         if MarkdownStylist.needsAccentRestyle(textView) {
             textView.insertionPointColor = Theme.nsBlue
+            textView.selectedTextAttributes = Self.paletteSelectionAttributes()
             didUpdateRenderedContent = true
         }
 
