@@ -230,7 +230,11 @@ enum CadenceTaskFieldEditCommit {
         for (snapshot, target) in zip(snapshots, targets) {
             if let successorID = snapshot.spawnedSuccessorID(comparedWith: target),
                let successor = pendingInsertedTask(withID: successorID, in: modelContext) {
-                modelContext.delete(successor)
+                // With its copied checklist ([[T-19057]]): deleting the successor alone nulls each
+                // copy's parent and leaves it pending for the next save to commit as an orphan.
+                for model in CadenceTaskRecurrenceWorkflowSupport.insertedGraph(of: successor) {
+                    modelContext.delete(model)
+                }
             }
         }
         for (snapshot, target) in zip(snapshots, targets) {

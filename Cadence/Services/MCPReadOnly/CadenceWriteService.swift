@@ -1880,7 +1880,7 @@ final class CadenceWriteService {
             if let spawnedTaskID {
                 auditEntries.append(.task(tool: "complete_task", id: spawnedTaskID, summary: "Spawned recurring task from: \(task.title)"))
             }
-            try saveNotifyAndAudit(auditEntries, inserted: spawnedTask.map { [$0] } ?? []) {
+            try saveNotifyAndAudit(auditEntries, inserted: spawnedTask.map(CadenceTaskRecurrenceWorkflowSupport.insertedGraph(of:)) ?? []) {
                 snapshot?.restore()
             }
         }
@@ -1987,7 +1987,7 @@ final class CadenceWriteService {
             if let spawnedTask {
                 auditEntries.append(.task(tool: "cancel_task", id: spawnedTask.id, summary: "Spawned recurring task from: \(task.title)"))
             }
-            try saveNotifyAndAudit(auditEntries, inserted: spawnedTask.map { [$0] } ?? []) {
+            try saveNotifyAndAudit(auditEntries, inserted: spawnedTask.map(CadenceTaskRecurrenceWorkflowSupport.insertedGraph(of:)) ?? []) {
                 snapshot.restore()
             }
         }
@@ -2109,7 +2109,7 @@ final class CadenceWriteService {
             // One commit for the whole batch, so one undo for the whole batch: every cancellation
             // goes back and every successor is un-inserted, rather than the store keeping whichever
             // prefix of a refused bulk call happened to be pending (T-1121).
-            try saveNotifyAndAudit(auditEntries, inserted: spawnedTasks) {
+            try saveNotifyAndAudit(auditEntries, inserted: spawnedTasks.flatMap(CadenceTaskRecurrenceWorkflowSupport.insertedGraph(of:))) {
                 for snapshot in snapshots {
                     snapshot.restore()
                 }

@@ -103,7 +103,8 @@ extension CadenceTaskMutationSupport {
         let status = task.status
         let completedAt = task.completedAt
         let spawnedTaskID = task.recurrenceSpawnedTaskID
-        let spawned: [any PersistentModel] = settle().map { [$0] } ?? []
+        // The successor's copied checklist too ([[T-19057]]), or a refusal strands it as orphans.
+        let spawned: [any PersistentModel] = settle().map(CadenceTaskRecurrenceWorkflowSupport.insertedGraph(of:)) ?? []
         do {
             try CadencePendingChangePersistence.commitInsert(of: spawned, in: context, commit: commit)
         } catch {

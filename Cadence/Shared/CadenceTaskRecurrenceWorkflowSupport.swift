@@ -355,6 +355,22 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         return nextTask
     }
 
+    /// Everything one spawn put into the context: the successor **and its copied checklist**.
+    ///
+    /// **[[T-19057]]: a refused settle must un-insert this, not the successor alone.**
+    /// `makeNextRecurringTask` hangs the copies on the successor and `spawnNextOccurrenceIfNeeded`
+    /// inserts the successor, which brings the copies in as pending inserts with it. Every settle
+    /// site used to hand only the successor to its undo, and deleting an unsaved successor
+    /// nullifies each copy's `parentTask` (no delete rule on `AppTask.subtasks`), so the next
+    /// unrelated save committed them as parentless `Subtask` rows — never drawn, never swept,
+    /// exported and synced. `CadencePendingChangePersistence.commitInsert`'s doc states the rule:
+    /// pass every object the caller inserted. `commitSettle`, `CadenceTaskFieldEditCommit`'s undo
+    /// and the MCP complete/cancel/bulk-cancel arms all read the graph from here, so they cannot
+    /// disagree about what a spawn inserted.
+    static func insertedGraph(of successor: AppTask) -> [any PersistentModel] {
+        [successor] + (successor.subtasks ?? []).map { $0 as any PersistentModel }
+    }
+
     // MARK: - Forked successor chains (T-622)
 
     /// One spawned occurrence's identity: which series, and where in it.
