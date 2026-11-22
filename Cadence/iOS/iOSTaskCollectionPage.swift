@@ -144,6 +144,8 @@ struct iOSTaskCollectionPage: View {
                     collapsedGroupIDs: $collapsedGroupIDs,
                     metrics: metrics,
                     todayKey: observedDay.todayKey,
+                    sortField: sortField,
+                    sortDirection: sortDirection,
                     // The empty state and this section are alternatives, not neighbours: "Inbox is
                     // clear" over a list of open reminders says the opposite of what the screen is
                     // showing. macOS spells the same rule as an extra clause on its `isEmpty`, and
@@ -274,6 +276,10 @@ struct iOSTaskCollectionSections: View {
     let metrics: iOSTaskCollectionMetrics
     /// The page's observed day, for `iOSTaskRow.todayKey` ([[T-14341]]).
     let todayKey: String
+    /// The page's sort, which a row drop asks whether the row it renumbered will be seen to move
+    /// ([[T-19100]]); see `rowTaskDrop(scopeTasks:dropKey:)`.
+    let sortField: TaskSortField
+    let sortDirection: TaskSortDirection
     /// Set when the host is drawing something else in this collection's place — today that is the
     /// Inbox's Apple Reminders section, which is not a task group and so cannot be counted by
     /// `isEmpty`, but is very much content. Without it a cleared Inbox with three open reminders
@@ -287,9 +293,13 @@ struct iOSTaskCollectionSections: View {
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
     @Environment(RemindersManager.self) private var remindersManager
     @Environment(\.modelContext) private var modelContext
-    /// A heading's row drop the store refused ([[T-16654]]): the Mac's All Tasks borrows its one
-    /// notice slot for the same outcome, and every field is already back when this is set.
+    /// A heading's or row's drop the store refused ([[T-16654]], [[T-19100]]): the Mac's All Tasks
+    /// borrows its one notice slot for the same outcome, and every field is already back when this
+    /// is set.
     @State private var rowDropFailureNotice: String?
+    /// A row drop that landed where the active sort will not show it move ([[T-19100]]) -- the
+    /// Mac's `TasksListView.reorderOffScreenNotice`, from the same `CadenceReorderVisibility` ask.
+    @State private var rowDropLandingNotice: String?
 
     /// **A task row dragged onto a grouped heading re-files it, as on the Mac ([[T-16654]]).**
     /// The key is `CadenceTaskHeaderDrop.dropKey(forDisplayGroup:)` -- the one `TasksListView`
@@ -330,7 +340,46 @@ struct iOSTaskCollectionSections: View {
         return { payload in
             let outcome = drop(payload)
             rowDropFailureNotice = outcome == .refused ? CadencePendingChangePersistence.editFailureNotice : nil
+            rowDropLandingNotice = nil
             return outcome == .applied
+        }
+    }
+
+    /// **A task row dragged onto another row lands in front of it, refiled into that row's group
+    /// first when it came from another, as on the Mac's All Tasks and Inbox ([[T-19100]]).** The
+    /// whole drop is `CadenceTaskRowDrop.drop`, which is the Mac's
+    /// `TasksPanelDropCoordinator.handleTaskDrop` with this page's lookups: `scopeTasks` is the
+    /// target's group, `dropKey` the one its heading hands out (`nil` for the ungrouped "Tasks"
+    /// section and for buckets that name nothing to file under, which then only renumber), and the
+    /// page's own rows are the universe a payload must name.
+    private func rowTaskDrop(scopeTasks: [AppTask], dropKey: String?) -> (String, AppTask) -> Bool {
+        let universe = activeTasks + completedTasks
+        let todayKey = todayKey
+        let sortField = sortField
+        let sortDirection = sortDirection
+        return { payload, target in
+            let outcome = CadenceTaskRowDrop.drop(
+                payload: payload,
+                onto: target,
+                scopeTasks: scopeTasks,
+                dropKey: dropKey,
+                among: universe,
+                todayKey: todayKey,
+                modelContext: modelContext,
+                sortKeyOrder: { TaskOrdering.sortKeyOrder($0, $1, field: sortField, direction: sortDirection) }
+            )
+            switch outcome {
+            case .applied(let notice):
+                rowDropFailureNotice = nil
+                rowDropLandingNotice = notice
+                return true
+            case .refused(let notice):
+                rowDropLandingNotice = nil
+                rowDropFailureNotice = notice
+                return false
+            case .resolvedNothing:
+                return false
+            }
         }
     }
 
@@ -385,6 +434,9 @@ struct iOSTaskCollectionSections: View {
             if let rowDropFailureNotice {
                 CadenceInlineFailureNotice(text: rowDropFailureNotice)
             }
+            if let rowDropLandingNotice {
+                CadenceInlineNotice(text: rowDropLandingNotice, tone: .informational)
+            }
 
             // **Ungrouped is still one section with a drop identity; grouped is the shared
             // groups** ([[T-8731]]).
@@ -416,7 +468,8 @@ struct iOSTaskCollectionSections: View {
                     showsContainer: showsContainer,
                     todayKey: todayKey,
                     dropIdentity: collection.activeGroupIdentity,
-                    collapsedGroupIDs: $collapsedGroupIDs
+                    collapsedGroupIDs: $collapsedGroupIDs,
+                    onDropTaskPayloadOnRow: rowTaskDrop(scopeTasks: activeTasks, dropKey: nil)
                 )
             } else {
                 ForEach(activeGroups) { group in
@@ -431,7 +484,11 @@ struct iOSTaskCollectionSections: View {
                         todayKey: todayKey,
                         collapsedGroupIDs: $collapsedGroupIDs,
                         groupID: group.id,
-                        onDropTaskPayload: onDropTaskPayload(for: group)
+                        onDropTaskPayload: onDropTaskPayload(for: group),
+                        onDropTaskPayloadOnRow: rowTaskDrop(
+                            scopeTasks: group.tasks,
+                            dropKey: CadenceTaskHeaderDrop.dropKey(forDisplayGroup: group)
+                        )
                     )
                 }
             }

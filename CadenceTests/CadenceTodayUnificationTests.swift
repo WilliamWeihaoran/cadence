@@ -1365,10 +1365,12 @@ struct CadenceTodayUnificationTests {
         #expect(try liveTextOccurrences(of: "sectionDropHandler(") == 3)
         // The row-level decision, still the coordinator's at both row drops. `.handleTaskDrop(` and
         // not `handleTaskDrop(`: the two kanban columns declare and call a private function of the
-        // same name over `[String]` items, which is not this one.
-        #expect(try liveTextOccurrences(of: ".handleTaskDrop(") == 2)
+        // same name over `[String]` items, which is not this one. Three since [[T-19100]]: the
+        // iPhone's and iPad's Today, All Tasks and Inbox rows reach it through the one call in
+        // `CadenceTaskRowDrop.drop`, not a copy of the decision.
+        #expect(try liveTextOccurrences(of: ".handleTaskDrop(") == 3)
 
-        let coordinator = try declarationBody(of: "TasksPanelDropCoordinator", in: "Cadence/macOS/Views/TasksPanelDropCoordinator.swift")
+        let coordinator = try declarationBody(of: "TasksPanelDropCoordinator", in: "Cadence/Shared/TasksPanelDropCoordinator.swift")
         #expect(coordinator.contains("func handleSectionDrop("), "non-vacuity: empty declaration slice")
         #expect(occurrences(of: "func taskDropHandler(", in: coordinator) == 0)
         #expect(occurrences(of: "func sectionDropHandler(", in: coordinator) == 1)
@@ -1376,7 +1378,7 @@ struct CadenceTodayUnificationTests {
 
         // And the removal is recorded where the surviving half is read, not only here. Asserted
         // against the *raw* file, because `strippingComments` blanks the sentence being looked for.
-        let raw = try sourceFile("Cadence/macOS/Views/TasksPanelDropCoordinator.swift")
+        let raw = try sourceFile("Cadence/Shared/TasksPanelDropCoordinator.swift")
         #expect(
             raw.contains("The task-level half of this pair is gone (T-564(b))"),
             "sectionDropHandler no longer says its sibling was removed, or why"

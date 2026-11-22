@@ -1,5 +1,9 @@
-#if os(macOS)
 import Foundation
+
+// **In `Shared/` since [[T-19100]]**, moved verbatim out of `macOS/Views/` (it was `#if os(macOS)`,
+// and pure Foundation), as [[T-16682]] moved `ListTasksGroupDrop`: the iPhone's and iPad's Today,
+// All Tasks and Inbox rows take the Mac's row-on-row drop through `CadenceTaskRowDrop.drop`, which
+// builds this with the touch pages' lookups. The Mac's two pages still build their own.
 
 struct TasksPanelDropCoordinator {
     let allTasks: [AppTask]
@@ -125,4 +129,3 @@ struct TasksPanelDropCoordinator {
         return (droppedID, droppedTask)
     }
 }
-#endif

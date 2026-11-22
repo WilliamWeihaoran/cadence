@@ -340,7 +340,7 @@ struct TasksListDropCommitRateTests {
         }
         #expect(read == 2, "expected two macOS drop surfaces, read \(read)")
         let coordinator = CadenceSourceScan.codeOnly(
-            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanelDropCoordinator.swift")
+            try CadenceSourceScan.sourceFile("Cadence/Shared/TasksPanelDropCoordinator.swift")
         )
         #expect(
             // [[T-18629]]: wrapped in `landed(_:)`, which releases the hover freeze on a `true`.

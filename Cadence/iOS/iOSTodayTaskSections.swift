@@ -72,6 +72,9 @@ struct iOSTodayTaskSections: View {
     /// do-date emphasis. A parameter the host's day observer changes is what makes the body re-run.
     /// It is the rows' `todayKey:` and their `dayAlreadyStatedBySurface:` -- see `iOSTaskRow`.
     let todayKey: String
+    /// The page's sort, which a row drop asks whether the row it renumbered will be seen to move
+    /// ([[T-19100]]) -- the Mac's `TasksPanel` asks `todaySortKeyOrder` with its own.
+    let sortMode: CadenceTaskSortMode
     /// Whether the day's finished work is **unfolded** — no longer whether it is on the page at
     /// all. Since the owner's *"show the completed today section (which is always folded until i
     /// unfold it) on the bottom of the list"* the section is always there and this bit is its
@@ -91,8 +94,55 @@ struct iOSTodayTaskSections: View {
     let seedSampleData: () -> Void
     #endif
 
+    @Environment(\.modelContext) private var modelContext
+    /// A row drop the store refused, or one that landed where the sort will not show it move
+    /// ([[T-19100]]) -- the Mac's Today pair (`TasksPanel.reorderFailureNotice` /
+    /// `reorderOffScreenNotice`), from the same `CadenceTaskRowDrop` answer.
+    @State private var rowDropFailureNotice: String?
+    @State private var rowDropLandingNotice: String?
+
     private var metrics: CadenceTodaySectionMetrics {
         .metrics(layout: layout)
+    }
+
+    /// **A task row dragged onto another row of a Today list group lands in front of it, filed
+    /// into that list on today first when it came from another, as on the Mac's Today
+    /// ([[T-19100]]).** The key is the group's own (`list:<key>|date:today`, from
+    /// `CadenceTaskDropSupport.dropKey(forGroup:)`, the one `TasksPanel.todayGroupSections` hands
+    /// its rows), and the whole drop is `CadenceTaskRowDrop.drop` -- the Mac's
+    /// `TasksPanelDropCoordinator.handleTaskDrop`. The page's rows are the universe a payload must
+    /// name.
+    private func rowTaskDrop(for group: CadenceTodayTaskGroup) -> (String, AppTask) -> Bool {
+        let universe = taskGroups.flatMap(\.tasks) + completedTasks
+        let dropKey = CadenceTaskDropSupport.dropKey(forGroup: group.dropIdentity)
+        let todayKey = todayKey
+        let sortMode = sortMode
+        return { payload, target in
+            let outcome = CadenceTaskRowDrop.drop(
+                payload: payload,
+                onto: target,
+                scopeTasks: group.tasks,
+                dropKey: dropKey,
+                among: universe,
+                todayKey: todayKey,
+                modelContext: modelContext,
+                sortKeyOrder: {
+                    CadenceTaskQuerySupport.todaySortKeyOrder($0, $1, todayKey: todayKey, sortMode: sortMode)
+                }
+            )
+            switch outcome {
+            case .applied(let notice):
+                rowDropFailureNotice = nil
+                rowDropLandingNotice = notice
+                return true
+            case .refused(let notice):
+                rowDropLandingNotice = nil
+                rowDropFailureNotice = notice
+                return false
+            case .resolvedNothing:
+                return false
+            }
+        }
     }
 
 
@@ -202,6 +252,13 @@ struct iOSTodayTaskSections: View {
         let showsContainer = CadenceTaskSurfaceOptions.showsContainerChip(on: .today)
 
         let stack = VStack(alignment: .leading, spacing: metrics.groupSpacing) {
+            if let rowDropFailureNotice {
+                CadenceInlineFailureNotice(text: rowDropFailureNotice)
+            }
+            if let rowDropLandingNotice {
+                CadenceInlineNotice(text: rowDropLandingNotice, tone: .informational)
+            }
+
             ForEach(taskGroups) { group in
                 // Every group here is a list, so every group accepts a dropped `+` and inherits
                 // its list. `CadenceTaskDropSupport.dropKey(forGroup:)` decides, once, for both
@@ -227,7 +284,8 @@ struct iOSTodayTaskSections: View {
                     todayKey: todayKey,
                     dropIdentity: group.dropIdentity,
                     collapsedGroupIDs: $collapsedGroupIDs,
-                    groupID: group.id
+                    groupID: group.id,
+                    onDropTaskPayloadOnRow: rowTaskDrop(for: group)
                 )
             }
 

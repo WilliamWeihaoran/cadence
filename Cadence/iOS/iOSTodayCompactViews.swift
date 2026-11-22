@@ -121,6 +121,7 @@ struct iOSCompactTodayView: View {
             taskGroups: todayTaskGroups,
             completedTasks: completedTodayTasks,
             todayKey: todayKey,
+            sortMode: sortMode,
             showsCompleted: $showCompleted,
             collapsedGroupIDs: $collapsedGroupIDs,
             rolloverNotice: rolloverNotice,
@@ -133,6 +134,7 @@ struct iOSCompactTodayView: View {
             taskGroups: todayTaskGroups,
             completedTasks: completedTodayTasks,
             todayKey: todayKey,
+            sortMode: sortMode,
             showsCompleted: $showCompleted,
             collapsedGroupIDs: $collapsedGroupIDs,
             rolloverNotice: rolloverNotice

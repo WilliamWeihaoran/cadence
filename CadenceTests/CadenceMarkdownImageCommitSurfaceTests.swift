@@ -576,7 +576,10 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // [[T-18292]] makes it 91, and bare: the Mac board card's tag popover names a refused tag
         // write under the picker -- the retry is the same pick or create, and the next one that
         // lands clears it ([[T-18309]]).
-        #expect(total == 91, "the inline notice has \(total) call sites, not the 91 this test was written over")
+        // [[T-19100]] makes it 92, and bare: iOS Today names a row-on-row drop the store refused
+        // above its list groups, as the Mac's Today does -- the retry is the drag itself, and the
+        // next drop that lands clears it.
+        #expect(total == 92, "the inline notice has \(total) call sites, not the 92 this test was written over")
         #expect(withDismissal == 9, "\(withDismissal) call sites offer a dismissal, not 9")
 
         // And each of the nine is named, so one swapping places with another is still a failure.

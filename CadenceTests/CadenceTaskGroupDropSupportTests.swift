@@ -852,7 +852,7 @@ struct CadenceTaskGroupDropSupportTests {
     /// together with the two call sites that make it dead.
     @Test func therowDropDeclaresNoDefaultDropKeyAndBothCallersSupplyOne() throws {
         let coordinator = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanelDropCoordinator.swift")
+            try CadenceSourceScan.sourceFile("Cadence/Shared/TasksPanelDropCoordinator.swift")
         )
         #expect(coordinator.contains("func handleTaskDrop("), "non-vacuity: wrong file read")
         #expect(

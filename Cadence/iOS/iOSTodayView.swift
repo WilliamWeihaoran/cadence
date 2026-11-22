@@ -384,6 +384,7 @@ struct iOSTodayView: View {
             taskGroups: content.taskGroups,
             completedTasks: content.completedTasks,
             todayKey: content.todayKey,
+            sortMode: sortMode,
             showsCompleted: $showCompleted,
             collapsedGroupIDs: $collapsedGroupIDs,
             rolloverNotice: iOSTodayRolloverNotice(content: content, onRollOver: rollOverPastDoTasks, onDismiss: dismissRolloverNotice),
@@ -396,6 +397,7 @@ struct iOSTodayView: View {
             taskGroups: content.taskGroups,
             completedTasks: content.completedTasks,
             todayKey: content.todayKey,
+            sortMode: sortMode,
             showsCompleted: $showCompleted,
             collapsedGroupIDs: $collapsedGroupIDs,
             rolloverNotice: iOSTodayRolloverNotice(content: content, onRollOver: rollOverPastDoTasks, onDismiss: dismissRolloverNotice)
