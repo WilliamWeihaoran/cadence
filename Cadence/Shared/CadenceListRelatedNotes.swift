@@ -46,14 +46,48 @@ enum CadenceListRelatedNotes {
             .filter { !isPast($0, todayKey: todayKey, nowMinutes: nowMinutes) }
     }
 
-    /// An undated note is never past. A dated one is past before today, or today once its end (its
-    /// start, when it has no end) is behind `nowMinutes`.
+    /// An undated note is never past. A dated one is past once the day its event ends is behind
+    /// today, or on that day once its end (its start, when it has no end) is behind `nowMinutes`.
+    ///
+    /// **[[T-19035]] -- an end that wraps ends on the next day.** The note stores its start's day
+    /// and two wall-clock minutes, the end's read on whatever day the end falls
+    /// (`CadenceEventNoteSupport.eventDateMetadata`). An end before the start (11 PM -> 1 AM), or
+    /// an end at minute 0 (10 PM -> 12 AM, and the next-midnight reading of an all-day day that
+    /// [[T-16880]] also takes) is on the day after the start, so the note stays upcoming for the
+    /// whole start day and until that minute of the next. Comparing it against the start day
+    /// dropped a 10 PM -> 12 AM note at 00:01 of its own day.
+    ///
+    /// Not covered: an event whose end is two or more days later -- a Mon-Wed all-day offsite, or a
+    /// timed event across several midnights -- stores an end minute that does not wrap or wraps
+    /// once, and nothing else on the note records the end's day. It still drops out at the end of
+    /// its start day (or the day after). Fixing that needs a synced end-day field, a schema
+    /// change ([[T-19039]]).
     static func isPast(_ note: Note, todayKey: String, nowMinutes: Int) -> Bool {
         guard !note.eventDateKey.isEmpty else { return false }
-        if note.eventDateKey < todayKey { return true }
-        guard note.eventDateKey == todayKey else { return false }
+        let endDayKey = endsOnNextDay(startMin: note.eventStartMin, endMin: note.eventEndMin)
+            ? (dayKey(after: note.eventDateKey) ?? note.eventDateKey)
+            : note.eventDateKey
+        if endDayKey < todayKey { return true }
+        guard endDayKey == todayKey else { return false }
         let comparisonMinutes = note.eventEndMin >= 0 ? note.eventEndMin : note.eventStartMin
         return comparisonMinutes >= 0 && comparisonMinutes < nowMinutes
+    }
+
+    /// Whether a stored span's end minute is on the day after its start: an end before the start,
+    /// or an end at midnight. A zero-length timed event (10:00 -> 10:00) is the same day.
+    static func endsOnNextDay(startMin: Int, endMin: Int) -> Bool {
+        guard startMin >= 0, endMin >= 0 else { return false }
+        return endMin < startMin || endMin == 0
+    }
+
+    /// The `yyyy-MM-dd` key one calendar day after `key`. Pure day arithmetic, so it is done in
+    /// a fixed zone: a key names a day, not an instant.
+    private static func dayKey(after key: String) -> String? {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? calendar.timeZone
+        guard let day = DateFormatters.date(from: key, in: calendar),
+              let next = calendar.date(byAdding: .day, value: 1, to: day) else { return nil }
+        return DateFormatters.dateKey(from: next, calendar: calendar)
     }
 
     // MARK: - Search and tag filter

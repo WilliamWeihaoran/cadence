@@ -85,6 +85,53 @@ struct CadenceListRelatedNotesTests {
         #expect(CadenceListRelatedNotes.upcomingEventNotes(linkedCalendarID: "", in: notes, todayKey: "2026-10-26", nowMinutes: 600).isEmpty)
     }
 
+    /// [[T-19035]]: an end that wraps past midnight ends on the next day, so its note stays upcoming
+    /// through the whole start day and until the end minute of the next -- it used to drop out at
+    /// 00:01 (10 PM -> 12 AM) or 01:01 (11 PM -> 1 AM) of its own day, before it had begun.
+    @Test func aNoteWhoseEventEndsAfterMidnightStaysUpcomingUntilThatEnd() {
+        func past(_ start: Int, _ end: Int, on day: String = "2026-10-26", today: String, now: Int) -> Bool {
+            let note = Note(kind: .meeting, title: "N", calendarID: "c", eventDateKey: day, eventStartMin: start, eventEndMin: end)
+            return CadenceListRelatedNotes.isPast(note, todayKey: today, nowMinutes: now)
+        }
+        let start = "2026-10-26", next = "2026-10-27", after = "2026-10-28"
+
+        // 10 PM -> 12 AM: upcoming all of its own day, past once the next day is under way.
+        #expect(!past(1320, 0, today: start, now: 1))
+        #expect(!past(1320, 0, today: start, now: 1380))
+        #expect(past(1320, 0, today: next, now: 1))
+        #expect(past(1320, 0, today: after, now: 0))
+
+        // 11 PM -> 1 AM: upcoming through 1 AM of the next day.
+        #expect(!past(1380, 60, today: start, now: 61))
+        #expect(!past(1380, 60, today: next, now: 30))
+        #expect(!past(1380, 60, today: next, now: 60))
+        #expect(past(1380, 60, today: next, now: 61))
+
+        // An all-day day, both readings of its end: the whole day, then gone.
+        for end in [1439, 0] {
+            #expect(!past(0, end, today: start, now: 1))
+            #expect(!past(0, end, today: start, now: 1438))
+            #expect(past(0, end, today: next, now: 1))
+        }
+
+        // Same-day spans keep the same-day rule; a zero-length event does not wrap.
+        #expect(past(480, 540, today: start, now: 541))
+        #expect(!past(480, 540, today: start, now: 540))
+        #expect(past(600, 600, today: start, now: 601))
+        #expect(past(600, 600, today: next, now: 0))
+
+        // The next day crosses a month end.
+        #expect(!past(1380, 60, on: "2026-10-31", today: "2026-11-01", now: 30))
+        #expect(past(1380, 60, on: "2026-10-31", today: "2026-11-01", now: 61))
+        #expect(past(1380, 60, on: "2026-12-31", today: "2027-01-02", now: 0))
+        #expect(!past(1380, 60, on: "2026-12-31", today: "2027-01-01", now: 59))
+
+        // A note with no span wraps nothing; a start alone keeps the start-minute rule.
+        #expect(!CadenceListRelatedNotes.endsOnNextDay(startMin: -1, endMin: 0))
+        #expect(!CadenceListRelatedNotes.endsOnNextDay(startMin: 600, endMin: -1))
+        #expect(past(500, -1, today: start, now: 501))
+    }
+
     /// An area's link is the one read, and it is not merged with a project's.
     @Test func theAreasCalendarLinkWins() {
         let area = Area(name: "Home")
