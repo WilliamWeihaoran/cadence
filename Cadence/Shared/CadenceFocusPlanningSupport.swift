@@ -59,9 +59,13 @@ struct CadenceFocusTimerState: Hashable {
 ///
 /// What differs is only how each platform learns there *was* an absence:
 ///
-/// - **macOS** is told. `NSWorkspace.willSleepNotification` is an explicit "nobody is working",
-///   so its threshold is zero — `FocusManager.handleSystemWillSleep` freezes the clock through
-///   `frozen(_:at:)` at the sleep instant, and wakes it again in `handleSystemDidWake` ([[T-1103]]).
+/// - **macOS** hears two signals. System sleep (`NSWorkspace.willSleepNotification`) is an
+///   explicit "nobody is working", so its threshold is zero — `FocusManager.handleSystemWillSleep`
+///   freezes the clock through `frozen(_:at:)` at the sleep instant, and wakes it again in
+///   `handleSystemDidWake` ([[T-1103]]). Display sleep and screen lock with the system awake are
+///   as ambiguous as iOS's lock screen, so they take iOS's rule and `unobservedGapThreshold`
+///   (`FocusManager.setScreenVisibility` / `applyUnobservedGap`, [[T-19094]]): past it the clock
+///   freezes at the instant the screen went out of sight and stays paused.
 /// - **iOS** is not. Going to the background is also a glance at another app or a locked phone
 ///   on the desk while the user works, which the owner declined to treat as the end of a session
 ///   ([[T-6001]]). So iOS measures the gap from the instant the screen was last seen and freezes
