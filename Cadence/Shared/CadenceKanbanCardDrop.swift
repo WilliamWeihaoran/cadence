@@ -24,8 +24,11 @@ import SwiftData
 ///   too ([[T-16503]]). The two rules above left no gesture that put a card below the LAST card of
 ///   its own column: on that card it went second-last, and the column body refused it. The iOS
 ///   column draws the slot under its last open card, where a drop can only mean "after the last",
-///   so it takes the own-column drop the body refuses. The Mac needs no slot: its column body is
-///   the space under the cards and already accepts the own-column drop.
+///   so it takes the own-column drop the body refuses. The Mac draws the same slot and asks the
+///   same rule (`landing(of:at:isOwnColumn:)`, [[T-19021]]): its column body is one target from
+///   header to foot as well -- the header strip, the top padding and the 8pt gap between two
+///   cards included -- and while it took the own-column drop, a card set down in any of those
+///   jumped to the bottom of the column it never left.
 /// - **Only a card of this board is accepted.** The payload decode is lenient by design (a bare
 ///   UUID passes, see `TaskDragPayload.taskID(from:)`), and an iPad shell can drag a task in from
 ///   another pane; refiling that one would be a container move this write does not make.
@@ -105,6 +108,31 @@ enum CadenceKanbanCardDrop {
         }
     }
 
+    /// Where a card set down on a column lands: in front of `before`, or at the column's end when
+    /// it is `nil`.
+    struct Landing {
+        let before: AppTask?
+    }
+
+    /// **The one slot rule both platforms' columns ask ([[T-16503]], [[T-19021]]).** `nil` is a
+    /// refusal: a card dropped on itself, or on its OWN column's body -- the header, the top
+    /// padding or a gap between cards, where "the end of the column" is not what a card set back
+    /// down meant. A body drop from another column still lands at the end, and the end slot is the
+    /// one target that puts a card below the last card of its own column.
+    ///
+    /// - Parameter isOwnColumn: whether `task` already sits in the column it was dropped on. Each
+    ///   board answers it its own way -- iOS by section name, the Mac boards by the column's cards.
+    static func landing(of task: AppTask, at slot: Slot, isOwnColumn: Bool) -> Landing? {
+        switch slot {
+        case .card(let card):
+            return task.id == card.id ? nil : Landing(before: card)
+        case .columnBody:
+            return isOwnColumn ? nil : Landing(before: nil)
+        case .columnEnd:
+            return Landing(before: nil)
+        }
+    }
+
     /// The `before:` spelling of `drop(_:intoColumn:at:...)`: a card, or the column body.
     @MainActor
     static func drop(
@@ -155,23 +183,12 @@ enum CadenceKanbanCardDrop {
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
         guard let task = droppedCard(from: items, among: boardTasks) else { return false }
-        let target: AppTask?
-        switch slot {
-        case .card(let card):
-            guard task.id != card.id else { return false }
-            target = card
-        case .columnBody:
-            guard task.resolvedSectionName.caseInsensitiveCompare(sectionName) != .orderedSame else {
-                return false
-            }
-            target = nil
-        case .columnEnd:
-            target = nil
-        }
+        let isOwnColumn = task.resolvedSectionName.caseInsensitiveCompare(sectionName) == .orderedSame
+        guard let landing = landing(of: task, at: slot, isOwnColumn: isOwnColumn) else { return false }
         return reorder(
             columnTasks.sorted(by: TaskOrdering.fallbackPrecedes),
             moving: task,
-            before: target,
+            before: landing.before,
             spanning: spanTasks,
             ofList: listKey,
             in: modelContext,

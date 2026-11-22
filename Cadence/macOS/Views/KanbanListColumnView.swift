@@ -28,6 +28,8 @@ struct TaskListKanbanColumn: View {
     @Environment(\.modelContext) private var modelContext
     @State private var isTargeted = false
     @State private var dragOverTaskID: UUID?
+    /// A card held over the end slot under the last card ([[T-19021]]).
+    @State private var isEndSlotTargeted = false
     @State private var isHovered = false
     @State private var isComposing = false
     @State private var frozenTasks: [AppTask]? = nil
@@ -81,7 +83,8 @@ struct TaskListKanbanColumn: View {
             guard let payload = items.first,
                   let droppedID = KanbanBoardSupport.taskID(from: payload),
                   let droppedTask = universeTasks.first(where: { $0.id == droppedID }) else { return false }
-            return moveTask(droppedTask, before: nil)
+            // [[T-19021]]: the body refuses the card's own column; the end slot reaches "last".
+            return dropCard(droppedTask, at: .columnBody)
         } isTargeted: { isTargeted = $0 }
         .onHover { hovering in
             isHovered = hovering
@@ -145,6 +148,23 @@ struct TaskListKanbanColumn: View {
                 }
             )
         }
+        if !tasks.isEmpty {
+            KanbanColumnEndDropSlot(
+                showsDropIndicator: isEndSlotTargeted,
+                onDropTargetedChanged: { isEndSlotTargeted = $0 },
+                onDrop: { items in
+                    handleColumnEndDrop(items: items)
+                }
+            )
+        }
+    }
+
+    /// A drop on the end slot under the last card: the column's end, own column included.
+    private func handleColumnEndDrop(items: [String]) -> Bool {
+        guard let payload = items.first,
+              let droppedID = KanbanBoardSupport.taskID(from: payload),
+              let droppedTask = universeTasks.first(where: { $0.id == droppedID }) else { return false }
+        return dropCard(droppedTask, at: .columnEnd)
     }
 
     private func handleTaskDrop(items: [String], before target: AppTask) -> Bool {
@@ -196,6 +216,13 @@ struct TaskListKanbanColumn: View {
             sortKeyOrder: { TaskOrdering.sortKeyOrder($0, $1, field: sortField, direction: sortDirection) }
         ) : nil
         return reordered
+    }
+
+    /// A body or end-slot drop, resolved by the shared slot rule ([[T-19021]]): `false`, with
+    /// nothing written, when the rule refuses it.
+    private func dropCard(_ task: AppTask, at slot: CadenceKanbanCardDrop.Slot) -> Bool {
+        guard let landing = KanbanBoardSupport.cardLanding(of: task, at: slot, inColumn: tasks) else { return false }
+        return moveTask(task, before: landing.before)
     }
 }
 #endif

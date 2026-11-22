@@ -237,6 +237,42 @@ struct KanbanDraggableCard: View {
     }
 }
 
+/// **The end of a column's open cards, as a drop target** ([[T-19021]]), the Mac twin of the iOS
+/// board's `columnEndDropSlot` ([[T-16503]]). The column body refuses a card's own column, so this
+/// is where a card goes to land below the LAST card of the column it is already in. Drawn only
+/// under a card, at the iOS slot's height, with a card's insertion line where the card will land.
+struct KanbanColumnEndDropSlot: View {
+    var showsDropIndicator: Bool = false
+    var onDropTargetedChanged: (Bool) -> Void = { _ in }
+    let onDrop: ([String]) -> Bool
+
+    var body: some View {
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: kanbanColumnEndDropSlotHeight)
+            .contentShape(Rectangle())
+            .overlay(alignment: .top) {
+                if showsDropIndicator {
+                    Rectangle()
+                        .fill(Theme.blue)
+                        .frame(height: 2)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.15), value: showsDropIndicator)
+            .dropDestination(for: String.self) { items, _ in
+                onDrop(items)
+            } isTargeted: { isOver in
+                onDropTargetedChanged(isOver)
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+/// The iOS board's end-slot height (`iOSListKanbanColumnEndSlotHeight`), so the two slots match.
+let kanbanColumnEndDropSlotHeight: CGFloat = 28
+
 /// Holds a column's card ordering still while the pointer is over one of its cards, so hover
 /// never makes rows resort under the cursor. Both boards install this.
 struct KanbanFreezeObserver: View {

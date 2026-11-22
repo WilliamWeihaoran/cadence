@@ -49,6 +49,8 @@ struct ListSectionKanbanColumn: View {
     @State private var isTargeted = false
     @State private var isComposing = false
     @State private var dragOverTaskID: UUID? = nil
+    /// Something held over the end slot under the last open card ([[T-19021]]).
+    @State private var isEndSlotTargeted = false
     @State private var frozenTasks: [AppTask]? = nil
     @State private var showDoneTasks = false
     @State private var showEditor = false
@@ -215,7 +217,7 @@ struct ListSectionKanbanColumn: View {
         .overlay(alignment: .top) {
             // [[T-16500]]: over one of this column's cards the card is the drop target, not the
             // column, and a column dropped there reorders the board -- so say so here too.
-            if (isTargeted || dragOverTaskID != nil) && isAnotherSectionBeingDragged {
+            if (isTargeted || dragOverTaskID != nil || isEndSlotTargeted) && isAnotherSectionBeingDragged {
                 RoundedRectangle(cornerRadius: 3)
                     .fill(columnColor.opacity(0.9))
                     .frame(height: 3)
@@ -235,7 +237,8 @@ struct ListSectionKanbanColumn: View {
             // drop on empty column space accepts exactly what a drop on a card accepts.
             guard let uuid = KanbanBoardSupport.taskID(from: payload),
                   let task = universeTasks.first(where: { $0.id == uuid }) else { return false }
-            return moveTask(task, before: nil)
+            // [[T-19021]]: the body refuses the card's own column; the end slot reaches "last".
+            return dropCard(task, at: .columnBody)
         } isTargeted: { isTargeted = $0 }
         .onHover { hovering in
             isHovered = hovering
@@ -341,6 +344,9 @@ struct ListSectionKanbanColumn: View {
             isComposing: $isComposing
         ) {
             activeTaskCards(tasks: active)
+            if !active.isEmpty {
+                columnEndDropSlot
+            }
             completedTaskSection(tasks: completed)
         }
     }
@@ -361,6 +367,31 @@ struct ListSectionKanbanColumn: View {
                 }
             )
         }
+    }
+
+    /// The end slot under the last open card ([[T-19021]]). A column dragged by its header and let
+    /// go here reorders the columns, as it does over a card or the body ([[T-16500]]), so it draws
+    /// the card insertion line only for a card.
+    private var columnEndDropSlot: some View {
+        KanbanColumnEndDropSlot(
+            showsDropIndicator: isEndSlotTargeted && !isBeingDragged && !isAnotherSectionBeingDragged,
+            onDropTargetedChanged: { isEndSlotTargeted = $0 },
+            onDrop: { items in
+                handleColumnEndDrop(items: items)
+            }
+        )
+    }
+
+    /// A drop on the end slot: a column reorders the board, a card goes to this column's end, own
+    /// column included.
+    private func handleColumnEndDrop(items: [String]) -> Bool {
+        guard let payload = items.first else { return false }
+        if let movingName = KanbanBoardSupport.draggedColumnName(from: payload) {
+            return onReorderBefore(movingName)
+        }
+        guard let uuid = KanbanBoardSupport.taskID(from: payload),
+              let task = universeTasks.first(where: { $0.id == uuid }) else { return false }
+        return dropCard(task, at: .columnEnd)
     }
 
     @ViewBuilder
@@ -499,6 +530,14 @@ struct ListSectionKanbanColumn: View {
             sortKeyOrder: { KanbanBoardSupport.cardSortKeyOrder($0, $1, field: sortField, direction: sortDirection) }
         ) : nil
         return reordered
+    }
+
+    /// A body or end-slot drop, resolved by the shared slot rule ([[T-19021]]): `false`, with
+    /// nothing written, when the rule refuses it. `tasks` is the column's open and finished cards,
+    /// so a finished card set back down on its own column's body is refused too.
+    private func dropCard(_ task: AppTask, at slot: CadenceKanbanCardDrop.Slot) -> Bool {
+        guard let landing = KanbanBoardSupport.cardLanding(of: task, at: slot, inColumn: tasks) else { return false }
+        return moveTask(task, before: landing.before)
     }
 
     private func openSectionEditor() {

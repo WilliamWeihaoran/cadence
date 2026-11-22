@@ -150,7 +150,7 @@ struct CadenceCodexKanbanRenderingTests {
         #expect(column.contains("header(count: tasks.count)"))
         #expect(column.contains("columnTaskScroll(tasks: tasks)"))
         #expect(column.contains(".dropDestination(for: String.self)"))
-        #expect(column.contains("return moveTask(droppedTask, before: nil)"))
+        #expect(column.contains("return dropCard(droppedTask, at: .columnBody)"), "[[T-19021]]: the body asks the shared slot rule")
         #expect(column.contains(".onDisappear"))
         #expect(column.contains("hoveredKanbanColumnManager.endHovering(id: columnHoverID)"))
         let cards = try #require(CadenceSourceScan.declarationBody("private func taskCards(tasks: [AppTask])", in: source))

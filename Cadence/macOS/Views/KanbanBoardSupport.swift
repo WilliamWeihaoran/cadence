@@ -476,5 +476,21 @@ enum KanbanBoardSupport {
         guard let droppedID = taskID(from: payload), droppedID != targetID else { return .refuse }
         return .moveCard(droppedID)
     }
+
+    /// Where a card dropped on a Mac column's body or end slot lands, or `nil` for a refusal
+    /// ([[T-19021]]). The rule is the iOS board's (`CadenceKanbanCardDrop.landing`); "own column"
+    /// is answered by the column's own cards, which both Mac boards hold as `tasks` -- the section
+    /// board's open and finished cards of one section, the list board's cards of one list.
+    static func cardLanding(
+        of task: AppTask,
+        at slot: CadenceKanbanCardDrop.Slot,
+        inColumn columnTasks: [AppTask]
+    ) -> CadenceKanbanCardDrop.Landing? {
+        CadenceKanbanCardDrop.landing(
+            of: task,
+            at: slot,
+            isOwnColumn: columnTasks.contains { $0.id == task.id }
+        )
+    }
 }
 #endif
