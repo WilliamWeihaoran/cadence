@@ -401,6 +401,15 @@ nonisolated enum CadenceTodayStanding: Int, CaseIterable, Hashable {
     /// has to agree, because the card editors let an estimate be typed down to 0.
     nonisolated static let minimumTimelineDurationMinutes = 5
 
+    /// **The estimate a write stores** for `minutes` asked for: `0` (or less) is "no estimate", the
+    /// Estimate row's None, and is stored as `0` ([[T-6581]]); anything positive is floored to
+    /// `minimumTimelineDurationMinutes`. The MCP writes (`CadenceWriteService`, [[T-19076]]) call
+    /// it -- they used to refuse `0` and keep `1...4` as typed -- and it is the same rule the in-app
+    /// create path (`TaskCreationService.insertion`) spells out inline.
+    nonisolated static func storedEstimatedMinutes(_ minutes: Int) -> Int {
+        minutes <= 0 ? 0 : max(minutes, minimumTimelineDurationMinutes)
+    }
+
     /// How long this task's time block is, in minutes. The one answer, for every renderer, layout
     /// pass, label and exporter.
     ///

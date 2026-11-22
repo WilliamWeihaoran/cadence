@@ -404,6 +404,26 @@ struct CadenceMCPToolContractTests {
             "the handshake advertises \(handshake) and mcp_diagnostics advertises \(diagnostics)"
         )
     }
+
+    // MARK: - T-19076, an estimate of 0 is None
+
+    /// **[[T-19076]]: every advertised `estimatedMinutes` admits `0`**, the "no estimate" value the
+    /// app stores and `get_task` reports, which `CadenceWriteService.validateEstimatedMinutes`
+    /// accepts. The schema used to say `minimum: 1`, so a schema-validating client refused a value
+    /// the read tool had just handed it. Scanned because nothing in `CadenceMCPServer/` is unit-executed.
+    @Test func everyAdvertisedEstimateAdmitsZeroForNone() throws {
+        let definitions = strippingComments(try sourceFile(Self.definitionsPath))
+        let estimateLines = definitions
+            .split(separator: "\n")
+            .filter { $0.contains("\"estimatedMinutes\": integerOrStringProperty") }
+
+        // Non-vacuity: create_task, update_task and schedule_task each advertise one.
+        #expect(estimateLines.count == 3, "read \(estimateLines.count) estimatedMinutes properties")
+        for line in estimateLines {
+            #expect(line.contains("minimum: 0,"), "an estimatedMinutes property does not admit 0: \(line)")
+            #expect(line.contains("0 for no estimate"), "an estimatedMinutes property does not say 0 is none: \(line)")
+        }
+    }
 }
 
 

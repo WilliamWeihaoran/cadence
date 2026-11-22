@@ -35,6 +35,40 @@ struct CadenceWriteServiceTests {
         #expect(detail.subtasks.map(\.title) == ["DTOs", "Router"])
     }
 
+    /// **[[T-19076]]: `0` is "no estimate"**, the Estimate row's None every in-app composer writes
+    /// and `get_task` reports. MCP used to refuse it on all three writes, so an agent could not
+    /// re-file or restore a task with no estimate; and it kept `1...4` as typed where the app's
+    /// create path floors to 5. An omitted estimate still defaults to the composers' 30.
+    @Test func estimateZeroIsNoneAndPositiveEstimatesTakeTheAppsFloor() throws {
+        let fixture = try Fixture()
+
+        let none = try fixture.writeService.createTask(options: .init(title: "Call bank", estimatedMinutes: 0))
+        #expect(none.summary.estimatedMinutes == 0)
+
+        let omitted = try fixture.writeService.createTask(options: .init(title: "Pay rent"))
+        #expect(omitted.summary.estimatedMinutes == 30)
+
+        let short = try fixture.writeService.createTask(options: .init(title: "Text Sam", estimatedMinutes: 3))
+        #expect(short.summary.estimatedMinutes == 5)
+
+        let updated = try fixture.writeService.updateTask(options: .init(taskId: omitted.summary.id, estimatedMinutes: 0))
+        #expect(updated.summary.estimatedMinutes == 0)
+
+        let scheduledShort = try fixture.writeService.scheduleTask(options: .init(taskId: omitted.summary.id, estimatedMinutes: 1))
+        #expect(scheduledShort.summary.estimatedMinutes == 5)
+        let scheduledNone = try fixture.writeService.scheduleTask(options: .init(taskId: omitted.summary.id, estimatedMinutes: 0))
+        #expect(scheduledNone.summary.estimatedMinutes == 0)
+
+        // The range is still bounded at both ends.
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createTask(options: .init(title: "Negative", estimatedMinutes: -1))
+        }
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.updateTask(options: .init(taskId: none.summary.id, estimatedMinutes: 1441))
+        }
+        #expect(try fixture.readService.getTask(taskID: none.summary.id).summary.estimatedMinutes == 0)
+    }
+
     @Test func updateTaskRejectsInvalidInputWithoutPartialMutation() throws {
         let fixture = try Fixture()
         let task = AppTask(title: "Original")

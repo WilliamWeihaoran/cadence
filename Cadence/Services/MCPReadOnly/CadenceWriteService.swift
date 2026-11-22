@@ -91,7 +91,7 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
         case .invalidScheduledStartMin(let value):
             return "Invalid scheduledStartMin: \(value). Expected 0...1439."
         case .invalidEstimatedMinutes(let value):
-            return "Invalid estimatedMinutes: \(value). Expected 1...1440."
+            return "Invalid estimatedMinutes: \(value). Expected 0...1440 (0 for no estimate)."
         case .invalidCombination(let message):
             return message
         case .noChanges:
@@ -2469,11 +2469,15 @@ final class CadenceWriteService {
         return value
     }
 
+    /// **[[T-19076]]: `0` is "no estimate"**, the Estimate row's None that every in-app composer
+    /// writes and `get_task` reports, so an agent can write back what it read. A positive value
+    /// takes the app's five-minute floor (`AppTask.storedEstimatedMinutes`). An omitted estimate on
+    /// `create_task` still defaults to 30 -- the composers' own default (`TaskCreationDraft`).
     private func validateEstimatedMinutes(_ value: Int) throws -> Int {
-        guard (1...1440).contains(value) else {
+        guard (0...1440).contains(value) else {
             throw CadenceWriteError.invalidEstimatedMinutes(value)
         }
-        return value
+        return AppTask.storedEstimatedMinutes(value)
     }
 
     private func normalizeNoteKind(_ value: String) throws -> String {
