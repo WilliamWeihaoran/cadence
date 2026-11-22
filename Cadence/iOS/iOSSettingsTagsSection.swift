@@ -360,7 +360,12 @@ private struct iOSTagSettingsRow: View {
         Text(CadenceTagChipStyle.displayName(name: tag.name, slug: tag.slug))
             .cadenceFont(.rowTitle, base: 15, weight: .semibold)
             .foregroundStyle(CadenceTagSettingsRowStyle.titleInk(isArchived: tag.isArchived))
-            .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
+            // [[T-19604]]: wraps at accessibility sizes, but to a bounded height that ends in an
+            // ellipsis, as the Mac's title does on one line -- never an unbounded column of word
+            // fragments. VoiceOver still reads the whole name.
+            .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling)
+                ? CadenceTagSettingsRowStyle.accessibilityTitleLineLimit : 1)
+            .truncationMode(.tail)
     }
 
     /// **[[T-12284]]: the edited tag's own title row, kept above its form.** The row used to swap
@@ -386,7 +391,13 @@ private struct iOSTagSettingsRow: View {
                 // [[T-12741]]: an archived tag says so beside its title, in the pill the Mac's
                 // tag row draws -- it only dimmed here, and the archived context rows on this
                 // same screen already say "Archived" on both platforms.
-                HStack(spacing: 7) {
+                // [[T-19604]]: at accessibility sizes the pill drops under the title, as the count
+                // chips below do. Beside it, the pill and the two buttons left the title a column
+                // five characters wide, so a hyphenated name broke mid-word down twelve lines.
+                let titleLayout = CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling)
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 5))
+                    : AnyLayout(HStackLayout(spacing: 7))
+                titleLayout {
                     tagTitle
                     if let status = CadenceTagSettingsRowStyle.statusLabel(isArchived: tag.isArchived) {
                         CadenceTagSettingsStatusPill(text: status)

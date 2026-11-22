@@ -105,6 +105,11 @@ enum CadenceTagSettingsRowStyle {
     static func titleInk(isArchived: Bool) -> Color {
         isArchived ? Theme.muted : Theme.text
     }
+
+    /// [[T-19604]]: how many lines the phone's tag title may take at accessibility text sizes
+    /// before it ends in an ellipsis. Uncapped, a 48-character name broke mid-word down twelve
+    /// lines; the Mac, with no Dynamic Type, keeps its title to one truncated line.
+    static let accessibilityTitleLineLimit = 3
 }
 
 // MARK: - Settings > Calendar: a calendar switched off
@@ -126,12 +131,18 @@ enum CadenceCalendarSettingsRowStyle {
 /// The "Archived" pill both tag Settings rows draw beside an archived tag's title. One view, so the
 /// two platforms cannot spell it differently again; the size resolves through `cadenceFont`, which
 /// leaves the Mac's fixed-scaling surface on its 9pt literal.
+///
+/// **[[T-19604]]: the pill never wraps.** At accessibility text sizes on the phone it broke
+/// "Archived" into `Archive` over `d`. A one-word status capsule is one line at its ideal width on
+/// both platforms; the title beside it is the part that gives way.
 struct CadenceTagSettingsStatusPill: View {
     let text: String
 
     var body: some View {
         Text(text)
             .cadenceFont(.metadata, base: 9, weight: .semibold)
+            .lineLimit(1)
+            .fixedSize()
             .foregroundStyle(Theme.dim)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)

@@ -45,6 +45,34 @@ struct CadenceTagSettingsArchivedRowTests {
                 "the iOS tag title must take the shared archived ink")
     }
 
+    /// **[[T-19604]].** At accessibility sizes the phone broke the pill into `Archive` over `d`. The
+    /// one shared pill holds to a single line at its ideal width, on both platforms at once.
+    @Test func theSharedArchivedPillNeverWraps() throws {
+        let pill = Self.squeezed(try Self.body("struct CadenceTagSettingsStatusPill", in: "Cadence/Shared/CadenceSettingsSharedViews.swift"))
+        #expect(pill.contains(".lineLimit(1)"), "the Archived pill may wrap again")
+        #expect(pill.contains(".fixedSize()"), "the Archived pill no longer holds its ideal width, so a narrow row squeezes it")
+    }
+
+    /// **[[T-19604]].** The phone's title broke mid-word down twelve lines at accessibility sizes,
+    /// squeezed by the pill beside it. The pill drops under the title when the row stacks, and the
+    /// title's wrap is bounded and ends in an ellipsis instead of running uncapped.
+    @Test func theIOSTagTitleKeepsItsWidthAndABoundedWrapAtAccessibilitySizes() throws {
+        let file = "Cadence/iOS/iOSSettingsTagsSection.swift"
+        let display = Self.squeezed(try Self.body("private var displayContent", in: file))
+        #expect(display.contains("AnyLayout(VStackLayout(alignment:.leading,spacing:5)):AnyLayout(HStackLayout(spacing:7))"),
+                "the Archived pill no longer drops under the title when the row stacks")
+        #expect(!display.contains("HStack(spacing:7){tagTitle"),
+                "the title and pill sit in a fixed HStack again, so the pill squeezes the title at every size")
+
+        let title = Self.squeezed(try Self.body("private var tagTitle", in: file))
+        #expect(title.contains("?CadenceTagSettingsRowStyle.accessibilityTitleLineLimit:1)"),
+                "the iOS tag title no longer takes the shared bounded line limit at accessibility sizes")
+        #expect(!title.contains("?nil:1)"), "the iOS tag title wraps uncapped again")
+        #expect(title.contains(".truncationMode(.tail)"), "the iOS tag title must end in an ellipsis when it runs out of lines")
+        #expect(CadenceTagSettingsRowStyle.accessibilityTitleLineLimit > 1,
+                "accessibility sizes must still let a long name wrap past one line")
+    }
+
     /// The Mac's row, the half whose title stayed at full ink.
     @Test func theMacTagRowDrawsTheSharedPillAndMutesItsTitle() throws {
         let file = "Cadence/macOS/Views/SettingsTagsSection.swift"
