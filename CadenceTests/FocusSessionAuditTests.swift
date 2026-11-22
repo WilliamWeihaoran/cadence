@@ -596,4 +596,185 @@ struct FocusLogSessionAndQuitTests {
 // block date-rank comparator, which is gone with the feature: the picker lists ready tasks, and
 // `readyTasks` owns their order.
 
+/// **[[T-19095]]: a Mac Focus session survives a Force Quit or a crash, as iOS's does ([[T-6001]]).**
+/// `bankBeforeTermination` runs only from `applicationWillTerminate`, so a process that died any
+/// other way took the clock with it. Each test builds its own `FocusManager` over its own defaults
+/// suite -- two managers over one suite are the process before and after the crash -- so nothing
+/// here touches `FocusManager.shared` or the app's defaults.
+@Suite(.serialized)
+@MainActor
+struct FocusManagerCrashResumeTests {
+
+    private func withSuite<T>(test: String = #function, _ body: (UserDefaults) throws -> T) throws -> T {
+        try withTemporaryDefaults("cadence.tests.focusCrashResume", test: test, body)
+    }
+
+    private func makeTask(_ title: String = "Reconcile invoices") throws -> (AppTask, ModelContext) {
+        let context = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let project = Project(name: "Ledger")
+        context.insert(project)
+        let task = AppTask(title: title)
+        task.project = project
+        context.insert(task)
+        try context.save()
+        return (task, context)
+    }
+
+    /// The process after the crash: a fresh manager over the same suite, reading the same clock.
+    private func relaunch(_ defaults: UserDefaults, clock: FocusManagerTestClock, in context: ModelContext) -> FocusManager {
+        let manager = FocusManager(sessionDefaults: defaults)
+        manager.clock = { clock.now }
+        manager.adoptPersistedSession(in: context)
+        return manager
+    }
+
+    private func record(_ defaults: UserDefaults) -> CadenceFocusSessionRecord? {
+        CadenceFocusSessionPersistence.read(from: defaults, key: CadencePreferenceKeys.macFocusSession)
+    }
+
+    /// The ticket's steps: start, work 40 minutes, die without a quit, relaunch a minute later.
+    /// The session comes back running on the same task with the 41 minutes on it, and nothing was
+    /// banked by the crash or by the resume.
+    @Test func aRunningSessionComesBackRunningAfterACrash() throws {
+        try withSuite { defaults in
+            let (task, context) = try makeTask()
+            let clock = FocusManagerTestClock()
+            let before = FocusManager(sessionDefaults: defaults)
+            before.clock = { clock.now }
+            try before.startFocus(task: task, in: context)
+            clock.advance(40 * 60)
+            before.noteSessionSeen()
+            clock.advance(60)
+
+            let after = relaunch(defaults, clock: clock, in: context)
+            #expect(after.activeTask?.id == task.id)
+            #expect(after.isRunning)
+            #expect(after.elapsed == 41 * 60)
+            #expect(task.actualMinutes == 0)
+            #expect(record(defaults)?.taskID == task.id)
+        }
+    }
+
+    /// A paused session comes back paused, holding its reading -- it does not start counting on
+    /// its own.
+    @Test func aPausedSessionComesBackPausedWithItsReading() throws {
+        try withSuite { defaults in
+            let (task, context) = try makeTask()
+            let clock = FocusManagerTestClock()
+            let before = FocusManager(sessionDefaults: defaults)
+            before.clock = { clock.now }
+            try before.startFocus(task: task, in: context)
+            clock.advance(25 * 60)
+            before.isRunning = false
+            clock.advance(5 * 60 * 60)
+
+            let after = relaunch(defaults, clock: clock, in: context)
+            #expect(after.activeTask?.id == task.id)
+            #expect(!after.isRunning)
+            #expect(after.elapsed == 25 * 60)
+        }
+    }
+
+    /// **The night is not credited** ([[T-6223]]'s rule, which iOS applies on resume): a gap since
+    /// the last heartbeat past `unobservedGapThreshold` brings the session back paused at the last
+    /// instant it was seen alive.
+    @Test func aCrashAtNightComesBackPausedAtTheLastHeartbeat() throws {
+        try withSuite { defaults in
+            let (task, context) = try makeTask()
+            let clock = FocusManagerTestClock()
+            let before = FocusManager(sessionDefaults: defaults)
+            before.clock = { clock.now }
+            try before.startFocus(task: task, in: context)
+            clock.advance(40 * 60)
+            before.noteSessionSeen()
+            clock.advance(CadenceFocusAbsenceRule.unobservedGapThreshold + 9 * 60 * 60)
+
+            let after = relaunch(defaults, clock: clock, in: context)
+            #expect(after.activeTask?.id == task.id)
+            #expect(!after.isRunning)
+            #expect(after.elapsed == 40 * 60)
+            #expect(task.actualMinutes == 0)
+        }
+    }
+
+    /// A clean exit leaves nothing to resume: `endSession` banks and the idle clock removes the
+    /// note, so the relaunch opens with no session rather than a second copy of banked minutes.
+    @Test func aBankedSessionLeavesNoNoteBehind() throws {
+        try withSuite { defaults in
+            let (task, context) = try makeTask()
+            let clock = FocusManagerTestClock()
+            let before = FocusManager(sessionDefaults: defaults)
+            before.clock = { clock.now }
+            try before.startFocus(task: task, in: context)
+            clock.advance(30 * 60)
+            try before.endSession(in: context)
+            #expect(task.actualMinutes == 30)
+            #expect(record(defaults) == nil)
+
+            let after = relaunch(defaults, clock: clock, in: context)
+            #expect(after.activeTask == nil)
+            #expect(after.elapsed == 0)
+            #expect(task.actualMinutes == 30)
+        }
+    }
+
+    /// T-276, through the shared resume: a task finished while Cadence was dead is not resumed
+    /// under a clock, nothing is banked against it, and the note is cleared.
+    @Test func aSessionOnATaskFinishedSinceIsDroppedUnbanked() throws {
+        try withSuite { defaults in
+            let (task, context) = try makeTask()
+            let clock = FocusManagerTestClock()
+            // Written as the dead process left it -- a live manager would see the tick itself.
+            CadenceFocusSessionPersistence.write(
+                CadenceFocusSessionRecord(
+                    taskID: task.id, isRunning: true, startedAt: clock.now,
+                    accumulatedSeconds: 0, lastSeenAt: clock.now.addingTimeInterval(20 * 60)
+                ),
+                to: defaults, key: CadencePreferenceKeys.macFocusSession
+            )
+            clock.advance(21 * 60)
+            task.status = .done
+            try context.save()
+
+            let after = relaunch(defaults, clock: clock, in: context)
+            #expect(after.activeTask == nil)
+            #expect(after.elapsed == 0)
+            #expect(task.actualMinutes == 0)
+            #expect(record(defaults) == nil)
+        }
+    }
+
+    /// The cold route only: a manager already holding a session keeps it.
+    @Test func aSessionAlreadyInMemoryIsNotReplaced() throws {
+        try withSuite { defaults in
+            let (task, context) = try makeTask()
+            // In the same store, so a guard-less adoption would find it and switch to it.
+            let other = AppTask(title: "File receipts")
+            other.project = task.project
+            context.insert(other)
+            try context.save()
+            let clock = FocusManagerTestClock()
+            let manager = FocusManager(sessionDefaults: defaults)
+            manager.clock = { clock.now }
+            try manager.startFocus(task: task, in: context)
+            CadenceFocusSessionPersistence.write(
+                CadenceFocusSessionRecord(taskID: other.id, isRunning: true, startedAt: clock.now, accumulatedSeconds: 0),
+                to: defaults, key: CadencePreferenceKeys.macFocusSession
+            )
+            manager.adoptPersistedSession(in: context)
+            #expect(manager.activeTask?.id == task.id)
+            #expect(manager.isRunning)
+        }
+    }
+
+    /// The app adopts at launch: the root view's appear calls it, ahead of the deep-link route.
+    @Test func theRootViewAdoptsTheNoteAsItAppears() throws {
+        let lifecycle = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/macOSRootLifecycleSupport.swift")
+        )
+        let appear = try #require(CadenceSourceScan.functionBody(named: "handleAppear", in: lifecycle))
+        #expect(appear.contains("FocusManager.shared.adoptPersistedSession(in: modelContext)"))
+    }
+}
+
 #endif

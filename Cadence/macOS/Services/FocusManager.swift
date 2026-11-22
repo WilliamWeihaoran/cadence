@@ -7,7 +7,12 @@ import SwiftUI
 
 @Observable
 final class FocusManager {
-    static let shared = FocusManager()
+    /// [[T-19095]]: the app's manager keeps its session note in `CadenceDefaults.store`; a test
+    /// host (and a UI-test launch) keeps none, so no test's session is resumed into the next
+    /// launch -- the gate `CadenceExternalWriteReminderWatch` starts behind.
+    static let shared = FocusManager(
+        sessionDefaults: NotificationManager.isTestEnvironment ? nil : CadenceDefaults.store
+    )
 
     enum ActiveSession {
         case task(AppTask)
@@ -16,7 +21,10 @@ final class FocusManager {
     /// Re-arms the settled-task watch on every assignment (T-5310), so whatever sets the session —
     /// `startFocus`, a deletion, a context swap re-resolving it — is watched without remembering to.
     var activeSession: ActiveSession? = nil {
-        didSet { watchActiveTaskStatus() }
+        didSet {
+            watchActiveTaskStatus()
+            persistSession()
+        }
     }
     var wantsNavToFocus: Bool = false
 
@@ -35,7 +43,9 @@ final class FocusManager {
     /// It is a `CadenceFocusTimerState` — the same shape iOS's focus screen has always used —
     /// so elapsed time is *derived* from a start instant rather than accumulated one tick at a
     /// time. A view timer can now only ask for a redraw; it has nothing to add to.
-    private var timerState = CadenceFocusTimerState()
+    private var timerState = CadenceFocusTimerState() {
+        didSet { persistSession() }
+    }
 
     /// The clock `timerState` is read against. Injectable so a test can advance time by 90 seconds
     /// with zero display ticks and see the session bank 90 seconds — which is the whole claim.
@@ -48,7 +58,10 @@ final class FocusManager {
     /// *user* paused must stay paused across a sleep.
     @ObservationIgnored private var resumesOnWake = false
 
-    private init() {
+    /// Where the session note goes ([[T-19095]]); `nil` keeps none. Internal rather than private
+    /// so a test builds a manager over its own suite -- `shared` is still the one the app runs.
+    init(sessionDefaults: UserDefaults? = nil) {
+        self.sessionDefaults = sessionDefaults
         startObservingSystemSleep()
     }
 
@@ -178,13 +191,14 @@ final class FocusManager {
 
     /// **T-5305.** Bank the running (or paused) session before the app quits.
     ///
-    /// The stopwatch lives only in memory, so a Cmd+Q — or an update restart after a sleep, which
+    /// The stopwatch lived only in memory, so a Cmd+Q — or an update restart after a sleep, which
     /// pauses the clock but keeps its reading — used to drop every minute not yet banked. Quitting
     /// is leaving the session, so it banks the way `endSession` does, into the context the active
     /// task lives in (`macOSRootDataRefreshSupport.adoptReplacementContext` keeps that the live
     /// one). There is no screen left to name a refusal on, so it is logged; the refused bank has
     /// already been undone by `commitElapsed`. Whether to *warn* before quitting is an owner
-    /// decision and is not made here.
+    /// decision and is not made here. What no delegate reaches -- a Force Quit, a crash -- is
+    /// covered by the session note instead ([[T-19095]], `adoptPersistedSession`).
     func bankBeforeTermination(commit: (ModelContext) throws -> Void = { try $0.save() }) {
         guard let modelContext = activeTask?.modelContext else { return }
         do {
@@ -286,6 +300,104 @@ final class FocusManager {
         guard !timerState.isRunning else { return }
         timerState.toggle(now: clock())
         resumesOnWake = false
+    }
+
+    // MARK: - [[T-19095]]: a session that outlives a Force Quit or a crash
+
+    @ObservationIgnored private let sessionDefaults: UserDefaults?
+    @ObservationIgnored private var heartbeat: Timer?
+    /// Held while `adoptPersistedSession` sets the subject and the clock one after the other, so
+    /// the half-set state between them never reaches disk.
+    @ObservationIgnored private var holdsPersistence = false
+
+    /// How often a running session re-stamps its record's `lastSeenAt`.
+    static let sessionHeartbeatInterval: TimeInterval = 60
+
+    /// **The Mac half of [[T-6001]].** `bankBeforeTermination` runs from `applicationWillTerminate`,
+    /// which no Force Quit, crash or signal reaches, so the clock -- held only here in memory -- went
+    /// with the process and the relaunch showed no session. Every change to the subject or the clock
+    /// now writes the shared `CadenceFocusSessionRecord` (an idle clock removes it), exactly as
+    /// `CadenceFocusSessionOwner` does on iOS, and `adoptPersistedSession` puts it back at launch.
+    /// Like iOS this persists and never banks: minutes still reach the store only through
+    /// `commitElapsed`, and a clean quit's bank resets the clock, which removes the note.
+    ///
+    /// **`lastSeenAt` is "this process was alive then", stamped on every write and by a heartbeat
+    /// while the clock runs.** iOS learns of an absence from `scenePhase` leaving the foreground,
+    /// which precedes any eviction; a Mac app gets no such event before a Force Quit or a crash,
+    /// so the last instant it was known alive has to be written while it is. That is the only
+    /// difference, and it is the hardware/OS constraint: the resume rule is iOS's own.
+    private func persistSession() {
+        guard let sessionDefaults, !holdsPersistence else { return }
+        let now = clock()
+        CadenceFocusSessionPersistence.write(
+            CadenceFocusSessionPersistence.record(
+                target: activeTask.map { .task($0.id) },
+                state: timerState,
+                lastSeenAt: now
+            ),
+            to: sessionDefaults,
+            key: CadencePreferenceKeys.macFocusSession
+        )
+        updateHeartbeat()
+    }
+
+    /// One heartbeat: re-stamp the running session as seen now. Callable so a test steps it
+    /// without a run loop.
+    func noteSessionSeen() {
+        guard timerState.isRunning else { return }
+        persistSession()
+    }
+
+    private func updateHeartbeat() {
+        guard timerState.isRunning else {
+            heartbeat?.invalidate()
+            heartbeat = nil
+            return
+        }
+        guard heartbeat == nil else { return }
+        let timer = Timer(timeInterval: Self.sessionHeartbeatInterval, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self else { return timer.invalidate() }
+                self.noteSessionSeen()
+            }
+        }
+        timer.tolerance = 10
+        RunLoop.main.add(timer, forMode: .common)
+        heartbeat = timer
+    }
+
+    /// **Puts back the session a Force Quit or a crash left on disk**, called by the root view as
+    /// it appears, before anything can start a session of its own.
+    ///
+    /// Through `CadenceFocusSessionPersistence.resumed` -- iOS's resume, unchanged: a task gone,
+    /// done or cancelled resolves to nothing and the note is cleared without banking (T-276), and
+    /// a gap since the last heartbeat longer than `CadenceFocusAbsenceRule.unobservedGapThreshold`
+    /// brings the session back **paused at the last instant it was seen** ([[T-6223]]), so a crash
+    /// at night does not reopen crediting the night. A shorter gap resumes live, as iOS's does.
+    ///
+    /// **The cold route only**: a session already in memory is the live one.
+    func adoptPersistedSession(in modelContext: ModelContext) {
+        guard let sessionDefaults, activeSession == nil, !timerState.isRunning,
+              timerState.accumulatedSeconds == 0,
+              let record = CadenceFocusSessionPersistence.read(
+                  from: sessionDefaults,
+                  key: CadencePreferenceKeys.macFocusSession
+              ) else { return }
+        let taskID = record.taskID
+        let tasks = (try? modelContext.fetch(
+            FetchDescriptor<AppTask>(predicate: #Predicate { $0.id == taskID })
+        )) ?? []
+        guard let resumed = CadenceFocusSessionPersistence.resumed(from: record, tasks: tasks, now: clock()),
+              let task = tasks.first else {
+            CadenceFocusSessionPersistence.clear(in: sessionDefaults, key: CadencePreferenceKeys.macFocusSession)
+            return
+        }
+        holdsPersistence = true
+        timerState = resumed.state
+        resumesOnWake = false
+        activeSession = .task(task)
+        holdsPersistence = false
+        persistSession()
     }
 
     // MARK: - System sleep

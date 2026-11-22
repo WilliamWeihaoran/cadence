@@ -114,24 +114,34 @@ enum CadenceFocusSessionPersistence {
         return try? decoder.decode(CadenceFocusSessionRecord.self, from: data)
     }
 
-    static func read(from defaults: UserDefaults = CadenceDefaults.store) -> CadenceFocusSessionRecord? {
-        decoded(defaults.string(forKey: CadencePreferenceKeys.iosFocusSession))
+    /// `key` is the platform's own slot ([[T-19095]]): iOS's `iosFocusSession` by default, the
+    /// Mac's `FocusManager` passes `macFocusSession`. One record shape and one resume rule; only
+    /// where each device keeps its note differs.
+    static func read(
+        from defaults: UserDefaults = CadenceDefaults.store,
+        key: String = CadencePreferenceKeys.iosFocusSession
+    ) -> CadenceFocusSessionRecord? {
+        decoded(defaults.string(forKey: key))
     }
 
     /// Writes the record, or removes the key when there is nothing worth resuming — one call for
     /// both, so a caller cannot persist a session and forget the path that ends it.
     static func write(
         _ record: CadenceFocusSessionRecord?,
-        to defaults: UserDefaults = CadenceDefaults.store
+        to defaults: UserDefaults = CadenceDefaults.store,
+        key: String = CadencePreferenceKeys.iosFocusSession
     ) {
         guard let record, let encoded = encoded(record) else {
-            defaults.removeObject(forKey: CadencePreferenceKeys.iosFocusSession)
+            defaults.removeObject(forKey: key)
             return
         }
-        defaults.set(encoded, forKey: CadencePreferenceKeys.iosFocusSession)
+        defaults.set(encoded, forKey: key)
     }
 
-    static func clear(in defaults: UserDefaults = CadenceDefaults.store) {
-        write(nil, to: defaults)
+    static func clear(
+        in defaults: UserDefaults = CadenceDefaults.store,
+        key: String = CadencePreferenceKeys.iosFocusSession
+    ) {
+        write(nil, to: defaults, key: key)
     }
 }

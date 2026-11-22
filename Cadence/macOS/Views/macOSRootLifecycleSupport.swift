@@ -44,6 +44,9 @@ enum macOSRootLifecycleSupport {
     ) {
         macOSRootStateSupport.configureMainWindow()
         TaskCompletionAnimationManager.shared.modelContext = modelContext
+        // [[T-19095]]: a session a Force Quit or a crash left on disk, back before anything else
+        // can start one. A no-op with a session already in memory (a second window appearing).
+        FocusManager.shared.adoptPersistedSession(in: modelContext)
         installKeyMonitorIfNeeded()
         CalendarManager.shared.refreshAuthorizationState()
         RemindersManager.shared.refreshAuthorizationState()

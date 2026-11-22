@@ -108,6 +108,13 @@ enum CadencePreferenceKeys {
     /// re-rendered on every tick of the clock it stores would be the opposite of what it is for.
     static let iosFocusSession = "ios.focus.session"
 
+    /// **[[T-19095]].** The Mac's running or paused focus session, in the same record shape and
+    /// through the same `CadenceFocusSessionPersistence` as `iosFocusSession`. `applicationWillTerminate`
+    /// banks a clean quit; this is what a Force Quit, a crash or a signal leaves behind, which no
+    /// delegate reaches. A key of its own, per device as the iOS one is: a session resumed on
+    /// another device would be a second clock against the same task.
+    static let macFocusSession = "mac.focus.session"
+
     // MARK: - Mac window chrome ([[T-18163]])
 
     /// Whether the user has hidden the Mac's sidebar (Cmd+O, View > Toggle Sidebar, the corner
