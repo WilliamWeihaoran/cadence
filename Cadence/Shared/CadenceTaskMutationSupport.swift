@@ -290,13 +290,21 @@ extension CadenceTaskMutationSupport {
     // transaction that undoes itself on a refusal and answers, with `.inert` because
     // `CadenceTaskDateEditing` reconciles after either answer. The callers report a `false`.
 
+    ///
+    /// **[[T-19050]]:** an overdue repeating occurrence moved onto today moves alone, as Today's
+    /// "Roll Over" moves it -- see `spawnSuccessorBeforeMovingOntoToday`, called inside the commit
+    /// so a refusal deletes the successor it minted.
     static func scheduleToday(
         _ task: AppTask,
         modelContext: ModelContext,
+        todayKey: String = DateFormatters.todayKey(),
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
         CadenceTaskFieldEditCommit.commit(task, in: modelContext, reconciler: .inert, commit: commit) {
-            task.scheduledDate = DateFormatters.todayKey()
+            CadenceTaskRecurrenceWorkflowSupport.spawnSuccessorBeforeMovingOntoToday(
+                task, to: todayKey, todayKey: todayKey, in: modelContext
+            )
+            task.scheduledDate = todayKey
         }
     }
 
@@ -362,11 +370,15 @@ extension CadenceTaskMutationSupport {
     ///
     /// The transaction and the `Bool` answer are exactly as PA-13 left them. Do not re-add a
     /// swallowed save, and do not stop forwarding the commit's answer.
+    ///
+    /// **[[T-19050]]:** a drop onto today moves an overdue repeating occurrence alone, as
+    /// `scheduleToday` does; see `spawnSuccessorBeforeMovingOntoToday`.
     @discardableResult
     static func moveTaskToDate(
         _ task: AppTask,
         dateKey: String,
         modelContext: ModelContext,
+        todayKey: String = DateFormatters.todayKey(),
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
         CadenceTaskFieldEditCommit.commit(
@@ -375,6 +387,9 @@ extension CadenceTaskMutationSupport {
             reconciler: .inert,
             commit: commit
         ) {
+            CadenceTaskRecurrenceWorkflowSupport.spawnSuccessorBeforeMovingOntoToday(
+                task, to: dateKey, todayKey: todayKey, in: modelContext
+            )
             task.scheduledDate = dateKey
             if task.estimatedMinutes <= 0 {
                 task.estimatedMinutes = 30

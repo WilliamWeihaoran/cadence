@@ -164,22 +164,56 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
     ///
     /// The same door as the settle and delete paths (`spawnNextOccurrenceIfNeeded`), so an ended
     /// series, a successor already minted, and the end condition all answer as they do there.
+    ///
+    /// **[[T-19050]]: a DUE-only occurrence is planned by its due date.** With no do date the due
+    /// date is the series' schedule, so an overdue one moved onto today asks the same question of
+    /// it. Without this the move gave it a do date after its due date, `advancedTogether` refused
+    /// the pair, and the two fields stepped apart for good -- the successor due Sunday and planned
+    /// for the Tuesday after. Minted here, before the do date is written, the successor keeps the
+    /// series' shape: due on its weekday, no do date.
     @discardableResult
     static func spawnSuccessorBeforeRollingOver(
         _ task: AppTask,
         todayKey: String,
         in context: ModelContext
     ) -> AppTask? {
+        let field: KeyPath<AppTask, String> = task.scheduledDate.isEmpty ? \.dueDate : \.scheduledDate
+        let plannedKey = task[keyPath: field]
         guard task.isRecurring,
               task.recurrenceSpawnedTaskID == nil,
-              !task.scheduledDate.isEmpty,
-              task.scheduledDate < todayKey,
+              !plannedKey.isEmpty,
+              plannedKey < todayKey,
               let now = DateFormatters.date(from: todayKey)
         else { return nil }
-        let anchor = recurrenceAnchorDay(of: task, field: \.scheduledDate, in: context)
-        guard !isOnSchedule(todayKey, from: task.scheduledDate, recurrence: task.recurrenceRule, anchorDay: anchor)
+        let anchor = recurrenceAnchorDay(of: task, field: field, in: context)
+        guard !isOnSchedule(todayKey, from: plannedKey, recurrence: task.recurrenceRule, anchorDay: anchor)
         else { return nil }
         return spawnNextOccurrenceIfNeeded(from: task, in: context, now: now)
+    }
+
+    /// **[[T-19050]]: every door that puts an overdue occurrence on today asks the roll's question.**
+    /// The row "Today" shortcut (Mac Do Date menu, iOS swipe and context menus, the note embed),
+    /// a Calendar day drop on either platform and a drop on a Today heading
+    /// (`CadenceTaskHeaderDrop`, both platforms) are each "do last
+    /// Sunday's one today" -- what Today's banner "Roll Over" does -- and used to move the whole
+    /// series onto today's weekday, because the successor is stepped from the do date on
+    /// completion. Each calls this inside its field commit, before writing `dateKey`, so a refused
+    /// commit deletes the minted successor through `CadenceTaskFieldEditCommit`'s undo.
+    ///
+    /// **Only a move onto TODAY mints early** (decided in [[T-19050]]). A move onto any other day
+    /// is a reschedule the user chose a date for -- an overdue row sent to Tomorrow or Next Week,
+    /// or a future one pulled forward -- and minting from the planned date there could put the
+    /// successor on or before the day the row was just moved to; the series has always followed
+    /// such a move, and still does.
+    @discardableResult
+    static func spawnSuccessorBeforeMovingOntoToday(
+        _ task: AppTask,
+        to dateKey: String,
+        todayKey: String,
+        in context: ModelContext
+    ) -> AppTask? {
+        guard dateKey == todayKey else { return nil }
+        return spawnSuccessorBeforeRollingOver(task, todayKey: todayKey, in: context)
     }
 
     /// Whether `dayKey` is a whole number of periods (at least one) after `key` on the series' own

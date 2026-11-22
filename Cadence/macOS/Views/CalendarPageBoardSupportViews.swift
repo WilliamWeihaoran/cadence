@@ -231,11 +231,17 @@ enum CalendarPageBoardDropSupport {
     /// drop does, so `bundle`/`bundleOrder` move and the block's remaining members are renumbered —
     /// they ride in `alsoRestoring:`. The drop also materialises `estimatedMinutes` when the card
     /// has none, so the block it draws on the timeline is the length the board already shows.
+    ///
+    /// **[[T-19050]]:** a drop onto today -- typically from the Leftover rail -- moves an overdue
+    /// repeating occurrence alone, the shared `moveTaskToDate`'s answer; see
+    /// `spawnSuccessorBeforeMovingOntoToday`, called inside the commit so a refusal takes the
+    /// successor back.
     static func schedule(
         _ task: AppTask,
         on dateKey: String,
         modelContext: ModelContext,
         reconciler: CadenceWindDownReconciler? = nil,
+        todayKey: String = DateFormatters.todayKey(),
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> TasksPanelDropOutcome {
         guard let action = CalendarBoardPlannerSupport.dropAction(for: .day(dateKey)) else {
@@ -258,6 +264,9 @@ enum CalendarPageBoardDropSupport {
             if task.bundle != nil {
                 SchedulingActions.removeTaskFromBundle(task, keepOnBundleDate: false)
             }
+            CadenceTaskRecurrenceWorkflowSupport.spawnSuccessorBeforeMovingOntoToday(
+                task, to: dateKey, todayKey: todayKey, in: modelContext
+            )
             CalendarBoardPlannerSupport.apply(action, to: task)
             if task.estimatedMinutes <= 0 {
                 task.estimatedMinutes = AppTask.defaultTimelineDurationMinutes
@@ -654,7 +663,8 @@ struct CalendarPageBoardView: View {
             CalendarPageBoardDropSupport.schedule(
                 task,
                 on: dateKey,
-                modelContext: modelContext
+                modelContext: modelContext,
+                todayKey: todayKey
             )
         }
         dropFailureNotice = outcome == .refused ? CadencePendingChangePersistence.editFailureNotice : nil

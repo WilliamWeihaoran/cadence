@@ -1053,6 +1053,149 @@ struct CadenceTodayRolloverSurfaceTests {
         #expect(!context.hasChanges)
     }
 
+    // MARK: - T-19050: every door onto today moves one occurrence, as the roll does
+
+    /// "Weekly review" planned Sunday 2026-08-16 and moved onto Tuesday the 18th by the row
+    /// "Today" shortcut instead of the banner: the series stays on Sundays, and ticking the moved
+    /// row mints nothing more -- the roll's answer, through the shared door every row menu, the
+    /// iOS swipe and the note embed call.
+    @MainActor @Test func theTodayShortcutMovesAWeeklyOccurrenceOffItsWeekdayAlone() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let review = try repeatingTask("Weekly review", rule: .weekly, doDate: "2026-08-16", startMin: 540, in: context)
+
+        #expect(CadenceTaskDateEditing.scheduleToday(review, in: context, reconciler: .inert, todayKey: "2026-08-18"))
+
+        let others = try context.fetch(FetchDescriptor<AppTask>()).filter { $0.id != review.id }
+        let successor = try #require(others.first, "the Today shortcut left the series to step from Tuesday")
+        #expect(others.count == 1)
+        #expect(successor.scheduledDate == "2026-08-23", "the series moved off Sunday")
+        #expect(review.recurrenceSpawnedTaskID == successor.id)
+        #expect(review.scheduledDate == "2026-08-18")
+        #expect(!context.hasChanges, "the successor was not committed with the move")
+        #expect(
+            CadenceTaskRecurrenceWorkflowSupport.markDone(review, in: context, now: try noon(of: "2026-08-18")) == nil,
+            "ticking the moved occurrence minted a second successor"
+        )
+    }
+
+    /// A Calendar day drop onto today -- the iOS board's drop, through the shared `moveTaskToDate`
+    /// -- gives the same answer; a drop onto any other day is a reschedule and mints nothing.
+    @MainActor @Test func aDayDropOntoTodayMovesTheOccurrenceAloneAndOntoAnotherDayMintsNothing() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let today = try repeatingTask("Weekly review", rule: .weekly, doDate: "2026-08-16", startMin: 540, in: context)
+        let later = try repeatingTask("Weekly plan", rule: .weekly, doDate: "2026-08-16", startMin: 600, in: context)
+
+        #expect(CadenceTaskDateEditing.moveTaskToDate(today, dateKey: "2026-08-18", in: context, reconciler: .inert, todayKey: "2026-08-18"))
+        #expect(CadenceTaskDateEditing.moveTaskToDate(later, dateKey: "2026-08-19", in: context, reconciler: .inert, todayKey: "2026-08-18"))
+
+        let successor = try #require(today.recurrenceSpawnedTaskID.flatMap { id in
+            try context.fetch(FetchDescriptor<AppTask>()).first { $0.id == id }
+        })
+        #expect(successor.scheduledDate == "2026-08-23")
+        #expect(later.recurrenceSpawnedTaskID == nil, "a drop onto a future day minted a successor")
+        #expect(later.scheduledDate == "2026-08-19")
+        #expect(try context.fetch(FetchDescriptor<AppTask>()).count == 3)
+    }
+
+    /// Today is on a daily series' schedule, so the shortcut mints nothing early -- the roll's
+    /// on-schedule rule, unchanged by the second door.
+    @MainActor @Test func theTodayShortcutMintsNothingEarlyForADailyOccurrence() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let workout = try repeatingTask("Workout", rule: .daily, doDate: "2026-08-19", startMin: 420, in: context)
+
+        #expect(CadenceTaskDateEditing.scheduleToday(workout, in: context, reconciler: .inert, todayKey: "2026-08-20"))
+
+        #expect(try context.fetch(FetchDescriptor<AppTask>()).count == 1)
+        #expect(workout.recurrenceSpawnedTaskID == nil)
+        #expect(workout.scheduledDate == "2026-08-20")
+    }
+
+    /// The ticket's (b): "Pay rent" weekly, DUE Sunday 2026-08-16 with no do date, swiped Today on
+    /// Tuesday the 18th. The successor is minted from the due date before the do date is written,
+    /// so it is due the next Sunday and keeps the series' shape -- no do date, never one after its
+    /// deadline.
+    @MainActor @Test func theTodayShortcutOnADueOnlyOccurrenceKeepsTheSuccessorsDoDateWithinItsDeadline() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let rent = AppTask(title: "Pay rent")
+        rent.recurrenceRule = .weekly
+        rent.dueDate = "2026-08-16"
+        context.insert(rent)
+        try context.save()
+
+        #expect(CadenceTaskDateEditing.scheduleToday(rent, in: context, reconciler: .inert, todayKey: "2026-08-18"))
+
+        let successor = try #require(rent.recurrenceSpawnedTaskID.flatMap { id in
+            try context.fetch(FetchDescriptor<AppTask>()).first { $0.id == id }
+        }, "a due-only occurrence moved onto today minted no successor")
+        #expect(successor.dueDate == "2026-08-23")
+        #expect(successor.scheduledDate.isEmpty || successor.scheduledDate <= successor.dueDate)
+        #expect(successor.scheduledDate.isEmpty, "the successor gained a do date the series never had")
+        #expect(rent.scheduledDate == "2026-08-18")
+        #expect(rent.dueDate == "2026-08-16")
+    }
+
+    /// A refused shortcut leaves no successor and no pointer: the field commit's undo deletes the
+    /// insert it can identify by the pointer the spawn wrote, then restores the fields.
+    @MainActor @Test func aRefusedTodayShortcutLeavesNoSuccessorAndNoPointer() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let review = try repeatingTask("Weekly review", rule: .weekly, doDate: "2026-08-16", startMin: 540, in: context)
+
+        #expect(!CadenceTaskDateEditing.scheduleToday(
+            review, in: context, reconciler: .inert, todayKey: "2026-08-18"
+        ) { _ in throw CommitRefused() })
+        #expect(!CadenceTaskDateEditing.moveTaskToDate(
+            review, dateKey: "2026-08-18", in: context, reconciler: .inert, todayKey: "2026-08-18"
+        ) { _ in throw CommitRefused() })
+
+        #expect(
+            try context.fetch(FetchDescriptor<AppTask>()).map(\.id) == [review.id],
+            "a refused move left its successor pending"
+        )
+        #expect(review.recurrenceSpawnedTaskIDRaw.isEmpty)
+        #expect(review.scheduledDate == "2026-08-16")
+        // Nothing the undo left behind reaches the store on the context's next commit.
+        try context.save()
+        #expect(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).count == 1)
+    }
+
+    /// The Mac doors: the Calendar page's day column / month grid drop
+    /// (`CalendarPageBoardDropSupport.schedule`) and a Today heading drop
+    /// (`TasksPanelSupport.assignTask`, the shared `CadenceTaskHeaderDrop` the iOS headings also
+    /// use), each its own field commit -- accepted, then refused.
+    @MainActor @Test func theMacDayDropAndSidebarTodayDropMoveTheOccurrenceAlone() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let dropped = try repeatingTask("Weekly review", rule: .weekly, doDate: "2026-08-16", startMin: 540, in: context)
+        let sidebar = try repeatingTask("Weekly plan", rule: .weekly, doDate: "2026-08-16", startMin: 600, in: context)
+        let refused = try repeatingTask("Weekly call", rule: .weekly, doDate: "2026-08-16", startMin: 660, in: context)
+
+        #expect(CalendarPageBoardDropSupport.schedule(
+            dropped, on: "2026-08-18", modelContext: context, reconciler: .inert, todayKey: "2026-08-18"
+        ) == .applied)
+        #expect(TasksPanelSupport.assignTask(
+            sidebar, for: "date:today", todayKey: "2026-08-18", areas: [], projects: [],
+            modelContext: context, reconciler: .inert
+        ) == .applied)
+        #expect(CalendarPageBoardDropSupport.schedule(
+            refused, on: "2026-08-18", modelContext: context, reconciler: .inert, todayKey: "2026-08-18"
+        ) { _ in throw CommitRefused() } == .refused)
+
+        let all = try context.fetch(FetchDescriptor<AppTask>())
+        for moved in [dropped, sidebar] {
+            let successor = try #require(all.first { $0.id == moved.recurrenceSpawnedTaskID }, "\(moved.title) moved its series")
+            #expect(successor.scheduledDate == "2026-08-23")
+            #expect(moved.scheduledDate == "2026-08-18")
+        }
+        #expect(refused.recurrenceSpawnedTaskIDRaw.isEmpty)
+        #expect(refused.scheduledDate == "2026-08-16")
+        #expect(all.count == 5)
+    }
+
     // MARK: - T-635: the roll commits, and the dismissal follows the commit
 
     /// A commit that always refuses, the way every other save-commit suite here spells it.

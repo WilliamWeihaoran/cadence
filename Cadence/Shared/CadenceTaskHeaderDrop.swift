@@ -323,6 +323,12 @@ enum CadenceTaskHeaderDrop {
         case .project(let target):
             assignContainer(task, area: nil, project: target, in: modelContext)
         case .scheduleToday:
+            // [[T-19050]]: an overdue repeating occurrence dropped on Today moves alone, as the row
+            // shortcut and Roll Over move it; `assignTask`'s commit takes the successor back on a
+            // refusal.
+            CadenceTaskRecurrenceWorkflowSupport.spawnSuccessorBeforeMovingOntoToday(
+                task, to: todayKey, todayKey: todayKey, in: modelContext
+            )
             CadenceTaskDateEditing.setScheduledDate(
                 todayKey,
                 for: task,

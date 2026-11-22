@@ -79,9 +79,12 @@ enum CadenceTaskDateEditing {
         _ task: AppTask,
         in context: ModelContext,
         reconciler: CadenceWindDownReconciler? = nil,
+        todayKey: String = DateFormatters.todayKey(),
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
-        let landed = CadenceTaskMutationSupport.scheduleToday(task, modelContext: context, commit: commit)
+        let landed = CadenceTaskMutationSupport.scheduleToday(
+            task, modelContext: context, todayKey: todayKey, commit: commit
+        )
         reconcile(context, reconciler)
         return landed
     }
@@ -132,10 +135,11 @@ enum CadenceTaskDateEditing {
         dateKey: String,
         in context: ModelContext,
         reconciler: CadenceWindDownReconciler? = nil,
+        todayKey: String = DateFormatters.todayKey(),
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
         let landed = CadenceTaskMutationSupport.moveTaskToDate(
-            task, dateKey: dateKey, modelContext: context, commit: commit
+            task, dateKey: dateKey, modelContext: context, todayKey: todayKey, commit: commit
         )
         reconcile(context, reconciler)
         return landed
