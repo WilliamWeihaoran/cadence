@@ -438,6 +438,24 @@ final class NotificationManager: NSObject {
         centre.removePending(withIdentifiers: managedIDs)
     }
 
+    /// **[[T-19062]].** `cancelAll()` plus every **delivered** reminder Cadence owns -- the reset's
+    /// half, not the toggle's. "Delete my data" has to empty Notification Center too: a reminder
+    /// that already fired would otherwise sit there naming a task the reset just erased, and the
+    /// reset clears the stored complete read (`clearStoredCompleteStoreRead`), so no later
+    /// reconcile can prove those tasks deleted and withdraw them. Turning reminders off is not a
+    /// delete, so that path keeps `cancelAll()` and leaves shown banners alone ([[T-15464]]).
+    /// Another app's identifiers are never named: only what `NotificationIdentifiers.isManaged`
+    /// accepts is removed, pending or delivered.
+    func withdrawAllManaged() async {
+        guard centreIsInjected || !Self.isTestEnvironment else { return }
+        await cancelAll()
+        let deliveredIDs = await centre.deliveredReminders()
+            .map(\.identifier)
+            .filter(NotificationIdentifiers.isManaged)
+        guard !deliveredIDs.isEmpty else { return }
+        centre.removeDelivered(withIdentifiers: deliveredIDs)
+    }
+
     // MARK: - [[T-15516]]: the complete read, across a relaunch
 
     static func storedCompleteStoreRead(defaults: UserDefaults) -> NotificationDurableCompleteStoreRead? {

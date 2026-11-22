@@ -840,4 +840,45 @@ struct NotificationManagerCentreSeamTests {
             #expect(centre.removeCalls.count == 1, "cancelAll with nothing managed still reached the centre")
         }
     }
+
+    /// **[[T-19062]].** The reset's canceller -- the shipping body, run against the fake -- removes
+    /// every managed reminder, pending and already shown, and names no other app's identifier.
+    /// `cancelAll()` (the toggle's) removed pending only, leaving the erased task's fired banner
+    /// in Notification Center.
+    @Test func theResetsCancellerWithdrawsPendingAndDeliveredManagedRemindersAndNothingElse() async throws {
+        let (a, b) = (UUID(), UUID())
+        let pendingManaged = [
+            NotificationIdentifiers.taskStart(taskID: a),
+            NotificationIdentifiers.taskDue(taskID: a),
+            NotificationIdentifiers.habitReminder(habitID: UUID()),
+        ]
+        let deliveredManaged = [
+            NotificationIdentifiers.taskDue(taskID: b),
+            NotificationIdentifiers.taskStart(taskID: b),
+        ]
+        let centre = FakeCentre(pending: pendingManaged + [foreign], delivered: deliveredManaged + [foreign])
+
+        try await withManager(centre) { manager in
+            let canceller = CadenceNotificationCanceller.withdrawingEveryManagedReminder(through: { manager })
+            #expect(canceller.withdrawsDelivered)
+            await canceller.run()
+            #expect(centre.pending == [foreign])
+            #expect(centre.delivered == [foreign], "a fired reminder naming an erased task survived the reset")
+            #expect(Set(centre.removeDeliveredCalls.flatMap { $0 }) == Set(deliveredManaged))
+        }
+    }
+
+    /// The toggle's `cancelAll()` is unchanged: turning reminders off is not a delete, so the
+    /// banners already shown stay ([[T-15464]]).
+    @Test func cancelAllLeavesDeliveredRemindersAlone() async throws {
+        let shown = NotificationIdentifiers.taskDue(taskID: UUID())
+        let centre = FakeCentre(pending: [NotificationIdentifiers.taskStart(taskID: UUID())], delivered: [shown])
+
+        try await withManager(centre) { manager in
+            await manager.cancelAll()
+            #expect(centre.pending.isEmpty)
+            #expect(centre.delivered == [shown])
+            #expect(centre.removeDeliveredCalls.isEmpty)
+        }
+    }
 }

@@ -211,6 +211,9 @@ enum PrivacyDataResetService {
         //
         // Below the commit, deliberately: cancelling the reminders for data the store still holds
         // is the one step a refused deletion must not take.
+        //
+        // **[[T-19062]]: delivered too.** `default` is `resetLive`, which also withdraws every
+        // reminder already shown in Notification Center -- the toggle's `live` removes pending only.
         await (canceller ?? .default).run()
     }
 
@@ -492,10 +495,14 @@ struct CadenceNotificationCanceller {
     /// `false` for a canceller that deliberately does nothing. Exposed so `default` can be pinned.
     let isLive: Bool
 
+    /// [[T-19062]]: `true` for a canceller that also withdraws delivered reminders.
+    let withdrawsDelivered: Bool
+
     private let body: () async -> Void
 
-    init(isLive: Bool = true, _ body: @escaping () async -> Void) {
+    init(isLive: Bool = true, withdrawsDelivered: Bool = false, _ body: @escaping () async -> Void) {
         self.isLive = isLive
+        self.withdrawsDelivered = withdrawsDelivered
         self.body = body
     }
 
@@ -503,11 +510,31 @@ struct CadenceNotificationCanceller {
         await body()
     }
 
+    /// Pending only -- what Settings > "Enable reminders" turning off uses
+    /// (`CadenceNotificationsEnabledEffects.live`). Not the reset's: see `resetLive`.
     static let live = Self { await NotificationManager.shared.cancelAll() }
+
+    /// **[[T-19062]].** The reset's canceller: pending AND delivered managed reminders, so no
+    /// banner naming an erased task is left in Notification Center. A factory over the manager
+    /// so a test can run the shipping body against a fake centre; `shared` is read only when the
+    /// canceller runs.
+    static func withdrawingEveryManagedReminder(
+        through manager: @escaping @MainActor () -> NotificationManager
+    ) -> Self {
+        Self(withdrawsDelivered: true) { await manager().withdrawAllManaged() }
+    }
+
+    static var resetLive: Self { withdrawingEveryManagedReminder(through: { NotificationManager.shared }) }
 
     static let inert = Self(isLive: false) {}
 
     static var `default`: Self {
-        NotificationManager.isTestEnvironment ? .inert : .live
+        resolvedDefault(isTestEnvironment: NotificationManager.isTestEnvironment)
+    }
+
+    /// `default` with the host made a parameter, so the non-test branch -- the one that ships --
+    /// can be pinned to the reset's canceller rather than the toggle's.
+    static func resolvedDefault(isTestEnvironment: Bool) -> Self {
+        isTestEnvironment ? .inert : .resetLive
     }
 }

@@ -119,6 +119,13 @@ struct CadencePrivacyDataResetSurfaceTests {
         #expect(CadenceNotificationCanceller.default.isLive == false)
         #expect(CadenceNotificationCanceller.live.isLive)
         #expect(CadenceNotificationCanceller.inert.isLive == false)
+        // [[T-19062]]: outside a test host the reset withdraws delivered reminders as well; the
+        // toggle's `live` stays pending-only.
+        let shipping = CadenceNotificationCanceller.resolvedDefault(isTestEnvironment: false)
+        #expect(shipping.isLive)
+        #expect(shipping.withdrawsDelivered, "the reset's canceller leaves fired reminders in Notification Center")
+        #expect(CadenceNotificationCanceller.resolvedDefault(isTestEnvironment: true).isLive == false)
+        #expect(CadenceNotificationCanceller.live.withdrawsDelivered == false)
     }
 
     /// **T-310.** `clearStoredState` drops the widget snapshot out of the app group and asks
