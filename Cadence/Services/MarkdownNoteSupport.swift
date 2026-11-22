@@ -690,7 +690,7 @@ nonisolated enum MarkdownNoteTitleSync {
     ///
     /// `nil` is the answer in five distinct cases, and they are the sharp edges of the feature:
     /// the kind does not opt in; the first line is not an H1 at all (so a body that opens with
-    /// prose, a frontmatter fence, or an `## H2` says nothing about the name); the H1 was
+    /// prose or an `## H2` says nothing about the name); the H1 was
     /// **deleted**, which reaches here as "the first line no longer starts with `# `"; the H1 is
     /// present but empty (`"# "` alone, i.e. mid-rename); and the H1 already equals the stored
     /// title.
@@ -703,6 +703,13 @@ nonisolated enum MarkdownNoteTitleSync {
     ///
     /// Only the *first* line is considered. An `# H1` further down the body is a section heading,
     /// not the document's name.
+    ///
+    /// **[[T-19605]]: the first line is the first line under the frontmatter.** A note's
+    /// `---` block is not drawn — both editors hide `MarkdownMetadataParser.hiddenFrontmatterRange`
+    /// — so a note that opens with one shows its heading as its top line, and four of the eight
+    /// templates (Project Brief among them) open with one that [[T-13901]] keeps on a blank note.
+    /// Reading the raw first line saw `---`, so a note made from one of them kept the name
+    /// "Untitled" in its row and editor header under a `# Project Brief` heading, on both platforms.
     static func title(from content: String, kind: NoteKind, currentTitle: String) -> String? {
         guard syncsTitleFromH1(kind), let h1 = firstLineHeading(of: content) else { return nil }
         guard !h1.isEmpty, h1 != currentTitle else { return nil }
@@ -712,9 +719,19 @@ nonisolated enum MarkdownNoteTitleSync {
     /// The trimmed text of the body's first line when that line is an H1 this rule reads, else
     /// `nil`. The one spelling of the `# ` test, for reading and for renaming alike.
     private static func firstLineHeading(of content: String) -> String? {
-        let firstLine = content.prefix(while: { $0 != "\n" })
+        let firstLine = content[nameLineStart(in: content)...].prefix(while: { $0 != "\n" })
         guard firstLine.hasPrefix("# ") else { return nil }
         return String(firstLine.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Where the line this rule reads begins: the top of the note, or under a frontmatter block,
+    /// past the block and the blank lines after it -- the extent both editors hide, so the line
+    /// read is the line drawn at the top ([[T-19605]]). Without a block, a leading blank line is
+    /// still not skipped: a body that opens blank opens with no heading.
+    private static func nameLineStart(in content: String) -> String.Index {
+        guard let hidden = MarkdownMetadataParser.hiddenFrontmatterRange(in: content),
+              let range = Range(hidden, in: content) else { return content.startIndex }
+        return range.upperBound
     }
 
     /// **[[T-18095]]: the other direction.** `content` with its first-line H1 rewritten to `title`,
@@ -735,8 +752,9 @@ nonisolated enum MarkdownNoteTitleSync {
         let name = title.split(whereSeparator: \.isNewline).joined(separator: " ")
             .trimmingCharacters(in: .whitespaces)
         guard h1 != name else { return nil }
-        let firstLineEnd = content.firstIndex(of: "\n") ?? content.endIndex
-        return "# " + name + content[firstLineEnd...]
+        let start = nameLineStart(in: content)
+        let firstLineEnd = content[start...].firstIndex(of: "\n") ?? content.endIndex
+        return String(content[..<start]) + "# " + name + content[firstLineEnd...]
     }
 
     /// Renames `note`, keeping its first-line H1 in step (see `content(_:renamedTo:kind:)`). Writes

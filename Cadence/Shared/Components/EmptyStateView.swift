@@ -77,23 +77,38 @@ struct EmptyStateView: View {
 /// Draws nothing at all when `CadenceColdImportNotice.text` answers `nil`, so a caller places it
 /// unconditionally and gets silence in every state but one.
 ///
-/// **Read through a `TimelineView` so the line can retire on its own.** The owner's ruling is
-/// "disappear when they stop", and stopping is a fact about the clock rather than about the
-/// summary: an import that stalls posts no further event, so an `@Observable` read alone would
+/// **Re-read on a 30 s tick while it stands, so the line can retire on its own.** The owner's
+/// ruling is "disappear when they stop", and stopping is a fact about the clock rather than about
+/// the summary: an import that stalls posts no further event, so an `@Observable` read alone would
 /// leave the sentence standing for the rest of the launch — the exact "never clears" failure the
-/// ticket was filed against. The view therefore takes a ticking `now`, at twice the rate of
-/// `CadenceColdImportNotice.progressWindow`.
+/// ticket was filed against. So while the notice is drawn, a task bumps `tick` at twice the rate
+/// of `CadenceColdImportNotice.progressWindow` and the body asks again; an import that starts is
+/// an event, which the `@Observable` read already answers.
+///
+/// **[[T-19622]]: silence is no child at all.** This read through a `TimelineView`, which is a
+/// child of its stack even when its content is empty, so every stack holding the line charged
+/// its spacing for nothing — 7 pt of dead space under the Mac Focus "Pick a task" subtitle in
+/// every state but a running import. An `if` with no content is dropped by a stack outright, so
+/// the clock lives on the notice it refreshes rather than around it.
 ///
 /// `.informational` and not an accent: a sentence under an empty state is secondary to it.
 struct CadenceColdImportNoticeLine: View {
+    /// Read by `body` only so that bumping it asks the question again; `Date.now` is the clock.
+    @State private var tick = 0
+
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            if let text = CadenceColdImportNotice.text(
-                for: CadenceSyncActivityLog.shared.summary,
-                now: context.date
-            ) {
-                CadenceInlineNotice(text: text, tone: .informational)
-            }
+        let _ = tick
+        if let text = CadenceColdImportNotice.text(
+            for: CadenceSyncActivityLog.shared.summary,
+            now: .now
+        ) {
+            CadenceInlineNotice(text: text, tone: .informational)
+                .task {
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(30))
+                        tick &+= 1
+                    }
+                }
         }
     }
 }

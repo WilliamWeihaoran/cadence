@@ -1,6 +1,7 @@
 import CoreData
 import Foundation
 import Testing
+import SwiftUI
 @testable import Cadence
 
 /// What CloudKit mirroring has actually done — the half of "is iCloud working" the app could not
@@ -1254,9 +1255,10 @@ struct CadenceColdImportNoticeTests {
 
     /// The main surfaces say it, not only Settings — which is the decision this ticket records.
     /// `EmptyStateView` is what every page draws when it has nothing, so one reader there is every
-    /// main surface at once; and the `TimelineView` is load-bearing rather than decoration,
+    /// main surface at once; and the 30 s re-read is load-bearing rather than decoration,
     /// because the line retires on the clock and a burst that stops posts no further event for an
-    /// `@Observable` read to notice.
+    /// `@Observable` read to notice. It rides on the drawn notice since [[T-19622]], not a
+    /// `TimelineView` around it, so the body has to read `tick` and ask the clock itself.
     @Test func theEmptyStateEveryMainSurfaceDrawsReadsTheColdImport() throws {
         let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/Components/EmptyStateView.swift")
         let source = CadenceSourceScan.strippingComments(raw)
@@ -1268,8 +1270,10 @@ struct CadenceColdImportNoticeTests {
         #expect(source.contains("coldImportNotice"))
         #expect(source.contains("var statesColdImport: Bool = true"), "the main surfaces opt out by default")
         #expect(source.contains("CadenceSyncActivityLog.shared.summary"))
-        #expect(source.contains("TimelineView(.periodic("))
-        #expect(source.contains("now: context.date"), "the notice reads a frozen clock and cannot retire")
+        #expect(source.contains("try? await Task.sleep(for: .seconds(30))"))
+        #expect(source.contains("tick &+= 1"))
+        #expect(source.contains("let _ = tick"), "the body does not read the tick, so it never asks again")
+        #expect(source.contains("now: .now"), "the notice reads a frozen clock and cannot retire")
     }
 
     /// **[[T-8532]] — a panel that is not a view of the store does not say the store is filling
@@ -1301,5 +1305,65 @@ struct CadenceColdImportNoticeTests {
         #expect(notes.components(separatedBy: "statesColdImport: false").count - 1 == 1)
         #expect(listNotes.components(separatedBy: "statesColdImport: false").count - 1 == 1)
         #expect(notes.contains("title: emptyStateTitle,\n                    subtitle: emptyStateSubtitle\n                )"))
+    }
+}
+
+/// **[[T-19622]]: the cold-import line takes no stack slot when it has nothing to say.**
+///
+/// It read through a `TimelineView`, which stays a child of its stack with empty content, so the
+/// Mac Focus "Pick a task" card (`VStack(spacing: 7)`) and the shared `EmptyStateView`
+/// (`VStack(spacing: 14)`) both charged a gap for a line nobody could see -- in every state but a
+/// running import. Measured as a RELATION by hosting the stack with and without the line, never a
+/// point figure (T-1279).
+@MainActor
+struct CadenceColdImportNoticeLineLayoutTests {
+    private static let width: CGFloat = 320
+
+    private static func fittedHeight<V: View>(_ view: V) -> CGFloat {
+        let root = view.frame(width: width).fixedSize(horizontal: false, vertical: true)
+        let proposal = CGSize(width: width, height: 1_000)
+        #if os(iOS)
+        return UIHostingController(rootView: root).sizeThatFits(in: proposal).height
+        #else
+        return NSHostingController(rootView: root).sizeThatFits(in: proposal).height
+        #endif
+    }
+
+    @Test func aSilentLineAddsNoSpacingToItsStack() throws {
+        // The precondition every assertion below rests on: this process has no import running.
+        try #require(CadenceColdImportNotice.text(for: CadenceSyncActivityLog.shared.summary, now: .now) == nil)
+
+        let without = Self.fittedHeight(VStack(alignment: .leading, spacing: 7) {
+            Text("Pick a task")
+            Text("Open tasks appear here.")
+        })
+        let with = Self.fittedHeight(VStack(alignment: .leading, spacing: 7) {
+            Text("Pick a task")
+            Text("Open tasks appear here.")
+            CadenceColdImportNoticeLine()
+        })
+        // Non-vacuity: this host does charge spacing for an empty-but-present child, which is the
+        // shape the defect had. Without this the equality below could hold for a host that
+        // measured nothing.
+        let zeroHeightChild = Self.fittedHeight(VStack(alignment: .leading, spacing: 7) {
+            Text("Pick a task")
+            Text("Open tasks appear here.")
+            Color.clear.frame(height: 0)
+        })
+        #expect(without > 0)
+        #expect(zeroHeightChild > without, "the host did not charge spacing for a zero-height child")
+        #expect(with == without, "the silent line took a stack slot: \(with) vs \(without)")
+    }
+
+    /// The shared empty state places the line with `.padding(.top, 2)`; on or off, a silent line
+    /// is the same height.
+    @Test func theSharedEmptyStateIsTheSameHeightWithTheLineOnOrOff() throws {
+        try #require(CadenceColdImportNotice.text(for: CadenceSyncActivityLog.shared.summary, now: .now) == nil)
+        let on = Self.fittedHeight(EmptyStateView(message: "No tasks", subtitle: "Add one", icon: "checkmark"))
+        let off = Self.fittedHeight(
+            EmptyStateView(message: "No tasks", subtitle: "Add one", icon: "checkmark", statesColdImport: false)
+        )
+        #expect(off > 0)
+        #expect(on == off, "the silent line took a slot in EmptyStateView: \(on) vs \(off)")
     }
 }

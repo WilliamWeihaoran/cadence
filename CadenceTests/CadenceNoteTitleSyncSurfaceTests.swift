@@ -100,7 +100,8 @@ struct CadenceNoteTitleSyncSurfaceTests {
 
     /// **The no-H1 edge, and the only-the-first-line rule.** A body that does not open with `# `
     /// says nothing about the note's name — prose, an `## H2`, a `#hashtag` with no space, a
-    /// frontmatter fence, a leading blank line, and a real `# H1` further down are all silence.
+    /// leading blank line, and a real `# H1` further down are all silence. A frontmatter block is
+    /// not in this list since [[T-19605]]: the line under it is the note's first line.
     ///
     /// The last one is the one worth pinning: an `# H1` in the middle of a document is a section
     /// heading, and taking it as the title would rename a note from whatever section its author
@@ -112,7 +113,7 @@ struct CadenceNoteTitleSyncSurfaceTests {
             "## Subheading first",
             "#nospace",
             "#",
-            "---\ntags: [a]\n---\n\n# Real heading",
+            "---\ntags: [a]\n---\n\nprose under the block\n# Later heading",
             "\n# Heading after a blank line",
             " # Indented heading"
         ] {
@@ -121,6 +122,39 @@ struct CadenceNoteTitleSyncSurfaceTests {
                 "\(content.debugDescription) was read as a title"
             )
         }
+    }
+
+    /// **[[T-19605]]: the heading under a frontmatter block names the note.** Both editors hide the
+    /// block, so its heading is the top line the user sees; four of the eight templates open with
+    /// one, and [[T-13901]] keeps it on a blank note. Reading the raw first line saw `---`, so a
+    /// list note made from Project Brief stayed "Untitled" under a `# Project Brief` heading while
+    /// the daily row, which previews the frontmatter-stripped body, showed its heading.
+    @Test func theHeadingUnderAFrontmatterBlockNamesTheNote() throws {
+        #expect(
+            MarkdownNoteTitleSync.title(
+                from: "---\ntags: [a]\n---\n\n# Real heading\n\nbody",
+                kind: .list,
+                currentTitle: ""
+            ) == "Real heading"
+        )
+
+        // The reported path end to end: a seeded nameless list note, Project Brief applied through
+        // the shared commit both platforms' template menus reach.
+        let context = try makeContext()
+        let note = Note(kind: .list, title: "", content: "# \n\n")
+        context.insert(note)
+        let template = try #require(NoteTemplateLibrary.defaultTemplate(id: "project-brief"))
+        #expect(template.body.hasPrefix("---\n"), "non-vacuity: the template must open with a block")
+        CadenceNoteTemplateInsertionSupport.apply(template, to: note, in: context)
+        #expect(note.title == "Project Brief")
+        #expect(note.displayTitle == "Project Brief")
+
+        // The other direction keeps the block and rewrites the heading under it, not line one.
+        MarkdownNoteTitleSync.rename(note, to: "Launch plan")
+        #expect(note.content.hasPrefix("---\ntags: [project]\n"))
+        #expect(note.content.contains("\n# Launch plan\n"))
+        #expect(!note.content.contains("# Project Brief"))
+        #expect(MarkdownNoteTitleSync.title(from: note.content, kind: .list, currentTitle: "") == "Launch plan")
     }
 
     /// A heading that already matches the stored title is not a write. The commit paths run this on

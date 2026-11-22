@@ -1230,7 +1230,9 @@ struct CadenceEmptyStateAuditTests {
         // The shared line holds the whole reading, so a second drawer cannot drift from the first.
         let line = try #require(shared.range(of: "struct CadenceColdImportNoticeLine: View"), "the shared notice view is gone")
         let lineBody = shared[line.upperBound...]
-        #expect(lineBody.contains("TimelineView(.periodic(from: .now, by: 30))"))
+        // [[T-19622]]: the 30 s re-read rides on the notice, not a `TimelineView` around it.
+        #expect(lineBody.contains("try? await Task.sleep(for: .seconds(30))"))
+        #expect(!lineBody.contains("TimelineView("), "a TimelineView is a stack child even when silent")
         #expect(lineBody.contains("CadenceColdImportNotice.text("))
         #expect(lineBody.contains("CadenceInlineNotice(text: text, tone: .informational)"))
         // `EmptyStateView` draws that view rather than a copy of it.
