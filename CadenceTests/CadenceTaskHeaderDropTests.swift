@@ -159,4 +159,69 @@ struct CadenceTaskHeaderDropTests {
         #expect(task.priority == .none)
         #expect(task.scheduledDate.isEmpty)
     }
+
+    /// **[[T-19108]]: a Today list group's heading takes a dragged row and files it into that list
+    /// ON TODAY** -- the Mac's `list:<key>|date:today` section drop. The dragged row is on Today by
+    /// its due date alone, so the key's `date:today` half is observable; a list-only key would file
+    /// it and leave it off the page it was dropped on. A payload the page does not hold writes
+    /// nothing. Read back through a second context.
+    @Test("A Today list heading files a dragged row into its list, planned for today")
+    func aTodayListHeadingFilesADraggedRowIntoItsListOnToday() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let project = Project(name: "Garden")
+        let resident = AppTask(title: "In Garden, today")
+        resident.project = project
+        resident.scheduledDate = Self.todayKey
+        let dragged = AppTask(title: "Inbox, due today")
+        dragged.dueDate = Self.todayKey
+        let stranger = AppTask(title: "Not on the page")
+        context.insert(project)
+        [resident, dragged, stranger].forEach(context.insert)
+        try context.save()
+        let page = [resident, dragged]
+
+        let groups = CadenceTaskQuerySupport.todayListGroups(from: page, contexts: [])
+        #expect(groups.count == 2, "non-vacuity: expected an Inbox and a Garden group")
+        let garden = try #require(groups.first { $0.tasks.contains { $0.id == resident.id } })
+        let drop = try #require(
+            CadenceTaskHeaderDrop.todayHeadingDrop(
+                for: garden,
+                among: page,
+                todayKey: Self.todayKey,
+                modelContext: context,
+                reconciler: .inert
+            ),
+            "the Garden heading on Today takes no dragged row"
+        )
+        #expect(drop(TaskDragPayload.string(for: stranger.id)) == .resolvedNothing)
+        #expect(drop(TaskDragPayload.string(for: dragged.id)) == .applied)
+
+        let stored = try ModelContext(container).fetch(FetchDescriptor<AppTask>())
+        let read = try #require(stored.first { $0.id == dragged.id })
+        #expect(read.project?.id == project.id)
+        #expect(read.scheduledDate == Self.todayKey)
+        let untouched = try #require(stored.first { $0.id == stranger.id })
+        #expect(untouched.project == nil)
+        #expect(untouched.scheduledDate.isEmpty)
+    }
+
+    /// **The touch Today hands every list group's heading that drop ([[T-19108]]).** `Cadence/iOS/`
+    /// is invisible to the macOS leg, so the wiring is pinned as source, beside the row drop
+    /// [[T-19100]] gave the same groups' rows.
+    @Test("iOS Today hands every list group's heading the shared heading drop")
+    func theTouchTodayHandsItsListHeadingsTheDrop() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodayTaskSections.swift")
+        )
+        #expect(source.contains("iOSTaskGroupSection("), "non-vacuity: wrong file read")
+        #expect(
+            CadenceSourceScan.matchCount(#"onDropTaskPayload: headingTaskDrop\(for: group\)"#, in: source) == 1,
+            "Today's list groups no longer hand their headings a row drop"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceTaskHeaderDrop\.todayHeadingDrop\("#, in: source) == 1,
+            "Today's heading drop no longer goes through the shared write"
+        )
+    }
 }

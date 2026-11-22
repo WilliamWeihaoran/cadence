@@ -137,6 +137,33 @@ enum CadenceTaskHeaderDrop {
         )
     }
 
+    /// **A dragged row let go over a Today list group's heading ([[T-19108]])** -- the iPhone's and
+    /// iPad's half of the Mac's `TasksPanel.todayGroupSections`, which hands the same heading
+    /// `dropCoordinator.sectionDropHandler(for:)`. The key is the group's own
+    /// (`CadenceTaskDropSupport.dropKey(forGroup:)`, `list:<key>|date:today`): the list *and* the
+    /// day, so the row is filed without leaving the page it was dropped on. `nil` when the group
+    /// names nothing to file under, which then registers no row destination. `tasks` is the page's
+    /// own universe, as `dropTask` reads it.
+    static func todayHeadingDrop(
+        for group: CadenceTodayTaskGroup,
+        among tasks: [AppTask],
+        todayKey: String,
+        modelContext: ModelContext,
+        reconciler: CadenceWindDownReconciler? = nil
+    ) -> ((String) -> TasksPanelDropOutcome)? {
+        guard let dropKey = CadenceTaskDropSupport.dropKey(forGroup: group.dropIdentity) else { return nil }
+        return { payload in
+            dropTask(
+                payload: payload,
+                onHeaderKeyed: dropKey,
+                among: tasks,
+                todayKey: todayKey,
+                modelContext: modelContext,
+                reconciler: reconciler
+            )
+        }
+    }
+
     /// Moves `task` to everything `dropKey` names, and reports whether any of it landed.
     ///
     /// **A drop key is compound.** Today's group headers hand out `list:p_<uuid>|date:today` — the

@@ -145,6 +145,26 @@ struct iOSTodayTaskSections: View {
         }
     }
 
+    /// **A task row dragged onto a Today list group's HEADING files it into that list on today, as
+    /// on the Mac's Today ([[T-19108]]).** The drop is `CadenceTaskHeaderDrop.todayHeadingDrop`,
+    /// the heading drop All Tasks and Inbox already take ([[T-16654]]) keyed with the group's own
+    /// `list:<key>|date:today`. This is the view's half: the outcome as the `Bool` a drop
+    /// destination answers, plus the notice a refused write draws in the row drop's slot.
+    /// `.resolvedNothing` says nothing -- the row springing back is the whole report (T-591).
+    private func headingTaskDrop(for group: CadenceTodayTaskGroup) -> ((String) -> Bool)? {
+        guard let drop = CadenceTaskHeaderDrop.todayHeadingDrop(
+            for: group,
+            among: taskGroups.flatMap(\.tasks) + completedTasks,
+            todayKey: todayKey,
+            modelContext: modelContext
+        ) else { return nil }
+        return { payload in
+            let outcome = drop(payload)
+            rowDropFailureNotice = outcome == .refused ? CadencePendingChangePersistence.editFailureNotice : nil
+            rowDropLandingNotice = nil
+            return outcome == .applied
+        }
+    }
 
     /// The readable-column cap belongs to the **host**, not to this view: it has to hold the page
     /// header and the options bar as well, or a narrow iPad pane would cap the rows at 520 and let
@@ -285,6 +305,7 @@ struct iOSTodayTaskSections: View {
                     dropIdentity: group.dropIdentity,
                     collapsedGroupIDs: $collapsedGroupIDs,
                     groupID: group.id,
+                    onDropTaskPayload: headingTaskDrop(for: group),
                     onDropTaskPayloadOnRow: rowTaskDrop(for: group)
                 )
             }
