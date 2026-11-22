@@ -871,8 +871,12 @@ struct NotificationManagerCentreSeamTests {
     /// The toggle's `cancelAll()` is unchanged: turning reminders off is not a delete, so the
     /// banners already shown stay ([[T-15464]]).
     @Test func cancelAllLeavesDeliveredRemindersAlone() async throws {
+        // [[T-19088]]: `UUID(` stays off the `centre` line. The suite-name rule is file-scoped and
+        // reads any binding whose line mentions `UUID(` as a fresh suite name once it reaches
+        // `withManager(_:)`, which opens a suite.
         let shown = NotificationIdentifiers.taskDue(taskID: UUID())
-        let centre = FakeCentre(pending: [NotificationIdentifiers.taskStart(taskID: UUID())], delivered: [shown])
+        let pendingStart = NotificationIdentifiers.taskStart(taskID: UUID())
+        let centre = FakeCentre(pending: [pendingStart], delivered: [shown])
 
         try await withManager(centre) { manager in
             await manager.cancelAll()

@@ -97,6 +97,8 @@ struct CadenceAgentOperatingRuleTests {
                 "reconcile()",
                 "refreshAuthorizationState()",
                 "requestAuthorization()",
+                // [[T-19062]]: the data reset's canceller, pending and delivered; guarded like the rest.
+                "withdrawAllManaged()",
                 // [[T-18623]]: `cancel(taskIDs:)` is now this synchronous spelling plus an `await`.
                 "withdrawRemindersNow(taskIDs)",
             ],
