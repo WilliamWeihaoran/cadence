@@ -256,9 +256,12 @@ struct CadenceScheduleDraft: Equatable {
     /// `eventDateRange(calendar:)`, so an untouched event reads back as the instants it was opened
     /// with.
     ///
-    /// The two `Date`s are EventKit's, and EventKit's all-day end is **exclusive**: a one-day event
-    /// on the 16th ends at 00:00 on the 17th. So the last day it covers is one before its end, and
-    /// that is what `endDateKey` holds — the panel's Ends row names a day the event is *on*.
+    /// The two `Date`s are EventKit's, and an all-day end comes back in one of two readings: the
+    /// **exclusive** next midnight (a one-day event on the 16th ends at 00:00 on the 17th) or the
+    /// last day's 23:59:59. The last day it covers is the day of one second before either — the
+    /// rule `eventListAllDayLabel` and `isMultiDayTimedEvent` read ([[T-19036]]) — and that is what
+    /// `endDateKey` holds: the panel's Ends row names a day the event is *on*, the day its list row
+    /// names. `startOfDay(end) - 1 day` read the 23:59:59 end a day short.
     ///
     /// A timed event that ends exactly at the next midnight is read as a same-day block ending at
     /// minute 1440, not as a two-day one, because "4 PM – 12 AM" is what that event is and a
@@ -303,8 +306,7 @@ struct CadenceScheduleDraft: Equatable {
         self.startDateKey = startKey
 
         if isAllDay {
-            let lastCoveredDay = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: end))
-                ?? startDay
+            let lastCoveredDay = end > start ? end.addingTimeInterval(-1) : start
             self.endDateKey = max(startKey, DateFormatters.dateKey(from: lastCoveredDay, calendar: calendar))
             self.startMin = Self.allDayEventFallbackStartMinute
             self.endMin = Self.allDayEventFallbackStartMinute + Self.defaultDurationMinutes

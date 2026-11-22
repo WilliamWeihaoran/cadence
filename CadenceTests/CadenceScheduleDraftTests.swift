@@ -715,6 +715,46 @@ struct CadenceScheduleDraftEventEditingTests {
         #expect(!single.spansMultipleDays)
     }
 
+    /// EventKit hands an all-day end back as the next midnight OR the last day's 23:59:59
+    /// ([[T-16880]]); both must open on the day the list row names ([[T-19036]]), and a schedule
+    /// edit must write the exclusive next midnight from either. A Mon-Wed offsite read
+    /// "Mon → Tue" from the 23:59:59 end, and moving its start wrote it back a day short.
+    @Test("An all-day event opens on its last day from either EventKit end reading")
+    func allDayEndReadsTheSameFromEitherEventKitEnding() throws {
+        let calendar = try newYork()
+        let monday = try #require(DateFormatters.date(from: "2026-11-23", in: calendar))
+        let thursday = try #require(DateFormatters.date(from: "2026-11-26", in: calendar))
+        let tuesday = try #require(DateFormatters.date(from: "2026-11-24", in: calendar))
+        let cases: [(end: Date, lastKey: String, exclusiveEnd: Date)] = [
+            (thursday, "2026-11-25", thursday),
+            (thursday.addingTimeInterval(-1), "2026-11-25", thursday),
+            (tuesday, "2026-11-23", tuesday),
+            (tuesday.addingTimeInterval(-1), "2026-11-23", tuesday),
+        ]
+        for item in cases {
+            let draft = editing(start: monday, end: item.end, isAllDay: true, calendar)
+            #expect(draft.startDateKey == "2026-11-23")
+            #expect(draft.endDateKey == item.lastKey, "end \(item.end)")
+
+            // The list row names the same last day the editor opens on.
+            let rowLabel = CadenceScheduleSupport.eventListAllDayLabel(from: monday, to: item.end, calendar: calendar)
+            #expect(rowLabel == (item.lastKey == "2026-11-25" ? "All day → Wed" : "All day"))
+
+            // A schedule edit writes the exclusive next midnight after the opened last day.
+            let range = try #require(draft.eventDateRange(calendar: calendar))
+            #expect(range.start == monday)
+            #expect(range.end == item.exclusiveEnd)
+
+            // An untouched save writes the event's own instants back, whichever reading it had.
+            let reopened = editing(start: monday, end: item.end, isAllDay: true, calendar)
+            let saved = try #require(
+                reopened.savedEventRange(openedAs: draft, originalStart: monday, originalEnd: item.end, calendar: calendar)
+            )
+            #expect(saved.start == monday)
+            #expect(saved.end == item.end)
+        }
+    }
+
     /// "4 PM – 12 AM" is one evening, not a two-day event.
     @Test("An event ending at the next midnight reads as one day")
     func anEndAtTheNextMidnightIsTheSameDay() throws {
