@@ -3194,6 +3194,269 @@ struct CadenceWriteServiceTests {
         #expect(f.projectTask.context?.id == f.work.id)
     }
 
+    // MARK: - T-19044: an archive or completion from the MCP surface settles the open work
+
+    /// One open, one done-earlier and one cancelled-earlier task in `area` / `project`, all saved.
+    private func seedSettleSet(
+        in fixture: Fixture,
+        area: Area? = nil,
+        project: Project? = nil,
+        sectionName: String = TaskSectionDefaults.defaultName,
+        prefix: String
+    ) throws -> (open: AppTask, done: AppTask, cancelled: AppTask) {
+        let earlier = Date(timeIntervalSince1970: 1_700_000_000)
+        func make(_ suffix: String, _ status: TaskStatus) -> AppTask {
+            let task = AppTask(title: "\(prefix) \(suffix)")
+            task.area = area
+            task.project = project
+            task.sectionName = sectionName
+            task.status = status
+            task.completedAt = status == .todo ? nil : earlier
+            fixture.modelContext.insert(task)
+            return task
+        }
+        let set = (open: make("open", .todo), done: make("done", .done), cancelled: make("cancelled", .cancelled))
+        try fixture.modelContext.save()
+        return set
+    }
+
+    private static let earlierSettle = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func expectUntouched(_ set: (open: AppTask, done: AppTask, cancelled: AppTask)) {
+        #expect(set.done.isDone)
+        #expect(set.done.completedAt == Self.earlierSettle)
+        #expect(set.cancelled.isCancelled)
+        #expect(set.cancelled.completedAt == Self.earlierSettle)
+    }
+
+    @Test func archivingAnAreaCancelsItsOpenWorkAndItsChildProjectsLikeTheApp() throws {
+        let fixture = try Fixture()
+        let area = Area(name: "Household")
+        let child = Project(name: "Garage", area: area)
+        fixture.modelContext.insert(area)
+        fixture.modelContext.insert(child)
+        let own = try seedSettleSet(in: fixture, area: area, prefix: "Own")
+        let nested = try seedSettleSet(in: fixture, area: area, project: child, prefix: "Nested")
+
+        let updated = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "area",
+            containerId: area.id.uuidString,
+            status: "archived"
+        ))
+
+        #expect(updated.container.status == "archived")
+        #expect(own.open.isCancelled)
+        #expect(own.open.completedAt != nil)
+        #expect(nested.open.isCancelled)
+        #expect(nested.open.completedAt != nil)
+        expectUntouched(own)
+        expectUntouched(nested)
+        // The child project keeps its own status, as the app's wind-down leaves it.
+        #expect(child.status == .active)
+    }
+
+    @Test func completingAProjectMarksItsOpenWorkDoneAndOnlyAWindDownSettles() throws {
+        let fixture = try Fixture()
+        let set = try seedSettleSet(in: fixture, project: fixture.project, prefix: "Work")
+
+        // `paused` is no app wind-down, so it settles nothing.
+        _ = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "project",
+            containerId: fixture.project.id.uuidString,
+            status: "paused"
+        ))
+        #expect(!set.open.isDone && !set.open.isCancelled)
+
+        _ = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "project",
+            containerId: fixture.project.id.uuidString,
+            status: "done"
+        ))
+        #expect(fixture.project.status == .done)
+        #expect(set.open.isDone)
+        #expect(set.open.completedAt != nil)
+        expectUntouched(set)
+
+        // Reopening the list reopens no task, as the app's reopen does not.
+        _ = try fixture.writeService.updateContainer(options: .init(
+            containerKind: "project",
+            containerId: fixture.project.id.uuidString,
+            status: "active"
+        ))
+        #expect(set.open.isDone)
+    }
+
+    @Test func aRefusedListArchivePutsTheSettledTasksBack() throws {
+        let fixture = try Fixture()
+        let area = Area(name: "Household")
+        let child = Project(name: "Garage", area: area)
+        fixture.modelContext.insert(area)
+        fixture.modelContext.insert(child)
+        let own = try seedSettleSet(in: fixture, area: area, prefix: "Own")
+        let nested = try seedSettleSet(in: fixture, area: area, project: child, prefix: "Nested")
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.updateContainer(options: .init(
+                containerKind: "area",
+                containerId: area.id.uuidString,
+                status: "archived"
+            ))
+        }
+
+        #expect(area.status == .active)
+        for open in [own.open, nested.open] {
+            #expect(open.status == .todo)
+            #expect(open.completedAt == nil)
+        }
+        expectUntouched(own)
+        expectUntouched(nested)
+    }
+
+    @Test func completingAColumnArchivesItAndMarksOnlyItsBoardsOpenCardsDone() throws {
+        let fixture = try Fixture()
+        let area = Area(name: "Ops")
+        area.sectionNames = [TaskSectionDefaults.defaultName, "Doing", "Later"]
+        let child = Project(name: "Child", area: area)
+        fixture.modelContext.insert(area)
+        fixture.modelContext.insert(child)
+        let doing = try seedSettleSet(in: fixture, area: area, sectionName: "Doing", prefix: "Doing")
+        let later = try seedSettleSet(in: fixture, area: area, sectionName: "Later", prefix: "Later")
+        // Holds the area AND a project: the project's card, not on this board ([[T-15660]]).
+        let projectCard = try seedSettleSet(in: fixture, area: area, project: child, sectionName: "Doing", prefix: "Project")
+
+        let updated = try fixture.writeService.updateContainerColumns(options: .init(
+            containerKind: "area",
+            containerId: area.id.uuidString,
+            columnName: "doing",
+            isCompleted: true
+        ))
+
+        let column = try #require(updated.sections.first { $0.name == "Doing" })
+        #expect(column.isCompleted)
+        #expect(column.isArchived)
+        #expect(doing.open.isDone)
+        #expect(doing.open.completedAt != nil)
+        expectUntouched(doing)
+        #expect(later.open.status == .todo)
+        #expect(projectCard.open.status == .todo)
+    }
+
+    @Test func archivingAColumnCancelsItsCardsAndUnarchivingClearsBothFlags() throws {
+        let fixture = try Fixture()
+        let cards = try seedSettleSet(in: fixture, project: fixture.project, sectionName: "Build", prefix: "Build")
+
+        // A rename in the same call: the cards are matched on the column's name as stored.
+        let archived = try fixture.writeService.updateContainerColumns(options: .init(
+            containerKind: "project",
+            containerId: fixture.project.id.uuidString,
+            columnName: "Build",
+            newName: "Built",
+            isArchived: true
+        ))
+        let column = try #require(archived.sections.first { $0.name == "Built" })
+        #expect(column.isArchived)
+        #expect(!column.isCompleted)
+        #expect(cards.open.isCancelled)
+        #expect(cards.open.completedAt != nil)
+        expectUntouched(cards)
+
+        _ = try fixture.writeService.updateContainerColumns(options: .init(
+            containerKind: "project",
+            containerId: fixture.project.id.uuidString,
+            columnName: "Built",
+            isCompleted: true
+        ))
+        let reopened = try fixture.writeService.updateContainerColumns(options: .init(
+            containerKind: "project",
+            containerId: fixture.project.id.uuidString,
+            columnName: "Built",
+            isArchived: false
+        ))
+        let back = try #require(reopened.sections.first { $0.name == "Built" })
+        #expect(!back.isArchived)
+        #expect(!back.isCompleted)
+        // Unarchiving reopens no card.
+        #expect(cards.open.isCancelled)
+
+        // A colour rides along so the refusal cannot be a "nothing changed" one: the pair is
+        // refused for what it asks, not for what it would store.
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.updateContainerColumns(options: .init(
+                containerKind: "project",
+                containerId: fixture.project.id.uuidString,
+                columnName: "Built",
+                colorHex: "#123456",
+                isCompleted: true,
+                isArchived: false
+            ))
+        }
+        let untouched = try #require(fixture.project.sectionConfigs.first { $0.name == "Built" })
+        #expect(untouched.colorHex != "#123456")
+    }
+
+    @Test func aRefusedColumnCompletionPutsTheFlagsAndTheCardsBack() throws {
+        let fixture = try Fixture()
+        let cards = try seedSettleSet(in: fixture, project: fixture.project, sectionName: "Build", prefix: "Build")
+
+        let refusing = CadenceWriteService(
+            context: fixture.modelContext,
+            preparesStore: false,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(throws: CommitRefused.self) {
+            try refusing.updateContainerColumns(options: .init(
+                containerKind: "project",
+                containerId: fixture.project.id.uuidString,
+                columnName: "Build",
+                isCompleted: true
+            ))
+        }
+
+        let column = try #require(fixture.project.sectionConfigs.first { $0.name == "Build" })
+        #expect(!column.isCompleted)
+        #expect(!column.isArchived)
+        #expect(cards.open.status == .todo)
+        #expect(cards.open.completedAt == nil)
+        expectUntouched(cards)
+    }
+
+    /// The MCP target cannot compile `TaskContainerLifecycleService`, so the walk is restated in
+    /// `CadenceMCPContainerWindDown`; this pins the two to one answer on every shape.
+    @Test func theMCPWindDownWalkIsTheAppsWalk() throws {
+        let fixture = try Fixture()
+        let area = Area(name: "Ops")
+        area.sectionNames = [TaskSectionDefaults.defaultName, "Doing"]
+        let child = Project(name: "Child", area: area)
+        child.sectionNames = [TaskSectionDefaults.defaultName, "Doing"]
+        fixture.modelContext.insert(area)
+        fixture.modelContext.insert(child)
+        _ = try seedSettleSet(in: fixture, area: area, prefix: "Own")
+        _ = try seedSettleSet(in: fixture, area: area, sectionName: "Doing", prefix: "OwnDoing")
+        _ = try seedSettleSet(in: fixture, area: area, project: child, sectionName: "Doing", prefix: "Nested")
+        _ = try seedSettleSet(in: fixture, project: child, prefix: "ChildOnly")
+
+        func ids(_ tasks: [AppTask]) -> Set<UUID> { Set(tasks.map(\.id)) }
+        let areaWalk = ids(CadenceMCPContainerWindDown.remainingActiveTasks(in: area))
+        #expect(areaWalk.count == 4)
+        #expect(areaWalk == ids(TaskContainerLifecycleService.remainingActiveTasks(in: area, includingChildProjects: true)))
+        #expect(ids(CadenceMCPContainerWindDown.remainingActiveTasks(in: child))
+            == ids(TaskContainerLifecycleService.remainingActiveTasks(in: child)))
+
+        for (config, area, project, board) in [
+            (area.sectionConfigs.first { $0.name == "Doing" }!, Optional(area), Project?.none, CadenceTaskQuerySupport.listedTasks(for: area)),
+            (child.sectionConfigs.first { $0.name == "Doing" }!, Area?.none, Optional(child), child.tasks ?? []),
+        ] {
+            let mcp = ids(CadenceMCPContainerWindDown.remainingActiveTasks(inColumnNamed: config.name, boardTasks: board))
+            #expect(mcp.count == 1)
+            #expect(mcp == ids(TaskContainerLifecycleService.remainingActiveTasks(in: config, area: area, project: project)))
+        }
+    }
+
     @MainActor
     private final class Fixture {
         let container: ModelContainer

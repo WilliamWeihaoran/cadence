@@ -429,6 +429,62 @@ nonisolated struct CadenceCreateListNoteOptions: Sendable {
     var folderPath: String? = nil
 }
 
+/// **The app's wind-down walk, restated for this target ([[T-19044]]).** Archiving a list or a
+/// column from the MCP surface used to flip the flag and nothing else, leaving its open tasks on
+/// Today, the widgets and the reminder schedule under a list the app shows as gone. Every app
+/// surface settles that work in the same write through `TaskContainerLifecycleService` (archive
+/// cancels, complete marks done; an area walks its child projects; a column walks the cards its
+/// board draws, [[T-15660]]).
+///
+/// That service is not compiled into `CadenceMCPServer` -- it reaches `CadenceWindDownReconciler`
+/// and so the notification stack -- so its pure walk is restated here, and
+/// `CadenceWriteServiceTests.theMCPWindDownWalkIsTheAppsWalk` pins the two equal. The per-task
+/// write is the app's own, `CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries`,
+/// which never advances a series (a successor would refill the list just wound down, T-213). The
+/// notification reconcile the app runs after a settle is not made here: this process schedules no
+/// notifications, and the running app's own checkpoint sweeps the settled tasks' nudges.
+enum CadenceMCPContainerWindDown {
+    /// An area's own tasks plus its child projects', the raw edges ([[T-15431]] kept the list
+    /// wind-downs reaching every row pointing at the container).
+    static func remainingActiveTasks(in area: Area) -> [AppTask] {
+        var tasks = area.tasks ?? []
+        for project in area.projects ?? [] {
+            tasks.append(contentsOf: project.tasks ?? [])
+        }
+        return unsettled(tasks)
+    }
+
+    static func remainingActiveTasks(in project: Project) -> [AppTask] {
+        unsettled(project.tasks ?? [])
+    }
+
+    /// `boardTasks` is the set the column's board draws: an area's `listedTasks(for:)` (its tasks
+    /// holding no project), a project's `tasks`.
+    static func remainingActiveTasks(inColumnNamed name: String, boardTasks: [AppTask]) -> [AppTask] {
+        unsettled(boardTasks.filter {
+            $0.resolvedSectionName.caseInsensitiveCompare(name) == .orderedSame
+        })
+    }
+
+    /// Settles `tasks` as `status` with one `now`, and answers what each held before so a refused
+    /// commit can put it back.
+    static func settle(_ tasks: [AppTask], as status: TaskStatus) -> [(task: AppTask, statusRaw: String, completedAt: Date?)] {
+        let previous = tasks.map { (task: $0, statusRaw: $0.statusRaw, completedAt: $0.completedAt) }
+        let now = Date()
+        for task in tasks {
+            CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries(task, as: status, now: now)
+        }
+        return previous
+    }
+
+    /// Status alone, `TaskContainerLifecycleService.unsettled`'s reading: a cancelled task carries
+    /// a `completedAt`, and re-stamping it would drag last week's cancellation into today.
+    private static func unsettled(_ tasks: [AppTask]) -> [AppTask] {
+        var seen = Set<UUID>()
+        return tasks.filter { seen.insert($0.id).inserted && !$0.isDone && !$0.isCancelled }
+    }
+}
+
 /// Every field `updateContainer` writes to an `Area` or a `Project`, captured before the write so
 /// a refused commit puts all of it back (T-1121).
 ///
@@ -439,9 +495,10 @@ nonisolated struct CadenceCreateListNoteOptions: Sendable {
 /// `Cadence/Services/CadenceTaskContainerLifecycleService.swift`. Adding the shared snapshot to
 /// `CadenceMCPServer`'s Sources phase therefore adds the notification stack to a command-line
 /// tool, which is the coupling `CadenceMCPServer/AGENTS.md` warns about and the same boundary that
-/// keeps `CadenceTaskMutationSupport` out. The covered set is also smaller by design: this arm
-/// writes no task, so there is no `tasks:` leg, and it writes no `sectionConfigsRaw` —
-/// `updateContainerColumns` owns that and has its own undo.
+/// keeps `CadenceTaskMutationSupport` out. The covered set is also smaller by design: the tasks
+/// this arm writes (a re-filed list's inherited contexts, an archived or completed list's settled
+/// work, [[T-19044]]) are captured and put back by `updateContainer` itself, and it writes no
+/// `sectionConfigsRaw` — `updateContainerColumns` owns that and has its own undo.
 ///
 /// **Raw strings, not the computed façades**, for `CadenceListEditSnapshot`'s own reason:
 /// `statusRaw` coerces an unrecognised value to `.active` on read, so restoring through `status`
@@ -1096,7 +1153,36 @@ final class CadenceWriteService {
             }
         }
 
-        try saveNotifyAndAudit([.containerFields(kind: kind, id: containerID, summary: "Updated \(kind): \(finalName)")]) {
+        // [[T-19044]]: archiving or completing a list is a wind-down, never a bare flag -- the
+        // app's `settleListWindDown` / `EditAreaSheet.apply(_:)` settle the list's open work in
+        // the same write (archive cancels, complete marks done; an area walks its child projects).
+        // `paused` and a project's `cancelled` are statuses no app surface offers as a wind-down,
+        // so they settle nothing here either.
+        let windDownStatus: TaskStatus?
+        switch statusRaw {
+        case "archived": windDownStatus = .cancelled
+        case "done": windDownStatus = .done
+        default: windDownStatus = nil
+        }
+        var settledTasks: [(task: AppTask, statusRaw: String, completedAt: Date?)] = []
+        var summary = "Updated \(kind): \(finalName)"
+        if let windDownStatus {
+            let remaining: [AppTask]
+            switch resolved {
+            case .area(let area): remaining = CadenceMCPContainerWindDown.remainingActiveTasks(in: area)
+            case .project(let project): remaining = CadenceMCPContainerWindDown.remainingActiveTasks(in: project)
+            }
+            settledTasks = CadenceMCPContainerWindDown.settle(remaining, as: windDownStatus)
+            if !settledTasks.isEmpty {
+                summary += " (\(settledTasks.count) open task\(settledTasks.count == 1 ? "" : "s") \(windDownStatus == .done ? "marked done" : "canceled"))"
+            }
+        }
+
+        try saveNotifyAndAudit([.containerFields(kind: kind, id: containerID, summary: summary)]) {
+            for entry in settledTasks {
+                entry.task.statusRaw = entry.statusRaw
+                entry.task.completedAt = entry.completedAt
+            }
             for entry in previousTaskContexts {
                 entry.task.context = entry.context
             }
@@ -1221,7 +1307,33 @@ final class CadenceWriteService {
         if movedTaskCount > 0 {
             summary += " (\(movedTaskCount) re-filed)"
         }
+
+        // [[T-19044]]: completing or archiving a column settles its open cards, as both apps'
+        // column wind-downs do (completion marks done, archive cancels). Walked after the rename
+        // above, so the cards are matched on the column's name as stored; the set is the board's
+        // own (`tasks`, [[T-15660]]). Un-archiving settles nothing, as the apps' reopen does not.
+        let windDownStatus: TaskStatus? = options.isCompleted == true
+            ? .done
+            : (options.isArchived == true ? .cancelled : nil)
+        var settledTasks: [(task: AppTask, statusRaw: String, completedAt: Date?)] = []
+        if let windDownStatus,
+           let requested = CadenceMCPServiceSupport.normalizedOptionalText(options.columnName),
+           let uuid = previous.first(where: { $0.name.caseInsensitiveCompare(requested) == .orderedSame })?.uuid,
+           let column = stored.first(where: { $0.uuid == uuid }) {
+            settledTasks = CadenceMCPContainerWindDown.settle(
+                CadenceMCPContainerWindDown.remainingActiveTasks(inColumnNamed: column.name, boardTasks: tasks),
+                as: windDownStatus
+            )
+            if !settledTasks.isEmpty {
+                summary += " (\(settledTasks.count) open task\(settledTasks.count == 1 ? "" : "s") \(windDownStatus == .done ? "marked done" : "canceled"))"
+            }
+        }
+
         try saveNotifyAndAudit([.containerColumns(kind: kind, id: containerID, summary: summary)]) {
+            for entry in settledTasks {
+                entry.task.statusRaw = entry.statusRaw
+                entry.task.completedAt = entry.completedAt
+            }
             container.sectionConfigs = previous
             _ = CadenceSectionEditingSupport.applySectionNameChanges(
                 renames: moves.renames.map { (from: $0.to, to: $0.from) },
@@ -1301,8 +1413,23 @@ final class CadenceWriteService {
             } else if let dueDate {
                 config.dueDate = dueDate
             }
+            // [[T-19044]]: the flag pair as both apps write it. Completing a column files it away
+            // (`markColumnCompleted`, [[T-15722]]); un-archiving brings it back open, clearing
+            // both (`iOSColumnWindDownSupport.reopenColumn` and the Mac's Unarchive). Asking for
+            // a completed column that stays on the board is the split T-15722 closed, so it is
+            // refused rather than half-applied.
+            if options.isCompleted == true, options.isArchived == false {
+                throw CadenceWriteError.invalidCombination(
+                    "isCompleted true cannot be combined with isArchived false: completing a column archives it, as both apps do."
+                )
+            }
             if let isCompleted = options.isCompleted { config.isCompleted = isCompleted }
             if let isArchived = options.isArchived { config.isArchived = isArchived }
+            if options.isCompleted == true { config.markColumnCompleted() }
+            if options.isArchived == false {
+                config.isArchived = false
+                config.isCompleted = false
+            }
             planned[index] = config
         }
 
