@@ -781,7 +781,7 @@ struct FocusManagerCrashResumeTests {
 
 #if os(macOS)
 /// **[[T-19094]]: a Mac whose display sleeps or whose screen locks with the system awake.**
-/// `willSleep` never fires, so the wall clock counted the night and the next ✕, switch or quit
+/// `willSleepNotification` never fires, so the wall clock counted the night and the next ✕, switch or quit
 /// banked it. The Mac now applies iOS's absence rule (`CadenceFocusAbsenceRule`, the same
 /// `unobservedGapThreshold`, [[T-8201]]) to the interval the screen was out of sight. Each test
 /// builds its own `FocusManager`, so nothing here touches `FocusManager.shared`, and delivers the

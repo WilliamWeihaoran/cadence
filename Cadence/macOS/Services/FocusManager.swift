@@ -495,7 +495,7 @@ final class FocusManager {
 
     /// **The signal the absence rule was missing on the Mac.** A Mac whose display sleeps or whose
     /// screen locks while the system stays awake (a desktop, a laptop on power set not to sleep, a
-    /// caffeinate assertion) posts no `willSleep`, and the wall clock counted the whole night into
+    /// caffeinate assertion) posts no `willSleepNotification`, and the wall clock counted the whole night into
     /// the next ✕, switch or quit. Unlike system sleep, a display sleep or a lock is also a coffee
     /// break or a meeting with the session still meant to run -- exactly the ambiguity iOS's lock
     /// screen has -- so the Mac takes iOS's rule and iOS's threshold
