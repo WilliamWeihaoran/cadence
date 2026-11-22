@@ -112,6 +112,49 @@ struct CadenceWidgetStoreChangeReloadTests {
     }
     #endif
 
+    // MARK: - [[T-18590]]: a day or zone change reloads the Mac's widgets
+
+    /// Only a signal that moves the key or the zone reloads; a same-day activation, which is in the
+    /// stream too, costs nothing.
+    @Test func aDayOrZoneChangeReloadsTheWidgetsAndASameDaySignalDoesNot() throws {
+        let newYork = try #require(TimeZone(identifier: "America/New_York"))
+        let chicago = try #require(TimeZone(identifier: "America/Chicago"))
+        var reloads = 0
+        let reloader = CadenceWidgetDayChangeReloader(
+            observedDay: CadenceObservedDay(observedKey: "2026-11-20", observedTimeZone: newYork),
+            reload: { reloads += 1 }
+        )
+
+        reloader.dayMayHaveChanged(key: "2026-11-20", timeZone: newYork)
+        #expect(reloads == 0, "a same-day, same-zone signal reloaded the widgets")
+
+        reloader.dayMayHaveChanged(key: "2026-11-20", timeZone: chicago)
+        #expect(reloads == 1, "a zone change on the same day left the widgets drawing the old zone")
+
+        reloader.dayMayHaveChanged(key: "2026-11-20", timeZone: chicago)
+        #expect(reloads == 1, "the zone change was not recorded, so every later signal reloads")
+
+        reloader.dayMayHaveChanged(key: "2026-11-21", timeZone: chicago)
+        #expect(reloads == 2, "the day rolling over did not reload the widgets")
+    }
+
+    #if os(macOS)
+    /// The wiring is a SwiftUI modifier no unit test can fire, so its shape is pinned: the Mac's
+    /// observer holds one day reloader, feeds it the shared day-change stream, and skips test hosts.
+    @Test func theMacObserverReloadsWidgetsOnADayChange() throws {
+        let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/macOSRootView.swift"))
+        let start = try #require(source.range(of: "private struct NotificationReconcileObserver: View"))
+        let observer = String(source[start.lowerBound...])
+        #expect(observer.contains("@State private var widgetDayReloader = CadenceWidgetDayChangeReloader()"))
+        let handler = try #require(
+            CadenceSourceScan.declarationBody(".onReceive(CadenceDayChangeStream.main.publisher)", in: observer),
+            "the Mac observer no longer listens for a day change"
+        )
+        #expect(handler.contains("guard !NotificationManager.isTestEnvironment else { return }"))
+        #expect(handler.contains("widgetDayReloader.dayMayHaveChanged()"), "a day change no longer reaches the widgets")
+    }
+    #endif
+
     // MARK: - [[T-18674]]: iOS reloads on the leaving-active edge, forced
 
     /// Every one of the nine (from, to) pairs. Only leaving `.active` reloads: arriving through

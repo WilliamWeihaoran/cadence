@@ -460,6 +460,9 @@ private struct NotificationReconcileObserver: View {
     /// so a save is the Mac's checkpoint too, not only leaving active. One per observer, so its
     /// pending trailing reload survives re-renders.
     @State private var widgetReloader = CadenceWidgetStoreChangeReloader()
+    /// [[T-18590]]: a day or zone change reloads the widgets, whose entry dates are fixed when the
+    /// timeline is built.
+    @State private var widgetDayReloader = CadenceWidgetDayChangeReloader()
 
     var body: some View {
         Color.clear
@@ -472,6 +475,10 @@ private struct NotificationReconcileObserver: View {
             .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in
                 guard !NotificationManager.isTestEnvironment else { return }
                 widgetReloader.storeDidSave()
+            }
+            .onReceive(CadenceDayChangeStream.main.publisher) { _ in
+                guard !NotificationManager.isTestEnvironment else { return }
+                widgetDayReloader.dayMayHaveChanged()
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase != .active {

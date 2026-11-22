@@ -116,6 +116,46 @@ final class CadenceDayChangeStream {
     }
 }
 
+/// Reloads the widgets when the day or the zone really moved ([[T-18590]]).
+///
+/// A widget timeline's entry dates are fixed when it is built, so after a time-zone change a
+/// placed tile kept drawing the old zone's day until its own 15/20-minute fallback came round
+/// (longer if WidgetKit deferred it): the app reloaded on a store save and on leaving active,
+/// never on `CadenceDayChangeStream`. Each root holds one of these and feeds it every day-change
+/// signal; only a signal that moves the key or the zone reloads, so app activation (which is in
+/// the stream) costs nothing on an ordinary day. Forced, because a zone change is not a burst the
+/// throttle should thin.
+///
+/// **macOS only, for the same hardware reason as `CadenceWidgetStoreChangeReloader`:** the Mac's
+/// desktop and Notification Center widgets are on screen beside a frontmost window. An iOS
+/// home-screen widget cannot be seen while the app is in front, and iOS already reloads, forced,
+/// on every leaving-active edge ([[T-18674]]), which is the next moment a tile can be seen; a
+/// suspended iOS app receives no day-change signal at all. Lives here rather than beside `CadenceWidgetRefreshCenter` because that
+/// file is compiled into the widget extension and `CadenceObservedDay` is not.
+@MainActor
+final class CadenceWidgetDayChangeReloader {
+    private var observedDay: CadenceObservedDay
+    private let reload: () -> Void
+
+    init(
+        observedDay: CadenceObservedDay = CadenceObservedDay(),
+        reload: @escaping () -> Void = { CadenceWidgetRefreshCenter.reloadAllWidgets(force: true) }
+    ) {
+        self.observedDay = observedDay
+        self.reload = reload
+    }
+
+    /// One day-change signal arrived. Reloads only when `key` or `timeZone` differs from the last
+    /// one observed.
+    func dayMayHaveChanged(
+        key: String = DateFormatters.todayKey(),
+        timeZone: TimeZone = Calendar.current.timeZone
+    ) {
+        guard observedDay.observe(key, timeZone: timeZone) else { return }
+        reload()
+    }
+}
+
 extension View {
     /// Re-runs the caller's `body` when the day changes. The caller must *read* `day` in its body
     /// (through `todayKey`), or SwiftUI has no dependency to invalidate.
