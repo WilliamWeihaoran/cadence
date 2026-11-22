@@ -778,3 +778,206 @@ struct FocusManagerCrashResumeTests {
 }
 
 #endif
+
+#if os(macOS)
+/// **[[T-19094]]: a Mac whose display sleeps or whose screen locks with the system awake.**
+/// `willSleep` never fires, so the wall clock counted the night and the next ✕, switch or quit
+/// banked it. The Mac now applies iOS's absence rule (`CadenceFocusAbsenceRule`, the same
+/// `unobservedGapThreshold`, [[T-8201]]) to the interval the screen was out of sight. Each test
+/// builds its own `FocusManager`, so nothing here touches `FocusManager.shared`, and delivers the
+/// notifications by name -- no real display or lock is involved.
+@Suite(.serialized)
+@MainActor
+struct FocusManagerScreenAbsenceTests {
+
+    private let threshold = CadenceFocusAbsenceRule.unobservedGapThreshold
+
+    private func makeTask(_ title: String = "Reconcile invoices") throws -> (AppTask, Project, ModelContext) {
+        let context = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let project = Project(name: "Ledger")
+        context.insert(project)
+        let task = AppTask(title: title)
+        task.project = project
+        context.insert(task)
+        try context.save()
+        return (task, project, context)
+    }
+
+    private func makeManager(_ clock: FocusManagerTestClock) -> FocusManager {
+        let manager = FocusManager(sessionDefaults: nil)
+        manager.clock = { clock.now }
+        return manager
+    }
+
+    private func deliver(_ name: Notification.Name, to manager: FocusManager) {
+        manager.handleScreenVisibilityNotification(named: name)
+    }
+
+    /// The ticket's steps: 30 minutes of work, the display sleeps all night with the system
+    /// awake, wake, ✕. The night is not banked; the clock stopped at the display-sleep instant and
+    /// stays paused.
+    @Test func aDisplaySleepPastTheThresholdFreezesTheClockAndTheCloseBanksNoNight() throws {
+        let (task, project, context) = try makeTask()
+        let clock = FocusManagerTestClock()
+        let manager = makeManager(clock)
+        try manager.startFocus(task: task, in: context)
+        clock.advance(30 * 60)
+
+        deliver(NSWorkspace.screensDidSleepNotification, to: manager)
+        clock.advance(threshold + 13 * 60 * 60)
+        deliver(NSWorkspace.screensDidWakeNotification, to: manager)
+        clock.advance(5 * 60)
+
+        #expect(!manager.isRunning)
+        #expect(manager.elapsed == 30 * 60)
+        try manager.endSession(in: context)
+        #expect(task.actualMinutes == 30)
+        #expect(project.loggedMinutes == 30)
+    }
+
+    /// A gap at or under the threshold is a coffee break with the session still meant to run, as a
+    /// locked phone on the desk is on iOS: it is credited and the clock keeps running.
+    @Test func aLockUnderTheThresholdIsCreditedAndKeepsRunning() throws {
+        let (task, _, context) = try makeTask()
+        let clock = FocusManagerTestClock()
+        let manager = makeManager(clock)
+        try manager.startFocus(task: task, in: context)
+        clock.advance(10 * 60)
+
+        deliver(FocusManager.screenLockedNotification, to: manager)
+        clock.advance(threshold - 60)
+        deliver(FocusManager.screenUnlockedNotification, to: manager)
+        clock.advance(60)
+
+        #expect(manager.isRunning)
+        #expect(manager.elapsed == Int(10 * 60 + threshold))
+        try manager.endSession(in: context)
+        #expect(task.actualMinutes == Int((10 * 60 + threshold) / 60))
+    }
+
+    /// The display lighting on the lock screen does not end the interval: only awake **and**
+    /// unlocked does, so a night of brief lock-screen wakes cannot be credited piece by piece.
+    @Test func aDisplayWakeOnTheLockScreenDoesNotSplitTheNight() throws {
+        let (task, _, context) = try makeTask()
+        let clock = FocusManagerTestClock()
+        let manager = makeManager(clock)
+        try manager.startFocus(task: task, in: context)
+        clock.advance(20 * 60)
+
+        deliver(FocusManager.screenLockedNotification, to: manager)
+        for _ in 0..<6 {
+            deliver(NSWorkspace.screensDidSleepNotification, to: manager)
+            clock.advance(threshold / 2)
+            deliver(NSWorkspace.screensDidWakeNotification, to: manager)
+        }
+        #expect(manager.unobservedSince != nil)
+        deliver(FocusManager.screenUnlockedNotification, to: manager)
+
+        #expect(manager.unobservedSince == nil)
+        #expect(!manager.isRunning)
+        #expect(manager.elapsed == 20 * 60)
+    }
+
+    /// A task switch from a row after the night banks the outgoing task's 15 minutes, not 15 hours.
+    @Test func aSwitchAfterAnOverThresholdGapBanksNoNight() throws {
+        let (task, _, context) = try makeTask()
+        let next = AppTask(title: "File receipts")
+        next.project = task.project
+        context.insert(next)
+        let clock = FocusManagerTestClock()
+        let manager = makeManager(clock)
+        try manager.startFocus(task: task, in: context)
+        clock.advance(15 * 60)
+
+        deliver(NSWorkspace.screensDidSleepNotification, to: manager)
+        clock.advance(threshold + 60)
+        deliver(NSWorkspace.screensDidWakeNotification, to: manager)
+        try manager.startFocus(task: next, in: context)
+
+        #expect(task.actualMinutes == 15)
+        #expect(manager.activeTask?.id == next.id)
+        #expect(manager.elapsed == 0)
+    }
+
+    /// A quit (or an update restart) behind the lock screen, before any unlock: the bank applies
+    /// the rule to the gap so far, so the night is not banked even with no wake or unlock.
+    @Test func aQuitStillBehindTheLockBanksNoNight() throws {
+        let (task, _, context) = try makeTask()
+        let clock = FocusManagerTestClock()
+        let manager = makeManager(clock)
+        try manager.startFocus(task: task, in: context)
+        clock.advance(12 * 60)
+
+        deliver(FocusManager.screenLockedNotification, to: manager)
+        clock.advance(threshold + 6 * 60 * 60)
+        manager.bankBeforeTermination()
+
+        #expect(task.actualMinutes == 12)
+    }
+
+    /// System sleep is unchanged: it freezes at the sleep instant and waking restarts the clock,
+    /// even when the display slept and the screen locked with it -- the unlock right after the wake
+    /// measures only the minute since the wake, not the night.
+    @Test func systemSleepWithTheLockStillResumesOnWake() throws {
+        let (task, _, context) = try makeTask()
+        let clock = FocusManagerTestClock()
+        let manager = makeManager(clock)
+        try manager.startFocus(task: task, in: context)
+        clock.advance(60)
+
+        deliver(NSWorkspace.screensDidSleepNotification, to: manager)
+        deliver(FocusManager.screenLockedNotification, to: manager)
+        manager.handleSystemWillSleep()
+        clock.advance(10 * 60 * 60)
+        manager.handleSystemDidWake()
+        clock.advance(60)
+        deliver(NSWorkspace.screensDidWakeNotification, to: manager)
+        deliver(FocusManager.screenUnlockedNotification, to: manager)
+        clock.advance(30)
+
+        #expect(manager.isRunning)
+        #expect(manager.elapsed == 150)
+    }
+
+    /// A display asleep past the threshold before the system slept has already stopped crediting:
+    /// the system sleep does not credit those hours, and waking does not restart the clock.
+    @Test func aDisplaySleepPastTheThresholdBeforeSystemSleepStaysFrozenAcrossTheWake() throws {
+        let (task, _, context) = try makeTask()
+        let clock = FocusManagerTestClock()
+        let manager = makeManager(clock)
+        try manager.startFocus(task: task, in: context)
+        clock.advance(5 * 60)
+
+        deliver(NSWorkspace.screensDidSleepNotification, to: manager)
+        clock.advance(threshold + 60 * 60)
+        manager.handleSystemWillSleep()
+        clock.advance(6 * 60 * 60)
+        manager.handleSystemDidWake()
+        deliver(NSWorkspace.screensDidWakeNotification, to: manager)
+        clock.advance(60)
+
+        #expect(!manager.isRunning)
+        #expect(manager.elapsed == 5 * 60)
+    }
+
+    /// The crash note says the session was last seen when the screen went out of sight, not at
+    /// the last heartbeat behind the lock, so a crash during a locked night resumes paused.
+    @Test func theSessionNoteStampsTheInstantTheScreenWentOutOfSight() throws {
+        try withTemporaryDefaults("cadence.tests.focusScreenAbsence", test: #function) { defaults in
+            let (task, _, context) = try makeTask()
+            let clock = FocusManagerTestClock()
+            let manager = FocusManager(sessionDefaults: defaults)
+            manager.clock = { clock.now }
+            try manager.startFocus(task: task, in: context)
+            clock.advance(5 * 60)
+            let lockedAt = clock.now
+            deliver(FocusManager.screenLockedNotification, to: manager)
+            clock.advance(3 * 60 * 60)
+            manager.noteSessionSeen()
+
+            let record = CadenceFocusSessionPersistence.read(from: defaults, key: CadencePreferenceKeys.macFocusSession)
+            #expect(record?.lastSeenAt == lockedAt)
+        }
+    }
+}
+#endif

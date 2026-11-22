@@ -53,6 +53,19 @@ final class FocusManager {
 
     @ObservationIgnored private var sleepObserver: NSObjectProtocol?
     @ObservationIgnored private var wakeObserver: NSObjectProtocol?
+    /// [[T-19094]]: display sleep / wake and screen lock / unlock.
+    @ObservationIgnored private var screenObservers: [NSObjectProtocol] = []
+
+    /// [[T-19094]]: what is currently keeping the session out of sight. The unobserved interval
+    /// is open while either is true, so a display that lights for a notification on the lock
+    /// screen does not split one night into short, each-credited pieces.
+    @ObservationIgnored private var displayIsAsleep = false
+    @ObservationIgnored private var screenIsLocked = false
+
+    /// [[T-19094]]: the last instant the session could be seen -- when the display slept or the
+    /// screen locked, whichever came first -- while it is still out of sight; `nil` while it is
+    /// seen. The `lastSeenAt` of `CadenceFocusAbsenceRule.afterAbsence`.
+    @ObservationIgnored private(set) var unobservedSince: Date?
 
     /// Whether system sleep is what stopped the clock, so waking may start it again. A clock the
     /// *user* paused must stay paused across a sleep.
@@ -154,6 +167,9 @@ final class FocusManager {
         // [[T-19093]]: never bank against a row another device deleted. Every banking door --
         // ✕, a switch, the quit bank -- passes here, so the session ends unbanked instead.
         if endSessionIfActiveTaskGone() { return }
+        // [[T-19094]]: a bank taken while the screen is still out of sight (a quit or an update
+        // restart behind the lock screen) applies the absence rule to the gap so far first.
+        applyUnobservedGap()
         // One reading, taken once. `elapsed` is derived from the clock now, so asking twice — once
         // for the guard and once for the amount — could bank a different number than it checked.
         let seconds = elapsed
@@ -353,7 +369,9 @@ final class FocusManager {
             CadenceFocusSessionPersistence.record(
                 target: activeTask.map { .task($0.id) },
                 state: timerState,
-                lastSeenAt: now
+                // [[T-19094]]: the heartbeat keeps beating behind a sleeping display or the lock
+                // screen; the last instant anyone could see the session is when that began.
+                lastSeenAt: unobservedSince ?? now
             ),
             to: sessionDefaults,
             key: CadencePreferenceKeys.macFocusSession
@@ -448,19 +466,98 @@ final class FocusManager {
         ) { [weak self] _ in
             self?.handleSystemDidWake()
         }
+        startObservingScreenVisibility()
     }
 
     /// The freeze is `CadenceFocusAbsenceRule.frozen`, the rule iOS applies past its unobserved-gap
     /// threshold ([[T-6223]]); sleep is an explicit signal, so the Mac's threshold is zero.
+    ///
+    /// [[T-19094]]: a display that had already been asleep (or a screen locked) for longer than
+    /// the threshold before the system slept has already stopped crediting; that freeze stands and
+    /// the session stays paused, as iOS's does. Otherwise sleep is handled exactly as before.
     func handleSystemWillSleep() {
+        applyUnobservedGap()
         guard timerState.isRunning else { return }
         timerState = CadenceFocusAbsenceRule.frozen(timerState, at: clock())
         resumesOnWake = true
     }
 
     func handleSystemDidWake() {
+        // [[T-19094]]: the sleep itself was never credited, so an interval still out of sight
+        // (waking to the lock screen) is measured from the wake, when the clock starts again.
+        if unobservedSince != nil { unobservedSince = clock() }
         guard resumesOnWake, !timerState.isRunning else { return }
         timerState.toggle(now: clock())
+        resumesOnWake = false
+    }
+
+    // MARK: - [[T-19094]]: display sleep and screen lock with the system awake
+
+    /// **The signal the absence rule was missing on the Mac.** A Mac whose display sleeps or whose
+    /// screen locks while the system stays awake (a desktop, a laptop on power set not to sleep, a
+    /// caffeinate assertion) posts no `willSleep`, and the wall clock counted the whole night into
+    /// the next ✕, switch or quit. Unlike system sleep, a display sleep or a lock is also a coffee
+    /// break or a meeting with the session still meant to run -- exactly the ambiguity iOS's lock
+    /// screen has -- so the Mac takes iOS's rule and iOS's threshold
+    /// (`CadenceFocusAbsenceRule.unobservedGapThreshold`, [[T-8201]]): out of sight for at most
+    /// that long is credited; longer freezes the clock at the instant it went out of sight, paused.
+    private func startObservingScreenVisibility() {
+        guard screenObservers.isEmpty else { return }
+        let workspace = NSWorkspace.shared.notificationCenter
+        let distributed = DistributedNotificationCenter.default()
+        let observations: [(NotificationCenter, Notification.Name)] = [
+            (workspace, NSWorkspace.screensDidSleepNotification),
+            (workspace, NSWorkspace.screensDidWakeNotification),
+            (distributed, Self.screenLockedNotification),
+            (distributed, Self.screenUnlockedNotification),
+        ]
+        screenObservers = observations.map { center, name in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                self?.handleScreenVisibilityNotification(named: note.name)
+            }
+        }
+    }
+
+    static let screenLockedNotification = Notification.Name("com.apple.screenIsLocked")
+    static let screenUnlockedNotification = Notification.Name("com.apple.screenIsUnlocked")
+
+    /// One entry for the four observers, so a test can deliver a notification name without the
+    /// real display or lock.
+    func handleScreenVisibilityNotification(named name: Notification.Name) {
+        switch name {
+        case NSWorkspace.screensDidSleepNotification: handleDisplayDidSleep()
+        case NSWorkspace.screensDidWakeNotification: handleDisplayDidWake()
+        case Self.screenLockedNotification: handleScreenDidLock()
+        case Self.screenUnlockedNotification: handleScreenDidUnlock()
+        default: break
+        }
+    }
+
+    func handleDisplayDidSleep() { setScreenVisibility(displayAsleep: true, locked: screenIsLocked) }
+    func handleDisplayDidWake() { setScreenVisibility(displayAsleep: false, locked: screenIsLocked) }
+    func handleScreenDidLock() { setScreenVisibility(displayAsleep: displayIsAsleep, locked: true) }
+    func handleScreenDidUnlock() { setScreenVisibility(displayAsleep: displayIsAsleep, locked: false) }
+
+    /// Opens the unobserved interval on the first of display sleep / lock, and closes it -- applying
+    /// the shared rule to its length -- only once the display is awake **and** unlocked.
+    private func setScreenVisibility(displayAsleep: Bool, locked: Bool) {
+        displayIsAsleep = displayAsleep
+        screenIsLocked = locked
+        if displayAsleep || locked {
+            if unobservedSince == nil { unobservedSince = clock() }
+        } else if unobservedSince != nil {
+            applyUnobservedGap()
+            unobservedSince = nil
+        }
+    }
+
+    /// The shared rule over the interval out of sight so far. A gap at or under the threshold
+    /// changes nothing; past it the clock is frozen at `unobservedSince` and stays paused, and
+    /// waking from a system sleep does not restart it.
+    private func applyUnobservedGap() {
+        let settled = CadenceFocusAbsenceRule.afterAbsence(timerState, lastSeenAt: unobservedSince, now: clock())
+        guard settled != timerState else { return }
+        timerState = settled
         resumesOnWake = false
     }
 }
