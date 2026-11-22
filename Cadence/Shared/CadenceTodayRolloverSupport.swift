@@ -202,12 +202,25 @@ enum CadenceTodayRolloverSupport {
     /// `CadenceDeleteSurvivorSnapshot` carries the full argument, including why that order is what
     /// keeps `hasChanges` false on every toolchain.
     ///
+    /// **A landed roll reconciles reminders; a refused one does not ([[T-19061]]).** Since
+    /// [[T-18945]] a rolled repeating task keeps its minute, so the roll writes exactly what
+    /// `TaskNotificationPlanner.startNotification` schedules from — today's do date with a live
+    /// start — and a reconcile is the only thing that schedules today's "Starting now" or withdraws
+    /// yesterday's delivered one. The Mac's scene-phase reconcile never comes while its window
+    /// stays active, so without this the reminder was simply missing. It runs here rather than in
+    /// the two hosts so neither can forget it, and after the commit rather than in a `defer`, so a
+    /// refusal — which has already put every slot back — queues nothing. `CadenceTaskDateEditing`
+    /// is the same contract for the row "Today" shortcut and a day drop onto today.
+    ///
+    /// - Parameter reconciler: `nil` means `CadenceWindDownReconciler.default` — live in the app,
+    ///   inert in a test host. A test that watches the reconcile injects a recorder.
     /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     @discardableResult
     static func rollOver(
         _ tasks: [AppTask],
         todayKey: String,
         modelContext: ModelContext,
+        reconciler: CadenceWindDownReconciler? = nil,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) throws -> String {
         // Every task rolled, and every other member of every block they are leaving, because
@@ -236,6 +249,7 @@ enum CadenceTodayRolloverSupport {
             in: modelContext,
             commit: { try CadencePendingChangePersistence.commitEdit(in: $0, commit: commit, undo: survivors.restore) }
         )
+        (reconciler ?? .default).run(in: modelContext)
         return todayKey
     }
 }

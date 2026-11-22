@@ -1263,6 +1263,79 @@ struct CadenceTodayRolloverSurfaceTests {
         #expect(try context.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
     }
 
+    // MARK: - T-19061: a landed roll reconciles reminders, a refused one does not
+
+    /// A repeating task rolled with its minute kept ([[T-18945]]) is exactly what the start
+    /// reminder schedules from, so the roll has to reconcile — once, after the commit lands.
+    @MainActor @Test func aLandedRollRunsTheReconcilerOnce() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let standup = AppTask(title: "Standup")
+        standup.scheduledDate = "2026-08-19"
+        context.insert(standup)
+        try context.save()
+
+        var runs = 0
+        let spy = CadenceWindDownReconciler { _ in runs += 1 }
+        try CadenceTodayRolloverSupport.rollOver(
+            [standup],
+            todayKey: "2026-08-20",
+            modelContext: context,
+            reconciler: spy
+        )
+
+        #expect(standup.scheduledDate == "2026-08-20")
+        #expect(runs == 1, "a landed roll did not reconcile reminders")
+    }
+
+    /// The refusal has already put every slot back; reconciling over it would schedule from a
+    /// store that did not change, so it queues nothing — `CadenceTaskDateEditing`'s contract.
+    @MainActor @Test func aRefusedRollNeverRunsTheReconciler() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let standup = AppTask(title: "Standup")
+        standup.scheduledDate = "2026-08-19"
+        context.insert(standup)
+        try context.save()
+
+        var runs = 0
+        let spy = CadenceWindDownReconciler { _ in runs += 1 }
+        #expect(throws: (any Error).self) {
+            try CadenceTodayRolloverSupport.rollOver(
+                [standup],
+                todayKey: "2026-08-20",
+                modelContext: context,
+                reconciler: spy
+            ) { _ in throw CommitRefused() }
+        }
+
+        #expect(standup.scheduledDate == "2026-08-19")
+        #expect(runs == 0, "a refused roll reconciled reminders over a store it put back")
+    }
+
+    /// Both hosts reach the reconcile through `rollOver` and neither silences it. Scanned because
+    /// `Cadence/iOS/` is invisible to this macOS-built target.
+    @Test func bothHostsRollThroughTheReconcilingCommit() throws {
+        let source = try strippingComments(sourceFile("Cadence/Shared/CadenceTodayRolloverSupport.swift"))
+        let body = try cadenceFunctionBody("static func rollOver(", in: source)
+        let commit = try #require(body.range(of: "try CadencePendingChangePersistence.commitDelete("))
+        let reconcile = try #require(
+            body.range(of: "(reconciler ?? .default).run(in: modelContext)"),
+            "rollOver no longer reconciles reminders after the roll"
+        )
+        #expect(commit.upperBound <= reconcile.lowerBound, "the reconcile runs before the commit has landed")
+
+        for host in ["Cadence/macOS/Views/TasksPanel.swift", "Cadence/iOS/iOSTodayView.swift"] {
+            let text = try strippingComments(sourceFile(host))
+            let call = try #require(
+                text.range(of: "CadenceTodayRolloverSupport.rollOver("),
+                "\(host) no longer rolls through the shared helper"
+            )
+            let tail = String(text[call.lowerBound...].prefix(400))
+            #expect(!tail.contains("reconciler:"), "\(host) overrides the roll's reconcile")
+        }
+    }
+
     /// The commit itself: through `CadencePendingChangePersistence`, not a swallowed `save()`.
     @Test func theRollCommitsThroughThePendingChangeUnit() throws {
         // **Scoped back to the body by [[T-668]].** This read the whole file, because
