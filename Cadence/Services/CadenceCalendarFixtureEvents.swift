@@ -92,6 +92,37 @@ enum CadenceCalendarFixtureEvents {
         /// Defaulted to `nil`, so every other fixture stays a one-off; the rule is a value on an
         /// event that is never saved, so it needs no `EKEventStore` and expands no occurrences.
         var repeatFrequency: EKRecurrenceFrequency? = nil
+        /// **[[T-12942]].** When true the event's calendar is a `ReadOnlyCalendar`, which answers
+        /// `allowsContentModifications` false the way Holidays, Birthdays and subscribed feeds do.
+        /// Defaulted to `false`, so every other fixture keeps the writable calendar it had.
+        var isReadOnly: Bool = false
+    }
+
+    /// **[[T-12942]] — an unsaved calendar that EventKit's own question calls read-only.**
+    ///
+    /// `EKCalendar.allowsContentModifications` is get-only, and an unsaved `EKCalendar` answers
+    /// `true` (`CalendarManagerScenarioTests` leans on that for its scratch calendar), so no
+    /// property can be *set* to make a fixture calendar read-only. Overriding the getter does it
+    /// with no seam in the app: `canModify`, `CalendarEventEditPopover.isEditable`,
+    /// `CadenceEventNoteSupport.canMirrorNotes` and `writableCalendars`' filter all ask the
+    /// calendar itself, so every surface reads the fixture exactly as it would read a real
+    /// Holidays calendar.
+    ///
+    /// **Made by re-classing, not by `init`.** `EKCalendar(for:eventStore:)` is an Objective-C
+    /// factory method, which Swift does not inherit into a subclass (measured: the subclass call
+    /// does not compile), and the bare `init()` would be a calendar with no store at all. So the
+    /// fixture makes an ordinary calendar the ordinary way and then sets its class to this one —
+    /// legal because this subclass adds no storage, and done only when the object really is a
+    /// plain `EKCalendar`, so a framework that ever returns a private subclass leaves the calendar
+    /// writable (and `CadenceCalendarFixtureEventsTests` red) rather than stripping its methods.
+    /// The tests measure the class, the answer, and the round trip through `EKEvent.calendar`.
+    nonisolated final class ReadOnlyCalendar: EKCalendar {
+        override var allowsContentModifications: Bool { false }
+
+        static func adopt(_ calendar: EKCalendar) {
+            guard object_getClass(calendar) == EKCalendar.self else { return }
+            object_setClass(calendar, ReadOnlyCalendar.self)
+        }
     }
 
     /// **The `calendar-hues` fixture: the two pathological hues [[T-3168]] is about, a pale
@@ -299,6 +330,45 @@ enum CadenceCalendarFixtureEvents {
         )
     }
 
+    /// **[[T-12942]] — the `calendar-read-only` fixture: one event on a calendar EventKit would
+    /// refuse to write, and one on a calendar it would not, both on today.**
+    ///
+    /// Every launch an agent may make is EventKit-disarmed (`CadenceEventKitLaunchGate`), so no
+    /// agent had ever seen a read-only event: the read-only Calendar row "Holidays (Read-only)"
+    /// ([[T-12753]], [[T-12762]]), the inert event editor and the read-only notice were landed from
+    /// tests alone. `Bank holiday` is on `Holidays`, a `ReadOnlyCalendar`; `Design review` is on
+    /// `Work`, writable, so the same frame shows the contrast — an editable event's calendar menu
+    /// offers `Work` and never `Holidays`. Both calendars are offered to the event editors through
+    /// `servedCalendars`, which is what lets the Calendar row name them at all: the managers'
+    /// `availableCalendars` is empty on a disarmed launch, and an event whose calendar is in no
+    /// list reads as a missing calendar.
+    enum ReadOnlyFixture {
+        static let holidaysCalendarTitle = "Holidays"
+        static let holidaysHue = Hue(red: 0x2E, green: 0x9E, blue: 0x5B)
+        static let workHue = Hue(red: 0x3B, green: 0x6E, blue: 0xC4)
+
+        static let timed: [Spec] = [
+            Spec(
+                title: "Design review",
+                calendarTitle: "Work",
+                hue: workHue,
+                startMinute: 10 * 60,
+                durationMinutes: 60
+            )
+        ]
+
+        static let allDay: [Spec] = [
+            Spec(
+                title: "Bank holiday",
+                calendarTitle: holidaysCalendarTitle,
+                hue: holidaysHue,
+                startMinute: nil,
+                durationMinutes: 24 * 60,
+                isReadOnly: true
+            )
+        ]
+    }
+
     /// A timed event that starts on one day and ends `endDayOffset` days later. See
     /// `Fixture.multiDay`.
     struct MultiDaySpec {
@@ -345,6 +415,7 @@ enum CadenceCalendarFixtureEvents {
         case .calendarCascade: return .calendarCascade
         case .calendarChipStates: return .calendarChipStates
         case .calendarSleep: return .calendarSleep
+        case .calendarReadOnly: return .calendarReadOnly
         case .todayGeometry, .todayRowCrush, .popoverAnchors, nil: return nil
         }
     }
@@ -370,7 +441,7 @@ enum CadenceCalendarFixtureEvents {
         }
         return events(
             for: date,
-            specs: { $0 == .calendarHues ? Fixture.timed : CascadeFixture.timed },
+            specs: { timedSpecs(for: $0) },
             calendar: calendar,
             in: environment
         )
@@ -387,10 +458,56 @@ enum CadenceCalendarFixtureEvents {
         }
         return events(
             for: date,
-            specs: { $0 == .calendarHues ? Fixture.allDay : CascadeFixture.allDay },
+            specs: { allDaySpecs(for: $0) },
             calendar: calendar,
             in: environment
         )
+    }
+
+    /// Which timed specs a today-only scenario serves. `calendar-chip-states` serves the cascade's
+    /// events (its band overflow is tasks); `calendar-sleep` never reaches here.
+    private static func timedSpecs(for scenario: CadenceUITestScenarioSeed.Scenario) -> [Spec] {
+        switch scenario {
+        case .calendarHues: Fixture.timed
+        case .calendarReadOnly: ReadOnlyFixture.timed
+        default: CascadeFixture.timed
+        }
+    }
+
+    private static func allDaySpecs(for scenario: CadenceUITestScenarioSeed.Scenario) -> [Spec] {
+        switch scenario {
+        case .calendarHues: Fixture.allDay
+        case .calendarReadOnly: ReadOnlyFixture.allDay
+        default: CascadeFixture.allDay
+        }
+    }
+
+    /// **[[T-12942]].** The calendars of every fixture event this launch has served, for the event
+    /// editors' Calendar row, or `[]` outside the gate — which is every shipping launch, so the
+    /// editors' list is exactly the managers' there.
+    ///
+    /// The managers' `availableCalendars` is empty on every fixture launch (the gate's first half
+    /// disarms EventKit), so without this an opened fixture event's calendar is in no list and its
+    /// row reads as a missing calendar. Answered from the held events rather than rebuilt, because
+    /// the row matches by `calendarIdentifier` and an unsaved `EKCalendar` mints a fresh one each
+    /// time it is made.
+    static func servedCalendars(
+        in environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [EKCalendar] {
+        guard let scenario = activeScenario(in: environment) else { return [] }
+        // This scenario's specs alone: the held events outlive a scenario in a process that asks
+        // about several (the test host does), and another scenario's calendar in the menu would
+        // be a calendar no event on screen is on.
+        let titles: Set<String> = scenario == .calendarSleep
+            ? [SleepFixture.sleep.title, SleepFixture.allDay.title]
+            : Set((timedSpecs(for: scenario) + allDaySpecs(for: scenario)).map(\.title))
+        var seen = Set<String>()
+        return heldEvents
+            .sorted { $0.key < $1.key }
+            .map(\.value)
+            .filter { titles.contains($0.title ?? "") }
+            .compactMap(\.calendar)
+            .filter { seen.insert($0.calendarIdentifier).inserted }
     }
 
     private static func events(
@@ -432,6 +549,8 @@ enum CadenceCalendarFixtureEvents {
         // optional, so a fixture event without one kills the app the moment its block is clicked.
         // It also carries the colour, which is the entire point of this fixture.
         let eventCalendar = EKCalendar(for: .event, eventStore: store)
+        // [[T-12942]]: a read-only spec's calendar answers `allowsContentModifications` false.
+        if spec.isReadOnly { ReadOnlyCalendar.adopt(eventCalendar) }
         eventCalendar.title = spec.calendarTitle
         eventCalendar.cgColor = spec.hue.cgColor
         event.calendar = eventCalendar

@@ -64,8 +64,16 @@ enum CadenceEventEditorCalendarChoices {
     static func choices(
         selectedID: String,
         availableCalendars: [EKCalendar],
-        writableCalendars: [EKCalendar]
+        writableCalendars: [EKCalendar],
+        environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> [CadenceSchedulePanelChoice] {
+        // [[T-12942]]: a fixture launch is EventKit-disarmed, so both lists arrive empty and an
+        // opened fixture event's row would read as a missing calendar. The fixture's own calendars
+        // stand in, read-only ones out of the writable list by EventKit's own question. `[]` on
+        // every launch outside the fixture gate, which leaves both lists exactly as passed.
+        let fixtureCalendars = CadenceCalendarFixtureEvents.servedCalendars(in: environment)
+        let availableCalendars = availableCalendars + fixtureCalendars
+        let writableCalendars = writableCalendars + fixtureCalendars.filter(\.allowsContentModifications)
         let link = link(
             selectedID: selectedID,
             availableCalendars: availableCalendars.map {

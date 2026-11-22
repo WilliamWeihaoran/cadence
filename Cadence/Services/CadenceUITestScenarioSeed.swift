@@ -62,6 +62,13 @@ enum CadenceUITestScenarioSeed {
         /// night's tail, tonight's head) beside a morning task, and a daily all-day chip on every
         /// Month cell. The events are `CadenceCalendarFixtureEvents.SleepFixture`.
         case calendarSleep = "calendar-sleep"
+        /// **The read-only calendar scenario** ([[T-12942]]). An all-day `Bank holiday` on a
+        /// `Holidays` calendar that refuses writes, beside a timed `Design review` on a writable
+        /// `Work` calendar, both on today: the only way an EventKit-disarmed agent launch can see
+        /// a read-only event, its inert editor and its "Holidays (Read-only)" Calendar row. Events
+        /// only — the stock seed is the task half. The events are
+        /// `CadenceCalendarFixtureEvents.ReadOnlyFixture`.
+        case calendarReadOnly = "calendar-read-only"
     }
 
     /// The alt text on the seeded picture, and the text of the paragraph under it. Both are read
@@ -267,6 +274,10 @@ enum CadenceUITestScenarioSeed {
             seedCalendarChipStates(modelContext: modelContext)
         case .calendarSleep:
             seedCalendarSleep(modelContext: modelContext)
+        case .calendarReadOnly:
+            // Events only: what this scenario exists to show is an event's editor, and the stock
+            // seed already gave the launch its lists.
+            break
         }
     }
 

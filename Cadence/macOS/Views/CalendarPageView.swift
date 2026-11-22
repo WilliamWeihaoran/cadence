@@ -244,7 +244,9 @@ struct CalendarPageView: View {
         CadenceCalendarAccessNotice.resolve(
             isAuthorized: calendarManager.isAuthorized,
             isDenied: calendarManager.isDenied,
-            showsFixtureEvents: CalendarBoardUITestEventSupport.isActive
+            // [[T-12942]]: the day-cache fixture stands in for access too, as it does on iOS
+            // (`iOSCalendarView.accessNotice`); the bar drew over a fixture launch's events here.
+            showsFixtureEvents: CalendarBoardUITestEventSupport.isActive || CadenceCalendarFixtureEvents.isActive()
         )
     }
 

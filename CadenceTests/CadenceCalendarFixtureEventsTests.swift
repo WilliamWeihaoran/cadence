@@ -103,7 +103,7 @@ struct CadenceCalendarFixtureEventsTests {
     @Test func aLaunchThatSeesTheFixturesCannotReachARealEventStore() {
         var checked = 0
         for modeValue in ["1", "0", ""] {
-            for scenarioValue in ["calendar-hues", "calendar-cascade", "calendar-chip-states", "calendar-sleep", "today-geometry", "nonsense", ""] {
+            for scenarioValue in ["calendar-hues", "calendar-cascade", "calendar-chip-states", "calendar-sleep", "calendar-read-only", "today-geometry", "nonsense", ""] {
                 let environment = [Self.mode: modeValue, Self.scenario: scenarioValue]
                 guard CadenceCalendarFixtureEvents.isActive(in: environment) else { continue }
                 checked += 1
@@ -113,7 +113,7 @@ struct CadenceCalendarFixtureEventsTests {
                 )
             }
         }
-        #expect(checked == 4, "non-vacuity: expected exactly four active combinations, saw \(checked)")
+        #expect(checked == 5, "non-vacuity: expected exactly five active combinations, saw \(checked)")
     }
 
     // MARK: - 3. What it answers when it is open
@@ -277,7 +277,9 @@ struct CadenceCalendarFixtureEventsTests {
         #expect(Set(hueTimed.compactMap(\.title)).isDisjoint(with: cascadeTimed.compactMap(\.title)))
 
         // Titles key the held events, so they must be unique across both scenarios.
-        let allTitles = (hues.timed + hues.allDay + cascade.timed + cascade.allDay).map(\.title)
+        let readOnly = CadenceCalendarFixtureEvents.ReadOnlyFixture.self
+        let allTitles = (hues.timed + hues.allDay + cascade.timed + cascade.allDay + readOnly.timed + readOnly.allDay)
+            .map(\.title)
         #expect(Set(allTitles).count == allTitles.count)
 
         // Another day is answered empty, not fallen through, exactly as for `calendar-hues`.
@@ -411,6 +413,7 @@ struct CadenceCalendarFixtureEventsTests {
         #expect(CadenceUITestScenarioSeed.scenario(in: [Self.scenario: "calendar-hues"]) == .calendarHues)
         #expect(CadenceUITestScenarioSeed.scenario(in: [Self.scenario: "calendar-cascade"]) == .calendarCascade)
         #expect(CadenceUITestScenarioSeed.scenario(in: [Self.scenario: "calendar-chip-states"]) == .calendarChipStates)
+        #expect(CadenceUITestScenarioSeed.scenario(in: [Self.scenario: "calendar-read-only"]) == .calendarReadOnly)
         // The process reader is the pure one over this process, not a second implementation.
         #expect(CadenceUITestScenarioSeed.requestedScenario
             == CadenceUITestScenarioSeed.scenario(in: ProcessInfo.processInfo.environment))
@@ -495,9 +498,89 @@ struct CadenceCalendarFixtureEventsTests {
                 "Cadence/macOS/Views/CalendarTimelineSupport.swift",
                 "Cadence/iOS/iOSCalendarManager.swift",
                 "Cadence/iOS/iOSCalendarView.swift",
+                // [[T-12942]]: the editors' Calendar row lists the served fixture calendars.
+                "Cadence/Shared/CadenceEventEditorCalendarChoices.swift",
+                // [[T-12942]]: the Mac page's access bar stands down for the fixture, as iOS's does.
+                "Cadence/macOS/Views/CalendarPageView.swift",
             ],
             "unexpected reach of the calendar fixture harness: \(referencing.sorted())"
         )
+    }
+
+    // MARK: - 3c'. The calendar-read-only scenario (T-12942)
+
+    private static let readOnlyActive: [String: String] = [mode: "1", scenario: "calendar-read-only"]
+
+    /// The scenario serves a holiday on a calendar that refuses writes, beside a writable event,
+    /// and every writability question the app asks — the calendar's own, the Mac editor's, the
+    /// notes mirror's — reads the holiday as read-only and the other as writable. This is the
+    /// measurement the subclass rests on: an unsaved `EKCalendar` answers `true`, and nothing
+    /// short of overriding the getter can make a fixture one answer `false`.
+    @Test func theReadOnlyScenarioServesAReadOnlyHolidayBesideAWritableEvent() throws {
+        #expect(CadenceCalendarFixtureEvents.activeScenario(in: Self.readOnlyActive) == .calendarReadOnly)
+        let timed = try #require(CadenceCalendarFixtureEvents.timedEvents(for: Date(), in: Self.readOnlyActive))
+        let allDay = try #require(CadenceCalendarFixtureEvents.allDayEvents(for: Date(), in: Self.readOnlyActive))
+        #expect(timed.compactMap(\.title) == ["Design review"])
+        #expect(allDay.compactMap(\.title) == ["Bank holiday"])
+
+        let holiday = try #require(allDay.first)
+        let holidayCalendar = try #require(holiday.calendar)
+        #expect(holidayCalendar is CadenceCalendarFixtureEvents.ReadOnlyCalendar,
+                "the held event's calendar lost its subclass on the round trip through EKEvent.calendar")
+        #expect(holidayCalendar.title == CadenceCalendarFixtureEvents.ReadOnlyFixture.holidaysCalendarTitle)
+        #expect(holidayCalendar.allowsContentModifications == false)
+        #expect(CadenceEventNoteSupport.canMirrorNotes(to: holiday) == false)
+
+        let review = try #require(timed.first)
+        #expect(review.calendar?.allowsContentModifications == true, "the contrast event must stay writable")
+        #expect(CadenceEventNoteSupport.canMirrorNotes(to: review))
+        #if os(macOS)
+        #expect(CalendarEventEditPopover.isEditable(holiday) == false)
+        #expect(CalendarEventEditPopover.isEditable(review))
+        #endif
+
+        // Today only, like every scenario but calendar-sleep.
+        let tomorrow = try #require(Calendar.current.date(byAdding: .day, value: 1, to: Date()))
+        #expect(CadenceCalendarFixtureEvents.allDayEvents(for: tomorrow, in: Self.readOnlyActive)?.isEmpty == true)
+    }
+
+    /// **The row the ticket could not see.** On a fixture launch both managers hand the editors
+    /// empty calendar lists, so the shared builder must add the served calendars itself: the
+    /// holiday's row reads "Holidays (Read-only)" and the writable event is offered `Work` and
+    /// never `Holidays`. Outside the gate the builder adds nothing — the same call with an empty
+    /// environment leaves the holiday's calendar unlisted, which is exactly what a shipping launch
+    /// would do with a calendar it was not handed.
+    @Test func theEditorsCalendarRowNamesTheFixtureHolidayReadOnly() throws {
+        // Another scenario's events held in this process first, so "this scenario's alone" below is
+        // asked of a process that really holds more than one scenario's calendars.
+        _ = try #require(CadenceCalendarFixtureEvents.timedEvents(for: Date(), in: Self.active))
+        let allDay = try #require(CadenceCalendarFixtureEvents.allDayEvents(for: Date(), in: Self.readOnlyActive))
+        let timed = try #require(CadenceCalendarFixtureEvents.timedEvents(for: Date(), in: Self.readOnlyActive))
+        let holidayID = try #require(allDay.first?.calendar?.calendarIdentifier)
+        let workID = try #require(timed.first?.calendar?.calendarIdentifier)
+        #expect(!holidayID.isEmpty && holidayID != workID)
+
+        let served = CadenceCalendarFixtureEvents.servedCalendars(in: Self.readOnlyActive)
+        #expect(Set(served.map(\.calendarIdentifier)) == [holidayID, workID],
+                "served calendars must be this scenario's alone, whatever else the process has asked for")
+        #expect(CadenceCalendarFixtureEvents.servedCalendars(in: [:]).isEmpty)
+
+        let holidayRows = CadenceEventEditorCalendarChoices.choices(
+            selectedID: holidayID, availableCalendars: [], writableCalendars: [], environment: Self.readOnlyActive
+        )
+        #expect(holidayRows.first { $0.id == holidayID }?.name == "Holidays (Read-only)")
+        #expect(holidayRows.map(\.name).sorted() == ["Holidays (Read-only)", "Work"])
+
+        let workRows = CadenceEventEditorCalendarChoices.choices(
+            selectedID: workID, availableCalendars: [], writableCalendars: [], environment: Self.readOnlyActive
+        )
+        #expect(workRows.map(\.name) == ["Work"])
+
+        let shipping = CadenceEventEditorCalendarChoices.choices(
+            selectedID: holidayID, availableCalendars: [], writableCalendars: [], environment: [:]
+        )
+        #expect(shipping.count == 1)
+        #expect(shipping.first?.name != "Holidays (Read-only)")
     }
 
     // MARK: - 3d. The calendar-sleep scenario (T-17622)
