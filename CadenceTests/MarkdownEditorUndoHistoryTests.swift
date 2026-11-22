@@ -434,6 +434,29 @@ struct MarkdownEditorUndoHistoryTests {
         harness.view.markdownTaskEmbeds[task.id] = MarkdownTaskEmbedRenderInfo.task(task)
     }
 
+    /// One outside-rename sync delivered as the app's event loop delivers it ([[T-18712]]):
+    /// `groupsByEvent` on, so a registration made outside any group opens the event's own group
+    /// lazily, and that group closed as the event ends. Not a group opened around the call: that
+    /// would put the sync under `MarkdownReferenceTitleSyncUndo`'s already-grouped rule and make it
+    /// a step of its own, the very thing these tests catch. Without this, a write that skipped the
+    /// sync registered with no group open, `NSUndoManager` raised, AppKit swallowed it, and the
+    /// test hung instead of failing.
+    ///
+    /// The close is Foundation's own end-of-event close. The test host never delivers that itself
+    /// (measured: neither a run-loop turn, a main-actor yield nor a posted `NSEvent` closed the
+    /// group), and a plain `endUndoGrouping()` leaves the manager still expecting it, so the next
+    /// event's lazy open raises -- under mutant M5 the second sync in
+    /// `aHoverExitAfterAnUndoKeepsTheRedo` hung exactly so. Where the selector is missing the plain close stands in; every test passes on
+    /// it, only a mutant's second write would hang.
+    private static func asOneEvent(_ manager: UndoManager, _ body: () -> Void) {
+        manager.groupsByEvent = true
+        body()
+        let endEvent = Selector(("_endEventGroupingIfOpen"))
+        if manager.responds(to: endEvent) { _ = manager.perform(endEvent) }
+        while manager.groupingLevel > 0 { manager.endUndoGrouping() }
+        manager.groupsByEvent = false
+    }
+
     /// The defect: type, rename the task in its popover, close it, Cmd+Z -- the press took back the
     /// hidden reference title and left the typing. Now the press takes the typing back (the
     /// reference reads as it did then), the next press the typing before it, and redo replays both
@@ -445,7 +468,7 @@ struct MarkdownEditorUndoHistoryTests {
         Self.type(" two", atEndOf: harness.view, in: harness.manager)
 
         try Self.renameOutsideTheNote(task, to: "Oat milk", in: harness)
-        harness.handlers.reconcileEmbeddedTaskReferenceTitles()
+        Self.asOneEvent(harness.manager) { harness.handlers.reconcileEmbeddedTaskReferenceTitles() }
         #expect(harness.view.string == "Buy [[task:\(id)|Oat milk]] today one two")
 
         harness.manager.undo()
@@ -473,7 +496,7 @@ struct MarkdownEditorUndoHistoryTests {
         Self.type(" abc", atEndOf: harness.view, in: harness.manager)
 
         try Self.renameOutsideTheNote(task, to: "Oat milk", in: harness)
-        harness.handlers.refreshEmbeddedTask(task)
+        Self.asOneEvent(harness.manager) { harness.handlers.refreshEmbeddedTask(task) }
         #expect(harness.view.string == "Buy [[task:\(id)|Oat milk]] today abc")
         Self.type(" def", atEndOf: harness.view, in: harness.manager)
 
@@ -492,17 +515,19 @@ struct MarkdownEditorUndoHistoryTests {
         let scope = TaskNotesEmbedScope(referenceTasks: [task], embedTarget: .coreNotes, modelContext: harness.modelContext)
         Self.type(" abc", atEndOf: harness.view, in: harness.manager)
         try Self.renameOutsideTheNote(task, to: "Oat milk", in: harness)
-        harness.handlers.reconcileEmbeddedTaskReferenceTitles()
+        Self.asOneEvent(harness.manager) { harness.handlers.reconcileEmbeddedTaskReferenceTitles() }
 
         harness.manager.undo()
         #expect(harness.view.string == "Buy [[task:\(id)|Milk]] today")
-        harness.handlers.hoverEmbeddedTask(
-            id: task.id,
-            hovering: false,
-            in: scope,
-            hoveredTaskManager: .shared,
-            hoveredEditableManager: .shared
-        )
+        Self.asOneEvent(harness.manager) {
+            harness.handlers.hoverEmbeddedTask(
+                id: task.id,
+                hovering: false,
+                in: scope,
+                hoveredTaskManager: .shared,
+                hoveredEditableManager: .shared
+            )
+        }
         #expect(harness.view.string == "Buy [[task:\(id)|Milk]] today")
         #expect(harness.manager.canRedo, "a hover exit emptied the redo stack")
 
@@ -514,7 +539,7 @@ struct MarkdownEditorUndoHistoryTests {
     @Test func aSyncIntoAnUntouchedNoteAddsNoUndoStep() throws {
         let (harness, task) = try Self.renameHarness()
         try Self.renameOutsideTheNote(task, to: "Oat milk", in: harness)
-        harness.handlers.reconcileEmbeddedTaskReferenceTitles()
+        Self.asOneEvent(harness.manager) { harness.handlers.reconcileEmbeddedTaskReferenceTitles() }
         #expect(harness.view.string == "Buy [[task:\(task.id.uuidString)|Oat milk]] today")
         #expect(harness.manager.canUndo == false)
     }
@@ -533,7 +558,7 @@ struct MarkdownEditorUndoHistoryTests {
         let id = task.id
 
         try Self.renameOutsideTheNote(task, to: "Oat milk", in: harness)
-        harness.handlers.refreshEmbeddedTask(task)
+        Self.asOneEvent(harness.manager) { harness.handlers.refreshEmbeddedTask(task) }
         #expect(harness.view.string.contains("[[task:\(id.uuidString)|Oat milk]]"))
 
         harness.manager.undo()
@@ -560,7 +585,7 @@ struct MarkdownEditorUndoHistoryTests {
         let task = try #require(try harness.tasks(titled: "Milk").first)
         task.priority = .high
         try Self.renameOutsideTheNote(task, to: "Oat milk", in: harness)
-        harness.handlers.refreshEmbeddedTask(task)
+        Self.asOneEvent(harness.manager) { harness.handlers.refreshEmbeddedTask(task) }
 
         harness.manager.undo()
         #expect(harness.view.string == "( ) Milk")
@@ -600,7 +625,7 @@ struct MarkdownEditorUndoHistoryTests {
         harness.view.commitInlineTaskRename(id: task.id, typed: "Eggs")
         harness.manager.endUndoGrouping()
         try Self.renameOutsideTheNote(task, to: "Oat milk", in: harness)
-        harness.handlers.refreshEmbeddedTask(task)
+        Self.asOneEvent(harness.manager) { harness.handlers.refreshEmbeddedTask(task) }
         #expect(harness.view.string == "Buy [[task:\(id)|Oat milk]] today")
 
         harness.manager.undo()
