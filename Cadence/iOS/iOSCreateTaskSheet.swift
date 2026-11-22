@@ -20,6 +20,8 @@ struct iOSCreateTaskSheet: View {
     /// The card panel standing open, held here so Escape closes it before the composer
     /// ([[T-18083]], the Mac's [[T-16041]] rule). The card mirrors it through `activeField`.
     @State private var openField: CadenceCaptureField?
+    /// Cmd+Shift+T / Cmd+Shift+D: the card panel to open ([[T-18540]], the Mac's [[T-13792]] pair).
+    @State private var fieldRequest: CadenceCaptureField?
     /// [[T-5174]] (b): the draft as `onAppear`'s opening normalisation left it, against which a
     /// swipe-down is refused. `nil` until then, so the normalisation itself is never read as typing.
     @State private var openedDraft: CadenceCreateTaskDraftSnapshot?
@@ -62,6 +64,7 @@ struct iOSCreateTaskSheet: View {
                 },
                 selectedTagIDs: $selectedTagIDs,
                 createTag: createTag,
+                fieldRequest: $fieldRequest,
                 activeField: $openField
             ))
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardHeight = $0 + 24 }
@@ -70,6 +73,8 @@ struct iOSCreateTaskSheet: View {
             .frame(maxWidth: .infinity)
         }
         .iOSCaptureKeyboardCommands(
+            draft: $draft,
+            fieldRequest: $fieldRequest,
             commit: { actionError = create() },
             cancel: { iOSCaptureKeyboardCancel(openField: &openField, dismiss: { dismiss() }) }
         )
@@ -264,27 +269,50 @@ struct iOSCreateTaskSheet: View {
     }
 }
 
-/// **[[T-18083]]: the capture composer's hardware-keyboard keys on iPad, the Mac's own two.**
+/// **[[T-18083]] / [[T-18540]]: the capture composer's hardware-keyboard keys on iPad, the Mac's.**
 /// Cmd+N opens this composer ([[T-13281]]), so it is the one sheet a keyboard user opens BY
-/// keyboard; the Mac's `CreateTaskSheet` commits on Cmd+Return and cancels on Escape, and under
-/// [[T-8201]] a hardware keyboard is the reason the platforms may differ, which argues for the same
-/// keys here. Cmd+Return matters because Return in the notes field is a newline. Zero-size,
-/// transparent buttons in `iOSRootView`'s Cmd+K / Cmd+N form rather than `.hidden()`, which can
-/// drop a button's shortcut; titled, so the Cmd-hold overlay lists them. Applied by both hosts of
-/// the capture card, `iOSCreateTaskSheet` and `iOSCalendarQuickCreateSheet`.
+/// keyboard, and under [[T-8201]] a hardware keyboard is the same input on both platforms. So it
+/// answers the Mac `CreateTaskSheet`'s nine keys: Cmd+Return creates and Escape cancels
+/// ([[T-18083]]); Cmd+T / Cmd+D set or clear today as the do and due date, Cmd+Shift+T /
+/// Cmd+Shift+D open the card's Do and Due panels through its `fieldRequest`, Cmd+P cycles
+/// priority, and Cmd+Shift+= / Cmd+Shift+- nudge the do date a day ([[T-18540]]: it had only the
+/// first two). The draft edits are the shared `CreateTaskKeyboardCommands` the Mac's buttons call.
+/// None needs hover -- each acts on the open draft, not a row. Cmd+Return matters because Return
+/// in the notes field is a newline. Zero-size, transparent buttons in `iOSRootView`'s Cmd+K /
+/// Cmd+N form rather than `.hidden()`, which can drop a button's shortcut; titled, so the Cmd-hold
+/// overlay lists them. Applied by both hosts of the capture card, `iOSCreateTaskSheet` and
+/// `iOSCalendarQuickCreateSheet`.
 extension View {
-    func iOSCaptureKeyboardCommands(commit: @escaping () -> Void, cancel: @escaping () -> Void) -> some View {
+    func iOSCaptureKeyboardCommands(
+        draft: Binding<CadenceScheduleDraft>,
+        fieldRequest: Binding<CadenceCaptureField?>,
+        commit: @escaping () -> Void,
+        cancel: @escaping () -> Void
+    ) -> some View {
         background {
-            Button("Create", action: commit)
-                .keyboardShortcut(.return, modifiers: [.command])
-                .opacity(0)
-                .frame(width: 0, height: 0)
-                .accessibilityHidden(true)
-            Button("Cancel", action: cancel)
-                .keyboardShortcut(.cancelAction)
-                .opacity(0)
-                .frame(width: 0, height: 0)
-                .accessibilityHidden(true)
+            Group {
+                Button("Create", action: commit)
+                    .keyboardShortcut(.return, modifiers: [.command])
+                Button("Cancel", action: cancel)
+                    .keyboardShortcut(.cancelAction)
+                Button("Do Today") { CreateTaskKeyboardCommands.toggleDoToday(&draft.wrappedValue) }
+                    .keyboardShortcut("t", modifiers: .command)
+                Button("Do Date") { fieldRequest.wrappedValue = .doDate }
+                    .keyboardShortcut("t", modifiers: [.command, .shift])
+                Button("Due Today") { CreateTaskKeyboardCommands.toggleDueToday(&draft.wrappedValue) }
+                    .keyboardShortcut("d", modifiers: .command)
+                Button("Due Date") { fieldRequest.wrappedValue = .dueDate }
+                    .keyboardShortcut("d", modifiers: [.command, .shift])
+                Button("Next Priority") { CreateTaskKeyboardCommands.cyclePriority(&draft.wrappedValue) }
+                    .keyboardShortcut("p", modifiers: .command)
+                Button("Do Date a Day Later") { CreateTaskKeyboardCommands.nudgeDoDate(&draft.wrappedValue, by: 1) }
+                    .keyboardShortcut("=", modifiers: [.command, .shift])
+                Button("Do Date a Day Earlier") { CreateTaskKeyboardCommands.nudgeDoDate(&draft.wrappedValue, by: -1) }
+                    .keyboardShortcut("-", modifiers: [.command, .shift])
+            }
+            .opacity(0)
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
         }
     }
 }

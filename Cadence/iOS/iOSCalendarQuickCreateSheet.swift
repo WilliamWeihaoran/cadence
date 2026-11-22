@@ -50,6 +50,8 @@ struct iOSCalendarQuickCreateSheet: View {
     @State private var actionError: String?
     /// [[T-18083]]: the card panel standing open, so Escape closes it before the sheet.
     @State private var openField: CadenceCaptureField?
+    /// [[T-18540]]: Cmd+Shift+T / Cmd+Shift+D's card panel to open, as on the `+` composer.
+    @State private var fieldRequest: CadenceCaptureField?
 
     /// `initialKind` is what the capture palette's **Event** segment needs: the kind switch is
     /// still there and still switches, but a palette that says "Event" and opens on Task would be
@@ -105,13 +107,15 @@ struct iOSCalendarQuickCreateSheet: View {
             ) {
                 calendarAccessRequest
             }
-            .capturePresentation(CadenceScheduleCaptureOptions(activeField: $openField))
+            .capturePresentation(CadenceScheduleCaptureOptions(fieldRequest: $fieldRequest, activeField: $openField))
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardHeight = $0 + 24 }
             .frame(maxWidth: 540)
             .padding(12)
             .frame(maxWidth: .infinity)
         }
         .iOSCaptureKeyboardCommands(
+            draft: $draft,
+            fieldRequest: $fieldRequest,
             commit: { actionError = create() },
             cancel: { iOSCaptureKeyboardCancel(openField: &openField, dismiss: { dismiss() }) }
         )

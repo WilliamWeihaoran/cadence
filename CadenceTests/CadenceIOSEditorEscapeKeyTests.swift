@@ -104,19 +104,23 @@ struct CadenceIOSEditorEscapeKeyTests {
     /// in the notice the panel draws, and Escape through the panel-first cancel over the host's own
     /// copy of the open panel -- the Mac `CreateTaskSheet`'s keys and [[T-16041]]'s rule.
     private static let keyboardLayer =
-        ".iOSCaptureKeyboardCommands(commit:{actionError=create()},cancel:{iOSCaptureKeyboardCancel(openField:&openField,dismiss:{dismiss()})})"
+        ".iOSCaptureKeyboardCommands(draft:$draft,fieldRequest:$fieldRequest,commit:{actionError=create()},cancel:{iOSCaptureKeyboardCancel(openField:&openField,dismiss:{dismiss()})})"
 
     @Test func plusComposerTakesCommandReturnAndEscape() throws {
         let sheet = try Self.compactBody("struct iOSCreateTaskSheet: View", in: Self.createTaskPath)
         #expect(sheet.contains(Self.keyboardLayer), "Cmd+N's composer must take the Mac composer's two keys")
         #expect(sheet.contains("activeField:$openField"), "the open panel must be the host's, so Escape can see it")
+        #expect(
+            sheet.contains("fieldRequest:$fieldRequest,activeField:$openField"),
+            "[[T-18540]]: Cmd+Shift+T / Cmd+Shift+D ask the card for a panel through its fieldRequest"
+        )
         #expect(sheet.contains("failureNotice:actionError"))
     }
 
     @Test func calendarQuickCreateTakesCommandReturnAndEscape() throws {
         let sheet = try Self.compactBody("struct iOSCalendarQuickCreateSheet: View", in: Self.quickCreatePath)
         #expect(sheet.contains(Self.keyboardLayer), "the same card from a calendar slot takes the same keys")
-        #expect(sheet.contains("CadenceScheduleCaptureOptions(activeField:$openField)"))
+        #expect(sheet.contains("CadenceScheduleCaptureOptions(fieldRequest:$fieldRequest,activeField:$openField)"))
         #expect(sheet.contains("failureNotice:actionError"), "a keyboard refusal must be drawn, not dropped")
     }
 
@@ -124,7 +128,9 @@ struct CadenceIOSEditorEscapeKeyTests {
         let layer = try Self.compactBody("func iOSCaptureKeyboardCommands(", in: Self.createTaskPath)
         #expect(layer.contains(#"Button("Create",action:commit).keyboardShortcut(.return,modifiers:[.command])"#))
         #expect(layer.contains(#"Button("Cancel",action:cancel).keyboardShortcut(.cancelAction)"#))
-        #expect(Self.count(".keyboardShortcut(", in: layer) == 2, "only these two keys")
+        // [[T-18540]]: the Mac composer's other seven chords ride the same layer; their bindings are
+        // pinned in `CadenceCaptureKeyboardChordTests`.
+        #expect(Self.count(".keyboardShortcut(", in: layer) == 9, "the Mac composer's nine keys")
         #expect(!layer.contains(".hidden()"), "`.hidden()` can drop a button's shortcut")
     }
 
