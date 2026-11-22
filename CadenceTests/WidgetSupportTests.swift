@@ -492,6 +492,41 @@ struct WidgetSupportTests {
         #expect(done.completedAt == Date(timeIntervalSince1970: 100))
     }
 
+    /// [[T-18527]]: a completion that lands withdraws exactly that task's two reminders, pending and
+    /// delivered (the recorder stands in for the centre); a no-op -- already done, cancelled,
+    /// unknown or malformed id -- withdraws nothing, so the widget never strips a reminder from a
+    /// task it did not change.
+    @Test func completeTaskIntentWithdrawsTheCompletedTasksRemindersAndNothingOnANoOp() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let active = AppTask(title: "due today")
+        let cancelled = AppTask(title: "cancelled")
+        cancelled.status = .cancelled
+        let done = AppTask(title: "done")
+        done.status = .done
+        done.completedAt = Date(timeIntervalSince1970: 100)
+        modelContext.insert(active)
+        modelContext.insert(cancelled)
+        modelContext.insert(done)
+        try modelContext.save()
+
+        let recorder = RecordingTaskReminderWithdrawal()
+        #expect(try CompleteTaskIntent.completeTask(taskID: active.id.uuidString, in: modelContext, reminders: recorder))
+        #expect(recorder.calls == [[active.id]])
+        #expect(
+            NotificationIdentifiers.taskReminders(taskIDs: [active.id])
+                == ["task-start-\(active.id.uuidString)", "task-due-\(active.id.uuidString)"]
+        )
+
+        let noOps = [active.id.uuidString, done.id.uuidString, cancelled.id.uuidString, UUID().uuidString, "not-a-uuid"]
+        for id in noOps {
+            let noOp = RecordingTaskReminderWithdrawal()
+            #expect(try CompleteTaskIntent.completeTask(taskID: id, in: modelContext, reminders: noOp) == false)
+            #expect(noOp.calls.isEmpty, "a no-op completion of \(id) withdrew \(noOp.calls)")
+        }
+    }
+
     /// [[T-18097]]: the widget's checkmark runs `CompleteTaskIntent` through `Button(intent:)`,
     /// which needs no discoverable intent. Published, Shortcuts offered a "Complete Task" action
     /// whose only field was a raw task UUID; the sibling `CaptureTaskIntent` stays a real action.
@@ -1403,3 +1438,12 @@ private func widgetTargetSourcesPhase() throws -> String {
 }
 
 #endif
+
+/// [[T-18527]]: stands in for the notification centre behind `CompleteTaskIntent`'s withdrawal.
+private final class RecordingTaskReminderWithdrawal: CadenceTaskReminderWithdrawing, @unchecked Sendable {
+    private(set) var calls: [[UUID]] = []
+
+    func withdrawReminders(taskIDs: [UUID]) {
+        calls.append(taskIDs)
+    }
+}

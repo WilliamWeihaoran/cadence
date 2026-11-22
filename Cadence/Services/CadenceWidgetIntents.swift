@@ -95,8 +95,22 @@ struct CompleteTaskIntent: AppIntent {
         return .result()
     }
 
+    /// Marks the task done and saves; `true` only when that write landed.
+    ///
+    /// **[[T-18527]]: a landed completion withdraws the task's reminders here**, pending and
+    /// delivered, through `reminders` (the real centre unless a test hands in a recorder). Nothing
+    /// else would: `publish` only posts the marker, iOS has no marker watch, and a quit Mac app
+    /// reconciles nothing, so "Due today" / "Starting now" kept firing for a task the widget
+    /// already showed done. Cancelling needs no setting, so this is not the reconcile the header
+    /// above keeps out of the extension. A no-op completion (unknown id, cancelled, already done)
+    /// withdraws nothing. A repeating task's successor still gets its reminder only when the app
+    /// next reconciles -- scheduling needs `notificationsEnabled`, which only the app can read.
     @discardableResult
-    static func completeTask(taskID: String, in modelContext: ModelContext) throws -> Bool {
+    static func completeTask(
+        taskID: String,
+        in modelContext: ModelContext,
+        reminders: any CadenceTaskReminderWithdrawing = CadenceSystemTaskReminderWithdrawal()
+    ) throws -> Bool {
         guard let uuid = UUID(uuidString: taskID) else { return false }
 
         let predicate = #Predicate<AppTask> { task in
@@ -111,6 +125,7 @@ struct CompleteTaskIntent: AppIntent {
         // from a widget button or the "Complete Task" App Intent still spawns the next occurrence.
         CadenceTaskRecurrenceWorkflowSupport.markDone(task, in: modelContext)
         try modelContext.save()
+        reminders.withdrawReminders(taskIDs: [uuid])
         return true
     }
 }

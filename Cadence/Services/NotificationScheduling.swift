@@ -59,57 +59,6 @@ nonisolated struct CadenceNotificationRequest: Equatable {
     }
 }
 
-/// Centralizes deterministic notification identifier formats so the scheduler (add) and the
-/// canceller (remove) can never drift apart on ID format.
-nonisolated enum NotificationIdentifiers {
-    static func taskStart(taskID: UUID) -> String {
-        "task-start-\(taskID.uuidString)"
-    }
-
-    static func taskDue(taskID: UUID) -> String {
-        "task-due-\(taskID.uuidString)"
-    }
-
-    /// **Kept after [[T-2081]] retired habit reminders, and load-bearing rather than vestigial.**
-    ///
-    /// Nothing *schedules* one any more, but the owner's device still holds the ones an older
-    /// build registered. This is the only spelling of the identifier they carry, so it is what
-    /// `CadenceRetiredHabitReminderPurge` keys its removal on. Deleting it would leave those
-    /// pending requests with no name the app can say.
-    static func habitReminder(habitID: UUID) -> String {
-        "habit-reminder-\(habitID.uuidString)"
-    }
-
-    /// Whether an identifier belongs to Cadence's reconciled set. Anything else pending in the
-    /// notification centre is somebody else's and must survive a reconcile untouched.
-    ///
-    /// **`habit-reminder-` must stay in this list ([[T-2081]]).** It reads like dead vocabulary now
-    /// that no habit reminder is ever planned, and dropping it is the one "tidy-up" that would make
-    /// the retirement worse instead of better: `NotificationReconcileDiff.make` removes managed
-    /// pending identifiers that are not desired, and `cancelAll` removes managed ones outright, so
-    /// while the prefix is managed *every* reconcile sweeps the stale reminders an older build
-    /// left. Unmanaging it reclassifies them as "somebody else's", and both sweeps would then
-    /// deliberately preserve the thing this ticket exists to remove.
-    nonisolated static func isManaged(_ identifier: String) -> Bool {
-        identifier.hasPrefix("task-start-") || identifier.hasPrefix("task-due-") || identifier.hasPrefix("habit-reminder-")
-    }
-}
-
-extension NotificationIdentifiers {
-    /// The task a task reminder's identifier names, or `nil` for any other identifier.
-    ///
-    /// **[[T-3049]] (1).** The identifier has always carried the task's UUID, so it is the one
-    /// field a reminder registered by an *older* build — before `userInfo` carried a link — still
-    /// has. `NotificationTapRoute` falls back to it for exactly those. A `habit-reminder-` id names
-    /// a habit, not a task, and answers `nil`.
-    nonisolated static func taskID(fromIdentifier identifier: String) -> UUID? {
-        for prefix in ["task-start-", "task-due-"] where identifier.hasPrefix(prefix) {
-            return UUID(uuidString: String(identifier.dropFirst(prefix.count)))
-        }
-        return nil
-    }
-}
-
 /// What a reminder carries so a tap can open the task it is about, and what a tap opens.
 ///
 /// **[[T-3049]] (1).** A reminder used to carry title, body and sound and nothing else, and the

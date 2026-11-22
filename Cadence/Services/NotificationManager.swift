@@ -376,9 +376,7 @@ final class NotificationManager: NSObject {
     /// this one, so the two cannot drift.
     func withdrawRemindersNow(taskIDs: [UUID]) {
         guard centreIsInjected || !Self.isTestEnvironment, !taskIDs.isEmpty else { return }
-        let identifiers = taskIDs.flatMap {
-            [NotificationIdentifiers.taskStart(taskID: $0), NotificationIdentifiers.taskDue(taskID: $0)]
-        }
+        let identifiers = NotificationIdentifiers.taskReminders(taskIDs: taskIDs)
         centre.removePending(withIdentifiers: identifiers)
         centre.removeDelivered(withIdentifiers: identifiers)
     }
@@ -491,13 +489,12 @@ final class NotificationManager: NSObject {
     /// and UI tests never trigger a real OS permission prompt or schedule real notifications.
     /// Also skips Xcode's SwiftUI Preview host process — `UNUserNotificationCenter.current()` is a
     /// well-known source of crashes there since preview hosts lack a normal app bundle identity.
+    ///
+    /// [[T-18527]]: the predicate itself is `CadenceNotificationProcessGate`, which the widget
+    /// target also compiles, so this door and the widget's reminder withdrawal refuse the same
+    /// processes.
     static var isTestEnvironment: Bool {
-        let environment = ProcessInfo.processInfo.environment
-        if environment["XCTestConfigurationFilePath"] != nil { return true }
-        if environment["XCTestSessionIdentifier"] != nil { return true }
-        if environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" { return true }
-        if CadenceUITestSupport.isEnabled { return true }
-        return false
+        !CadenceNotificationProcessGate.mayReachTheCentre(in: ProcessInfo.processInfo.environment)
     }
 }
 

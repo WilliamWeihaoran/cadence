@@ -25,6 +25,9 @@ import Testing
 struct CadenceAgentOperatingRuleTests {
 
     private static let notificationManagerPath = "Cadence/Services/NotificationManager.swift"
+    /// [[T-18527]]: the widget-compilable door. `CompleteTaskIntent` runs in the widget extension,
+    /// which cannot compile `NotificationManager`, and has to withdraw a completed task's reminders.
+    private static let reminderWithdrawalPath = "Cadence/Services/CadenceTaskReminderWithdrawal.swift"
     private static let providerPath = "Cadence/Services/AI/AIProvider.swift"
 
     // MARK: - Never schedule a notification out of a process the guard does not cover
@@ -33,6 +36,11 @@ struct CadenceAgentOperatingRuleTests {
     ///
     /// Stated as an equality rather than as "no offenders": the file that must be in the answer is
     /// the non-vacuity claim, and a detector gone blind reports the empty set.
+    ///
+    /// **[[T-18527]]: two files, and the second is a narrower door, not a second scheduler.**
+    /// `CadenceTaskReminderWithdrawal.swift` exists because the widget target cannot compile the
+    /// manager and the Today widget's checkmark must withdraw the task it completes. It removes and
+    /// never adds, which `theWidgetReminderDoorOnlyWithdrawsBehindTheProcessGate` holds it to.
     @Test func theOnlyFileInTheAppThatReachesTheNotificationCentreIsTheGuardedManager() throws {
         let instrument = try CadenceScanInstrument(
             "names the OS notification centre",
@@ -51,13 +59,29 @@ struct CadenceAgentOperatingRuleTests {
         )
 
         #expect(
-            reached == [Self.notificationManagerPath],
+            reached == [Self.reminderWithdrawalPath, Self.notificationManagerPath],
             """
-            \(reached) reaches UNUserNotificationCenter outside NotificationManager, which is the \
-            one type that guards on isTestEnvironment. A second door schedules real notifications \
+            \(reached) reaches UNUserNotificationCenter outside NotificationManager and the widget's \
+            withdraw-only door, the two that guard on the test environment. A second door schedules real notifications \
             to the user's Notification Center under the app's bundle id (T-1386).
             """
         )
+    }
+
+    /// **[[T-18527]].** The widget's door names the centre in one place, removes the two task
+    /// identifiers pending and delivered, adds nothing, and is behind the same process gate the
+    /// manager's `isTestEnvironment` negates.
+    @Test func theWidgetReminderDoorOnlyWithdrawsBehindTheProcessGate() throws {
+        let stripped = try CadenceCommitSurfaceScan.scanned(Self.reminderWithdrawalPath)
+
+        #expect(stripped.components(separatedBy: "UNUserNotificationCenter.current()").count - 1 == 1)
+        #expect(stripped.contains("centre.removePendingNotificationRequests(withIdentifiers: identifiers)"))
+        #expect(stripped.contains("centre.removeDeliveredNotifications(withIdentifiers: identifiers)"))
+        for scheduling in [".add(", "requestAuthorization", "setNotificationCategories", ".delegate"] {
+            #expect(!stripped.contains(scheduling), "the widget door must not \(scheduling)")
+        }
+        #expect(stripped.contains("CadenceNotificationProcessGate.mayReachTheCentre(in: ProcessInfo.processInfo.environment)"))
+        #expect(!CadenceNotificationProcessGate.mayReachTheCentre(in: ProcessInfo.processInfo.environment))
     }
 
     /// Every declaration that touches the centre guards on `isTestEnvironment`, and `center` stays
@@ -146,13 +170,23 @@ struct CadenceAgentOperatingRuleTests {
             CadenceSourceScan.declarationBody("static var isTestEnvironment: Bool", in: stripped),
             "isTestEnvironment is no longer declared the way this assertion reads it"
         )
-        for key in [
-            "XCTestConfigurationFilePath",
-            "XCTestSessionIdentifier",
-            "XCODE_RUNNING_FOR_PREVIEWS",
-            "CadenceUITestSupport.isEnabled",
+        // [[T-18527]]: the predicate moved to `CadenceNotificationProcessGate`, which the widget
+        // target compiles too; `isTestEnvironment` is its negation, and the gate is driven below.
+        #expect(
+            body.contains("!CadenceNotificationProcessGate.mayReachTheCentre(in: ProcessInfo.processInfo.environment)"),
+            "isTestEnvironment no longer negates CadenceNotificationProcessGate"
+        )
+        #expect(CadenceNotificationProcessGate.mayReachTheCentre(in: [:]))
+        for refusing in [
+            ["XCTestConfigurationFilePath": "/x.xctestconfiguration"],
+            ["XCTestSessionIdentifier": "session"],
+            ["XCODE_RUNNING_FOR_PREVIEWS": "1"],
+            ["CADENCE_UI_TEST_MODE": "1"],
         ] {
-            #expect(body.contains(key), "isTestEnvironment no longer consults \(key)")
+            #expect(
+                !CadenceNotificationProcessGate.mayReachTheCentre(in: refusing),
+                "the notification gate no longer refuses \(refusing)"
+            )
         }
     }
 
