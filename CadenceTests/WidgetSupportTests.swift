@@ -1437,8 +1437,6 @@ private func widgetTargetSourcesPhase() throws -> String {
     return widgetBlocks.first ?? ""
 }
 
-#endif
-
 /// [[T-18527]]: stands in for the notification centre behind `CompleteTaskIntent`'s withdrawal.
 private final class RecordingTaskReminderWithdrawal: CadenceTaskReminderWithdrawing, @unchecked Sendable {
     private(set) var calls: [[UUID]] = []
@@ -1447,3 +1445,5 @@ private final class RecordingTaskReminderWithdrawal: CadenceTaskReminderWithdraw
         calls.append(taskIDs)
     }
 }
+
+#endif
