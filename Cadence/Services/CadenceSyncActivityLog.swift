@@ -36,7 +36,13 @@ protocol CadenceSyncActivityEventStream: AnyObject {
 @MainActor
 @Observable
 final class CadenceSyncActivityLog {
-    static let shared = CadenceSyncActivityLog(stream: CadenceCloudKitMirroringEventStream())
+    static let shared = CadenceSyncActivityLog(
+        stream: CadenceCloudKitMirroringEventStream(),
+        reloadWidgets: {
+            guard !NotificationManager.isTestEnvironment else { return }
+            CadenceWidgetStoreChangeReloader.outOfProcessWrites.storeDidSave()
+        }
+    )
 
     private(set) var summary: CadenceSyncActivitySummary = .empty
 
@@ -48,8 +54,17 @@ final class CadenceSyncActivityLog {
     @ObservationIgnored private var pendingFirstCompletedImportWork: (@MainActor () -> Void)?
     @ObservationIgnored private(set) var hasObservedCompletedImport = false
 
-    init(stream: CadenceSyncActivityEventStream) {
+    /// [[T-19079]]. Asks the widgets to redraw after an import pass lands. An import is written by
+    /// the mirroring container's own context and merged, not saved, by the app's, so no
+    /// `ModelContext.didSave` fires for it, and a backgrounded iPhone changes no scene phase: a
+    /// task ticked on the other device stayed on this one's widget for its whole timeline. Unlike
+    /// the reminder reconcile [[T-3046]] withholds from sync, a reload deletes nothing and the next
+    /// one corrects a partial picture. Defaults to nothing, so a test's log stamps no app group.
+    @ObservationIgnored private let reloadWidgets: @MainActor () -> Void
+
+    init(stream: CadenceSyncActivityEventStream, reloadWidgets: @escaping @MainActor () -> Void = {}) {
         self.stream = stream
+        self.reloadWidgets = reloadWidgets
     }
 
     /// Called from both app delegates' launch, beside
@@ -103,9 +118,11 @@ final class CadenceSyncActivityLog {
         summary = summary.applying(event)
         guard event.phase == .import, event.endDate != nil, event.succeeded else { return }
         hasObservedCompletedImport = true
-        guard let work = pendingFirstCompletedImportWork else { return }
-        pendingFirstCompletedImportWork = nil
-        work()
+        if let work = pendingFirstCompletedImportWork {
+            pendingFirstCompletedImportWork = nil
+            work()
+        }
+        reloadWidgets()
     }
 }
 

@@ -551,6 +551,42 @@ struct CadenceSyncActivityTests {
         #expect(runs == 1, "the fixture cannot open the gate at all, so the refusals above say nothing")
     }
 
+    /// **[[T-19079]]: a completed import reloads the widgets, and nothing else does.** An import is
+    /// merged, not saved, by the app's contexts, so it reaches no `ModelContext.didSave` reloader,
+    /// and a backgrounded iPhone changes no scene phase. The begin half, an in-flight pass claiming
+    /// success, a failed import, an export and a setup each bring nothing down and reload nothing;
+    /// every completed import does, not only the first (the latch above is one-shot, this is not).
+    @Test func everyCompletedImportReloadsTheWidgetsAndNothingElseDoes() throws {
+        var reloads = 0
+        let log = CadenceSyncActivityLog(stream: CadenceSyncActivityTestStream(), reloadWidgets: { reloads += 1 })
+
+        let identifier = UUID()
+        log.record(began(.import, at: try moment(12, 0), identifier: identifier))
+        log.record(CadenceSyncActivityEvent(phase: .import, startDate: try moment(12, 1), succeeded: true))
+        log.record(finished(.import, endingAt: try moment(12, 2), succeeded: false, error: "offline"))
+        log.record(finished(.export, endingAt: try moment(12, 3)))
+        log.record(finished(.setup, endingAt: try moment(12, 4)))
+        #expect(reloads == 0, "a pass that brought nothing down reloaded the widgets")
+
+        log.record(finished(.import, endingAt: try moment(12, 5), identifier: identifier))
+        #expect(reloads == 1, "a completed import left the widgets drawing the old store (T-19079)")
+
+        log.record(finished(.import, endingAt: try moment(12, 30)))
+        #expect(reloads == 2, "only the first import of the launch reloaded the widgets")
+    }
+
+    /// The app's log, not a test's, has to reach a reload, through the shared coalescing reloader
+    /// and never in a test host.
+    @Test func theAppsLogReloadsThroughTheOutOfProcessReloader() throws {
+        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/Services/CadenceSyncActivityLog.swift"))
+        let shared = try #require(source.range(of: "static let shared = CadenceSyncActivityLog("))
+        let tail = source[shared.upperBound...]
+        let end = try #require(tail.range(of: "private(set) var summary"))
+        let declaration = String(tail[..<end.lowerBound])
+        #expect(declaration.contains("CadenceWidgetStoreChangeReloader.outOfProcessWrites.storeDidSave()"))
+        #expect(declaration.contains("guard !NotificationManager.isTestEnvironment"))
+    }
+
     /// The registration races the import and may lose: `PersistenceController` arms the gate from a
     /// `Task { @MainActor }` while the app delegate has already started the log. Arming after the
     /// import has landed must run the work at once rather than wait for an import that may not come

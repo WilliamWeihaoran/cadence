@@ -264,23 +264,45 @@ struct CadenceExternalWriteReconcileTests {
         let markerURL = CadenceStoreSupport.externalWriteMarkerURL(besideStoreAt: storeURL)
         final class Count { var value = 0 }
         let reconciles = Count()
-        let watch = CadenceExternalWriteReminderWatch(reconcile: { reconciles.value += 1 })
+        let reloads = Count()
+        let watch = CadenceExternalWriteReminderWatch(
+            reconcile: { reconciles.value += 1 },
+            reloadWidgets: { reloads.value += 1 }
+        )
         watch.start(markerURL: markerURL)
         defer { watch.stop() }
 
         #expect(watch.isWatching)
         try await Task.sleep(nanoseconds: 400_000_000)
         #expect(reconciles.value == 0, "the watch reconciled before anything was written")
+        #expect(reloads.value == 0, "the watch reloaded widgets before anything was written")
 
         #expect(CadenceStoreSupport.postExternalWrite(besideStoreAt: storeURL, now: Date()))
         let deadline = Date().addingTimeInterval(10)
-        while reconciles.value == 0, Date() < deadline {
+        while reconciles.value == 0 || reloads.value == 0, Date() < deadline {
             try await Task.sleep(nanoseconds: 50_000_000)
         }
         #expect(
             reconciles.value >= 1,
             "an MCP write's marker no longer reconciles reminders until Cadence is frontmost (T-18622)"
         )
+        // [[T-19078]]: the same marker is the widgets' only news of an MCP write.
+        #expect(
+            reloads.value >= 1,
+            "an MCP write's marker no longer reloads the widgets, so the desktop Today widget keeps the task (T-19078)"
+        )
+    }
+
+    /// [[T-19078]]. The app's own watch, not a test's, is the one that has to reach a reload: its
+    /// closure goes through the shared out-of-process reloader and stays out of a test host.
+    @Test func theAppsMarkerWatchReloadsThroughTheOutOfProcessReloader() throws {
+        let source = strippingComments(try sourceFile("Cadence/macOS/Services/CadenceMCPRefreshCoordinator.swift"))
+        let shared = try #require(source.range(of: "static let shared = CadenceExternalWriteReminderWatch("))
+        let tail = source[shared.upperBound...]
+        let end = try #require(tail.range(of: "private var monitor"))
+        let declaration = String(tail[..<end.lowerBound])
+        #expect(declaration.contains("CadenceWidgetStoreChangeReloader.outOfProcessWrites.storeDidSave()"))
+        #expect(declaration.contains("guard !NotificationManager.isTestEnvironment"))
     }
 
     /// The watch has to outlive the window, so it is the app delegate's, started at launch -- not

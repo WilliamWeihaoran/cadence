@@ -316,3 +316,12 @@ final class CadenceWidgetStoreChangeReloader {
         }
     }
 }
+
+extension CadenceWidgetStoreChangeReloader {
+    /// **The one reloader for rows another process wrote** ([[T-19078]], [[T-19079]]): an MCP
+    /// write's marker on the Mac and a completed CloudKit import on both platforms. Neither reaches
+    /// this process's `ModelContext.didSave`, so neither reached a reload. One per process, so a
+    /// trailing reload it has pending is shared by both arms rather than doubled. The callers keep
+    /// it out of a test host: its reload stamps the real app group.
+    static let outOfProcessWrites = CadenceWidgetStoreChangeReloader()
+}

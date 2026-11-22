@@ -42,17 +42,32 @@ final class CadenceMCPRefreshCoordinator {
 /// and reconciles from a fresh read whatever the activation state; the UI swap stays deferred
 /// exactly as it was ([[T-18162]]). The [[T-3046]] half-imported-store caution does not apply: a
 /// local SQLite write is complete before its marker is posted.
+///
+/// **[[T-19078]]: and the widgets.** The marker was heard for reminders only, and nothing else on
+/// an MCP write's path asks WidgetKit to reload: the server process has no `WidgetCenter` call,
+/// and the UI swap's merge saves nothing, so the [[T-17311]] `ModelContext.didSave` reloader never
+/// fires for rows another process wrote. The desktop Today widget kept listing the task Claude had
+/// just completed for its whole timeline interval. So the marker reloads them too, through the
+/// coalescing out-of-process reloader: a burst of agent writes reloads now and once more at the
+/// window's end, never dropping the last write. A widget-intent marker lands inside the window its
+/// own forced reload just stamped, so it costs one trailing reload at most.
 @MainActor
 final class CadenceExternalWriteReminderWatch {
     static let shared = CadenceExternalWriteReminderWatch(
-        reconcile: { CadenceExternalWriteReminderWatch.reconcileFromStore() }
+        reconcile: { CadenceExternalWriteReminderWatch.reconcileFromStore() },
+        reloadWidgets: {
+            guard !NotificationManager.isTestEnvironment else { return }
+            CadenceWidgetStoreChangeReloader.outOfProcessWrites.storeDidSave()
+        }
     )
 
     private var monitor: CadenceMCPRefreshMonitor?
     private let reconcile: @MainActor () -> Void
+    private let reloadWidgets: @MainActor () -> Void
 
-    init(reconcile: @escaping @MainActor () -> Void) {
+    init(reconcile: @escaping @MainActor () -> Void, reloadWidgets: @escaping @MainActor () -> Void) {
         self.reconcile = reconcile
+        self.reloadWidgets = reloadWidgets
     }
 
     var isWatching: Bool { monitor != nil }
@@ -64,6 +79,7 @@ final class CadenceExternalWriteReminderWatch {
               let url = markerURL ?? (try? CadenceModelContainerFactory.refreshMarkerURL()) else { return }
         monitor = CadenceMCPRefreshMonitor(markerURL: url) { [weak self] in
             self?.reconcile()
+            self?.reloadWidgets()
         }
     }
 
