@@ -677,7 +677,10 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
         self.content = content
         let opened = CadenceScheduleDraft(editing: task)
         _openedDraft = State(initialValue: opened)
-        _draft = State(initialValue: opened)
+        // [[T-19029]]: a draft a click-away kept comes back on the next open of this task.
+        _draft = State(initialValue: CadencePopoverDrafts.taskSchedule.restored(
+            for: CadencePopoverDrafts.taskKey(task.id), opened: opened
+        ) ?? opened)
     }
 
     private var selection: TaskContainerSelection {
@@ -715,7 +718,10 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
                 offersTaskRepeat: true,
                 actions: CadenceSchedulePanelActions(
                     commit: save,
-                    cancel: { dismiss() },
+                    cancel: {
+                        CadencePopoverDrafts.markTaskCancel(task.id)
+                        dismiss()
+                    },
                     delete: {
                         deleteConfirmationManager.presentTaskDelete(task, in: modelContext)
                         return nil
@@ -729,6 +735,13 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
         // [[T-6191]]: an After count stored below this occurrence before [[T-6114]]'s floor is
         // repaired when the task is opened, and only then. A coherent count is not written.
         .onAppear { CadenceTaskRecurrenceWorkflowSupport.repairEndCountOnOpen(task, in: modelContext) }
+        // [[T-19029]]: a click outside keeps the draft for the next open; Save, Cancel and Escape
+        // marked their close a cancel, and an untouched draft is nothing to keep.
+        .onDisappear {
+            CadencePopoverDrafts.taskSchedule.close(
+                id: CadencePopoverDrafts.taskKey(task.id), draft: draft, opened: openedDraft
+            )
+        }
         .onChange(of: task.statusRaw) { _, _ in draft.isSettled = CadenceTaskQuerySupport.isFinishedTask(task) }
         // [[T-18451]]: another window, a sync or MCP changed the task -- untouched fields follow it.
         .onChange(of: CadenceScheduleDraft(editing: task)) { _, stored in
@@ -770,6 +783,7 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
             draft, opened: openedDraft, to: task, areas: areas, projects: projects, allTasks: allTasks,
             scope: scope, in: modelContext, commit: { try $0.save() }
         ) else { return CadencePendingChangePersistence.editFailureNotice } // [[T-17853]]: as iOS and the embed say
+        CadencePopoverDrafts.markTaskCancel(task.id)
         dismiss()
         return nil
     }

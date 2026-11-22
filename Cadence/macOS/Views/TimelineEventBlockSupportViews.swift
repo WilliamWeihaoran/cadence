@@ -120,6 +120,9 @@ struct CalendarEventEditPopover: View {
     @State private var notesFlushID = UUID()
     /// [[T-8164]]: the one live-card handler set every other Mac note editor uses ([[T-5120]]).
     @State private var embeds = TaskNotesEmbedHandlers(hoverIDPrefix: "event-notes-embed-task-")
+    /// [[T-19029]]: a Save reached the host. Its success closes the popover with no failure notice,
+    /// and that close keeps nothing; a refused Save leaves its notice up, and a click-away then keeps.
+    @State private var saveRequested = false
 
     /// The draft as the popover opened it. A Save compares against it — see
     /// `CalendarEventEditRequest`.
@@ -142,7 +145,8 @@ struct CalendarEventEditPopover: View {
         _actionFailureNotice = actionFailureNotice
         let opened = Self.openingDraft(for: item)
         self.openedDraft = opened
-        _draft = State(initialValue: opened)
+        // [[T-19029]]: a draft a click-away kept comes back on the next open of this event.
+        _draft = State(initialValue: CadencePopoverDrafts.eventSchedule.restored(for: item.id, opened: opened) ?? opened)
     }
 
     /// The draft over the **whole** event, whichever day's segment was clicked.
@@ -277,7 +281,14 @@ struct CalendarEventEditPopover: View {
         .onDisappear {
             flushPendingNotes()
             MarkdownEditorTerminationFlush.shared.unregister(notesFlushID)
+            // [[T-19029]]: a click outside keeps the draft for the next open; Save, Cancel and
+            // Escape keep nothing, and neither does an untouched draft.
+            if saveRequested && actionFailureNotice == nil {
+                CadencePopoverDrafts.eventSchedule.markCancel(id: item.id)
+            }
+            CadencePopoverDrafts.eventSchedule.close(id: item.id, draft: draft, opened: openedDraft)
         }
+        .cadencePopoverEscapeWatch { CadencePopoverDrafts.eventSchedule.markCancel(id: item.id, $0) }
         .sheet(isPresented: Binding(
             get: { presentedEventNote != nil },
             set: { if !$0 { presentedEventNote = nil } }
@@ -340,7 +351,10 @@ struct CalendarEventEditPopover: View {
     /// recurring event's Save and Delete both stop at the scope question here before anything is
     /// written, so their outcome reaches the user through the host rather than as a return value.
     private var panelActions: CadenceSchedulePanelActions {
-        var actions = CadenceSchedulePanelActions(commit: save, cancel: { dismiss() })
+        var actions = CadenceSchedulePanelActions(commit: save, cancel: {
+            CadencePopoverDrafts.eventSchedule.markCancel(id: item.id)
+            dismiss()
+        })
         // Absent, not disabled, on a read-only event: EventKit refuses the removal.
         if isEditable {
             actions.delete = {
@@ -606,6 +620,7 @@ struct CalendarEventEditPopover: View {
     private func applyAction(_ action: PendingAction, scope: CalendarRecurrenceEditScope) {
         switch action {
         case .save:
+            saveRequested = true
             onSave(
                 CalendarEventEditRequest(
                     draft: draft,

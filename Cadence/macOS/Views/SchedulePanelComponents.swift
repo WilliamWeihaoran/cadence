@@ -24,6 +24,14 @@ struct TaskDetailPopover: View {
     @State private var presentationMode: TaskDetailPresentationMode = .full
     @FocusState private var subtaskFieldFocused: Bool
 
+    init(task: AppTask) {
+        _task = Bindable(wrappedValue: task)
+        // [[T-19029]]: an "Add subtask" entry a click-away kept comes back with the task.
+        _newSubtaskTitle = State(initialValue: CadencePopoverDrafts.taskSubtaskEntry.restored(
+            for: CadencePopoverDrafts.taskKey(task.id), opened: ""
+        ) ?? "")
+    }
+
     /// "1 of 3" beside the SUBTASKS heading; nil (and so omitted) when there are no subtasks.
     /// [[T-13564]]: the iOS inspector's heading wording, `countLabel`; the `1/3` badge is a row's.
     private var subtaskProgressLabel: String? {
@@ -77,6 +85,14 @@ struct TaskDetailPopover: View {
         .onAppear { focusSubtaskFieldIfRequested() }
         .onChange(of: taskSubtaskEntryManager.requestedTaskID) { _, _ in
             focusSubtaskFieldIfRequested()
+        }
+        // [[T-19029]]: a click outside keeps the inspector's unsent subtask entry and its schedule
+        // draft (`TaskInspectorScheduleEditor`); Escape, like Save and Cancel, keeps neither.
+        .cadencePopoverEscapeWatch { CadencePopoverDrafts.markTaskCancel(task.id, $0) }
+        .onDisappear {
+            CadencePopoverDrafts.taskSubtaskEntry.close(
+                id: CadencePopoverDrafts.taskKey(task.id), draft: newSubtaskTitle, opened: ""
+            )
         }
     }
 
