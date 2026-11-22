@@ -38,6 +38,8 @@ struct CadenceDestructiveMenuRowTests {
         ("Cadence/macOS/Views/MacTaskRowContextMenu.swift", 1),
         // [[T-18883]]: the Mac Calendar event menu's Delete Event.
         ("Cadence/macOS/Views/CalendarEventChipPopoverSupport.swift", 1),
+        // [[T-19016]]: its iOS twin's Delete Event, on the Board card and the Month agenda row.
+        ("Cadence/iOS/iOSCalendarEventContextMenu.swift", 1),
         // [[T-12322]]: a list's Archive row is NOT destructive (the Mac's `ListEditorArchiveButton`
         // ruling, under T-8201), so the Lists page, its regular-width pane and the sidebar row
         // ([[T-11753]]) wear the shared red on none of their rows. Zero, not dropped: a list

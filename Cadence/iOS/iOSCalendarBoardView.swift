@@ -478,6 +478,8 @@ private struct iOSCalendarBoardDayColumn: View {
                 iOSCalendarBoardEventCard(item: item)
             }
             .buttonStyle(.iosPressable)
+            // [[T-19016]]: the long-press the task card beside it answers -- Edit is this tap.
+            .iOSEventContextMenu(event: item.event) { onOpenEvent(item.event) }
         case .task(let task):
             iOSBoardTaskCard(
                 task: task,

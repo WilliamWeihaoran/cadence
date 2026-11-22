@@ -319,12 +319,13 @@ struct iOSCalendarMonthAgendaList: View {
     private func agendaRow(_ item: iOSCalendarBoardColumnItem, dayKey: String) -> some View {
         switch item {
         case .event(let eventItem):
-            Button {
-                pageEditor(.event(iOSCalendarEventSelection(event: eventItem.event)))
-            } label: {
+            let openEvent = { pageEditor(.event(iOSCalendarEventSelection(event: eventItem.event))) }
+            Button(action: openEvent) {
                 iOSCalendarEventSummaryRow(event: eventItem.event)
             }
             .buttonStyle(.iosPressable)
+            // [[T-19016]]: the long-press the task row under it answers -- Edit is this tap.
+            .iOSEventContextMenu(event: eventItem.event, onEdit: openEvent)
 
         case .task(let task):
             // [[T-16821]]: interleaved with events by start time, so a timed task states its slot

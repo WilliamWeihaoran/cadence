@@ -79,5 +79,68 @@ struct CadenceCalendarEventContextMenuTests {
         #expect(menu.contains(".keyboardShortcut(MacTaskRowContextMenu.hoverKey(.delete, namedHere: true))"))
         #expect(menu.contains("Button(role: .destructive, action: onDelete)"))
     }
+
+    // MARK: - [[T-19016]]: the iOS twin, on the Calendar Board card and the iPhone Month agenda row
+
+    /// The iOS menu reads the shared gate, which is the editor's own view-only rule: a read-only or
+    /// organizer-cancelled event gets Edit alone, a writable one Edit then Delete Event -- the
+    /// Mac's items, item for item.
+    @Test func theIOSEventMenuGatesDeleteOnTheEditorsViewOnlyRule() {
+        let readOnly = CadenceEventContextMenuItems.allowsDelete(isEditable: false, isCancelled: false)
+        let cancelled = CadenceEventContextMenuItems.allowsDelete(isEditable: true, isCancelled: true)
+        let writable = CadenceEventContextMenuItems.allowsDelete(isEditable: true, isCancelled: false)
+        #expect(CadenceEventContextMenuItems.items(allowsDelete: readOnly) == [.edit])
+        #expect(CadenceEventContextMenuItems.items(allowsDelete: cancelled) == [.edit])
+        #expect(CadenceEventContextMenuItems.items(allowsDelete: writable) == [.edit, .delete])
+        for (isEditable, isCancelled) in [(false, false), (true, true), (false, true), (true, false)] {
+            #expect(
+                CadenceEventContextMenuItems.allowsDelete(isEditable: isEditable, isCancelled: isCancelled)
+                    == TimelineEventBlockEditGate.allowsDelete(isEditable: isEditable, isCancelled: isCancelled),
+                "the iOS gate and the Mac gate disagree at editable=\(isEditable), cancelled=\(isCancelled)"
+            )
+        }
+    }
+
+    /// Both iOS hosts: the Board column's event case and the agenda's event case each attach the
+    /// menu once, with the surface's own tap as Edit.
+    @Test func theIOSBoardCardAndAgendaRowHostTheEventMenuWithTheirOwnTap() throws {
+        let board = try Self.code("Cadence/iOS/iOSCalendarBoardView.swift")
+        let column = try #require(CadenceSourceScan.functionBody(named: "columnItemView", in: board))
+        #expect(CadenceSourceScan.matchCount(
+            #"\.iOSEventContextMenu\(event: item\.event\) \{ onOpenEvent\(item\.event\) \}"#,
+            in: column
+        ) == 1)
+
+        let agenda = try Self.code("Cadence/iOS/iOSCalendarMonthAgendaViews.swift")
+        let row = try #require(CadenceSourceScan.functionBody(named: "agendaRow", in: agenda))
+        #expect(CadenceSourceScan.matchCount(
+            #"Button\(action: openEvent\)"#,
+            in: row
+        ) == 1)
+        #expect(CadenceSourceScan.matchCount(
+            #"\.iOSEventContextMenu\(event: eventItem\.event, onEdit: openEvent\)"#,
+            in: row
+        ) == 1)
+    }
+
+    /// The host reads the gate from the manager's `canModify` and the cancelled predicate, draws
+    /// the shared items, and its Delete is the sheet's scope-then-confirm path, re-gated at the write.
+    @Test func theIOSHostGatesDeleteAndAsksScopeThenConfirms() throws {
+        let file = try Self.code("Cadence/iOS/iOSCalendarEventContextMenu.swift")
+        let host = try #require(CadenceSourceScan.declarationBody("struct iOSEventContextMenuHost: ViewModifier", in: file))
+        #expect(CadenceSourceScan.matchCount(
+            #"CadenceEventContextMenuItems\.allowsDelete\(\s*isEditable: calendarManager\.canModify\(event\),\s*isCancelled: CadenceCalendarEventVisibility\.isCancelled\(event\)\s*\)"#,
+            in: host
+        ) == 1)
+        #expect(CadenceSourceScan.matchCount(
+            #"\.contextMenu \{\s*let items = CadenceEventContextMenuItems\.items\(allowsDelete: allowsDelete\)"#,
+            in: host
+        ) == 1)
+        #expect(host.contains("Button(role: .destructive, action: beginDelete)"))
+        let begin = try #require(CadenceSourceScan.functionBody(named: "beginDelete", in: host))
+        #expect(begin.contains("CadenceEventDeleteStep.first("))
+        let apply = try #require(CadenceSourceScan.functionBody(named: "applyDelete", in: host))
+        #expect(CadenceSourceScan.matchCount(#"guard allowsDelete else \{ return \}\s*if let failure = calendarManager\.deleteEvent\(event, span: scope\.eventSpan\)"#, in: apply) == 1)
+    }
 }
 #endif

@@ -229,3 +229,31 @@ enum CadenceEventDeleteStep: Equatable {
         return nil
     }
 }
+
+/// **[[T-19016]] -- what a long-press on an iOS Calendar event offers.** The Calendar Board event
+/// card and the iPhone Month-agenda event row answered a long-press with nothing while the task
+/// beside each opened the task menu; both now host `iOSEventContextMenuHost`, which reads its items
+/// here. The Mac's `MacEventContextMenu.items(allowsDelete:)` rule: Edit always, Delete Event only
+/// where the editor itself would offer Delete -- a view-only event (read-only calendar or
+/// organizer-cancelled, [[T-18014]]) gets Edit alone. Shared so the gate is asserted on the Mac
+/// test target, which never compiles `Cadence/iOS/`.
+enum CadenceEventContextMenuItems {
+    enum Item: Equatable {
+        case edit
+        case delete
+    }
+
+    /// The menu's items, in order.
+    static func items(allowsDelete: Bool) -> [Item] {
+        allowsDelete ? [.edit, .delete] : [.edit]
+    }
+
+    /// The editor's view-only rule, read rather than restated: a view-only notice means no Delete.
+    static func allowsDelete(isEditable: Bool, isCancelled: Bool) -> Bool {
+        CadenceCalendarEventEditingSupport.viewOnlyNotice(
+            calendarName: "",
+            isEventEditable: isEditable,
+            isEventCancelled: isCancelled
+        ) == nil
+    }
+}
