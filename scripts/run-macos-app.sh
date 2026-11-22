@@ -368,6 +368,77 @@ function run(argv) {
 JXA
 }
 
+# Is window $1 on the Space the person is actually looking at? Prints `ONSCREEN`, or
+# `OFFSCREEN<TAB><apps on screen><TAB><how many apps own layer-0 windows>`.
+#
+# WHY THIS IS WORTH A CHECK (T-17642, mechanism measured 2026-11-22 by slot `slot1323`). A window that
+# opens on a Space the owner is not on can still be CAPTURED -- `screencapture -l` reads the
+# window's own backing store -- but it cannot be DRIVEN: System Events answers `count of windows`
+# 0 for the process, so every AX press, every typed value and every custom action is silently
+# unreachable. Three macOS sighting slots lost their whole input tier to this, and each reported it
+# as "the window opened off the owner's active Space" without naming what put it there.
+#
+# What puts it there is a FULLSCREEN frontmost app: a fullscreen window owns its own Space, so a
+# launch made from one lands Cadence on the shared desktop Space behind it. Measured on this Mac
+# at 13:52 EST: layer-0 windows existed for 25 applications and exactly ONE was on screen -- the
+# fullscreen one. That matters because the remedy is cheap and needs no pointer and no automation
+# grant: leave fullscreen, relaunch, and the window opens where System Events can reach it. Before
+# this was understood the tier looked like it needed the owner's physical pointer, which it does not.
+#
+# Reads the same CGWindow list `window_for_pid` already reads: no Accessibility, no Apple Events,
+# nothing that can seize input or raise a prompt.
+offspace_report() {
+  osascript -l JavaScript - "$1" <<'JXA'
+ObjC.import('CoreGraphics');
+function run(argv) {
+  var win = parseInt(argv[0], 10);
+  var EXCL = $.kCGWindowListExcludeDesktopElements;
+  var all = ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionAll | EXCL, $.kCGNullWindowID));
+  var vis = ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly | EXCL, $.kCGNullWindowID));
+  // Membership in the ON-SCREEN list, never the presence of a `kCGWindowIsOnscreen` key on the
+  // full list: `objectForKey` hands back an ObjC nil for a missing key, which is not JS null and
+  // tested truthy, so a key check called every window on screen and the warning never fired.
+  var mine = false, onscreen = [], seen = {};
+  for (var i = 0; i < vis.count; i++) {
+    var v = vis.objectAtIndex(i);
+    if (v.objectForKey('kCGWindowNumber').intValue === win) mine = true;
+    if (v.objectForKey('kCGWindowLayer').intValue !== 0) continue;
+    var vn = v.objectForKey('kCGWindowOwnerName');
+    if (!vn || !vn.js || seen[vn.js]) continue;
+    seen[vn.js] = true; onscreen.push(vn.js);
+  }
+  var owners = {};
+  for (var j = 0; j < all.count; j++) {
+    var a = all.objectAtIndex(j);
+    if (a.objectForKey('kCGWindowLayer').intValue !== 0) continue;
+    var an = a.objectForKey('kCGWindowOwnerName');
+    if (an && an.js) owners[an.js] = true;
+  }
+  if (mine) return 'ONSCREEN';
+  return ['OFFSCREEN', onscreen.join(', '), String(Object.keys(owners).length)].join('\t');
+}
+JXA
+}
+
+# Say it up front when the window cannot be driven, naming what to do about it (T-17642).
+warn_if_offspace() {
+  local rep front total
+  rep=$(offspace_report "$1" 2>/dev/null) || return 0
+  [[ "$rep" == OFFSCREEN* ]] || return 0
+  front=$(print -r -- "$rep" | cut -f2)
+  total=$(print -r -- "$rep" | cut -f3)
+  print -r -- "!! OFF-SPACE (T-17642): this window is NOT on the Space you are looking at."
+  print -r -- "   Window CAPTURES are unaffected -- screencapture -l$1 reads its backing store."
+  print -r -- "   But System Events will report 0 windows for this pid, so nothing in it can be"
+  print -r -- "   pressed, typed into or driven through AX. A view check works; a flow does not."
+  print -r -- "   On screen right now: ${front:-(nothing at layer 0)}   [layer-0 windows exist for $total apps]"
+  print -r -- "   USUAL CAUSE: the frontmost app is FULLSCREEN, which gives it a Space of its own."
+  # $SELF, not $0: inside a zsh function $0 is the FUNCTION's name, so this line printed
+  # "warn_if_offspace stop <id>" -- an instruction that cannot be typed.
+  print -r -- "   FIX: leave fullscreen, then '$SELF stop $ID' and relaunch. No pointer is seized and"
+  print -r -- "   no UI-automation grant is needed -- this is a Space problem, not a permission one."
+}
+
 # Wait up to $1 seconds for the tracked pid's window; print its number.
 wait_window() {
   local secs="${1:-60}" i p rc w
@@ -454,6 +525,7 @@ case "$CMD" in
     WIN=$(wait_window 60); wrc=$?
     if (( wrc )); then print -r -- "!! no capturable window (exit $wrc). Still run: $0 stop $ID"; exit $wrc; fi
     print -r -- "WINDOW=$WIN"
+    warn_if_offspace "$WIN"
     print -r -- "  capture: $0 capture $ID <out.png>   (or: screencapture -x -o -l$WIN <out.png>)"
     print -r -- "REMEMBER: $0 stop $ID   — in this same turn."
     ;;
