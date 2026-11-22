@@ -311,6 +311,9 @@ struct iOSTaskNotesSection: View {
     let flush: iOSMarkdownEditorFlush
     let referenceNotes: [Note]
     let referenceTasks: [AppTask]
+    /// The task these notes are: a `( ) Title` typed here files into its list and section, as the
+    /// Mac inspector does ([[T-19075]]).
+    let ownerTask: AppTask
     let onOpenReference: (MarkdownReferenceDisplayTarget) -> Void
 
     var body: some View {
@@ -322,6 +325,7 @@ struct iOSTaskNotesSection: View {
                 referenceNotes: referenceNotes,
                 referenceTasks: referenceTasks,
                 onOpenReference: onOpenReference,
+                embeddedTaskOwner: ownerTask,
                 // [[T-11085]]: a task's notes offer the list templates from `/`, as both Mac
                 // editors of them do, through the one kind all three read.
                 slashTemplateKind: NoteTemplateLibrary.taskNotesKind,

@@ -726,7 +726,10 @@ struct iOSFocusView: View {
                 placeholder: "Add notes…",
                 referenceNotes: allNotes,
                 referenceTasks: allTasks,
-                onOpenReference: openMarkdownReference
+                onOpenReference: openMarkdownReference,
+                // [[T-19075]]: a `( ) Title` typed in the task's notes files into its list and
+                // section, as the Mac's Focus notes panel does.
+                embeddedTaskOwner: task
             )
             // Keyed on the task: the surface loads its draft once, so without this a session
             // switched mid-edit would keep the outgoing task's buffer over the incoming note.

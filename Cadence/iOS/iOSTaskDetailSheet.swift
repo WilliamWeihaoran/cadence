@@ -343,6 +343,7 @@ struct iOSTaskDetailSheet: View {
             flush: notesFlush,
             referenceNotes: allNotes,
             referenceTasks: allTasks,
+            ownerTask: task,
             onOpenReference: openMarkdownReference
         )
     }

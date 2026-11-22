@@ -3,42 +3,8 @@ import SwiftUI
 import SwiftData
 import AppKit
 
-/// Where a card created from the editor is filed, and what else rides in that creation's commit.
-/// The one real policy difference between the hosts ([[T-6721]]): a task's notes file into the
-/// owner task's list and section; `NotePanel`'s core notes into the Inbox; a `NoteEditorPane` into
-/// its list note's area or project, and it bumps that note's `updatedAt` in the same commit.
-struct TaskNotesEmbedTarget {
-    /// Checked first: a non-nil area wins over `project`, else the Inbox.
-    let area: Area?
-    let project: Project?
-    let sectionName: String
-    /// A note whose `updatedAt` is bumped inside the creation's commit and put back when the
-    /// commit is refused, so a refused embed cannot leave the note marked as edited.
-    var touchedNote: Note? = nil
-
-    /// A task's notes: the owner's area or project, in the owner's section.
-    static func ownerTask(_ task: AppTask) -> Self {
-        Self(area: task.area, project: task.project, sectionName: task.resolvedSectionName)
-    }
-
-    /// `NotePanel`'s core notes (today, week, notepad) belong to no list: the Inbox, default section.
-    static var coreNotes: Self {
-        Self(area: nil, project: nil, sectionName: TaskSectionDefaults.defaultName)
-    }
-
-    /// `NoteEditorPane`: a list note files into its list — the area or project the host passes,
-    /// else the note's own — and any other kind of note into the Inbox; default section either way.
-    /// The note's `updatedAt` rides in the creation's commit.
-    static func noteEditor(_ note: Note, area: Area?, project: Project?) -> Self {
-        let isListNote = note.kind == .list
-        return Self(
-            area: isListNote ? (area ?? note.area) : nil,
-            project: isListNote ? (project ?? note.project) : nil,
-            sectionName: TaskSectionDefaults.defaultName,
-            touchedNote: note
-        )
-    }
-}
+// `TaskNotesEmbedTarget` -- where a new embed is filed -- lives in `Shared/` so iOS builds its
+// draft through the same value ([[T-19075]]).
 
 /// What the embed handlers read from their host at the moment a card is clicked: the tasks the
 /// editor resolves `[[task:…]]` against, where a new embed is filed, and the context every commit
@@ -227,37 +193,7 @@ final class TaskNotesEmbedHandlers {
         title: String,
         in scope: TaskNotesEmbedScope
     ) -> (draft: TaskCreationDraft, areas: [Area], projects: [Project]) {
-        let target = scope.embedTarget
-        let container: TaskContainerSelection
-        let areas: [Area]
-        let projects: [Project]
-
-        if let area = target.area {
-            container = .area(area.id)
-            areas = [area]
-            projects = []
-        } else if let project = target.project {
-            container = .project(project.id)
-            areas = []
-            projects = [project]
-        } else {
-            container = .inbox
-            areas = []
-            projects = []
-        }
-
-        let draft = TaskCreationDraft(
-            title: title,
-            notes: "",
-            priority: .none,
-            container: container,
-            sectionName: target.sectionName,
-            dueDateKey: "",
-            scheduledDateKey: "",
-            subtaskTitles: [],
-            tags: []
-        )
-        return (draft, areas, projects)
+        scope.embedTarget.draft(title: title)
     }
 
     /// What the editor calls on Return over a `( ) Title` line: the creation below, plus the

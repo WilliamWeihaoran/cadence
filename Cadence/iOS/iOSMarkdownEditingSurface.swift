@@ -50,6 +50,10 @@ struct iOSMarkdownEditingSurface: View {
     var allowsImageInsertion = true
     var embeddedTaskArea: Area? = nil
     var embeddedTaskProject: Project? = nil
+    /// **[[T-19075]].** The task whose notes this editor is: a `( ) Title` typed here files into
+    /// that task's area or project, in its section, as every Mac task-notes host does. Wins over
+    /// `embeddedTaskArea`/`embeddedTaskProject`.
+    var embeddedTaskOwner: AppTask? = nil
     /// Passed straight through to `iOSMarkdownFormatToolbar`; see the note there for why the
     /// template menu belongs in the format row rather than a page header.
     var templateKind: NoteKind? = nil
@@ -872,35 +876,19 @@ struct iOSMarkdownEditingSurface: View {
     /// The draft a new embed is created from, and the lists it may file into. One builder for the
     /// creation and for the re-creation an undone embed's redo makes ([[T-18174]]).
     private func embedDraft(title: String) -> (draft: TaskCreationDraft, areas: [Area], projects: [Project]) {
-        let container: TaskContainerSelection
-        let areas: [Area]
-        let projects: [Project]
-        if let embeddedTaskArea {
-            container = .area(embeddedTaskArea.id)
-            areas = [embeddedTaskArea]
-            projects = []
-        } else if let embeddedTaskProject {
-            container = .project(embeddedTaskProject.id)
-            areas = []
-            projects = [embeddedTaskProject]
-        } else {
-            container = .inbox
-            areas = []
-            projects = []
-        }
+        embedTarget.draft(title: title)
+    }
 
-        let draft = TaskCreationDraft(
-            title: title,
-            notes: "",
-            priority: .none,
-            container: container,
-            sectionName: TaskSectionDefaults.defaultName,
-            dueDateKey: "",
-            scheduledDateKey: "",
-            subtaskTitles: [],
-            tags: []
+    /// Where a new embed is filed, through the policy value the Mac's hosts use ([[T-19075]]): a
+    /// task's notes into the owner's list and section, else the host's area or project, else the
+    /// Inbox, in the default section.
+    private var embedTarget: TaskNotesEmbedTarget {
+        if let embeddedTaskOwner { return .ownerTask(embeddedTaskOwner) }
+        return TaskNotesEmbedTarget(
+            area: embeddedTaskArea,
+            project: embeddedTaskProject,
+            sectionName: TaskSectionDefaults.defaultName
         )
-        return (draft, areas, projects)
     }
 
     /// What the editor calls on Return over a `( ) Title` line: the creation below, plus the
