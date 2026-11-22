@@ -167,6 +167,34 @@ struct CadenceReadServiceTests {
         #expect(try fixture.service.search(query: "Cadence Platform", scopes: ["goals"]).items.first?.entityType == "goal")
     }
 
+    /// **[[T-19090]]: `list_habits` scoped to a goal answers the habit set `get_goal` lists** -- the
+    /// goal's own habits and the ones filed on its milestones. It used to read `goal.habits` flat,
+    /// so a habit on a milestone counted on `get_goal` and was missing from the paged list.
+    @Test func listHabitsByGoalIncludesHabitsFiledOnItsMilestones() throws {
+        let fixture = try Fixture()
+        let goal = Goal(title: "Run a marathon", context: fixture.context)
+        let milestone = Goal(title: "Run a half", context: fixture.context)
+        milestone.parentGoal = goal
+        let other = Goal(title: "Learn Spanish", context: fixture.context)
+        let own = Habit(title: "Stretch", context: fixture.context, goal: goal)
+        let nested = Habit(title: "Long run", context: fixture.context, goal: milestone)
+        let unrelated = Habit(title: "Flashcards", context: fixture.context, goal: other)
+        for model in [goal, milestone, other] { fixture.modelContext.insert(model) }
+        for model in [own, nested, unrelated] { fixture.modelContext.insert(model) }
+        try fixture.modelContext.save()
+
+        let detail = try fixture.service.getGoal(goalID: goal.id.uuidString)
+        let page = try fixture.service.listHabits(options: .init(goalId: goal.id.uuidString))
+
+        #expect(Set(page.items.map(\.id)) == [own.id.uuidString, nested.id.uuidString])
+        #expect(page.totalCount == 2)
+        #expect(Set(page.items.map(\.id)) == Set(detail.habits.map(\.id)))
+        #expect(page.totalCount == detail.habitMomentum.linkedHabitCount)
+        // The milestone's own list is still just its habit, and the context filter still narrows.
+        #expect(try fixture.service.listHabits(options: .init(goalId: milestone.id.uuidString)).items.map(\.id) == [nested.id.uuidString])
+        #expect(try fixture.service.listHabits(options: .init(goalId: goal.id.uuidString, query: "Long")).items.map(\.id) == [nested.id.uuidString])
+    }
+
     @Test func readServiceMigratesLegacyListDocumentsOnInit() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)

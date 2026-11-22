@@ -1676,7 +1676,10 @@ final class CadenceWriteService {
     }
 
     func createTask(options: CadenceCreateTaskOptions) throws -> CadenceTaskDetail {
-        let title = try normalizedRequiredText(options.title, emptyError: CadenceWriteError.emptyTitle)
+        // One line, as every in-app capture door writes it (T-19086); `!` marks are kept as text.
+        let title = TaskTitleShortcutParsing.oneLineTitle(
+            try normalizedRequiredText(options.title, emptyError: CadenceWriteError.emptyTitle)
+        )
         let priority = try options.priority.map(validatePriority) ?? .none
         let dueDate = try validatedOptionalDate(options.dueDate)
         let scheduledDate = try validatedOptionalDate(options.scheduledDate)
@@ -1740,7 +1743,9 @@ final class CadenceWriteService {
     func updateTask(options: CadenceUpdateTaskOptions) throws -> CadenceTaskDetail {
         let task = try findTask(options.taskId)
 
-        let title = try options.title.map { try normalizedRequiredText($0, emptyError: CadenceWriteError.emptyTitle) }
+        let title = try options.title.map {
+            TaskTitleShortcutParsing.oneLineTitle(try normalizedRequiredText($0, emptyError: CadenceWriteError.emptyTitle))
+        }
         let priority = try options.priority.map(validatePriority)
         let dueDate = try validatedOptionalDate(options.dueDate)
         let estimatedMinutes = try options.estimatedMinutes.map(validateEstimatedMinutes)

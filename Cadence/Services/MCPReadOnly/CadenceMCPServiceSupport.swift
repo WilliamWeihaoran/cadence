@@ -196,9 +196,10 @@ nonisolated enum CadenceMCPServiceSupport {
         return result
     }
 
+    /// Folded onto one line like the task title they hang off (T-19086).
     static func normalizedSubtaskTitles(_ values: [String]) -> [String] {
         values
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .map(TaskTitleShortcutParsing.oneLineTitle)
             .filter { !$0.isEmpty }
     }
 

@@ -264,7 +264,15 @@ nonisolated enum TaskTitleShortcutParsing {
     /// `TaskCreationService` -- the iOS slot sheet and iPad timeline (`makeTask`) and Siri /
     /// Shortcuts' Capture Task (`CaptureTaskIntent`, in the widget target) -- call the same rule.
     static func capturedTitle(_ title: String, priority: inout TaskPriority) -> String {
-        titleApplyingPriorityShortcut(title, priority: &priority)
+        oneLineTitle(titleApplyingPriorityShortcut(title, priority: &priority))
+    }
+
+    /// **[[T-19086]]: the line-break fold alone, with no priority marks read.** Every line break,
+    /// with the spaces around it, becomes one space and blank lines drop. `capturedTitle` is this
+    /// after the marks come off; MCP `create_task` / `update_task` and their subtask titles call
+    /// it bare, because an API title's `!` is text the caller sent, not a priority shortcut.
+    static func oneLineTitle(_ title: String) -> String {
+        title
             .split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }

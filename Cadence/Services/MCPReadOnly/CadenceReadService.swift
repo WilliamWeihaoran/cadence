@@ -723,9 +723,12 @@ final class CadenceReadService {
         let contextUUID = try options.contextId.map(uuid)
         let goalUUID = try options.goalId.map(uuid)
         // The narrower of the two edges wins: a goal owns fewer habits than a context does.
+        // A goal's habits are the ones `get_goal` lists -- its own and its milestones'
+        // (`GoalHabitMomentumResolver.linkedHabits`), so the two tools agree (T-19090).
         var habits: [Habit]
         if let goalUUID {
-            habits = try fetchFirst(Goal.self, where: #Predicate { $0.id == goalUUID })?.habits ?? []
+            habits = try fetchFirst(Goal.self, where: #Predicate { $0.id == goalUUID })
+                .map { GoalHabitMomentumResolver.linkedHabits(for: $0) } ?? []
         } else if let contextUUID {
             habits = try contextModel(contextUUID)?.habits ?? []
         } else {
@@ -733,9 +736,6 @@ final class CadenceReadService {
         }
         if let contextUUID {
             habits = habits.filter { $0.context?.id == contextUUID }
-        }
-        if let goalUUID {
-            habits = habits.filter { $0.goal?.id == goalUUID }
         }
         if let query = options.query?.trimmingCharacters(in: .whitespacesAndNewlines), !query.isEmpty {
             habits = habits.filter { habit in

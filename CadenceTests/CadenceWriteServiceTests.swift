@@ -35,6 +35,28 @@ struct CadenceWriteServiceTests {
         #expect(detail.subtasks.map(\.title) == ["DTOs", "Router"])
     }
 
+    /// **[[T-19086]]: an MCP task title is written on one line**, as every in-app capture door
+    /// writes it -- a line break, with the spaces around it, becomes one space and blank lines
+    /// drop. Subtask titles fold the same way. The `!` marks stay text: an API title's bangs are
+    /// not the capture field's priority shortcut.
+    @Test func taskAndSubtaskTitlesFoldOntoOneLineAndKeepTheirMarks() throws {
+        let fixture = try Fixture()
+
+        let created = try fixture.writeService.createTask(options: .init(
+            title: "Call\n  bank\n\n!",
+            subtaskTitles: ["Find\r\nstatement", " \n "]
+        ))
+        #expect(created.summary.title == "Call bank !")
+        #expect(created.summary.priority == TaskPriority.none.rawValue)
+        #expect(created.subtasks.map(\.title) == ["Find statement"])
+
+        let updated = try fixture.writeService.updateTask(options: .init(
+            taskId: created.summary.id,
+            title: "Pay\n  rent !!"
+        ))
+        #expect(updated.summary.title == "Pay rent !!")
+    }
+
     /// **[[T-19076]]: `0` is "no estimate"**, the Estimate row's None every in-app composer writes
     /// and `get_task` reports. MCP used to refuse it on all three writes, so an agent could not
     /// re-file or restore a task with no estimate; and it kept `1...4` as typed where the app's

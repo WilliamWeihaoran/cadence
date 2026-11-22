@@ -250,7 +250,7 @@ enum CadenceMCPToolDefinitions {
             ], required: ["goalId"])),
             Tool(name: "list_habits", description: "List Cadence habits with streak and goal metadata.", inputSchema: schema([
                 "contextId": uuidProperty("Optional context UUID."),
-                "goalId": uuidProperty("Optional goal UUID."),
+                "goalId": uuidProperty("Optional goal UUID. Includes habits filed on the goal's milestones, the same set get_goal lists."),
                 "query": stringProperty("Optional habit search."),
                 "limit": integerProperty("Optional page size, capped at 200. The response is a page envelope — items, offset, returnedCount, totalCount, hasMore, nextOffset — so 0 is a valid request for totalCount alone.", minimum: 0, maximum: 200),
                 "offset": integerProperty("Optional zero-based offset into the totally ordered result. Pass the previous response's nextOffset to continue; hasMore says whether one exists.", minimum: 0),
