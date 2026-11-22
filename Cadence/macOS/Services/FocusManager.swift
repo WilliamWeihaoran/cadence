@@ -151,6 +151,9 @@ final class FocusManager {
         in modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) throws {
+        // [[T-19093]]: never bank against a row another device deleted. Every banking door --
+        // ✕, a switch, the quit bank -- passes here, so the session ends unbanked instead.
+        if endSessionIfActiveTaskGone() { return }
         // One reading, taken once. `elapsed` is derived from the clock now, so asking twice — once
         // for the guard and once for the amount — could bank a different number than it checked.
         let seconds = elapsed
@@ -206,6 +209,23 @@ final class FocusManager {
         } catch {
             Self.logger.error("Focus session could not be banked on quit: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    // MARK: - [[T-19093]]: a session on a task deleted on another device
+
+    /// **The delete teardown for a delete that never reached the delete core.** A CloudKit import
+    /// saves its delete in another context, so `TaskDeleteHelpers.deferFocusTeardown` never runs and
+    /// the held task goes on answering as if alive ([[T-7561]]): the Focus page kept its header,
+    /// clock and notes, and ✕ / Log Session / a switch banked minutes against a row the store no
+    /// longer has. Asked by `FocusView` when its query loses the task, by the context swap, and by
+    /// `commitElapsed` before it banks. Ends exactly as the in-app delete does -- session cleared,
+    /// clock at zero, nothing banked. Returns whether it ended the session.
+    @discardableResult
+    func endSessionIfActiveTaskGone() -> Bool {
+        guard let task = activeTask, CadenceFocusSupport.heldSubjectIsGone(task) else { return false }
+        activeSession = nil
+        reset()
+        return true
     }
 
     // MARK: - T-5310: a session on a task that was finished somewhere else

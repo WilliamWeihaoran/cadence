@@ -181,6 +181,29 @@ enum CadenceFocusSupport {
         !task.isDone && !task.isCancelled
     }
 
+    // MARK: - [[T-19093]]: the subject deleted on another device
+
+    /// **Whether a session's held subject is gone from the store**, by the three signals
+    /// `CadenceDetailPanelPresentation.resolveHeldSubject(heldModel:)` reads. The in-app delete
+    /// ends a session from the delete core ([[T-18514]], `deferFocusTeardown`); a delete that
+    /// arrives by CloudKit import is saved in another context, so the held instance goes on reading
+    /// `isDeleted == false` with its context set ([[T-7561]]) and only the store can say it is gone.
+    /// A session over such a subject ends unbanked: the row the minutes would credit does not exist.
+    static func heldSubjectIsGone(_ task: AppTask) -> Bool {
+        CadenceDetailPanelPresentation.resolveHeldSubject(heldModel: task) == .close
+    }
+
+    /// The same question for a subject held only by id (iOS's `CadenceFocusSessionOwner`): `true`
+    /// only when the store answers with no row. A fetch that throws answers `false`, because a
+    /// session that cannot prove its subject is gone keeps its clock.
+    static func subjectIsGone(taskID: UUID, in modelContext: ModelContext) -> Bool {
+        var descriptor = FetchDescriptor<AppTask>(predicate: #Predicate { $0.id == taskID })
+        descriptor.includePendingChanges = true
+        descriptor.fetchLimit = 1
+        guard let count = try? modelContext.fetchCount(descriptor) else { return false }
+        return count == 0
+    }
+
     static func readyTasks(from tasks: [AppTask], todayKey: String) -> [AppTask] {
         tasks
             .filter { canFocus($0) }

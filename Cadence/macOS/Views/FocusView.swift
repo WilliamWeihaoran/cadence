@@ -34,7 +34,16 @@ struct FocusView: View {
         .background(Theme.bg)
         // Arriving on a session that ran while this screen was gone must show its real reading
         // immediately, not the one it had when the view was last torn down.
-        .onAppear { displayTick = Date() }
+        .onAppear {
+            displayTick = Date()
+            focusManager.endSessionIfActiveTaskGone()
+        }
+        // [[T-19093]]: the task deleted on another device. The query drops the row when the import
+        // merges; the held task never learns it ([[T-7561]]), so the manager asks the store and
+        // ends the session the way the in-app delete does, unbanked.
+        .onChange(of: activeTaskLeftTheQuery) { _, left in
+            if left { focusManager.endSessionIfActiveTaskGone() }
+        }
         .onReceive(timer) { instant in
             guard focusManager.isRunning else { return }
             displayTick = instant
@@ -49,6 +58,13 @@ struct FocusView: View {
     @State private var observedDay = CadenceObservedDay()
 
     private var todayKey: String { observedDay.todayKey }
+
+    /// Whether the session's task is missing from this page's query -- the cue to ask the store,
+    /// never the verdict: `FocusManager.endSessionIfActiveTaskGone` decides ([[T-19093]]).
+    private var activeTaskLeftTheQuery: Bool {
+        guard let task = focusManager.activeTask else { return false }
+        return !allTasks.contains { $0.id == task.id }
+    }
 
     private var readyTasks: [AppTask] {
         FocusSessionSupport.readyTasks(from: allTasks, todayKey: todayKey)

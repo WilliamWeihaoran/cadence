@@ -94,6 +94,12 @@ struct iOSFocusView: View {
         return pickItem(for: selectedTarget)
     }
 
+    /// A chosen subject that no longer resolves to a row -- the cue for [[T-19093]], never the
+    /// verdict: `CadenceFocusSessionOwner.endSessionIfSubjectGone` asks the store.
+    private var selectedSubjectLeftTheQuery: Bool {
+        selectedTarget != nil && selectedItem == nil
+    }
+
     /// Whether the session's subject is done or cancelled ([[T-12691]]). Read in the body, so a
     /// write to the task's status from any screen re-evaluates it.
     private var selectedSubjectIsSettled: Bool {
@@ -165,6 +171,8 @@ struct iOSFocusView: View {
             // the same breath leaves it the way a handoff always leaves a running session —
             // through `accept(_:)`, which banks the outgoing subject rather than dropping it.
             restorePersistedSession()
+            // [[T-19093]]: a subject deleted on another device while this screen was gone.
+            if selectedSubjectLeftTheQuery { session.endSessionIfSubjectGone(in: modelContext) }
             // [[T-15548]]: a subject finished while this screen was gone, in a way the owner's
             // status watch could not see, is released on the way back in rather than timed on.
             if selectedSubjectIsSettled { releaseSettledSubject() }
@@ -185,6 +193,12 @@ struct iOSFocusView: View {
         // `FocusManager` does ([[T-5310]]), rather than keep timing a finished task.
         .onChange(of: selectedSubjectIsSettled) { _, settled in
             if settled { releaseSettledSubject() }
+        }
+        // [[T-19093]]: the subject deleted on another device, arriving by CloudKit import. The
+        // delete core never ran, so the screen fell to "No session selected" under a clock still
+        // reading "Session running". The owner asks the store and ends it as the delete does.
+        .onChange(of: selectedSubjectLeftTheQuery) { _, left in
+            if left { session.endSessionIfSubjectGone(in: modelContext) }
         }
         // The screen may already be standing when the request is made — the compact shell keeps a
         // visited tab's stack alive behind the one on screen — so arriving is not the only way a

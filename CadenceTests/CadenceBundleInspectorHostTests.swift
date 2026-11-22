@@ -232,7 +232,10 @@ struct CadenceBundleInspectorHostTests {
                 "Cadence/iOS/iOSMarkdownReferenceSupport.swift": 1,
                 // [[T-9663]]: `iOSNoteEditorCover`'s swipe-dismiss commit asks the same rule
                 // before replaying held typing, so a note deleted under the editor takes none.
-                "Cadence/iOS/iOSNotesView.swift": 1
+                "Cadence/iOS/iOSNotesView.swift": 1,
+                // [[T-19093]]: a Focus session's held task, deleted on another device, is asked
+                // the same three-signal question by both platforms' session owners.
+                "Cadence/Shared/CadenceFocusPlanningSupport.swift": 1
             ]
         )
         // The model spelling, which reads all three signals in `Shared/` ([[T-7561]]): a host

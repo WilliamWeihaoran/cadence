@@ -106,6 +106,19 @@ final class CadenceFocusSessionOwner {
         CadenceFocusSessionPersistence.clear(in: defaults)
     }
 
+    /// **[[T-19093]]: the subject deleted on another device.** A CloudKit import's delete never
+    /// passes through the delete core, so nothing called `endSessionForDeletedSubject()` and the
+    /// screen fell to "No session selected" under a header still reading "Session running". The
+    /// screen asks this when its subject stops resolving; the store, not the screen's query, decides,
+    /// and the teardown is the delete core's -- nothing banked. Returns whether it ended the session.
+    @discardableResult
+    func endSessionIfSubjectGone(in modelContext: ModelContext) -> Bool {
+        guard let subjectID = selectedTarget?.taskID,
+              CadenceFocusSupport.subjectIsGone(taskID: subjectID, in: modelContext) else { return false }
+        endSessionForDeletedSubject()
+        return true
+    }
+
     // MARK: - [[T-18252]]: the Log Session form's two exits
 
     /// **Log Session's confirm, run here rather than on the screen** ([[T-18252]]). The form is

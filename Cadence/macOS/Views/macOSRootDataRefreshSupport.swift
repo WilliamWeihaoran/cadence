@@ -21,8 +21,10 @@ import SwiftData
 ///   reason. Re-resolution is safe precisely because the stopwatch is *not* in `activeSession`:
 ///   `FocusManager` keeps elapsed time in its own `CadenceFocusTimerState`, derived from a start
 ///   instant, so exchanging the task object changes which row the session points at and nothing
-///   about the clock. When the row is gone from the store (the other process deleted it) the old
-///   object is **kept**, not cleared: a stale pointer is recoverable and a discarded session is not.
+///   about the clock. When the row is gone from the store (the other process deleted it)
+///   `reresolvedSession` leaves the pointer alone, and since [[T-19093]] the adoption then ends the
+///   session the way the in-app delete does, unbanked: there is no row left to bank against, and
+///   keeping it timed and banked minutes into a task the store no longer has.
 /// - **`HoveredTaskManager` is cleared.** Hover is per-pointer-position state the `.id()` rebuild
 ///   has already invalidated from the other end — each row's `@State isHovered` is reset by the
 ///   rebuild, so no `endHovering` ever fires and the manager is left asserting a hover that no row
@@ -41,6 +43,10 @@ enum macOSRootDataRefreshSupport {
         if let session = reresolvedSession(focusManager.activeSession, in: context) {
             focusManager.activeSession = session
         }
+        // [[T-19093]]. A row the swap could not re-resolve because the other side DELETED it is
+        // not a stale pointer worth keeping: it is the in-app delete arriving by another route, so
+        // it gets the delete's teardown -- ended, nothing banked.
+        focusManager.endSessionIfActiveTaskGone()
         // T-5893. Another process (MCP's `complete_task`) finishing the focused task never mutates
         // the app's copy of the row — it arrives here, as the live row, already done — so T-5310's
         // `statusRaw` watch has nothing to fire on. Ask the adopted row directly, the way the watch
@@ -65,8 +71,9 @@ enum macOSRootDataRefreshSupport {
     /// into an `@Observable` property and inviting a redraw.
     ///
     /// `nil` covers all three of "no session", "already resolved against this context" and "the row
-    /// is no longer in the store". The last of those is the one worth naming: it is **not** a
-    /// reason to end the session.
+    /// is no longer in the store". The last of those is decided by the caller, not here:
+    /// `adoptReplacementContext` ends that session through `FocusManager.endSessionIfActiveTaskGone`
+    /// ([[T-19093]]).
     static func reresolvedSession(
         _ session: FocusManager.ActiveSession?,
         in context: ModelContext
