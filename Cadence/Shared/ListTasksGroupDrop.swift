@@ -158,6 +158,76 @@ enum ListTasksGroupDrop {
                 : .refused(notice: CadencePendingChangePersistence.editFailureNotice)
         }
         guard let target = listTasks.first(where: { $0.id == targetID }) else { return .resolvedNothing }
+        return refileThenRenumber(
+            dropped,
+            onto: target,
+            in: group,
+            groupingMode: groupingMode,
+            listTasks: listTasks,
+            todayKey: todayKey,
+            modelContext: modelContext,
+            sortKeyOrder: sortKeyOrder,
+            commit: commit
+        )
+    }
+
+    /// **A row let go over another ROW of a list's Tasks tab -- the Mac's `ListTasksView.dropTask`,
+    /// in one place iOS can call ([[T-18544]]).** iOS's rows were a drag source and no destination,
+    /// so a row set down on a row did nothing and an iOS-only owner could not author the Custom
+    /// order the tab offers; the Mac renumbers the same drop. No hardware constraint answers that
+    /// split ([[T-8201]]): the touch lift is the same system drag carrying the same
+    /// `TaskDragPayload` string. The steps are the Mac row's: into `target`'s group when the row
+    /// came from another one (`refiling`), then in front of `target` through
+    /// `CadenceTaskRowReorder.reorderTask` over the list's open rows, spanning the whole list
+    /// ([[T-1175]]). A refused refile stops before the renumber. The header drop is this same path
+    /// through the group's first row (`dropOnHeader`), so the two sites cannot disagree.
+    ///
+    /// `.resolvedNothing` for a payload the list does not hold and for a row dropped on itself.
+    /// The outcome is `HeaderDropOutcome` -- the name predates the row site; the three cases are
+    /// the same ones the surface draws.
+    static func dropOnRow(
+        payload: String,
+        onto targetID: UUID,
+        in group: some ListTasksDropGroup,
+        groupingMode: TaskGroupingMode,
+        listTasks: [AppTask],
+        todayKey: String,
+        modelContext: ModelContext,
+        sortKeyOrder: (AppTask, AppTask) -> TaskSortKeyOrder,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> HeaderDropOutcome {
+        guard let droppedID = TaskDragPayload.listTaskID(from: payload),
+              droppedID != targetID,
+              let dropped = listTasks.first(where: { $0.id == droppedID }),
+              let target = listTasks.first(where: { $0.id == targetID }) else { return .resolvedNothing }
+        return refileThenRenumber(
+            dropped,
+            onto: target,
+            in: group,
+            groupingMode: groupingMode,
+            listTasks: listTasks,
+            todayKey: todayKey,
+            modelContext: modelContext,
+            sortKeyOrder: sortKeyOrder,
+            commit: commit
+        )
+    }
+
+    /// The row path both drop sites share: refile into `group` if the row came from elsewhere,
+    /// then renumber it in front of `target`.
+    private static func refileThenRenumber(
+        _ dropped: AppTask,
+        onto target: AppTask,
+        in group: some ListTasksDropGroup,
+        groupingMode: TaskGroupingMode,
+        listTasks: [AppTask],
+        todayKey: String,
+        modelContext: ModelContext,
+        sortKeyOrder: (AppTask, AppTask) -> TaskSortKeyOrder,
+        commit: (ModelContext) throws -> Void
+    ) -> HeaderDropOutcome {
+        let droppedID = dropped.id
+        let targetID = target.id
         if let refiling = refiling(dropping: dropped, onto: target, in: group, groupingMode: groupingMode) {
             guard refile(dropped, refiling, todayKey: todayKey, modelContext: modelContext, commit: commit) else {
                 return .refused(notice: CadencePendingChangePersistence.editFailureNotice)

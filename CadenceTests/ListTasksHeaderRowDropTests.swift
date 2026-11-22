@@ -188,4 +188,109 @@ struct ListTasksHeaderRowDropTests {
         #expect(body.contains("ListTasksGroupDrop.dropOnHeader("))
         #expect(body.contains("listTasks: filteredTasks"), "the renumber spans less than the list")
     }
+
+    // MARK: - [[T-18544]]: a row set down on a ROW
+
+    private func drop(
+        _ task: AppTask,
+        onRow target: AppTask,
+        in group: CadenceTaskDisplayGroup,
+        grouping: TaskGroupingMode,
+        among tasks: [AppTask],
+        in modelContext: ModelContext,
+        commit: @escaping (ModelContext) throws -> Void = { try $0.save() }
+    ) -> ListTasksGroupDrop.HeaderDropOutcome {
+        ListTasksGroupDrop.dropOnRow(
+            payload: TaskDragPayload.string(for: task.id),
+            onto: target.id,
+            in: group,
+            groupingMode: grouping,
+            listTasks: tasks,
+            todayKey: Self.todayKey,
+            modelContext: modelContext,
+            sortKeyOrder: { _, _ in .tie },
+            commit: commit
+        )
+    }
+
+    private func storedOrders(_ tasks: [AppTask], in container: ModelContainer) throws -> [Int] {
+        try tasks.map { try #require(try stored($0.id, in: container)).order }
+    }
+
+    /// The Custom order, authored by drag on iOS: the last row let go over the first lands in
+    /// front of it, the Mac row's renumber, with every other row keeping its relative place.
+    @Test func aRowDroppedOnARowOfItsOwnGroupLandsInFrontOfIt() throws {
+        let (container, modelContext) = try store()
+        let tasks = try seeded([("A", "Documents"), ("B", "Documents"), ("C", "Documents")], in: modelContext)
+        let documents = try #require(groups(tasks, grouping: .none).first)
+
+        #expect(drop(tasks[2], onRow: tasks[0], in: documents, grouping: .none, among: tasks, in: modelContext)
+            == .applied(notice: nil))
+
+        let orders = try storedOrders(tasks, in: container)
+        #expect(orders[2] < orders[0] && orders[0] < orders[1], "C did not land in front of A: \(orders)")
+        #expect(try stored(tasks[2].id, in: container)?.resolvedSectionName == "Documents")
+    }
+
+    /// A row from another section let go over a row of Later joins Later, in front of that row --
+    /// the Mac's refile-then-reorder ([[T-5358]]), not a renumber that springs back.
+    @Test func aRowDroppedOnARowOfAnotherSectionJoinsItInFrontOfThatRow() throws {
+        let (container, modelContext) = try store()
+        let tasks = try seeded([("Ship", "Later"), ("Launch", "Later"), ("Spec", "Documents")], in: modelContext)
+        let later = try #require(groups(tasks, grouping: .byList).first { $0.title == "Later" })
+
+        #expect(drop(tasks[2], onRow: tasks[1], in: later, grouping: .byList, among: tasks, in: modelContext)
+            == .applied(notice: nil))
+
+        #expect(try stored(tasks[2].id, in: container)?.resolvedSectionName == "Later")
+        let orders = try storedOrders(tasks, in: container)
+        #expect(orders[0] < orders[2] && orders[2] < orders[1], "Spec is not between Ship and Launch: \(orders)")
+    }
+
+    /// A refused renumber is said with the order failure, and leaves every row where it was.
+    @Test func aRefusedRowRenumberIsReportedAndWritesNothing() throws {
+        let (container, modelContext) = try store()
+        let tasks = try seeded([("A", "Documents"), ("B", "Documents"), ("C", "Documents")], in: modelContext)
+        let documents = try #require(groups(tasks, grouping: .none).first)
+
+        #expect(
+            drop(tasks[2], onRow: tasks[0], in: documents, grouping: .none, among: tasks, in: modelContext,
+                 commit: { _ in throw Refused() })
+                == .refused(notice: CadenceOrderCommit.failureNotice)
+        )
+        #expect(try storedOrders(tasks, in: container) == [0, 1, 2])
+    }
+
+    /// A row on itself, or a payload the list does not hold, resolves to nothing and writes nothing.
+    @Test func aRowDropWithNothingToMoveWritesNothing() throws {
+        let (container, modelContext) = try store()
+        let tasks = try seeded([("A", "Documents"), ("B", "Documents")], in: modelContext)
+        let documents = try #require(groups(tasks, grouping: .none).first)
+        let stranger = AppTask(title: "Elsewhere")
+        stranger.order = 9
+        modelContext.insert(stranger)
+        try modelContext.save()
+
+        #expect(drop(tasks[1], onRow: tasks[1], in: documents, grouping: .none, among: tasks, in: modelContext)
+            == .resolvedNothing)
+        #expect(drop(stranger, onRow: tasks[0], in: documents, grouping: .none, among: tasks, in: modelContext)
+            == .resolvedNothing)
+        #expect(try storedOrders(tasks, in: container) == [0, 1])
+        #expect(try stored(stranger.id, in: container)?.order == 9)
+    }
+
+    /// The iOS page's call site: every group's rows are handed the shared row drop, and the
+    /// group component registers it on each row.
+    @Test func theIOSListTasksTabHandsEachRowTheSharedDrop() throws {
+        let source = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSListDetailView.swift")
+        #expect(source.contains("onDropTaskPayloadOnRow: rowDrop(for: group)"),
+                "the list Tasks tab rows take no row-on-row drop")
+        let body = try CadenceCommitSurfaceScan.declarationBody(named: "rowDrop", in: source)
+        #expect(body.contains("ListTasksGroupDrop.dropOnRow("))
+        #expect(body.contains("listTasks: filteredTasks"), "the renumber spans less than the list")
+
+        let section = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTaskGroupSection.swift")
+        #expect(section.contains(".iOSTaskRowReorderDrop(target: task, onDrop: onDropTaskPayloadOnRow)"),
+                "the group draws its rows with no row destination")
+    }
 }

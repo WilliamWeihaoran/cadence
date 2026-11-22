@@ -55,9 +55,9 @@ struct iOSListDetailView: View {
     @State private var kanbanControlsListKey: String?
     /// The day the By Date groups are cut against ([[T-5012]]), as the Mac's `ListTasksView` holds.
     @State private var observedDay = CadenceObservedDay()
-    /// What the last row dropped on a Tasks tab heading has to say ([[T-16682]]): a refusal, or a
-    /// landing the active sort does not show -- the Mac's `ListTasksView` pair, from the same
-    /// `ListTasksGroupDrop.dropOnHeader` answer.
+    /// What the last row dropped on a Tasks tab heading or row has to say ([[T-16682]],
+    /// [[T-18544]]): a refusal, or a landing the active sort does not show -- the Mac's
+    /// `ListTasksView` pair, from the same `ListTasksGroupDrop.dropOnHeader` / `dropOnRow` answer.
     @State private var headingDropFailureNotice: String?
     @State private var headingDropLandingNotice: String?
 
@@ -642,18 +642,51 @@ struct iOSListDetailView: View {
                     TaskOrdering.sortKeyOrder($0, $1, field: controls.sortField, direction: controls.sortDirection)
                 }
             )
-            switch outcome {
-            case .applied(let notice):
-                headingDropFailureNotice = nil
-                headingDropLandingNotice = notice
-                return true
-            case .refused(let notice):
-                headingDropLandingNotice = nil
-                headingDropFailureNotice = notice
-                return false
-            case .resolvedNothing:
-                return false
-            }
+            return report(outcome)
+        }
+    }
+
+    /// **A task row dragged onto another row lands in front of it, as on the Mac's list Tasks tab
+    /// ([[T-18544]]).** The whole drop is `ListTasksGroupDrop.dropOnRow`, the Mac row's own steps:
+    /// into the target row's group when it came from another (section, priority or date bucket),
+    /// then renumbered in front of the target over the list's open rows, spanning the whole list.
+    /// Every row takes it, as every Mac row does -- a group that names nothing to file under only
+    /// renumbers, which is the Custom order this tab offers.
+    private func rowDrop(for group: CadenceTaskDisplayGroup) -> (String, AppTask) -> Bool {
+        let controls = taskControls
+        let dayKey = observedDay.todayKey
+        return { payload, target in
+            let outcome = ListTasksGroupDrop.dropOnRow(
+                payload: payload,
+                onto: target.id,
+                in: group,
+                groupingMode: controls.grouping,
+                listTasks: filteredTasks,
+                todayKey: dayKey,
+                modelContext: modelContext,
+                sortKeyOrder: {
+                    TaskOrdering.sortKeyOrder($0, $1, field: controls.sortField, direction: controls.sortDirection)
+                }
+            )
+            return report(outcome)
+        }
+    }
+
+    /// The outcome of a heading or row drop, drawn in the tab's one notice pair and answered as the
+    /// `Bool` a drop destination reads. `.resolvedNothing` says nothing -- the row springing back
+    /// is the whole report (T-591).
+    private func report(_ outcome: ListTasksGroupDrop.HeaderDropOutcome) -> Bool {
+        switch outcome {
+        case .applied(let notice):
+            headingDropFailureNotice = nil
+            headingDropLandingNotice = notice
+            return true
+        case .refused(let notice):
+            headingDropLandingNotice = nil
+            headingDropFailureNotice = notice
+            return false
+        case .resolvedNothing:
+            return false
         }
     }
 
@@ -691,7 +724,8 @@ struct iOSListDetailView: View {
                         dropIdentity: dropIdentity(for: group),
                         collapsedGroupIDs: collapsedGroupIDsBinding,
                         groupID: group.id,
-                        onDropTaskPayload: headingRowDrop(for: group)
+                        onDropTaskPayload: headingRowDrop(for: group),
+                        onDropTaskPayloadOnRow: rowDrop(for: group)
                     )
                 }
 

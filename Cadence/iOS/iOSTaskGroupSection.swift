@@ -135,6 +135,11 @@ struct iOSTaskGroupSection: View {
     var groupID: String? = nil
     /// See `iOSTaskGroupHeader.onDropTaskPayload`.
     var onDropTaskPayload: ((String) -> Bool)? = nil
+    /// A task row dragged onto one of this group's ROWS, by its `TaskDragPayload` string and the
+    /// row it was let go over; answers whether the drop landed ([[T-18544]]). `nil` -- the rows
+    /// register no destination. A list's Tasks tab hands `ListTasksGroupDrop.dropOnRow`, the Mac
+    /// row's own refile-then-renumber; see `iOSTaskRowReorderDropModifier`.
+    var onDropTaskPayloadOnRow: ((String, AppTask) -> Bool)? = nil
 
     private var foldKey: String { groupID ?? title }
 
@@ -179,12 +184,65 @@ struct iOSTaskGroupSection: View {
                                 todayKey: todayKey
                             )
                             .opacity(opacity)
+                            .iOSTaskRowReorderDrop(target: task, onDrop: onDropTaskPayloadOnRow)
                         }
                     }
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
         }
+    }
+}
+
+/// **A task row set down on another row lands in front of it, as on the Mac ([[T-18544]]).**
+///
+/// iOS's rows were a drag source (`.timelineTaskDragSource`) and no destination, so a row dropped
+/// on a row did nothing and a list's Custom order could not be authored by drag on the iPhone or
+/// iPad. This is the destination: a system `.dropDestination` reading the same `TaskDragPayload`
+/// string, with the row insertion line the board card already draws in front of the card it will
+/// land before (`iOSListSupportViews.boardCard`, [[T-8271]]) -- 2pt of `Theme.blue` along the
+/// row's top, the colour of "reorder here" ([[T-18062]] keeps the heading line in the group tint).
+/// The `+` capture gesture reaches the same row through `iOSNewTaskDropTarget`'s frame registry,
+/// never a system drop, so the two cannot claim one gesture.
+///
+/// Registered only when there is a handler, as `CadenceTaskHeadingRowDrop` is.
+struct iOSTaskRowReorderDropModifier: ViewModifier {
+    let target: AppTask
+    let onDrop: ((String, AppTask) -> Bool)?
+
+    @State private var isTargeted = false
+
+    static let lineHeight: CGFloat = 2
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let onDrop {
+            content
+                .overlay(alignment: .top) {
+                    if isTargeted {
+                        Rectangle()
+                            .fill(Theme.blue)
+                            .frame(height: Self.lineHeight)
+                            .transition(.opacity)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.15), value: isTargeted)
+                .dropDestination(for: String.self) { items, _ in
+                    guard let payload = items.first else { return false }
+                    return onDrop(payload, target)
+                } isTargeted: { isTargeted = $0 }
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    /// See `iOSTaskRowReorderDropModifier`.
+    func iOSTaskRowReorderDrop(target: AppTask, onDrop: ((String, AppTask) -> Bool)?) -> some View {
+        modifier(iOSTaskRowReorderDropModifier(target: target, onDrop: onDrop))
     }
 }
 
