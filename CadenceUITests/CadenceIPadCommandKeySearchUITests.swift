@@ -168,11 +168,38 @@ final class CadenceIPadCommandKeySearchUITests: XCTestCase {
     /// what was typed in it, and the page underneath is still the page the user left.
     func testCommandKeyOverAPresentedCaptureCardLeavesBothTheCardAndThePageAlone() throws {
         try launchOnTheIPad()
-        let plus = app.buttons.matching(NSPredicate(format: "label == %@", Capture.plusLabel)).firstMatch
+        // NOT `.firstMatch` on the label alone, and this is [[T-19755]]'s measurement rather than
+        // a style preference. [[T-13281]] (`1e120718`) added a SECOND button carrying this label:
+        // the zero-size, `.accessibilityHidden(true)` host for Cmd+N, beside the Cmd+K one, in
+        // `iOSRootView`'s `.background` (`Cadence/iOS/iOSRootView.swift:199`). XCUITest does not
+        // honour `accessibilityHidden` on iOS 26.5 -- that is [[T-8925]], pinned by
+        // `CadenceAccessibilityHiddenTransportUITests`, whose own worked example is the sibling
+        // `Button {{417.0, 595.0}, {0.0, 0.0}} label: 'Search'`. So from `1e120718` onward
+        // `firstMatch` resolved to the invisible shortcut host and the tap failed with
+        // `kAXErrorCannotComplete ... AXScrollToVisibleAction` on a `{0.0, 0.0}` frame. Measured
+        // 2026-11-23: this test was the one red in an otherwise green 4-test run.
+        //
+        // Gate on a non-empty frame, not on `isHittable`: a hidden host is `hittable == false`
+        // only incidentally, whereas zero size is the thing that makes it untappable and is what
+        // the failure named. Any future zero-size shortcut host is excluded the day it lands.
+        let plusCandidates = app.buttons.matching(NSPredicate(format: "label == %@", Capture.plusLabel))
         XCTAssertTrue(
-            plus.waitForExistence(timeout: CadenceUITestBounds.firstPaint),
+            plusCandidates.firstMatch.waitForExistence(timeout: CadenceUITestBounds.firstPaint),
             "no capture control to present over the page. " + surfaceReport()
         )
+        let plus = plusCandidates.allElementsBoundByIndex.first { element in
+            let frame = element.frame
+            return frame.width > 0 && frame.height > 0
+        }
+        guard let plus else {
+            return XCTFail(
+                """
+                Every button labelled "\(Capture.plusLabel)" has a zero frame, so the real capture \
+                control is not on screen -- only shortcut hosts like iOSRootView's Cmd+N button \
+                ([[T-13281]]). \(surfaceReport())
+                """
+            )
+        }
         plus.tap()
 
         let title = app.textFields.element(identified: Capture.titleIdentifier)

@@ -38,16 +38,37 @@ section. Read any item in full with `./scripts/ledger-view.sh head T-NNNN`.
 
 ---
 
-## A. Keys an agent cannot send
+## A. Keys the simulator *tool* cannot send — but XCUITest can (corrected 2026-11-23, T-19756)
+
+**Read this before you spend a minute on anything below.** This section used to say these were
+keys "an agent cannot send". That was wrong, and it parked four items here for weeks on a limit
+that belongs to one tool rather than to the device.
 
 Claude Code's simulator `press_key` is a **closed enum** — `return`, `delete`, `forward_delete`,
 the four arrows, `home`, `end`, `page_up`, `page_down`, `select_all`, `undo`, `redo` — with **no
 `escape` and no modifiers**. The `text` action types characters literally, so `\u001b` arrives as
 six characters in the field. `xcrun simctl` has no key-injection subcommand, and the simulator's
 own hardware keyboard belongs to the host Simulator app, which agents must not touch
-(measured on T-11051, recorded in `Cadence/iOS/AGENTS.md`).
+(measured on T-11051, recorded in `Cadence/iOS/AGENTS.md`). All of that is still true.
 
-So: **you press these keys, with the Simulator window focused.**
+**What is also true: `XCUIElement.typeKey(_:modifierFlags:)` exists on iOS and sends any chord,
+Escape included.** Six committed suites already send `XCUIKeyboardKey.escape`, and
+`CadenceIPadCommandKeySearchUITests` has driven Cmd+K on `Cadence-iPadPro11` since 2026-10-31
+(T-8801). It needs no one at the keyboard: every iOS suite gates on
+`CadenceUITestEnvironment.requireAnUnlockedScreen()` alone, never on `requireInteractiveUITests()`,
+which exists for macOS tests that seize the owner's own pointer. A simulator test seizes nothing.
+Measured unattended on 2026-11-23: four tests executed on the iPad with no automation prompt
+raised and no pointer taken.
+
+**So the iPad items below are very likely ordinary agent work, not owner sightings** — T-11051,
+T-13282, T-12231's iPad half and T-10062's iPad half. None has been *driven* yet, so they stay
+listed; the next agent to take one writes a suite rather than asking you. Two honest caveats: a
+UI test per sighting costs far more than a tap-and-look, and these three surfaces carry almost no
+accessibility identifiers, so lookups go by label and type — the fragile shape that broke a suite
+in T-19755. The iPhone items, the EventKit and Reminders items and the OpenAI-key item are
+unaffected: the enum was never why those needed you.
+
+Until someone writes those suites: **you press these keys, with the Simulator window focused.**
 
 ### T-11051 — Escape discards a draft (iPad, 3 checks)
 
