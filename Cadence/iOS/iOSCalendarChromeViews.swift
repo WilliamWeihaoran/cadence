@@ -58,6 +58,10 @@ struct iOSCalendarToolbar: View {
     /// The title popover's Today row, after it has moved `leadingDate` ([[T-18549]]). See
     /// `iOSDateJumpTitle.onJumpToNow`.
     var onJumpToNow: (() -> Void)? = nil
+    /// Whether the surface under the title has an hour axis -- the timed grids, Day and Week. Its
+    /// Today row is then always offered, as on the Mac ([[T-18573]]); see
+    /// `iOSDateJumpTitle.offersNowWhileAtNow`.
+    var hasHourAxis = false
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private let calendar = Calendar.current
@@ -254,7 +258,8 @@ struct iOSCalendarToolbar: View {
             anchor: { picked in
                 CadenceCalendarDateTitleSupport.anchor(forPicked: picked, format: titleFormat, calendar: calendar)
             },
-            onJumpToNow: onJumpToNow
+            onJumpToNow: onJumpToNow,
+            offersNowWhileAtNow: hasHourAxis
         )
     }
 

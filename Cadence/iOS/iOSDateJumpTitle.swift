@@ -68,6 +68,11 @@ struct iOSDateJumpTitle: View {
     /// whose idea of now has a second axis -- the timed calendar grids' current hour -- needs this
     /// separate signal to move it. `nil` everywhere a date is the whole answer.
     var onJumpToNow: (() -> Void)? = nil
+    /// Offer the now row even while `isAtNow` holds ([[T-18573]]). `isAtNow` is a date test, so on
+    /// a surface whose now also has an hour -- the timed grids -- it holds at 2 AM on today, where
+    /// the row is still the only way back to the current hour. The Mac's Today button is always
+    /// there; Notes, the Board and Month have no hour axis and keep the date rule.
+    var offersNowWhileAtNow = false
 
     @State private var isOpen = false
     @State private var viewMonth = Date()
@@ -114,7 +119,7 @@ struct iOSDateJumpTitle: View {
                 selection: pickedDate,
                 viewMonth: $viewMonth,
                 isOpen: $isOpen,
-                isAtNow: isAtNow,
+                showsNowRow: offersNowWhileAtNow || !isAtNow,
                 nowTitle: nowTitle,
                 calendar: pickerCalendar,
                 onNow: {
@@ -209,14 +214,14 @@ private struct iOSDateJumpPopover: View {
     @Binding var selection: Date
     @Binding var viewMonth: Date
     @Binding var isOpen: Bool
-    let isAtNow: Bool
+    let showsNowRow: Bool
     let nowTitle: String
     let calendar: Calendar
     let onNow: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            if !isAtNow {
+            if showsNowRow {
                 Button {
                     onNow()
                     isOpen = false

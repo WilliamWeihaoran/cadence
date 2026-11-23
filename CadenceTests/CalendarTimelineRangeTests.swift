@@ -812,6 +812,39 @@ struct CalendarTimelineRangeTests {
         #expect(macJump.contains("CadenceScheduleSupport.nowTimelineHour("))
     }
 
+    /// [[T-18573]]: on the timed grids the popover's Today row is always offered, as the Mac's Today
+    /// button is. `isAtNow` is a date test, so it holds on today at 2 AM, where the row is the only
+    /// way back to the current hour. Notes, the Board and Month have no hour axis and keep it.
+    /// iOS is behind `#if os(iOS)`, so this is source.
+    @Test func theTimedGridsAlwaysOfferTheTodayRowEvenWhileTodayLeads() throws {
+        let title = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSDateJumpTitle.swift")
+        )
+        #expect(title.contains("showsNowRow: offersNowWhileAtNow || !isAtNow"))
+        #expect(title.contains("if showsNowRow {"))
+        #expect(!title.contains("if !isAtNow"), "the popover gates its now row on the date test alone again")
+
+        let toolbar = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarChromeViews.swift")
+        )
+        #expect(toolbar.contains("offersNowWhileAtNow: hasHourAxis"))
+
+        let page = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarView.swift")
+        )
+        #expect(page.contains("hasHourAxis: isTimedGrid"))
+        let timed = try #require(CadenceSourceScan.declarationBody("private var isTimedGrid: Bool", in: page))
+        #expect(timed.contains("presentation == .timeline"))
+        #expect(timed.contains("viewMode != .month"))
+
+        // Notes has no hour axis; its title keeps the date rule.
+        let notes = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSNotesView.swift")
+        )
+        #expect(notes.contains("iOSDateJumpTitle("), "non-vacuity: Notes no longer draws the shared title")
+        #expect(!notes.contains("offersNowWhileAtNow"))
+    }
+
     /// A week that is not this week has no "now" to honour. The sensible default is the user's own
     /// work-hours start — the window the amber band on each column is already drawn from — rather
     /// than a second hardcoded hour.

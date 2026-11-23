@@ -262,7 +262,8 @@ struct iOSCalendarView: View {
                     presentation: presentation,
                     viewMode: viewMode
                 ),
-                onJumpToNow: { nowJumpToken &+= 1 }
+                onJumpToNow: { nowJumpToken &+= 1 },
+                hasHourAxis: isTimedGrid
             )
 
             // [[T-5954]]: every event read on this page answers empty without access, so say why.
