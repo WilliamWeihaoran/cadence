@@ -627,9 +627,10 @@ struct CadenceTouchRowStackLazinessTests {
         #expect(normalized.contains("iOSTaskGroupHeader("))
     }
 
-    /// Every phone host that scrolls the group puts it inside `ScrollView { LazyVStack(...) }`. A
-    /// lazy row stack inside an eager page is still built whole the moment the page is, which is
-    /// the shape T-3004 found on the Mac. Named by host and by the exact opening it draws.
+    /// Every phone host that scrolls the group puts it inside `ScrollView { LazyVStack(...) }`, but
+    /// one: a list's Tasks tab, eager since [[T-19922]] and argued at its entry below. A lazy row
+    /// stack inside an eager page is still built whole the moment the page is, which is the shape
+    /// T-3004 found on the Mac. Named by host and by the exact opening it draws.
     ///
     /// **T-2088 moved the collection page's scrolling page one declaration down**, and this test
     /// follows it rather than being loosened. `body` is now the `ScrollViewReader` that gives the
@@ -648,10 +649,19 @@ struct CadenceTouchRowStackLazinessTests {
                 "var body: some View",
                 "ScrollView { LazyVStack(alignment: .leading, spacing: 10) {"
             ),
+            // **A list's Tasks tab is the one eager page, since [[T-19922]], and it is pinned as one.**
+            // Its children are whole groups -- By Section puts a ~35pt empty heading beside groups
+            // hundreds of points tall -- and a lazy page sized the groups it had not built from the
+            // ones it had: 930pt from the top, 762pt from the bottom, and a frozen list on the
+            // iPhone. Measured in the iOS unit host with 1,500 tasks in one section, the eager page
+            // spent the same main-thread time building as the lazy one (0.24 s against 0.23 s), so
+            // the rows inside `iOSTaskGroupSection`'s own `LazyVStack` stayed lazy here; T-3004's
+            // "built whole" finding above was the Mac's. `iOSListDetailTasksScrollHeightTests` holds
+            // the behaviour; this holds the spelling.
             (
                 "Cadence/iOS/iOSListDetailView.swift",
                 "private var sectionStack: some View",
-                "ScrollView { LazyVStack(alignment: .leading, spacing: iOSTaskCollectionMetrics.groupSpacing) {"
+                "ScrollView { VStack(alignment: .leading, spacing: iOSTaskCollectionMetrics.groupSpacing) {"
             ),
         ]
 
@@ -660,7 +670,7 @@ struct CadenceTouchRowStackLazinessTests {
             let normalized = desktopSurfaceCollapsingWhitespace(body)
             #expect(
                 normalized.trimmingCharacters(in: .whitespaces).hasPrefix(host.opening),
-                "\(host.path): \(host.declaration) no longer opens a lazy scrolling page"
+                "\(host.path): \(host.declaration) no longer opens the scrolling page pinned for it"
             )
         }
 

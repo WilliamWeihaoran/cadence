@@ -1746,6 +1746,9 @@ struct CadenceTestTargetHygieneTests {
         // [[T-16654]]: the grouped headings' row drop is `iOSTaskCollectionSections` wiring under
         // `Cadence/iOS/`; the write it reaches is `CadenceTaskHeaderDropTests`, on both legs.
         "CadenceTests/iOSTaskHeaderRowDropTests.swift",
+        // [[T-19922]]: a list's Tasks tab hosted for real and scrolled by its own `UIScrollView`;
+        // the page is `iOSListDetailView`, under `Cadence/iOS/`.
+        "CadenceTests/iOSListDetailTasksScrollHeightTests.swift",
     ]
 
     @Test func noTestFileCompilesToNothingWhereItIsMeantToRun() throws {

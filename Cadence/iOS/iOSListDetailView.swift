@@ -702,9 +702,20 @@ struct iOSListDetailView: View {
     /// picks up its count badge, its uniform spacing, and its empty-group rule. What the `List`
     /// provided was already switched off or replaced app-wide — see `iOSTaskCollectionPage` for
     /// that accounting; the rows' swipe actions are `iOSSwipeActions`, which works in either host.
+    ///
+    /// **The groups are an eager `VStack`, not a `LazyVStack` ([[T-19922]]).** Each child here is a
+    /// whole group, and By Section makes them as unlike as children get: an empty Default heading
+    /// of ~35pt over a Regression group of several hundred. A lazy stack sizes the children it has
+    /// not built from the ones it has, so the page's height depended on where it was scrolled --
+    /// measured on the seeded `[Sample] TestFlight Readiness`, 930pt from the top and 762pt (the
+    /// real height) from the bottom -- and a swipe on the iPhone froze the list with its main
+    /// thread pinned inside SwiftUI's lazy placement. By Date's groups are alike, and its height
+    /// never moved. The rows keep their laziness: they are in `iOSTaskGroupSection`'s own `LazyVStack`
+    /// (T-2057), and a page has a handful of groups, not thousands.
+    /// `iOSListDetailTasksScrollHeightTests` pins the height at both ends.
     private var sectionStack: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: iOSTaskCollectionMetrics.groupSpacing) {
+            VStack(alignment: .leading, spacing: iOSTaskCollectionMetrics.groupSpacing) {
                 if let headingDropFailureNotice {
                     CadenceInlineFailureNotice(text: headingDropFailureNotice)
                 }
