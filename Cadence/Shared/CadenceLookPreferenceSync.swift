@@ -253,7 +253,8 @@ struct CadenceLookPreferenceSyncHost: View {
             .onChange(of: lookPreferences.map(\.updatedAt)) { _, _ in
                 sync.adopt(records: lookPreferences)
             }
-            .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+            // [[T-19903]]: delivered on the main thread; the notification is posted on the writer's.
+            .onReceive(CadenceDefaultsChangeStream.main.publisher) { _ in
                 sync.publish(records: lookPreferences, in: modelContext)
             }
     }

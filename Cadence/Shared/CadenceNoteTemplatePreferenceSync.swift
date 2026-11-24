@@ -251,7 +251,8 @@ struct CadenceNoteTemplatePreferenceSyncHost: View {
             .onChange(of: templatePreferences.map(\.updatedAt)) { _, _ in
                 sync.reconcile(records: templatePreferences, in: modelContext)
             }
-            .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+            // [[T-19903]]: delivered on the main thread; the notification is posted on the writer's.
+            .onReceive(CadenceDefaultsChangeStream.main.publisher) { _ in
                 sync.publish(records: templatePreferences, in: modelContext)
             }
     }
