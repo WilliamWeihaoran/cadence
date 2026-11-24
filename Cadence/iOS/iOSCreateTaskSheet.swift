@@ -170,7 +170,7 @@ struct iOSCreateTaskSheet: View {
     private var calendarUnavailableNotice: String? {
         guard draft.kind == .event else { return nil }
         if !calendarManager.isAuthorized { return CadenceCalendarAccessNotice.eventCreationNeedsAccessSentence }
-        return calendarManager.writableCalendars.isEmpty ? "No writable calendars are available." : nil
+        return calendarManager.writableCalendars.isEmpty ? CadenceEventEditorCalendarChoices.noWritableCalendarSentence : nil
     }
 
     private func normalizeSection() {

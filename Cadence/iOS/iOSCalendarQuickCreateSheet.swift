@@ -160,7 +160,7 @@ struct iOSCalendarQuickCreateSheet: View {
             return CadenceCalendarAccessNotice.eventCreationNeedsAccessSentence
         }
         if calendarManager.writableCalendars.isEmpty {
-            return "No writable calendars are available."
+            return CadenceEventEditorCalendarChoices.noWritableCalendarSentence
         }
         return nil
     }

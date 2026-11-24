@@ -433,7 +433,7 @@ struct iOSTimelineDraftPanelHost: View {
             return sentence
         }
         if calendarManager.writableCalendars.isEmpty {
-            return "No writable calendars are available."
+            return CadenceEventEditorCalendarChoices.noWritableCalendarSentence
         }
         return nil
     }
