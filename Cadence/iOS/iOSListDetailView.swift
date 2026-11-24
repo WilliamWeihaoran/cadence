@@ -445,14 +445,16 @@ struct iOSListDetailView: View {
     /// in its tab bar, in this order, with Order only where the field honours one (T-7006).
     private var kanbanPage: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
+            // [[T-19921]]: a wrapping row, as the Tasks tab's bar, so `Priority` / `Ascending` /
+            // `Show Archived` moves a chip down rather than squeezing one into a broken word.
+            CadenceWrappingHStack(spacing: 10, lineSpacing: 10) {
                 iOSEnumChoiceChip(title: "Sort", glyph: "arrow.up.arrow.down", selection: kanbanControl(\.sortField))
                 if kanbanControls.sortField.honorsDirection {
                     iOSEnumChoiceChip(title: "Order", glyph: "arrow.up.arrow.down.square", selection: kanbanControl(\.sortDirection))
                 }
                 archivedColumnsChip
-                Spacer(minLength: 0)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.top, 14)
             .padding(.bottom, 4)
@@ -498,6 +500,7 @@ struct iOSListDetailView: View {
             )
             .cadenceFont(.controlLabel, base: iOSTaskChipMetrics.fontSize)
             .foregroundStyle(isOn ? Theme.text : Theme.dim)
+            .lineLimit(1)
             .padding(.horizontal, iOSTaskChipMetrics.horizontalPadding)
             .frame(minHeight: 44)
             .background(Theme.surfaceElevated.opacity(isOn ? 1 : 0.72))

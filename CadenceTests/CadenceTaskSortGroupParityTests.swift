@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import SwiftUI
 import Testing
 
 @testable import Cadence
@@ -635,6 +636,38 @@ struct CadenceTaskSortGroupParityTests {
                 .contains(CadencePreferenceKeys.inboxSortField))
             #expect(defaults.string(forKey: CadencePreferenceKeys.inboxSortField) == TaskSortField.custom.rawValue)
         }
+    }
+
+    /// **[[T-19921]] -- a chip never breaks a word in half.** On a 393pt iPhone at the default
+    /// text size a list's Tasks tab drew `Priority` / `Ascendin` over `g` / `By Section`: the bar
+    /// was an `HStackLayout` whose `stacksControls` switch flips only at accessibility sizes, so
+    /// three chips that overran the width were compressed and each label wrapped wherever the
+    /// width ran out. The row now WRAPS whole chips (`CadenceWrappingHStack`, whose line-breaking
+    /// `CadenceFlowLayoutSupportTests` runs), and a chip on a row is one line, so even a squeezed
+    /// one truncates rather than splitting a word. The Kanban tab's band -- the same chips beside
+    /// Show Archived -- is the same row. The accessibility-size column is untouched: it still
+    /// wraps its labels, which is [[T-13621]]'s answer.
+    @Test func theChipRowsWrapWholeChipsAndAChipIsOneLineOnARow() throws {
+        let touch = try literalBearingCode(Self.barPath)
+        let bar = try #require(CadenceSourceScan.declarationBody("struct iOSTaskSortGroupBar: View", in: touch))
+        #expect(bar.contains(": AnyLayout(CadenceWrappingHStack(spacing: 10, lineSpacing: 10))"))
+        #expect(!bar.contains("HStackLayout("), "the bar squeezes its chips into one line again")
+        #expect(bar.contains("? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))"), "the large-text column is gone")
+
+        let chip = try #require(CadenceSourceScan.declarationBody("struct iOSEnumChoiceChip<", in: touch))
+        #expect(chip.contains(".lineLimit(stacks ? nil : 1)"), "a chip on a row can break its label mid-word again")
+
+        let list = try literalBearingCode("Cadence/iOS/iOSListDetailView.swift")
+        let board = try #require(CadenceSourceScan.declarationBody("private var kanbanPage: some View", in: list))
+        #expect(board.contains("CadenceWrappingHStack(spacing: 10, lineSpacing: 10) {"))
+        #expect(!board.contains("HStack(spacing: 10) {"), "the board's band squeezes its chips into one line again")
+        let archived = try #require(CadenceSourceScan.declarationBody("private var archivedColumnsChip: some View", in: list))
+        #expect(archived.contains(".lineLimit(1)"))
+
+        // The predicate the bar consults is the shared one, unchanged: still false at the default
+        // size, so the fix is the row's, and every other `stacksControls` caller draws as before.
+        #expect(!iOSTaskPageTypographyMetrics.stacksControls(at: .large, scaling: .enabled))
+        #expect(iOSTaskPageTypographyMetrics.stacksControls(at: .accessibility1, scaling: .enabled))
     }
 
     /// It is reached at launch. A migration nothing calls is the defect, not the mapping.

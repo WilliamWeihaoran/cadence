@@ -778,11 +778,18 @@ struct iOSTaskSortGroupBar: View {
     /// passes `ListTasksGroupingLabel.label(for:)`, the Mac badge's `labelOverride` ([[T-13561]]).
     var groupingLabel: (TaskGroupingMode) -> String? = { _ in nil }
 
+    /// [[T-19921]]: below the accessibility sizes the chips sit on a WRAPPING row, not an
+    /// `HStackLayout`. Three chips whose ideal widths overrun a 393pt iPhone (`Priority`,
+    /// `Ascending`, `By Section`) were compressed by the stack, and each label broke wherever the
+    /// width ran out -- `Ascendin` over `g`. `CadenceWrappingHStack` measures every chip at its
+    /// natural width and moves the one that does not fit to the next line, and the chip's own
+    /// `lineLimit(1)` keeps a word whole even then. `stacksControls` is unchanged: it still owns
+    /// the accessibility-size column, and its other callers never see this.
     var body: some View {
         let stacks = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
         let layout = stacks
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
-            : AnyLayout(HStackLayout(spacing: 10))
+            : AnyLayout(CadenceWrappingHStack(spacing: 10, lineSpacing: 10))
         layout {
             iOSEnumChoiceChip(title: "Sort", glyph: "arrow.up.arrow.down", selection: $sortField)
             // The Mac asks the same question before drawing its Order pill (T-7006).
@@ -796,11 +803,8 @@ struct iOSTaskSortGroupBar: View {
                 excluded: excludedGroupings,
                 labelOverride: groupingLabel
             )
-
-            if !stacks {
-                Spacer()
-            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .tint(Theme.blue)
     }
 }
@@ -851,6 +855,9 @@ struct iOSEnumChoiceChip<T: CaseIterable & RawRepresentable & Identifiable & Has
             Label(label(for: selection), systemImage: glyph)
                 .cadenceFont(.controlLabel, base: iOSTaskChipMetrics.fontSize)
                 .foregroundStyle(Theme.text)
+                // [[T-19921]]: one line wherever the row is not a column, so a squeezed chip
+                // truncates rather than breaking a word in half. The column keeps wrapping.
+                .lineLimit(stacks ? nil : 1)
                 .padding(.horizontal, iOSTaskChipMetrics.horizontalPadding)
                 .fixedSize(horizontal: false, vertical: stacks)
                 .frame(minHeight: height)
