@@ -288,13 +288,14 @@ final class CadenceLayoutManager: NSLayoutManager {
             guard quoteGlyphRange.length > 0 else { return }
 
             var lineRect = self.boundingRect(forGlyphRange: quoteGlyphRange, in: textContainer)
-            if let paragraph = textStorage.attribute(.paragraphStyle, at: blockRange.location, effectiveRange: nil) as? NSParagraphStyle {
-                // Hidden `>` glyphs still occupy the container's leading edge. Measuring from
-                // them puts the rail outside AppKit's text-container clip; use the text indent.
-                let rightEdge = lineRect.maxX
-                lineRect.origin.x = max(lineRect.minX, paragraph.firstLineHeadIndent + textContainer.lineFragmentPadding)
-                lineRect.size.width = max(0, rightEdge - lineRect.minX)
-            }
+            // Hidden `>` glyphs still occupy the container's leading edge. Measuring from them
+            // puts the rail outside AppKit's text-container clip; use the QUOTE's text indent.
+            // Not the block's first paragraph style: a block opening `> - [ ] todo` carries the
+            // checklist's content indent on top of the quote's, which moved the rail and wash
+            // right through every top-level box and across the plain quote lines ([[T-19923]]).
+            let rightEdge = lineRect.maxX
+            lineRect.origin.x = max(lineRect.minX, MarkdownQuoteSupport.paragraphIndent(depth: depth) + textContainer.lineFragmentPadding)
+            lineRect.size.width = max(0, rightEdge - lineRect.minX)
             lineRect = lineRect.offsetBy(dx: origin.x, dy: origin.y)
             let backgroundRect = MarkdownDecorationGeometry.quoteBackgroundRect(lineRect: lineRect, depth: depth)
             let barRect = MarkdownDecorationGeometry.quoteBarRect(backgroundRect: backgroundRect, depth: depth)

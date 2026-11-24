@@ -31,9 +31,16 @@ nonisolated struct iOSMarkdownQuoteRailLayout: Equatable {
         return runs
     }
 
-    func barRects(firstFragment: CGRect, lastFragment: CGRect, markerLocation: CGPoint) -> [CGRect] {
+    /// The rail sits in the gutter the QUOTE's own indent opens, `MarkdownQuoteSupport
+    /// .paragraphIndent(depth:)` from the container's leading edge -- never from wherever the
+    /// block's first glyph landed. It read the first glyph's location, which is the quote indent
+    /// only when the block opens with a plain quote line: a block opening `> - [ ] todo` put its
+    /// first glyph at the quote indent PLUS the checklist's content indent, so the rail moved
+    /// right through every top-level box and across the plain quote lines below it ([[T-19923]]).
+    func barRects(firstFragment: CGRect, lastFragment: CGRect, lineFragmentPadding: CGFloat) -> [CGRect] {
         let markerWidth = CGFloat(8 + max(0, depth - 1) * 4)
-        let x = max(0, firstFragment.minX + markerLocation.x - markerWidth - 6)
+        let textIndent = lineFragmentPadding + MarkdownQuoteSupport.paragraphIndent(depth: depth)
+        let x = max(0, firstFragment.minX + textIndent - markerWidth - 6)
         return (0..<max(1, depth)).map { index in
             CGRect(x: x + CGFloat(index * 4), y: firstFragment.minY + 1,
                    width: 3, height: max(0, lastFragment.maxY - firstFragment.minY - 2))

@@ -159,8 +159,8 @@ final class iOSMarkdownBlockCanvasLayoutManager: NSLayoutManager {
             guard glyphs.length > 0 else { continue }
             let first = lineFragmentRect(forGlyphAt: glyphs.location, effectiveRange: nil)
             let last = lineFragmentRect(forGlyphAt: NSMaxRange(glyphs) - 1, effectiveRange: nil)
-            let location = location(forGlyphAt: glyphs.location)
-            for (index, rect) in run.barRects(firstFragment: first, lastFragment: last, markerLocation: location).enumerated() {
+            let padding = textContainer(forGlyphAt: glyphs.location, effectiveRange: nil)?.lineFragmentPadding ?? 0
+            for (index, rect) in run.barRects(firstFragment: first, lastFragment: last, lineFragmentPadding: padding).enumerated() {
                 UIColor(Theme.blue).withAlphaComponent(index == 0 ? 0.78 : 0.38).setFill()
                 UIBezierPath(roundedRect: rect.offsetBy(dx: origin.x, dy: origin.y), cornerRadius: 1.5).fill()
             }

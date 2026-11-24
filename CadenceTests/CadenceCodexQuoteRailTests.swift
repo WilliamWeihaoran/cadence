@@ -59,7 +59,7 @@ struct CadenceCodexQuoteRailTests {
             let run = iOSMarkdownQuoteRailLayout(depth: 1, range: NSRange(location: 0, length: 1))
             let first = CGRect(x: 5, y: 12, width: 320, height: lineHeight)
             let last = CGRect(x: 5, y: 12 + lineHeight * 5 + 16, width: 320, height: lineHeight)
-            let bars = run.barRects(firstFragment: first, lastFragment: last, markerLocation: CGPoint(x: 18, y: 0))
+            let bars = run.barRects(firstFragment: first, lastFragment: last, lineFragmentPadding: 0)
             #expect(bars == [CGRect(x: 9, y: 13, width: 3, height: lineHeight * 6 + 14)])
             #expect(bars[0].contains(CGPoint(x: 10, y: first.maxY + 4)))
         }
@@ -69,11 +69,37 @@ struct CadenceCodexQuoteRailTests {
         let run = iOSMarkdownQuoteRailLayout(depth: 3, range: NSRange(location: 0, length: 1))
         let first = CGRect(x: 5, y: 10, width: 320, height: 20)
         let last = CGRect(x: 5, y: 80, width: 320, height: 20)
-        #expect(run.barRects(firstFragment: first, lastFragment: last, markerLocation: CGPoint(x: 42, y: 0)) == [
+        #expect(run.barRects(firstFragment: first, lastFragment: last, lineFragmentPadding: 0) == [
             CGRect(x: 25, y: 11, width: 3, height: 88),
             CGRect(x: 29, y: 11, width: 3, height: 88),
             CGRect(x: 33, y: 11, width: 3, height: 88)
         ])
+    }
+
+    /// The rail sits in the QUOTE's gutter whatever line opens the block. It was measured from the
+    /// block's first glyph, so a block opening `> - [ ] todo` carried the checklist's content
+    /// indent into the rail: it ran through every top-level box and across the plain quote line
+    /// below, while nested boxes, further right, sat clear ([[T-19923]]). The box is placed here by
+    /// the renderer's own rule -- the hidden marker's column, less the 18pt canvas and 6pt gap.
+    @Test func theRailClearsTopLevelBoxesAndPlainQuoteTextWhicheverLineOpensTheBlock() throws {
+        let padding: CGFloat = 5
+        let first = CGRect(x: 0, y: 10, width: 320, height: 20)
+        let last = CGRect(x: 0, y: 130, width: 320, height: 20)
+        for depth in 1...3 {
+            let quote = String(repeating: ">", count: depth)
+            let run = iOSMarkdownQuoteRailLayout(depth: depth, range: NSRange(location: 0, length: 1))
+            let bars = run.barRects(firstFragment: first, lastFragment: last, lineFragmentPadding: padding)
+            let railMaxX = try #require(bars.map(\.maxX).max())
+            let quoteIndent = padding + MarkdownQuoteSupport.paragraphIndent(depth: depth)
+            #expect(railMaxX < quoteIndent, "depth \(depth): plain quote text starts right of the rail")
+            #expect(bars.allSatisfy { $0.minX >= padding }, "depth \(depth): the rail stays inside the container")
+            for line in ["\(quote) - [ ] todo", "\(quote) - [x] done", "\(quote)   - [ ] nested"] {
+                let item = try #require(MarkdownQuoteSupport.listLineInfo(in: line)?.list, "non-vacuity: \(line) is a quoted item")
+                let boxMinX = quoteIndent
+                    + MarkdownListIndentMetrics.contentIndent(level: item.visualLevel, markerWidth: item.markerWidth) - 18 - 6
+                #expect(railMaxX < boxMinX, "\(line): the box sits clear of the rail, not on it")
+            }
+        }
     }
 
     /// Wiring only: UIKit is not executed by the macOS test target.
@@ -103,7 +129,7 @@ struct CadenceCodexQuoteRailTests {
         let rails = try #require(CadenceSourceScan.functionBody(named: "drawQuoteRails", in: drawing))
         #expect(rails.contains("iOSMarkdownQuoteRailLayout.runs(in: storage, intersecting: charRange)"))
         #expect(rails.contains("lineFragmentRect(forGlyphAt: NSMaxRange(glyphs) - 1"))
-        #expect(rails.contains("run.barRects(firstFragment: first, lastFragment: last, markerLocation: location)"))
+        #expect(rails.contains("run.barRects(firstFragment: first, lastFragment: last, lineFragmentPadding: padding)"))
         #expect(rails.contains("UIBezierPath(roundedRect:"))
         #expect(rails.contains(".fill()"))
     }
@@ -136,6 +162,35 @@ struct CadenceCodexQuoteRailTests {
         let runs = iOSMarkdownQuoteRailLayout.runs(in: storage, intersecting: NSRange(location: 0, length: storage.length))
         #expect(runs.map(\.depth) == [1, 1])
         #expect(runs[0].range == NSRange(location: 0, length: 25))
+    }
+
+    /// The columns of the quote rail's blue, in view pixels, across the whole rendered view.
+    private func railColumns(_ view: CadenceTextView) throws -> ClosedRange<Int> {
+        let rep = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: rep)
+        let blue = try #require(Theme.nsBlue.usingColorSpace(.deviceRGB))
+        var columns: [Int] = []
+        for x in 0..<rep.pixelsWide {
+            for y in 0..<rep.pixelsHigh {
+                let pixel = try #require(rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB))
+                let delta = max(abs(pixel.redComponent - blue.redComponent),
+                                abs(pixel.greenComponent - blue.greenComponent), abs(pixel.blueComponent - blue.blueComponent))
+                if delta < 0.14 { columns.append(x); break }
+            }
+        }
+        let lo = try #require(columns.min(), "positive control: the rail actually drew")
+        return lo...(try #require(columns.max()))
+    }
+
+    /// The Mac half of [[T-19923]]: the rail and wash were measured from the block's FIRST
+    /// paragraph style, which for `> - [ ] todo` carries the checklist's content indent, so a
+    /// block opening on a box drew its rail through the box. The rail column must not depend on
+    /// which line opens the block.
+    @Test func macOSRailColumnDoesNotDependOnWhichLineOpensTheBlock() throws {
+        let plainFirst = try railColumns(macTextView("> plain text\n> - [ ] todo\n> - [ ] top"))
+        let boxFirst = try railColumns(macTextView("> - [ ] todo\n> - [ ] top\n> plain text"))
+        #expect(plainFirst.count <= 12, "non-vacuity: one narrow rail, not a wash of blue")
+        #expect(boxFirst == plainFirst)
     }
 
     /// Real AppKit pixels, not an inference from the attribute grouping.

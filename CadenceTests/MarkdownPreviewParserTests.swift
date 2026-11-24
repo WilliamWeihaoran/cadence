@@ -209,6 +209,36 @@ struct MarkdownPreviewParserTests {
         #expect(CadenceMarkdownPresentationSupport.plainPreviewText(from: "> - [ ] todo") == "todo")
     }
 
+    /// An EMPTY item is a list line with nothing to say, quoted or not -- not a quote or a
+    /// paragraph whose text is its own `- [ ]` marker. The note is the one the iOS sighting typed;
+    /// Search read `todo top nested deeper - [ ] plain text` from it ([[T-19923]]).
+    @Test func anEmptyListItemContributesNoTextQuotedOrNot() {
+        let quoted = """
+        > - [ ] todo
+        > - [ ] top
+        >   - [ ] nested
+        >   - [ ] deeper
+        >   - [ ] \("")
+        >   plain text
+        """
+        #expect(CadenceMarkdownPresentationSupport.plainPreviewText(from: quoted)
+                == "todo top nested deeper plain text")
+        let note = Note(kind: .permanent, title: "Quoted", content: quoted)
+        #expect(CadenceSearchNoteExcerpt.text(for: note, taskTitles: [:]) == "todo top nested deeper plain text")
+
+        for empty in ["> - [ ] ", "> - [x] ", "> - ", "> 1. ", "- [ ] ", "- ", "  - [ ] ", ">> - [ ] "] {
+            #expect(MarkdownPreviewParser.blocks(in: "\(empty)\nafter") == [.paragraph("after")],
+                    "\(empty.debugDescription) is an empty item, not text")
+        }
+        // Still an item boundary: the paragraph above it does not run on into the line below.
+        #expect(MarkdownPreviewParser.blocks(in: "before\n- [ ] \nafter") == [.paragraph("before"), .paragraph("after")])
+        // Non-vacuity: a filled item and a plain quote right beside one still read.
+        #expect(MarkdownPreviewParser.blocks(in: "> - [ ] \n> - [ ] filled\n> plain") == [
+            .checklist(depth: 0, isDone: false, text: "filled", lineIndex: 1),
+            .quote(depth: 1, text: "plain")
+        ])
+    }
+
     @Test func parsesIndentedQuotesWithSharedQuoteRules() {
         let markdown = """
             > Project note

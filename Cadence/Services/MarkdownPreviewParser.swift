@@ -150,6 +150,18 @@ nonisolated enum MarkdownPreviewParser {
                 continue
             }
 
+            // An EMPTY list item -- `- [ ] `, `> - [ ] `, the line Return leaves behind -- has no
+            // text, so `listBlock` declined it above; it is a list line all the same and says
+            // nothing. Left to fall through, a quoted one became a quote whose text was the
+            // literal `- [ ]` and an unquoted one a paragraph of it, so Search's excerpt read
+            // `todo top - [ ] plain` with every filled item stripped and the empty one not
+            // ([[T-19923]]). It still ends the paragraph above it, as any list item does.
+            if isEmptyListItem(rawLine) {
+                flushParagraph()
+                lineIndex += 1
+                continue
+            }
+
             if let quote = MarkdownQuoteSupport.lineInfo(in: rawLine), !quote.content.isEmpty {
                 flushParagraph()
                 blocks.append(.quote(depth: quote.depth, text: quote.content))
@@ -166,6 +178,20 @@ nonisolated enum MarkdownPreviewParser {
         }
         flushParagraph()
         return blocks
+    }
+
+    /// A line `listBlock` reads as a list item -- directly, or after its quote prefix -- whose text
+    /// is empty. Asked through `listPrefixMatch`, the read `listBlock` itself makes, so a line this
+    /// drops is one `listBlock` declined only for being empty, never one it could not read.
+    private static func isEmptyListItem(_ line: String) -> Bool {
+        var body = line
+        if let quote = MarkdownQuoteSupport.lineInfo(in: line) {
+            body = (line as NSString).substring(from: NSMaxRange(quote.prefixRange))
+        }
+        guard let prefix = MarkdownListSupport.listPrefixMatch(in: body) else { return false }
+        let nsBody = body as NSString
+        let contentLocation = min((prefix.prefix as NSString).length, nsBody.length)
+        return nsBody.substring(from: contentLocation).trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private static func listBlock(in line: String, lineIndex: Int) -> MarkdownPreviewBlock? {
