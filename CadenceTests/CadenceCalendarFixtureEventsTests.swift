@@ -583,6 +583,51 @@ struct CadenceCalendarFixtureEventsTests {
         #expect(shipping.first?.name != "Holidays (Read-only)")
     }
 
+    /// **[[T-19924]] -- the notice and the menu answer from one list.** On `calendar-read-only`
+    /// the iPhone opened `Design review` (writable `Work`) to "No writable calendars are
+    /// available." with no Calendar row: the notice asked the manager's bare `writableCalendars`,
+    /// empty on a disarmed launch, while the menu was built from the same list plus the served
+    /// fixture calendars. Both editors now ask `unavailableNotice`, which reads the menu's own
+    /// `offeredWritableCalendars`.
+    @Test func theEditorsNoticeAsksTheListItsMenuDrawsFrom() throws {
+        let timed = try #require(CadenceCalendarFixtureEvents.timedEvents(for: Date(), in: Self.readOnlyActive))
+        let workID = try #require(timed.first?.calendar?.calendarIdentifier)
+
+        let offered = CadenceEventEditorCalendarChoices.offeredWritableCalendars([], environment: Self.readOnlyActive)
+        #expect(offered.map(\.calendarIdentifier) == [workID], "the holiday is offered, or Work is not")
+        let menu = CadenceEventEditorCalendarChoices.choices(
+            selectedID: workID, availableCalendars: [], writableCalendars: [], environment: Self.readOnlyActive
+        )
+        #expect(menu.map(\.id) == offered.map(\.calendarIdentifier), "the menu and the offer are two lists again")
+
+        // The sighting: a writable fixture event, nothing from the manager -- no notice.
+        #expect(CadenceEventEditorCalendarChoices.unavailableNotice(
+            isEditable: true, writableCalendars: [], environment: Self.readOnlyActive
+        ) == nil)
+        // Non-vacuity: with nothing offered at all (a shipping launch handed no calendars) the
+        // sentence is still said, and never on a read-only event, whose panel is inert.
+        #expect(CadenceEventEditorCalendarChoices.unavailableNotice(
+            isEditable: true, writableCalendars: [], environment: [:]
+        ) == "No writable calendars are available.")
+        #expect(CadenceEventEditorCalendarChoices.unavailableNotice(
+            isEditable: false, writableCalendars: [], environment: [:]
+        ) == nil)
+
+        // Both editors ask it, on both platforms, and neither asks the manager's list alone.
+        for path in [
+            "Cadence/iOS/iOSCalendarEventEditSheet.swift",
+            "Cadence/macOS/Views/TimelineEventBlockSupportViews.swift",
+        ] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            let notice = try #require(
+                CadenceSourceScan.declarationBody("private var calendarUnavailableNotice: String?", in: code),
+                "\(path) lost its notice"
+            )
+            #expect(notice.contains("CadenceEventEditorCalendarChoices.unavailableNotice("), "\(path)")
+            #expect(!notice.contains("writableCalendars.isEmpty"), "\(path) asks the manager's bare list again")
+        }
+    }
+
     // MARK: - 3d. The calendar-sleep scenario (T-17622)
 
     private static let sleepActive: [String: String] = [mode: "1", scenario: "calendar-sleep"]

@@ -383,9 +383,12 @@ struct CalendarEventEditPopover: View {
         )
     }
 
+    /// [[T-19924]]: asked of the same list `calendarChoices` draws, never the manager's bare one.
     private var calendarUnavailableNotice: String? {
-        guard isEditable, calendarManager.writableCalendars.isEmpty else { return nil }
-        return "No writable calendars are available."
+        CadenceEventEditorCalendarChoices.unavailableNotice(
+            isEditable: isEditable,
+            writableCalendars: calendarManager.writableCalendars
+        )
     }
 
     /// **[[T-8161]] — the one Notes field.** It replaced two: this card, which only offered to

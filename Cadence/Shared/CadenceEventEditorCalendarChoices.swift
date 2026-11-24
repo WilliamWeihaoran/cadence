@@ -60,6 +60,42 @@ enum CadenceEventEditorCalendarChoices {
         return choices
     }
 
+    /// **The writable calendars an existing event's editor offers** -- the manager's, plus on a
+    /// fixture launch the served fixture calendars that accept writes.
+    ///
+    /// [[T-12942]]: a fixture launch is EventKit-disarmed, so the managers' lists arrive empty and
+    /// an opened fixture event's row would read as a missing calendar. The fixture's own calendars
+    /// stand in, read-only ones left out by EventKit's own question. `[]` is added on every launch
+    /// outside the fixture gate, which leaves the list exactly as passed.
+    ///
+    /// [[T-19924]]: one answer for the menu AND the notice. The notice used to ask the manager's
+    /// bare `writableCalendars`, which is empty on a fixture launch, so a writable fixture event's
+    /// editor said "No writable calendars are available." above a menu that offered `Work`.
+    static func offeredWritableCalendars(
+        _ writableCalendars: [EKCalendar],
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [EKCalendar] {
+        writableCalendars
+            + CadenceCalendarFixtureEvents.servedCalendars(in: environment).filter(\.allowsContentModifications)
+    }
+
+    /// What an existing event's editor says in place of its Calendar row when there is nothing it
+    /// could move the event to: `nil` on a read-only event (its panel is inert, and its row names
+    /// its own calendar), and otherwise asked of `offeredWritableCalendars`, the list the menu
+    /// draws from. Both editors call this, so the sentence and the menu cannot disagree.
+    static func unavailableNotice(
+        isEditable: Bool,
+        writableCalendars: [EKCalendar],
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> String? {
+        guard isEditable,
+              offeredWritableCalendars(writableCalendars, environment: environment).isEmpty
+        else { return nil }
+        return noWritableCalendarSentence
+    }
+
+    static let noWritableCalendarSentence = "No writable calendars are available."
+
     /// The EventKit-shaped call both editors make.
     static func choices(
         selectedID: String,
@@ -67,13 +103,9 @@ enum CadenceEventEditorCalendarChoices {
         writableCalendars: [EKCalendar],
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> [CadenceSchedulePanelChoice] {
-        // [[T-12942]]: a fixture launch is EventKit-disarmed, so both lists arrive empty and an
-        // opened fixture event's row would read as a missing calendar. The fixture's own calendars
-        // stand in, read-only ones out of the writable list by EventKit's own question. `[]` on
-        // every launch outside the fixture gate, which leaves both lists exactly as passed.
         let fixtureCalendars = CadenceCalendarFixtureEvents.servedCalendars(in: environment)
         let availableCalendars = availableCalendars + fixtureCalendars
-        let writableCalendars = writableCalendars + fixtureCalendars.filter(\.allowsContentModifications)
+        let writableCalendars = offeredWritableCalendars(writableCalendars, environment: environment)
         let link = link(
             selectedID: selectedID,
             availableCalendars: availableCalendars.map {
