@@ -352,8 +352,15 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         }
         // The notice is about what is in the fields *now*, so the next keystroke retires it — the
         // rule T-589 settled for the docked bar this panel replaces, which kept "Add a title
-        // first." on screen while the title was being typed.
-        .onChange(of: draft.title) { _, _ in actionError = nil }
+        // first." on screen while the title was being typed. A Return is not such a keystroke:
+        // on iOS it arrives here as a line break, which `CadenceCaptureTitleReturn` turns into
+        // the submit `titleField`'s `onSubmit` gives the Mac ([[T-19958]]).
+        .onChange(of: draft.title) { old, new in
+            if CadenceCaptureTitleReturn.changesWords(old: old, new: new) { actionError = nil }
+            guard let resolution = CadenceCaptureTitleReturn.resolve(old: old, new: new) else { return }
+            draft.title = resolution.title
+            if resolution.submits { commit() }
+        }
     }
 
     // MARK: Kind
@@ -411,7 +418,10 @@ struct CadenceSchedulePanel<NotesField: View>: View {
             // such affordance, so guarding it would make the key do nothing at all and look
             // broken: the "inert control, no word on it" failure T-470/T-471 went through
             // this app removing. `commit()` reports instead, and `onChange(of: draft.title)`
-            // below takes the report down on the next keystroke.
+            // takes the report down on the next keystroke.
+            // **`onSubmit` fires on the Mac only.** iOS takes Return in a vertical-axis field as
+            // a line break and never calls it; `onChange(of: draft.title)` submits for that one
+            // ([[T-19958]]).
             .onSubmit(commit)
     }
 

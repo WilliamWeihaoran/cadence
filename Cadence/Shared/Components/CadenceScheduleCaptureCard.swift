@@ -37,6 +37,50 @@ nonisolated enum CadenceCaptureTagEntry {
     }
 }
 
+/// What a line break arriving in a capture title means ([[T-19958]]), read by both title fields --
+/// `CadenceScheduleCaptureCard`'s and `CadenceSchedulePanel.titleField`.
+///
+/// Both are `TextField(..., axis: .vertical)` so a long title wraps (T-3237). On the Mac, Return in
+/// such a field fires `onSubmit` and inserts nothing. On iOS and iPadOS the same field takes Return
+/// as a line break and never fires `onSubmit`, so the shared card submitted on one platform and
+/// grew a second line on the other with no hardware reason for it ([[T-8201]]). The difference is
+/// in how the two text systems route the key, so the answer is read from the text itself: one
+/// line break typed into the title is Return, and submits; a paste carrying line breaks keeps
+/// its words on one line and does not submit. Either way a title never stores a line break.
+nonisolated enum CadenceCaptureTitleReturn {
+    struct Resolution: Equatable {
+        let title: String
+        let submits: Bool
+    }
+
+    /// `nil` when `new` holds no line break -- an ordinary edit, nothing to do.
+    static func resolve(old: String, new: String) -> Resolution? {
+        guard new.contains(where: \.isNewline) else { return nil }
+        let typed = Array(new)
+        if typed.count == old.count + 1,
+           let index = typed.indices.first(where: { typed[$0].isNewline }) {
+            var withoutBreak = typed
+            withoutBreak.remove(at: index)
+            if String(withoutBreak) == old {
+                return Resolution(title: old, submits: true)
+            }
+        }
+        return Resolution(title: singleLine(new), submits: false)
+    }
+
+    /// Whether `old` -> `new` changed the title's words rather than only its line breaks, which is
+    /// what retires the "Add a title first." notice. Return and the strip that follows it change
+    /// no word, so the notice a Return raises survives the field being rewritten under it.
+    static func changesWords(old: String, new: String) -> Bool {
+        old.filter { !$0.isNewline } != new.filter { !$0.isNewline }
+    }
+
+    private static func singleLine(_ text: String) -> String {
+        guard text.contains(where: \.isNewline) else { return text }
+        return text.split(whereSeparator: \.isNewline).joined(separator: " ")
+    }
+}
+
 /// Whether a pick in the Repeat panel's frequency list closes the panel ([[T-16251]]).
 ///
 /// The list is a draft picker, so a pick writes `repeatRule` and closes -- right when the list is
@@ -461,7 +505,12 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
         .onChange(of: options.activeField?.wrappedValue) { _, field in
             if field == nil, activeField != nil { activeField = nil }
         }
-        .onChange(of: draft.title) { _, _ in actionError = nil }
+        .onChange(of: draft.title) { old, new in
+            if CadenceCaptureTitleReturn.changesWords(old: old, new: new) { actionError = nil }
+            guard let resolution = CadenceCaptureTitleReturn.resolve(old: old, new: new) else { return }
+            draft.title = resolution.title
+            if resolution.submits { commit() }
+        }
         .onChange(of: options.fieldRequest.wrappedValue) { _, field in
             guard let field else { return }
             options.fieldRequest.wrappedValue = nil
@@ -533,8 +582,10 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
         // since it was built; this card was the near-copy that kept the single-line form, so a
         // long title lost its tail at the one moment the reader is still composing it. Matching
         // the panel rather than inventing a height keeps one title treatment across the two
-        // presentations, and keeps Return on `onSubmit` the way the panel documents at its own
-        // field: a vertical-axis field still submits, and the submit is deliberately unguarded.
+        // presentations. Return submits, deliberately unguarded as the panel documents at its own
+        // field -- but a vertical-axis field fires `onSubmit` only on the Mac. On iOS it takes
+        // Return as a line break, so the card's `onChange(of: draft.title)` reads that break through
+        // `CadenceCaptureTitleReturn` and submits from there ([[T-19958]]).
         TextField(draft.kind.titlePlaceholder, text: $draft.title, axis: .vertical)
             .textFieldStyle(.plain)
             .cadenceFont(.composerTitle)
