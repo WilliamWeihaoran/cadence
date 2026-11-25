@@ -149,6 +149,34 @@ struct CadenceCalendarAccessNoticeTests {
         }
     }
 
+    /// **[[T-19957]]: the remedy is said by a sentence or by a button, never both -- a rule per
+    /// control, not per platform.** The two iOS composers that host `iOSCaptureCalendarAccessButton`
+    /// say the bare lead, because the remedy sentence would name that same button somewhere else:
+    /// the offer's "Choose Allow Access under Calendar in Cadence's Settings." sits over an
+    /// "Allow Access" button that does it in place. The composers with no such control -- the
+    /// Mac's two and the iOS timeline draft -- name the remedy, as the test above pins.
+    @Test func aComposerWithAnInHostAccessButtonSaysTheBareLead() throws {
+        let hosts = ["Cadence/iOS/iOSCreateTaskSheet.swift", "Cadence/iOS/iOSCalendarQuickCreateSheet.swift"]
+        for path in hosts {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(code.contains("iOSCaptureCalendarAccessButton(calendarManager: calendarManager)"), "\(path) lost its access button; name the remedy instead")
+            #expect(code.contains("CadenceCalendarAccessNotice.eventCreationNeedsAccessSentence"), "\(path)")
+            #expect(!code.contains("eventCreationUnavailableSentence("), "\(path) says the remedy beside the button that performs it")
+        }
+        for path in [
+            "Cadence/macOS/Views/QuickCreateChoicePopover.swift",
+            "Cadence/macOS/Sheets/CreateTaskSheet.swift",
+            "Cadence/iOS/iOSTimelineDraftCreate.swift",
+        ] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(!code.contains("iOSCaptureCalendarAccessButton("), "\(path) hosts the button; drop the remedy sentence")
+        }
+        // The redundancy the bare lead answers: the offer's remedy names the button's own title.
+        let offer = try #require(CadenceCalendarAccessNotice.eventCreationUnavailableSentence(
+            isAuthorized: false, isDenied: false, on: .mobile))
+        #expect(offer.contains(CadenceCalendarAccessNotice.connectOffer.actionTitle(on: .mobile)))
+    }
+
     // MARK: - The empty copy
 
     @Test func nothingThisMonthIsSaidOnlyWhenEventsCouldHaveBeenRead() {
