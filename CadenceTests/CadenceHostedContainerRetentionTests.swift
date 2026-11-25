@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+#endif
 import SwiftData
 import SwiftUI
 import Testing
@@ -48,6 +49,10 @@ extension View {
     }
 }
 
+// The helpers above build on both platforms, so an iOS test that hosts a view through
+// `UIHostingController` can route its container through the same modifier ([[T-19922]]'s
+// scroll-height test). The census below reads source, so it runs on macOS alone.
+#if os(macOS)
 @Suite(.serialized)
 @MainActor
 struct CadenceHostedContainerRetentionTests {

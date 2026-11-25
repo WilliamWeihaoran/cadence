@@ -49,7 +49,7 @@ struct iOSListDetailTasksScrollHeightTests {
         let host = UIHostingController(
             rootView: iOSListDetailView(project: project)
                 .environment(CadenceDeepLinkManager.shared)
-                .modelContainer(container)
+                .retainingModelContainerForProcessLifetime(container)
         )
         let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
