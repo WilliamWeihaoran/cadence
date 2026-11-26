@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import Cadence
 
-/// **T-899 + T-1043.** The two sides of [[T-624]]'s evidence gate, guarded by one sweep.
+/// **T-899 + T-13661.** The two sides of [[T-624]]'s evidence gate, guarded by one sweep.
 ///
 /// T-624 replaced "no calendar on this device carries this identifier" with "…and this device has
 /// itself seen that identifier alive", because `Area.linkedCalendarID` / `Project.linkedCalendarID`
@@ -16,7 +16,7 @@ import Testing
 ///   files — but a new surface that reads a *synced* `linkedCalendarID` and forgets
 ///   `evidence: .synced(…)` gets the pre-T-624 rule back: the other device's good link announced as
 ///   broken, with a re-pick beside it that overwrites it.
-/// - **The writing half (T-1043).** A link this device made must be recorded in
+/// - **The writing half (T-13661).** A link this device made must be recorded in
 ///   `CadenceCalendarLinkObservations`, or the gate can never report *that* link broken on the
 ///   device that made it. Every path does record it today, each for a different local reason. A new
 ///   link-writing surface — or a settings write that skips `saveCalendarLinks(_:)` — silently
@@ -28,9 +28,9 @@ import Testing
 /// it has no list-editor calendar row today, which is the only reason there is not already a third
 /// reading site.
 ///
-/// ## Two corrections to the rule as T-1043 proposed it, both measured here
+/// ## Two corrections to the rule as T-13661 proposed it, both measured here
 ///
-/// 1. **A fourth allowance is needed, for restore paths.** T-1043 proposed three conditions
+/// 1. **A fourth allowance is needed, for restore paths.** T-13661 proposed three conditions
 ///    (an unlink, reaches `recordPick`, reaches `saveCalendarLinks()`) on the day before T-274's
 ///    archive importer landed. `CadenceListEditSnapshot.restore` and
 ///    `CadenceArchiveImportService.write` both *put back a value the store already held* rather
@@ -147,7 +147,7 @@ struct CadenceCalendarLinkProvenanceSweepTests {
         }
     }
 
-    // MARK: - The writing half (T-1043)
+    // MARK: - The writing half (T-13661)
 
     /// Every write of a stored calendar link either records the pick, reaches the settings write
     /// that records it, or is a ledgered restore of a value the store already held.
@@ -173,7 +173,7 @@ struct CadenceCalendarLinkProvenanceSweepTests {
         #expect(offenders.isEmpty, """
             a surface writes a list's calendar link without recording that this device made it. \
             Since T-624 a break is reported only for an identifier this device has seen alive, so \
-            an unrecorded link is one whose eventual breakage can never be reported here (T-1043). \
+            an unrecorded link is one whose eventual breakage can never be reported here (T-13661). \
             Call `\(Self.recordPickNeedle)…)` beside the assignment, route it through \
             `\(Self.commitFunnelNeedle)…)`, or — only if it puts back a value the store already \
             held — add it to `restoreDeclarations` with the reason. Offenders: \(offenders.sorted()).
@@ -201,7 +201,7 @@ struct CadenceCalendarLinkProvenanceSweepTests {
     /// **T-1132.** The funnel allowance, read the same way: it still writes a link, it still
     /// records nothing itself, and every caller still hands it to the settings save that records
     /// past the `catch`. Without the caller half the allowance would excuse any new surface that
-    /// simply called the commit and never refreshed the observation record — which is the T-1043
+    /// simply called the commit and never refreshed the observation record — which is the T-13661
     /// hole in a newer shape.
     @Test func everyCallerOfTheSharedLinkCommitHandsItToTheSettingsSave() throws {
         let writes = try Self.writeSites()
@@ -230,7 +230,7 @@ struct CadenceCalendarLinkProvenanceSweepTests {
     }
 
     /// All three categories still carry sites. A rule whose branch nothing exercises stops being
-    /// read, and this is the branch T-1043's own proposal got wrong in both directions.
+    /// read, and this is the branch T-13661's own proposal got wrong in both directions.
     @Test func allThreeWriterCategoriesAreStillLoadBearing() throws {
         let writes = try Self.writeSites()
         var recordsThePick = 0

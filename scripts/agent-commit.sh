@@ -1272,17 +1272,18 @@ ledger_duplicate_ids() {  # $1... = ledger files, read as one ledger
 # escape for ONE commit; it is not a way to live with a standing duplicate, because under the
 # whole-file reading the commit after it is refused too.
 #
-# T-1043 is the only member and T-1072 put it there in as many words -- **"Fix the allocator, not
-# the three collisions"** -- because it is two genuinely different tickets (an image fix, closed
-# 2026-09-05, and a calendar-link one, closed 2026-09-11) under one number, and renumbering either
-# orphans every `[[T-1043]]` reference in the ledger. The other two collisions that sentence covers
-# were repaired by [[T-1136]] and are deliberately NOT listed.
+# THE LIST IS EMPTY, and that is its correct state while the ledger holds no permanent duplicate.
+# Its one member was T-1043 -- two genuinely different tickets (an image fix, closed 2026-09-05, and
+# a calendar-link one, closed 2026-09-11) that T-1072 refused to renumber. [[T-13701]] renumbered
+# the calendar-link half to [[T-13661]] after all, so the exemption excused nothing, and [[T-13662]]
+# retired it: left in place it would have silently waved through a NEW second `T-1043`. Mode 4f's
+# d8 check pins that a ledger with two `T-1043` entries is now refused like any other.
 #
 # The exemption takes effect in the commit that lands it -- this script runs from the working tree,
 # not from HEAD -- so the list and the entries it excuses go in one hunk, and the reviewer of that
 # hunk sees both. That is the point: a permanent duplicate should be hard to add and obvious once
 # added, not invisible in a flag on one command line.
-LEDGER_DUPLICATE_EXEMPT_IDS=(T-1043)
+LEDGER_DUPLICATE_EXEMPT_IDS=()
 
 # T-3234, and it is LEDGER-ID-DUPLICATE when the two agents do NOT share a file. That guard reads
 # the staged ledger, which is one checkout's view; an id filed on a `claude/*` or `codex/*` branch,
@@ -2772,7 +2773,8 @@ $(print -r -- "$lint_out" | grep -v '^REFUSED' | sed "s|${staged_content[$lint_n
   this reads is the one you are staging. Renumber YOUR entry to an id that is free in
   $duplicate_in as this commit leaves it, or fold the two entries into one, and fix the references.
   A duplicate that is PERMANENT by decision -- one number, two genuinely different tickets, the way
-  \`T-1043\` is -- belongs in LEDGER_DUPLICATE_EXEMPT_IDS in this script, added in the same hunk:
+  \`T-1043\` was until T-13701 renumbered it -- belongs in LEDGER_DUPLICATE_EXEMPT_IDS in this
+  script, added in the same hunk:
   this script runs from the working tree, so the exemption covers the commit that lands it.
   If this really is one ticket written twice on purpose, for THIS commit only:
   --duplicate-ids $duplicate_sorted"
@@ -4449,18 +4451,19 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     out=$( cd "$ws" && zsh "$here" d7 -m "$M" TODO.md=oneactive.md 2>&1 ); rc=$?
     check "two entries for one id with one still active are refused" \
         $( [[ $rc == 3 && "$out" == *LEDGER-ID-DUPLICATE* && "$out" == *"T-903"* ]] && print 1 || print 0 ) "exit $rc: $out"
-    # THE EXEMPTION ITSELF, read from this script rather than asserted in prose. T-1043 is the one
-    # member; a ledger carrying two entries for it commits with no flag at all, which is the
-    # property that lets the real docs/TODO.md keep T-1072's decision.
+    # THE RETIRED EXEMPTION (T-13662), read from this script rather than asserted in prose. T-1043
+    # was the one member until T-13701 renumbered its calendar-link half to T-13661; a ledger that
+    # carries two entries for it again is a NEW collision and must be refused like any other. Put
+    # T-1043 back in LEDGER_DUPLICATE_EXEMPT_IDS and this goes red.
     ( cd "$ws"
       git show HEAD:TODO.md > exempt.md
       print -rl -- "" "- [T-1043] **CLOSED 2026-09-05 -- the image half.**" \
-                      "  One number, two unrelated tickets, permanent by T-1072's decision." \
-                      "" "- [T-1043] **CLOSED 2026-09-11 -- the calendar-link half.**" \
-                      "  Renumbering either orphans every reference in the ledger." >> exempt.md ) >/dev/null 2>&1
+                      "  The one entry T-1043 still names after T-13701." \
+                      "" "- [T-1043] **a new piece of work that read a stale next-free value.**" \
+                      "  The exemption that would have excused this is gone." >> exempt.md ) >/dev/null 2>&1
     out=$( cd "$ws" && zsh "$here" d8 -m "$M" TODO.md=exempt.md 2>&1 ); rc=$?
-    check "the NAMED permanent exemption commits with no flag" \
-        $( [[ $rc == 0 && "$out" != *LEDGER-ID-DUPLICATE* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "a second T-1043 is refused now that its exemption is retired" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-ID-DUPLICATE* && "$out" == *"T-1043"* ]] && print 1 || print 0 ) "exit $rc: $out"
 
     say ""
     say " mode 4g (LEDGER-ENTRY-DUPLICATED) -- T-1142: a closure APPENDED to the draft it replaces"

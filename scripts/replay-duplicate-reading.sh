@@ -80,6 +80,8 @@ cd "$ROOT" || exit 2
 
 TODO=docs/TODO.md
 DONE=docs/TODO_DONE.md
+# Kept although agent-commit.sh retired the exemption ([[T-13662]]): this replays history, and
+# T-1043 really was a standing duplicate from `dcb0a15` until [[T-13701]] renumbered it.
 EXEMPT_ID=T-1043
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/cadence-replay-dup-XXXXXX") || exit 2
